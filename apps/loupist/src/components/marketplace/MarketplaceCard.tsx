@@ -1,11 +1,12 @@
 import { connectionText } from "@/lib/connectionCopy";
+import { keychainErrorMessage } from "@/lib/errors";
 import i18n, { useTranslation } from "@/i18n";
 import { ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { MarketplaceConnectorStatus, MarketplaceEntry, MarketplaceFreeState } from "../../marketplace/types";
-import { CONNECTION_STATES, connectionState } from "../../marketplace/readiness";
+import { CONNECTION_STATES, connectionState, needsSavedKeyPermission } from "../../marketplace/readiness";
 
 const FREE_STATE_LABELS: Record<MarketplaceFreeState, string> = {
   get keyless() { return i18n.t("connections:marketplaceCard.noApiKeyRequired"); },
@@ -39,27 +40,48 @@ export function setupEntryLabel(entry: MarketplaceEntry, connector?: Marketplace
   return i18n.t("connections:marketplaceCard.setupEntry", { name });
 }
 
-export function MarketplaceCard({ entry, connector, offFor, onSetup, onUnlock, headingLevel = 4 }: {
+export function MarketplaceCard({ entry, connector, offFor, onSetup, onUnlock, permissionBatchActive, headingLevel = 4 }: {
   entry: MarketplaceEntry;
   connector?: MarketplaceConnectorStatus;
   /** The current Loupist's name when this ready connection is switched off for it. */
   offFor?: string;
   onSetup?: (entry: MarketplaceEntry) => void;
-  /** Try again on a key macOS refused; resolves false when it is still locked. */
-  onUnlock?: (entry: MarketplaceEntry) => Promise<boolean>;
+  onUnlock?: (entry: MarketplaceEntry, presenceOnly: boolean) => Promise<void>;
+  permissionBatchActive?: boolean;
   headingLevel?: 3 | 4;
 }) {
   const Title = `h${headingLevel}` as const;
   useTranslation();
   const [unlocking, setUnlocking] = useState(false);
-  const [stillLocked, setStillLocked] = useState(false);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
   const action = setupActionLabel(entry, connector);
   const locked = connectionState(connector) === "locked";
+  const savedKeyNeedsPermission = needsSavedKeyPermission(connector);
+  const savedKeyDenied = connector?.credentials.some(({ last_error }) => last_error === "credential_saved_denied");
+  const presenceUnavailable = !locked && connector?.credentials.some(({ last_error }) => last_error === "credential_presence_unavailable");
+  const savedKeyUnknown = connector?.credentials.some(({ last_error }) => last_error === "credential_status_unknown");
+  const showRetry = locked || presenceUnavailable || savedKeyDenied;
+  const checkDetail = locked
+    ? i18n.t("connections:marketplaceCard.lockedExplanation")
+    : presenceUnavailable
+      ? i18n.t("connections:marketplaceCard.couldNotCheckSavedKey")
+      : savedKeyDenied
+        ? i18n.t("connections:savedKeyPermission.denied")
+        : savedKeyNeedsPermission
+          ? i18n.t("connections:marketplaceCard.checkSavedKeyDetail")
+          : i18n.t("connections:marketplaceCard.checkSavedKeyUnknownDetail");
   const state = CONNECTION_STATES[connectionState(connector)];
   const tryAgain = async () => {
     if (!onUnlock || unlocking) return;
     setUnlocking(true);
-    try { setStillLocked(!(await onUnlock(entry))); } catch { setStillLocked(true); } finally { setUnlocking(false); }
+    setUnlockError(null);
+    try {
+      await onUnlock(entry, Boolean(presenceUnavailable));
+    } catch (cause) {
+      setUnlockError(keychainErrorMessage(cause) ?? i18n.t("connections:marketplaceView.couldNotRefreshConnections"));
+    } finally {
+      setUnlocking(false);
+    }
   };
   return (
     <article className="marketplace-card" data-testid="marketplace-card" aria-labelledby={`connection-${entry.id}`}>
@@ -73,11 +95,10 @@ export function MarketplaceCard({ entry, connector, offFor, onSetup, onUnlock, h
           <span>{accessLabel(entry)}</span>
           {entry.markets.length ? <span>{entry.markets.map(connectionText).join(" · ")}</span> : null}
         </div>
-        {/* Said before Try again, the read that makes macOS ask for the login password. */}
-        {locked ? <div className="marketplace-locked" data-connection-locked>
-          <p>{i18n.t("connections:marketplaceCard.lockedExplanation")}</p>
-          {stillLocked ? <p role="status">{i18n.t("connections:marketplaceCard.stillLocked")}</p> : null}
-          {onUnlock ? <Button type="button" size="sm" variant="outline" disabled={unlocking} aria-label={i18n.t("connections:marketplaceCard.tryAgainEntry", { name: connectionText(entry.name) })} onClick={() => void tryAgain()}>{i18n.t("connections:marketplaceCard.tryAgain")}</Button> : null}
+        {showRetry || savedKeyNeedsPermission || savedKeyUnknown ? <div className="marketplace-locked" data-connection-locked={locked || undefined}>
+          <p>{checkDetail}</p>
+          {unlockError ? <p role="status">{unlockError}</p> : null}
+          {onUnlock ? <Button type="button" size="sm" variant="outline" disabled={unlocking || permissionBatchActive} aria-label={i18n.t(showRetry ? "connections:marketplaceCard.tryAgainEntry" : "connections:marketplaceCard.checkSavedKeyEntry", { name: connectionText(entry.name) })} onClick={() => void tryAgain()}>{i18n.t(showRetry ? "connections:marketplaceCard.tryAgain" : "connections:marketplaceCard.checkSavedKey")}</Button> : null}
         </div> : null}
       </div>
       <div className="marketplace-entry-actions">
@@ -89,7 +110,7 @@ export function MarketplaceCard({ entry, connector, offFor, onSetup, onUnlock, h
           {/* Ready is set up for every Loupist; this one may still have it off, which is why a page sent the user here. */}
           {offFor && connectionState(connector) === "ready" ? <span className="marketplace-off-here">{i18n.t("connections:marketplaceCard.offFor", { loupist: offFor })}</span> : null}
         </span>}
-        {onSetup ? <Button type="button" size="sm" variant="ghost" aria-label={setupEntryLabel(entry, connector)} onClick={() => onSetup(entry)}>{action}<ChevronRightIcon /></Button> : null}
+        {onSetup && !savedKeyNeedsPermission && !presenceUnavailable ? <Button type="button" size="sm" variant="ghost" aria-label={setupEntryLabel(entry, connector)} onClick={() => onSetup(entry)}>{action}<ChevronRightIcon /></Button> : null}
       </div>
     </article>
   );

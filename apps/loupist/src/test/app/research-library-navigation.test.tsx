@@ -21,7 +21,10 @@ it.each(["Chat", "Lens"])("opens an exact research note inline and restores it a
   });
   const exactRead = vi.spyOn(bridge, "knowledgeWorkingNoteRead").mockResolvedValue(note);
   await openApp(bridge);
-  await user.click(await mainTab(/Map/));
+  await user.click(await mainTab(/World/));
+  await user.click(await screen.findByRole("button", { name: /^Whole World/ }));
+  await user.click(await screen.findByRole("button", { name: "Apple" }));
+  expect(await screen.findByRole("button", { name: /^Around Apple/ })).toBeVisible();
   await user.click(await screen.findByRole("button", { name: "Library" }));
   await user.click(await screen.findByRole("tab", { name: "Notes" }));
   await user.type(screen.getByRole("textbox", { name: "Search notes" }), "margin");
@@ -31,7 +34,8 @@ it.each(["Chat", "Lens"])("opens an exact research note inline and restores it a
   expect(exactRead).toHaveBeenCalledExactlyOnceWith({ loupistId: loupist.id, noteId: note.researchId });
 
   await user.click(await mainTab(new RegExp(`^${destination}$`)));
-  await user.click(await mainTab(/Map/));
+  await user.click(await mainTab(/World/));
+  expect(await screen.findByRole("button", { name: /^Whole World/ })).toBeVisible();
   if (destination === "Lens") await user.click(savedSurface("Notes"));
   await waitFor(() => expect(savedSurface("Notes")).toHaveAttribute("aria-selected", "true"));
   expect(screen.getByRole("textbox", { name: "Search notes" })).toHaveValue("margin");

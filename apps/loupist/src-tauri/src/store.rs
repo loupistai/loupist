@@ -1,7 +1,9 @@
 use std::{
+    cell::Cell,
     collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Mutex, MutexGuard, TryLockError},
+    time::{Duration, Instant},
 };
 
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
@@ -77,12 +79,72 @@ pub enum StoreError {
     Conflict(&'static str),
     #[error("store lock was poisoned")]
     LockPoisoned,
+    #[error("the Chat store wait exceeded its deadline")]
+    ChatSaveDeadline,
     /// A development format from before the upgrade ladder; refused, never migrated.
     #[error("this Loupist was made by an earlier version of the app")]
     EarlierVersion,
 }
 
 pub type StoreResult<T> = Result<T, StoreError>;
+
+thread_local! {
+    static CHAT_SAVE_DEADLINE: Cell<Option<Instant>> = const { Cell::new(None) };
+}
+
+/// Give one synchronous Chat finalization step a finite store-lock budget.
+/// The caller remains on this thread until the transaction commits or rolls back.
+pub(crate) fn bounded_chat_save<T>(body: impl FnOnce() -> T) -> T {
+    const SAVE_BUDGET: Duration = Duration::from_secs(10);
+    struct Restore(Option<Instant>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            CHAT_SAVE_DEADLINE.set(self.0);
+        }
+    }
+    let run = || {
+        let deadline = Instant::now() + SAVE_BUDGET;
+        let _restore = Restore(CHAT_SAVE_DEADLINE.replace(Some(deadline)));
+        body()
+    };
+    if tokio::runtime::Handle::try_current()
+        .is_ok_and(|handle| handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread)
+    {
+        tokio::task::block_in_place(run)
+    } else {
+        run()
+    }
+}
+
+fn check_chat_save_deadline() -> StoreResult<()> {
+    if CHAT_SAVE_DEADLINE
+        .get()
+        .is_some_and(|deadline| Instant::now() >= deadline)
+    {
+        return Err(StoreError::ChatSaveDeadline);
+    }
+    Ok(())
+}
+
+fn lock_store<T>(mutex: &Mutex<T>) -> StoreResult<MutexGuard<'_, T>> {
+    let Some(deadline) = CHAT_SAVE_DEADLINE.get() else {
+        return mutex.lock().map_err(|_| StoreError::LockPoisoned);
+    };
+    loop {
+        check_chat_save_deadline()?;
+        match mutex.try_lock() {
+            Ok(guard) => return Ok(guard),
+            Err(TryLockError::Poisoned(_)) => return Err(StoreError::LockPoisoned),
+            Err(TryLockError::WouldBlock) => {
+                std::thread::sleep(
+                    deadline
+                        .saturating_duration_since(Instant::now())
+                        .min(Duration::from_millis(10)),
+                );
+            }
+        }
+    }
+}
 
 /// Listings tolerate individual unreadable values, but still report query/storage
 /// failures. Log at most once per listing, without the row's contents or identity.
@@ -123,8 +185,11 @@ pub(crate) fn is_app_setting_id(id: &str) -> bool {
             | "update"
             | "legacy_holdings_export"
     ) || id
-        .strip_prefix("world_processing:")
-        .is_some_and(|loupist| !loupist.is_empty())
+        .strip_prefix("default_model:")
+        .is_some_and(|id| !id.is_empty())
+        || id
+            .strip_prefix("world_processing:")
+            .is_some_and(|loupist| !loupist.is_empty())
 }
 
 fn put_app_setting(connection: &Connection, id: &str, data_json: &str) -> StoreResult<()> {
@@ -244,11 +309,7 @@ impl SqliteStore {
     }
 
     pub(crate) fn lock(&self) -> StoreResult<StoreConnection<'_>> {
-        Ok(StoreConnection::Global(
-            self.connection
-                .lock()
-                .map_err(|_| StoreError::LockPoisoned)?,
-        ))
+        Ok(StoreConnection::Global(lock_store(&self.connection)?))
     }
 
     pub(crate) fn database_path(&self) -> Option<&Path> {
@@ -290,6 +351,7 @@ impl SqliteStore {
             return Err(StoreError::Conflict("Chat compare-and-swap"));
         }
         during(&transaction)?;
+        check_chat_save_deadline()?;
         transaction.commit()?;
         Ok(())
     }
@@ -378,6 +440,7 @@ impl SqliteStore {
             return Err(StoreError::Conflict("artifact Chat compare-and-swap"));
         }
         during(&transaction)?;
+        check_chat_save_deadline()?;
         transaction.commit()?;
         Ok(())
     }
@@ -478,6 +541,46 @@ impl SqliteStore {
             return Err(StoreError::Conflict("deletion journal changed"));
         }
         Ok(())
+    }
+
+    pub(crate) fn observe_default_model(
+        &self,
+        loupist: &str,
+        selection: &crate::providers::selection::ResolvedModelSelection,
+    ) -> StoreResult<Option<crate::providers::selection::DefaultModelChange>> {
+        use crate::providers::selection::{DefaultModelChange, ObservedDefault};
+        let key = format!("default_model:{loupist}");
+        let connection = self.lock()?;
+        if !selection.is_default {
+            connection.execute("DELETE FROM app_settings WHERE id = ?1", [&key])?;
+            return Ok(None);
+        }
+        let current = selection.model.clone();
+        let previous: Option<ObservedDefault> = load_json_by_id(&connection, "app_settings", &key)?;
+        if let Some(prior) = &previous {
+            if prior.model.as_ref().map(|m| &m.id) == current.as_ref().map(|m| &m.id) {
+                return Ok(prior.pending.clone());
+            }
+        }
+        let pending = previous.and_then(|prior| {
+            let previous = prior.pending.map_or(prior.model, |change| change.previous);
+            (previous.as_ref().map(|m| &m.id) != current.as_ref().map(|m| &m.id)).then(|| {
+                DefaultModelChange {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    previous,
+                    current: current.clone(),
+                }
+            })
+        });
+        put_app_setting(
+            &connection,
+            &key,
+            &to_json(&ObservedDefault {
+                model: current,
+                pending: pending.clone(),
+            })?,
+        )?;
+        Ok(pending)
     }
 
     pub fn save_model_catalog(&self, catalog: &ModelCatalog) -> StoreResult<()> {
@@ -691,6 +794,10 @@ impl SqliteStore {
             return Err(StoreError::Conflict("Loupist changed before deletion"));
         }
 
+        transaction.execute(
+            "DELETE FROM app_settings WHERE id = ?1",
+            [format!("default_model:{id}")],
+        )?;
         crate::scheduled_tasks::store::erase_loupist_in(&transaction, id)?;
         transaction.execute(
             "DELETE FROM chart_artifact_datasets WHERE artifact_id IN (SELECT id FROM chat_artifacts WHERE chat_session_id IN (SELECT id FROM chat_sessions WHERE loupist_id = ?1))",
@@ -879,6 +986,16 @@ impl SqliteStore {
     pub fn get_chat(&self, id: &str) -> StoreResult<Option<ChatSession>> {
         let connection = self.lock_record("chat_sessions", id)?;
         load_json_by_id(&connection, "chat_sessions", id)
+    }
+
+    pub(crate) fn get_chat_in_loupist(
+        &self,
+        loupist_id: &str,
+        chat_id: &str,
+    ) -> StoreResult<Option<ChatSession>> {
+        let connection = self.lock_loupist(loupist_id)?;
+        let chat = load_json_by_id::<ChatSession>(&connection, "chat_sessions", chat_id)?;
+        Ok(chat.filter(|chat| chat.loupist_id == loupist_id))
     }
 
     pub fn list_chats_for_loupist(&self, loupist_id: &str) -> StoreResult<Vec<ChatSession>> {

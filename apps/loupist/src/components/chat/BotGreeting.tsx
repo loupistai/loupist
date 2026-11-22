@@ -147,7 +147,7 @@ export function BotGreeting({ bridge, loupistId, loupist, onAsk, accountConnecte
           <p className="bot-greeting-label" aria-hidden="true">{asksLabel}</p>
           <ul ref={asksRef} className="bot-asks">
             {shownCards.map((card) => <li key={card.key}>
-              <button type="button" className="bot-ask" data-ask={card.key} onClick={card.run}>
+              <button type="button" className="start-option-card bot-ask" data-ask={card.key} onClick={card.run}>
                 <span><strong>{card.label}</strong>{card.hint ? <small>{card.hint}</small> : null}</span>
                 {/* Not Send's arrow: a card fills the composer or opens a page, as the news's questions do. */}
                 <ArrowRightIcon aria-hidden="true" />

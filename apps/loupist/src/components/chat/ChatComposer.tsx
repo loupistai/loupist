@@ -25,7 +25,8 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useInputModality } from "@/lib/inputModality";
-import { skillPresentation } from "@/lib/agentSkills";
+import { useExtensionAvailability } from "@/app/extensionAvailability";
+import { skillBlurb, skillPresentation, visibleSkill } from "@/lib/agentSkills";
 import { formatNumber } from "@/i18n/format";
 import { composeSubmission, composerChipInlineText, contextGroupLabel, rankText, type ComposerChip, type ContextOption } from "../../chat/composerChips";
 import type { FileUIPart } from "ai";
@@ -58,7 +59,7 @@ import { ChatModelMenu } from "./ChatModelMenu";
 import { ComposerChipTray, ComposerInlineReferenceControls } from "./ComposerChipTray";
 import { useComposerInlineReferences, type InlineComposerItem } from "./useComposerInlineReferences";
 import { knowledgePinKey } from "../../knowledge/location";
-import { activeTriggerAt, ComposerAssistMenu, ComposerPromptHighlight, type ActiveTrigger, type AssistOption, type ComposerOption } from "./ComposerAssist";
+import { activeTriggerAt, ComposerAssistMenu, ComposerPromptHighlight, type ActiveTrigger, type AssistOption, type ComposerOption, type ComposerSkill } from "./ComposerAssist";
 import { AsOfDatePanel } from "./ComposerAsOf";
 import { shortcutFor } from "../../app/shortcuts";
 import { asOfProblem, formatAsOf, typedAsOf } from "../../chat/asOf";
@@ -72,6 +73,7 @@ import {
 const t = i18n.getFixedT(null, "chat");
 /** Space between the composer's top edge and a menu that opens above it (`.composer-assist`). */
 const COMPOSER_MENU_GAP = 10;
+const MEMORY_SKILL_IDS: readonly string[] = ["world", "lens", "journal"];
 
 const validateAttachment = (file: File) =>
   file.type.startsWith("image/") && file.size > 5 * 1024 * 1024
@@ -86,6 +88,7 @@ type Props = {
   prompt: string;
   privateChat: boolean;
   isRunning: boolean;
+  isSaving?: boolean;
   isStopping?: boolean;
   error: string | null;
   sendDisabledReason?: string;
@@ -93,7 +96,7 @@ type Props = {
   models: ConfiguredModel[];
   providers: ModelProviderOption[];
   modelSelection: ModelRunSelection;
-  skills: ComposerOption[];
+  skills: ComposerSkill[];
   plugins: ComposerOption[];
   knowledgePins?: readonly KnowledgePin[];
   chips?: readonly ComposerChip[];
@@ -103,18 +106,19 @@ type Props = {
   onChipsChange?: (chips: ComposerChip[]) => void;
   onSearchContext?: (query: string) => Promise<ContextOption[]>;
   onAddKnowledgePin?: (pin: KnowledgePin) => void;
-  /** "Screenshot of the map" in the + menu; absent where no map is in reach. */
+  /** "Screenshot of World" in the + menu, available when the conversation has a World view. */
   mapScreenshot?: MapScreenshot;
   /** The chat's saved Sources, offered as "Add from Evidence". */
   evidenceSources?: readonly EvidenceSourceOption[];
   onSelectArtifact?: (artifact: ChatArtifactRef) => void;
-  onNewChat?: () => void;
   onPromptChange: (prompt: string) => void;
   onPrivateChatChange: (enabled: boolean) => void;
   onModelSelectionChange: (selection: ModelRunSelection) => void;
-  /** Nothing chosen for this Loupist: the composer shows "Auto". */
-  modelAuto: boolean;
-  onModelResetToAuto: () => void;
+  /** The composer shows the host’s default model until a choice is saved. */
+  modelIsDefault: boolean;
+  modelName?: string;
+  noAccount?: boolean;
+  onChooseDefault: () => void;
   onSend: (prompt: string, files: FileUIPart[], draftText?: string) => boolean | void | Promise<boolean | void>;
   onFollowUp: (text?: string, files?: FileUIPart[], draftText?: string) => boolean | void;
   onAbort: () => void;
@@ -144,6 +148,13 @@ export type IncomingFiles = { id: number; files: File[] };
  * with the caret at the end, the message scrolls to its last line.
  */
 function fitPromptHeight(textarea: HTMLTextAreaElement) {
+  // An empty editor is one row. WebKit can still report the old text extent
+  // after the first send changes the docked layout and clears the textarea.
+  if (!textarea.value) {
+    textarea.style.height = "";
+    textarea.scrollTop = 0;
+    return;
+  }
   const { scrollTop } = textarea;
   // Measured without a scrollbar, so a classic one cannot add a line that is not there.
   textarea.style.overflowY = "hidden";
@@ -503,6 +514,7 @@ function ComposerRunExtras({
  */
 function ComposerTile({
   running,
+  saving,
   stopping,
   prompt,
   hasModel,
@@ -511,6 +523,7 @@ function ComposerTile({
   onPreserveFocus,
 }: {
   running: boolean;
+  saving: boolean;
   /** Stop was pressed and the host has not confirmed it. */
   stopping: boolean;
   prompt: string;
@@ -524,7 +537,7 @@ function ComposerTile({
   const [tooltip, setTooltip] = useState(false);
   const submitting = !running && attachments.isSubmitting;
   const empty = !prompt.trim() && attachments.files.length === 0;
-  const label = running ? t("chatComposer.stopResponse") : t("chatComposer.send");
+  const label = running ? saving ? t("memorySaving.skip") : t("chatComposer.stopResponse") : t("chatComposer.send");
   return (
     <Tooltip open={running && tooltip} onOpenChange={setTooltip}>
       <TooltipTrigger asChild>
@@ -550,7 +563,7 @@ function ComposerTile({
         </InputGroupButton>
       </TooltipTrigger>
       <TooltipContent side="top">
-        {t("chatComposer.stopResponse")}
+        {saving ? t("memorySaving.skipDetail") : label}
         <span className="ml-2 text-muted-foreground">{shortcutFor("stop")}</span>
       </TooltipContent>
     </Tooltip>
@@ -569,6 +582,7 @@ export function ChatComposer({
   privateChat,
   isRunning,
   isStopping = false,
+  isSaving = false,
   error,
   sendDisabledReason,
   streamAnnouncement,
@@ -588,12 +602,13 @@ export function ChatComposer({
   mapScreenshot,
   evidenceSources,
   onSelectArtifact,
-  onNewChat,
   onPromptChange,
   onPrivateChatChange,
   onModelSelectionChange,
-  modelAuto,
-  onModelResetToAuto,
+  modelIsDefault,
+  modelName,
+  noAccount,
+  onChooseDefault,
   onSend,
   onFollowUp,
   onAbort,
@@ -607,6 +622,8 @@ export function ChatComposer({
   layerOpen = false,
 }: Props) {
   useTranslation("chat");
+  const { userSkills } = useExtensionAvailability();
+  const availableSkills = useMemo(() => skills.filter(skill => visibleSkill(skill, userSkills)), [skills, userSkills]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [attachmentCount, setAttachmentCount] = useState(0);
   const hasAttachedContext = attachmentCount > 0 || knowledgePins.length > 0 || Boolean(selectedArtifact) || Boolean(asOf);
@@ -621,7 +638,6 @@ export function ChatComposer({
   const searchContextRef = useRef(onSearchContext);
   searchContextRef.current = onSearchContext;
   const canSearchContext = Boolean(onSearchContext);
-  const [modelMenuSignal, setModelMenuSignal] = useState(0);
   const [localChips, setOwnedChips] = useState<ComposerChip[]>(() => [...(chips ?? [])]);
   // Controlled draft chips are read in the same render as pins/ranges on native restoration.
   const ownedChips = chips ?? localChips;
@@ -659,26 +675,11 @@ export function ChatComposer({
   const selectedModel = models.find(
     (model) => model.id === modelSelection.model_profile_id,
   );
-  const accountConnected = hasAccount(models, providers);
+  const accountConnected = noAccount === undefined ? hasAccount(models, providers) : !noAccount;
   const canSetAsOf = Boolean(onAsOfChange);
   const assistOptions = useMemo<AssistOption[]>(() => {
     if (!activeTrigger) return [];
     const query = activeTrigger.query;
-    const commandQuery = query.trim().toLowerCase();
-    const skillOptions = skills.flatMap((skill) => {
-      // Bundled Skills show their localized name, as Settings › Skills does; the chip still invokes the id.
-      const { name } = skillPresentation(skill);
-      const score = rankText(query, [name, skill.name, skill.description, skill.id]);
-      return score ? [{
-        id: `skill:${skill.id}`,
-        kind: "skill" as const,
-        label: name,
-        name,
-        // Bundled Skills read a short line for people; the agent-facing description stays in the prompt metadata.
-        detail: (t as unknown as (key: string, options: { defaultValue: string }) => string)(`skillBlurb.${skill.id}`, { defaultValue: skill.description }),
-        group: t("chatComposer.skills"),
-      }] : [];
-    }).sort((left, right) => rankText(query, [right.name]) - rankText(query, [left.name]));
     if (activeTrigger.symbol === "@") {
       return contextOptions.map((option) => ({
         id: option.id,
@@ -690,31 +691,35 @@ export function ChatComposer({
         context: option,
       }));
     }
-    // `/`: the finance commands, then Skills by name, then the composer's own actions.
-    // Command names are typed literals, the same in every language.
-    const finance = ([
-      { id: "command:brief", kind: "command", label: "/brief", name: "/brief", detail: t("chatComposer.briefDetail"), group: t("chatComposer.commands"), command: "brief" },
-      { id: "command:compare", kind: "command", label: "/compare", name: "/compare", detail: t("chatComposer.compareDetail"), group: t("chatComposer.commands"), command: "compare" },
-      { id: "command:check", kind: "command", label: "/check", name: "/check", detail: t("chatComposer.checkDetail"), group: t("chatComposer.commands"), command: "check" },
-      ...(canSetAsOf ? [{ id: "command:asof", kind: "command", label: "/asof", name: "/asof", detail: t("chatComposer.asofDetail"), group: t("chatComposer.commands"), command: "asof" }] as const : []),
-    ] as const satisfies readonly AssistOption[]).filter((option) => !query.trim() || rankText(query, [option.name.slice(1), option.detail]) >= 2)
-      // A command whose name starts with what was typed comes first: `/as` → /asof before /compare.
-      .sort((a, b) => Number(b.name.slice(1).startsWith(commandQuery)) - Number(a.name.slice(1).startsWith(commandQuery)));
-    const commands = ([
-      { id: "command:new-chat", kind: "command", label: t("chatComposer.newChat"), name: t("chatComposer.newChat"), detail: t("chatComposer.startAFreshConversation"), group: t("chatComposer.commands"), command: "new-chat" },
-      { id: "command:model", kind: "command", label: t("chatComposer.model"), name: t("chatComposer.model"), detail: t("chatComposer.chooseTheModel"), group: t("chatComposer.commands"), command: "model" },
-      // Private chat, named as in the + menu; the line under it says what choosing it does now.
-      { id: "command:memory", kind: "command", label: t("chatComposer.privateChat"), name: t("chatComposer.privateChat"), detail: privateChat ? t("chatComposer.privateOff") : t("chatComposer.privateMenuDetail"), group: t("chatComposer.commands"), command: "memory" },
-      { id: "command:attach", kind: "command", label: t("chatComposer.attachFiles"), name: t("chatComposer.attachFiles"), detail: t("chatComposer.addFilesOrImages"), group: t("chatComposer.commands"), command: "attach" },
-    ] as const satisfies readonly AssistOption[]).filter((option) => {
-      // "/memory" still finds private chat.
-      const score = rankText(query, [option.name, option.detail, ...(option.command === "memory" ? [t("chatComposer.memory")] : [])]);
-      return query.trim() ? score >= 3 : score > 0;
-    });
-    const actions = commands.map((option) => ({ ...option, group: t("chatComposer.actions") }));
-    return [...finance, ...skillOptions.slice(0, 8), ...actions];
+    const memory: AssistOption[] = [];
+    const otherSkills: AssistOption[] = [];
+    for (const skill of availableSkills) {
+      const bundled = skill.source === "bundled";
+      const memoryIndex = bundled ? MEMORY_SKILL_IDS.indexOf(skill.id) : -1;
+      if (bundled && memoryIndex < 0 && !query.trim()) continue;
+      const { name, description } = skillPresentation(skill);
+      const detail = skillBlurb(skill);
+      if (!rankText(query, [name, skill.name, skill.id, description, skill.description, detail])) continue;
+      const option: AssistOption = {
+        id: `skill:${skill.id}`, kind: "skill", name, label: name, detail,
+        group: memoryIndex < 0 ? t("chatComposer.skills") : t("chatComposer.memory"),
+      };
+      if (memoryIndex >= 0) memory[memoryIndex] = option;
+      else otherSkills.push(option);
+    }
+    otherSkills.sort((a, b) => rankText(query, [b.name]) - rankText(query, [a.name]) || a.name.localeCompare(b.name, i18n.language));
+    const options = memory.filter(Boolean).concat(otherSkills);
+    const asof: AssistOption = {
+      id: "command:asof", kind: "command", label: "/asof", name: "/asof",
+      detail: t("chatComposer.asofDetail"), group: t("chatComposer.commands"),
+    };
+    if (canSetAsOf && rankText(query, ["asof", asof.detail])) {
+      if (query && "asof".startsWith(query.toLowerCase())) options.unshift(asof);
+      else options.push(asof);
+    }
+    return options;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the interface language is the recompute trigger; `i18n` itself is not reactive.
-  }, [activeTrigger, contextOptions, skills, canSetAsOf, privateChat, i18n.language]);
+  }, [activeTrigger, contextOptions, availableSkills, canSetAsOf, i18n.language]);
 
   useEffect(() => {
     if (activeTrigger?.symbol !== "@" || !canSearchContext) {
@@ -799,43 +804,14 @@ export function ChatComposer({
     updateChips([...ownedChips.filter((existing) => existing.key !== chip.key), chip]);
   };
 
-  const startCommand = (starter: string) => {
-    if (!activeTrigger) return;
-    const before = prompt.slice(0, activeTrigger.start);
-    const after = prompt.slice(activeTrigger.end);
-    const next = `${before}${starter}${after}`;
-    const cursor = before.length + starter.length;
-    inline.edit(next);
-    setActiveTrigger(activeTriggerAt(next, cursor));
-    requestAnimationFrame(() => {
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-      textarea.focus();
-      textarea.setSelectionRange(cursor, cursor);
-    });
-  };
-
   const selectAssist = (option: AssistOption) => {
     if (!activeTrigger) return;
     const insertReference = (item: InlineComposerItem) => {
       inline.insert(item, activeTrigger.start, activeTrigger.end);
       setActiveTrigger(null);
     };
-    if (option.command === "brief") return startCommand(t("chatComposer.briefPrompt"));
-    if (option.command === "compare") return startCommand(t("chatComposer.comparePrompt"));
-    if (option.command === "check") return startCommand(t("chatComposer.checkPrompt"));
-    if (option.command === "asof") {
+    if (option.kind === "command") {
       setDatePanel({ trigger: activeTrigger, initial: asOf });
-      return;
-    }
-    if (option.command) {
-      if (option.command === "new-chat") onNewChat?.();
-      if (option.command === "model") setModelMenuSignal((value) => value + 1);
-      if (option.command === "memory") {
-        onPrivateChatChange(!privateChat);
-      }
-      if (option.command === "attach") textareaRef.current?.form?.querySelector<HTMLInputElement>("input[type=file]")?.click();
-      clearTrigger();
       return;
     }
     if (option.context?.pin) { onAddKnowledgePin?.(option.context.pin); insertReference(pinItem(option.context.pin)); return; }
@@ -983,14 +959,14 @@ export function ChatComposer({
     // Enter queues. ⌘Enter / Ctrl+Enter guides the reply in progress. Shift+Enter stays a new line.
     if (isRunning && event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      if (event.metaKey || event.ctrlKey) steerCurrent();
+      if (!isSaving && (event.metaKey || event.ctrlKey)) steerCurrent();
       else queueFollowUp();
     }
   };
 
   const submission = composeSubmission(prompt, ownedChips, inline.references);
   const showSend = isRunning && !sendDisabledReason && (Boolean(submission) || attachmentCount > 0);
-  const showGuide = isRunning && Boolean(submission);
+  const showGuide = isRunning && !isSaving && Boolean(submission);
   const canSteer = showGuide && !sendDisabledReason && !hasAttachedContext;
   const showRunHelp = isRunning && (Boolean(submission) || hasAttachedContext);
 
@@ -1106,7 +1082,7 @@ export function ChatComposer({
           >
             <ComposerPromptHighlight
               prompt={prompt}
-              skills={skills}
+              skills={availableSkills}
               plugins={plugins}
               highlightRef={highlightRef}
               references={inline.references}
@@ -1143,16 +1119,17 @@ export function ChatComposer({
             models={models}
             providers={providers}
             selection={modelSelection}
-            openSignal={modelMenuSignal + openModelMenuSignal}
+            openSignal={openModelMenuSignal}
             onSelectionChange={onModelSelectionChange}
             onManageModels={onOpenModelSettings}
             onOpenUsage={onOpenUsage}
-            auto={modelAuto}
-            onResetToAuto={onModelResetToAuto}
+            modelName={modelName}
+            isDefault={modelIsDefault}
+            onChooseDefault={onChooseDefault}
           /> : null}
           {!isRunning && !accountConnected && onOpenModelSettings ? (
-            <ChatModelMenu models={models} providers={providers} selection={modelSelection} onSelectionChange={onModelSelectionChange}
-              onManageModels={onOpenModelSettings} auto={modelAuto} onResetToAuto={onModelResetToAuto} />
+            <ChatModelMenu noAccount models={models} providers={providers} selection={modelSelection} onSelectionChange={onModelSelectionChange}
+              onManageModels={onOpenModelSettings} isDefault={modelIsDefault} onChooseDefault={onChooseDefault} />
           ) : (
             <div className="composer-run-actions">
               {isRunning ? <ComposerRunExtras
@@ -1166,6 +1143,7 @@ export function ChatComposer({
               /> : null}
               <ComposerTile
                 running={isRunning}
+                saving={isSaving}
                 stopping={isStopping}
                 prompt={submission}
                 hasModel={Boolean(
@@ -1199,7 +1177,9 @@ export function ChatComposer({
           onRemoveAsOf={() => { onAsOfChange?.(undefined); textareaRef.current?.focus(); }}
         />
         <ComposerInlineReferenceControls items={inlineItems} onRemove={(key) => { inline.remove(key); keepComposerFocus(); }} />
-        {showRunHelp ? <p id={runHelpId} className="composer-run-help">{hasAttachedContext
+        {showRunHelp ? <p id={runHelpId} className="composer-run-help">{isSaving
+          ? t("memorySaving.queueHelp", { send: shortcutFor("send"), newline: shortcutFor("newLine") })
+          : hasAttachedContext
           ? t("chatComposer.useSendNextToIncludeAttachedFilesOrReferences")
           : t("chatComposer.runHelp", { send: shortcutFor("send"), guide: shortcutFor("guide"), newline: shortcutFor("newLine") })}</p> : null}
       </PromptInput>

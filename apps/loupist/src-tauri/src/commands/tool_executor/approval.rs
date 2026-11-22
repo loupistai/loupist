@@ -41,6 +41,7 @@ impl AppToolExecutor {
         let call_id = current_tool_call_id();
         let request_id = approval.request_id.clone();
         let receiver = approvals::register(&request_id, &self.loupist_id);
+        let admission = park_tool_for_user();
         sink(call_id.clone(), approval.clone());
         let decision = tokio::select! {
             decision = receiver => decision.ok(),
@@ -55,6 +56,9 @@ impl AppToolExecutor {
             None => ApprovalState::Expired,
         };
         sink(call_id, approval);
+        if resume_tool_after_user(admission).await.is_err() {
+            return AskOutcome::NoAnswer;
+        }
         match decision {
             Some(decision) => AskOutcome::Answered(decision),
             None => AskOutcome::NoAnswer,

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
+import { createServer, ServerResponse } from "node:http";
 import { constants, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -614,6 +614,82 @@ function oauthOnlyProvider(id, login) {
 
 const credential = { type: "oauth", access: "access-fixture", refresh: "refresh-fixture", expires: 1_900_000_000_000 };
 
+test("the localized callback page carries the app icon and escapes all provider text", async () => {
+  const { signInPage } = await import("./provider-signin-page.mjs");
+  const provider = "<A&B>";
+  const en = signInPage({ success: true, language: "en", provider });
+  const ko = signInPage({ success: true, language: "ko", provider });
+  assert.match(en, /<html lang="en">/);
+  assert.match(en, /<h1>Return to Loupist<\/h1>/);
+  assert.ok(en.includes("&lt;A&amp;B&gt; approved the sign-in. Loupist finishes connecting in the app."));
+  assert.ok(en.includes("You can close this tab."));
+  assert.ok(ko.includes("<h1>Loupist로 돌아가십시오</h1>"));
+  assert.ok(ko.includes("&lt;A&amp;B&gt;에서 로그인을 승인했습니다. 연결은 앱에서 마무리됩니다."));
+  assert.ok(ko.includes("이 탭은 닫아도 됩니다."));
+  assert.ok(en.includes("default-src 'none'; style-src 'unsafe-inline'; img-src data:"));
+  assert.ok(en.includes("prefers-color-scheme: dark"));
+  for (const color of ["#f5f5f8", "#15151c", "#4f4f66", "#66667a", "#111116", "#f1f1f6", "#b3b3c2", "#8c8c9c"]) {
+    assert.ok(en.includes(color));
+  }
+  const icon = /data:image\/png;base64,([^"]+)/u.exec(en)[1];
+  assert.deepEqual(Buffer.from(icon, "base64"), readFileSync(join(import.meta.dirname, "../src-tauri/icons/128x128.png")));
+  const failed = signInPage({ success: false, language: "ko", provider, reason: "bad <tag> & 'quoted'" });
+  assert.ok(failed.includes("로그인을 완료하지 못했습니다"));
+  assert.ok(failed.includes("Loupist로 돌아가 다시 시도하십시오."));
+  assert.ok(failed.includes("bad &lt;tag&gt; &amp; &#39;quoted&#39;"));
+});
+
+test("the login command replaces only Pi callback HTML and restores HTTP on every exit", async (t) => {
+  const { commands } = await loadExtension(t, "callback-page");
+  const command = commands.get("loupist-provider-login");
+  const original = ServerResponse.prototype.writeHead;
+  const page = title => `<!doctype html><html><head><title>${title}</title></head><body><p>Pi &amp; reason.</p><div class="details">&lt;detail&gt;</div></body></html>`;
+  const future = page("Authentication successful (new)");
+  const success = page("Authentication successful");
+  const failure = page("Authentication failed");
+  const responses = { "/success": success, "/failure": failure, "/other": future, "/plain": success, "/stream": success };
+  const server = createServer((req, res) => {
+    const html = responses[req.url];
+    res.writeHead(req.url === "/failure" ? 400 : 200, {
+      "Content-Type": req.url === "/plain" ? "text/plain" : "text/html; charset=utf-8",
+      "Content-Length": Buffer.byteLength(html), "Cache-Control": "no-store",
+    });
+    if (req.url === "/stream") {
+      res.write(html.slice(0, 10));
+      res.end(html.slice(10));
+    } else res.end(html);
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  for (const outcome of ["success", "failure", "cancel"]) {
+    const login = async () => {
+      assert.notEqual(ServerResponse.prototype.writeHead, original);
+      for (const [path, prior] of Object.entries(responses)) {
+        const response = await fetch(url + path);
+        const actual = await response.text();
+        assert.equal(Number(response.headers.get("content-length")), Buffer.byteLength(actual));
+        assert.equal(response.headers.get("cache-control"), "no-store");
+        if (path === "/failure") {
+          assert.equal(response.status, 400);
+          assert.ok(actual.includes("로그인을 완료하지 못했습니다"));
+          assert.ok(actual.includes("Pi &amp; reason.\n&lt;detail&gt;"));
+        } else if (path === "/success") {
+          assert.ok(actual.includes("ChatGPT에서 로그인을 승인했습니다. 연결은 앱에서 마무리됩니다."));
+        } else assert.equal(actual, prior);
+      }
+      if (outcome !== "success") throw new Error(outcome === "cancel" ? "Login cancelled" : "Sign-in failed");
+      return credential;
+    };
+    const ctx = { modelRegistry: { getProvider: () => oauthOnlyProvider("openai", login) }, ui: { notify() {} } };
+    const attempt = command.handler("openai ko", ctx);
+    if (outcome === "success") await attempt;
+    else await assert.rejects(attempt, { message: outcome === "cancel" ? "Login cancelled" : "Provider sign-in failed" });
+    assert.equal(ServerResponse.prototype.writeHead, original);
+    assert.equal(await (await fetch(url + "/success")).text(), success);
+  }
+});
+
 test("the host answers Pi's paste prompt, and the browser callback can still win", async (t) => {
   const { commands } = await loadExtension(t, "manual-code");
   const pasted = "http://127.0.0.1:1455/auth/callback?code=fixture&state=fixture";
@@ -661,8 +737,32 @@ test("a failed sign-in reports one fixed reason before the command fails", async
   assert.equal(notices.some((notice) => notice.includes("acct-private")), false);
 });
 
+test("the login command reports only fixed ChatGPT exchange diagnostics", async (t) => {
+  const { commands } = await loadExtension(t, "token-exchange");
+  for (const [status, body, reason, code] of [
+    [400, { error: "invalid_grant" }, "chatgpt_connection_rejected", "invalid_grant"],
+    [403, { error: { code: "subscription_sharing_user_not_eligible" } }, "plan_not_eligible", "subscription_sharing_user_not_eligible"],
+    [401, { error: "invalid_client" }, "chatgpt_connection_rejected", "invalid_client"],
+    [400, { error: "private-account", error_description: "invalid_grant" }, "chatgpt_connection_rejected", "unknown"],
+    [502, "not JSON", "chatgpt_connection_rejected", "unknown"],
+  ]) {
+    const notices = [];
+    const login = async () => {
+      throw new Error(`OpenAI OAuth token request failed (${status}): ${typeof body === "string" ? body : JSON.stringify(body)}`);
+    };
+    const ctx = {
+      modelRegistry: { getProvider: () => oauthOnlyProvider("openai", login) },
+      ui: { notify: message => notices.push(JSON.parse(message.slice("loupist-provider/1:".length))) },
+    };
+    await assert.rejects(commands.get("loupist-provider-login").handler("openai", ctx), {
+      message: "Provider sign-in failed",
+    });
+    assert.deepEqual(notices, [{ type: "failed", reason, token_error: code, http_status: status }]);
+  }
+});
+
 test("sign-in failures map to fixed reasons", async () => {
-  const { loginFailureReason } = await import(`${pathToFileURL(join(import.meta.dirname, "loupist-provider-extension.mjs"))}?reasons=${Date.now()}`);
+  const { loginFailure } = await import(`${pathToFileURL(join(import.meta.dirname, "loupist-provider-extension.mjs"))}?reasons=${Date.now()}`);
   for (const [message, reason] of [
     ["OpenAI OAuth grant did not include chatgpt.tokens.use.direct", "plan_permission_declined"],
     ["403 subscription_sharing_user_not_eligible", "plan_not_eligible"],
@@ -674,7 +774,7 @@ test("sign-in failures map to fixed reasons", async () => {
     ["fetch failed: getaddrinfo ENOTFOUND auth.openai.com", "offline"],
     ["OAuth state mismatch", "other"],
   ]) {
-    assert.equal(loginFailureReason(new Error(message)), reason, message);
+    assert.equal(loginFailure(new Error(message)).reason, reason, message);
   }
 });
 

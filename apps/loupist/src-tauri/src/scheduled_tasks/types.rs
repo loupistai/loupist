@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::store::{StoreError, StoreResult};
+use crate::{
+    domain::MemorySaveSkipReason,
+    store::{StoreError, StoreResult},
+};
 
 pub const MAX_TASKS_PER_LOUPIST: usize = 100;
 pub const MAX_RUN_HISTORY: usize = 50;
@@ -238,6 +241,8 @@ pub struct SkippedTool {
     pub reason: String,
 }
 
+pub(crate) const SAVED_KEY_PERMISSION_SKIP: &str = "keychain_permission_required";
+
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskDraft {
@@ -274,7 +279,7 @@ impl TaskDraft {
             identifier(thread_id)?;
         }
         // An empty model means Auto: Rust resolves it at each run (W17.5).
-        let auto = self.model_profile_id.is_empty();
+        let auto = crate::providers::auto::uses_default(&self.model_profile_id);
         if !auto && !crate::providers::catalog::valid_model_profile_id(&self.model_profile_id) {
             return Err(invalid("scheduled model profile is invalid"));
         }
@@ -303,6 +308,9 @@ pub struct Task {
     pub target: TaskTarget,
     #[serde(default)]
     pub session_thread_id: Option<String>,
+    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub model_selection: Option<crate::providers::selection::ResolvedModelSelection>,
     pub model_profile_id: String,
     pub thinking_level: String,
     pub run_options: BTreeMap<String, String>,
@@ -325,6 +333,24 @@ pub struct Task {
 }
 
 impl Task {
+    pub(crate) fn resolve_selection(
+        &mut self,
+        catalog: Option<&crate::providers::selection::SelectionCatalog>,
+        preferred_level: Option<&str>,
+    ) {
+        let level = if self.thinking_level.is_empty() {
+            preferred_level.unwrap_or_default()
+        } else {
+            &self.thinking_level
+        };
+        self.model_selection = Some(match catalog {
+            Some(catalog) => catalog.selection(&self.model_profile_id, level, &self.run_options),
+            None => crate::providers::selection::ResolvedModelSelection::catalog_unavailable(
+                &self.model_profile_id,
+            ),
+        });
+    }
+
     pub fn draft(&self) -> TaskDraft {
         TaskDraft {
             title: self.title.clone(),
@@ -378,6 +404,12 @@ impl Task {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Run {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub memory_save_skip: Option<MemorySaveSkipReason>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub discarded_memory_items: Option<Vec<crate::domain::DiscardedMemoryItem>>,
     pub briefing_context: Option<crate::briefings::BriefingContext>,
     pub kind: TaskKind,
     pub read_at_ms: Option<i64>,
@@ -409,6 +441,8 @@ pub struct PreviousRun {
     pub finished_at: String,
     pub status: RunStatus,
     pub quiet: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_save_skip: Option<MemorySaveSkipReason>,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub summary: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -424,6 +458,8 @@ pub struct PreviousRun {
 pub struct DeliveredRun {
     pub finished_at: String,
     pub summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_save_skip: Option<MemorySaveSkipReason>,
 }
 
 /// The longest summary a run passes on, as the Bot preview keeps it.
@@ -464,6 +500,7 @@ impl PreviousRun {
                 Some(DeliveredRun {
                     finished_at: finished_at(run)?,
                     summary: summary(run),
+                    memory_save_skip: run.memory_save_skip,
                 })
             })
         };
@@ -473,6 +510,7 @@ impl PreviousRun {
             status: previous.status,
             // Quiet is a successful check that posted nothing, as the inbox reads it.
             quiet: previous.quiet && previous.status == RunStatus::Succeeded,
+            memory_save_skip: previous.memory_save_skip,
             summary,
             last_delivered,
             untrusted,
@@ -499,6 +537,11 @@ pub struct TaskListItem {
 
 impl Run {
     pub fn validate(&self) -> StoreResult<()> {
+        crate::domain::validate_discarded_memory_items(
+            self.discarded_memory_items.as_deref(),
+            self.memory_save_skip.is_some(),
+        )
+        .map_err(|error| invalid(&error.to_string()))?;
         for id in [&self.id, &self.task_id, &self.loupist_id, &self.run_id] {
             identifier(id)?;
         }

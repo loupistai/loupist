@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import type { ChatThread } from "../../types";
+import type { ChatMessage, ChatThread } from "../../types";
 import { LoupistChatItem } from "./LoupistChatItem";
 import { SidebarProvider } from "../ui/sidebar";
 import { TooltipProvider } from "../ui/tooltip";
@@ -44,7 +44,7 @@ it("shows the app's spinner in the status slot while a reply runs, named once in
 it("keeps Bot's name and descriptor while it runs, in the rail too", () => {
   const bot: ChatThread = { ...thread, id: "home-loupist", home: true, title: "Thread" };
   const { rerender } = render(inSidebar(row({ thread: bot, running: true })));
-  expect(screen.getByRole("button", { name: "Bot" })).toHaveAccessibleDescription("Chat, briefings, and alerts Running");
+  expect(screen.getByRole("button", { name: "Bot" })).toHaveAccessibleDescription("Chat and scheduled task results Running");
   rerender(inSidebar(row({ thread: bot, running: true, iconOnly: true })));
   expect(screen.getByRole("button", { name: "Bot" })).toHaveAccessibleDescription("Running");
 });
@@ -58,4 +58,17 @@ it("stills the spinner with reduced motion", () => {
     .flatMap((media) => [...media.cssRules])
     .filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule && spinner.matches(rule.selectorText) && /^none\b/.test(rule.style.getPropertyValue("animation")));
   expect(stills).not.toHaveLength(0);
+});
+
+
+it("describes only a continued session that began with a scheduled request", () => {
+  const question: ChatMessage = { id: "question", role: "user", status: "complete", content: "Why?", created_at: thread.updated_at };
+  const request: ChatMessage = { ...question, id: "scheduled", scheduled: { task_id: "task", run_id: "run", task_title: "Check", task_kind: "custom" } };
+  const { rerender } = render(inSidebar(row({ thread: { ...thread, messages: [request, question] } })));
+  const button = screen.getByRole("button", { name: thread.title });
+  expect(button).toHaveAccessibleDescription("Started by a schedule");
+  for (const messages of [[question, request], [request]]) {
+    rerender(inSidebar(row({ thread: { ...thread, messages } })));
+    expect(button).not.toHaveAccessibleDescription("Started by a schedule");
+  }
 });

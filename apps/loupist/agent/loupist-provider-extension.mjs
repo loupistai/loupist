@@ -13,6 +13,7 @@ import { ModelRuntime, readStoredCredential, SettingsManager } from "@earendil-w
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { hasTrustedModelEndpoint, runControlsFor } from "./model-run-controls.mjs";
 import { MAX_INFERENCE_REQUEST_BYTES, runProviderInference } from "./provider-inference.mjs";
+import { withSignInPage } from "./provider-signin-page.mjs";
 import {
   isNativeSearchProvider,
   runNativeSearch,
@@ -251,10 +252,36 @@ export function withLoupistSignInIdentity(fetchImpl, providerId) {
   };
 }
 
-/** Fixed sign-in failure reasons; provider text never leaves this process. */
-export function loginFailureReason(error) {
-  const message = String(error?.message ?? error ?? "").toLowerCase();
-  if (message.includes("openai oauth token request failed") && /\binvalid_grant\b/u.test(message)) return "chatgpt_connection_rejected";
+const TOKEN_ERRORS = new Set([
+  "invalid_grant", "invalid_client", "invalid_request", "invalid_scope", "access_denied",
+  "unauthorized_client", "unsupported_grant_type", "invalid_target", "server_error",
+  "temporarily_unavailable", "subscription_sharing_user_not_eligible", "not_eligible",
+]);
+
+/** Pi embeds the entire token response in its exception. Only fixed categories leave this process. */
+export function loginFailure(error) {
+  const message = String(error?.message ?? error ?? "");
+  const exchange = /^OpenAI OAuth token request failed \(([1-5]\d\d)\): ([\s\S]*)$/u.exec(message);
+  if (!exchange) return { reason: loginFailureReason(message.toLowerCase()) };
+
+  let body;
+  try {
+    body = JSON.parse(exchange[2]);
+  } catch {
+    // A proxy or the provider can return a non-JSON error page.
+  }
+  const codes = [body?.error, body?.error?.code, body?.code];
+  const tokenError = codes.find(code => TOKEN_ERRORS.has(code)) ?? "unknown";
+  let reason = "chatgpt_connection_rejected";
+  if (codes.includes("subscription_sharing_user_not_eligible") || codes.includes("not_eligible")) {
+    reason = "plan_not_eligible";
+  } else if (codes.includes("access_denied")) {
+    reason = "denied";
+  }
+  return { reason, token_error: tokenError, http_status: Number(exchange[1]) };
+}
+
+function loginFailureReason(message) {
   if (message.includes("chatgpt.tokens.use.direct")) return "plan_permission_declined";
   if (message.includes("not_eligible") || message.includes("not eligible")) return "plan_not_eligible";
   if (message.includes("access_denied")) return "denied";
@@ -524,7 +551,9 @@ export default function loupistTerminalProviderExtension(pi) {
   pi.registerCommand("loupist-provider-login", {
     description: "Connect one OAuth provider through Pi",
     handler: async (args, ctx) => {
-      const providerId = validateProviderId(args.trim());
+      const [id, language = "en", ...extra] = args.trim().split(/\s+/u);
+      const providerId = validateProviderId(id);
+      if (extra.length || !["en", "ko"].includes(language)) throw new Error("Invalid sign-in language");
       const provider = ctx.modelRegistry.getProvider(providerId);
       if (!provider?.auth?.oauth) throw new Error("Pi provider does not support OAuth");
 
@@ -546,16 +575,20 @@ export default function loupistTerminalProviderExtension(pi) {
         if (providerId === "openai" || providerId === "openai-codex") {
           loginOptions.agentName = LOUPIST_PROVIDER_NAME;
         }
-        await runtime.login(providerId, "oauth", {
+        const callbacks = {
           signal: controller.signal,
           prompt: (prompt) => oauthPrompt(ctx, prompt),
           notify: (event) => oauthNotify(ctx, event),
-        }, Object.keys(loginOptions).length > 0 ? loginOptions : undefined);
+        };
+        await withSignInPage(providerId, language, () =>
+          runtime.login(providerId, "oauth", callbacks, Object.keys(loginOptions).length > 0 ? loginOptions : undefined)
+        );
       } catch (error) {
-        if (!/login cancelled/iu.test(String(error?.message ?? ""))) {
-          emit(ctx, { type: "failed", reason: loginFailureReason(error) });
+        if (String(error?.message ?? "").toLowerCase() === "login cancelled") {
+          throw new Error("Login cancelled");
         }
-        throw error;
+        emit(ctx, { type: "failed", ...loginFailure(error) });
+        throw new Error("Provider sign-in failed");
       } finally {
         globalThis.fetch = previousFetch;
       }

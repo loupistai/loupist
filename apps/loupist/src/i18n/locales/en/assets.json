@@ -21,7 +21,7 @@
     "challenged": "Challenged",
     "broken": "Broken",
     "since": "{{verdict}} since {{date}}",
-    "started": "Holding up since you wrote it on {{date}}",
+    "unreviewed": "Not reviewed yet",
     "undo": "Undo",
     "undone": "Back to {{verdict}} · you undid the {{date}} change",
     "chipLabel": "{{loupist}}'s read: {{verdict}}, step {{step}} of 4",
@@ -64,7 +64,7 @@
     "undo": "Couldn't undo this change. Try again.",
     "undoStale": "A newer change was made, so this one can't be undone. The page now shows the latest.",
     "follow": "Couldn't add {{name}} to what you follow. Try again.",
-    "unlink": "Couldn't unlink this page from the Map. Try again."
+    "unlink": "Couldn't unlink this page from World. Try again."
   },
   "offline": "You're offline. The stored price is shown; Check now works again when you're back online.",
   "offlineTooltip": "You're offline",
@@ -114,7 +114,7 @@
     },
     "open": "Open",
     "map": {
-      "label": "Map",
+      "label": "World",
       "suppliers_one": "{{formattedCount}} supplier",
       "suppliers_other": "{{formattedCount}} suppliers",
       "customers_one": "{{formattedCount}} customer",

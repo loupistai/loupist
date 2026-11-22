@@ -28,23 +28,41 @@ pub(super) fn retain_authored_source(
     bytes: &[u8],
     authorship: Authorship,
 ) -> RetainedFixture {
+    retain_source_fixture(
+        state,
+        bytes,
+        authorship,
+        "example-publisher",
+        Some("2026-07-14"),
+        1_700_000_000_000,
+    )
+}
+
+fn retain_source_fixture(
+    state: &AppState,
+    bytes: &[u8],
+    authorship: Authorship,
+    provider: &str,
+    published: Option<&str>,
+    saved_at: i64,
+) -> RetainedFixture {
     let retained = knowledge(state)
         .transact(|write| {
             write.retain_new_source(RetainNewSource {
                 origin: None,
                 loupist_id: "loupist-a".into(),
-                at_ms: 1_700_000_000_000,
+                at_ms: saved_at,
                 title: "Notes".into(),
                 source_class: SourceClass::PublisherDocument,
                 origin_locator: "https://example.test/notes".into(),
-                provider_identity: "example-publisher".into(),
+                provider_identity: provider.into(),
                 authorship,
                 coverage: Coverage::IncludedFull,
                 origin_chat_id: None,
                 request_ref: None,
                 declared_digest: None,
-                publication_time: Some(crate::knowledge::TimePoint {
-                    value: Some("2026-07-14".into()),
+                publication_time: published.map(|value| crate::knowledge::TimePoint {
+                    value: Some(value.into()),
                     precision: crate::knowledge::TimePrecision::Date,
                     approximate: false,
                 }),
@@ -889,4 +907,270 @@ async fn a_later_chat_supersedes_a_note_and_the_earlier_note_points_to_it() {
     assert_eq!(old["note"]["markdown"], "Monthly contribution: 500.");
     assert_eq!(old["note"]["laterNotes"][0]["noteId"], note_ids[1]);
     assert_eq!(old["note"]["laterNotes"][0]["chatId"], "chat-b");
+}
+
+#[tokio::test]
+async fn c011_saved_source_evidence_keeps_the_publisher_date_separate_from_its_save_date() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let source = retain_publisher_source(&state, b"Closing value: 120,000");
+    let evidence_view = Arc::new(std::sync::Mutex::new(None));
+    let received = evidence_view.clone();
+    let capture = Arc::new(ToolCapture {
+        evidence_sink: Some(Arc::new(move |evidence, _| {
+            *received.lock().unwrap() = Some(serde_json::to_value(evidence).unwrap());
+        })),
+        ..ToolCapture::default()
+    });
+    let executor = Arc::new(executor_for(&state, capture.clone()));
+    let socket = tool_broker_endpoint(temporary.path().join("saved-origin.sock"));
+    let broker = start_tool_broker(socket.clone(), policy(true, false), executor)
+        .await
+        .unwrap();
+    let read = broker_request(
+        &socket,
+        broker.token(),
+        "world.read",
+        json!({"scope": "source", "recordId": source.record_id, "spanId": source.span_id}),
+    )
+    .await;
+    assert_eq!(read["ok"], true, "{read}");
+    let evidence_view = evidence_view.lock().unwrap().clone().unwrap();
+    let origin = &evidence_view["memory_origin"];
+    assert_eq!(origin["route"], "source");
+    assert_eq!(origin["publisher"], "example-publisher");
+    assert_eq!(origin["publication"]["kind"], "published");
+    assert_eq!(origin["publication"]["time"]["value"], "2026-07-14");
+    assert_eq!(origin["saved_at"], "2023-11-14T22:13:20.000Z");
+    broker.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn c011_map_keeps_the_world_bank_update_date_and_an_undated_capture() {
+    for dated in [true, false] {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = seeded_state(&temporary);
+        let source = retain_source_fixture(
+            &state,
+            br#"{"data":{"series":{"provider_updated_at":"2026-11-11"},"value":120000}}"#,
+            Authorship::Publisher,
+            crate::finance_data::WORLD_BANK_SOURCE_ID,
+            dated.then_some("2026-11-11"),
+            day_ms("2026-11-21"),
+        );
+        let world = seal_world(&state, &source, &["The economy reported 120,000"]);
+        let evidence_view = Arc::new(std::sync::Mutex::new(None));
+        let received = evidence_view.clone();
+        let capture = Arc::new(ToolCapture {
+            evidence_sink: Some(Arc::new(move |evidence, _| {
+                *received.lock().unwrap() = Some(serde_json::to_value(evidence).unwrap());
+            })),
+            ..ToolCapture::default()
+        });
+        let executor = Arc::new(executor_for(&state, capture));
+        let socket = tool_broker_endpoint(temporary.path().join("map-origin.sock"));
+        let broker = start_tool_broker(socket.clone(), policy(true, false), executor)
+            .await
+            .unwrap();
+        let read = broker_request(
+            &socket,
+            broker.token(),
+            "world.read",
+            json!({"scope": "world", "recordId": world.record_id, "revisionId": world.revision_id}),
+        )
+        .await;
+        assert_eq!(read["ok"], true, "{read}");
+        let evidence = evidence_view.lock().unwrap().clone().unwrap();
+        let origin = &evidence["memory_origin"];
+        assert_eq!(origin["route"], "world", "{evidence}");
+        assert_eq!(
+            origin["publisher"],
+            crate::finance_data::WORLD_BANK_SOURCE_ID
+        );
+        assert_eq!(origin["saved_at"], "2026-11-21T00:00:00.000Z");
+        if dated {
+            assert_eq!(origin["publication"]["kind"], "updated");
+            assert_eq!(origin["publication"]["time"]["value"], "2026-11-11");
+        } else {
+            assert!(origin.get("publication").is_none());
+        }
+        broker.shutdown().await.unwrap();
+    }
+}
+
+fn day_ms(date: &str) -> i64 {
+    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc()
+        .timestamp_millis()
+}
+
+#[tokio::test]
+async fn c011_calculated_input_uses_the_same_source_after_chat_reload() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let source = retain_source_fixture(
+        &state,
+        b"Observed value: 120,000",
+        Authorship::Publisher,
+        "example-publisher",
+        Some("2026-11-11"),
+        day_ms("2026-11-21"),
+    );
+    let capture = Arc::new(ToolCapture::default());
+    let executor = Arc::new(executor_for(&state, capture.clone()));
+    let socket = tool_broker_endpoint(temporary.path().join("input-origin.sock"));
+    let mut policy = policy(true, false);
+    policy.as_of = Some("2026-11-16".into());
+    let broker = start_tool_broker(socket.clone(), policy, executor)
+        .await
+        .unwrap();
+    let read = broker_request(
+        &socket,
+        broker.token(),
+        "world.read",
+        json!({"scope": "source", "recordId": source.record_id, "spanId": source.span_id}),
+    )
+    .await;
+    assert_eq!(read["ok"], true, "{read}");
+    let result = broker_request(
+        &socket,
+        broker.token(),
+        "calculation.run",
+        json!({"operation":"percent_change", "inputs":{"from":120000,"to":132000},
+            "input_sources":{"from":read["result"]["citation_url"]}}),
+    )
+    .await;
+    assert_eq!(result["ok"], true, "{result}");
+    let evidence_id = result["result"]["inputs"][0]["provenance"]["evidence_id"]
+        .as_str()
+        .unwrap();
+    let original = capture.evidence_refs.lock().await.clone();
+    assert!(original.iter().any(|evidence| evidence.id == evidence_id));
+    let calc_url = result["result"]["citation_url"].as_str().unwrap();
+    let answer = format!("Observed increase of [10%]({calc_url}).");
+    let checks = capture.number_checks(&answer, &original).await;
+    let inputs = &checks[0].calc.as_ref().unwrap().inputs;
+    assert!(inputs
+        .iter()
+        .any(|input| input.evidence_id.as_deref() == Some(evidence_id)));
+    let mut chat = state.store.get_chat("chat-a").unwrap().unwrap();
+    let mut message =
+        crate::test_fixtures::chat_message("answer", crate::domain::ChatRole::Assistant, &answer);
+    message.number_checks = checks;
+    message.memory_refs = capture.memories.lock().await.values().cloned().collect();
+    message.observed_exact_count = message.memory_refs.len() as u64;
+    message.refs_digest = crate::domain::memory_refs_digest(&message.memory_refs).unwrap();
+    message.evidence_refs = original;
+    chat.messages.push(message);
+    let serialized = serde_json::to_string(&chat).unwrap();
+    assert!(!serialized.contains("memory_origin"));
+    let reloaded = serde_json::from_str(&serialized).unwrap();
+    let mut dto = crate::commands::types::chat_dto(&reloaded).unwrap();
+    crate::commands::knowledge::project_chat_memory(&state, &reloaded, &mut dto);
+    let receipt = serde_json::to_value(dto).unwrap();
+    let source = receipt["messages"][0]["evidence_refs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == evidence_id)
+        .unwrap();
+    let origin = &source["memory_origin"];
+    assert_eq!(origin["publisher"], "example-publisher");
+    assert_eq!(origin["publication"]["time"]["value"], "2026-11-11");
+    assert_eq!(origin["saved_at"], "2026-11-21T00:00:00.000Z");
+    broker.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn c011_lens_credits_only_a_single_retained_capture() {
+    use crate::knowledge::lens_page::{
+        AnchorInput, Basis, BasisRef, LensOp, PageDelta, PageKind, PageTarget, SectionKey,
+    };
+    for mixed in [false, true] {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = seeded_state(&temporary);
+        let source = retain_publisher_source(&state, b"First observed value: 120,000");
+        let basis = |source: RetainedFixture| BasisRef::Span {
+            record_id: source.record_id,
+            revision_digest: source.revision_digest,
+            span_id: source.span_id,
+        };
+        let mut refs = vec![basis(source)];
+        if mixed {
+            refs.push(basis(retain_source_fixture(
+                &state,
+                b"Second observed value: 130,000",
+                Authorship::Publisher,
+                "second-publisher",
+                None,
+                day_ms("2026-11-21"),
+            )));
+        }
+        let lens = knowledge(&state)
+            .transact(|write| {
+                write.file(
+                    "loupist-a",
+                    &crate::knowledge::test_support::user_origin(),
+                    vec![PageDelta {
+                        target: PageTarget::Create {
+                            kind: PageKind::Subject,
+                            title: "Observed values".into(),
+                            anchors: vec![AnchorInput::Name {
+                                name: "Observed values".into(),
+                            }],
+                        },
+                        ops: vec![LensOp::Put {
+                            key: SectionKey::new("values").unwrap(),
+                            heading: "Values".into(),
+                            markdown: "One observation was 120,000.".into(),
+                            basis: Basis {
+                                refs,
+                                uncertainty: None,
+                            },
+                            expected: None,
+                        }],
+                    }],
+                    day_ms("2026-11-21"),
+                )
+            })
+            .unwrap()
+            .remove(0);
+        let evidence_view = Arc::new(std::sync::Mutex::new(None));
+        let received = evidence_view.clone();
+        let capture = Arc::new(ToolCapture {
+            evidence_sink: Some(Arc::new(move |evidence, _| {
+                *received.lock().unwrap() = Some(serde_json::to_value(evidence).unwrap());
+            })),
+            ..ToolCapture::default()
+        });
+        let executor = Arc::new(executor_for(&state, capture));
+        let socket = tool_broker_endpoint(temporary.path().join("lens-origin.sock"));
+        let broker = start_tool_broker(socket.clone(), policy(true, false), executor)
+            .await
+            .unwrap();
+        let read = broker_request(
+            &socket,
+            broker.token(),
+            "lens.read",
+            json!({"recordId": lens.record_id}),
+        )
+        .await;
+        assert_eq!(read["ok"], true, "{read}");
+        let evidence = evidence_view.lock().unwrap().clone().unwrap();
+        let origin = &evidence["memory_origin"];
+        assert_eq!(origin["route"], "lens");
+        if mixed {
+            assert!(origin.get("publisher").is_none());
+            assert!(origin.get("publication").is_none());
+            assert_eq!(origin["saved_at"], "2026-11-21T00:00:00.000Z");
+        } else {
+            assert_eq!(origin["publisher"], "example-publisher");
+            assert_eq!(origin["publication"]["time"]["value"], "2026-07-14");
+            assert_eq!(origin["saved_at"], "2023-11-14T22:13:20.000Z");
+        }
+        broker.shutdown().await.unwrap();
+    }
 }

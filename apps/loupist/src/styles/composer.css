@@ -72,6 +72,7 @@
   position: relative;
   z-index: var(--gg-z-sticky);
   width: 100%;
+  height: var(--gg-size-control-lg);
   min-height: var(--gg-size-control-lg);
   /* ChatComposer sets the height from the text (WKWebView lacks field-sizing); past this cap it scrolls. */
   field-sizing: fixed;
@@ -101,8 +102,8 @@
 .composer .composer-prompt textarea::placeholder {
   color: var(--gg-color-text-tertiary);
   -webkit-text-fill-color: var(--gg-color-text-tertiary);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .composer .composer-prompt textarea::selection { color: transparent; background: var(--gg-color-accent-soft); }
 /* A selection made in the thread can reach past the composer; WebKit then fills the whole textarea with the colour
@@ -115,10 +116,10 @@
 .composer-prompt-highlight [data-mention="connection"],
 .composer-assist [data-mention="connection"] { color: var(--gg-color-focus); }
 
-/* The model: a quiet label ("Auto"), never a filled control. */
+/* Model and reasoning level share the trailing control. */
 .composer .composer-model-menu {
   min-width: 0;
-  max-width: min(220px, 34cqi);
+  max-width: min(240px, 55cqi);
   height: var(--gg-size-control-lg);
   gap: 3px;
   padding: 0 var(--gg-space-2);
@@ -132,10 +133,9 @@
 .composer .composer-model-menu[data-state="open"] { background: var(--gg-color-bg-hover); color: var(--gg-color-text-primary); }
 .composer .composer-model-menu > svg { flex: none; width: 12px; height: 12px; }
 .composer-model-menu > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* The reasoning level reads apart from the model ("Auto · Medium", not "Auto Medium"). */
+/* The reasoning level reads apart from the model (model name · reasoning level). */
 .composer-model-menu > .composer-thinking-level { flex: none; }
 .composer-model-menu > .composer-thinking-level::before { content: "· "; }
-/* A chosen model is named the same quiet way as Auto. */
 .composer-model-menu > .composer-model-chip { padding: 0; background: transparent; font-size: inherit; }
 /* Without an AI account, Connect takes the send slot as the one filled button. */
 .composer .composer-tools > .composer-model-menu:not([aria-haspopup]) {
@@ -248,10 +248,6 @@
 .composer-run-help { margin: 0; padding: var(--gg-space-1) var(--gg-space-2) 2px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); line-height: 1.5; }
 .composer-disclosure { display: flex; align-items: center; justify-content: center; min-height: var(--gg-space-5); margin: 6px 0 0; text-align: center; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
 
-/* token-exception: breakpoint; vars unsupported in query conditions */
-@container composer (max-width: 420px) {
-  .composer .composer-model-menu { max-width: 96px; }
-}
 /* token-exception: breakpoint; vars unsupported in query conditions */
 @container chat-reading (max-width: 760px) {
   .composer-shell { margin-bottom: var(--gg-space-3); }

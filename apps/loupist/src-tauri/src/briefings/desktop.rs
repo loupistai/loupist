@@ -13,7 +13,7 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
-static SETTINGS_LOCK: Mutex<()> = Mutex::new(());
+pub(super) static SETTINGS_LOCK: Mutex<()> = Mutex::new(());
 const TRAY_ID: &str = "briefings-tray";
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -25,6 +25,9 @@ pub(crate) struct ResidentSettings {
     /// None follows the automatic default; Some preserves the user's choice.
     #[serde(default)]
     pub keep_running_choice: Option<bool>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, ts(as = "Option<bool>", optional))]
+    pub login_hint_dismissed: bool,
 }
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -173,7 +176,7 @@ pub(super) fn read_settings(root: &Path) -> Result<ResidentSettings, CommandErro
         )),
     }
 }
-fn write_settings(root: &Path, settings: &ResidentSettings) -> Result<(), CommandError> {
+pub(super) fn write_settings(root: &Path, settings: &ResidentSettings) -> Result<(), CommandError> {
     let save = || -> Result<(), Box<dyn std::error::Error>> {
         std::fs::create_dir_all(root)?;
         let mut file = tempfile::NamedTempFile::new_in(root)?;
@@ -214,8 +217,8 @@ fn enable_automatic(state: &AppState, notifications: bool) -> Result<(), Command
 #[tauri::command]
 pub(crate) fn briefing_resident_settings_get(
     state: tauri::State<'_, AppState>,
-) -> Result<ResidentSettings, CommandError> {
-    read_settings(&state.artifacts.app_data_dir)
+) -> Result<super::login_item::DesktopSettings, CommandError> {
+    super::login_item::apply(&state, super::login_item::Action::Read)
 }
 #[derive(Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -227,22 +230,15 @@ pub(crate) struct ResidentRequest {
 pub(crate) fn briefing_resident_settings_set(
     request: ResidentRequest,
     state: tauri::State<'_, AppState>,
-) -> Result<ResidentSettings, CommandError> {
+) -> Result<super::login_item::DesktopSettings, CommandError> {
     set_keep_running(&state, request.keep_running)
 }
 
 pub(super) fn set_keep_running(
     state: &AppState,
     keep_running: bool,
-) -> Result<ResidentSettings, CommandError> {
-    let _lock = SETTINGS_LOCK
-        .lock()
-        .map_err(|_| CommandError::internal("Briefing settings lock failed"))?;
-    let mut settings = read_settings(&state.artifacts.app_data_dir)?;
-    settings.keep_running = keep_running;
-    settings.keep_running_choice = Some(keep_running);
-    write_settings(&state.artifacts.app_data_dir, &settings)?;
-    Ok(settings)
+) -> Result<super::login_item::DesktopSettings, CommandError> {
+    super::login_item::apply(state, super::login_item::Action::MenuBar(keep_running))
 }
 
 pub(crate) fn completed(state: &AppState, run: &Run) {

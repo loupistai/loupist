@@ -2,7 +2,7 @@
 import { advancePreviewClock, prepareFixture, PreviewBridge, previewKo } from "../fixtures";
 import i18n from "../../i18n";
 import type { ChatRunPhase } from "../../contracts/chat";
-import { approvalFor, approvalRun, approvalSteps, asSession, base, centerOn, click, hasLayout, longThread, openNavigation, prepareAttention, pressMenu, runningHeader, select, submitPrompt, until, visible, type PreviewScenario } from "./kit";
+import { approvalFor, approvalRun, approvalSteps, asSession, base, centerOn, click, contextTitleLandmark, hasLayout, longThread, openNavigation, prepareAttention, pressMenu, runningHeader, select, submitPrompt, until, visible, type PreviewScenario } from "./kit";
 
 /** A reply that stays in flight on a running step; `phase: "tool"` sends no answer text. */
 function liveRun(bridge: PreviewBridge, phase: ChatRunPhase) {
@@ -122,6 +122,27 @@ async function scrollThreadUp() {
 
 /** A reply in flight: status, plans, approvals, questions and the composer's menus. */
 export const chatRunScenarios: PreviewScenario[] = [
+  { ...base("chat-saving-waiting", "A finished answer waits for another conversation before saving", () => contextTitleLandmark('.turn-live[data-kind="saving"]'), root => submitPrompt(root, "Summarize the quarter.")), setup: async bridge => {
+    await prepareFixture(bridge, "streaming");
+    asSession(bridge);
+    const selectWorkspace = bridge.loupistSelect.bind(bridge);
+    bridge.loupistSelect = async id => {
+      const workspace = await selectWorkspace(id);
+      const thread = workspace.threads[0]!;
+      return { ...workspace, threads: [...workspace.threads, { ...thread, id: "preview-blocking-chat", messages: [], title: previewKo()
+        ? "동종 기업의 최근 실적과 내년 투자 전망 비교 및 주요 가정 분석"
+        : "Compare peer earnings, operating assumptions and next year's investment outlook" }] };
+    };
+    bridge.chatSend = async ({ run_id }, observer) => {
+      observer({ type: "started", run_id });
+      observer({ type: "delta", run_id, text: previewKo()
+        ? "한울정밀의 매출은 11% 늘었지만 영업이익률은 14.8%로 하락했습니다."
+        : "Hanul Precision’s revenue grew 11%, while operating margin slipped to 14.8%." });
+      observer({ type: "saving", run_id, waiting_for_other_chat: false });
+      observer({ type: "saving", run_id, waiting_for_other_chat: true, blocking_chat_id: "preview-blocking-chat" });
+      return { run_id };
+    };
+  } },
   { ...base("shell-needs-attention", "The sidebar lists what waits for the user", () => select('.needs-attention .needs-attention-row[data-kind="approval"]'), async () => {
     await until(() => select("textarea[data-chat-composer]"), "Chat did not initialize");
     if (hasLayout() && document.documentElement.clientWidth < 768) await openNavigation(".needs-attention");
@@ -212,13 +233,13 @@ export const chatRunScenarios: PreviewScenario[] = [
     const trigger = await until(() => select(".composer-model-menu"), "The run-profile control did not render");
     trigger.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
   }) },
-  { ...base("composer-model-menu", "The composer shows Auto and its menu offers a model", () => select(".composer-model-menu-panel"), async root => {
+  { ...base("composer-model-menu", "The composer and its menu show the model that will answer", () => select(".composer-model-menu-panel"), async root => {
     await until(() => root.querySelector("textarea[data-chat-composer]"), "Chat did not initialize");
     // Radix menus open on pointer down, not on click.
     const trigger = await until(() => select(".composer-model-menu"), "The run-profile control did not render");
     trigger.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
   }) },
-  { ...base("composer-command-menu", "/ offers finance commands, then Skills", () => select('.composer-assist[data-symbol="/"]'), async root => {
+  { ...base("composer-command-menu", "/ offers Memory Skills, installed Skills and the as-of date", () => select('.composer-assist[data-symbol="/"]'), async root => {
     const composer = await until(() => root.querySelector<HTMLTextAreaElement>("textarea[data-chat-composer]"), "Composer did not appear");
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(composer, "/");
     composer.setSelectionRange(composer.value.length, composer.value.length);

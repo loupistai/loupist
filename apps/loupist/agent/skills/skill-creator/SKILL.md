@@ -4,6 +4,7 @@ description: Create or revise a reusable Skill and its supporting files when the
 ---
 # Skill Creator
 
+
 Adapted from OpenAI's Skill Creator (Apache-2.0); Loupist paths, scope, validation and Memory boundaries are modified.
 
 Create a focused Skill that another capable model can use. Keep only guidance that changes decisions: local conventions, domain procedures and real constraints. Preserve the user's task and authorization.

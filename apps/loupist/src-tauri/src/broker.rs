@@ -330,7 +330,7 @@ impl ToolMethod {
 pub enum BrokerError {
     #[error("{}", crate::custom_connections::taint::OUTBOUND_REFUSAL)]
     OutboundPaused,
-    #[error("{}", crate::custom_connections::taint::UNTRUSTED_TEXT_REFUSAL)]
+    #[error("{}", crate::custom_connections::taint::untrusted_text_refusal())]
     UntrustedTextPaused,
     #[error("This path is protected and is not touched.")]
     ProtectedPath,
@@ -381,6 +381,12 @@ pub enum BrokerError {
     FrameTooLarge,
     #[error("tool execution failed: {0}")]
     Execution(String),
+    #[error("The saved key for this connection is being changed right now, so it was not read.")]
+    KeychainBusy,
+    #[error("macOS did not release the saved key for this connection. It may be showing the user a permission prompt, or the keychain is locked.")]
+    KeychainUnavailable,
+    #[error("This connection's saved key needs the user's permission in macOS first.")]
+    KeychainPermissionRequired,
     /// The read never reached its server (DNS, connect or no route). One host
     /// failing does not prove the device is offline, so the text names it.
     #[error("{0} could not be reached; the network or this provider may be unavailable")]
@@ -749,10 +755,10 @@ impl ToolBrokerHandle {
                 )))),
                 Err(_) => {
                     // Connection handlers are owned as futures inside this task.
-                    // Awaiting its abort therefore drops every in-flight tool
-                    // future before shutdown reports the bounded failure.
+                    // A cooperative abort drops all in-flight tool futures.
+                    // A tool poll that is itself blocked must not extend this wait.
                     task.abort();
-                    let _ = task.await;
+                    let _ = timeout(Duration::from_secs(2), &mut task).await;
                     Err(BrokerError::Io(io::Error::new(
                         io::ErrorKind::TimedOut,
                         "tool broker task did not drain after shutdown",
@@ -781,7 +787,7 @@ impl Drop for ToolBrokerHandle {
                 runtime.spawn(async move {
                     if timeout(Duration::from_secs(2), &mut task).await.is_err() {
                         task.abort();
-                        let _ = task.await;
+                        let _ = timeout(Duration::from_secs(2), &mut task).await;
                     }
                     let _ = remove_broker_endpoint(&socket_path);
                 });
@@ -1546,6 +1552,18 @@ pub(crate) fn error_body(error: &BrokerError) -> Value {
             "Change the request or the approach. Do not repeat the identical call.",
             false,
         ),
+        BrokerError::KeychainBusy => (
+            "Call this once more. If it fails again, tell the user the key change has not finished and continue without this connection.",
+            true,
+        ),
+        BrokerError::KeychainUnavailable => (
+            "Tell the user to answer the macOS prompt with Always Allow, or unlock the keychain, and then ask again. Continue this reply without this connection.",
+            false,
+        ),
+        BrokerError::KeychainPermissionRequired => (
+            "Tell the user to open Settings > Data connections and choose Allow access, then ask again. Continue this reply without this connection.",
+            false,
+        ),
         BrokerError::Offline(_) => (
             "Do not repeat this read this turn. Other sources may still be reachable; if none is, answer from evidence already available and say that this source could not be reached.",
             false,
@@ -1597,6 +1615,9 @@ fn error_code(error: &BrokerError) -> &'static str {
         BrokerError::Malformed => "malformed_request",
         BrokerError::WithNext { source, .. } => error_code(source),
         BrokerError::Execution(message) => as_of_code(message).unwrap_or("execution_failed"),
+        BrokerError::KeychainBusy => "keychain_busy",
+        BrokerError::KeychainUnavailable => "keychain_unavailable",
+        BrokerError::KeychainPermissionRequired => "keychain_permission_required",
         BrokerError::Offline(_) => "offline",
         BrokerError::BudgetExceeded { .. } | BrokerError::ArtifactLimit { .. } => {
             "transaction_limit"

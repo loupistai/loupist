@@ -23,8 +23,10 @@ mod dataset_import;
 #[cfg(test)]
 mod dataset_tests;
 mod datasets;
+mod discarded_memory;
 mod errors;
 mod evidence;
+pub(in crate::commands) use evidence::evidence_id;
 mod interface_labels;
 use errors::{command_error, command_message, knowledge_error, store_error};
 mod finance;
@@ -128,7 +130,8 @@ struct ChartPublishRequest {
     edit_token: Option<String>,
 }
 
-type EvidenceSink = Arc<dyn Fn(crate::domain::ChatEvidenceRef, Option<String>) + Send + Sync>;
+type EvidenceSink =
+    Arc<dyn Fn(crate::commands::types::ChatEvidenceViewDto, Option<String>) + Send + Sync>;
 /// Receives a chart or table as its publish call is delivered; it is saved only with the reply.
 type ArtifactSink = Arc<dyn Fn(super::types::ChatArtifactViewDto) + Send + Sync>;
 /// Receives (tool call id, World node ids) when a call's World read is acknowledged.
@@ -146,6 +149,7 @@ pub(super) struct ToolCapture {
     pub(in crate::commands) eval_native_read:
         Option<Arc<super::chat_runtime::EvalNativeReadCallback>>,
     pub(super) tool_refusals: Arc<std::sync::Mutex<Vec<crate::domain::ChatToolRefusal>>>,
+    pub(super) saved_keys_needing_permission: BTreeSet<String>,
     pub(super) turn_taint: crate::custom_connections::taint::TurnTaint,
     pub(crate) unattended_run_id: Option<String>,
     pub(in crate::commands) staged_price_reads: Mutex<
@@ -192,7 +196,8 @@ pub(super) struct ToolCapture {
     journal_delivery: Mutex<Vec<(String, StagedResearchJournal)>>,
     pub(super) staged_principles: Mutex<Vec<StagedPrinciple>>,
     /// Checked thesis updates, committed with the reply.
-    pub(in crate::commands) staged_theses: Mutex<Vec<crate::knowledge::assets::ThesisUpdate>>,
+    pub(in crate::commands) staged_theses:
+        Mutex<Vec<(String, crate::knowledge::assets::ThesisUpdate)>>,
     pub(in crate::commands) staged_vocabulary: Mutex<Vec<StagedVocabulary>>,
     pub(in crate::commands) staged_filings: Mutex<Vec<StagedFiling>>,
     /// The reply's one `loupist_setup` call.
@@ -223,6 +228,8 @@ pub(super) struct ToolCapture {
     pub(super) principle_user_message_id: Option<String>,
     /// Original Chat binding captured by the host, never selected by tool input.
     pub(super) bound_chat_id: Option<String>,
+    pub(super) chat_run_id: Option<String>,
+    pub(super) file_labels: crate::chat::local_files::FileLabels,
     pub(super) opening_task_id: Option<String>,
     pending_deliveries: Mutex<HashMap<String, PendingToolCapture>>,
     pub(super) web_search_policy: crate::web::WebSearchPolicy,
@@ -247,6 +254,7 @@ struct PendingToolCapture {
     web_sources: HashMap<String, crate::web::WebSource>,
     web_fetch_snapshots: HashMap<String, RunWebFetchSnapshot>,
     run_results: BTreeMap<String, CapturedRunResult>,
+    local_file_title: Option<String>,
     /// Run results that host reads resolve but the answer never lists as
     /// Sources (a market data read that returned no rows).
     unlisted_results: BTreeSet<String>,
@@ -256,7 +264,7 @@ struct PendingToolCapture {
     research: Option<StagedResearch>,
     thesis_pair: Option<StagedResearchJournal>,
     principles: Vec<StagedPrinciple>,
-    theses: Vec<crate::knowledge::assets::ThesisUpdate>,
+    theses: Vec<(String, crate::knowledge::assets::ThesisUpdate)>,
     vocabulary: Vec<StagedVocabulary>,
     filings: Vec<StagedFiling>,
     setup: Option<StagedSetup>,
@@ -396,6 +404,26 @@ pub(super) struct StagedKnowledgeRead {
     pub(super) object_id: String,
     pub(super) title: String,
     pub(super) payload: AckedPayload,
+    pub(super) evidence_origin: Option<crate::commands::types::MemoryEvidenceOrigin>,
+}
+
+fn project_memory_evidence(
+    snapshot: crate::domain::ChatEvidenceRef,
+    reads: &[StagedKnowledgeRead],
+) -> crate::commands::types::ChatEvidenceViewDto {
+    let read = snapshot
+        .read_ref
+        .as_deref()
+        .and_then(|read_ref| reads.iter().find(|read| read.read_ref == read_ref));
+    let memory_origin = read.and_then(|read| read.evidence_origin.clone());
+    let mut view = crate::commands::types::ChatEvidenceViewDto {
+        snapshot,
+        memory_origin,
+    };
+    if let Some(read) = read {
+        view.snapshot.title = read.title.clone();
+    }
+    view
 }
 
 impl StagedKnowledgeRead {
@@ -651,7 +679,15 @@ impl ToolCapture {
         let mut delivered_evidence = Vec::new();
         for (result_ref, captured) in std::mem::take(&mut pending.run_results) {
             if !pending.unlisted_results.contains(&result_ref) {
-                delivered_evidence.push(evidence::project(&captured.result));
+                let mut snapshot = evidence::project(&captured.result);
+                if let Some(title) = pending
+                    .local_file_title
+                    .as_ref()
+                    .filter(|_| snapshot.tool_name == "workspace_capture")
+                {
+                    snapshot.title = title.clone();
+                }
+                delivered_evidence.push(project_memory_evidence(snapshot, &pending.staged_reads));
             }
             registry
                 .insert_captured(captured)
@@ -974,10 +1010,32 @@ fn bounded_warning_text(value: &Value) -> Option<String> {
 
 tokio::task_local! {
     static TOOL_CALL_ID: String;
+    static CHAT_TOOL_ADMISSION: std::cell::RefCell<Option<crate::runs::coordinator::ChatToolAdmission>>;
 }
 
 pub(super) fn current_tool_call_id() -> Option<String> {
     TOOL_CALL_ID.try_with(|call_id| call_id.clone()).ok()
+}
+
+fn park_tool_for_user() -> Option<crate::runs::coordinator::ChatToolAdmission> {
+    let mut admission = CHAT_TOOL_ADMISSION
+        .try_with(|slot| slot.borrow_mut().take())
+        .ok()??;
+    admission.park();
+    Some(admission)
+}
+
+async fn resume_tool_after_user(
+    admission: Option<crate::runs::coordinator::ChatToolAdmission>,
+) -> Result<(), BrokerError> {
+    if let Some(mut admission) = admission {
+        admission
+            .resume()
+            .await
+            .map_err(|_| BrokerError::MethodDenied)?;
+        CHAT_TOOL_ADMISSION.with(|slot| *slot.borrow_mut() = Some(admission));
+    }
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -1118,6 +1176,32 @@ impl AppToolExecutor {
         params: Value,
         delivery_id: &str,
     ) -> Result<Value, BrokerError> {
+        let Some(run_id) = &self.capture.chat_run_id else {
+            return self
+                .dispatch_staged(policy, method, params, delivery_id)
+                .await;
+        };
+        let admission = self
+            .state
+            .run_coordinator
+            .begin_chat_tool(run_id)
+            .await
+            .map_err(|_| BrokerError::MethodDenied)?;
+        CHAT_TOOL_ADMISSION
+            .scope(
+                std::cell::RefCell::new(Some(admission)),
+                self.dispatch_staged(policy, method, params, delivery_id),
+            )
+            .await
+    }
+
+    async fn dispatch_staged(
+        &self,
+        policy: &ToolPolicy,
+        method: ToolMethod,
+        params: Value,
+        delivery_id: &str,
+    ) -> Result<Value, BrokerError> {
         self.state
             .ensure_loupist_available(&self.loupist_id)
             .map_err(|_| BrokerError::Execution("Loupist is unavailable".into()))?;
@@ -1131,6 +1215,9 @@ impl AppToolExecutor {
                 method,
                 &params,
             )?;
+        }
+        if let Some(vendor) = crate::finance_data::serving_vendor(method) {
+            self.require_saved_key_permission(vendor.source_id)?;
         }
         refuse_sensitive_memory(&self.capture, method, &params)?;
         if policy.as_of.is_some() {
@@ -1147,8 +1234,16 @@ impl AppToolExecutor {
         };
         let request = params.clone();
         let persistent_data = retention.is_some_and(Retention::keeps_dataset);
+        let kis_credential = if method == ToolMethod::KisRead {
+            Some(
+                self.provider_credential_bundle(crate::finance_data::KIS_SOURCE_ID)
+                    .await?,
+            )
+        } else {
+            None
+        };
         let request_key = if persistent_data {
-            Some(self.persistent_request_key(policy, method, &request).await)
+            Some(self.persistent_request_key(policy, method, &request, kis_credential.as_ref()))
         } else {
             None
         };
@@ -1206,7 +1301,14 @@ impl AppToolExecutor {
             ToolMethod::DefillamaRead => self.defillama_read(policy, params).await,
             ToolMethod::KrxDailyQuote => self.krx_daily_quote(policy, params).await,
             ToolMethod::KisOperationSearch => self.kis_operation_search(params).await,
-            ToolMethod::KisRead => self.kis_read(policy, params).await,
+            ToolMethod::KisRead => {
+                self.kis_read(
+                    policy,
+                    params,
+                    kis_credential.as_ref().ok_or(BrokerError::MethodDenied)?,
+                )
+                .await
+            }
             ToolMethod::DartFinancials => self.dart_financials(policy, params).await,
             ToolMethod::DartFilingSearch => self.dart_filing_search(policy, params).await,
             ToolMethod::DartFilingRead => self.dart_filing_read(policy, params).await,
@@ -1260,6 +1362,16 @@ impl AppToolExecutor {
             ToolMethod::GridPublish => self.grid_publish(policy, params, delivery_id).await,
             ToolMethod::WorkspaceCapture => {
                 let mut result = self.workspace_capture(params)?;
+                if let Some(title) = result["path"]
+                    .as_str()
+                    .and_then(|path| self.captured_attachment_snapshot_title(path))
+                {
+                    self.capture
+                        .stage(delivery_id, |pending| {
+                            pending.local_file_title = Some(title)
+                        })
+                        .await;
+                }
                 if policy.propose_memory_updates {
                     result["next"] = json!("Captured, not retained. If the user named or attached this file as material for the answer, call source_save with this result_ref before replying.");
                 }
@@ -1268,6 +1380,7 @@ impl AppToolExecutor {
             ToolMethod::PastedCapture => self.pasted_capture(policy, params),
             ToolMethod::PythonRun => self.python_run(params).await,
         }?;
+        drop(kis_credential);
         // Account-field redaction over every account result: an account read
         // keeps no quantity, amount or price paid in any copy below, a reused
         // dataset included, and an unreviewed account read is refused.
@@ -1453,15 +1566,17 @@ impl AppToolExecutor {
     /// names the credential revision, account and environment that serve it,
     /// as a digest and never a secret, so `max_age` cannot hand one account's
     /// balances to a read made after switching accounts.
-    pub(super) async fn persistent_request_key(
+    pub(super) fn persistent_request_key(
         &self,
         policy: &ToolPolicy,
         method: ToolMethod,
         request: &Value,
+        kis_credential: Option<&crate::finance_credentials::ActiveCredentialBundle>,
     ) -> String {
         let mut key = json!({"method":format!("{method:?}"),"request":request,"as_of":policy.as_of,"capabilities":self.capability_ids,"schema":"finance-dataset/1"});
         if method == ToolMethod::KisRead {
-            key["provider_identity"] = json!(self.kis_reuse_identity().await);
+            key["provider_identity"] =
+                json!(kis_credential.and_then(|credential| self.kis_reuse_identity(credential)));
         }
         sha256(key.to_string().as_bytes())
     }

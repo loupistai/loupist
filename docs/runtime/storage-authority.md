@@ -123,6 +123,12 @@ The global `catalog.sqlite3` and every folder's `loupist.sqlite3` share one sche
 Knowledge schema version 10 (`knowledge_schema`) and the Knowledge format version 1.
 A fresh database is created at the current versions.
 
+The global `app_settings` entry `default_model:<loupist_id>` records the last
+observed default model and any unacknowledged change. Removing the registration
+clears that observation. Chat preferences and scheduled task definitions keep
+their original requested model. The selection shown to the user is computed
+from the current catalog.
+
 A database from store 4 and Knowledge 6 onward (the format 0.0.1 installs use) is
 upgraded one version at a time, each step in its own transaction. Before the first
 step Rust writes `<database>.upgrade-backup-<UTC stamp>` beside it with `VACUUM
@@ -199,7 +205,7 @@ owning series to each close and quote. The step derives the listing reference fr
 the page's legacy asset id, keeps its ticker as the series symbol and prefixes its
 existing price keys with the listing reference. Pages without a ticker retain no
 price source, and legacy price rows without a ticker page remain stored and
-unselected. Existing Map links are marked `auto`. The same SQL runs in the
+unselected. Existing World links are marked `auto`. The same SQL runs in the
 catalog, folder and admission-copy ladder and needs only tables in that database.
 
 Store 12 migrates each asset to a name, optional ticker and exchange reference
@@ -347,6 +353,12 @@ one. Change them only this way:
   of an enum without a fallback, or a removed, renamed or reinterpreted field.
   The step bumps `user_version`, so an older build reports `newer_version`
   instead of misreading the record.
+
+The app-wide briefing settings file remembers Schedule hint dismissal in the
+optional boolean `loginHintDismissed`. A missing field means the hint is eligible.
+An older build rewriting the file can lose this presentation preference safely.
+The additive stored-JSON rule applies without a schema step. macOS owns login
+registration, and the launch Apple event supplies the startup mode.
 
 Research hand-offs record an optional origin, trust receipt and bounded note
 on the queued row. A new row and its target Chat come from the same folder

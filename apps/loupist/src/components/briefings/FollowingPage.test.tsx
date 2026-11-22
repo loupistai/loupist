@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import i18n from "@/i18n";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { LoupistSummary } from "../../types";
 import { AssetPageOpenerProvider, type OpenAssetPage } from "../assets/assetOpener";
@@ -122,6 +123,35 @@ it("keeps the host's ranking and carries the selected exchange name into the fol
   expect(followName).toHaveBeenCalledWith({ loupistId: loupist.id, name: first.name,
     reference: { figi: first.figi, ticker: first.ticker, exchange: "UB", exchangeName: "Example Exchange", securityType: first.securityType } });
   expect(row(first.name).querySelector(".following-identity")).toHaveTextContent("NVDA · Example Exchange · Common Stock");
+});
+
+it("localizes generic listing labels and accessible names while saving the provider fields", async () => {
+  await i18n.changeLanguage("ko");
+  try {
+    const { followName, loupist, lookup, user } = await fixture();
+    const domestic = {
+      name: "SAMSUNG ELECTRONICS CO LTD", ticker: "005930", figi: "BBG000BDTF76",
+      exchange: "KS", exchangeName: "South Korea", securityType: "Common Stock",
+    };
+    const otc = {
+      ...domestic, ticker: "00593EUR", figi: "BBG019T9FJM3",
+      exchange: "XL", exchangeName: "TradEcho-LSE OTC", securityType: "Provider Type",
+    };
+    lookup.mockResolvedValue([{ ...domestic, marketSector: "Equity" }, { ...otc, marketSector: "Equity" }]);
+    await user.type(screen.getByRole("combobox"), "samsung{Enter}");
+    const country = await screen.findByRole("option", { name: /005930 · 대한민국 · 보통주/u });
+    expect(country).toHaveTextContent("005930 · 대한민국 · 보통주");
+    expect(screen.getByRole("option", { name: /00593EUR · TradEcho-LSE OTC · Provider Type/u })).toBeVisible();
+    await user.click(country);
+    const { name, ...reference } = domestic;
+    expect(followName).toHaveBeenCalledWith({ loupistId: loupist.id, name, reference });
+    expect(row(name).querySelector(".following-identity")).toHaveTextContent("005930 · 대한민국 · 보통주");
+    await act(async () => { await i18n.changeLanguage("en"); });
+    expect(row(name).querySelector(".following-identity")).toHaveTextContent("005930 · South Korea · Common Stock");
+  } finally {
+    cleanup();
+    await i18n.changeLanguage("en");
+  }
 });
 
 it("follows the text as typed by name alone, from the last option or with the arrows and Enter", async () => {

@@ -9,7 +9,11 @@ import type {
   KnowledgePin,
   KnowledgeSelection,
   SourceDetail,
+  SourceFigureRequest,
 } from "../contracts/knowledge";
+
+/** A request to open a Source reader, separate from its saved location and scroll. */
+export type SourceOpen = { figure?: SourceFigureRequest };
 
 export type KnowledgeNavigation = {
   current: KnowledgeLocation;

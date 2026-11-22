@@ -74,9 +74,9 @@ it("keeps the sidebar toggle after it expands the rail in a narrow window, and h
   }
 });
 
-it("opens ⌘1–⌘4 destinations", () => {
+it("opens ⌘1–⌘5 destinations", () => {
   const onNavigate = vi.fn();
   header({ onNavigate });
-  fireEvent.keyDown(window, { key: "3", metaKey: true });
+  fireEvent.keyDown(window, { key: "4", metaKey: true });
   expect(onNavigate).toHaveBeenCalledWith("lens");
 });

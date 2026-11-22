@@ -1,10 +1,12 @@
+import { useExtensionAvailability } from "../../app/extensionAvailability";
 import { CustomConnections } from "../connections/custom/CustomConnections";
 import { connectionText } from "@/lib/connectionCopy";
+import { keychainErrorMessage } from "@/lib/errors";
 import { formatNumber } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
 import { PageHeader } from "../ui/page-header";
 import { DatabaseIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
 import { Input } from "@/components/ui/input";
@@ -23,14 +25,15 @@ import type {
 import type { LoupistSummary, LoupistBridge } from "../../types";
 import { MarketplaceCard, accessLabel } from "./MarketplaceCard";
 import { MarketplaceSetupDialog } from "./MarketplaceSetupDialog";
-import { CONFIG_CHANGED_EVENT } from "../../app/useConfiguration";
+import { CONFIG_CHANGED_EVENT, notifyConfigurationChanged } from "../../app/useConfiguration";
 import { connectionGroups } from "../../marketplace/groups";
-import { CONNECTION_STATES, connectionState, sortConnectionEntries } from "../../marketplace/readiness";
+import { CONNECTION_STATES, connectionState, needsSavedKeyPermission, sortConnectionEntries } from "../../marketplace/readiness";
 
 type Props = {
   bridge: LoupistBridge;
   loupists?: LoupistSummary[];
   currentLoupistId?: string | null;
+  permissionNoticeRequest?: number;
   initialEntryId?: string | null;
   onManageLoupists?: () => void;
   onOpenModelSettings?: () => void;
@@ -69,8 +72,14 @@ const groupLabel = (group: { label: string }) => connectionText(group.label);
 const showGroupHeading = (group: { label: string; entries: MarketplaceEntry[] }) =>
   group.entries.length > 1 || connectionText(group.entries[0]?.name ?? "") !== groupLabel(group);
 
-export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initialEntryId, onManageLoupists, onOpenModelSettings }: Props) {
+export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initialEntryId, permissionNoticeRequest, onManageLoupists, onOpenModelSettings }: Props) {
+  const { customConnections } = useExtensionAvailability();
   const { i18n: activeLanguage } = useTranslation("connections");
+  const batchId = useRef<string | null>(null);
+  const snapshotRevision = useRef(0);
+  const [permissionProgress, setPermissionProgress] = useState<{ settled: number; total: number } | null>(null);
+  const [cancellingPermission, setCancellingPermission] = useState(false);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<MarketplaceSnapshot | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [query, setQuery] = useState("");
@@ -90,17 +99,22 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
       .catch(() => null);
   }, [bridge, currentLoupistId]);
 
+  useEffect(() => () => {
+    const id = batchId.current;
+    batchId.current = null;
+    if (id) void bridge.marketplaceCredentialsCancelAccess(id).catch(() => undefined);
+  }, [bridge]);
+
   useEffect(() => {
     let active = true;
-    let revision = 0;
     const refresh = () => {
-      const requested = ++revision;
+      const requested = ++snapshotRevision.current;
       void bridge.marketplaceSnapshot().then((next) => {
-        if (active && revision === requested) { setSnapshot(next); setError(null); }
+        if (active && snapshotRevision.current === requested) { setSnapshot(next); setError(null); }
       }).catch(() => {
-        if (active && revision === requested) setError(i18n.t("connections:marketplaceView.couldNotLoadConnections"));
+        if (active && snapshotRevision.current === requested) setError(i18n.t("connections:marketplaceView.couldNotLoadConnections"));
       });
-      void readEnabledHere().then((next) => { if (active && revision === requested) setEnabledHere(next); });
+      void readEnabledHere().then((next) => { if (active && snapshotRevision.current === requested) setEnabledHere(next); });
     };
     refresh();
     window.addEventListener("focus", refresh);
@@ -126,6 +140,12 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
       ),
     [snapshot],
   );
+  const permissionNotice = useRef<HTMLDivElement>(null);
+  const permissionCount = (snapshot?.connectors ?? []).filter(needsSavedKeyPermission).length;
+  const showPermissionNotice = permissionCount > 0;
+  useEffect(() => {
+    if (permissionNoticeRequest && showPermissionNotice) permissionNotice.current?.focus();
+  }, [permissionNoticeRequest, showPermissionNotice]);
   const browseableEntryCount = useMemo(
     () =>
       (snapshot?.catalog.entries ?? []).length,
@@ -157,9 +177,12 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
     : null;
 
   async function refreshMarketplace() {
+    const requested = ++snapshotRevision.current;
     const [next, here] = await Promise.all([bridge.marketplaceSnapshot(), readEnabledHere()]);
-    setSnapshot(next);
-    setEnabledHere(here);
+    if (snapshotRevision.current === requested) {
+      setSnapshot(next);
+      setEnabledHere(here);
+    }
   }
 
   /** Turns a ready connection on for the current Loupist, from its dialog. */
@@ -169,11 +192,53 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
     setEnabledHere(await readEnabledHere());
   }
 
-  /** Try again: macOS may ask for the login password once more. True when the key is readable again. */
-  async function unlockEntry(entry: MarketplaceEntry) {
-    const credentials = await bridge.marketplaceCredentialUnlock({ entry_id: entry.id });
+  /** Rechecks the saved-key state and refreshes the row. */
+  async function unlockEntry(entry: MarketplaceEntry, presenceOnly: boolean) {
+    const request = { entry_id: entry.id };
+    if (presenceOnly) await bridge.marketplaceCredentialUnlock(request, true);
+    else await bridge.marketplaceCredentialUnlock(request);
     await refreshMarketplace();
-    return !credentials.some((credential) => credential.locked);
+    notifyConfigurationChanged();
+  }
+
+  async function allowSavedKeys() {
+    if (batchId.current || !permissionCount) return;
+    const id = crypto.randomUUID();
+    batchId.current = id;
+    setPermissionError(null);
+    setPermissionProgress({ settled: 0, total: permissionCount });
+    const couldNotCheck = i18n.t("connections:savedKeyPermission.error");
+    try {
+      await bridge.marketplaceCredentialsAllowAccess(id, (progress) => {
+        if (batchId.current !== id) return;
+        setPermissionProgress(progress);
+        if (progress.failed_entry_id) setPermissionError(couldNotCheck);
+        void refreshMarketplace().catch(() => {
+          if (batchId.current === id) setPermissionError(couldNotCheck);
+        });
+      });
+      if (batchId.current === id) await refreshMarketplace();
+    } catch (cause) {
+      if (batchId.current === id) setPermissionError(keychainErrorMessage(cause) ?? couldNotCheck);
+    } finally {
+      if (batchId.current === id) {
+        batchId.current = null;
+        setPermissionProgress(null);
+        setCancellingPermission(false);
+        notifyConfigurationChanged();
+      }
+    }
+  }
+
+  async function cancelSavedKeys() {
+    if (!batchId.current) return;
+    setCancellingPermission(true);
+    try {
+      await bridge.marketplaceCredentialsCancelAccess(batchId.current);
+    } catch {
+      setCancellingPermission(false);
+      setPermissionError(i18n.t("connections:savedKeyPermission.error"));
+    }
   }
 
   return (
@@ -197,6 +262,21 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
               onClick={() => setReloadToken((current) => current + 1)}
             >
               <RefreshCwIcon /> {i18n.t("connections:marketplaceView.retry")}</Button>
+          </div>
+        ) : null}
+        {permissionCount || permissionProgress ? (
+          <div className="marketplace-permission" ref={permissionNotice} tabIndex={-1}>
+            <DatabaseIcon aria-hidden="true" />
+            <div>
+              <p>{i18n.t("connections:savedKeyPermission.notice", { count: permissionCount || permissionProgress?.total })}</p>
+              {permissionProgress ? <p role="status">{i18n.t(cancellingPermission
+                ? "connections:savedKeyPermission.closePrompt"
+                : "connections:savedKeyPermission.progress", permissionProgress)}</p> : null}
+              {permissionError ? <p role="alert">{permissionError}</p> : null}
+            </div>
+            {permissionProgress
+              ? <Button variant="outline" disabled={cancellingPermission} onClick={() => void cancelSavedKeys()}>{i18n.t("connections:savedKeyPermission.cancel")}</Button>
+              : <Button variant="outline" disabled={Boolean(selectedEntry)} onClick={() => void allowSavedKeys()}>{i18n.t("connections:savedKeyPermission.allow")}</Button>}
           </div>
         ) : null}
         <section className="connection-catalog" aria-labelledby="available-connections-title">
@@ -267,6 +347,7 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
                         headingLevel={showGroupHeading(group) ? 4 : 3}
                         onSetup={(next) => setSelectedEntryId(next.id)}
                         onUnlock={unlockEntry}
+                        permissionBatchActive={Boolean(permissionProgress)}
                       />
                     ))}
                   </div>
@@ -283,7 +364,7 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
         </div>
         </section>
 
-        <CustomConnections bridge={bridge} loupists={loupists} initialLoupistId={currentLoupistId} />
+        {customConnections ? <CustomConnections bridge={bridge} loupists={loupists} initialLoupistId={currentLoupistId} /> : null}
       </div>
 
       <MarketplaceSetupDialog

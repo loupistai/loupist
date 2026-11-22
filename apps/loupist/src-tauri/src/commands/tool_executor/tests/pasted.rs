@@ -109,7 +109,7 @@ async fn pasted_text_is_kept_as_the_users_own_bytes_in_a_user_provided_source() 
     )
     .unwrap();
     assert_eq!(check.kind, NumberCheckKind::Passage);
-    assert_eq!(check.status, NumberCheckStatus::Rounded);
+    assert_eq!(check.status, NumberCheckStatus::Matched);
 
     // Without saving on, the capture is evidence only.
     let read_only = capture_paste(
@@ -210,6 +210,7 @@ async fn pasted_text_is_kept_as_the_users_own_bytes_in_a_user_provided_source() 
             purpose: "renderer_inspection".into(),
             world_record_id: None,
             world_revision_id: None,
+            figure: None,
         },
     )
     .unwrap();
@@ -235,7 +236,7 @@ async fn only_text_the_user_sent_in_this_chat_can_be_captured() {
         handoff_note: Some(HandoffNote {
             title: "Backlog".into(),
             question: Some("Check the order backlog".into()),
-            brief: None,
+            brief: Some("Compare the confirmed order backlog of Hanul Mills and Solsup.".into()),
             untrusted_id: None,
         }),
         ..user(
@@ -280,6 +281,7 @@ async fn only_text_the_user_sent_in_this_chat_can_be_captured() {
     for text in [
         "Marrow Glass original FY2024 gross margin was 40.0 percent.",
         "Check the order backlog of 990 billion won",
+        "Compare the confirmed order backlog of Hanul Mills and Solsup.",
     ] {
         assert_eq!(
             invalid_field(&refused(json!({"text": text})).await),

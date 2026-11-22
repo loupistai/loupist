@@ -1,6 +1,8 @@
 // Generated from Rust by ts-rs; do not edit. Regenerate with:
 // LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract
 
+import type { DefaultModelChange, ResolvedModelSelection } from "./providers/selection";
+
 export type AppearanceConfig = {
   theme?: string,
   language?: string,
@@ -37,6 +39,10 @@ export type ConfigReadRequest = { scope: ConfigScope };
 export type ConfigScope = { "kind": "global" } | { "kind": "project", loupistId: string };
 
 export type ConfigSnapshot = {
+  modelSelection?: ResolvedModelSelection,
+  defaultModelChange?: DefaultModelChange,
+  userSkillsAvailable?: boolean,
+  customConnectionsAvailable?: boolean,
   scope: ConfigScope,
   path: string,
   revision: string,

@@ -776,6 +776,9 @@ fn clone_error(error: &BrokerError) -> BrokerError {
         Authentication => Authentication,
         FrameTooLarge => FrameTooLarge,
         Execution(message) => Execution(message.clone()),
+        KeychainBusy => KeychainBusy,
+        KeychainUnavailable => KeychainUnavailable,
+        KeychainPermissionRequired => KeychainPermissionRequired,
         Offline(provider) => Offline(provider.clone()),
         BudgetExceeded { tool, limit } => BudgetExceeded {
             tool: tool.clone(),

@@ -17,10 +17,20 @@ use crate::app::{AppState, CommandError};
 
 fn error(error: ConnectionError) -> CommandError {
     let code = match error {
+        ConnectionError::Unavailable => "connection_unavailable",
         ConnectionError::ApprovalRequired => "needs_approval",
         ConnectionError::ClientIdRequired => "client_id_required",
         ConnectionError::Authorization => "authorization_required",
         ConnectionError::CredentialStore => "credential_store_unavailable",
+        ConnectionError::UpdateInstalling => {
+            return crate::keychain_operation::KeychainError::UpdateInstalling.command_error()
+        }
+        ConnectionError::KeychainBusy => {
+            return crate::keychain_operation::KeychainError::Busy.command_error()
+        }
+        ConnectionError::KeychainUnavailable | ConnectionError::KeychainMutationPending => {
+            return crate::keychain_operation::KeychainError::Unavailable.command_error()
+        }
         _ => "custom_connection_failed",
     };
     CommandError::new(code, error.to_string())
@@ -125,6 +135,7 @@ pub async fn custom_connection_add_url(
     request: AddUrlRequest,
     state: State<'_, AppState>,
 ) -> Result<ConnectionView, CommandError> {
+    crate::extension_availability::require_custom_connections()?;
     let url = super::http::canonical_resource(&request.url).map_err(error)?;
     let name = request.name.unwrap_or_else(|| {
         super::http::checked_url(&url)
@@ -138,14 +149,18 @@ pub async fn custom_connection_add_url(
         ..Default::default()
     };
     let manager = for_state(&state).map_err(error)?;
-    let mut service = manager.lock().await;
-    let pending = service
-        .add_pending(ParsedConnection {
-            name,
-            transport: TransportConfig::Http { url },
-            secrets,
-        })
-        .map_err(error)?;
+    let for_add = manager.clone();
+    let pending = crate::app::off_main_thread(&state, move |_| {
+        for_add
+            .add(ParsedConnection {
+                name,
+                transport: TransportConfig::Http { url },
+                secrets,
+            })
+            .map_err(error)
+    })
+    .await?;
+    let mut service = manager.for_connection(&pending.id).map_err(error)?;
     service.probe(&pending.id).await.map_err(error)
 }
 
@@ -154,18 +169,23 @@ pub async fn custom_connection_add_json(
     request: AddJsonRequest,
     state: State<'_, AppState>,
 ) -> Result<Vec<ConnectionView>, CommandError> {
+    crate::extension_availability::require_custom_connections()?;
     let parsed = config::parse_json(&request.json).map_err(error)?;
     let manager = for_state(&state).map_err(error)?;
-    let mut service = manager.lock().await;
     let mut views: Vec<ConnectionView> = Vec::new();
     for entry in parsed {
-        match service.add_pending(entry) {
+        let for_add = manager.clone();
+        let result =
+            crate::app::off_main_thread(&state, move |_| for_add.add(entry).map_err(error)).await;
+        match result {
             Ok(view) => views.push(view),
             Err(failure) => {
                 for view in &views {
-                    let _ = service.remove(&view.id).await;
+                    if let Ok(mut service) = manager.for_connection(&view.id) {
+                        let _ = service.remove(&view.id).await;
+                    }
                 }
-                return Err(error(failure));
+                return Err(failure);
             }
         }
     }
@@ -177,23 +197,26 @@ pub async fn custom_connection_add_command(
     request: AddCommandRequest,
     state: State<'_, AppState>,
 ) -> Result<ConnectionView, CommandError> {
+    crate::extension_availability::require_custom_connections()?;
     config::validate_command(&request.command, &request.args).map_err(error)?;
     let name = request.name.unwrap_or_else(|| request.command.clone());
     let manager = for_state(&state).map_err(error)?;
-    let mut service = manager.lock().await;
-    service
-        .add_pending(ParsedConnection {
-            name,
-            transport: TransportConfig::Stdio {
-                command: request.command,
-                args: request.args,
-            },
-            secrets: Secrets {
-                env: request.env,
-                ..Default::default()
-            },
-        })
-        .map_err(error)
+    crate::app::off_main_thread(&state, move |_| {
+        manager
+            .add(ParsedConnection {
+                name,
+                transport: TransportConfig::Stdio {
+                    command: request.command,
+                    args: request.args,
+                },
+                secrets: Secrets {
+                    env: request.env,
+                    ..Default::default()
+                },
+            })
+            .map_err(error)
+    })
+    .await
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -201,6 +224,7 @@ pub async fn custom_connection_confirm(
     request: ConfirmRequest,
     state: State<'_, AppState>,
 ) -> Result<ConnectionView, CommandError> {
+    crate::extension_availability::require_custom_connections()?;
     let loupist = request
         .loupist_id
         .as_deref()
@@ -211,8 +235,8 @@ pub async fn custom_connection_confirm(
     }
     let manager = for_state(&state).map_err(error)?;
     let result = manager
-        .lock()
-        .await
+        .for_connection(&request.connection_id)
+        .map_err(error)?
         .confirm_for_loupist(&request.connection_id, loupist)
         .await
         .map_err(error);
@@ -224,6 +248,7 @@ pub async fn custom_connection_list(
     request: ListRequest,
     state: State<'_, AppState>,
 ) -> Result<Vec<ConnectionView>, CommandError> {
+    crate::extension_availability::require_custom_connections()?;
     if let Some(loupist) = &request.loupist_id {
         state.ensure_loupist_available(loupist)?;
     }
@@ -238,13 +263,17 @@ pub async fn custom_connection_remove(
     request: IdentityRequest,
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
+    crate::extension_availability::require_custom_connections()?;
     let manager = for_state(&state).map_err(error)?;
     let result = manager
-        .lock()
-        .await
+        .for_connection(&request.connection_id)
+        .map_err(error)?
         .remove(&request.connection_id)
         .await
         .map_err(error);
+    if result.is_ok() {
+        manager.forget(&request.connection_id);
+    }
     result
 }
 
@@ -253,13 +282,13 @@ pub async fn custom_connection_set_memory(
     request: MemoryRequest,
     state: State<'_, AppState>,
 ) -> Result<ConnectionView, CommandError> {
+    crate::extension_availability::require_custom_connections()?;
     let manager = for_state(&state).map_err(error)?;
-    let result = manager
-        .lock()
-        .await
+    manager
+        .for_connection(&request.connection_id)
+        .map_err(error)?
         .set_memory(&request.connection_id, request.dont_save_to_memory)
-        .map_err(error);
-    result
+        .map_err(error)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -267,14 +296,14 @@ pub async fn custom_connection_set_enabled(
     request: EnabledRequest,
     state: State<'_, AppState>,
 ) -> Result<ConnectionView, CommandError> {
+    crate::extension_availability::require_custom_connections()?;
     state.ensure_loupist_available(&request.loupist_id)?;
     let manager = for_state(&state).map_err(error)?;
-    let result = manager
-        .lock()
-        .await
+    manager
+        .for_connection(&request.connection_id)
+        .map_err(error)?
         .set_enabled(&request.connection_id, &request.loupist_id, request.enabled)
-        .map_err(error);
-    result
+        .map_err(error)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -282,11 +311,12 @@ pub async fn custom_tool_approve(
     request: ApproveRequest,
     state: State<'_, AppState>,
 ) -> Result<ConnectionView, CommandError> {
+    crate::extension_availability::require_custom_connections()?;
     state.ensure_loupist_available(&request.loupist_id)?;
     let manager = for_state(&state).map_err(error)?;
     let result = manager
-        .lock()
-        .await
+        .for_connection(&request.connection_id)
+        .map_err(error)?
         .approve(
             &request.loupist_id,
             &request.connection_id,
@@ -304,6 +334,7 @@ pub async fn custom_connection_authorize(
     request: AuthorizeRequest,
     state: State<'_, AppState>,
 ) -> Result<ConnectionView, CommandError> {
+    crate::extension_availability::require_custom_connections()?;
     let manager = for_state(&state).map_err(error)?;
     let id = request.connection_id.clone();
     let mut log = crate::runs::log::RunLog::new(
@@ -338,6 +369,7 @@ pub async fn custom_connection_sign_in(
     request: IdentityRequest,
     state: State<'_, AppState>,
 ) -> Result<ConnectionView, CommandError> {
+    crate::extension_availability::require_custom_connections()?;
     let manager = for_state(&state).map_err(error)?;
     let mut log = crate::runs::log::RunLog::new(
         "connection_sign_in",
@@ -373,7 +405,7 @@ fn finish_sign_in_log(
 }
 
 async fn run_sign_in(
-    manager: std::sync::Arc<tokio::sync::Mutex<super::service::Service>>,
+    manager: super::service::SharedService,
     connection_id: &str,
     client: Option<AuthorizeRequest>,
 ) -> Result<ConnectionView, CommandError> {
@@ -388,7 +420,7 @@ async fn run_sign_in(
         pending.insert(connection_id.to_owned(), cancel);
     }
     let _lease = SignInLease(connection_id.to_owned());
-    let mut service = manager.lock().await;
+    let mut service = manager.for_connection(connection_id).map_err(error)?;
     if client.is_none() {
         service.begin_sign_in(connection_id).map_err(error)?;
     }
@@ -410,6 +442,7 @@ async fn run_sign_in(
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn custom_connection_sign_in_cancel(request: IdentityRequest) -> Result<(), CommandError> {
+    crate::extension_availability::require_custom_connections()?;
     let pending = sign_ins()
         .lock()
         .map_err(|_| error(ConnectionError::Configuration))?;
@@ -422,11 +455,28 @@ pub fn custom_connection_sign_in_cancel(request: IdentityRequest) -> Result<(), 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use tokio::{
         net::TcpListener,
         time::{timeout, Duration},
     };
+
+    #[test]
+    fn stale_sign_in_cancel_refuses_a_dormant_custom_connection() {
+        crate::extension_availability::with_test_flags(true, false, || {
+            let error = custom_connection_sign_in_cancel(IdentityRequest {
+                connection_id: "unused".into(),
+            })
+            .unwrap_err();
+            assert_eq!(
+                error.code,
+                crate::app::CommandErrorCode::ConnectionUnavailable
+            );
+            assert_eq!(
+                error.message,
+                "This feature is not available in this version."
+            );
+        });
+    }
 
     #[tokio::test]
     async fn ordinary_and_advanced_sign_in_share_cancellation_and_release_the_registry() {
@@ -434,19 +484,17 @@ mod tests {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let url = format!("http://{}/mcp", listener.local_addr().unwrap());
             let directory = tempfile::tempdir().unwrap();
-            let mut service = super::super::service::Service::open(
-                directory.path().join("connections"),
-                format!("cancel-test-{}", uuid::Uuid::new_v4()),
-            )
-            .unwrap();
-            let view = service
+            let state = AppState::for_folder_test(directory.path().join("fixture"));
+            let manager = for_state(&state).unwrap();
+            let view = manager
+                .for_new_connection()
+                .unwrap()
                 .add_pending(ParsedConnection {
                     name: "Cancelable fixture".into(),
                     transport: TransportConfig::Http { url: url.clone() },
                     secrets: Secrets::default(),
                 })
                 .unwrap();
-            let manager = Arc::new(tokio::sync::Mutex::new(service));
             let id = view.id.clone();
             let client = advanced.then(|| AuthorizeRequest {
                 connection_id: id.clone(),
@@ -481,7 +529,7 @@ mod tests {
             );
             assert!(!sign_ins().lock().unwrap().contains_key(&id));
             assert!(
-                manager.try_lock().is_ok(),
+                manager.for_connection(&id).is_ok(),
                 "cancellation releases the connection lock"
             );
         }

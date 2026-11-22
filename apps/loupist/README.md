@@ -47,7 +47,7 @@ use_memory = true
 update_memory = true
 ```
 
-Map (the internal World model), Lens, Journal and visualization are always available app workflows. Map building
+World, Lens, Journal and visualization are always available app workflows. World building
 settings, connection grants, scheduled tasks and execution state remain in
 SQLite; credentials stay in the private credential stores.
 
@@ -77,8 +77,8 @@ dependency before running the same checks.
 The first release supports macOS 13 or newer on Apple Silicon only.
 Windows is not supported in this release.
 Release builds require staged sidecars and the credentials selected by
-`release-profile.json` (self-signed Beta or Developer ID); the
+`release-profile.json` (Developer ID for the current Beta); the
 [release workflow](../../.github/workflows/release.yml) defines the required
 configuration. Use the [release acceptance flow](../../LOUPIST.md) to verify
-the app against its recorded signing mode. The Beta is not notarized; see
+the app against its recorded signing mode. Developer ID releases carry a stapled notarization ticket. See
 [installation](../../installation.md) for first-launch approval and verification.

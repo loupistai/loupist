@@ -191,28 +191,63 @@ impl SqliteStore {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn scheduled_run_result(
         &self,
         loupist_id: &str,
         id: &str,
         text: &str,
         message_id: &str,
+        memory_save_skip: Option<crate::domain::MemorySaveSkipReason>,
     ) -> StoreResult<()> {
         let connection = self.lock_loupist(loupist_id)?;
-        let mut run = load_run(&connection, loupist_id, id)?
+        let run = load_run(&connection, loupist_id, id)?
             .ok_or_else(|| invalid("scheduled run not found"))?;
-        // A quiet run that wrote nothing has the host's placeholder answer, not a summary.
-        run.summary = if run.quiet && text.trim() == super::QUIET_NO_REPORT {
-            String::new()
-        } else {
-            crate::briefings::summary(text)
-        };
-        run.message_id = Some(message_id.to_owned());
-        connection.execute(
-            "UPDATE scheduled_task_runs SET data_json=?2 WHERE run_id=?1",
-            params![id, serde_json::to_string(&run)?],
+        retain_run_result(
+            &connection,
+            run,
+            text,
+            message_id,
+            memory_save_skip.map(|reason| (reason, &[][..])),
+        )
+    }
+
+    pub(super) fn complete_scheduled_chat(
+        &self,
+        loupist_id: &str,
+        run_id: &str,
+        text: &str,
+        message_id: &str,
+        skip: Option<(
+            crate::domain::MemorySaveSkipReason,
+            &[crate::domain::DiscardedMemoryItem],
+        )>,
+        now: i64,
+    ) -> StoreResult<Run> {
+        validate_now(now)?;
+        let mut connection = self.lock_loupist(loupist_id)?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let run = load_run(&transaction, loupist_id, run_id)?
+            .ok_or_else(|| invalid("scheduled run not found"))?;
+        let was_running = run.status == RunStatus::Running;
+        if was_running {
+            retain_run_result(&transaction, run, text, message_id, skip)?;
+        }
+        let run = finish_run(
+            &transaction,
+            loupist_id,
+            run_id,
+            RunStatus::Succeeded,
+            None,
+            false,
+            now,
         )?;
-        Ok(())
+        transaction.commit()?;
+        drop(connection);
+        if was_running {
+            crate::runs::log::record_scheduled(self, &run);
+        }
+        Ok(run)
     }
 
     pub(crate) fn scheduled_run_skip_tool(
@@ -491,6 +526,7 @@ impl SqliteStore {
             schedule: draft.schedule,
             target: draft.target,
             session_thread_id: None,
+            model_selection: None,
             model_profile_id: draft.model_profile_id,
             thinking_level: draft.thinking_level,
             run_options: draft.run_options,
@@ -800,6 +836,8 @@ impl SqliteStore {
             }
         };
         let run = Run {
+            discarded_memory_items: None,
+            memory_save_skip: None,
             briefing_context: None,
             kind: snapshot.kind.clone(),
             read_at_ms: None,
@@ -868,6 +906,35 @@ impl SqliteStore {
         error: Option<&str>,
         now: i64,
     ) -> StoreResult<Run> {
+        self.finish_scheduled_task(loupist_id, run_id, status, error, false, now)
+    }
+
+    pub(super) fn scheduled_task_failed_to_start(
+        &self,
+        loupist_id: &str,
+        run_id: &str,
+        error: &crate::app::CommandError,
+        now: i64,
+    ) -> StoreResult<Run> {
+        self.finish_scheduled_task(
+            loupist_id,
+            run_id,
+            RunStatus::Failed,
+            Some(&super::bounded_error(&error.message)),
+            error.code == crate::app::CommandErrorCode::ProviderUnavailable,
+            now,
+        )
+    }
+
+    fn finish_scheduled_task(
+        &self,
+        loupist_id: &str,
+        run_id: &str,
+        status: RunStatus,
+        error: Option<&str>,
+        account_required: bool,
+        now: i64,
+    ) -> StoreResult<Run> {
         validate_now(now)?;
         let mut connection = self.lock_loupist(loupist_id)?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -879,6 +946,7 @@ impl SqliteStore {
             run_id,
             status,
             error.map(str::to_owned),
+            account_required,
             now,
         )?;
         transaction.commit()?;
@@ -915,12 +983,32 @@ impl SqliteStore {
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let mut finished = Vec::new();
             for run in &runs {
+                let (status, error) = if let Some(reply) =
+                    retained_scheduled_answer(&transaction, run)?
+                {
+                    let skip = reply.memory_update.as_ref().and_then(|update| {
+                        update.skip_reason.map(|reason| {
+                            (
+                                reason,
+                                update.discarded_memory_items.as_deref().unwrap_or_default(),
+                            )
+                        })
+                    });
+                    retain_run_result(&transaction, run.clone(), &reply.content, &reply.id, skip)?;
+                    (RunStatus::Succeeded, None)
+                } else {
+                    (
+                        RunStatus::Interrupted,
+                        Some(super::UNEXPECTED_INTERRUPTION.into()),
+                    )
+                };
                 finished.push(finish_run(
                     &transaction,
                     &run.loupist_id,
                     &run.run_id,
-                    RunStatus::Interrupted,
-                    Some(super::UNEXPECTED_INTERRUPTION.into()),
+                    status,
+                    error,
+                    false,
                     now,
                 )?);
             }
@@ -936,12 +1024,75 @@ impl SqliteStore {
     }
 }
 
+fn retain_run_result(
+    connection: &Connection,
+    mut run: Run,
+    text: &str,
+    message_id: &str,
+    skip: Option<(
+        crate::domain::MemorySaveSkipReason,
+        &[crate::domain::DiscardedMemoryItem],
+    )>,
+) -> StoreResult<()> {
+    run.summary = if run.quiet && text.trim() == super::QUIET_NO_REPORT {
+        String::new()
+    } else {
+        crate::briefings::summary(text)
+    };
+    run.message_id = Some(message_id.to_owned());
+    run.memory_save_skip = skip.map(|(reason, _)| reason);
+    run.discarded_memory_items =
+        skip.and_then(|(_, items)| (!items.is_empty()).then(|| items.to_vec()));
+    connection.execute(
+        "UPDATE scheduled_task_runs SET data_json=?2 WHERE run_id=?1",
+        params![run.run_id, serde_json::to_string(&run)?],
+    )?;
+    Ok(())
+}
+
+fn retained_scheduled_answer(
+    connection: &Connection,
+    run: &Run,
+) -> StoreResult<Option<crate::domain::ChatMessage>> {
+    let Some(thread) = &run.thread_id else {
+        return Ok(None);
+    };
+    let body: Option<String> = connection
+        .query_row(
+            "SELECT data_json FROM chat_sessions WHERE loupist_id=?1 AND id=?2",
+            params![run.loupist_id, thread],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(chat) = body.and_then(|body| serde_json::from_str::<ChatSession>(&body).ok()) else {
+        return Ok(None);
+    };
+    let Some(request) = chat.messages.iter().position(|message| {
+        message
+            .scheduled
+            .as_ref()
+            .is_some_and(|scheduled| scheduled.run_id == run.run_id)
+    }) else {
+        return Ok(None);
+    };
+    Ok(chat
+        .messages
+        .into_iter()
+        .skip(request + 1)
+        .find(|message| !message.steer)
+        .filter(|reply| {
+            reply.role == crate::domain::ChatRole::Assistant
+                && reply.status == crate::domain::ChatMessageStatus::Complete
+        }))
+}
+
 fn finish_run(
     connection: &Connection,
     loupist_id: &str,
     run_id: &str,
     status: RunStatus,
     error: Option<String>,
+    account_required: bool,
     now: i64,
 ) -> StoreResult<Run> {
     if status == RunStatus::Running {
@@ -992,7 +1143,8 @@ fn finish_run(
             )?.query_map(params![task.id, super::USER_STOPPED, super::APP_QUIT, super::LEGACY_INTERRUPTED], |row| row.get::<_, String>(0))?
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter().take_while(|status| status != "succeeded").count();
-            if failures >= 3 || run.error.as_deref().is_some_and(requires_setup) {
+            if account_required || failures >= 3 || run.error.as_deref().is_some_and(requires_setup)
+            {
                 task.status = TaskStatus::Paused;
                 task.next_run_at_ms = None;
             } else {
@@ -1011,7 +1163,6 @@ fn requires_setup(error: &str) -> bool {
         crate::pi::provider_failure::NEEDS_RECONNECT
             | crate::pi::provider_failure::MODEL_GONE
             | "the selected Pi model is hidden from Chat"
-            | "Connect an AI account in Settings › Models & providers before chatting."
     )
 }
 

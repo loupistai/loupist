@@ -33,6 +33,8 @@ export type LensLogEntry = {
   op: string,
   outcome: string,
   key?: string,
+  /** Section label at the time of this operation, for the user's history. */
+  sectionHeading?: string,
   origin: string,
   chatId?: string,
   messageId?: string,

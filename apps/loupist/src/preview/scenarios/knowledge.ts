@@ -14,8 +14,8 @@ const i18nHistory = () => i18n.t("knowledge:memoryPage.tabs.history");
 export const knowledgeScenarios: PreviewScenario[] = [
   { ...base("growth-replay", "Recorded Semiconductors growth", () => select(".map-replay-bar"), async root => {
     await navigate(root, "map");
-    const map = await until(() => select(".map-view"), "Growth Map did not load");
-    if (hasLayout()) await until(mapCanvas, "Growth Map canvas did not mount");
+    const map = await until(() => select(".map-view"), "Growth World did not load");
+    if (hasLayout()) await until(mapCanvas, "Growth World canvas did not mount");
     await clickMapAction("[data-map-replay]", map);
     const scrubber = await until(() => map.querySelector<HTMLInputElement>(".map-replay-scrubber"), "Growth replay did not open");
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(scrubber, scrubber.max);
@@ -28,16 +28,16 @@ export const knowledgeScenarios: PreviewScenario[] = [
   }), setup: prepareGrowthReplay },
   { ...base("map-conflicts", "Conflicting evidence", () => select(".map-conflicts"), async root => {
     await navigate(root, "map");
-    const input = await until(() => select('.map-view [role="combobox"]'), "Map search missing") as HTMLInputElement;
+    const input = await until(() => select('.map-view [role="combobox"]'), "World search missing") as HTMLInputElement;
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Hanul");
     input.dispatchEvent(new Event("input", { bubbles: true }));
     await click('[role="option"]');
     await until(() => select(".map-conflicts"), "Conflicting evidence did not load");
-    if (hasLayout()) { await until(mapCanvas, "Map canvas missing"); select(".map-conflicts")?.scrollIntoView({ block: "start" }); }
+    if (hasLayout()) { await until(mapCanvas, "World canvas missing"); select(".map-conflicts")?.scrollIntoView({ block: "start" }); }
   }), setup: prepareConflictsFixture },
   { ...base("map-core-schema", "Core World kinds", () => select("#map-inspector-title"), async root => {
     await navigate(root, "map");
-    const input = await until(() => select('.map-view [role="combobox"]'), "Map search missing") as HTMLInputElement;
+    const input = await until(() => select('.map-view [role="combobox"]'), "World search missing") as HTMLInputElement;
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Hanbit");
     input.dispatchEvent(new Event("input", { bubbles: true }));
     await click('[role="option"]');
@@ -67,7 +67,7 @@ export const knowledgeScenarios: PreviewScenario[] = [
         await click(".journal-library-section .source-library-heading button", root);
         await click(".journal-check-toggle", root);
       } else if (id === "journal-reader-outcome") await click('[data-research-id="preview-journal-1"]', root);
-      if (hasLayout()) { await until(mapCanvas, "Map canvas did not load"); for (let frame = 0; frame < 3; frame++) await new Promise(requestAnimationFrame);
+      if (hasLayout()) { await until(mapCanvas, "World canvas did not load"); for (let frame = 0; frame < 3; frame++) await new Promise(requestAnimationFrame);
         const target = select(id === "journal-new-entry" ? ".journal-check-fields" : id === "journal-reader-outcome" ? ".journal-outcome-card" : ".journal-entry-list");
         const viewport = target?.closest<HTMLElement>(id === "journal-new-entry" ? '[role="tabpanel"]' : ".knowledge-research-reader");
         // A new check takes focus and scrolls its first field, with its label, clear of the sticky search.
@@ -84,11 +84,11 @@ export const knowledgeScenarios: PreviewScenario[] = [
       landmark: () => select(id === "map-learned-toast" ? ".learning-toast" : id === "memory-history" ? ".memory-history" : id === "lens-then-now-stacked" ? ".lens-then-now" : ".method-learning"),
       enter: async root => {
         if (id === "memory-history") {
-          // Learning history lives on "What {Loupist} knows".
+          // Learning history lives on "{Loupist}’s Lens".
           await until(() => root.querySelector("textarea[data-chat-composer]"), "Chat did not initialize");
           await selectPanel("lens");
           // Choose the tab once the page has loaded; a click during loading can be lost to the first render.
-          await until(() => select(".memory-page-body"), "What it knows did not load");
+          await until(() => select(".memory-page-body"), "Lens did not load");
           const history = await until(() => [...document.querySelectorAll<HTMLElement>('.memory-page-tabs [role="tab"]')].find(tab => tab.textContent?.includes(i18nHistory())), "History tab missing");
           history.click();
           await until(() => select(".memory-history"), "History did not load");
@@ -108,7 +108,7 @@ export const knowledgeScenarios: PreviewScenario[] = [
             select(".lens-history")?.scrollIntoView({ block: "start" });
           }
         }
-        if (hasLayout() && id === "map-learned-toast") { await until(mapCanvas, "Map canvas did not load"); for (let frame = 0; frame < 3; frame++) await new Promise(requestAnimationFrame); }
+        if (hasLayout() && id === "map-learned-toast") { await until(mapCanvas, "World canvas did not load"); for (let frame = 0; frame < 3; frame++) await new Promise(requestAnimationFrame); }
       },
     };
   }),

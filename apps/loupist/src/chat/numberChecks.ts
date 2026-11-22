@@ -1,10 +1,38 @@
 import i18n from "@/i18n";
-import { formatDate, formatNumber } from "@/i18n/format";
+import { formatNumber } from "@/i18n/format";
 import type { ChatEvidenceRef, ChatMessage, NumberCheck } from "../types";
-import { citationSources, sourceIdentityLabel } from "./evidence";
+import { byteMatchParts, citationSources, evidenceProvenance } from "./evidence";
 import { providerName } from "../lib/marketProviderName";
+import { normalizeCurrencyMarkers } from "./numberText";
 
 const t = i18n.getFixedT(null, "chat");
+
+export function calculationCheck(check: NumberCheck, evidence?: ChatEvidenceRef) {
+  return check.kind === "step" || check.kind === "calculated" || evidence?.tool_name === "run_python" || evidence?.tool_name === "calculate";
+}
+
+/** Follow the host's location only; duplicate figures in other fields are unrelated. */
+export function comparisonPassage(excerpt: string, check: NumberCheck | undefined) {
+  if (!check) return null;
+  if (check.span) return byteMatchParts(excerpt, check.span);
+  if (check.context) return byteMatchParts(check.context.text, check.context);
+  if (!check.pointer?.startsWith("/") || !check.comparedValue) return null;
+  // The host can select a field beyond the excerpt's display limit. The receipt
+  // still retains its exact path and printed value, even for incomplete JSON.
+  const recordedField = { before: `${check.pointer}\n`, match: check.comparedValue, after: "" };
+  try {
+    let field: unknown = JSON.parse(excerpt);
+    for (const segment of check.pointer.slice(1).split("/")) {
+      const key = segment.replaceAll("~1", "/").replaceAll("~0", "~");
+      if (!field || typeof field !== "object" || !Object.hasOwn(field, key)) return recordedField;
+      field = (field as Record<string, unknown>)[key];
+    }
+    if (typeof field !== "string") return recordedField;
+    const at = field.indexOf(check.comparedValue);
+    if (at < 0) return recordedField;
+    return { before: field.slice(0, at), match: check.comparedValue, after: field.slice(at + check.comparedValue.length) };
+  } catch { return recordedField; }
+}
 
 /** A data cell the Evidence reader marks when it opens (`pointer` from the check). */
 export type EvidenceCell = { pointer: string; key: string; value: string };
@@ -14,11 +42,11 @@ export type EvidenceCell = { pointer: string; key: string; value: string };
  * as one number with its unit gets the pending underline. Rust decides which
  * links are numbers when the answer finishes; the renderer never rechecks.
  */
-const NUMBER_TEXT = /^[+\-−–]?(?:(?:[A-Za-z]{1,2})?[$₩€£¥￦]|[A-Z]{3}\s)?\s?[\-−]?\d[\d,]*(?:\.\d+)?(?:\s?(?:조|억|만|천)(?:\s?\d[\d,]*(?:\.\d+)?)?)*\s?(?:%p|%pt|%|pp|bps?|x|×|배|[kmbt]n?|mn|bn|tn|thousand|million|billion|trillion|percent|원|달러|엔|유로|krw|usd|eur|jpy|won|dollars?)?(?:\s?(?:원|달러|krw|usd|won|dollars?))?$/iu;
+const NUMBER_TEXT = /^[+\-−–]?(?:(?:[A-Za-z]{1,2})?[$₩€£¥￦]|[A-Z]{3}\s)?\s?[\-−]?\d[\d,]*(?:\.\d+)?(?:\s?(?:조|억|만|천)(?:\s?\d[\d,]*(?:\.\d+)?)?)*\s?(?:%p|%pt|%|pp|bps?|x|×|배|[kmbt]n?|mn|bn|tn|thousand|million|billion|trillion|percent|원|달러|엔|유로|krw|usd|eur|jpy|won|dollars?)?(?:\s?(?:원|달러|krw|usd|won|dollars?|\$))?$/iu;
 
 export function looksLikeNumber(text: string): boolean {
   const value = text.trim();
-  if (!NUMBER_TEXT.test(value)) return false;
+  if (!NUMBER_TEXT.test(value) && !NUMBER_TEXT.test(normalizeCurrencyMarkers(value))) return false;
   // Years and small counts are labels or numbered citations, never number chips.
   return !/^\d{1,3}$/u.test(value) && !/^(?:19|20)\d{2}$/u.test(value);
 }
@@ -59,23 +87,11 @@ export function formulaLines(formula: string): string[] {
 /** A date that must never wrap inside ("Mar 18, 2026" on one line): spaces become no-break spaces. */
 export const unbroken = (text: string) => text.replace(/ /gu, " ");
 
-/** The evidence date to show: publication when known, otherwise retrieval. It never wraps inside. */
-export function evidenceDate(evidence: ChatEvidenceRef | undefined, field: "published_at" | "retrieved_at" | "published_only" = "published_at") {
-  // "published_only" never stands in the retrieval day for a missing publication date.
-  const value = field === "published_only" ? evidence?.published_at
-    : field === "published_at" ? evidence?.published_at ?? evidence?.retrieved_at : evidence?.retrieved_at;
-  const time = value ? Date.parse(value) : Number.NaN;
-  if (!Number.isFinite(time)) return "";
-  return unbroken(formatDate(time, /^\d{4}-\d{2}-\d{2}$/u.test(value ?? "") ? { timeZone: "UTC" } : {}));
-}
-
 /** The numbered citation an input's source has in this answer, if it has one. */
 export function citationNumber(evidence: ChatEvidenceRef, evidenceRefs: readonly ChatEvidenceRef[]) {
   const index = citationSources(evidenceRefs).findIndex((item) => item.id === evidence.id);
   return index < 0 ? null : index + 1;
 }
-
-const isoDay = (evidence: ChatEvidenceRef) => (evidence.published_at ?? evidence.retrieved_at ?? "").slice(0, 10);
 
 /** The inputs' sources as "OpenDART, 2026-03-18", for copied formulas and exports. */
 function inputSources(check: NumberCheck, evidenceRefs: readonly ChatEvidenceRef[]) {
@@ -85,7 +101,9 @@ function inputSources(check: NumberCheck, evidenceRefs: readonly ChatEvidenceRef
     const evidence = evidenceRefs.find((item) => item.id === input.evidence_id);
     if (!evidence || seen.has(evidence.id)) continue;
     seen.add(evidence.id);
-    sources.push([providerName(evidence.provider) ?? sourceIdentityLabel(evidence), isoDay(evidence)].filter(Boolean).join(", "));
+    const origin = evidenceProvenance(evidence, providerName(evidence.provider));
+    const name = !evidence.memory_origin && evidence.kind === "local_file" ? evidence.title.trim() || t("evidence.files") : origin.name;
+    sources.push([name, evidence.memory_origin ? origin.publication?.label : origin.sourceDay, origin.route].filter(Boolean).join(", "));
   }
   return sources.join("; ");
 }
@@ -108,5 +126,8 @@ export function exportFootnote(check: NumberCheck, evidence: ChatEvidenceRef | u
     return `${equation} (${t("numberChip.exportCalculated", { inputs: sources || t("numberChip.notLinked") })})`;
   }
   if (!evidence) return check.text;
-  return [evidence.title, isoDay(evidence), evidence.url].filter(Boolean).join(" — ");
+  const origin = evidenceProvenance(evidence);
+  return evidence.memory_origin
+    ? [origin.name, origin.publication?.label, origin.route, evidence.url].filter(Boolean).join(" — ")
+    : [evidence.title, origin.sourceDay, evidence.url].filter(Boolean).join(" — ");
 }

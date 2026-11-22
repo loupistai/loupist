@@ -316,7 +316,7 @@ const perspectiveView = (): PageView => pageOf("lens-perspective", "perspective"
   section("priorities", "Priorities", "Update the view when stronger counterevidence appears."),
 ], { suggestedSections: ["beliefs", "priorities", "avoid"] });
 
-const subjectView = (): PageView => pageOf("lens-subject-tcp", "subject", "TCP", "What the Loupist knows about TCP: where it sits in the web stack and where it is being replaced.", [
+const subjectView = (): PageView => pageOf("lens-subject-tcp", "subject", "TCP", "Where TCP sits in the web stack and where it is being replaced.", [
   section("overview", "Overview", "TCP carries most web traffic. HTTP/1.1 and HTTP/2 depend on it; HTTP/3 does not.", {
     chip: "source", basis: { refs: [{ kind: "claim", claimId: "claim-http-tcp" }, { kind: "span", recordId: SOURCE, revisionDigest: "digest-source-rfc-9110", spanId: "span-status-codes" }] },
   }),
@@ -628,7 +628,12 @@ export const knowledgeSourceRead = async (
   return clone({
     ...found,
     origin: found.origin,
-    relatedClaims: store.owned.edges.filter((edge) => edge.claim.evidence.some((evidence) => found.spans.some((span) => span.spanId === evidence.spanId))).map((edge) => ({ worldRecordId: WORLD, worldRevisionId: OWNED, claimId: edge.claim.id, proposition: edge.claim.proposition, relation: edge.relation })),
+    relatedClaims: store.owned.edges
+      .filter((edge) => edge.claim.evidence.some((evidence) => found.spans.some((span) => span.spanId === evidence.spanId)))
+      .map(({ claim }) => ({
+        worldRecordId: WORLD, worldRevisionId: OWNED, claimId: claim.id, proposition: claim.proposition, relation: claim.relation,
+        isRelationship: new Set(claim.endpoints.map((endpoint) => endpoint.nodeId)).size > 1,
+      })),
     selectedSpanId:
       request.spanId && found.spans.some((span) => span.spanId === request.spanId)
         ? request.spanId
@@ -712,7 +717,7 @@ export const memorySectionForget = async (state: MockBridgeState, request: { lou
   const now = Date.now();
   page.body.sections = page.body.sections.filter((item) => item.key !== request.key);
   page.updatedAtMs = now;
-  store.log.push({ recordId: request.recordId, before, entry: { opId: makeId("op"), op: "retire", outcome: "retired", key: request.key, origin: "user", createdAtMs: now } });
+  store.log.push({ recordId: request.recordId, before, entry: { opId: makeId("op"), op: "retire", outcome: "retired", key: request.key, sectionHeading: before?.heading, origin: "user", createdAtMs: now } });
   return readPage(store, page);
 };
 
@@ -731,7 +736,7 @@ export const memoryOpUndo = async (state: MockBridgeState, request: { loupistId:
     ? page.body.sections.some((item) => item.key === key) ? page.body.sections.map((item) => item.key === key ? restored : item) : [...page.body.sections, restored]
     : page.body.sections.filter((item) => item.key !== key);
   page.updatedAtMs = now;
-  store.log.push({ recordId: row.recordId, entry: { opId: makeId("op"), op: row.entry.outcome === "retired" ? "put" : "retire", outcome: row.entry.outcome === "retired" ? "added" : "retired", key, origin: "user", createdAtMs: now, undoesOpId: request.opId } });
+  store.log.push({ recordId: row.recordId, entry: { opId: makeId("op"), op: row.entry.outcome === "retired" ? "put" : "retire", outcome: row.entry.outcome === "retired" ? "added" : "retired", key, sectionHeading: row.entry.sectionHeading, origin: "user", createdAtMs: now, undoesOpId: request.opId } });
   return readPage(store, page);
 };
 

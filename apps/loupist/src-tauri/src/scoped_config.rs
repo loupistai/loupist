@@ -243,6 +243,19 @@ pub struct ConfigDiagnostic {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigSnapshot {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub model_selection: Option<crate::providers::selection::ResolvedModelSelection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub default_model_change: Option<crate::providers::selection::DefaultModelChange>,
+    // Older and preview bridges may omit these fields. The host always fills them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub user_skills_available: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub custom_connections_available: Option<bool>,
     pub scope: ConfigScope,
     pub path: String,
     pub revision: String,
@@ -869,7 +882,7 @@ fn validate(config: &ConfigDocument, scope: &ConfigScope) -> Result<(), String> 
         }
     }
     if let Some(chat) = &config.chat {
-        if let Some(id) = &chat.model_profile_id {
+        if let Some(id) = chat.model_profile_id.as_deref().filter(|id| !id.is_empty()) {
             bounded(id, "chat.model_profile_id", 512)?;
         }
         if let Some(level) = &chat.thinking_level {
@@ -1016,12 +1029,25 @@ pub fn read_scope(
     scope: ConfigScope,
 ) -> Result<ConfigSnapshot, CommandError> {
     let directory = scope_directory(global_root, project_loupist_dir, &scope)?;
-    let global = load(global_root, &ConfigScope::Global);
-    let project = if matches!(&scope, ConfigScope::Project { .. }) {
+    let mut global = load(global_root, &ConfigScope::Global);
+    let mut project = if matches!(&scope, ConfigScope::Project { .. }) {
         Some(load(directory, &scope))
     } else {
         None
     };
+    if !crate::extension_availability::user_skills() {
+        // Filter the view after reading the cache. The cached document and the
+        // stored preferences remain usable when the feature is available.
+        for scope in std::iter::once(&mut global).chain(project.iter_mut()) {
+            if let Some(skills) = scope
+                .explicit
+                .as_mut()
+                .and_then(|config| config.skills.as_mut())
+            {
+                skills.retain(|id, _| crate::agent_harness::bundled_skill_available(id));
+            }
+        }
+    }
     let (effective, sources) = assemble(&global, project.as_ref());
     let mut diagnostics = global.diagnostics.clone();
     let mut warnings = global.warnings.clone();
@@ -1031,6 +1057,10 @@ pub fn read_scope(
     }
     let selected = project.as_ref().unwrap_or(&global);
     Ok(ConfigSnapshot {
+        model_selection: None,
+        default_model_change: None,
+        user_skills_available: Some(crate::extension_availability::user_skills()),
+        custom_connections_available: Some(crate::extension_availability::custom_connections()),
         scope,
         path: directory.join(FILE_NAME).to_string_lossy().into_owned(),
         revision: selected.revision.clone(),
@@ -1201,6 +1231,20 @@ pub(crate) fn update_scope_with_display_change(
     project_loupist_dir: Option<&Path>,
     request: &ConfigUpdateRequest,
 ) -> Result<(ConfigSnapshot, bool), CommandError> {
+    let updates_hidden_skills = request.set.skills.as_ref().is_some_and(|skills| {
+        skills
+            .keys()
+            .any(|id| !crate::agent_harness::bundled_skill_available(id))
+    });
+    let resets_hidden_skills = request.unset.iter().any(|path| {
+        path.first().is_some_and(|part| part == "skills")
+            && path
+                .get(1)
+                .is_none_or(|id| !crate::agent_harness::bundled_skill_available(id))
+    });
+    if updates_hidden_skills || resets_hidden_skills {
+        crate::extension_availability::require_user_skills()?;
+    }
     validate(&request.set, &request.scope).map_err(config_error)?;
     // A request names only settings this version has; ignoring is for the file.
     if let Some(ignored) = ignore_unknown_catalog_keys(&mut request.set.clone())

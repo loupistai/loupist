@@ -610,7 +610,7 @@ pub(in crate::commands) fn earlier_research<'a>(
 }
 
 /// Keep every saveRef usable in the turn, with the final attribution for a repeated paste.
-fn current_paste_saves(
+pub(in crate::commands) fn current_paste_saves(
     sources: &[StagedSource],
 ) -> crate::knowledge::KnowledgeResult<Vec<(&str, &StagedSource)>> {
     let mut latest = std::collections::HashMap::new();
@@ -718,7 +718,7 @@ fn setup_line(change: &crate::domain::SetupChange) -> String {
         SetupChange::Unfollowed { symbol, .. } => format!("Stopped following {symbol}."),
         SetupChange::Focus { focus } => format!("Focus: {focus}."),
         SetupChange::Tracks { kinds } => format!(
-            "Your map now also tracks {}.",
+            "Your World now also tracks {}.",
             kinds
                 .iter()
                 .map(|kind| kind.label.as_str())
@@ -768,6 +768,8 @@ pub(in crate::commands) fn write_chat_learning_report(
     }
     let changed = !changes.is_empty() || !setup.is_empty();
     message.memory_update = save_learning.then(|| crate::domain::MemoryUpdateResult {
+        discarded_memory_items: None,
+        skip_reason: None,
         status: if changed {
             crate::domain::MemoryUpdateStatus::Applied
         } else {
@@ -807,6 +809,13 @@ pub(in crate::commands) fn write_chat_learning_report(
             .chain(setup.iter().map(setup_line))
             .collect::<Vec<_>>()
             .join("\n");
+    }
+    if let Some(activity) = message
+        .progress
+        .as_mut()
+        .and_then(|progress| progress.save_activity.as_mut())
+    {
+        activity.finished_at_ms = Some(crate::commands::now_ms().max(activity.started_at_ms));
     }
     message.performance = performance;
     message.research_session_id = research_session_id;

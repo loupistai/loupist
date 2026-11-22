@@ -1229,6 +1229,7 @@ pub(in crate::commands) fn host_prepare_journal_read_as_of(
             revision_id: String::new(),
             object_id: record.journal_id.clone(),
             title,
+            evidence_origin: None,
             payload: crate::commands::tool_executor::AckedPayload::Journal {
                 journal_id: record.journal_id,
                 delivered_text: text,
@@ -1246,7 +1247,7 @@ pub(in crate::commands) fn host_prepare_read(
 ) -> Result<(String, crate::commands::tool_executor::StagedKnowledgeRead), CommandError> {
     admit(state, loupist_id)?;
     let read_ref = format!("rdg_{}", uuid::Uuid::new_v4().simple());
-    let (text, revision_id, span_id, object_id, title, payload) =
+    let ((text, revision_id, span_id, object_id, title, payload), evidence_origin) =
         with_loupist_knowledge(state, loupist_id, |tx, blobs| {
             let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
             let module = write.owned_record(loupist_id, &request.record_id)?;
@@ -1267,7 +1268,7 @@ pub(in crate::commands) fn host_prepare_read(
                     "revision belongs to another record",
                 ));
             }
-            match request.scope.as_str() {
+            let delivery = match request.scope.as_str() {
                 "source"
                     if super::removed_pack_sources(tx, loupist_id)?
                         .contains(&request.record_id) =>
@@ -1307,7 +1308,21 @@ pub(in crate::commands) fn host_prepare_read(
                 _ => Err(crate::knowledge::KnowledgeError::Invalid(
                     "knowledge scope is invalid",
                 )),
-            }
+            }?;
+            let world_text = match &delivery.5 {
+                crate::commands::tool_executor::AckedPayload::World { view_json, .. } => {
+                    Some(view_json.as_str())
+                }
+                _ => None,
+            };
+            let origin = super::evidence_origin::exact_read(
+                &write,
+                loupist_id,
+                &revision,
+                delivery.2.as_deref(),
+                world_text,
+            );
+            Ok((delivery, origin))
         })?;
     Ok((
         text,
@@ -1320,6 +1335,7 @@ pub(in crate::commands) fn host_prepare_read(
             object_id,
             title,
             payload,
+            evidence_origin: Some(evidence_origin),
         },
     ))
 }
@@ -1584,7 +1600,8 @@ fn source_overlay(payload: &serde_json::Value, span_id: &str) -> Option<SourceOv
         .origin_locator
         .as_deref()
         .filter(|origin| !origin.trim().is_empty())
-        .unwrap_or(&source.provider_identity);
+        .and_then(crate::chat::local_files::origin_label)
+        .unwrap_or_else(|| source.provider_identity.clone());
     let attribution = if origin == source.provider_identity {
         format!("{} — {}", source.title, origin)
     } else {

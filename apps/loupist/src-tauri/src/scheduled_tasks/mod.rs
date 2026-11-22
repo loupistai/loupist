@@ -307,7 +307,10 @@ impl ScheduledSupervisor {
             return if !manual
                 && matches!(
                     error.code.as_str(),
-                    "conflict" | "maintenance_active" | "loupist_storage_unavailable"
+                    "conflict"
+                        | "memory_busy"
+                        | "maintenance_active"
+                        | "loupist_storage_unavailable"
                 ) {
                 Ok(None)
             } else {
@@ -375,13 +378,7 @@ impl ScheduledSupervisor {
                 Err(error) => {
                     let finished = state
                         .store
-                        .scheduled_task_finish(
-                            loupist_id,
-                            &run_id,
-                            RunStatus::Failed,
-                            Some(&bounded_error(&error.message)),
-                            now_ms(),
-                        )
+                        .scheduled_task_failed_to_start(loupist_id, &run_id, &error, now_ms())
                         .map_err(map_store)?;
                     if let Ok(mut live) = self.inner.live.lock() {
                         live.remove(&run_id);
@@ -431,13 +428,7 @@ impl ScheduledSupervisor {
             }
             let finished = state
                 .store
-                .scheduled_task_finish(
-                    loupist_id,
-                    &run_id,
-                    RunStatus::Failed,
-                    Some(&bounded_error(&error.message)),
-                    now_ms(),
-                )
+                .scheduled_task_failed_to_start(loupist_id, &run_id, &error, now_ms())
                 .map_err(map_store)?;
             crate::briefings::desktop::completed(state, &finished);
             // A claimed run is a durable receipt, including admission failure.
@@ -459,19 +450,44 @@ impl ScheduledSupervisor {
         let baseline_id = run.run_id.clone();
         #[allow(unused_mut)]
         let mut sink = ChatEventSink::new(move |event| {
-            let terminal = match &event {
-                ChatStreamEvent::Completed { .. } => Some((RunStatus::Succeeded, None)),
-                ChatStreamEvent::Aborted { .. } => Some((
-                    RunStatus::Interrupted,
-                    Some(
-                        if *completion_state.scheduled.inner.stop.borrow() {
-                            APP_QUIT
-                        } else {
-                            USER_STOPPED
-                        }
-                        .to_owned(),
-                    ),
-                )),
+            let outcome = match &event {
+                ChatStreamEvent::Completed {
+                    final_text,
+                    message_id,
+                    memory_save_skip,
+                    discarded_memory_items,
+                    ..
+                } => Some(crate::store::bounded_chat_save(|| {
+                    store.complete_scheduled_chat(
+                        &binding.loupist_id,
+                        &binding.run_id,
+                        final_text,
+                        message_id,
+                        memory_save_skip.map(|reason| {
+                            (
+                                reason,
+                                discarded_memory_items.as_deref().unwrap_or_default(),
+                            )
+                        }),
+                        now_ms(),
+                    )
+                })),
+                ChatStreamEvent::Aborted { .. } => {
+                    let reason = if *completion_state.scheduled.inner.stop.borrow() {
+                        APP_QUIT
+                    } else {
+                        USER_STOPPED
+                    };
+                    Some(crate::store::bounded_chat_save(|| {
+                        store.scheduled_task_finish(
+                            &binding.loupist_id,
+                            &binding.run_id,
+                            RunStatus::Interrupted,
+                            Some(reason),
+                            now_ms(),
+                        )
+                    }))
+                }
                 ChatStreamEvent::Error {
                     message,
                     failure_kind,
@@ -486,38 +502,25 @@ impl ScheduledSupervisor {
                         }
                         _ => bounded_error(message),
                     };
-                    Some((RunStatus::Failed, Some(error)))
+                    Some(crate::store::bounded_chat_save(|| {
+                        store.scheduled_task_finish(
+                            &binding.loupist_id,
+                            &binding.run_id,
+                            RunStatus::Failed,
+                            Some(&error),
+                            now_ms(),
+                        )
+                    }))
                 }
                 _ => None,
             };
-            if let ChatStreamEvent::Completed {
-                final_text,
-                message_id,
-                ..
-            } = &event
-            {
-                if store
-                    .scheduled_run_result(
-                        &binding.loupist_id,
-                        &binding.run_id,
-                        final_text,
-                        message_id,
-                    )
-                    .is_err()
-                {
-                    eprintln!("Scheduled Chat summary could not be recorded");
-                }
-            }
-            if let Some((status, error)) = &terminal {
-                match store.scheduled_task_finish(
-                    &binding.loupist_id,
-                    &binding.run_id,
-                    *status,
-                    error.as_deref(),
-                    now_ms(),
-                ) {
+            let terminal = outcome.is_some();
+            if let Some(outcome) = outcome {
+                match outcome {
                     Ok(finished) => {
-                        crate::briefings::desktop::completed(&completion_state, &finished)
+                        crate::store::bounded_chat_save(|| {
+                            crate::briefings::desktop::completed(&completion_state, &finished)
+                        });
                     }
                     Err(_) => eprintln!("Scheduled Chat completion could not be recorded"),
                 }
@@ -534,7 +537,7 @@ impl ScheduledSupervisor {
                             current.subscriber = None;
                         }
                     }
-                    if terminal.is_some() {
+                    if terminal {
                         live.remove(&binding.run_id);
                         inner.changed.notify_one();
                     }

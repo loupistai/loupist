@@ -24,7 +24,7 @@ pub(crate) fn list(state: &AppState, scope: &ConfigScope) -> Result<SkillCatalog
     skills::catalog(
         &state.artifacts.app_data_dir,
         project.and_then(Path::parent),
-        config,
+        super::configuration::present(state, config)?,
     )
 }
 fn find(state: &AppState, scope: &ConfigScope, key: &str) -> Result<ManagedSkill, CommandError> {
@@ -97,6 +97,9 @@ pub fn skills_read(
     request: SkillReadRequest,
     state: State<'_, AppState>,
 ) -> Result<SkillDocument, CommandError> {
+    if !crate::agent_harness::bundled_skill_available(&request.key) {
+        crate::extension_availability::require_user_skills()?;
+    }
     skills::document(find(&state, &request.scope, &request.key)?)
 }
 #[tauri::command]
@@ -104,6 +107,7 @@ pub fn skills_create(
     request: SkillCreateRequest,
     state: State<'_, AppState>,
 ) -> Result<SkillCatalog, CommandError> {
+    crate::extension_availability::require_user_skills()?;
     let _activity = state
         .maintenance
         .admit_kind(crate::runs::maintenance::MaintenanceActivityKind::LoupistMutation)?;
@@ -120,6 +124,7 @@ pub fn skills_save(
     request: SkillSaveRequest,
     state: State<'_, AppState>,
 ) -> Result<SkillCatalog, CommandError> {
+    crate::extension_availability::require_user_skills()?;
     let _activity = state
         .maintenance
         .admit_kind(crate::runs::maintenance::MaintenanceActivityKind::LoupistMutation)?;
@@ -136,6 +141,7 @@ pub fn skills_delete(
     request: SkillDeleteRequest,
     state: State<'_, AppState>,
 ) -> Result<SkillCatalog, CommandError> {
+    crate::extension_availability::require_user_skills()?;
     let _activity = state
         .maintenance
         .admit_kind(crate::runs::maintenance::MaintenanceActivityKind::LoupistMutation)?;
@@ -150,6 +156,7 @@ pub fn skills_reveal(
     request: SkillReadRequest,
     state: State<'_, AppState>,
 ) -> Result<(), CommandError> {
+    crate::extension_availability::require_user_skills()?;
     let skill = find(&state, &request.scope, &request.key)?;
     let path = skill
         .path
@@ -166,6 +173,7 @@ pub async fn skills_import(
     request: SkillImportRequest,
     state: State<'_, AppState>,
 ) -> Result<Option<SkillCatalog>, CommandError> {
+    crate::extension_availability::require_user_skills()?;
     let _activity = state
         .maintenance
         .admit_kind(crate::runs::maintenance::MaintenanceActivityKind::LoupistMutation)?;
@@ -215,4 +223,37 @@ pub async fn skills_import(
     }
     skills::install(&root, package)?;
     list(&state, &request.scope).map(Some)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tauri::Manager;
+
+    #[test]
+    fn stale_skill_commands_refuse_user_entries_but_allow_bundled_reads() {
+        let directory = tempfile::tempdir().unwrap();
+        let app = tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        assert!(app.manage(AppState::for_folder_test(directory.path().to_path_buf())));
+        crate::extension_availability::with_test_flags(false, true, || {
+            let request = |key: &str| SkillReadRequest {
+                scope: ConfigScope::Global,
+                key: key.into(),
+            };
+            let refused = skills_read(request("personal"), app.state()).err().unwrap();
+            assert_eq!(refused.code, crate::app::CommandErrorCode::SkillUnavailable);
+            assert!(skills_read(request("skill-creator"), app.state()).is_err());
+            assert!(skills_read(request("valuation"), app.state()).is_ok());
+            let catalog = skills_list(
+                ConfigReadRequest {
+                    scope: ConfigScope::Global,
+                },
+                app.state(),
+            )
+            .unwrap();
+            assert!(catalog.skills.iter().all(|skill| skill.source == "bundled"));
+        });
+    }
 }

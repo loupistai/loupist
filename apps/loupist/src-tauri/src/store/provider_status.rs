@@ -382,6 +382,11 @@ impl SqliteStore {
             "DELETE FROM model_notice WHERE id = 1 AND notice_id = ?1",
             [id],
         )?;
+        connection.execute(
+            "UPDATE app_settings SET data_json = json_set(data_json, '$.pending', NULL)
+             WHERE id GLOB 'default_model:*' AND json_extract(data_json, '$.pending.id') = ?1",
+            [id],
+        )?;
         Ok(())
     }
 }

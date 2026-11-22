@@ -288,3 +288,17 @@ pub fn reset(
     event.insert(tx)?;
     Ok(plan.counts)
 }
+
+pub(crate) fn reset_since(
+    tx: &rusqlite::Connection,
+    loupist: &str,
+    turn_started_at_ms: i64,
+) -> rusqlite::Result<bool> {
+    tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM knowledge_growth_events
+         WHERE loupist_id=?1 AND at_ms>=?2 AND kind='lens_archived'
+           AND json_extract(origin, '$.kind')='memory_reset')",
+        rusqlite::params![loupist, turn_started_at_ms],
+        |row| row.get(0),
+    )
+}

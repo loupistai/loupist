@@ -9,11 +9,11 @@ function View({ bridge, loupists }: { bridge: MockLoupistBridge; loupists: Loupi
   const [scope, setScope] = useState<ConfigScope>({ kind: "global" });
   return <SkillsSettings bridge={bridge} loupists={loupists} scope={scope} onScopeChange={setScope} />;
 }
-async function setup() { const bridge = new MockLoupistBridge({ delay_ms: 0 }); const loupists = await bridge.loupistList(); render(<View bridge={bridge} loupists={loupists} />); await screen.findByRole("switch", { name: "Skill Creator: disabled" }); return { bridge, user: userEvent.setup() }; }
+async function setup() { const bridge = new MockLoupistBridge({ delay_ms: 0, userSkillsAvailable: true }); const loupists = await bridge.loupistList(); render(<View bridge={bridge} loupists={loupists} />); await screen.findByRole("switch", { name: "Skill Creator: disabled" }); return { bridge, user: userEvent.setup() }; }
 
 describe("Skills management", () => {
   it("replaces loading with an error and recovers through Reload", async () => {
-    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const bridge = new MockLoupistBridge({ delay_ms: 0, userSkillsAvailable: true });
     const read = vi.spyOn(bridge, "skillsList").mockRejectedValueOnce(new Error("Could not load skills."));
     render(<View bridge={bridge} loupists={await bridge.loupistList()} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not load skills.");
@@ -85,7 +85,7 @@ describe("Skills management", () => {
 });
 
 it("translates bundled Skill metadata while preserving personal Skill content", async () => {
-  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const bridge = new MockLoupistBridge({ delay_ms: 0, userSkillsAvailable: true });
   const scope = { kind: "global" } as const;
   await bridge.skillsCreate({ scope, name: "My research", description: "Keep this description in English.", instructions: "User instructions stay unchanged." });
   render(<View bridge={bridge} loupists={await bridge.loupistList()} />);
@@ -101,7 +101,7 @@ it("translates bundled Skill metadata while preserving personal Skill content", 
 });
 
 it("lists a bundled Skill by its short line for people and keeps the full description for its detail", async () => {
-  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const bridge = new MockLoupistBridge({ delay_ms: 0, userSkillsAvailable: true });
   render(<View bridge={bridge} loupists={await bridge.loupistList()} />);
   await screen.findByRole("switch", { name: "Skill Creator: disabled" });
   const blurb = i18n.t("chat:skillBlurb.dividend-income");
@@ -112,7 +112,7 @@ it("lists a bundled Skill by its short line for people and keeps the full descri
 });
 
 it("shows a bundled Skill's description once, its instructions, and its files behind the shared disclosure", async () => {
-  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const bridge = new MockLoupistBridge({ delay_ms: 0, userSkillsAvailable: true });
   render(<View bridge={bridge} loupists={await bridge.loupistList()} />);
   await screen.findByRole("switch", { name: "Skill Creator: disabled" });
   const user = userEvent.setup();

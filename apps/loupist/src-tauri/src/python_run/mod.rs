@@ -13,6 +13,8 @@
 //! quota beyond these copy bounds and the parent's kill. Live host
 //! directories are never writable preopens.
 
+pub(crate) mod workbook;
+
 #[cfg(unix)]
 mod snapshot;
 

@@ -1,4 +1,5 @@
 import i18n, { useTranslation } from "@/i18n";
+import { APP_DESTINATIONS } from "../../app/navigation";
 import { SHORTCUTS, isMacPlatform, shortcutKeys } from "../../app/shortcuts";
 
 /** Settings › Keyboard: every shortcut the app handles, read from the same table as the handlers. Not editable in v1. */
@@ -13,8 +14,8 @@ export function KeyboardSettings() {
     <table className="keyboard-table">
       <thead><tr><th scope="col">{i18n.t("settings:keyboard.action")}</th><th scope="col">{i18n.t("settings:keyboard.keys")}</th></tr></thead>
       <tbody>
-        {SHORTCUTS.map((shortcut) => <tr key={shortcut.id}>
-          <td>{i18n.t(`settings:keyboard.actions.${shortcut.id}`)}</td>
+        {SHORTCUTS.filter(shortcut => shortcutKeys(shortcut, mac)).map((shortcut) => <tr key={shortcut.id}>
+          <td>{shortcut.id === "tabs" ? APP_DESTINATIONS.map(destination => destination.label).join(" · ") : i18n.t(`settings:keyboard.actions.${shortcut.id}`)}</td>
           <td>{shortcutKeys(shortcut, mac).split(" · ").map((keys, index) => <span key={keys}>{index ? " · " : null}<kbd>{keys}</kbd></span>)}</td>
         </tr>)}
       </tbody>

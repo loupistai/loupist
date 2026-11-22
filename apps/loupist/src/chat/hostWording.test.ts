@@ -17,12 +17,12 @@ describe("text the renderer chooses around host steps", () => {
     await act(async () => { await i18n.changeLanguage("ko"); });
     // A host market-data read is not the web; the Map and Lens are named in the interface language.
     expect(sourceIdentityLabel(snapshot)).toBe("시장 데이터");
-    expect(sourceIdentityLabel({ ...snapshot, tool_name: "world_read" })).toBe("지도");
+    expect(sourceIdentityLabel({ ...snapshot, tool_name: "world_read" })).toBe("월드");
     expect(sourceIdentityLabel({ ...snapshot, tool_name: "web_fetch" })).toBe("웹");
     expect(sourceIdentityLabel({ ...snapshot, tool_name: "asset_lookup", provider: "openfigi.lookup" })).toBe("자산 검색");
     // The host's record kind ("Source") is never shown as English.
     expect(memoryChangeVerb({ operation: "create", kind: "Source" })).toBe("만든 자료");
-    expect(memoryChangeVerb({ operation: "create", kind: "World" })).toBe("만든 지도 항목");
+    expect(memoryChangeVerb({ operation: "create", kind: "World" })).toBe("만든 월드 항목");
     // A quote's field has a label, and a percent field stays a percent.
     const check = { link_index: 0, text: "156.14", evidence_id: "ev", kind: "data", status: "matched",
       fields: [{ key: "last", value: "156.14", matched: true }, { key: "below_52w_high_pct", value: "-35.8" }] } as NumberCheck;

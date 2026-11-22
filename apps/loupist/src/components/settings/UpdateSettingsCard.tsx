@@ -51,6 +51,7 @@ const blockerLabel = (kind: string) => {
     case "loupist_deletion": return i18n.t("settings:updateSettingsCard.blockers.loupistDeletion");
     case "marketplace_configuration": return i18n.t("settings:updateSettingsCard.blockers.connectionSettings");
     case "marketplace_credential": return i18n.t("settings:updateSettingsCard.blockers.connectionCredentials");
+    case "keychain_mutation": return i18n.t("settings:updateSettingsCard.blockers.keychainMutation");
     case "provider_inference": return i18n.t("settings:updateSettingsCard.blockers.modelWork");
     case "provider_support": return i18n.t("settings:updateSettingsCard.blockers.modelConnection");
     case "graph": return i18n.t("settings:updateSettingsCard.blockers.map");

@@ -8,9 +8,27 @@ use crate::{
     app::{AppState, CommandError},
     commands::assets::wire::AssetLookupCandidate,
     finance_credentials::{self, ActiveCredentialBundle, FinanceCredentialError},
+    keychain_operation::KeychainError,
 };
 
 use http::{Clock, Endpoint, Https, Limiter, RuntimeClock, Transport, DEADLINE};
+
+/// The published equity list includes two distinct venues with code TT.
+pub(crate) fn exchange_name(code: &str) -> Option<&'static str> {
+    #[derive(serde::Deserialize)]
+    struct Directory {
+        exchanges: std::collections::BTreeMap<String, Vec<(String, Option<String>)>>,
+    }
+    static DIRECTORY: OnceLock<Directory> = OnceLock::new();
+    let directory = DIRECTORY.get_or_init(|| {
+        serde_json::from_str(include_str!("equity-exchanges.json"))
+            .expect("bundled OpenFIGI exchanges")
+    });
+    match directory.exchanges.get(code)?.as_slice() {
+        [(name, _)] => Some(name),
+        _ => None,
+    }
+}
 
 pub(crate) const SOURCE_ID: &str = "openfigi.lookup";
 
@@ -20,6 +38,7 @@ enum LookupStatus {
     GrantOff,
     CredentialLocked,
     CredentialUnavailable,
+    Keychain(KeychainError),
     InvalidKey,
     Unavailable,
     Timeout,
@@ -41,6 +60,7 @@ impl From<LookupStatus> for CommandError {
                 "credential_unavailable",
                 "Asset lookup credential unavailable.",
             ),
+            LookupStatus::Keychain(error) => error.command_error(),
             LookupStatus::InvalidKey => {
                 Self::new("credential_rejected", "OpenFIGI rejected the key.")
             }
@@ -75,30 +95,51 @@ impl Authority {
     }
 }
 
+fn grant_revision(state: &AppState, loupist_id: &str) -> Result<i64, LookupStatus> {
+    state
+        .ensure_loupist_available(loupist_id)
+        .map_err(|_| LookupStatus::GrantOff)?;
+    let binding = crate::marketplace::loupist_binding(state, loupist_id, SOURCE_ID)
+        .map_err(|_| LookupStatus::GrantOff)?
+        .ok_or(LookupStatus::GrantOff)?;
+    if !binding.enabled || !crate::commands::binding_grants_execute(&binding) {
+        return Err(LookupStatus::GrantOff);
+    }
+    Ok(binding.updated_at_ms)
+}
+
 async fn authority(state: &AppState, loupist_id: &str) -> Result<Authority, LookupStatus> {
     let state = state.clone();
     let loupist_id = loupist_id.to_owned();
     tokio::task::spawn_blocking(move || {
-        let _guard = crate::marketplace::connector_lifecycle_lock()
+        crate::marketplace::reconcile_credential_presence(&state)
             .map_err(|_| LookupStatus::Unavailable)?;
-        state
-            .ensure_loupist_available(&loupist_id)
-            .map_err(|_| LookupStatus::GrantOff)?;
-        let binding = crate::marketplace::loupist_binding(&state, &loupist_id, SOURCE_ID)
-            .map_err(|_| LookupStatus::GrantOff)?
-            .ok_or(LookupStatus::GrantOff)?;
-        if !binding.enabled || !crate::commands::binding_grants_execute(&binding) {
-            return Err(LookupStatus::GrantOff);
+        let revision = {
+            let _guard = crate::marketplace::connector_lifecycle_lock()
+                .map_err(|_| LookupStatus::Unavailable)?;
+            grant_revision(&state, &loupist_id)?
+        };
+        if finance_credentials::status_recovery(&state, SOURCE_ID)
+            == Some(finance_credentials::StatusRecovery::PresenceUnavailable)
+        {
+            return Err(LookupStatus::CredentialUnavailable);
         }
         let key =
-            finance_credentials::lookup_key(&state.credential_environment).map_err(|error| {
-                match error {
-                    FinanceCredentialError::Locked => LookupStatus::CredentialLocked,
-                    _ => LookupStatus::CredentialUnavailable,
+            finance_credentials::get_for_state(&state, SOURCE_ID).map_err(|error| match error {
+                FinanceCredentialError::Locked => LookupStatus::CredentialLocked,
+                FinanceCredentialError::Busy => LookupStatus::Keychain(KeychainError::Busy),
+                FinanceCredentialError::Unavailable => {
+                    LookupStatus::Keychain(KeychainError::Unavailable)
                 }
+                _ => LookupStatus::CredentialUnavailable,
             })?;
+        let _guard = crate::marketplace::connector_lifecycle_lock()
+            .map_err(|_| LookupStatus::Unavailable)?;
+        if grant_revision(&state, &loupist_id)? != revision {
+            return Err(LookupStatus::Cancelled);
+        }
         Ok(Authority {
-            grant_revision: binding.updated_at_ms,
+            grant_revision: revision,
             key,
         })
     })
@@ -119,38 +160,42 @@ impl<T: Transport, C: Clock> Lookup<T, C> {
         loupist_id: &str,
         search: response::Search<'_>,
     ) -> Result<Vec<AssetLookupCandidate>, LookupStatus> {
+        let before = authority(state, loupist_id).await?;
+        let grant = before.grant_revision;
+        let revision = before.key_revision().map(str::to_owned);
+        let key = before
+            .key
+            .as_ref()
+            .map(|key| {
+                key.get("api_key")
+                    .ok_or(LookupStatus::CredentialUnavailable)
+            })
+            .transpose()?;
+        let endpoint = Endpoint::Search;
+        let request = http::request(endpoint, &search, key)?;
+        let lease = self
+            .limiter
+            .dispatch(endpoint, key.is_some(), self.clock.now())?;
+        drop(before);
         let deadline = self.clock.now() + DEADLINE;
-        let operation = async {
-            let before = authority(state, loupist_id).await?;
-            let key = before
-                .key
-                .as_ref()
-                .map(|key| {
-                    key.get("api_key")
-                        .ok_or(LookupStatus::CredentialUnavailable)
-                })
-                .transpose()?;
-            let endpoint = Endpoint::Search;
-            let request = http::request(endpoint, &search, key)?;
-            let lease = self
-                .limiter
-                .dispatch(endpoint, key.is_some(), self.clock.now())?;
-            let reply = self.transport.send(request).await?;
-            let status = self.limiter.observe(lease, &reply, self.clock.now());
-            let after = authority(state, loupist_id)
-                .await
-                .map_err(|_| LookupStatus::Cancelled)?;
-            if before.grant_revision != after.grant_revision
-                || before.key_revision() != after.key_revision()
-            {
-                return Err(LookupStatus::Cancelled);
-            }
-            status?;
-            response::decode(search.query, &reply.body)
-        };
-        tokio::time::timeout_at(deadline, operation)
+        let reply = tokio::time::timeout_at(deadline, self.transport.send(request))
             .await
-            .map_err(|_| LookupStatus::Timeout)?
+            .map_err(|_| LookupStatus::Timeout)??;
+        let status = self.limiter.observe(lease, &reply, self.clock.now());
+        // A Keychain change outside Loupist does not update the host projection.
+        // Recheck the actual item before releasing a response from the old key.
+        let after = authority(state, loupist_id)
+            .await
+            .map_err(|error| match error {
+                LookupStatus::Keychain(_) => error,
+                _ => LookupStatus::Cancelled,
+            })?;
+        if grant != after.grant_revision || revision.as_deref() != after.key_revision() {
+            return Err(LookupStatus::Cancelled);
+        }
+        drop(after);
+        status?;
+        response::decode(search.query, &reply.body)
     }
 }
 

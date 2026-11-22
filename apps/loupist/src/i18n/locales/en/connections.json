@@ -1,4 +1,13 @@
 {
+  "savedKeyPermission": {
+    "cancel": "Cancel",
+    "notice": "Loupist was updated and needs macOS permission to use your {{count}} saved keys. macOS asks once for each: choose Always Allow.",
+    "allow": "Allow access",
+    "progress": "{{settled}} of {{total}}",
+    "closePrompt": "Close the open macOS prompt to finish cancelling.",
+    "denied": "macOS did not allow this key.",
+    "error": "Could not check all saved keys. Try again."
+  },
   "marketplaceCard": {
     "preview": "Preview",
     "noApiKeyRequired": "No API key required",
@@ -15,17 +24,22 @@
     "continueEntry": "Continue setting up {{name}}",
     "setupEntry": "Set up {{name}}",
     "contactEmailOnly": "Contact email only",
-    "lockedExplanation": "After each update, macOS asks once for your login password before Loupist can use a saved key, because this Beta is not signed with an Apple Developer ID. Choose “Always Allow” and it stops asking until the next update.",
+    "lockedExplanation": "macOS has not allowed Loupist to use this saved key yet. Choose Always Allow when macOS asks, then check again.",
+    "checkSavedKey": "Check saved key",
+    "checkSavedKeyEntry": "Check the saved key for {{name}}",
+    "checkSavedKeyDetail": "This connection has a saved key. macOS may ask for permission.",
+    "checkSavedKeyUnknownDetail": "Check whether this connection has a saved key.",
+    "couldNotCheckSavedKey": "Could not check whether this connection has a saved key.",
+    "keychainBusy": "A saved-key operation is still waiting for macOS. Try again in a moment.",
+    "keychainUnavailable": "The Keychain did not respond in time. Try again once macOS is ready.",
     "tryAgain": "Try again",
     "tryAgainEntry": "Try again for {{name}}",
-    "stillLocked": "macOS did not allow access. Try again and enter your login password.",
     "offFor": "Off for {{loupist}}",
     "brokerageRequired": "Brokerage account required",
     "freeTierRequiresCard": "Free tier requires a card"
   },
   "marketplaceSetupDialog": {
     "couldNotDeleteTheSavedCredentialsTryAgain": "Could not delete the saved credentials. Try again.",
-    "couldNotOpenTheSetupGuide": "Could not open the setup guide.",
     "connectionUnavailable": "Connection unavailable",
     "noSetupNeededChooseWhichLoupistsCanUse": "No setup needed. Choose which Loupists can use this connection in Loupist settings.",
     "setupHelp": "Setup help",
@@ -99,7 +113,6 @@
     "couldNotSaveSetup": "Could not save setup",
     "credentialsDeleted": "Credentials deleted",
     "couldNotDeleteCredentials": "Could not delete credentials",
-    "couldNotOpenSetupGuide": "Could not open setup guide",
     "searchRouting": "Search routing",
     "connectionSettings": "Connection settings",
     "automaticChoosesAnAvailableSearchServiceForYour": "Automatic chooses an available search service for your model.",

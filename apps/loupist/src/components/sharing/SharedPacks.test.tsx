@@ -32,7 +32,7 @@ it("checks once when the section opens and applies only the chosen part of an up
   const edited = within(update).getByRole("checkbox", { name: /Read the filing before the headline\./ });
   expect(edited).not.toBeChecked();
   expect(within(update).getByText("Capex cycle reading")).toBeVisible();
-  expect(within(update).getByRole("checkbox", { name: "Map: +48 names · +130 relationships · 6 withdrawn" })).toBeChecked();
+  expect(within(update).getByRole("checkbox", { name: "World: +48 names · +130 relationships · 6 withdrawn" })).toBeChecked();
 
   // Theirs beside yours; "Use theirs" chooses it.
   const row = edited.closest("li") as HTMLElement;

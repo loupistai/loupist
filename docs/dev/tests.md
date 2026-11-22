@@ -34,6 +34,13 @@ Use [Which tool](../../apps/loupist/e2e/README.md#which-tool) for window behavio
 The [eval guide](../../apps/loupist/evals/README.md) owns credential-free
 Pi contracts and separately authorized live calls.
 
+### Process lease fixtures
+
+The orphan-recovery test opens a real process lease and ends its owning subprocess
+without cleanup. Linux sends SIGKILL to the helper. macOS uses an immediate exit
+without running destructors. Reaping the helper has a deadline so a stalled exit
+produces a test failure and releases the test runner.
+
 ### World extraction fixtures
 
 World extraction golden tests replay frozen prompt and response-schema fixtures
@@ -46,8 +53,8 @@ model replies and real local embeddings.
 ### Search recall
 
 `src-tauri/src/knowledge/tests/search_recall.rs` runs a synthetic corpus of
-English and Korean Sources and an English Map (`search_recall.json`) through
-knowledge search and the Map index with the staged embedding model, the one the
+English and Korean Sources and an English World snapshot (`search_recall.json`) through
+knowledge search and the World index with the staged embedding model, the one the
 app ships. Its 112 queries go Korean to English, English to Korean and within
 each language; the test reports recall@5 and MRR per query kind and path, and
 fails below the floors recorded for blink-multilingual-64M with rank fusion. To
@@ -107,8 +114,8 @@ assignable to the generated request (`apps/loupist/src/bridge/tauriBridge.ts`).
 New wire types use `#[serde(rename_all = "camelCase")]`. Existing snake_case fields
 stay: stored rows and `json_extract` paths read their serde names. Event names live
 in `apps/loupist/src-tauri/src/events.rs` and `src/bridge/events.ts`;
-`src/bridge/events.test.ts` checks that every `emit` names a registry entry and the
-renderer subscribes to each one. `CommandError.code` is `CommandErrorCode`
+`src/bridge/events.test.ts` checks that both broadcast and targeted emits name a
+registry entry and the renderer subscribes to each one. `CommandError.code` is `CommandErrorCode`
 (`src-tauri/src/app/error_code.rs`), generated as a union; read it with
 `commandErrorCode` from `src/lib/errors.ts`, throw it from mocks with
 `src/bridge/mock/commandError.ts`, and list a new code there before returning it

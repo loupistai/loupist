@@ -317,3 +317,9 @@ article[data-source-id][tabindex="-1"]:focus { outline: none; }
 .journal-inspector .research-document-head h2 { font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-body); }
 .map-swatch.is-journal { width: 12px; height: 12px; border: 2px solid var(--gg-color-text-primary); border-radius: 50%; background: transparent; }
 @container memory-library (max-width: 300px) { .journal-form-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.saved-passage-table { max-width: 100%; overflow-x: auto; white-space: nowrap; }
+.saved-passage-table table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.saved-passage-table :is(th, td) { white-space: nowrap; overflow-wrap: normal; padding: var(--gg-space-1) var(--gg-space-2); text-align: start; border-bottom: 1px solid var(--gg-color-border-subtle); }
+.saved-source-data caption { text-align: start; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); padding-block-end: var(--gg-space-2); }
+.saved-passage-table table[data-aligned] { font-family: var(--gg-font-mono); }

@@ -6,7 +6,7 @@ import type { ConnectSheetTarget } from "../components/settings/ConnectSheet";
 import type { LoupistUIMessage } from "../chat/ai-sdk";
 import type { RecoveredChatRun } from "../chat/loupistRunRegistry";
 import { chatSessionKey, type HostedWatchPhase } from "../chat/sessionRegistry";
-import { resolveConfiguredModelRunSelection } from "../lib/modelSelection";
+import { modelRunSelection, resolveExplicitSelection } from "../lib/modelSelection";
 import type { ChatArtifactRef, ChatThread, LoupistBridge, LoupistSummary, ModelRunSelection } from "../types";
 import type { ChatDraft, useChatDrafts } from "./useChatDrafts";
 import type { useChatSessions } from "./useChatSessions";
@@ -61,14 +61,9 @@ export function useChatViewModel({
   refreshKnowledge, onOpenModelSettings, onOpenChatPreferences, onOpenFollowing,
 }: ChatViewModelInput): ComponentProps<typeof ChatView> | null {
   const selectedLoupistId = selectedLoupist?.id ?? null;
-  const surface = threads.find((thread) => thread.id === effectiveThreadId)?.home ? "bot" : "session";
-  const modelSelection = resolveConfiguredModelRunSelection(
-    model.catalog,
-    selectedLoupist ? model.selections[selectedLoupist.id] : undefined,
-    configuration.snapshot?.effective.chat,
-    selectedLoupist?.last_model_profile_id,
-    surface,
-  );
+  const chosen = selectedLoupistId ? model.selections[selectedLoupistId] : undefined;
+  const resolved = configuration.snapshot?.modelSelection ?? model.catalog?.default_selection;
+  const modelSelection = chosen ? resolveExplicitSelection(model.catalog, chosen) : modelRunSelection(resolved);
   const { createThreadForLoupist } = threadActions;
   const { adopt } = drafts;
   const createThread = useCallback(
@@ -94,7 +89,7 @@ export function useChatViewModel({
   const { recordLastModel } = loupist;
   const recordSelectedModel = useCallback(
     (selection: ModelRunSelection) => {
-      // An Auto send names no model; Rust records what it resolved in the answer.
+      // Rust records the model it resolved for an unset request.
       if (!selectedLoupistId || !selection.model_profile_id) return;
       recordLastModel(selectedLoupistId, selection.model_profile_id);
     },
@@ -147,13 +142,13 @@ export function useChatViewModel({
   if (!selectedLoupist || !activeChat) return null;
   const loupistId = selectedLoupist.id;
   const { snapshot } = configuration;
-  const chosen = model.selections[loupistId];
   return {
     active,
     theme,
     bridge,
     chat: activeChat,
     recoveredRun: recoveredChat,
+    onWaitForMemory: runRegistry?.waitForMemory,
     loupist: selectedLoupist,
     threads,
     setThreads: setVisibleThreads,
@@ -165,19 +160,24 @@ export function useChatViewModel({
     skillPreferences: snapshot?.effective.skills,
     memoryDefaults: snapshot?.effective.chat,
     configurationReady: Boolean(snapshot) && !configuration.error && !snapshot?.diagnostics.length,
-    configurationError: configuration.error ?? (snapshot?.diagnostics.length ? i18n.t("app:app.correctTheConfigurationFileInSettingsChat") : snapshot && model.catalog?.models.length && !modelSelection.model_profile_id && !chosen ? i18n.t("app:app.theConfiguredChatDefaultsAreUnavailableFor") : undefined),
+    configurationError: configuration.error ?? (snapshot?.diagnostics.length ? i18n.t("app:app.correctTheConfigurationFileInSettingsChat") : snapshot && resolved?.unavailable_reason && resolved.unavailable_reason !== "no_connected_account" && !chosen ? i18n.t("app:app.theConfiguredChatDefaultsAreUnavailableFor") : undefined),
     onModelSelectionChange: changeSelectedModel,
-    modelAuto: !chosen,
-    onModelResetToAuto: () => model.resetSelection(loupistId),
+    modelName: chosen ? undefined : resolved?.model?.name,
+    modelIsDefault: !chosen && Boolean(resolved?.is_default),
+    noAccount: resolved && resolved.unavailable_reason === "no_connected_account",
+    onChooseDefault: () => model.resetSelection(loupistId),
     onModelUsed: recordSelectedModel,
     onResolveModelSelection: async () => {
       const next = await configuration.reload();
       if (!next || next.diagnostics.length) throw new Error(i18n.t("app:app.correctTheConfigurationFileBeforeSending"));
       const catalog = model.catalog ? { ...model.catalog, hidden_model_profile_ids: next.effective.models.hidden_model_profile_ids } : null;
-      // Nothing chosen here and no Chat default: Rust resolves Auto at admission (W17.5) and applies
-      // the configured reasoning and run options where the model it picks supports them.
-      if (!model.selections[loupistId] && !next.effective.chat.model_profile_id) return { model_profile_id: "", thinking_level: surface === "bot" ? "" : next.effective.chat.thinking_level ?? "", run_options: { ...next.effective.chat.run_options }, auto: true, memoryDefaults: next.effective.chat };
-      return { ...resolveConfiguredModelRunSelection(catalog, model.selections[loupistId], next.effective.chat, selectedLoupist.last_model_profile_id, surface), memoryDefaults: next.effective.chat };
+      const override = model.selections[loupistId];
+      if (override) return { ...resolveExplicitSelection(catalog, override), memoryDefaults: next.effective.chat };
+      const selection = next.modelSelection;
+      if (selection?.is_default && selection.model) {
+        return { model_profile_id: "", thinking_level: next.effective.chat.thinking_level ?? "", run_options: { ...next.effective.chat.run_options }, auto: true, memoryDefaults: next.effective.chat };
+      }
+      return { ...modelRunSelection(selection), memoryDefaults: next.effective.chat };
     },
     selectedArtifact: effectiveChatKey ? workspace.selectedArtifacts[effectiveChatKey] : undefined,
     onClearSelectedArtifact: () => { if (effectiveChatKey) workspace.selectArtifactForChat(effectiveChatKey); },
@@ -202,9 +202,9 @@ export function useChatViewModel({
     onTurnComplete: refreshKnowledge,
     modelSetupMessage: model.needsVisibleModels ? i18n.t("app:app.showOrLoadAModelInSettings") : undefined,
     onOpenModelSettings,
-    modelNotice: model.catalog?.model_notice ?? null,
+    modelNotice: chosen ? null : snapshot?.defaultModelChange,
     onAcknowledgeModelNotice: model.acknowledgeModelNotice,
-    hostAuto: !chosen && !snapshot?.effective.chat.model_profile_id,
+    hostAuto: !chosen && Boolean(resolved?.is_default),
     onOpenChatPreferences: () => onOpenChatPreferences(loupistId),
     onOpenFollowing,
   };

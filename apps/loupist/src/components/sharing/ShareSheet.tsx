@@ -9,6 +9,7 @@ import type {
 } from "../../contracts/sharing";
 import { commandErrorCode, errorMessage } from "../../lib/errors";
 import { Button } from "../ui/button";
+import { ExternalLinkError, useExternalLink } from "../navigation/ExternalLinkError";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, focusDialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { NativeSelect } from "../ui/native-select";
@@ -38,6 +39,7 @@ export function ShareSheet({ bridge, loupistId, loupistName, scope, open, onOpen
   bridge: LoupistBridge; loupistId: string; loupistName: string; scope: ShareScope; open: boolean; onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useTranslation("sharing");
+  const { open: openBrowser, failedUrl, clear: clearBrowserError } = useExternalLink(url => bridge.openExternalUrl(url));
   const ids = { body: useId(), license: useId(), byline: useId(), repo: useId(), reason: useId(), gist: useId() };
   const stepRef = useRef<HTMLDivElement>(null);
   const shownStep = useRef<Step>("options");
@@ -72,6 +74,7 @@ export function ShareSheet({ bridge, loupistId, loupistName, scope, open, onOpen
 
   useEffect(() => {
     if (!open) return;
+    clearBrowserError();
     const scope: ShareScope = scopeKey === "loupist" ? { kind: "loupist" } : { kind: "item", recordId: scopeKey.slice(5) };
     const current = ++generation.current;
     setSummary(null); setAccount(null); setLoadError(null); setSlow(false); setExcluded([]); setAcknowledged([]); setAllFindings(false);
@@ -86,7 +89,7 @@ export function ShareSheet({ bridge, loupistId, loupistName, scope, open, onOpen
       setRepoName(loaded.repo?.fullName.split("/")[1] ?? repoSlug(loaded.loupistName));
     }).catch(cause => { if (current === generation.current) setLoadError(errorMessage(cause, t("scanning"))); });
     return () => { clearTimeout(timer); generation.current += 1; };
-  }, [open, bridge, loupistId, scopeKey, t]);
+  }, [open, bridge, loupistId, scopeKey, t, clearBrowserError]);
 
   const summaryReady = summary !== null;
   useEffect(() => {
@@ -218,7 +221,14 @@ export function ShareSheet({ bridge, loupistId, loupistName, scope, open, onOpen
     if (!account?.login) { startSignIn(next); return; }
     if (next === "gist") void publish({ gist }); else setStep("repo");
   };
-  const signOut = async () => { setAccount(await bridge.githubSignOut()); };
+  const signOut = async () => {
+    setError(null);
+    try {
+      setAccount(await bridge.githubSignOut());
+    } catch (cause) {
+      setError(errorMessage(cause, t("publishOffline")));
+    }
+  };
 
   // "Rule “Trim when…” contains what looks like…": the kind in the app's words and the record's own title, never the matched text.
   const findingText = (finding: ShareFinding) => t(FINDING_KEYS[finding.class], { kind: t(`itemKind.${finding.itemKind}`), item: shortTitle(finding.itemLabel) });
@@ -342,8 +352,9 @@ export function ShareSheet({ bridge, loupistId, loupistName, scope, open, onOpen
               try { await navigator.clipboard.writeText(published.url); setLinkCopied(true); }
               catch { setCopyFailed(true); }
             }}>{t("copyLink")}</Button>
-            <Button variant="ghost" onClick={() => void bridge.openExternalUrl(published.url)}>{t("openGithub")}<ExternalLinkIcon aria-hidden="true" /></Button>
+            <Button variant="ghost" onClick={() => void openBrowser(published.url)}>{t("openGithub")}<ExternalLinkIcon aria-hidden="true" /></Button>
           </div>
+          <ExternalLinkError url={failedUrl === published.url ? failedUrl : null} />
           {copyFailed ? <p className="share-error" role="alert">{t("copyFailed")}</p> : null}
           {linkCopied ? <p className="share-saved" role="status">{t("copied")}</p> : null}
           <Button className="share-primary" onClick={() => onOpenChange(false)}>{i18n.t("connections:marketplaceSetupDialog.done")}</Button>
@@ -389,7 +400,8 @@ export function ShareSheet({ bridge, loupistId, loupistName, scope, open, onOpen
               </NativeSelect>
               {/* The chosen license's name opens its legal text (Rust supplies each allowed license's URL), then one plain line. */}
               {license ? <div className="share-license-about">
-                {licenseUrl ? <Button variant="link" size="sm" className="share-license-link" title={licenseUrl} data-share-license-link onClick={() => void bridge.openExternalUrl(licenseUrl)}>{licenseName(license)}<ExternalLinkIcon aria-hidden="true" /></Button> : null}
+                {licenseUrl ? <Button variant="link" size="sm" className="share-license-link" title={licenseUrl} data-share-license-link onClick={() => void openBrowser(licenseUrl)}>{licenseName(license)}<ExternalLinkIcon aria-hidden="true" /></Button> : null}
+                <ExternalLinkError url={failedUrl === licenseUrl ? failedUrl : null} />
                 <p id={`${ids.license}-summary`} className="share-license-note" data-share-license-summary>{licenseSummary(license)}</p>
               </div> : null}
               {fixedLicense ? <p id={`${ids.license}-fixed`} className="share-left-out">{t("licenseFixed")}</p> : null}
@@ -413,6 +425,7 @@ export function ShareSheet({ bridge, loupistId, loupistName, scope, open, onOpen
  */
 function GalleryListing({ bridge, loupistId, termsUrl }: { bridge: LoupistBridge; loupistId: string; termsUrl: string | null }) {
   const { t } = useTranslation("sharing");
+  const browser = useExternalLink(url => bridge.openExternalUrl(url));
   const id = useId();
   const [listed, setListed] = useState<boolean | null>(null);
   const [agreed, setAgreed] = useState(false);
@@ -437,15 +450,17 @@ function GalleryListing({ bridge, loupistId, termsUrl }: { bridge: LoupistBridge
   if (!termsUrl) return null;
   if (request?.state === "requested") return <div className="share-listing" data-gallery-listing>
     <p className="share-saved" role="status"><CheckIcon aria-hidden="true" />{t("listRequested")}
-      <Button variant="link" size="sm" onClick={() => void bridge.openExternalUrl(request.url)}>{t("openGithub")}<ExternalLinkIcon aria-hidden="true" /></Button></p>
+      <Button variant="link" size="sm" onClick={() => void browser.open(request.url)}>{t("openGithub")}<ExternalLinkIcon aria-hidden="true" /></Button></p>
+    <ExternalLinkError url={browser.failedUrl === request.url ? browser.failedUrl : null} />
   </div>;
   const busy = request?.state === "busy";
   return <section className="share-listing" aria-labelledby={`${id}-title`} data-gallery-listing>
     <h3 id={`${id}-title`} className="share-label">{t("galleryTitle")}</h3>
     <div className="share-listing-choice">
       <input id={id} type="checkbox" checked={agreed} disabled={busy} onChange={event => setAgreed(event.target.checked)} data-gallery-terms />
-      <label htmlFor={id}><Trans ns="sharing" i18nKey="listingTerms" components={[<TermsLink onOpen={() => void bridge.openExternalUrl(termsUrl)} />]} /></label>
+      <label htmlFor={id}><Trans ns="sharing" i18nKey="listingTerms" components={[<TermsLink onOpen={() => void browser.open(termsUrl)} />]} /></label>
     </div>
+    <ExternalLinkError url={browser.failedUrl} />
     <Button variant="outline" className="share-listing-request" disabled={!agreed || busy} aria-describedby={`${id}-note`} data-gallery-list onClick={() => void list()}>{busy ? <Spinner /> : null}{t("listInGallery")}</Button>
     <p id={`${id}-note`} className="share-section-note">{t("listNote")}</p>
     {request?.state === "failed" ? <p className="share-error" role="alert">{request.message}</p> : null}

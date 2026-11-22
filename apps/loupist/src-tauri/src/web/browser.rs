@@ -1,3 +1,5 @@
+mod history;
+
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -66,12 +68,21 @@ pub struct BrowserTabState {
     pub url: String,
     pub title: String,
     pub loading: bool,
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub can_go_back: Option<bool>,
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub can_go_forward: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BrowserTabEvent {
+    HistoryChanged {
+        tab_id: String,
+        can_go_back: bool,
+        can_go_forward: bool,
+    },
     LoadStarted {
         tab_id: String,
         url: String,
@@ -163,6 +174,8 @@ struct BrowserRecord {
     url: String,
     title: String,
     loading: bool,
+    history: Option<(bool, bool)>,
+    history_events: Option<tokio::sync::mpsc::UnboundedSender<BrowserTabEvent>>,
 }
 
 impl BrowserRecord {
@@ -172,6 +185,8 @@ impl BrowserRecord {
             url: self.url.clone(),
             title: self.title.clone(),
             loading: self.loading,
+            can_go_back: self.history.map(|(back, _)| back),
+            can_go_forward: self.history.map(|(_, forward)| forward),
         }
     }
 }
@@ -214,6 +229,8 @@ impl BrowserManager {
             url: url.as_str().to_owned(),
             title: url.host_str().unwrap_or("Web page").to_owned(),
             loading: true,
+            history: None,
+            history_events: None,
         };
         let state = record.state(&tab_id);
         registry.tabs.insert(tab_id, record);
@@ -379,7 +396,17 @@ fn constrained_bounds(
         .inner_size()
         .map_err(|error| CommandError::internal(error.to_string()))?
         .to_logical::<f64>(scale);
-    bounds.constrained(size.width, size.height)
+    // The renderer reports CSS pixels. The native child webview uses the owner
+    // window's logical points, independent of the main webview's page zoom.
+    let zoom = crate::app_menu::zoom_factor(window.app_handle());
+    let bounds = bounds.constrained(size.width / zoom, size.height / zoom)?;
+    BrowserBounds {
+        x: bounds.x * zoom,
+        y: bounds.y * zoom,
+        width: (bounds.width * zoom).max(1.0),
+        height: (bounds.height * zoom).max(1.0),
+    }
+    .constrained(size.width, size.height)
 }
 
 fn browser_webview(
@@ -419,7 +446,10 @@ pub async fn browser_tab_open(
     let popup_events = on_event.clone();
     let popup_manager = state.browser.clone();
     let download_tab_id = tab_id.clone();
-    let download_events = on_event;
+    let download_events = on_event.clone();
+    let navigation_manager = state.browser.clone();
+    let navigation_window = window.clone();
+    let navigation_label = label.clone();
 
     let builder = WebviewBuilder::new(&label, WebviewUrl::External(url))
         .data_directory(state.browser.profile_dir.clone())
@@ -435,9 +465,20 @@ pub async fn browser_tab_open(
                     },
                 );
             }
+            if allowed {
+                let manager = navigation_manager.clone();
+                let id = navigation_tab_id.clone();
+                let window = navigation_window.clone();
+                let label = navigation_label.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Some(view) = window.get_webview(&label) {
+                        manager.refresh_history(&id, &view);
+                    }
+                });
+            }
             allowed
         })
-        .on_page_load(move |_webview, payload| {
+        .on_page_load(move |webview, payload| {
             // Wry's load callback reads the webview's main-document URL, rather
             // than the target URL from the all-frame navigation callback above.
             let url = payload.url().as_str().to_owned();
@@ -456,9 +497,11 @@ pub async fn browser_tab_open(
                     url,
                 }
             };
+            load_manager.defer_history(&load_tab_id, webview);
             queue_browser_event(load_events.clone(), event);
         })
-        .on_document_title_changed(move |_webview, title| {
+        .on_document_title_changed(move |webview, title| {
+            title_manager.defer_history(&title_tab_id, webview);
             title_manager.update_title(&title_tab_id, &title);
             queue_browser_event(
                 title_events.clone(),
@@ -520,7 +563,18 @@ pub async fn browser_tab_open(
             return Err(CommandError::internal(error.to_string()));
         }
     }
-    Ok(initial)
+    match state
+        .browser
+        .attach_history(&tab_id, &webview, on_event)
+        .await
+    {
+        Ok(snapshot) => Ok(snapshot),
+        Err(error) => {
+            let _ = webview.close();
+            let _ = state.browser.remove(&tab_id);
+            Err(error)
+        }
+    }
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -547,9 +601,12 @@ pub async fn browser_tab_history(
         BrowserHistoryDirection::Back => "history.back()",
         BrowserHistoryDirection::Forward => "history.forward()",
     };
-    browser_webview(&window, &state.browser, &request.tab_id)?
+    let child = browser_webview(&window, &state.browser, &request.tab_id)?;
+    child
         .eval(script)
-        .map_err(|error| CommandError::internal(error.to_string()))
+        .map_err(|error| CommandError::internal(error.to_string()))?;
+    state.browser.refresh_history(&request.tab_id, &child);
+    Ok(())
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -624,6 +681,18 @@ pub async fn browser_tabs_reset(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tab_exposes_unknown_history_before_native_attachment() {
+        let manager = BrowserManager::new(PathBuf::from("profile"));
+        let (state, _) = manager
+            .reserve(&validated_http_url("https://example.com").unwrap())
+            .unwrap();
+        let state = serde_json::to_value(state).unwrap();
+        for key in ["can_go_back", "can_go_forward"] {
+            assert_eq!(state.get(key), Some(&serde_json::Value::Null));
+        }
+    }
 
     #[test]
     fn close_or_reset_invalidates_a_reserved_tab_before_its_webview_attaches() {

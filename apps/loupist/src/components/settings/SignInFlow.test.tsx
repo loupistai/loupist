@@ -6,8 +6,8 @@ import type { ProviderConnectFailure } from "@/types";
 import { ConnectStep } from "../onboarding/ConnectStep";
 
 const rejectedCopy = {
-  en: "You approved the browser sign-in, but ChatGPT didn't finish connecting and gave no reason. Try again for a new sign-in, which may work, or use an OpenAI API key.",
-  ko: "브라우저 로그인은 승인했지만 ChatGPT가 이유를 알리지 않고 연결을 완료하지 않았습니다. 다시 시도해 새로 로그인하면 연결될 수도 있고, OpenAI API 키로 연결할 수도 있습니다.",
+  en: "OpenAI approved the sign-in in the browser but did not let this account connect. This can happen when the ChatGPT plan or workspace isn’t allowed to be used in other apps. Try again, or connect with an OpenAI API key or another account.",
+  ko: "브라우저에서는 승인됐지만 OpenAI가 이 계정의 연결을 허용하지 않았습니다. ChatGPT 플랜이나 워크스페이스가 다른 앱에서의 사용을 허용하지 않을 때 이렇게 될 수 있습니다. 다시 시도하거나 OpenAI API 키 또는 다른 계정으로 연결하십시오.",
 };
 
 afterEach(async () => { await i18n.changeLanguage("en"); });

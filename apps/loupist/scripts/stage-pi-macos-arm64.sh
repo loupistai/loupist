@@ -98,7 +98,7 @@ chmod 755 "$NEW_RUNTIME/loupist-pi"
 printf '%s\n' "$PI_VERSION" >"$NEW_RUNTIME/.pi-version"
 printf '%s\n' "$PI_ARCHIVE_SHA256" >"$NEW_RUNTIME/.pi-archive.sha256"
 python3 "$SCRIPT_DIR/stage_workspace_tools.py" --runtime "$NEW_RUNTIME" --target "$TARGET"
-if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+if [ -n "${LOUPIST_MACOS_SIGNING_MODE:-}" ] && [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
     python3 "$SCRIPT_DIR/macos_release_signing.py" sign-runtime --kind pi --runtime "$NEW_RUNTIME"
 fi
 python3 "$SCRIPT_DIR/stage_workspace_tools.py" --runtime "$NEW_RUNTIME" --target "$TARGET" --record-signature

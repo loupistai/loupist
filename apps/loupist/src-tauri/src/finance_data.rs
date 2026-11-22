@@ -98,6 +98,11 @@ pub(crate) fn fixed_request_spacing() -> futures_util::future::BoxFuture<'static
 pub enum FinanceDataError {
     #[error("finance data request is invalid: {0}")]
     InvalidQuery(&'static str),
+    #[error("finance data request is invalid: {diagnostic}")]
+    RejectedArguments {
+        diagnostic: String,
+        next: &'static str,
+    },
     #[error("finance data provider request failed")]
     Network(#[source] reqwest::Error),
     #[error("finance data provider network request failed: {0}")]
@@ -321,17 +326,7 @@ impl FinanceDataService {
         let (status, raw) = self
             .send_provider_bounded(request, provider, source_url, maximum_bytes)
             .await?;
-        match status {
-            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-                Err(FinanceDataError::CredentialRejected(provider))
-            }
-            StatusCode::TOO_MANY_REQUESTS => Err(FinanceDataError::RateLimited(provider)),
-            status if !status.is_success() => Err(FinanceDataError::Provider(format!(
-                "{provider} returned HTTP {}",
-                status.as_u16()
-            ))),
-            _ => Ok(raw),
-        }
+        interpret_provider_status(provider, status, raw)
     }
 
     async fn send_provider_bounded(
@@ -450,6 +445,38 @@ impl FinanceDataService {
                 continuation,
             },
         ))
+    }
+}
+
+fn interpret_provider_status(
+    provider: &'static str,
+    status: StatusCode,
+    raw: RawProviderResponse,
+) -> Result<RawProviderResponse, FinanceDataError> {
+    match status {
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+            Err(FinanceDataError::CredentialRejected(provider))
+        }
+        StatusCode::TOO_MANY_REQUESTS => Err(FinanceDataError::RateLimited(provider)),
+        status if !status.is_success() => {
+            // These APIs can send the same diagnostic on HTTP 200 or 4xx.
+            let diagnosed = match provider {
+                OPENDART_SOURCE_ID if status.is_client_error() => {
+                    validate_dart_document_status(&raw.bytes).err()
+                }
+                KRX_SOURCE_ID if status.is_client_error() => detect_krx_error(&raw.bytes).err(),
+                _ => None,
+            };
+            Err(diagnosed
+                .filter(|error| !matches!(error, FinanceDataError::InvalidResponse))
+                .unwrap_or_else(|| {
+                    FinanceDataError::Provider(format!(
+                        "{provider} returned HTTP {}",
+                        status.as_u16()
+                    ))
+                }))
+        }
+        _ => Ok(raw),
     }
 }
 

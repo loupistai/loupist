@@ -6,9 +6,8 @@ pub(super) fn mcp_call_error_with_inventory(
     tools: Option<Vec<Value>>,
     error: BrokerError,
 ) -> Result<Value, BrokerError> {
-    // Offline reads must remain broker failures so the turn records their
-    // typed code, even if activation also refreshed the tool inventory.
-    if is_offline(&error) {
+    // Preserve the typed broker code even when activation refreshed tools.
+    if is_offline(&error) || is_argument_failure(&error) {
         return Err(error);
     }
     let message = safe_mcp_error_summary(&error);
@@ -26,6 +25,21 @@ fn is_offline(error: &BrokerError) -> bool {
         BrokerError::WithNext { source, .. } => is_offline(source),
         _ => false,
     }
+}
+
+pub(super) fn is_argument_failure(error: &BrokerError) -> bool {
+    match error {
+        BrokerError::InvalidArguments { .. } => true,
+        BrokerError::WithNext { source, .. } => is_argument_failure(source),
+        _ => false,
+    }
+}
+
+const MCP_REQUEST_REJECTED: &str = "The MCP provider rejected the request";
+const MCP_REQUEST_NEXT: &str = "Check the active tool schema, provider, symbol, and date range. Change the request before trying again; if it still fails, report that this data is unavailable.";
+
+pub(super) fn invalid_mcp_arguments() -> BrokerError {
+    BrokerError::invalid("", MCP_REQUEST_REJECTED).with_next(MCP_REQUEST_NEXT)
 }
 
 fn safe_mcp_error_summary(error: &BrokerError) -> String {
@@ -96,6 +110,7 @@ pub(super) fn map_mcp_error(error: McpError) -> BrokerError {
         ),
         // Remote diagnostics may contain credentials or private paths. Only
         // a fixed category and its host-owned recovery advice may leave Rust.
+        McpError::InvalidParams => return invalid_mcp_arguments(),
         McpError::Remote(text) => return rejected_mcp_text(&text),
     };
     BrokerError::Execution(message.into()).with_next(next)
@@ -137,6 +152,20 @@ pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerE
             };
             return BrokerError::invalid(field, expected);
         }
+        Some("invalid_arguments") => {
+            let marker = result
+                .structured_content
+                .as_ref()
+                .and_then(|v| v.get("loupist_error"));
+            if marker.is_some_and(|marker| marker["provider"] == "fred") {
+                let field = marker
+                    .filter(|marker| marker["field"] == "symbol")
+                    .map_or("", |_| "symbol");
+                return BrokerError::invalid(field, MCP_REQUEST_REJECTED)
+                    .with_next("Find the series id with economy_fred_search, then read it again.");
+            }
+            return invalid_mcp_arguments();
+        }
         Some("unsupported_adjustment") => {
             return BrokerError::invalid("adjustment", YAHOO_ADJUSTMENT_EXPECTED);
         }
@@ -146,8 +175,12 @@ pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerE
         }
         _ => {}
     }
-    // MCP tools commonly put a JSON error inside a text content block.
-    // Decode one layer only; never return this provider-controlled body.
+    rejected_mcp_text(&result_diagnostic(result).to_string())
+}
+
+/// MCP tools also put JSON errors inside text content blocks. Decode one
+/// layer and use the result only for classification.
+fn result_diagnostic(result: &crate::mcp::McpCallResult) -> Value {
     let content = result
         .content
         .iter()
@@ -163,12 +196,10 @@ pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerE
             part.clone()
         })
         .collect::<Vec<_>>();
-    let diagnostic = serde_json::to_string(&json!({
+    json!({
         "content": content,
         "structuredContent": result.structured_content,
-    }))
-    .unwrap_or_default();
-    rejected_mcp_text(&diagnostic)
+    })
 }
 
 fn rejected_mcp_text(diagnostic: &str) -> BrokerError {
@@ -214,22 +245,36 @@ fn rejected_mcp_text(diagnostic: &str) -> BrokerError {
             "The MCP provider rejected authentication or access",
             "If connection_setup is available, call it with this provider's connection name so the user checks and verifies it in a card, including its subscription access; otherwise tell the user to check it in Connections. Do not request a key in Chat or retry with guessed credentials.",
         )
+    } else if structured
+        .as_ref()
+        .is_some_and(structured_argument_rejection)
+    {
+        return invalid_mcp_arguments();
     } else {
-        (
-            "The MCP provider rejected the request",
-            "Check the active tool schema, provider, symbol, and date range. Change the request before trying again; if it still fails, report that this data is unavailable.",
-        )
+        (MCP_REQUEST_REJECTED, MCP_REQUEST_NEXT)
     };
     BrokerError::Execution(message.into()).with_next(next)
 }
 
-fn mcp_has_status(value: &Value, status: u64) -> bool {
+fn structured_argument_rejection(value: &Value) -> bool {
+    [400, 422, -32602]
+        .into_iter()
+        .any(|code| mcp_has_status(value, code))
+}
+
+pub(super) fn rejected_custom_arguments(value: &Value) -> Option<BrokerError> {
+    let result = serde_json::from_value::<crate::mcp::McpCallResult>(value.clone()).ok()?;
+    (result.is_error && structured_argument_rejection(&result_diagnostic(&result)))
+        .then(invalid_mcp_arguments)
+}
+
+fn mcp_has_status(value: &Value, status: i64) -> bool {
     match value {
         Value::Object(fields) => fields.iter().any(|(key, value)| {
             (matches!(
                 key.as_str(),
                 "status" | "status_code" | "statusCode" | "code"
-            ) && (value.as_u64() == Some(status)
+            ) && (value.as_i64() == Some(status)
                 || value.as_str().and_then(|text| text.parse().ok()) == Some(status)))
                 || mcp_has_status(value, status)
         }),
@@ -335,6 +380,41 @@ mod tests {
                 .unwrap()
                 .contains(mcp_error_next(&error).unwrap()));
             assert!(!response.to_string().contains(private));
+        }
+    }
+
+    #[test]
+    fn structured_input_refusals_keep_the_broker_argument_type() {
+        let tools = vec![json!({"name":"economy_fred_search"})];
+        let result = serde_json::from_value(json!({
+            "isError": true, "content": [{"type":"text","text":"private-canary"}],
+            "structuredContent": {"loupist_error": {
+                "kind":"invalid_arguments", "provider":"fred", "field":"symbol"
+            }},
+        }))
+        .unwrap();
+        let error =
+            mcp_call_error_with_inventory(Some(tools), rejected_mcp_result(&result)).unwrap_err();
+        assert!(is_argument_failure(&error));
+        assert!(error.to_string().starts_with("symbol:"));
+        assert_eq!(
+            mcp_error_next(&error),
+            Some("Find the series id with economy_fred_search, then read it again."),
+        );
+        assert!(!error.to_string().contains("private-canary"));
+
+        for content in [
+            json!({"code":-32602, "message":"private-canary"}),
+            json!({"status_code":422, "detail":"private-canary"}),
+        ] {
+            let mut wire = json!({
+                "isError": true, "content": [{"type":"text","text":content.to_string()}],
+            });
+            let error = rejected_custom_arguments(&wire).unwrap();
+            assert!(is_argument_failure(&error));
+            assert!(!error.to_string().contains("private-canary"));
+            wire["isError"] = json!(false);
+            assert!(rejected_custom_arguments(&wire).is_none());
         }
     }
 

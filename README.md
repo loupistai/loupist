@@ -22,7 +22,7 @@ Each Loupist works in its own local folder, created by the app or opened from on
 
 ## Teach a principle, see it applied
 
-**Day 1** — *"Check whether capacity costs are temporary before trusting margin recovery."* Save a principle and apply it to dated company reports. The Map connects retained Sources to entities, claims, principles and methods. With Map building and method learning enabled, findings from separate research sessions about different companies can support a reusable method. The review can defer when the evidence is insufficient.
+**Day 1** — *"Check whether capacity costs are temporary before trusting margin recovery."* Save a principle and apply it to dated company reports. World connects retained Sources to entities, claims, principles and methods. With World building and method learning enabled, findings from separate research sessions about different companies can support a reusable method. The review can defer when the evidence is insufficient.
 
 **Later** — *"Compare these companies’ margin recoveries."* In a new research session, the Loupist can apply the saved principle and relevant learned method. Open Lens from the sidebar to inspect a revised method’s dated Then / Now summaries and evidence.
 
@@ -33,35 +33,35 @@ Ask Bot to hand a question to a research session. Its result comes back to Bot w
 - **It carries lessons forward.** Ordinary research can retain Sources and refine research methods. A later session can use those revisions. The original evidence stays with the saved research.
 - **Primary filings, two markets, one conversation.** OpenBB brings SEC EDGAR, FRED, keyless market data, and configured data vendors into the same chat as native OpenDART, World Bank, KRX, and the Korea Investment read catalog. Credentials are stored locally; requests go to the selected providers.
 - **Its own math.** Pi's native file tools let the Loupist read and edit files in that folder. `run_python` runs numerical code in a pinned offline Python runtime with no shell and no network. Research scripts and results stay in that folder, and charts can preserve exact data revisions.
-- **Records you own.** A Loupist folder preserves its research sessions, retained originals and referenced tool activity. Opening a copy on another Mac restores its asset pages, Sources, Map, Lens, notes and private judgments. Following starts empty there. Inspect tool results in Chat and open a file, chart or document from the answer. Removing a Loupist from the app leaves its folder available to reopen.
+- **Records you own.** A Loupist folder preserves its research sessions, retained originals and referenced tool activity. Opening a copy on another Mac restores its asset pages, Sources, World, Lens, notes and private judgments. Following starts empty there. Inspect tool results in Chat and open a file, chart or document from the answer. Removing a Loupist from the app leaves its folder available to reopen.
 
 ## How a Loupist remembers
 
-The sidebar shows **Bot · Following · Map · Lens · Schedule**, with Settings below. Map and Lens each open as a full page. Activity in the chat header shows what the session used. Map opens the Library, with **Sources · Journal · Notes** tabs. Lens holds principles, perspectives, methods, topics and ideas. Briefings and scheduled research run while the app is open or in the menu bar. Memory is the research a Loupist can draw on in later conversations. A quality-compounder Loupist and a deep-value Loupist keep their own sources, knowledge, and perspective.
+The sidebar shows **Bot · Following · World · Lens · Schedule**, with Settings below. World and Lens each open as a full page. Activity in the chat header shows what the session used. World opens the Library, with **Sources · Journal · Notes** tabs. Lens holds principles, perspectives, methods, topics and ideas. Briefings and scheduled research run while the app is open or in the menu bar. Memory is the research a Loupist can draw on in later conversations. A quality-compounder Loupist and a deep-value Loupist keep their own sources, knowledge, and perspective.
 
 | Kind | What it holds |
 | --- | --- |
 | Source | Retained material, its origin, and the exact passages used |
-| Map | Entities, events, and relationships supported by retained Sources |
+| World | Entities, events, and relationships supported by retained Sources |
 | Lens | Your principles and editable pages for perspectives, methods, topics and ideas, with evidence and revision history |
 | Research note | The Loupist’s saved analysis, with its evidence |
 | Journal | Your own judgments, dated checks and later outcomes, with their exact inputs |
 
-The composer’s **+** menu has one **Private chat** switch. With it off, Chat can read saved context, retain Sources and revise Lens; turning it on skips Memory reads and saves together. Chat history still persists and messages still go to your AI provider. New Loupists default to automatic Map building with a recommended connected model, editable in Settings. Existing Loupist folders retain their settings. New retained Sources enter Map building when a model is configured and processing is enabled. A later relevant turn must use the learned state; storing a record alone does not establish learning.
+The composer’s **+** menu has one **Private chat** switch. With it off, Chat can read saved context, retain Sources and revise Lens; turning it on skips Memory reads and saves together. Chat history still persists and messages still go to your AI provider. New Loupists default to automatic World building with a recommended connected model, editable in Settings. Existing Loupist folders retain their settings. New retained Sources enter World building when a model is configured and processing is enabled. A later relevant turn must use the learned state; storing a record alone does not establish learning.
 
 > [!NOTE]
 > This is a bounded claim, not a black-box one. A Loupist turns source-grounded experience into reusable knowledge that changes how it handles a later relevant case. It is not model-weight training, a promise of returns, or a single performance score.
 
 ## Install
 
-Download [Loupist for macOS 13+ on Apple Silicon (Beta)](https://github.com/loupistai/loupist/releases/latest/download/Loupist-macOS-arm64.dmg); Windows, Intel Macs and Linux are not supported. This Beta is signed with Loupist's own certificate and is not notarized by Apple, so first launch needs a one-time approval: see [installation and download verification](installation.md).
+Download [Loupist for macOS 13+ on Apple Silicon (Beta)](https://github.com/loupistai/loupist/releases/latest/download/Loupist-macOS-arm64.dmg); Windows, Intel Macs and Linux are not supported. Starting with 0.1.3, macOS downloads are signed with Developer ID and notarized by Apple. The [installation guide](installation.md) covers first launch, download verification and the one-time Keychain prompts when updating from 0.1.2.
 
 ## Security model
 
 - React submits typed intent and has no raw filesystem, process, credential, or Memory-write authority.
 - Rust owns Loupist isolation, persistence, and Memory writes.
 - Native file tools are restricted to admitted workspace, scratch, attachment and bounded global-instruction paths, plus read-only bundled Skills; private app data and credentials are refused. `run_python` is the only agent code execution tool. It has no shell, network or host environment, and it stays allowed after third-party text. See [Native tool permissions](docs/runtime/permissions.md).
-- Model, market-data and Python workers run behind Rust authority; Map building runs inside the app. The host owns their process lifetimes and allowed operations.
+- Model, market-data and Python workers run behind Rust authority; World building runs inside the app. The host owns their process lifetimes and allowed operations.
 - Memory stays in local Loupist folders. Your AI provider receives messages and the Sources and saved notes used by answers or background reading; data providers receive the names and tickers you follow or ask about. The app keeps a list of assets you follow. A position you mention in a message goes to your AI provider like the rest of that message.
 - AI sign-ins and keys are stored in private app storage; Data connection secrets use the macOS Keychain. Saving an AI key uses private process input, not a process environment. Workspace instructions and Skill entrypoints enter through a bounded, hash-checked snapshot.
 

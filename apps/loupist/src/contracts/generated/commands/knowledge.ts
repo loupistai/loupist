@@ -120,6 +120,7 @@ export type KnowledgeSourceReadRequest = {
   purpose: string,
   worldRecordId?: string | null,
   worldRevisionId?: string | null,
+  figure?: SourceFigureRequest | null,
 };
 
 export type KnowledgeSourceRetainRequest = {
@@ -164,6 +165,7 @@ export type ResearchRecordDto = {
 };
 
 export type SourceDetailDto = {
+  figureFailure?: SourceFigureFailure,
   origin?: CustomOrigin,
   relatedClaims: Array<SourceWorldClaim>,
   processing: SourceProcessing | null,
@@ -184,6 +186,16 @@ export type SourceDetailDto = {
   acquiredAt: TimePoint | null,
   /** Where a user-provided Source was pasted and what the user stated about it. */
   provided?: ProvidedOrigin,
+};
+
+export type SourceFigureFailure = "answer_unavailable" | "evidence_mismatch" | "mark_unavailable";
+
+export type SourceFigureRequest = {
+  threadId: string,
+  messageId: string,
+  evidenceId: string,
+  /** Zero-based index among the answer's evidence links. */
+  linkIndex: number,
 };
 
 export type SourceSpanViewDto = {

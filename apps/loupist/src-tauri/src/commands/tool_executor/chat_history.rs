@@ -548,6 +548,8 @@ mod tests {
         let mut message =
             host_message("fixture", "Card preview, not the answer.".into(), 1).unwrap();
         message.handoff = Some(crate::domain::HomeHandoff {
+            memory_save_skip: None,
+            discarded_memory_items: None,
             handoff_id: handoff.id.clone(),
             chat_id: handoff.chat_id.clone(),
             title: handoff.title.clone(),

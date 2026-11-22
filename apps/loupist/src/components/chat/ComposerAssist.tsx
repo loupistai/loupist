@@ -1,21 +1,18 @@
 import i18n, { useTranslation } from "@/i18n";
 import {
   BookOpenIcon,
-  BrainIcon,
   CornerDownLeftIcon,
-  CpuIcon,
   FileIcon,
   FileTextIcon,
   GlobeIcon,
   LibraryIcon,
-  MessageSquarePlusIcon,
-  PaperclipIcon,
   PlugIcon,
   SearchIcon,
   WorkflowIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
 import { knownComposerMentions, splitComposerMentions } from "../../chat/composerMentions";
+import type { ManagedSkill } from "../../types";
 import type { ContextOption } from "../../chat/composerChips";
 import { validInlineReferences, type ComposerInlineReference } from "../../chat/composerInlineReferences";
 
@@ -25,7 +22,9 @@ export type ComposerOption = {
   id: string;
   name: string;
   description: string;
+  source?: ManagedSkill["source"];
 };
+export type ComposerSkill = Required<ComposerOption>;
 
 export type TriggerSymbol = "@" | "/";
 
@@ -44,7 +43,6 @@ export type AssistOption = {
   detail: string;
   group?: string;
   context?: ContextOption;
-  command?: "new-chat" | "model" | "memory" | "attach" | "brief" | "compare" | "check" | "asof";
 };
 
 const assistHeading = (symbol: TriggerSymbol) => {
@@ -52,7 +50,7 @@ const assistHeading = (symbol: TriggerSymbol) => {
   return t("chatComposer.commandsAndSkills");
 };
 
-// `/` names its sections (Commands, Skills, Actions) under the heading; a hint would repeat them.
+// `/` names its sections under the heading; a hint would repeat them.
 const assistHint = (symbol: TriggerSymbol) => symbol === "@" ? t("chatComposer.filesMemoryAndConnections") : null;
 
 const assistEmpty = (symbol: TriggerSymbol) => {
@@ -78,10 +76,6 @@ function highlightMatch(text: string, query: string) {
 }
 
 function assistIcon(option: AssistOption) {
-  if (option.command === "new-chat") return MessageSquarePlusIcon;
-  if (option.command === "model") return CpuIcon;
-  if (option.command === "memory") return BrainIcon;
-  if (option.command === "attach") return PaperclipIcon;
   if (option.kind === "skill") return WorkflowIcon;
   switch (option.context?.group) {
     case "Files":
@@ -104,7 +98,7 @@ function assistIcon(option: AssistOption) {
 }
 
 function assistRowKind(option: AssistOption) {
-  if (option.command) return "command";
+  if (option.kind === "command") return "command";
   if (option.kind === "skill") return "skill";
   if (option.context?.connectionId) return "connection";
   return "context";

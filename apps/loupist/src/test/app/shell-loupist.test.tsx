@@ -39,7 +39,7 @@ describe("Loupist · Shell and Loupist", () => {
     const user = userEvent.setup();
     const bridge = await openApp();
     const create = vi.spyOn(bridge, "chatCreate");
-    await user.click(await mainTab(/Map/));
+    await user.click(await mainTab(/World/));
     await chooseLoupist(user, "Contrarian Value");
     expect(await screen.findByRole("button", { name: "Bot", current: "page" })).toBeVisible();
     expect(within(document.querySelector<HTMLElement>(".loupist-navigation")!).getByRole("button", { name: "Downside scenario review" })).toBeVisible();
@@ -255,9 +255,7 @@ describe("Loupist · Model providers", () => {
     render(<App bridge={bridge} />);
     expect(await screen.findByRole("heading", { name: "Bot" })).toBeVisible();
     expect(selectedLoupistButton()).toHaveTextContent("Quality Compounder");
-    // Home's first-visit checklist and the composer both offer it; the checklist comes first.
-    await user.click(screen.getAllByRole("button", { name: "Connect an AI account" })[0]!);
-    await user.click(await screen.findByRole("button", { name: "Add an AI account" }));
+    await user.click(screen.getByRole("button", { name: "No AI account" }));
     const dialog = await screen.findByRole("dialog", { name: "Add an AI account" });
     await user.click(within(dialog).getByRole("button", { name: /Continue with ChatGPT/u }));
     await user.click(await mainTab(/Chat/));
@@ -352,9 +350,9 @@ describe("Loupist · Model providers", () => {
     await waitFor(() => expect(updateVisibility).toHaveBeenCalledWith({ model_profile_id: "model-test", visible_in_chat: false }));
     await user.click(screen.getByRole("button", { name: "Back" }));
     await user.hover(await screen.findByRole("button", { name: /Model settings for this message/ }));
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("Uses your default model settings.");
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("google default");
     await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
-    expect(screen.getByRole("menuitemradio", { name: "google default" })).toBeVisible();
+    expect(screen.getByRole("menuitemradio", { name: "google default Default" })).toBeVisible();
     expect(screen.queryByRole("menuitemradio", { name: "GPT-5.6 Luna" })).not.toBeInTheDocument();
     await user.keyboard("{Escape}");
 

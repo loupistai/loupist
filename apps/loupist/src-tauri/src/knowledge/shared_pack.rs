@@ -466,7 +466,7 @@ pub(crate) fn differs(existing: &GraphClaim, claim: &GraphClaim) -> bool {
 }
 
 /// The note a pack's differing claim carries; the claim already on the map is never changed.
-const DIFFERS_NOTE: (&str, &str) = ("shared_note", "Differs from a value already on your map");
+const DIFFERS_NOTE: (&str, &str) = ("shared_note", "Differs from a value already in your World");
 
 fn same_endpoints(left: &GraphClaim, right: &GraphClaim) -> bool {
     let set = |claim: &GraphClaim| {
@@ -805,9 +805,7 @@ pub(crate) fn import_world(
         .collect();
     if body.nodes.len() > LOAD_NODES || body.claims.len() > LOAD_CLAIMS || cited.len() > LOAD_SPANS
     {
-        return Err(KnowledgeError::Invalid(
-            "the map would be too large to load",
-        ));
+        return Err(KnowledgeError::Invalid("World would be too large to load"));
     }
     super::world::seal_world_with_provenance(
         tx,

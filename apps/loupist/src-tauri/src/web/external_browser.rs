@@ -28,11 +28,7 @@ pub(crate) fn open(url: &str) -> io::Result<()> {
 #[cfg(target_os = "macos")]
 fn macos_open_command(url: &str) -> Command {
     let mut command = Command::new("/usr/bin/open");
-    // A hidden automation-owned browser process can otherwise absorb the
-    // LaunchServices request without presenting a window. A fresh application
-    // instance makes link activation visible and also recovers cleanly after a
-    // user closes the browser during OAuth.
-    command.arg("-n").arg("--").arg(url);
+    command.arg("--").arg(url);
     command
 }
 
@@ -42,13 +38,12 @@ mod tests {
     use std::ffi::OsStr;
 
     #[test]
-    fn macos_links_request_a_fresh_browser_instance() {
+    fn macos_links_use_the_default_application_for_the_url() {
         let command = macos_open_command("https://example.com/path?value=one");
         assert_eq!(command.get_program(), OsStr::new("/usr/bin/open"));
         assert_eq!(
             command.get_args().collect::<Vec<_>>(),
             vec![
-                OsStr::new("-n"),
                 OsStr::new("--"),
                 OsStr::new("https://example.com/path?value=one"),
             ]

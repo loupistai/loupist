@@ -40,14 +40,18 @@ export function useConfiguration(bridge: LoupistBridge, scope: ConfigScope) {
       if (event instanceof CustomEvent && event.detail?.origin === reload) return;
       void reload();
     };
+    const stopCatalog = bridge.onModelCatalogChanged?.(() => void reload(), () => {});
+    const stopProvider = bridge.onProviderStatus?.(() => void reload());
     window.addEventListener("focus", refresh);
     window.addEventListener(CONFIG_CHANGED_EVENT, refresh);
     return () => {
+      stopCatalog?.();
+      stopProvider?.();
       epoch.current += 1;
       window.removeEventListener("focus", refresh);
       window.removeEventListener(CONFIG_CHANGED_EVENT, refresh);
     };
-  }, [reload]);
+  }, [bridge, reload]);
 
   const update = useCallback(async (set: ConfigDocument, unset: string[][] = []) => {
     const current = snapshotRef.current;

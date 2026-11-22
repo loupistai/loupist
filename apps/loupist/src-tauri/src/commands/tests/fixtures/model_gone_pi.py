@@ -55,7 +55,12 @@ for line in sys.stdin:
                 (root / "app" / "config.toml").write_text(appearance.read_text())
         respond(request, {})
         emit({"type": "message_start", "message": {"role": "assistant"}})
-        if model == "gone-model":
+        if (root / "rate-limited").exists():
+            emit({"type": "message_end", "message": {
+                "role": "assistant", "stopReason": "error", "content": [],
+                "errorMessage": "429 Too Many Requests",
+            }})
+        elif model == "gone-model":
             emit({"type": "message_end", "message": {
                 "role": "assistant", "stopReason": "error", "content": [],
                 "errorMessage": '404 {"error":{"code":"model_not_found","message":"The model does not exist"}}',

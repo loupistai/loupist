@@ -7,14 +7,19 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::finance_data::openfigi::SOURCE_ID as ASSET_LOOKUP_SOURCE_ID;
+use crate::{
+    app::AppState,
+    finance_data::openfigi::SOURCE_ID as ASSET_LOOKUP_SOURCE_ID,
+    keychain_operation::{check_mutation_deadline, KeychainError, KeychainOperation},
+};
+
+mod presence;
+#[cfg(test)]
+pub(crate) use presence::reconcile_with_timeout;
+pub(crate) use presence::{reconcile_presence, retry_presence, PresencePass};
 
 const CREDENTIAL_SCHEMA_VERSION: &str = "loupist-finance-credential/1";
 
-#[cfg(all(
-    not(any(debug_assertions, test, feature = "webdriver")),
-    any(target_os = "macos", windows)
-))]
 const NATIVE_SERVICE: &str = "com.monarchjuno.loupist.finance";
 
 #[derive(Debug, Error)]
@@ -27,6 +32,24 @@ pub enum FinanceCredentialError {
     /// denied or could not be answered). Remembered for the session.
     #[error("access to this saved key was not allowed in macOS")]
     Locked,
+    #[error("access to this saved key needs permission in macOS")]
+    PermissionRequired,
+    #[error("a keychain operation is still pending for this item")]
+    Busy,
+    #[error("the keychain is unavailable")]
+    Unavailable,
+    #[error("Loupist is installing an update")]
+    UpdateInstalling,
+}
+
+impl From<KeychainError> for FinanceCredentialError {
+    fn from(error: KeychainError) -> Self {
+        match error {
+            KeychainError::UpdateInstalling => Self::UpdateInstalling,
+            KeychainError::Busy => Self::Busy,
+            KeychainError::Unavailable | KeychainError::TimedOut => Self::Unavailable,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -66,7 +89,7 @@ pub struct KrxCoverage {
     pub kosdaq: KrxServiceAccess,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct CredentialStatus {
     pub stored: bool,
     pub active: bool,
@@ -78,8 +101,9 @@ pub struct CredentialStatus {
     pub krx_coverage: Option<KrxCoverage>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub enum CredentialVerification {
+    #[default]
     Never,
     Verified,
     Rejected,
@@ -92,6 +116,7 @@ pub enum CredentialVerification {
 /// the secret cannot accidentally cross the command boundary or enter logs.
 pub struct CredentialCandidate {
     revision: String,
+    already_active: bool,
     secrets: BTreeMap<String, String>,
 }
 
@@ -102,6 +127,10 @@ impl CredentialCandidate {
 
     pub fn secrets(&self) -> &BTreeMap<String, String> {
         &self.secrets
+    }
+
+    pub(crate) fn already_active(&self) -> bool {
+        self.already_active
     }
 }
 
@@ -248,11 +277,6 @@ fn validate_envelope(
     Ok(())
 }
 
-fn operation_lock() -> &'static std::sync::Mutex<()> {
-    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    LOCK.get_or_init(Default::default)
-}
-
 #[cfg(any(debug_assertions, test, feature = "webdriver"))]
 fn memory_store() -> &'static std::sync::Mutex<std::collections::BTreeMap<String, String>> {
     static STORE: std::sync::OnceLock<
@@ -282,13 +306,122 @@ pub(crate) mod test_store {
         DENIED.get_or_init(Default::default)
     }
 
+    type Barriers = BTreeMap<String, std::sync::mpsc::Receiver<bool>>;
+
+    fn write_barriers() -> &'static Mutex<Barriers> {
+        static BARRIERS: OnceLock<Mutex<Barriers>> = OnceLock::new();
+        BARRIERS.get_or_init(Default::default)
+    }
+
+    fn read_barriers() -> &'static Mutex<Barriers> {
+        static BARRIERS: OnceLock<Mutex<Barriers>> = OnceLock::new();
+        BARRIERS.get_or_init(Default::default)
+    }
+
+    fn presence_barriers() -> &'static Mutex<Barriers> {
+        static BARRIERS: OnceLock<Mutex<Barriers>> = OnceLock::new();
+        BARRIERS.get_or_init(Default::default)
+    }
+
+    fn presence_checks() -> &'static Mutex<BTreeMap<String, usize>> {
+        static CHECKS: OnceLock<Mutex<BTreeMap<String, usize>>> = OnceLock::new();
+        CHECKS.get_or_init(Default::default)
+    }
+
+    pub(crate) fn block_next_presence(
+        environment: &str,
+        id: &str,
+    ) -> std::sync::mpsc::Sender<bool> {
+        let (release, pending) = std::sync::mpsc::channel();
+        presence_barriers()
+            .lock()
+            .unwrap()
+            .insert(super::native_account(environment, id), pending);
+        release
+    }
+
+    pub(super) fn record_presence(account: &str) -> bool {
+        *presence_checks()
+            .lock()
+            .unwrap()
+            .entry(account.into())
+            .or_default() += 1;
+        let pending = presence_barriers().lock().unwrap().remove(account);
+        pending.is_none_or(|pending| pending.recv().unwrap_or(false))
+    }
+
+    pub(crate) fn presence_calls(environment: &str) -> usize {
+        let prefix = format!("credential-state/v1/{environment}/");
+        presence_checks()
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(account, _)| account.starts_with(&prefix))
+            .map(|(_, count)| count)
+            .sum()
+    }
+
+    fn mutations() -> &'static Mutex<BTreeMap<String, usize>> {
+        static MUTATIONS: OnceLock<Mutex<BTreeMap<String, usize>>> = OnceLock::new();
+        MUTATIONS.get_or_init(Default::default)
+    }
+
+    pub(super) fn record_mutation(account: &str) {
+        *mutations()
+            .lock()
+            .unwrap()
+            .entry(account.to_owned())
+            .or_default() += 1;
+    }
+
+    pub(super) fn await_write(account: &str) -> bool {
+        let pending = write_barriers().lock().unwrap().remove(account);
+        pending.is_none_or(|pending| pending.recv().unwrap_or(false))
+    }
+
+    pub(super) fn block_next_write(environment: &str, id: &str) -> std::sync::mpsc::Sender<bool> {
+        let (release, pending) = std::sync::mpsc::channel();
+        write_barriers()
+            .lock()
+            .unwrap()
+            .insert(super::native_account(environment, id), pending);
+        release
+    }
+
+    pub(crate) fn block_next_read(environment: &str, id: &str) -> std::sync::mpsc::Sender<bool> {
+        let (release, pending) = std::sync::mpsc::channel();
+        read_barriers()
+            .lock()
+            .unwrap()
+            .insert(super::native_account(environment, id), pending);
+        release
+    }
+
+    pub(crate) fn backend_calls(environment: &str) -> usize {
+        let prefix = format!("credential-state/v1/{environment}/");
+        let count = |accounts: &BTreeMap<String, usize>| {
+            accounts
+                .iter()
+                .filter(|(name, _)| name.starts_with(&prefix))
+                .map(|(_, count)| count)
+                .sum::<usize>()
+        };
+        count(&reads().lock().unwrap())
+            + count(&mutations().lock().unwrap())
+            + presence_calls(environment)
+    }
+
     pub(super) fn record_read(account: &str) -> bool {
         *reads()
             .lock()
             .unwrap()
             .entry(account.to_owned())
             .or_default() += 1;
-        !denied().lock().unwrap().contains(account)
+        let pending = read_barriers().lock().unwrap().remove(account);
+        pending.map_or_else(
+            || !denied().lock().unwrap().contains(account),
+            |pending| pending.recv().unwrap_or(false),
+        )
     }
 
     /// How many times the secret of this credential was read.
@@ -343,6 +476,14 @@ fn write_memory_blob(
     entry_id: &str,
     value: &str,
 ) -> Result<(), FinanceCredentialError> {
+    #[cfg(test)]
+    {
+        let account = native_account(environment_id, entry_id);
+        test_store::record_mutation(&account);
+        if !test_store::await_write(&account) {
+            return Err(FinanceCredentialError::Store);
+        }
+    }
     memory_store()
         .lock()
         .map_err(|_| FinanceCredentialError::Store)?
@@ -352,6 +493,8 @@ fn write_memory_blob(
 
 #[cfg(any(debug_assertions, test, feature = "webdriver"))]
 fn delete_memory_blob(environment_id: &str, entry_id: &str) -> Result<(), FinanceCredentialError> {
+    #[cfg(test)]
+    test_store::record_mutation(&native_account(environment_id, entry_id));
     memory_store()
         .lock()
         .map_err(|_| FinanceCredentialError::Store)?
@@ -412,10 +555,8 @@ fn delete_native_blob(
     service: &str,
     entry_id: &str,
 ) -> Result<(), FinanceCredentialError> {
-    match native_entry(environment_id, service, entry_id)?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(_) => Err(FinanceCredentialError::Store),
-    }
+    crate::keychain_operation::delete_entry(native_entry(environment_id, service, entry_id)?)
+        .map_err(Into::into)
 }
 
 #[cfg(any(debug_assertions, test, feature = "webdriver"))]
@@ -507,20 +648,22 @@ fn delete_blob(environment_id: &str, _entry_id: &str) -> Result<(), FinanceCrede
 
 /// What this session learned about one saved credential, without its secret.
 ///
-/// macOS ties a keychain item to the build that saved it, so the first read
-/// after an update asks for the login password. Every read takes
-/// `operation_lock` (the gate), so callers that arrive while the prompt is up
-/// wait for its answer instead of asking again. The answer is kept for the
-/// session: the status (so listing connections reads nothing more) or a
-/// denial (so no screen asks again until the user chooses Try again). The
-/// secret itself is never kept here.
-#[derive(Clone)]
+/// The session records whether macOS refused an item. Status and the random
+/// credential revision contain no secret material.
+#[derive(Clone, Deserialize, Serialize)]
 enum SessionAccess {
     Known {
         status: CredentialStatus,
         active_revision: Option<String>,
+        #[serde(default)]
+        last_store_failure: bool,
     },
     Locked,
+    Unconfirmed,
+    StoreUnavailable,
+    /// The item exists. Its fields and active revision are still unknown.
+    PresentUnread,
+    PresentDenied,
 }
 
 fn session() -> &'static std::sync::Mutex<BTreeMap<String, SessionAccess>> {
@@ -553,6 +696,7 @@ fn remember_envelope(environment_id: &str, entry_id: &str, envelope: &Credential
         entry_id,
         Some(SessionAccess::Known {
             status: status_from(envelope),
+            last_store_failure: false,
             active_revision: envelope
                 .active
                 .as_ref()
@@ -563,7 +707,7 @@ fn remember_envelope(environment_id: &str, entry_id: &str, envelope: &Credential
 
 /// Reads the envelope for a passive caller. A credential this session was
 /// refused stays refused without asking macOS again.
-fn load_locked(
+fn load(
     environment_id: &str,
     entry_id: &str,
 ) -> Result<CredentialEnvelope, FinanceCredentialError> {
@@ -575,29 +719,37 @@ fn load_locked(
     ) {
         return Err(FinanceCredentialError::Locked);
     }
-    let value = match read_blob(environment_id, entry_id) {
-        Ok(Some(value)) => value,
-        Ok(None) => {
-            let envelope = CredentialEnvelope::default();
-            remember_envelope(environment_id, entry_id, &envelope);
-            return Ok(envelope);
-        }
-        Err(FinanceCredentialError::Store | FinanceCredentialError::Locked) => {
+    let envelope = match read_envelope(environment_id, entry_id) {
+        Ok(envelope) => envelope,
+        Err(FinanceCredentialError::Locked) => {
             remember(environment_id, entry_id, Some(SessionAccess::Locked));
             return Err(FinanceCredentialError::Locked);
         }
         Err(error) => return Err(error),
     };
-    let envelope: CredentialEnvelope =
-        serde_json::from_str(&value).map_err(|_| FinanceCredentialError::Store)?;
-    validate_envelope(entry_id, &envelope)?;
     remember_envelope(environment_id, entry_id, &envelope);
+    Ok(envelope)
+}
+
+fn read_envelope(
+    environment_id: &str,
+    entry_id: &str,
+) -> Result<CredentialEnvelope, FinanceCredentialError> {
+    let Some(value) = read_blob(environment_id, entry_id).map_err(|error| match error {
+        FinanceCredentialError::Store => FinanceCredentialError::Locked,
+        error => error,
+    })?
+    else {
+        return Ok(CredentialEnvelope::default());
+    };
+    let envelope = serde_json::from_str(&value).map_err(|_| FinanceCredentialError::Store)?;
+    validate_envelope(entry_id, &envelope)?;
     Ok(envelope)
 }
 
 /// Reads the envelope for something the user just asked for (save, check,
 /// Try again): a remembered denial is set aside and macOS may ask once more.
-fn load_for_user_locked(
+fn load_for_user(
     environment_id: &str,
     entry_id: &str,
 ) -> Result<CredentialEnvelope, FinanceCredentialError> {
@@ -609,16 +761,17 @@ fn load_for_user_locked(
     ) {
         remember(environment_id, entry_id, None);
     }
-    load_locked(environment_id, entry_id)
+    load(environment_id, entry_id)
 }
 
-fn save_locked(
+fn save_envelope(
     environment_id: &str,
     entry_id: &str,
     envelope: &CredentialEnvelope,
 ) -> Result<(), FinanceCredentialError> {
     validate_envelope(entry_id, envelope)?;
     let value = serde_json::to_string(envelope).map_err(|_| FinanceCredentialError::Store)?;
+    check_mutation_deadline()?;
     write_blob(environment_id, entry_id, &value)?;
     remember_envelope(environment_id, entry_id, envelope);
     Ok(())
@@ -681,13 +834,25 @@ pub fn stage(
     entry_id: &str,
     patch: &BTreeMap<String, String>,
 ) -> Result<CredentialStatus, FinanceCredentialError> {
+    stage_with_validation(environment_id, entry_id, patch, |_| {
+        Ok::<_, std::convert::Infallible>(())
+    })?
+    .map_err(|never| match never {})
+}
+
+pub(crate) fn stage_with_validation<E>(
+    environment_id: &str,
+    entry_id: &str,
+    patch: &BTreeMap<String, String>,
+    validate: impl FnOnce(&CredentialStatus) -> Result<(), E>,
+) -> Result<Result<CredentialStatus, E>, FinanceCredentialError> {
     validate_revision(environment_id)?;
     validate_entry_id(entry_id)?;
     validate_secrets(patch)?;
-    let _guard = operation_lock()
-        .lock()
-        .map_err(|_| FinanceCredentialError::Store)?;
-    let mut envelope = load_for_user_locked(environment_id, entry_id)?;
+    let mut envelope = load_for_user(environment_id, entry_id)?;
+    if let Err(error) = validate(&status_from(&envelope)) {
+        return Ok(Err(error));
+    }
     let mut secrets = envelope
         .active
         .as_ref()
@@ -705,8 +870,8 @@ pub fn stage(
         },
         verification: CandidateVerification::Never,
     });
-    save_locked(environment_id, entry_id, &envelope)?;
-    Ok(status_from(&envelope))
+    save_envelope(environment_id, entry_id, &envelope)?;
+    Ok(Ok(status_from(&envelope)))
 }
 
 /// Stores the optional OpenFIGI key as the active credential in one write.
@@ -714,11 +879,8 @@ pub(crate) fn save_lookup_key(
     environment_id: &str,
     key: &str,
 ) -> Result<(), FinanceCredentialError> {
-    let _guard = operation_lock()
-        .lock()
-        .map_err(|_| FinanceCredentialError::Store)?;
     // An explicit save may unlock a key whose access was previously refused.
-    load_for_user_locked(environment_id, ASSET_LOOKUP_SOURCE_ID)?;
+    load_for_user(environment_id, ASSET_LOOKUP_SOURCE_ID)?;
     let envelope = CredentialEnvelope {
         active: Some(ActiveCredential {
             credential: StoredCredentialBundle {
@@ -730,13 +892,7 @@ pub(crate) fn save_lookup_key(
         }),
         ..CredentialEnvelope::default()
     };
-    save_locked(environment_id, ASSET_LOOKUP_SOURCE_ID, &envelope)
-}
-
-pub(crate) fn lookup_key(
-    environment_id: &str,
-) -> Result<Option<ActiveCredentialBundle>, FinanceCredentialError> {
-    get(environment_id, ASSET_LOOKUP_SOURCE_ID)
+    save_envelope(environment_id, ASSET_LOOKUP_SOURCE_ID, &envelope)
 }
 
 /// Loads only the current candidate. An active credential is never returned by
@@ -745,13 +901,11 @@ pub fn candidate(
     environment_id: &str,
     entry_id: &str,
 ) -> Result<Option<CredentialCandidate>, FinanceCredentialError> {
-    let _guard = operation_lock()
-        .lock()
-        .map_err(|_| FinanceCredentialError::Store)?;
-    Ok(load_for_user_locked(environment_id, entry_id)?
+    Ok(load_for_user(environment_id, entry_id)?
         .candidate
         .map(|candidate| CredentialCandidate {
             revision: candidate.credential.revision,
+            already_active: false,
             secrets: candidate.credential.secrets,
         }))
 }
@@ -764,10 +918,23 @@ pub fn candidate_for_verification(
     environment_id: &str,
     entry_id: &str,
 ) -> Result<Option<CredentialCandidate>, FinanceCredentialError> {
-    let _guard = operation_lock()
-        .lock()
-        .map_err(|_| FinanceCredentialError::Store)?;
-    let mut envelope = load_for_user_locked(environment_id, entry_id)?;
+    Ok(
+        verification_envelope(environment_id, entry_id)?.and_then(|envelope| {
+            let already_active = envelope.active.is_some();
+            envelope.candidate.map(|candidate| CredentialCandidate {
+                revision: candidate.credential.revision,
+                already_active,
+                secrets: candidate.credential.secrets,
+            })
+        }),
+    )
+}
+
+fn verification_envelope(
+    environment_id: &str,
+    entry_id: &str,
+) -> Result<Option<CredentialEnvelope>, FinanceCredentialError> {
+    let mut envelope = load_for_user(environment_id, entry_id)?;
     if envelope.candidate.is_none() {
         let Some(active) = &envelope.active else {
             return Ok(None);
@@ -779,12 +946,9 @@ pub fn candidate_for_verification(
             },
             verification: CandidateVerification::Never,
         });
-        save_locked(environment_id, entry_id, &envelope)?;
+        save_envelope(environment_id, entry_id, &envelope)?;
     }
-    Ok(envelope.candidate.map(|candidate| CredentialCandidate {
-        revision: candidate.credential.revision,
-        secrets: candidate.credential.secrets,
-    }))
+    Ok(Some(envelope))
 }
 
 /// Applies a verification result only when `expected_revision` is still the
@@ -802,16 +966,25 @@ pub fn finish_verification(
     if verified_at < 0 {
         return Err(FinanceCredentialError::Store);
     }
-    let _guard = operation_lock()
-        .lock()
-        .map_err(|_| FinanceCredentialError::Store)?;
-    let mut envelope = load_for_user_locked(environment_id, entry_id)?;
-    let Some(candidate) = envelope.candidate.as_mut() else {
+    let mut envelope = load_for_user(environment_id, entry_id)?;
+    let Some(candidate) = envelope.candidate.as_ref() else {
         return Ok(FinishVerification::Stale);
     };
     if candidate.credential.revision != expected_revision {
         return Ok(FinishVerification::Stale);
     }
+    apply_outcome(&mut envelope, outcome, verified_at, krx_coverage);
+    save_envelope(environment_id, entry_id, &envelope)?;
+    Ok(FinishVerification::Applied)
+}
+
+fn apply_outcome(
+    envelope: &mut CredentialEnvelope,
+    outcome: VerificationOutcome,
+    verified_at: i64,
+    krx_coverage: Option<KrxCoverage>,
+) {
+    let candidate = envelope.candidate.as_mut().expect("candidate is current");
     match outcome {
         VerificationOutcome::Verified => {
             let candidate = envelope
@@ -831,8 +1004,6 @@ pub fn finish_verification(
             candidate.verification = CandidateVerification::TemporarilyUnavailable;
         }
     }
-    save_locked(environment_id, entry_id, &envelope)?;
-    Ok(FinishVerification::Applied)
 }
 
 pub fn status(
@@ -852,13 +1023,16 @@ pub fn status(
             krx_coverage: None,
         });
     }
-    let _guard = operation_lock()
-        .lock()
-        .map_err(|_| FinanceCredentialError::Store)?;
     match remembered(environment_id, entry_id) {
         Some(SessionAccess::Known { status, .. }) => Ok(status),
         Some(SessionAccess::Locked) => Err(FinanceCredentialError::Locked),
-        None => Ok(status_from(&load_locked(environment_id, entry_id)?)),
+        Some(
+            SessionAccess::Unconfirmed
+            | SessionAccess::StoreUnavailable
+            | SessionAccess::PresentUnread
+            | SessionAccess::PresentDenied,
+        )
+        | None => Ok(CredentialStatus::default()),
     }
 }
 
@@ -876,13 +1050,7 @@ pub fn unlock(
     environment_id: &str,
     entry_id: &str,
 ) -> Result<CredentialStatus, FinanceCredentialError> {
-    let _guard = operation_lock()
-        .lock()
-        .map_err(|_| FinanceCredentialError::Store)?;
-    Ok(status_from(&load_for_user_locked(
-        environment_id,
-        entry_id,
-    )?))
+    Ok(status_from(&load_for_user(environment_id, entry_id)?))
 }
 
 /// Returns the active bundle. Credentials that require verification become
@@ -898,10 +1066,7 @@ pub fn get(
             secrets: eval_fields(),
         }));
     }
-    let _guard = operation_lock()
-        .lock()
-        .map_err(|_| FinanceCredentialError::Store)?;
-    Ok(load_locked(environment_id, entry_id)?
+    Ok(load(environment_id, entry_id)?
         .active
         .map(|active| ActiveCredentialBundle {
             revision: active.credential.revision,
@@ -914,6 +1079,7 @@ pub fn get(
 /// This deliberately returns only the revision needed to bind a Pi session
 /// cache to credential authority. It never constructs or exposes a credential
 /// bundle, and staged candidates do not affect the result.
+#[cfg(any(test, feature = "eval-harness"))]
 pub(crate) fn active_revision(
     environment_id: &str,
     entry_id: &str,
@@ -922,31 +1088,321 @@ pub(crate) fn active_revision(
     if crate::eval_harness::replay::credential_environment(environment_id, entry_id) {
         return Ok(Some("eval-replay".into()));
     }
-    let _guard = operation_lock()
-        .lock()
-        .map_err(|_| FinanceCredentialError::Store)?;
     match remembered(environment_id, entry_id) {
         Some(SessionAccess::Known {
             active_revision, ..
         }) => Ok(active_revision),
         Some(SessionAccess::Locked) => Err(FinanceCredentialError::Locked),
-        None => Ok(load_locked(environment_id, entry_id)?
-            .active
-            .map(|active| active.credential.revision)),
+        Some(
+            SessionAccess::Unconfirmed
+            | SessionAccess::StoreUnavailable
+            | SessionAccess::PresentUnread
+            | SessionAccess::PresentDenied,
+        )
+        | None => Ok(None),
     }
 }
 
 pub fn delete(environment_id: &str, entry_id: &str) -> Result<(), FinanceCredentialError> {
     validate_revision(environment_id)?;
     validate_entry_id(entry_id)?;
-    let _guard = operation_lock()
-        .lock()
-        .map_err(|_| FinanceCredentialError::Store)?;
+    check_mutation_deadline()?;
     delete_blob(environment_id, entry_id)?;
     remember_envelope(environment_id, entry_id, &CredentialEnvelope::default());
     Ok(())
 }
 
+fn publish_session(state: &AppState, entry_id: &str) -> Result<(), FinanceCredentialError> {
+    let access = remembered(&state.credential_environment, entry_id);
+    if let Some(access) = access {
+        let serialized =
+            serde_json::to_string(&access).map_err(|_| FinanceCredentialError::Store)?;
+        state
+            .store
+            .set_connector_credential_status(entry_id, &serialized)
+            .map_err(|_| FinanceCredentialError::Store)?;
+    }
+    Ok(())
+}
+
+fn status_projection(
+    state: &AppState,
+    entry_id: &str,
+) -> Result<Option<SessionAccess>, FinanceCredentialError> {
+    let environment = &state.credential_environment;
+    if let Some(access) = remembered(environment, entry_id) {
+        return Ok(Some(access));
+    }
+    let saved = state
+        .store
+        .connector_credential_status(entry_id)
+        .map_err(|_| FinanceCredentialError::Store)?
+        .map(|encoded| serde_json::from_str(&encoded).map_err(|_| FinanceCredentialError::Store))
+        .transpose()?;
+    Ok(remembered(environment, entry_id).or(saved))
+}
+
+pub(crate) fn status_for_state(
+    state: &AppState,
+    entry_id: &str,
+) -> Result<CredentialStatus, FinanceCredentialError> {
+    #[cfg(feature = "eval-harness")]
+    if crate::eval_harness::replay::credential_environment(&state.credential_environment, entry_id)
+    {
+        return status(&state.credential_environment, entry_id);
+    }
+    match status_projection(state, entry_id)? {
+        Some(SessionAccess::Known { status, .. }) => Ok(status),
+        Some(SessionAccess::Locked) => Err(FinanceCredentialError::Locked),
+        Some(
+            SessionAccess::Unconfirmed
+            | SessionAccess::StoreUnavailable
+            | SessionAccess::PresentUnread
+            | SessionAccess::PresentDenied,
+        )
+        | None => Ok(CredentialStatus::default()),
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StatusRecovery {
+    SavedUnread,
+    SavedDenied,
+    PresenceUnavailable,
+    Unknown,
+}
+
+impl StatusRecovery {
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            Self::SavedUnread => "credential_saved_unread",
+            Self::SavedDenied => "credential_saved_denied",
+            Self::PresenceUnavailable => "credential_presence_unavailable",
+            Self::Unknown => "credential_status_unknown",
+        }
+    }
+}
+
+pub(crate) fn status_recovery(state: &AppState, entry_id: &str) -> Option<StatusRecovery> {
+    let unknown = if presence::SUPPORTED {
+        Some(StatusRecovery::PresenceUnavailable)
+    } else if cfg!(windows) {
+        Some(StatusRecovery::Unknown)
+    } else {
+        None
+    };
+    match status_projection(state, entry_id) {
+        Ok(Some(SessionAccess::PresentUnread)) => Some(StatusRecovery::SavedUnread),
+        Ok(Some(SessionAccess::PresentDenied)) => Some(StatusRecovery::SavedDenied),
+        Ok(Some(SessionAccess::Unconfirmed | SessionAccess::StoreUnavailable)) => unknown,
+        Ok(None) if state.store.legacy_credential_namespace().unwrap_or(true) => unknown,
+        _ => None,
+    }
+}
+
+pub(crate) fn needs_permission(state: &AppState, entry_id: &str) -> bool {
+    matches!(
+        status_projection(state, entry_id),
+        Ok(Some(
+            SessionAccess::PresentUnread | SessionAccess::PresentDenied
+        ))
+    )
+}
+
+/// The caller has reserved this item on a background thread. The native read
+/// cannot be interrupted, so Cancel discards its result before publishing.
+pub(crate) fn read_saved_key_permission(
+    state: &AppState,
+    entry_id: &str,
+    cancelled: &std::sync::Mutex<bool>,
+) -> Result<(), FinanceCredentialError> {
+    if *cancelled
+        .lock()
+        .map_err(|_| FinanceCredentialError::Store)?
+        || !needs_permission(state, entry_id)
+    {
+        return Ok(());
+    }
+    let environment = &state.credential_environment;
+    let result = read_envelope(environment, entry_id);
+    let cancelled = cancelled
+        .lock()
+        .map_err(|_| FinanceCredentialError::Store)?;
+    if *cancelled {
+        return Ok(());
+    }
+    match result {
+        Ok(envelope) => remember_envelope(environment, entry_id, &envelope),
+        Err(FinanceCredentialError::Locked) => {
+            remember(environment, entry_id, Some(SessionAccess::PresentDenied));
+        }
+        Err(error) => return Err(error),
+    }
+    publish_session(state, entry_id)
+}
+
+pub(crate) fn last_store_failure(state: &AppState, entry_id: &str) -> bool {
+    matches!(
+        status_projection(state, entry_id),
+        Ok(Some(
+            SessionAccess::Known {
+                last_store_failure: true,
+                ..
+            } | SessionAccess::StoreUnavailable
+        ))
+    )
+}
+
+pub(crate) fn revision_for_state(
+    state: &AppState,
+    entry_id: &str,
+) -> Result<Option<String>, FinanceCredentialError> {
+    #[cfg(feature = "eval-harness")]
+    if crate::eval_harness::replay::credential_environment(&state.credential_environment, entry_id)
+    {
+        return active_revision(&state.credential_environment, entry_id);
+    }
+    match status_projection(state, entry_id)? {
+        Some(SessionAccess::Known {
+            active_revision, ..
+        }) => Ok(active_revision),
+        Some(SessionAccess::Locked) => Err(FinanceCredentialError::Locked),
+        Some(
+            SessionAccess::Unconfirmed
+            | SessionAccess::StoreUnavailable
+            | SessionAccess::PresentUnread
+            | SessionAccess::PresentDenied,
+        )
+        | None => Ok(None),
+    }
+}
+
+pub(crate) fn operation_pending(
+    state: &AppState,
+    entry_id: &str,
+) -> Result<bool, FinanceCredentialError> {
+    Ok(KeychainOperation::pending(
+        NATIVE_SERVICE,
+        native_account(&state.credential_environment, entry_id),
+    )?)
+}
+
+pub(crate) fn reserve(
+    state: &AppState,
+    entry_id: &str,
+) -> Result<KeychainOperation, FinanceCredentialError> {
+    validate_entry_id(entry_id)?;
+    Ok(KeychainOperation::begin(
+        NATIVE_SERVICE,
+        native_account(&state.credential_environment, entry_id),
+    )?)
+}
+
+pub(crate) fn read<T: Send + 'static>(
+    state: &AppState,
+    entry_id: &str,
+    action: impl FnOnce(&AppState, &str) -> Result<T, FinanceCredentialError> + Send + 'static,
+) -> Result<T, FinanceCredentialError> {
+    read_with_timeout(state, entry_id, crate::keychain_operation::TIMEOUT, action)
+}
+
+pub(crate) fn read_timed_out(state: &AppState, entry_id: &str) -> bool {
+    KeychainOperation::read_timed_out(
+        NATIVE_SERVICE,
+        native_account(&state.credential_environment, entry_id),
+    )
+}
+
+pub(crate) fn read_with_timeout<T: Send + 'static>(
+    state: &AppState,
+    entry_id: &str,
+    timeout: std::time::Duration,
+    action: impl FnOnce(&AppState, &str) -> Result<T, FinanceCredentialError> + Send + 'static,
+) -> Result<T, FinanceCredentialError> {
+    let operation = reserve(state, entry_id)?;
+    let state = state.clone();
+    let entry_id = entry_id.to_owned();
+    operation.read_with_timeout(timeout, move || {
+        let result = action(&state, &entry_id);
+        publish_session(&state, &entry_id)?;
+        result
+    })?
+}
+
+pub(crate) fn mutate<T: Send + 'static>(
+    state: &AppState,
+    entry_id: &str,
+    action: impl FnOnce(&AppState, &str) -> Result<T, FinanceCredentialError> + Send + 'static,
+) -> Result<T, FinanceCredentialError> {
+    mutate_with_timeout(state, entry_id, crate::keychain_operation::TIMEOUT, action)
+}
+
+fn mutate_with_timeout<T: Send + 'static>(
+    state: &AppState,
+    entry_id: &str,
+    timeout: std::time::Duration,
+    action: impl FnOnce(&AppState, &str) -> Result<T, FinanceCredentialError> + Send + 'static,
+) -> Result<T, FinanceCredentialError> {
+    let operation = reserve(state, entry_id)?;
+    let state = state.clone();
+    let entry_id = entry_id.to_owned();
+    let maintenance = state.maintenance.clone();
+    operation.mutate_with_timeout(&maintenance, timeout, move || {
+        // A quit after the OS changes the item but before its result publishes
+        // leaves the projection unknown. The next explicit check reads the item.
+        let prior = status_projection(&state, &entry_id).ok().flatten();
+        let pending = serde_json::to_string(&SessionAccess::Unconfirmed)
+            .map_err(|_| FinanceCredentialError::Store)?;
+        state
+            .store
+            .set_connector_credential_status(&entry_id, &pending)
+            .map_err(|_| FinanceCredentialError::Store)?;
+        let result = action(&state, &entry_id);
+        if matches!(
+            result,
+            Err(FinanceCredentialError::Store
+                | FinanceCredentialError::Unavailable
+                | FinanceCredentialError::Unsupported)
+        ) {
+            let environment = &state.credential_environment;
+            let access = match remembered(environment, &entry_id).or(prior) {
+                Some(SessionAccess::Known {
+                    status,
+                    active_revision,
+                    ..
+                }) => SessionAccess::Known {
+                    status,
+                    active_revision,
+                    last_store_failure: true,
+                },
+                Some(SessionAccess::Locked) => SessionAccess::Locked,
+                _ => SessionAccess::StoreUnavailable,
+            };
+            remember(environment, &entry_id, Some(access));
+        }
+        publish_session(&state, &entry_id)?;
+        result
+    })?
+}
+
+pub(crate) fn get_for_state(
+    state: &AppState,
+    entry_id: &str,
+) -> Result<Option<ActiveCredentialBundle>, FinanceCredentialError> {
+    // Replay credentials belong to the caller's runtime. The native credential
+    // worker has no Tokio context and only serves real credential operations.
+    #[cfg(feature = "eval-harness")]
+    if crate::eval_harness::replay::credential_environment(&state.credential_environment, entry_id)
+    {
+        return get(&state.credential_environment, entry_id);
+    }
+    read(state, entry_id, |state, id| {
+        if needs_permission(state, id) {
+            return Err(FinanceCredentialError::PermissionRequired);
+        }
+        get(&state.credential_environment, id)
+    })
+}
 #[cfg(feature = "eval-harness")]
 fn eval_fields() -> BTreeMap<String, String> {
     let mut fields: BTreeMap<String, String> = ["api_key", "app_key", "app_secret"]
@@ -1345,139 +1801,113 @@ fn krx_coverage_belongs_to_the_verified_key_and_survives_a_failed_replacement() 
 mod session_gate_tests {
     use super::*;
 
-    fn saved(environment: &str, entry: &str) {
-        let key = BTreeMap::from([("api_key".into(), "fixture-gate-key".into())]);
-        stage(environment, entry, &key).unwrap();
-        let pending = candidate(environment, entry).unwrap().unwrap();
-        finish_verification(
-            environment,
-            entry,
-            pending.revision(),
-            VerificationOutcome::Verified,
-            5,
-            None,
+    #[test]
+    fn passive_status_never_loads_a_native_item() {
+        let environment = Uuid::new_v4().to_string();
+        let id = "fred.macro";
+        stage(
+            &environment,
+            id,
+            &BTreeMap::from([("api_key".into(), "fixture".into())]),
         )
         .unwrap();
-    }
-
-    #[test]
-    fn listing_status_reads_a_saved_secret_at_most_once_per_session() {
-        let environment = Uuid::new_v4().to_string();
-        let entry = "fred.macro";
-        saved(&environment, entry);
-        let after_save = test_store::secret_reads(&environment, entry);
-        for _ in 0..5 {
-            assert!(status(&environment, entry).unwrap().active);
-            assert!(active_revision(&environment, entry).unwrap().is_some());
-        }
-        assert_eq!(test_store::secret_reads(&environment, entry), after_save);
-
-        // After a restart (an update) the first status read is the only one.
-        test_store::restart(&environment, entry);
-        for _ in 0..5 {
-            assert!(status(&environment, entry).unwrap().active);
-        }
-        assert_eq!(
-            test_store::secret_reads(&environment, entry),
-            after_save + 1
-        );
-        delete(&environment, entry).unwrap();
-    }
-
-    #[test]
-    fn concurrent_first_reads_wait_for_one_answer() {
-        let environment = Uuid::new_v4().to_string();
-        let entry = "fred.macro";
-        saved(&environment, entry);
-        test_store::restart(&environment, entry);
-        let before = test_store::secret_reads(&environment, entry);
-        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
-        let threads = (0..8)
-            .map(|_| {
-                let barrier = barrier.clone();
-                let environment = environment.clone();
-                std::thread::spawn(move || {
-                    barrier.wait();
-                    status(&environment, entry).unwrap().active
-                })
-            })
-            .collect::<Vec<_>>();
-        for thread in threads {
-            assert!(thread.join().unwrap());
-        }
-        assert_eq!(test_store::secret_reads(&environment, entry), before + 1);
-
-        // A denial reached by concurrent callers is also asked once.
-        test_store::restart(&environment, entry);
-        test_store::deny(&environment, entry, true);
-        let before = test_store::secret_reads(&environment, entry);
-        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
-        let threads = (0..8)
-            .map(|_| {
-                let barrier = barrier.clone();
-                let environment = environment.clone();
-                std::thread::spawn(move || {
-                    barrier.wait();
-                    status(&environment, entry).is_err()
-                })
-            })
-            .collect::<Vec<_>>();
-        for thread in threads {
-            assert!(thread.join().unwrap());
-        }
-        assert_eq!(test_store::secret_reads(&environment, entry), before + 1);
-        test_store::deny(&environment, entry, false);
-        delete(&environment, entry).unwrap();
+        assert!(status(&environment, id).unwrap().stored);
+        let reads = test_store::secret_reads(&environment, id);
+        test_store::restart(&environment, id);
+        assert!(!status(&environment, id).unwrap().stored);
+        assert!(active_revision(&environment, id).unwrap().is_none());
+        assert_eq!(test_store::secret_reads(&environment, id), reads);
+        delete(&environment, id).unwrap();
     }
 
     #[test]
     fn a_denial_is_remembered_for_its_own_credential_until_try_again() {
         let environment = Uuid::new_v4().to_string();
-        let (locked, other) = ("fred.macro", "krx.market-data");
-        saved(&environment, locked);
-        saved(&environment, other);
-        test_store::restart(&environment, locked);
-        test_store::restart(&environment, other);
-        test_store::deny(&environment, locked, true);
+        let id = "fred.macro";
+        let patch = BTreeMap::from([("api_key".into(), "fixture".into())]);
+        stage(&environment, id, &patch).unwrap();
+        test_store::deny(&environment, id, true);
+        let before = test_store::secret_reads(&environment, id);
+        assert!(matches!(
+            get(&environment, id),
+            Err(FinanceCredentialError::Locked)
+        ));
+        assert!(is_locked(&environment, id));
+        assert!(matches!(
+            status(&environment, id),
+            Err(FinanceCredentialError::Locked)
+        ));
+        assert!(matches!(
+            get(&environment, id),
+            Err(FinanceCredentialError::Locked)
+        ));
+        assert_eq!(test_store::secret_reads(&environment, id), before + 1);
+        assert!(matches!(
+            unlock(&environment, id),
+            Err(FinanceCredentialError::Locked)
+        ));
+        test_store::deny(&environment, id, false);
+        assert!(unlock(&environment, id).unwrap().stored);
+        assert_eq!(test_store::secret_reads(&environment, id), before + 3);
+        delete(&environment, id).unwrap();
+    }
 
-        let before = test_store::secret_reads(&environment, locked);
-        assert!(matches!(
-            status(&environment, locked),
-            Err(FinanceCredentialError::Locked)
-        ));
-        assert!(is_locked(&environment, locked));
-        // Every later passive caller is refused without asking again.
-        assert!(matches!(
-            status(&environment, locked),
-            Err(FinanceCredentialError::Locked)
-        ));
-        assert!(matches!(
-            get(&environment, locked),
-            Err(FinanceCredentialError::Locked)
-        ));
-        assert!(matches!(
-            active_revision(&environment, locked),
-            Err(FinanceCredentialError::Locked)
-        ));
-        assert_eq!(test_store::secret_reads(&environment, locked), before + 1);
+    #[test]
+    fn late_native_save_success_and_failure_update_the_durable_projection() {
+        for stored in [true, false] {
+            late_native_save(stored);
+        }
+    }
 
-        // The other connection is unaffected.
-        assert!(!is_locked(&environment, other));
-        assert!(status(&environment, other).unwrap().active);
-        assert!(get(&environment, other).unwrap().is_some());
-
-        // Try again asks again; still denied, still locked.
+    fn late_native_save(stored: bool) {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_persistent_test(temporary.path().join("app"));
+        let id = "openfigi.lookup";
+        let release = test_store::block_next_write(&state.credential_environment, id);
+        let before = test_store::backend_calls(&state.credential_environment);
         assert!(matches!(
-            unlock(&environment, locked),
-            Err(FinanceCredentialError::Locked)
+            mutate_with_timeout(
+                &state,
+                id,
+                std::time::Duration::from_millis(100),
+                |state, _| {
+                    save_lookup_key(&state.credential_environment, "late-fixture-secret")
+                }
+            ),
+            Err(FinanceCredentialError::Unavailable)
         ));
-        assert_eq!(test_store::secret_reads(&environment, locked), before + 2);
-        // Allowed this time: the connection is back.
-        test_store::deny(&environment, locked, false);
-        assert!(unlock(&environment, locked).unwrap().active);
-        assert!(!is_locked(&environment, locked));
-        assert!(get(&environment, locked).unwrap().is_some());
-        delete(&environment, locked).unwrap();
-        delete(&environment, other).unwrap();
+        assert_eq!(
+            test_store::backend_calls(&state.credential_environment),
+            before + 2
+        );
+        assert!(matches!(
+            reserve(&state, id),
+            Err(FinanceCredentialError::Busy)
+        ));
+        assert!(!status_for_state(&state, id).unwrap().active);
+        assert!(state.maintenance.begin_update().is_err());
+        release.send(stored).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let settled = loop {
+            if let Ok(settled) = reserve(&state, id) {
+                break settled;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        assert_eq!(status_for_state(&state, id).unwrap().active, stored);
+        let record = state
+            .store
+            .connector_credential_status(id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.contains("api_key"), stored);
+        assert!(!record.contains("late-fixture-secret"));
+        test_store::restart(&state.credential_environment, id);
+        assert_eq!(status_for_state(&state, id).unwrap().active, stored);
+        assert_eq!(last_store_failure(&state, id), !stored);
+        assert!(state.maintenance.begin_update().is_ok());
+        drop(settled);
+        delete(&state.credential_environment, id).unwrap();
     }
 }

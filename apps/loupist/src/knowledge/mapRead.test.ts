@@ -1,7 +1,7 @@
 import { readKnowledgeMap } from "./mapRead";
 import type { LoupistBridge } from "../types";
 
-it("shares one Map read while it is in flight, and asks again after it settles or when fresh", async () => {
+it("shares one World read while it is in flight, and asks again after it settles or when fresh", async () => {
   const knowledgeMap = vi.fn(async () => ({ nodes: [], edges: [] }));
   const bridge = { knowledgeMap } as unknown as LoupistBridge;
   const first = readKnowledgeMap(bridge, "a");

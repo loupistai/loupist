@@ -64,13 +64,20 @@ describe("Agent configuration", () => {
   it("starts with Chat defaults and confirms a saved selection while advanced controls stay collapsed", async () => {
     const user = userEvent.setup();
     const fixture = await setup();
-    render(<Settings {...fixture} />);
-    const model = await screen.findByLabelText("Default model");
-    await user.selectOptions(model, "model-test");
+    const catalog = await fixture.bridge.providerConfigure({ provider: "google", api_key: "fixture" });
+    render(<Settings {...fixture} catalog={catalog} />);
+    const model = await screen.findByRole("button", { name: /GPT-5.6 Luna.*Default model/ });
+    await user.click(model);
+    expect(screen.getByRole("menuitemradio", { name: "GPT-5.6 Luna Default" })).toBeChecked();
+    await user.click(screen.getByRole("menuitemradio", { name: "google default" }));
+    await user.keyboard("{Escape}");
     expect(await screen.findByText("Saved · Applies to new responses")).toBeInTheDocument();
-    expect((await fixture.bridge.configRead({ scope: { kind: "global" } })).explicit?.chat?.model_profile_id).toBe("model-test");
+    expect((await fixture.bridge.configRead({ scope: { kind: "global" } })).explicit?.chat?.model_profile_id).toBe("google/google-default");
     await user.selectOptions(screen.getByLabelText("Settings apply to"), "loupist-quality");
-    await waitFor(() => expect(screen.getByLabelText("Default model")).toHaveValue("model-test"));
+    await user.click(await screen.findByRole("button", { name: /google default.*Default model/ }));
+    expect(screen.getByRole("menuitemradio", { name: "google default" })).toBeChecked();
+    expect(screen.queryByText("Default")).toBeNull();
+    await user.keyboard("{Escape}");
     expect(screen.queryByRole("button", { name: "Reset Default model" })).not.toBeInTheDocument();
     expect(screen.queryByText("Saved · Applies to new responses")).not.toBeInTheDocument();
   });

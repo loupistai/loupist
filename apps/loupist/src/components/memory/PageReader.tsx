@@ -6,16 +6,17 @@ import type { BasisRefView, KnowledgeCatalog, KnowledgeLocation, KnowledgePin, L
 import { errorMessage } from "../../lib/errors";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
+import { useRequestTurn } from "./requestTurn";
+import { SectionSources } from "./SectionSources";
 import { Spinner } from "../ui/spinner";
 import { SafeMessageResponse } from "../chat/SafeMessageResponse";
 import { OpenProvider, useOpenLayer, type OpenLayer } from "../navigation/Open";
-import { displaySectionHeading } from "../../knowledge/hostDefaults";
+import { displaySectionHeading, historySectionHeading } from "../../knowledge/hostDefaults";
 import { sharingReleaseVisible } from "../../sharing/releaseVisibility";
 import { SharedOrigin } from "../sharing/SharedOrigin";
 import { SHARED_SECTION_ITEM } from "../sharing/SharedPacks";
 import { ShareSheet } from "../sharing/ShareSheet";
 import { pinForLens } from "../../knowledge/location";
-import { sourceTitle } from "../../knowledge/hostSource";
 import "@/styles/page-reader.css";
 
 const WORLD_LINK = /\]\(world:([^)\s]+)\)/gu;
@@ -57,6 +58,7 @@ function PageLinks({ onLens, children }: { onLens: (recordId: string) => void; c
 
 export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, usage, children, chatTitle, onOpenPage, onOpen, onAsk, onChanged, onLoaded, takeFocus = true }: PageReaderProps) {
   const { t } = useTranslation("knowledge");
+  const requestTurn = useRequestTurn();
   const [page, setPage] = useState<PageView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -119,12 +121,6 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, usag
     }
     onOpenPage(target);
   };
-  const openSource = (ref: Extract<BasisRefView, { kind: "span" }>) => {
-    const record = catalog?.sources.find(item => item.recordId === ref.recordId);
-    const sourceId = record?.objects[0]?.id;
-    if (!record) return;
-    onOpen({ loupistId, surface: "source", recordId: record.recordId, revisionId: record.revisionId, objectId: sourceId, selection: { kind: "source", sourceId, spanId: ref.spanId } });
-  };
   const openClaim = (claimId: string) => onOpen({ loupistId, surface: "world", view: { followCurrent: true }, selection: { kind: "claim", id: claimId } });
   const forget = (section: SectionView) => void act(() => bridge.memorySectionForget({ loupistId, recordId, key: section.key }), next => {
     const entry = next.history.find(item => item.op === "retire" && item.key === section.key);
@@ -132,19 +128,16 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, usag
   });
   const undo = (opId: string) => void act(() => bridge.memoryOpUndo({ loupistId, opId }), () => setForgot(null));
 
-  const chip = (ref: BasisRefView, index: number) => {
+  const chip = (ref: Exclude<BasisRefView, { kind: "span" }>, index: number, section: SectionView) => {
     switch (ref.kind) {
       case "claim": return <button key={index} type="button" className="page-chip" data-chip="claim" onClick={() => openClaim(ref.claimId)}>{t("pageReader.chip.claim")}</button>;
-      case "span": {
-        // "Source · {title}" when the Library has the source, else just "Source" (direction N3).
-        const record = catalog?.sources.find(item => item.recordId === ref.recordId);
-        const title = record ? sourceTitle(record).trim() : "";
-        const label = title ? t("pageReader.chip.sourceTitled", { title }) : t("pageReader.chip.source");
-        return record
-          ? <button key={index} type="button" className="page-chip" data-chip="source" title={title || undefined} onClick={() => openSource(ref)}><span className="page-chip-label">{label}</span></button>
-          : <span key={index} className="page-chip" data-chip="source">{label}</span>;
+      case "said": {
+        const turn = requestTurn?.(ref.messageId);
+        const date = formatDate(turn ? new Date(turn.date) : section.updatedAtMs, { year: undefined, month: "short", day: "numeric" });
+        const label = t("pageReader.chip.requested", { date });
+        return turn ? <button key={index} type="button" role="link" className="page-chip" data-chip="said" onClick={turn.open}>{label}</button>
+          : <span key={index} className="page-chip" data-chip="said">{label}</span>;
       }
-      case "said": return <span key={index} className="page-chip" data-chip="said">{t("pageReader.chip.said")}</span>;
       case "page": {
         // A page title can be a whole sentence: the chip shortens it and keeps it whole in its name and tooltip.
         const label = t("pageReader.chip.page", { title: known.get(ref.recordId) ?? t("pageReader.chip.pageUnknown") });
@@ -154,7 +147,7 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, usag
   };
 
   const entryText = (entry: LensLogEntryView) => {
-    const section = entry.key ? sections.find(item => item.key === entry.key)?.heading ?? entry.key : "";
+    const section = historySectionHeading(entry);
     const chat = entry.chatId ? chatTitle?.(entry.chatId) : undefined;
     const what = entry.undoesOpId ? t("pageReader.history.undone", { section })
       : entry.op === "summary" ? t("pageReader.history.summary")
@@ -185,18 +178,17 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, usag
       {body.why ? <section className="page-section"><h3>{t("pageReader.why")}</h3><p>{body.why}</p></section> : null}
       {body.example ? <section className="page-section"><h3>{t("pageReader.example")}</h3><p>{body.example}</p></section> : null}
     </div> : <div className="page-sections">
-      {sections.map((section, index) => <section key={section.key} className="page-section" data-section-key={section.key} data-contested={section.contested || undefined} aria-label={section.heading}>
-        <header>
-          <h3>{section.heading}</h3>
-          <div className="page-section-tools">
-            {section.chip === "view" ? <span className="page-chip" data-chip="view">{t("pageReader.chip.view")}</span> : null}
-            {section.basis.refs.map(chip)}
-            {section.contested ? <button type="button" className="page-contested" disabled={!section.contestedClaimIds[0]} onClick={() => section.contestedClaimIds[0] && openClaim(section.contestedClaimIds[0])}><TriangleAlertIcon aria-hidden="true" />{t("pageReader.contested")}</button> : null}
-            {page.archived ? null : <Button variant="ghost" size="sm" className="page-forget" disabled={busy} aria-label={t("pageReader.forgetSection", { heading: section.heading })} onClick={() => forget(section)}>{t("pageReader.forget")}</Button>}
-          </div>
-        </header>
+      {sections.map((section, index) => <section key={section.key} className="page-section" data-section-key={section.key} data-contested={section.contested || undefined} aria-label={section.heading.trim() || undefined}>
+        {section.heading.trim() && <h3>{section.heading}</h3>}
         <PageLinks onLens={openLens}><SafeMessageResponse text={rewritten.texts[index] ?? section.markdown} isAnimating={false} /></PageLinks>
         {section.chip === "view" && section.basis.uncertainty ? <p className="page-uncertainty">{t("pageReader.uncertainty", { text: section.basis.uncertainty })}</p> : null}
+        <div className="page-section-tools">
+          <SectionSources refs={section.basis.refs.filter(ref => ref.kind === "span")} catalog={catalog} loupistId={loupistId} onOpen={onOpen} />
+          {section.chip === "view" ? <span className="page-chip" data-chip="view">{t("pageReader.chip.view")}</span> : null}
+          {section.basis.refs.filter(ref => ref.kind !== "span").map((ref, index) => chip(ref, index, section))}
+          {section.contested ? <button type="button" className="page-contested" disabled={!section.contestedClaimIds[0]} onClick={() => section.contestedClaimIds[0] && openClaim(section.contestedClaimIds[0])}><TriangleAlertIcon aria-hidden="true" />{t("pageReader.contested")}</button> : null}
+          {page.archived ? null : <Button variant="ghost" size="sm" className="page-forget" disabled={busy} aria-label={section.heading.trim() ? t("pageReader.forgetSection", { heading: section.heading }) : t("pageReader.forget")} onClick={() => forget(section)}>{t("pageReader.forget")}</Button>}
+        </div>
       </section>)}
       {!sections.length ? <p className="knowledge-hint">{t(page.kind === "perspective" ? "pageReader.emptyPerspective" : "pageReader.emptyPage")}</p> : null}
     </div>}

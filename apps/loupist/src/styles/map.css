@@ -197,7 +197,7 @@
 .map-library .source-library-controls,.map-library .research-library-controls { position:sticky; top:0; z-index:var(--gg-z-sticky); grid-template-columns:minmax(0,1fr); gap:var(--gg-space-3); padding:var(--gg-space-3) var(--gg-space-4) 0; border-bottom:0; background:var(--gg-color-bg-raised); }
 .map-library .source-library-row,.map-library .research-library-row { padding:var(--gg-space-3) var(--gg-space-4); border-radius:0; }
 .map-library .memory-rail-copy strong { font-size:var(--gg-text-control); display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
-.map-library .source-summary { font-size:var(--gg-text-meta); -webkit-line-clamp:2; }
+.map-library .source-summary { font-size:var(--gg-text-meta); }
 .map-reader .source-reader button { min-height:var(--gg-size-control-sm); }
 
 /* The Chat map shares the canvas while retaining a compact, independent scope. */

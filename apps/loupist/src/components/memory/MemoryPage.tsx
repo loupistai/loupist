@@ -10,7 +10,7 @@ import { errorMessage } from "../../lib/errors";
 import { revealFocused } from "../../lib/revealFocused";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { displaySectionHeading } from "../../knowledge/hostDefaults";
+import { historySectionHeading } from "../../knowledge/hostDefaults";
 import { chatTitle } from "../../app/chatTitle";
 import { LensLearningPanel } from "../knowledge/LensLearningPanel";
 import { PageReader } from "./PageReader";
@@ -29,7 +29,7 @@ import "@/styles/map.css";
 const t = i18n.getFixedT(null, "knowledge");
 export type MemorySegment = "pages" | "history";
 const SEGMENTS: readonly MemorySegment[] = ["pages", "history"];
-const KIND_ORDER: readonly LensKind[] = ["subject", "idea", "method", "principle", "perspective"];
+const KIND_ORDER: readonly LensKind[] = ["perspective", "principle", "method", "subject", "idea"];
 const day = (ms: number) => formatDate(ms, { year: undefined, month: "short", day: "numeric" });
 
 type Item = {
@@ -47,7 +47,7 @@ type Data = {
   paused: Set<string>;
   principles: Principle[];
   catalog: KnowledgeCatalog;
-  userRows: HistoryRow[];
+  sectionHistory: HistoryRow[];
   usage: Map<string, MemoryUsage>;
   reviews: LearningReview[];
   events: GrowthEvent[];
@@ -74,7 +74,7 @@ type Props = {
 };
 
 /**
- * "What {Loupist} knows": what the Loupist knows about the user, the principles the
+ * The Lens shows the perspective, the principles the
  * user taught, the methods it learned, and when. Every write is a typed intent
  * that Rust validates.
  */
@@ -116,14 +116,14 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
       bridge.githubAccount().then(account => account.indexConfigured).catch(() => false),
       bridge.knowledgeMemoryControls({ loupistId }),
     ]).then(async ([principles, catalog, usage, reviews, events, learnMethods, suggestions, imports, indexConfigured, controls]) => {
-      const touched = [...new Set(events.filter(event => event.kind === "lens_revised" && event.actor === "user" && event.recordId).map(event => event.recordId!))].slice(0, 20);
+      const touched = [...new Set(events.filter(event => (event.kind === "lens_revised" || event.kind === "lens_created") && event.recordId).map(event => event.recordId!))].slice(0, 20);
       const pages = await Promise.all(touched.map(recordId => bridge.knowledgeLensRead({ loupistId, recordId }).catch(() => null)));
       if (!live) return;
       setData({
         paused: new Set(controls.paused),
         principles: principles.filter(item => !item.archived),
         catalog,
-        userRows: pages.flatMap(page => page ? sectionRows(page) : []),
+        sectionHistory: pages.flatMap(page => page ? sectionRows(page) : []),
         usage: new Map(usage.map(item => [item.recordId, item])),
         reviews, events, learnMethods, suggestions, imports, indexConfigured,
       });
@@ -165,7 +165,7 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `terms` follows `query`.
   }, [bridge, loupistId, query]);
   const shown = items.filter(item => !terms || (item.kind === "principle" ? `${item.title} ${item.summary}`.toLowerCase().includes(terms) : hits?.has(item.id)));
-  const selected = items.find(item => item.id === selectedId);
+  const selected = shown.find(item => item.id === selectedId);
   const remember = config.snapshot ? config.snapshot.effective.chat.use_memory && config.snapshot.effective.chat.update_memory : null;
   const paused = remember === false && data?.learnMethods === false;
   const resume = async () => {
@@ -181,6 +181,7 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
     setResuming(false);
   };
 
+  const searchPages = (value: string) => { setQuery(value); setHits(null); setChosen(false); setCompactReader(false); };
   const open = (id: string) => { setSelectedId(id); setChosen(true); setCompactReader(true); };
   const openKnowledge = (location: KnowledgeLocation) => {
     if (location.surface === "source") { setSourceLocation(location); return; }
@@ -207,8 +208,8 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
       {/* With no pages yet there is nothing to search; the empty list says how pages appear. */}
       {current === "pages" && !(data && !items.length && !query) ? <label className="memory-page-search">
         <SearchIcon aria-hidden="true" />
-        <Input type="search" aria-label={t("memoryPage.search")} placeholder={t("memoryPage.search")} value={query} onChange={event => setQuery(event.target.value)} />
-        {query ? <Button variant="ghost" size="icon-sm" aria-label={t("memoryPage.clearSearch")} onClick={() => setQuery("")}><XIcon /></Button> : null}
+        <Input type="search" aria-label={t("memoryPage.search")} placeholder={t("memoryPage.search")} value={query} onChange={event => searchPages(event.target.value)} />
+        {query ? <Button variant="ghost" size="icon-sm" aria-label={t("memoryPage.clearSearch")} onClick={() => searchPages("")}><XIcon /></Button> : null}
       </label> : null}
     </div>
     {paused ? <div className="memory-page-paused" role="status"><span>{t("memoryPage.paused.banner")}</span><Button size="sm" variant="outline" disabled={resuming} onClick={() => void resume()}>{t("memoryPage.actions.resume")}</Button></div> : null}
@@ -226,8 +227,10 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
           </div>}
           after={showSharing ? <SharedPacks ref={sharedRef} bridge={bridge} loupistId={loupistId} imports={data.imports} indexConfigured={data.indexConfigured}
             onChanged={imports => { setData(current => current && { ...current, imports }); changed(); }} /> : null} />
-        <Reader item={selected} takeFocus={chosen} bridge={bridge} loupistId={loupistId} usage={data.usage} paused={Boolean(selected && data.paused.has(selected.id))} threads={threads} onOpenChat={onOpenChat} onChanged={changed} onClose={() => setCompactReader(false)} backLabel={t("memoryPage.tabs.pages")} catalog={data.catalog} onOpenKnowledge={openKnowledge} onOpenPage={open} onAsk={onAsk}
-          onShare={showSharing ? recordId => setShare({ recordId }) : undefined} onAboutShared={showSharing ? () => { setSegment("pages"); setCompactReader(false); requestAnimationFrame(() => sharedRef.current?.scrollIntoView?.({ block: "start" })); } : undefined} />
+        {terms && !selected && selectedId ? <div className="memory-reader" data-testid="memory-reader">
+          <p className="memory-empty">{t("memoryPage.filteredReader")}</p>
+        </div> : <Reader item={selected} takeFocus={chosen} bridge={bridge} loupistId={loupistId} usage={data.usage} paused={Boolean(selected && data.paused.has(selected.id))} threads={threads} onOpenChat={onOpenChat} onChanged={changed} onClose={() => setCompactReader(false)} backLabel={t("memoryPage.tabs.pages")} catalog={data.catalog} onOpenKnowledge={openKnowledge} onOpenPage={open} onAsk={onAsk}
+          onShare={showSharing ? recordId => setShare({ recordId }) : undefined} onAboutShared={showSharing ? () => { setSegment("pages"); setCompactReader(false); requestAnimationFrame(() => sharedRef.current?.scrollIntoView?.({ block: "start" })); } : undefined} />}
       </> : null}
       {current === "history" ? (() => {
         // The newest row that names a principle or method opens by default, so the tab shows how something was learned.
@@ -375,16 +378,18 @@ function Reader({ item, takeFocus, bridge, loupistId, usage, paused, threads, on
 type HistoryRow = { key: string; atMs: number; text: string; failed?: boolean; itemId?: string; map?: boolean };
 
 function sectionRows(page: PageView): HistoryRow[] {
-  const heading = (key?: string) => key ? displaySectionHeading(key, (page.body.kind === "principle" ? undefined : page.body.sections.find(section => section.key === key)?.heading) ?? key) : "";
-  return page.history.filter(entry => entry.origin === "user" && entry.outcome !== "summarized" && ["added", "retired"].includes(entry.outcome) && (entry.undoesOpId || entry.outcome === "retired")).map(entry => ({
-    key: `section:${entry.opId}`, atMs: entry.createdAtMs, itemId: page.recordId,
-    text: t(entry.undoesOpId ? "memoryPage.history.undone" : "memoryPage.history.forgot", { section: heading(entry.key), page: page.title }),
-  }));
+  return page.history.filter(entry => ["added", "replaced", "retired"].includes(entry.outcome)).map(entry => {
+    const section = historySectionHeading(entry);
+    const label = entry.undoesOpId ? "undone" : entry.outcome === "added" ? "added" : entry.outcome === "replaced" ? "replaced"
+      : entry.origin === "user" ? "forgot" : "retired";
+    return { key: `section:${entry.opId}`, atMs: entry.createdAtMs, itemId: page.recordId,
+      text: t(`memoryPage.history.${label}`, { section, page: page.title }) };
+  });
 }
 
 function historyRows(data: Data, threads: readonly ChatThread[]): HistoryRow[] {
   const titles = new Map(data.catalog.lenses.map(lens => [lens.recordId, lens.title]));
-  const rows: HistoryRow[] = [...data.userRows];
+  const rows: HistoryRow[] = [...data.sectionHistory];
   const filed = new Map<string, { atMs: number; chatId: string; recordIds: string[] }>();
   for (const event of data.events) {
     if ((event.kind !== "lens_created" && event.kind !== "lens_revised") || event.actor === "user" || !event.originChatId || !event.recordId) continue;

@@ -23,25 +23,6 @@ type Helpers = {
 
 const RETRIEVED = "2026-03-18T06:00:00Z";
 const ko = () => previewKo();
-/** Bundled Skills for everyday questions (finance-korea-retail-disagreement.md §3.2). */
-const RETAIL_SKILLS = ["dividend-income", "fund-compare", "why-it-moved", "goal-math"] as const;
-
-/** The `/` menu's rows for the retail Skills, found by their blurbs, in list order. */
-function retailRows(assist: Element | null) {
-  const blurbs = RETAIL_SKILLS.map(id => i18n.t(`chat:skillBlurb.${id}`));
-  return [...assist?.querySelectorAll<HTMLElement>('[role="option"]') ?? []].filter(row => blurbs.includes(row.querySelector("small")?.textContent ?? ""));
-}
-
-/** A row the list shows whole, above its fading edge; without layout (tests), being listed is enough. */
-function shownInList(row: HTMLElement, assist: Element) {
-  const scroll = assist.querySelector(".composer-assist-scroll");
-  if (!scroll || document.documentElement.clientWidth === 0) return true;
-  const box = scroll.getBoundingClientRect();
-  const fade = scroll.hasAttribute("data-more-below") ? 24 : 0;
-  const rect = row.getBoundingClientRect();
-  return rect.height > 0 && rect.top >= box.top - 1 && rect.bottom <= box.bottom - fade + 1;
-}
-
 /** UTF-8 byte offsets of `needle` in `text`, as Rust stores a passage match. */
 function spanOf(text: string, needle: string) {
   const at = text.indexOf(needle);
@@ -379,19 +360,23 @@ export function answerCheckScenarios({ base, select, until, click, clickMapActio
     { ...base("composer-asof-chip", "The as-of mode stays below the question", () => select(".composer-chip-tray .composer-asof-chip"), async root => {
       await type(root, `/asof ${AS_OF} `);
     }), setup: bridge => prepareFixture(bridge, "answer") },
-    // finance-korea-retail-disagreement.md §2.4: the retail Skills, each with its blurb, under `/`,
-    // scrolled into the list's view as a reader would scroll to them.
-    { ...base("composer-slash-retail-skills", "The retail Skills with their blurbs under /", () => {
-      const assist = select(".composer-assist");
-      const rows = retailRows(assist);
-      return assist && rows.length === RETAIL_SKILLS.length && rows.every(row => shownInList(row, assist)) ? assist : null;
+    { ...base("composer-slash-retail-skills", "Search finds a bundled retail Skill and its description", () => {
+      const row = select(`.composer-assist [role="option"][aria-label="${i18n.t("settings:bundledSkills.fund-compare.name")}"]`);
+      return row?.textContent?.includes(i18n.t("chat:skillBlurb.fund-compare")) ? row : null;
     }, async root => {
-      await type(root, "/");
-      const assist = await until(() => select(".composer-assist"), "The / menu did not open");
-      const [first] = await until(() => { const rows = retailRows(assist); return rows.length === RETAIL_SKILLS.length && rows; }, "The retail Skills are not under /");
-      const scroll = assist.querySelector<HTMLElement>(".composer-assist-scroll")!;
-      if (hasLayout()) scroll.scrollTop += first!.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 4;
-    }), setup: bridge => prepareFixture(bridge, "answer") },
+      await type(root, "/fund-compare");
+    }), setup: async bridge => {
+      await prepareFixture(bridge, "answer");
+      // A stale inventory from an older bridge can still contain a personal Skill.
+      const read = bridge.skillsList.bind(bridge);
+      bridge.skillsList = async request => {
+        const catalog = await read(request);
+        return { ...catalog, skills: [...catalog.skills, {
+          id: "personal-fund-compare", source: "personal", name: "Personal fund comparison", description: "Compare funds",
+          enabled: true, editable: false, fixed: false, shadowed: false, error: null, path: null, revision: "preview",
+        }] };
+      };
+    } },
     { ...base("chat-asof-answer", "An as-of answer: tags, a skipped step, the note and Known as of", () => select('.number-chip-popover .number-chip-status[data-status="as_of"]') && select(".as-of-note"), async root => {
       await answerLoaded(root);
       await click("article.message.assistant .chat-progress-toggle", root);

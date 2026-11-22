@@ -2,6 +2,7 @@ mod catalog;
 pub(crate) mod connector_config;
 pub(crate) mod credentials;
 pub(crate) mod entry_lookup;
+pub(crate) mod key_permission;
 
 pub(crate) use catalog::progress_names;
 pub use catalog::*;
@@ -22,11 +23,19 @@ use crate::{
     runs::maintenance::MaintenanceActivityKind,
 };
 
-pub(crate) fn connector_lifecycle_lock() -> Result<MutexGuard<'static, ()>, CommandError> {
+fn connector_lifecycle_mutex() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(Default::default)
+}
+
+pub(crate) fn connector_lifecycle_lock() -> Result<MutexGuard<'static, ()>, CommandError> {
+    connector_lifecycle_mutex()
         .lock()
         .map_err(|_| CommandError::internal("connector lifecycle lock was poisoned"))
+}
+
+pub(crate) fn try_connector_lifecycle_lock() -> Option<MutexGuard<'static, ()>> {
+    connector_lifecycle_mutex().try_lock().ok()
 }
 
 pub(crate) fn with_connector_lifecycle<T>(
@@ -38,11 +47,17 @@ pub(crate) fn with_connector_lifecycle<T>(
     operation()
 }
 
+pub(crate) fn reconcile_credential_presence(state: &AppState) -> Result<(), CommandError> {
+    crate::finance_credentials::reconcile_presence(state, &bundled_marketplace()?.catalog);
+    Ok(())
+}
+
 #[tauri::command(rename_all = "snake_case")]
 pub async fn marketplace_snapshot(
     state: State<'_, AppState>,
 ) -> Result<MarketplaceSnapshotDto, CommandError> {
     off_main_thread(&state, |state| {
+        reconcile_credential_presence(state)?;
         with_connector_lifecycle(state, || marketplace_snapshot_for_state(state))
     })
     .await
@@ -55,6 +70,7 @@ pub async fn loupist_capability_list(
 ) -> Result<Vec<LoupistCapabilityBindingDto>, CommandError> {
     off_main_thread(&state, move |state| {
         state.ensure_loupist_available(&loupist_id)?;
+        reconcile_credential_presence(state)?;
         with_connector_lifecycle(state, || {
             loupist_capability_list_for_state(&loupist_id, state)
         })
@@ -234,8 +250,16 @@ fn connector_status(
     entry: &MarketplaceEntryDto,
     state: &AppState,
 ) -> Result<MarketplaceConnectorStatusDto, CommandError> {
-    let config = read_connector_config(state, &entry.id)?;
-    let config_state = config_state(entry, &config);
+    let (config, config_state) = match read_connector_config(state, &entry.id) {
+        Ok(config) => {
+            let status = config_state(entry, &config);
+            (config, status)
+        }
+        Err(error) if error.code == "config_apply_pending" => {
+            (BTreeMap::new(), MarketplaceConfigState::Missing)
+        }
+        Err(error) => return Err(error),
+    };
     let credentials = credential_statuses(state, entry)?;
     let credentials_ready = entry
         .setup
@@ -249,11 +273,23 @@ fn connector_status(
             })
         })
         .unwrap_or(true);
+    use crate::finance_credentials::StatusRecovery;
+    // Keyless connections with an optional saved key also need a successful
+    // presence check before a run can read their credential item.
+    let key_recovery_needed = !credentials.is_empty()
+        && matches!(
+            crate::finance_credentials::status_recovery(state, &entry.id),
+            Some(
+                StatusRecovery::SavedUnread
+                    | StatusRecovery::SavedDenied
+                    | StatusRecovery::PresenceUnavailable
+            )
+        );
     let configuration_ready = !matches!(config_state, MarketplaceConfigState::Missing);
     let runtime_ready = runtime_ready(entry, state);
     let readiness = if !runtime_ready {
         MarketplaceConnectorReadiness::RuntimeUnavailable
-    } else if configuration_ready && credentials_ready {
+    } else if configuration_ready && credentials_ready && !key_recovery_needed {
         MarketplaceConnectorReadiness::Ready
     } else {
         MarketplaceConnectorReadiness::NeedsConfiguration

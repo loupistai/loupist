@@ -85,6 +85,55 @@ async fn an_option_answer_resumes_the_waiting_call_and_settles_the_card() {
 }
 
 #[tokio::test]
+async fn an_ask_user_card_releases_the_reader_until_the_answer_can_resume() {
+    use crate::{chat::control::chat_control_channel, runs::coordinator::RunKind};
+    let temporary = tempfile::tempdir().unwrap();
+    let (mut executor, mut cards) = asking_executor(&temporary, None);
+    let state = executor.state.clone();
+    let (control, _) = chat_control_channel();
+    let _reader = state
+        .register_chat_run(
+            "asking".into(),
+            "loupist-a".into(),
+            "chat-a".into(),
+            control,
+        )
+        .unwrap();
+    let executor_capture = &mut Arc::get_mut(&mut executor).unwrap().capture;
+    Arc::get_mut(executor_capture).unwrap().chat_run_id = Some("asking".into());
+    let pending = spawn_ask(&executor, fork());
+    let (_, waiting) = cards.recv().await.unwrap();
+    let (control, _) = chat_control_channel();
+    let _saver = state
+        .register_chat_run("saver".into(), "loupist-a".into(), "chat-b".into(), control)
+        .unwrap();
+    assert!(state.claim_run_completion("saver", RunKind::Chat).unwrap());
+    state.run_coordinator.queue_chat_save("saver").unwrap();
+    assert_eq!(
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            state.run_coordinator.wait_for_chat_save("saver", |_| {}),
+        )
+        .await
+        .unwrap()
+        .unwrap(),
+        None
+    );
+    questions::answer("loupist-a", &waiting.request_id, QuestionAnswer::Choice(1)).unwrap();
+    let (_, answered) = cards.recv().await.unwrap();
+    assert_eq!(answered.state, QuestionState::Answered);
+    assert!(
+        !pending.is_finished(),
+        "the active commit still owns admission"
+    );
+    state.run_coordinator.finish_chat_save("saver");
+    assert_eq!(
+        pending.await.unwrap().unwrap(),
+        json!({"answered": true, "choice": "Last 3 years"}),
+    );
+}
+
+#[tokio::test]
 async fn a_free_text_answer_reaches_the_model_as_the_users_words() {
     let temporary = tempfile::tempdir().unwrap();
     let (executor, mut cards) = asking_executor(&temporary, None);

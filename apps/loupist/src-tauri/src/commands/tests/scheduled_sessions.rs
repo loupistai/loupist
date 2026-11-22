@@ -250,6 +250,7 @@ async fn a_scheduled_run_sends_the_tasks_request_and_the_users_reply_lists_the_s
 fn the_previous_run_block_carries_its_hint_and_leaves_the_context_digest_alone() {
     use crate::scheduled_tasks::types::{PreviousRun, RunStatus};
     let previous = PreviousRun {
+        memory_save_skip: None,
         finished_at: "2026-11-19T23:01:30Z".into(),
         status: RunStatus::Succeeded,
         quiet: true,

@@ -24,14 +24,19 @@ export const CONNECTION_STATES: Record<
 export function connectionState(connector?: MarketplaceConnectorStatus): ConnectionState {
   if (!connector) return "not_connected";
   if (connector.readiness === "runtime_unavailable") return "unavailable";
-  if (connector.readiness === "ready") return "ready";
-  // macOS refused this session's read of the saved key: only this connection waits for Try again.
+  // A refusal or a still-pending read that timed out only affects this card.
   if (connector.credentials.some((credential) => credential.locked)) return "locked";
+  if (connector.readiness === "ready") return "ready";
   const savedConfig = Object.values(connector.config).some((value) => value.trim() !== "");
   const failing =
     connector.credentials.some((credential) => credential.stored || credential.last_error) ||
     (connector.config_state === "missing" && savedConfig);
   return failing ? "needs_attention" : "not_connected";
+}
+
+export function needsSavedKeyPermission(connector?: MarketplaceConnectorStatus): boolean {
+  return connector?.credentials.some(({ last_error }) =>
+    last_error === "credential_saved_unread" || last_error === "credential_saved_denied") ?? false;
 }
 
 /** Ready entries first, entries that need no setup ahead of the rest, then by display name. */

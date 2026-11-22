@@ -12,7 +12,6 @@ use crate::{
         contains_protected_value, filter_tool_providers, validate_result_provider, McpCallResult,
         McpError, McpLaunchConfig, McpSession,
     },
-    runs::maintenance::MaintenanceActivityKind,
     runs::scratch::RunScratch,
 };
 
@@ -152,8 +151,7 @@ pub(super) fn credential_statuses(
     if fields.is_empty() {
         return Ok(Vec::new());
     }
-    let status = match crate::finance_credentials::status(&state.credential_environment, &entry.id)
-    {
+    let status = match crate::finance_credentials::status_for_state(state, &entry.id) {
         Ok(status) => status,
         // One unreadable key never fails the list: only its own connection
         // shows it, as locked (macOS refused access) or as a read error.
@@ -180,6 +178,9 @@ pub(super) fn credential_statuses(
                 .collect());
         }
     };
+    let recovery = crate::finance_credentials::status_recovery(state, &entry.id);
+    let store_failed = crate::finance_credentials::last_store_failure(state, &entry.id);
+    let read_timed_out = crate::finance_credentials::read_timed_out(state, &entry.id);
     Ok(fields
         .iter()
         .map(|field| {
@@ -213,7 +214,13 @@ pub(super) fn credential_statuses(
                     Some("The provider could not verify these credentials right now.".to_owned())
                 }
                 MarketplaceCredentialVerification::Never
-                | MarketplaceCredentialVerification::Verified => None,
+                | MarketplaceCredentialVerification::Verified => {
+                    if let Some(recovery) = recovery {
+                        Some(recovery.code().to_owned())
+                    } else {
+                        store_failed.then(|| "credential_store_unavailable".to_owned())
+                    }
+                }
             };
             MarketplaceCredentialStatusDto {
                 entry_id: entry.id.clone(),
@@ -225,7 +232,7 @@ pub(super) fn credential_statuses(
                 verified_at: active.then_some(status.verified_at).flatten(),
                 last_error,
                 krx_coverage: status.krx_coverage,
-                locked: false,
+                locked: read_timed_out,
             }
         })
         .collect())
@@ -241,6 +248,15 @@ pub(crate) fn credential_store_error(
             crate::app::CommandErrorCode::CredentialLocked,
             "macOS did not allow Loupist to read this saved key. Choose Try again and allow access.",
         ),
+        crate::finance_credentials::FinanceCredentialError::Busy => {
+            crate::keychain_operation::KeychainError::Busy.command_error()
+        }
+        crate::finance_credentials::FinanceCredentialError::Unavailable => {
+            crate::keychain_operation::KeychainError::Unavailable.command_error()
+        }
+        crate::finance_credentials::FinanceCredentialError::UpdateInstalling => {
+            crate::keychain_operation::KeychainError::UpdateInstalling.command_error()
+        }
         error => CommandError::internal(error.to_string()),
     }
 }
@@ -384,16 +400,15 @@ pub async fn marketplace_credential_save(
     .await
 }
 
-/// Try again on a connection whose saved key macOS refused: asks macOS once
-/// more (the user chose to) and returns the connection's credentials, still
-/// `locked` when access was refused again.
+/// Retry presence detection, or explicitly ask macOS for access to a saved key.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn marketplace_credential_unlock(
     request: MarketplaceCredentialRequest,
+    presence_only: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<Vec<MarketplaceCredentialStatusDto>, CommandError> {
     off_main_thread(&state, move |state| {
-        unlock_credential_for_state(request, state)
+        unlock_credential_for_state(request, state, presence_only.unwrap_or(false))
     })
     .await
 }
@@ -401,13 +416,32 @@ pub async fn marketplace_credential_unlock(
 pub(super) fn unlock_credential_for_state(
     request: MarketplaceCredentialRequest,
     state: &AppState,
+    presence_only: bool,
 ) -> Result<Vec<MarketplaceCredentialStatusDto>, CommandError> {
     let catalog = bundled_catalog()?;
     ensure_installable(&request.entry_id)?;
     let entry = credential_entry(&catalog, &request.entry_id)?;
-    match crate::finance_credentials::unlock(&state.credential_environment, &request.entry_id) {
+    if presence_only {
+        let _ = crate::finance_credentials::retry_presence(state, &entry.id);
+        return credential_statuses(state, entry);
+    }
+    let _explicit_read = crate::finance_credentials::needs_permission(state, &entry.id)
+        .then(|| {
+            state
+                .key_permission_batch
+                .start(uuid::Uuid::new_v4().to_string())
+        })
+        .transpose()?;
+    super::connector_config::apply_pending_credential_scope(state, entry)?;
+    match crate::finance_credentials::read(state, &entry.id, |state, id| {
+        if crate::finance_credentials::needs_permission(state, id) {
+            crate::finance_credentials::read_saved_key_permission(state, id, &false.into())
+        } else {
+            crate::finance_credentials::unlock(&state.credential_environment, id).map(|_| ())
+        }
+    }) {
         Ok(_) | Err(crate::finance_credentials::FinanceCredentialError::Locked) => {}
-        Err(error) => return Err(CommandError::internal(error.to_string())),
+        Err(error) => return Err(credential_store_error(error)),
     }
     credential_statuses(state, entry)
 }
@@ -416,36 +450,28 @@ pub(super) fn save_credential_for_state(
     request: MarketplaceCredentialSaveRequest,
     state: &AppState,
 ) -> Result<Vec<MarketplaceCredentialStatusDto>, CommandError> {
-    let _activity = state
-        .maintenance
-        .admit_kind(MaintenanceActivityKind::MarketplaceCredential)?;
     let catalog = bundled_catalog()?;
     ensure_installable(&request.entry_id)?;
-    let _lifecycle_guard = connector_lifecycle_lock()?;
-    reconcile_connector_configs_locked(state, &_lifecycle_guard)?;
     let entry = credential_entry(&catalog, &request.entry_id)?;
     validate_credential_secrets(entry, &request.secrets)?;
-    if entry.id == super::ASSET_LOOKUP_SOURCE_ID {
-        let key = request
-            .secrets
-            .get("api_key")
-            .ok_or_else(|| CommandError::invalid("Enter an OpenFIGI API key."))?;
-        crate::finance_credentials::save_lookup_key(&state.credential_environment, key)
-            .map_err(credential_store_error)?;
-        return credential_statuses(state, entry);
+    super::connector_config::apply_pending_credential_scope(state, entry)?;
+    if entry.id == super::ASSET_LOOKUP_SOURCE_ID && !request.secrets.contains_key("api_key") {
+        return Err(CommandError::invalid("Enter an OpenFIGI API key."));
     }
-    // Saving is the user's own action: a key refused earlier this session is
-    // read again here (macOS may ask) rather than reported as locked.
-    let current =
-        crate::finance_credentials::unlock(&state.credential_environment, &request.entry_id)
-            .map_err(credential_store_error)?;
-    validate_required_credential_fields(entry, &request.secrets, &current)?;
-    crate::finance_credentials::stage(
-        &state.credential_environment,
-        &request.entry_id,
-        &request.secrets,
-    )
-    .map_err(credential_store_error)?;
+    let entry_for_save = entry.clone();
+    let patch = request.secrets;
+    crate::finance_credentials::mutate(state, &entry.id, move |state, id| {
+        let environment = &state.credential_environment;
+        if id == super::ASSET_LOOKUP_SOURCE_ID {
+            return crate::finance_credentials::save_lookup_key(environment, &patch["api_key"])
+                .map(Ok);
+        }
+        crate::finance_credentials::stage_with_validation(environment, id, &patch, |current| {
+            validate_required_credential_fields(&entry_for_save, &patch, current)
+        })
+        .map(|result| result.map(|_| ()))
+    })
+    .map_err(credential_store_error)??;
     credential_statuses(state, entry)
 }
 
@@ -724,9 +750,6 @@ pub async fn marketplace_credential_verify(
     request: MarketplaceCredentialRequest,
     state: State<'_, AppState>,
 ) -> Result<Vec<MarketplaceCredentialStatusDto>, CommandError> {
-    let _activity = state
-        .maintenance
-        .admit_kind(MaintenanceActivityKind::MarketplaceCredential)?;
     let catalog = bundled_catalog()?;
     ensure_installable(&request.entry_id)?;
     let entry = credential_entry(&catalog, &request.entry_id)?;
@@ -735,136 +758,178 @@ pub async fn marketplace_credential_verify(
             "The optional OpenFIGI key is used when you search for a listing.",
         ));
     }
-    let (
-        candidate,
-        candidate_secrets,
-        verification_secrets,
-        provider_context,
-        scope_snapshot,
-        was_ready,
-    ) = {
-        let _lifecycle_guard = connector_lifecycle_lock()?;
-        reconcile_connector_configs_locked(&state, &_lifecycle_guard)?;
-        let was_ready = connector_ready(entry, &state)?;
-        let Some(candidate) = crate::finance_credentials::candidate_for_verification(
-            &state.credential_environment,
-            &request.entry_id,
-        )
-        .map_err(credential_store_error)?
-        else {
-            return Err(CommandError::conflict(
-                "connector credentials must be saved first",
-            ));
-        };
-        let required_ids = entry
-            .setup
-            .as_ref()
-            .map(|setup| {
-                setup
-                    .credential_fields
-                    .iter()
-                    .filter(|field| field.required)
-                    .map(|field| field.id.as_str())
-                    .collect::<BTreeSet<_>>()
+    let entry_id = entry.id.clone();
+    let (provider_context, scope_snapshot, was_ready, candidate) =
+        off_main_thread(&state, move |state| {
+            let catalog = bundled_catalog()?;
+            let entry = credential_entry(&catalog, &entry_id)?;
+            super::connector_config::apply_pending_credential_scope(state, entry)?;
+            let (provider_context, scope_snapshot, was_ready) = {
+                let guard = connector_lifecycle_lock()?;
+                reconcile_connector_configs_locked(state, &guard)?;
+                (
+                    credential_provider_context(state, &entry_id)?,
+                    credential_scope_snapshot(state, entry)?,
+                    connector_ready(entry, state)?,
+                )
+            };
+            let candidate = crate::finance_credentials::mutate(state, &entry_id, |state, id| {
+                crate::finance_credentials::candidate_for_verification(
+                    &state.credential_environment,
+                    id,
+                )
             })
-            .unwrap_or_default();
-        let candidate_secrets = candidate.secrets().clone();
-        let verification_secrets = candidate
-            .secrets()
-            .iter()
-            .filter(|(credential_id, _)| required_ids.contains(credential_id.as_str()))
-            .map(|(credential_id, secret)| (credential_id.clone(), secret.clone()))
-            .collect::<BTreeMap<_, _>>();
-        let provider_context = credential_provider_context(&state, &request.entry_id)?;
-        let scope_snapshot = credential_scope_snapshot(&state, entry)?;
-        (
-            candidate,
-            candidate_secrets,
-            verification_secrets,
-            provider_context,
-            scope_snapshot,
-            was_ready,
-        )
-    };
+            .map_err(credential_store_error)?
+            .ok_or_else(|| CommandError::conflict("connector credentials must be saved first"))?;
+            let was_ready = was_ready || candidate.already_active();
+            Ok((provider_context, scope_snapshot, was_ready, candidate))
+        })
+        .await?;
+    let required_ids = entry
+        .setup
+        .as_ref()
+        .map(|setup| {
+            setup
+                .credential_fields
+                .iter()
+                .filter(|field| field.required)
+                .map(|field| field.id.as_str())
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_default();
+    let verification_secrets = candidate
+        .secrets()
+        .iter()
+        .filter(|(id, _)| required_ids.contains(id.as_str()))
+        .map(|(id, value)| (id.clone(), value.clone()))
+        .collect::<BTreeMap<_, _>>();
     let revision = candidate.revision().to_owned();
     if entry.runtime.kind == MarketplaceRuntimeKind::BundledMcp {
-        let result = verify_bundled_mcp_credential(&state, entry, &candidate_secrets).await;
+        let result = {
+            let _activity = state.maintenance.admit_kind(
+                crate::runs::maintenance::MaintenanceActivityKind::MarketplaceCredential,
+            )?;
+            verify_bundled_mcp_credential(&state, entry, candidate.secrets()).await
+        };
         drop(candidate);
         let outcome = match result {
             Ok(()) => crate::finance_credentials::VerificationOutcome::Verified,
             Err(error) => error.outcome(),
         };
-        let _lifecycle_guard = connector_lifecycle_lock()?;
-        reconcile_connector_configs_locked(&state, &_lifecycle_guard)?;
-        if credential_scope_snapshot(&state, entry)? != scope_snapshot {
-            return Err(CommandError::conflict(
-                "connector configuration changed while credential verification was in progress",
-            ));
-        }
-        let finished = crate::finance_credentials::finish_verification(
-            &state.credential_environment,
-            &request.entry_id,
-            &revision,
+        finalize_verification(
+            &state,
+            request.entry_id,
+            revision,
+            provider_context,
+            scope_snapshot,
             outcome,
-            Utc::now().timestamp_millis(),
             None,
+            was_ready,
         )
-        .map_err(credential_store_error)?;
-        if finished == crate::finance_credentials::FinishVerification::Stale {
-            return Err(CommandError::conflict(
-                "connector credential changed while verification was in progress",
-            ));
-        }
+        .await?;
         return match result {
-            Ok(()) => {
-                if !was_ready {
-                    enable_ready_bindings_locked(&state, &request.entry_id, &_lifecycle_guard)?;
-                }
-                credential_statuses(&state, entry)
-            }
+            Ok(()) => credential_statuses(&state, entry),
             Err(error) => Err(error.command_error()),
         };
     }
-    let result = state
-        .finance_data
-        .verify_credential(
-            &request.entry_id,
-            &verification_secrets,
-            provider_context.as_deref(),
-        )
-        .await;
+    let result = {
+        let _activity = state
+            .maintenance
+            .admit_kind(crate::runs::maintenance::MaintenanceActivityKind::MarketplaceCredential)?;
+        state
+            .finance_data
+            .verify_credential(
+                &request.entry_id,
+                &verification_secrets,
+                provider_context.as_deref(),
+            )
+            .await
+    };
     drop(candidate);
     let outcome = credential_verification_outcome(&result);
-    let _lifecycle_guard = connector_lifecycle_lock()?;
-    reconcile_connector_configs_locked(&state, &_lifecycle_guard)?;
-    if credential_provider_context(&state, &request.entry_id)? != provider_context
-        || credential_scope_snapshot(&state, entry)? != scope_snapshot
-    {
-        return Err(CommandError::conflict(
-            "connector configuration changed while credential verification was in progress",
-        ));
-    }
-    let finished = crate::finance_credentials::finish_verification(
-        &state.credential_environment,
-        &request.entry_id,
-        &revision,
+    finalize_verification(
+        &state,
+        request.entry_id,
+        revision,
+        provider_context,
+        scope_snapshot,
         outcome,
-        Utc::now().timestamp_millis(),
         result.as_ref().ok().copied().flatten(),
+        was_ready,
     )
-    .map_err(credential_store_error)?;
-    if finished == crate::finance_credentials::FinishVerification::Stale {
-        return Err(CommandError::conflict(
-            "connector credential changed while verification was in progress",
-        ));
-    }
+    .await?;
     if let Err(error) = result {
         return Err(credential_verification_error(&error));
     }
-    if !was_ready {
-        enable_ready_bindings_locked(&state, &request.entry_id, &_lifecycle_guard)?;
-    }
     credential_statuses(&state, entry)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn finalize_verification(
+    state: &AppState,
+    entry_id: String,
+    revision: String,
+    provider_context: Option<String>,
+    scope_snapshot: BTreeMap<String, String>,
+    outcome: crate::finance_credentials::VerificationOutcome,
+    coverage: Option<crate::finance_credentials::KrxCoverage>,
+    was_ready: bool,
+) -> Result<(), CommandError> {
+    off_main_thread(state, move |state| {
+        crate::finance_credentials::mutate(state, &entry_id, move |state, id| {
+            let catalog = match bundled_catalog() {
+                Ok(catalog) => catalog,
+                Err(error) => return Ok(Err(error)),
+            };
+            let entry = match credential_entry(&catalog, id) {
+                Ok(entry) => entry,
+                Err(error) => return Ok(Err(error)),
+            };
+            let check_scope = || {
+                if credential_provider_context(state, id)? != provider_context
+                    || credential_scope_snapshot(state, entry)? != scope_snapshot
+                {
+                    return Err(CommandError::conflict(
+                        "connector configuration changed while credential verification was in progress",
+                    ));
+                }
+                Ok(())
+            };
+            let before = (|| {
+                let guard = connector_lifecycle_lock()?;
+                reconcile_connector_configs_locked(state, &guard)?;
+                check_scope()
+            })();
+            if let Err(error) = before {
+                return Ok(Err(error));
+            }
+            // Read again at publication to compare the exact durable revision.
+            // An item removed while the provider probes must not be recreated.
+            let finished = crate::finance_credentials::finish_verification(
+                &state.credential_environment,
+                id,
+                &revision,
+                outcome,
+                Utc::now().timestamp_millis(),
+                coverage,
+            )?;
+            if finished == crate::finance_credentials::FinishVerification::Stale {
+                return Ok(Err(CommandError::conflict(
+                    "connector credential changed while verification was in progress",
+                )));
+            }
+            Ok((|| {
+                let guard = connector_lifecycle_lock()?;
+                reconcile_connector_configs_locked(state, &guard)?;
+                check_scope()?;
+                if !was_ready && outcome == crate::finance_credentials::VerificationOutcome::Verified {
+                    enable_ready_bindings_locked(state, id, &guard)?;
+                }
+                Ok(())
+            })())
+        }).map_err(credential_store_error)?
+    })
+    .await
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -887,23 +952,26 @@ pub(super) fn delete_credential_for_state(
     request: MarketplaceCredentialRequest,
     state: &AppState,
 ) -> Result<Vec<MarketplaceCredentialStatusDto>, CommandError> {
-    let _activity = state
-        .maintenance
-        .admit_kind(MaintenanceActivityKind::MarketplaceCredential)?;
     let catalog = bundled_catalog()?;
     ensure_installable(&request.entry_id)?;
     let entry = credential_entry(&catalog, &request.entry_id)?;
-    let lifecycle_guard = connector_lifecycle_lock()?;
-    if entry.id == super::ASSET_LOOKUP_SOURCE_ID {
-        crate::finance_credentials::delete(&state.credential_environment, &entry.id)
-            .map_err(credential_store_error)?;
-    } else {
-        disable_bindings_and_delete_credentials_locked(state, &request.entry_id, &lifecycle_guard)?;
-    }
+    crate::finance_credentials::mutate(state, &entry.id, |state, id| {
+        if id != super::ASSET_LOOKUP_SOURCE_ID {
+            let revoked = (|| {
+                let guard = connector_lifecycle_lock()?;
+                disable_bindings_locked(state, id, &guard)
+            })();
+            if let Err(error) = revoked {
+                return Ok(Err(error));
+            }
+        }
+        crate::finance_credentials::delete(&state.credential_environment, id).map(Ok)
+    })
+    .map_err(credential_store_error)??;
     credential_statuses(state, entry)
 }
 
-pub(super) fn disable_bindings_and_delete_credentials_locked(
+pub(super) fn disable_bindings_locked(
     state: &AppState,
     entry_id: &str,
     _lifecycle_guard: &MutexGuard<'static, ()>,
@@ -943,8 +1011,7 @@ pub(super) fn disable_bindings_and_delete_credentials_locked(
             unavailable.join(", ")
         )));
     }
-    crate::finance_credentials::delete(&state.credential_environment, entry_id)
-        .map_err(credential_store_error)
+    Ok(())
 }
 
 #[cfg(test)]

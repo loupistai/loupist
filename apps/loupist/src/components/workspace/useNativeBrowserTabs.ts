@@ -32,6 +32,24 @@ const browserUrlMessage = (reason: BrowserUrlError) => {
   }
 };
 
+/** Only the fields described by this event may replace the open snapshot. */
+function browserEventPatch(event: Exclude<BrowserTabEvent, { type: "open_requested" }>): Partial<BrowserWorkspaceTab> | undefined {
+  switch (event.type) {
+    case "history_changed":
+      return { can_go_back: event.can_go_back, can_go_forward: event.can_go_forward };
+    case "load_started":
+      return parseCredentialFreeHttpUrl(event.url) ? { url: event.url, loading: true, error: undefined } : undefined;
+    case "load_finished":
+      return parseCredentialFreeHttpUrl(event.url) ? { url: event.url, loading: false } : undefined;
+    case "title_changed":
+      return event.title ? { title: event.title } : undefined;
+    case "navigation_blocked":
+      return { loading: false, error: browserUrlMessage(event.reason) };
+    case "download_blocked":
+      return { loading: false, error: t("useNativeBrowserTabs.downloadsAreNotAvailableInTheInAppBrowser") };
+  }
+}
+
 const browserFailureMessage = (cause: unknown, fallback: string) => {
   switch (commandErrorCode(cause)) {
     case "browser_url_too_long": return browserUrlMessage("too_long");
@@ -142,38 +160,6 @@ export function useNativeBrowserTabs({
     setAddress(activeTab?.url ?? "");
   }, [activeTab?.id, activeTab?.url]);
 
-  const updateFromEvent = useCallback(
-    (localTabId: string, event: BrowserTabEvent) => {
-      if (event.type === "open_requested") {
-        if (parseCredentialFreeHttpUrl(event.url)) onOpenLink(event.url);
-        return;
-      }
-      onUpdateTab(localTabId, (tab) => {
-        if (tab.kind !== "browser") return tab;
-        if (event.type === "load_started") {
-          if (!parseCredentialFreeHttpUrl(event.url)) return tab;
-          return { ...tab, url: event.url, loading: true, error: undefined };
-        }
-        if (event.type === "load_finished") {
-          if (!parseCredentialFreeHttpUrl(event.url)) return tab;
-          return { ...tab, url: event.url, loading: false };
-        }
-        if (event.type === "title_changed") {
-          return { ...tab, title: event.title || tab.title };
-        }
-        if (event.type === "navigation_blocked") {
-          return { ...tab, loading: false, error: browserUrlMessage(event.reason) };
-        }
-        return {
-          ...tab,
-          loading: false,
-          error: t("useNativeBrowserTabs.downloadsAreNotAvailableInTheInAppBrowser"),
-        };
-      });
-    },
-    [onOpenLink, onUpdateTab],
-  );
-
   useEffect(() => {
     if (!open || !activeTab?.url || activeTab.native_id || activeTab.error) return;
     const epoch = scopeRef.current.epoch;
@@ -185,10 +171,21 @@ export function useNativeBrowserTabs({
       tabsRef.current.some((tab) => tab.id === localTabId && tab.kind === "browser");
     const bounds = browserBounds(viewportRef.current);
     lastBoundsRef.current = bounds;
+    let beforeSnapshot: Partial<BrowserWorkspaceTab> | undefined = {};
     void bridge
       .browserTabOpen(
         { url: activeTab.url, bounds, visible: false },
-        (event) => { if (stillOwned()) updateFromEvent(localTabId, event); },
+        (event) => {
+          if (!stillOwned()) return;
+          if (event.type === "open_requested") {
+            if (parseCredentialFreeHttpUrl(event.url)) onOpenLink(event.url);
+            return;
+          }
+          const patch = browserEventPatch(event);
+          if (!patch) return;
+          if (beforeSnapshot) Object.assign(beforeSnapshot, patch);
+          onUpdateTab(localTabId, tab => tab.kind === "browser" ? { ...tab, ...patch } : tab);
+        },
       )
       .then((native) => {
         if (!stillOwned()) {
@@ -196,15 +193,20 @@ export function useNativeBrowserTabs({
           void bridge.browserTabClose(native.tab_id).catch(() => undefined);
           return;
         }
+        const newerEvents = beforeSnapshot;
+        beforeSnapshot = undefined;
         onUpdateTab(localTabId, (tab) =>
           tab.kind === "browser"
             ? {
                 ...tab,
                 native_id: native.tab_id,
+                can_go_back: native.can_go_back === true,
+                can_go_forward: native.can_go_forward === true,
                 url: native.url,
                 title: native.title,
                 loading: native.loading,
                 error: undefined,
+                ...newerEvents,
               }
             : tab,
         );
@@ -230,7 +232,7 @@ export function useNativeBrowserTabs({
     onUpdateTab,
     open,
     threadId,
-    updateFromEvent,
+    onOpenLink,
   ]);
 
   const flushBounds = useCallback(async () => {
@@ -277,6 +279,9 @@ export function useNativeBrowserTabs({
               request.bounds.y,
               request.bounds.width,
               request.bounds.height,
+              // Page zoom can move the native child viewport even when the slot keeps its CSS size.
+              window.innerWidth,
+              window.innerHeight,
               request.visible ? 1 : 0,
             ].join(":");
             if (sentBoundsRef.current.get(request.tab_id) === key) return;

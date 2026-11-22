@@ -23,7 +23,7 @@ import { isBasePerspective, isLensNode, isStandingPlaceholder, lensDisplayTitle 
 import { sharingReleaseVisible } from "../../sharing/releaseVisibility";
 import { SharedOrigin } from "../sharing/SharedOrigin";
 import { SHARED_SECTION_ITEM } from "../sharing/SharedPacks";
-export function MapInspector({ node, map, bridge, location, onClose, onSelect, onOpen, onAsk, providedGraph, catalog, onChanged, onOpenChat, onExplainDisagreement, onPointRelationship }: {
+export function MapInspector({ onShowConnections, node, map, bridge, location, onClose, onSelect, onOpen, onAsk, providedGraph, catalog, onChanged, onOpenChat, onExplainDisagreement, onPointRelationship }: {
   catalog?: KnowledgeCatalog; onChanged?: () => void; onOpenChat?: (chatId: string) => void;
   /** A relationship chip the user points at; the canvas widens that line. */
   onPointRelationship?: (edgeId?: string) => void;
@@ -31,6 +31,7 @@ export function MapInspector({ node, map, bridge, location, onClose, onSelect, o
   onExplainDisagreement?: (pins: KnowledgePin[]) => void;
   providedGraph?: WorldGraphView;
   node: KnowledgeMapNode; map: KnowledgeMap; bridge: LoupistBridge; location: KnowledgeLocation;
+  onShowConnections?: () => void;
   onClose: () => void; onSelect: (node: KnowledgeMapNode) => void; onOpen: (location: KnowledgeLocation) => void; onAsk: (pin: KnowledgePin) => void;
 }) {
   const { t, i18n } = useTranslation("knowledge");
@@ -143,7 +144,8 @@ export function MapInspector({ node, map, bridge, location, onClose, onSelect, o
     {/* The Relationships view already shows every connection with its direction; the flat list belongs to Facts. */}
     {showRelationships ? null : <><h3>{t("map.connections", { count: connections.length })}</h3>{(allConnections ? connections : connections.slice(0, 8)).map((edge, index, rows) => { const neighbor = map.nodes.find((n) => n.id === (edge.source === node.id ? edge.target : edge.source)); return neighbor ? <div key={edge.id}>{index === 0 || rows[index - 1].relation !== edge.relation ? <small className="map-relation">{(edge.relation ? relationName(edge.relation, t) : undefined)}</small> : null}<Button variant="ghost" className="map-connection" onClick={() => onSelect(neighbor)}><i className={`map-swatch is-${nodeCategory(neighbor)}`} />{entityLabel(neighbor, i18n.language)}</Button></div> : null; })}
     {connections.length > 8 ? <Button variant="link" onClick={() => setAllConnections(!allConnections)}>{t(allConnections ? "map.less" : "map.more")}</Button> : null}</>}
-    <footer>{node.kind === "entity" && location.recordId && location.revisionId ? <Button onClick={() => onAsk(pinForNode(location.loupistId, location.recordId!, location.revisionId!, entity ?? { id: node.id, name: node.label, aliases: [], description: "", kind: node.entityKind ?? "", sourceRole: "", properties: {} }))}>{t("map.askAbout")}</Button> : null}
+    <footer>{onShowConnections ? <Button variant="outline" onClick={onShowConnections}>{t("map.showConnections")}</Button> : null}
+    {node.kind === "entity" && location.recordId && location.revisionId ? <Button onClick={() => onAsk(pinForNode(location.loupistId, location.recordId!, location.revisionId!, entity ?? { id: node.id, name: node.label, aliases: [], description: "", kind: node.entityKind ?? "", sourceRole: "", properties: {} }))}>{t("map.askAbout")}</Button> : null}
     <p className="map-disclosure">{t("map.disclosure")}</p></footer>
   </aside>;
 }

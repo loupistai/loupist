@@ -24,6 +24,7 @@ pub enum MaintenanceActivityKind {
     MemoryMutation,
     MarketplaceConfiguration,
     MarketplaceCredential,
+    KeychainMutation,
 }
 
 impl MaintenanceActivityKind {
@@ -35,6 +36,7 @@ impl MaintenanceActivityKind {
             Self::MemoryMutation => "memory_mutation",
             Self::MarketplaceConfiguration => "marketplace_configuration",
             Self::MarketplaceCredential => "marketplace_credential",
+            Self::KeychainMutation => "keychain_mutation",
         }
     }
 
@@ -46,6 +48,7 @@ impl MaintenanceActivityKind {
             Self::MemoryMutation => "Memory change",
             Self::MarketplaceConfiguration => "Marketplace configuration change",
             Self::MarketplaceCredential => "Marketplace credential change",
+            Self::KeychainMutation => "A saved-key change is still waiting for macOS.",
         }
     }
 }

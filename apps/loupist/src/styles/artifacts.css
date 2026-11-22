@@ -580,8 +580,6 @@ button.work-row:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
   gap: 2px;
 }
 /* Kind, version and date stay whole; the chat title takes the ellipsis. */
-.work-row-facts { flex: none; white-space: nowrap; }
-.work-row-chat { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .work-status {
   margin: 0 var(--gg-space-4) var(--gg-space-1);
   color: var(--gg-color-text-tertiary);

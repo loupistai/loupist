@@ -202,9 +202,10 @@ fn deletion_quarantine_blocks_runs_and_writes_until_cleared() {
     );
     assert_eq!(
         state
-            .reserve_memory_write(
+            .register_run(
                 "write-a".into(),
                 "loupist-a".into(),
+                RunKind::MemoryWrite,
                 RunTarget::MemoryWriteSession("write-a".into())
             )
             .err()

@@ -9,9 +9,56 @@ import { libraryState } from "../map/libraryState";
 import { FixMemoryProvider } from "../memory/fixMemory";
 import { ChatSetAsideProvider, type ChatSetAside } from "../../chat/chatSetAside";
 import type { GrowthEvent, KnowledgeMap } from "../../contracts/knowledge";
+import type { MemorySaveSkipReason } from "../../types";
 import { useChatMap } from "../workspace/ChatMapContext";
 
 vi.mock("../workspace/ChatMapContext", () => ({ useChatMap: vi.fn(() => null) }));
+
+const skipReasons: Array<[MemorySaveSkipReason, string, string]> = [
+  ["user", "you skipped saving.", "저장을 건너뛰었습니다."],
+  ["deadline", "another conversation was still running after 10 minutes.", "10분이 지나도 다른 대화가 끝나지 않았습니다."],
+  ["interrupted", "Loupist quit before saving finished.", "저장이 끝나기 전에 Loupist가 종료되었습니다."],
+  ["failed", "saving failed.", "저장에 실패했습니다."],
+  ["policy_changed", "Memory was reset while this answer was being written.", "답변을 작성하는 동안 메모리가 초기화되었습니다."],
+];
+
+it.each(skipReasons.flatMap(([reason, en, ko]) => [false, true].map(staged => ({ reason, en, ko, staged }))))(
+  "shows the terminal receipt for $reason with staged writes = $staged in both languages", async ({ reason, en, ko, staged }) => {
+  const items = [
+    { kind: "note", title: "Overlap check" }, { kind: "source", title: "Annual report" },
+    { kind: "lens_page", title: "Fiscal calendar" }, { kind: "journal_entry", title: "Margin thesis" },
+    { kind: "principle", title: "Read comparable periods" },
+  ] as const;
+  const message: ChatMessage = { id: "answer", role: "assistant", status: "complete", content: "The answer.", created_at: new Date().toISOString(),
+    memory_update: { status: "no_change", commitId: null, changes: [], skipReason: reason, discardedMemoryItems: staged ? [...items] : undefined },
+    number_checks: [{ text: "42", evidence_id: "ev_filing", link_index: 0, status: "not_found", kind: "passage" }],
+  };
+  const { unmount } = renderWithOpen(<MessageMemoryRow loupistId="loupist-a" message={message} />);
+  try {
+    const receipt = screen.getByTestId("memory-row");
+    const assertReceipt = (status: string, correction: string, heading: string, kinds: string[]) => {
+      const line = within(receipt).getByText(status);
+      expect(line).toBeVisible();
+      expect(within(receipt).getByRole("button")).toBeVisible();
+      expect(within(receipt).queryByText(i18n.t("chat:chatReceipt.nothingNew"))).toBeNull();
+      expect(receipt.querySelector('[data-receipt^="saved:"]')).toBeNull();
+      if (staged) {
+        expect(line.nextElementSibling).toHaveTextContent(correction);
+        const list = within(receipt).getByRole("list", { name: heading });
+        expect(within(list).getAllByRole("listitem").map(item => item.textContent)).toEqual(items.map((item, index) => `${kinds[index]} · ${item.title}`));
+      } else {
+        expect(within(receipt).queryByText(correction)).toBeNull();
+        expect(within(receipt).queryByRole("list", { name: heading })).toBeNull();
+      }
+    };
+    assertReceipt(`Not saved to Memory: ${en}`, "What this answer says it saved was not kept.", "Not kept", ["Note", "Source", "Lens page", "Journal entry", "Principle"]);
+    await act(async () => { await i18n.changeLanguage("ko"); });
+    assertReceipt(`메모리에 저장하지 않음: ${ko}`, "이 답변에서 저장했다고 한 내용은 보관되지 않았습니다.", "보관되지 않음", ["메모", "출처", "렌즈 페이지", "저널 항목", "원칙"]);
+  } finally {
+    unmount();
+    await i18n.changeLanguage("en");
+  }
+});
 
 describe("the relation this answer added", () => {
   const node = (id: string, label: string, extra: Record<string, unknown> = {}) => ({ id, label, kind: "entity", entityKind: "Organization", degree: 1, watched: false, ...extra });
@@ -31,7 +78,7 @@ describe("the relation this answer added", () => {
     expect(pills).toHaveLength(1);
     expect(pills[0]).toHaveTextContent("TSMCsuppliesNVDA");
     // Named as one phrase, by what it opens.
-    expect(screen.getByRole("button", { name: "Show on the map: TSMC supplies NVDA" })).toBe(pills[0]);
+    expect(screen.getByRole("button", { name: "Show in World: TSMC supplies NVDA" })).toBe(pills[0]);
   });
 
   it("shows no relation when every added edge joins an asset to itself", () => {

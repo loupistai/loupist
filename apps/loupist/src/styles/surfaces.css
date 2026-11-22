@@ -62,3 +62,11 @@
 
 .app-date-field { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); min-width: 0; }
 .app-date-field > * { flex: 1 1 4.5rem; min-width: 0; }
+
+/* Cards that offer a first step in Bot and Schedule. */
+.start-option-card {
+  border: 1px solid var(--gg-color-border-subtle);
+  border-radius: var(--gg-radius-lg);
+  background: var(--gg-color-bg-raised);
+  box-shadow: var(--gg-shadow-card);
+}

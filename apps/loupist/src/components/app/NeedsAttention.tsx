@@ -34,7 +34,7 @@ function approvalConnection(title: string) {
   return (at > 0 ? title.slice(0, at) : title).trim();
 }
 
-/** Whether the sentence already names the Loupist; a check names its claim instead. */
+/** Whether the sentence needs no separate Loupist label. */
 export const attentionNamesLoupist = (item: AttentionItem) => item.kind !== "checkDue" && item.kind !== "lineCrossed";
 
 /** One sentence that names what waits: the Loupist and the connection, scheduled result or check. */
@@ -54,6 +54,7 @@ export function attentionWhat(item: AttentionRow, threads?: Threads, nowMs = Dat
         : thread && item.title.trim() ? chatTitle({ ...thread, title: item.title }) : item.title.trim();
       return chat ? t("attention.question", { loupistSubject, chat }) : t("attention.questionAny", { loupistSubject });
     }
+    case "savedKeyPermission": return t("attention.savedKeyPermission", { count: item.count ?? 1 });
     case "lineCrossed": return t("attention.lineCrossed", { name: item.title });
     case "briefingConflict": return t("attention.conflict", { loupist });
     case "unreadResults": return t("attention.unreadResults", { loupist, count: item.count ?? 1, formattedCount: formatNumber(item.count ?? 1) });
@@ -81,7 +82,7 @@ export function NeedsAttention({ items, threads, onOpen, onMore }: {
   if (!items.length) return null;
   const shown = items.slice(0, MAX_ROWS);
   // Most sentences name their Loupist; a check names its claim, and its Loupist only when there are several.
-  const manyLoupists = new Set(items.map((item) => item.loupistId)).size > 1;
+  const manyLoupists = new Set(items.map((item) => item.loupistId).filter(Boolean)).size > 1;
   const more = items.length - shown.length;
   return <SidebarGroup className="needs-attention">
     <SidebarGroupLabel>{t("shell.needsAttention")}</SidebarGroupLabel>

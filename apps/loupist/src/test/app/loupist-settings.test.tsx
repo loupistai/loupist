@@ -5,7 +5,7 @@ import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { chooseLoupist, selectedLoupistButton, headerAction, mainTab, openApp } from "../renderApp";
 
 it("keeps profile, chat, learning and skills on one page with changes scoped to that Loupist", async () => {
-  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const bridge = new MockLoupistBridge({ delay_ms: 0, userSkillsAvailable: true });
   const update = vi.spyOn(bridge, "configUpdate");
   const learning = vi.spyOn(bridge, "memoryLearningSettingsSet");
   const user = userEvent.setup();
@@ -46,7 +46,7 @@ it("keeps profile, chat, learning and skills on one page with changes scoped to 
   act(() => bridge.emitMenuAction("map"));
   expect(screen.queryByRole("region", { name: "Loupist settings" })).toBeNull();
   expect(within(document.querySelector<HTMLElement>('[data-sidebar-place="map"]')!).getByRole("button")).toHaveAttribute("aria-current", "page");
-  expect(await screen.findByRole("region", { name: "Map" })).toBeVisible();
+  expect(await screen.findByRole("region", { name: "World" })).toBeVisible();
 });
 
 it("opens the same page for the chosen Loupist from app settings", async () => {
@@ -74,7 +74,7 @@ it("opens the same page for the chosen Loupist from app settings", async () => {
   expect(document.querySelector(".app-header-title")).toHaveTextContent("Chat defaults");
   expect(heading.closest("header")!.querySelector(".page-description")).toHaveTextContent("Set the chat defaults every Loupist starts with.");
   expect(screen.queryByRole("combobox", { name: "Settings apply to" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Map building" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "World building" })).toBeNull();
 });
 
 it("opens the exact unavailable connection's setup from Loupist tools without enabling it", async () => {
@@ -111,31 +111,31 @@ it("keeps a failed reconnect visible with the selected folder and retries withou
   expect(create).not.toHaveBeenCalled();
 });
 
-it("distinguishes Loupists with matching folder names and opens the intended one", async () => {
+it("opens the intended same-name Loupist by its research focus", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
-  const loupists = (await bridge.loupistList()).slice(0, 2).map((loupist, index) => ({ ...loupist, name: "research", workspace_path: `/Users/${index ? "work" : "personal"}/research` }));
+  const loupists = (await bridge.loupistList()).slice(0, 2).map((loupist, index) => ({ ...loupist, name: "research", philosophy: index ? "Industrial suppliers" : "Household spending", workspace_path: `/Users/${index ? "work" : "personal"}/research` }));
   vi.spyOn(bridge, "loupistList").mockResolvedValue(loupists);
   const originalSelect = bridge.loupistSelect.bind(bridge);
   const select = vi.spyOn(bridge, "loupistSelect").mockImplementation(async (id) => ({ ...await originalSelect(id), loupist: loupists.find((loupist) => loupist.id === id)! }));
   const user = userEvent.setup();
   await openApp(bridge);
-  await chooseLoupist(user, "research · /Users/work");
+  await chooseLoupist(user, "research · Industrial suppliers");
   await waitFor(() => expect(select).toHaveBeenLastCalledWith(loupists[1].id));
   expect(selectedLoupistButton()).toHaveTextContent("research");
 });
 
-it("keeps what the map tracks under Map building and Advanced, not Learning", async () => {
+it("keeps what World tracks under World building and Advanced, not Learning", async () => {
   const user = userEvent.setup();
   await openApp();
   await user.click(headerAction("Loupist settings"));
   const page = await screen.findByRole("region", { name: "Loupist settings" });
-  await user.click(within(page).getByRole("button", { name: "Map building" }));
+  await user.click(within(page).getByRole("button", { name: "World building" }));
   const world = page.querySelector<HTMLElement>('[data-loupist-section="world"]')!;
   const learning = page.querySelector<HTMLElement>('[data-loupist-section="learning"]')!;
-  expect(within(world).queryByText("What the map tracks")).not.toBeVisible();
+  expect(within(world).queryByText("What World tracks")).not.toBeVisible();
   await user.click(within(world).getByText("Advanced"));
-  expect(await within(world).findByText("What the map tracks")).toBeVisible();
-  expect(within(learning).queryByText("What the map tracks")).toBeNull();
+  expect(await within(world).findByText("What World tracks")).toBeVisible();
+  expect(within(learning).queryByText("What World tracks")).toBeNull();
 });
 
 it("opens the current Loupist's Skills & connections from the Connections page and leaves the sidebar on Loupists", async () => {

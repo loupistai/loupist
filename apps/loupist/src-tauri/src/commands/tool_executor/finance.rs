@@ -91,6 +91,8 @@ fn finance_error(error: crate::finance_data::FinanceDataError) -> BrokerError {
             services: services.into_iter().map(str::to_owned).collect(),
             next: next.into(),
         },
+        E::RejectedArguments { diagnostic, next } =>
+            BrokerError::invalid("", diagnostic).with_next(next),
         E::Network(_) | E::NetworkSafe(_) =>
             BrokerError::Execution("The finance data request failed. Try a smaller request or another source.".into()),
         E::Provider(_) => BrokerError::Execution("The finance provider rejected the request. Check its symbol, route and date range before retrying.".into()),
@@ -281,13 +283,13 @@ impl AppToolExecutor {
         entry_id: &'static str,
     ) -> Result<crate::finance_credentials::ActiveCredentialBundle, BrokerError> {
         self.require_capability(entry_id)?;
-        let credential_environment = self.state.credential_environment.clone();
+        let state = self.state.clone();
         let credential = tokio::task::spawn_blocking(move || {
-            crate::finance_credentials::get(&credential_environment, entry_id)
+            crate::finance_credentials::get_for_state(&state, entry_id)
         })
         .await
         .map_err(|_| BrokerError::Execution("credential lookup failed".into()))?
-        .map_err(|_| BrokerError::Execution("credential lookup failed".into()))?;
+        .map_err(super::errors::credential_read_error)?;
         credential.ok_or_else(|| {
             BrokerError::Execution(
                 format!("Connection {entry_id} has no verified credential. It cannot serve this read."),
@@ -312,11 +314,10 @@ impl AppToolExecutor {
     /// Which KIS credential revision, account and environment would serve a
     /// read, as a digest for reuse keys. `None` when no credential is usable;
     /// the read itself then reports why.
-    pub(super) async fn kis_reuse_identity(&self) -> Option<String> {
-        let credential = self
-            .provider_credential_bundle(crate::finance_data::KIS_SOURCE_ID)
-            .await
-            .ok()?;
+    pub(super) fn kis_reuse_identity(
+        &self,
+        credential: &crate::finance_credentials::ActiveCredentialBundle,
+    ) -> Option<String> {
         let environment = crate::marketplace::connector_config_value(
             &self.state,
             crate::finance_data::KIS_SOURCE_ID,
@@ -479,6 +480,7 @@ impl AppToolExecutor {
         &self,
         policy: &ToolPolicy,
         params: Value,
+        credential: &crate::finance_credentials::ActiveCredentialBundle,
     ) -> Result<Value, BrokerError> {
         let cutoff = effective_as_of(policy, &params)?;
         if cutoff.is_some() {
@@ -512,10 +514,7 @@ impl AppToolExecutor {
             ));
         }
         self.require_capability(crate::finance_data::KIS_SOURCE_ID)?;
-        let credential = self
-            .provider_credential_bundle(crate::finance_data::KIS_SOURCE_ID)
-            .await?;
-        let profile = Self::kis_account_profile(&credential)?;
+        let profile = Self::kis_account_profile(credential)?;
         let environment = crate::marketplace::connector_config_value(
             &self.state,
             crate::finance_data::KIS_SOURCE_ID,
@@ -523,6 +522,14 @@ impl AppToolExecutor {
         )
         .map_err(|_| BrokerError::Execution("KIS configuration is unavailable".into()))?
         .ok_or_else(|| BrokerError::Execution("the KIS connector needs an environment".into()))?;
+        let current = crate::finance_credentials::revision_for_state(
+            &self.state,
+            crate::finance_data::KIS_SOURCE_ID,
+        )
+        .map_err(|_| BrokerError::MethodDenied)?;
+        if current.as_deref() != Some(credential.revision()) {
+            return Err(BrokerError::MethodDenied);
+        }
         let app_key = credential
             .get("app_key")
             .map(str::to_owned)
@@ -550,7 +557,6 @@ impl AppToolExecutor {
             .await
             .map_err(finance_error)?;
         refuse_credential_echo(&output, &[app_key, app_secret])?;
-        drop(credential);
         // Quantities, amounts, prices paid and their rates stay here: hidden
         // before the result reaches Pi, a dataset, a result ref or an export.
         let mut output = output;
@@ -1128,5 +1134,25 @@ mod fx_tests {
             fx_pair_params(pi_args, None),
             Err(BrokerError::InvalidArguments { field, .. }) if field == "to"
         ));
+    }
+}
+
+#[cfg(test)]
+mod provider_refusal_tests {
+    use super::*;
+
+    #[test]
+    fn provider_argument_failure_keeps_the_broker_code_and_repair() {
+        use crate::finance_data::FinanceDataError;
+        let diagnostic = "KRX rejected the date in this request (code 400).";
+        let next = "Check the identifiers and dates sent against this tool's parameter descriptions and read again with corrected values; the same call fails the same way.";
+        let error = finance_error(FinanceDataError::RejectedArguments {
+            diagnostic: diagnostic.into(),
+            next,
+        });
+        assert_eq!(
+            crate::broker::error_body(&error),
+            json!({"code": "malformed_request", "message": diagnostic, "next": next, "retryable": false}),
+        );
     }
 }

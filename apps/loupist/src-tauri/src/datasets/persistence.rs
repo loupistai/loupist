@@ -124,8 +124,20 @@ impl SqliteStore {
         id: &str,
         revision: u32,
     ) -> Result<(DatasetRef, Value, Value), CommandError> {
+        self.dataset_bounded(loupist, id, revision, MAX_DATASET_BYTES)
+            .map(|(reference, payload, metadata, _)| (reference, payload, metadata))
+    }
+
+    pub(crate) fn dataset_bounded(
+        &self,
+        loupist: &str,
+        id: &str,
+        revision: u32,
+        limit: usize,
+    ) -> Result<(DatasetRef, Value, Value, usize), CommandError> {
+        let limit = limit.min(MAX_DATASET_BYTES) as i64;
         let db = self.lock_loupist(loupist).map_err(error)?;
-        let row:Option<(String,String,Vec<u8>)>=db.query_row("SELECT digest,metadata_json,payload FROM datasets WHERE loupist_id=?1 AND id=?2 AND revision=?3",params![loupist,id,revision],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(error)?;
+        let row:Option<(String,String,Vec<u8>)>=db.query_row("SELECT digest,metadata_json,payload FROM datasets WHERE loupist_id=?1 AND id=?2 AND revision=?3 AND length(payload)<=?4",params![loupist,id,revision,limit],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(error)?;
         let (digest, metadata, bytes) =
             row.ok_or_else(|| CommandError::not_found("dataset revision"))?;
         if crate::util::sha256(&bytes) != digest {
@@ -139,6 +151,7 @@ impl SqliteStore {
             },
             serde_json::from_slice(&bytes).map_err(error)?,
             serde_json::from_str(&metadata).map_err(error)?,
+            bytes.len(),
         ))
     }
     /// The metadata of a dataset's current revision, if the dataset still
@@ -335,7 +348,33 @@ impl SqliteStore {
                 },
             )
         };
-        let result = json!({"ref":reference,"fetched_at":metadata.get("fetched_at"),"total":total,"offset":offset,"rows":rows,"next_offset":if offset.saturating_add(limit)<total {Some(offset+limit)}else{None},"metadata":preview(&metadata,3)});
+        let mut result = json!({"ref":reference,"fetched_at":metadata.get("fetched_at"),"total":total,"offset":offset,"rows":rows,"next_offset":if offset.saturating_add(limit)<total {Some(offset+limit)}else{None},"metadata":preview(&metadata,3)});
+        // The generic preview only retains three entries per array. Copy the
+        // selected table's column metadata within the same query size limit.
+        let root_path = pointer.unwrap_or_default();
+        let descriptors = metadata["tables"]
+            .get(root_path)
+            .and_then(|table| table.get("columns"))
+            .or_else(|| {
+                root_path
+                    .rsplit_once('/')
+                    .and_then(|(parent, _)| payload.pointer(parent))
+                    .and_then(|parent| parent.get("columns"))
+            })
+            .or_else(|| selected.get("columns"))
+            .or_else(|| metadata.get("columns"))
+            .or_else(|| metadata.get("column_metadata"));
+        if let Some(descriptors) = descriptors {
+            result["columns"] = preview(descriptors, 80);
+        } else if root_path == "/data/observations" {
+            if let Some(series) = payload
+                .pointer("/data/series")
+                .filter(|series| series.is_object())
+            {
+                result["columns"] =
+                    json!({"value":{"label":series["indicator_name"],"unit":series["unit"]}});
+            }
+        }
         if result.to_string().len() > 1024 * 1024 {
             return Err(CommandError::invalid(
                 "query result exceeds 1 MiB; select a narrower pointer, columns or limit",

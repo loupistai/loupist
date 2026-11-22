@@ -1,5 +1,5 @@
 import { App } from "../../App";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { chooseLoupist, openApp, openLoupistSwitcher, selectedLoupistButton } from "../renderApp";
 
@@ -68,13 +68,16 @@ it("opens a new user's Bot after the notice and skips watchlist and scheduling s
   for (const profile of await bridge.loupistList()) await bridge.loupistDelete({ loupist_id: profile.id });
   const create = vi.spyOn(bridge, "loupistCreate");
   const schedule = vi.spyOn(bridge, "briefingSettingsSet");
+  const updateMenu = vi.spyOn(bridge, "appMenuUpdate");
   const user = userEvent.setup();
   render(<App bridge={bridge} />);
   await user.click(await screen.findByRole("checkbox", { name: "I understand" }));
+  expect(updateMenu).toHaveBeenLastCalledWith(expect.objectContaining({ shell: false }));
   await user.click(screen.getByRole("button", { name: "Get started" }));
   await user.click(await screen.findByRole("button", { name: "Continue" }));
   await user.click(await screen.findByRole("button", { name: "Create Loupist" }));
   expect(await screen.findByRole("heading", { name: "Bot" })).toBeVisible();
+  await waitFor(() => expect(updateMenu).toHaveBeenLastCalledWith(expect.objectContaining({ shell: true, loupist: true, modal: false })));
   expect(screen.getByRole("textbox", { name: "Message Loupist" })).toBeEnabled();
   expect(create).toHaveBeenCalledTimes(1);
   expect(schedule).not.toHaveBeenCalled();

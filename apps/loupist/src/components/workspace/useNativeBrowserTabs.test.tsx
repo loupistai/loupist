@@ -23,6 +23,26 @@ function setup(bridge: MockLoupistBridge) {
 }
 
 describe("Native browser lifecycle", () => {
+  it("keeps newer native events when a stale open snapshot arrives", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    let resolve!: (value: BrowserTabState) => void;
+    let emit!: (event: BrowserTabEvent) => void;
+    vi.spyOn(bridge, "browserTabOpen").mockImplementation((_request, observer) => {
+      emit = observer;
+      return new Promise(done => { resolve = done; });
+    });
+    const { result } = setup(bridge);
+    const url = "https://example.com/redirect";
+    act(() => {
+      emit({ type: "load_started", tab_id: native.tab_id, url });
+      emit({ type: "title_changed", tab_id: native.tab_id, title: "Results" });
+      emit({ type: "history_changed", tab_id: native.tab_id, can_go_back: false, can_go_forward: true });
+    });
+    await act(async () => resolve({ ...native, can_go_back: true, can_go_forward: false }));
+    expect(result.current.current.tabs[0]).toMatchObject({ native_id: native.tab_id, url, title: "Results",
+      loading: true, can_go_back: false, can_go_forward: true, error: undefined });
+  });
+
   it("keeps a creation failure visible until explicit retry", async () => {
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const open = vi.spyOn(bridge, "browserTabOpen").mockRejectedValueOnce(new Error("Native creation failed")).mockResolvedValue(native);

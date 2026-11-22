@@ -1,5 +1,6 @@
 import type { AssetPageTarget } from "../contracts/assets";
-import type { ChatArtifactRef, ChatEvidenceRef, KnowledgeLocation, MemoryRef } from "../types";
+import type { SourceFigureRequest } from "../contracts/knowledge";
+import type { ChatArtifactRef, ChatEvidenceRef, ChatMessage, KnowledgeLocation, MemoryRef, NumberCheck } from "../types";
 import { parseCredentialFreeHttpUrl } from "../lib/credentialFreeUrl";
 import { isMacPlatform } from "../lib/platform";
 import { knowledgeLocationFromMemoryRef } from "../knowledge/location";
@@ -17,13 +18,15 @@ export type ChatDestination =
       evidence: ChatEvidenceRef;
       /** A data number opens its reader at the matched cell. */
       cell?: EvidenceCell;
+      /** The number-link occurrence that asked to open a saved Source. */
+      figureCheck?: NumberCheck;
       /** The step that produced the evidence; the turn fills it in. */
       step?: EvidenceStepLink;
       /** Where a target this layer cannot open goes instead (a host post's asset page). */
       fallback?: ChatDestination;
     }
   | { kind: "link"; url: string }
-  | { kind: "memory"; location: KnowledgeLocation; title: string }
+  | { kind: "memory"; location: KnowledgeLocation; title: string; figure?: Omit<SourceFigureRequest, "threadId"> }
   /** A Lens record of the Loupist on screen. It always opens in the Evidence reader. */
   | { kind: "lens"; recordId: string }
   | { kind: "page"; location: KnowledgeLocation }
@@ -33,20 +36,16 @@ export type ChatDestination =
   /** A workspace file by its path, or the Files tab at the workspace root without one. */
   | { kind: "file"; path?: string }
   | { kind: "asset"; target: AssetPageTarget }
-  | { kind: "schedule"; taskId: string }
+  | { kind: "schedule"; taskId: string; handoffReceipt?: boolean }
   | { kind: "chat"; threadId: string }
-  /**
-   * A scheduled run's own session. A run's session goes with the run, so once it is
-   * gone this opens the run's task in Schedule, and once the task is gone too the
-   * open rejects with {@link RunRecordRemoved}.
-   */
-  | { kind: "run"; threadId: string | null; taskId: string }
+  /** A specific occurrence in its task's Schedule history. */
+  | { kind: "run"; runId: string; taskId: string }
   | { kind: "briefing"; runId: string }
   | { kind: "settings"; section: "connections" }
   /** The Following page (what you follow, shared by every Loupist). */
   | { kind: "following" };
 
-/** A scheduled run whose session and task are both gone: there is nothing left to open. */
+/** The requested occurrence has left its task's Schedule history. */
 export class RunRecordRemoved extends Error {
   constructor() { super("run_record_removed"); this.name = "RunRecordRemoved"; }
 }
@@ -55,6 +54,16 @@ export class RunRecordRemoved extends Error {
 export type OpenHow = { external?: boolean; anchor?: HTMLElement };
 /** Rejects only on a real failure. A target nothing can open resolves with nothing opened. */
 export type Open = (to: ChatDestination, how?: OpenHow) => Promise<void>;
+
+/** A matched or compared occurrence in the exact Source named by this answer's read. */
+export function savedSourceFigure(loupistId: string, message: Pick<ChatMessage, "id" | "memory_refs">, evidence: ChatEvidenceRef, check: NumberCheck): ChatDestination | undefined {
+  if (check.evidence_id !== evidence.id) return undefined;
+  const read = memoryReadForEvidence(evidence, message.memory_refs);
+  if (read?.knowledge?.kind !== "source") return undefined;
+  const location = knowledgeLocationFromMemoryRef(loupistId, read);
+  if (!location) return undefined;
+  return { kind: "memory", location, title: read.title, figure: { messageId: message.id, evidenceId: evidence.id, linkIndex: check.link_index } };
+}
 
 /** Where a citation goes. Every evidence ref has one, so a numbered citation is never a no-op. */
 export type EvidenceTarget =

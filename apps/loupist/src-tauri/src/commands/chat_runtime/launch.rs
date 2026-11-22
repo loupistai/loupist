@@ -127,6 +127,7 @@ pub(super) async fn launch_chat_turn(
         state,
         on_event: &on_event,
         run_id: &run_id,
+        loupist_id: &chat.loupist_id,
         thread_id: &chat.id,
         message_id: &assistant_message_id,
         memory_revision: &memory_revision,
@@ -183,6 +184,8 @@ pub(super) async fn launch_chat_turn(
         }
         capture.tool_refusals = on_event.tool_refusals.clone();
         capture.bound_chat_id = Some(chat.id.clone());
+        capture.chat_run_id = Some(request.run_id.clone());
+        capture.file_labels = crate::chat::local_files::FileLabels::for_chat(&chat);
         capture.opening_task_id = chat
             .opening_scheduled_turn()
             .map(|turn| turn.task_id.clone());
@@ -215,7 +218,7 @@ pub(super) async fn launch_chat_turn(
         let result_link_tx = result_links.0.clone();
         capture.evidence_sink = Some(Arc::new(move |evidence, call_id| {
             if let Some(call_id) = call_id {
-                let _ = result_link_tx.send((call_id, evidence.id.clone()));
+                let _ = result_link_tx.send((call_id, evidence.snapshot.id.clone()));
             }
             let _ = evidence_event_sink.send(ChatStreamEvent::Evidence {
                 run_id: evidence_run_id.clone(),
@@ -244,6 +247,8 @@ pub(super) async fn launch_chat_turn(
             }));
         }
         capture.mcp_scratch_root = Some(turn_resources.run_scratch_path().join("mcp"));
+        capture.saved_keys_needing_permission =
+            connector_authority.saved_keys_needing_permission.clone();
         capture.mcp_pool = Some(state.mcp_pool.clone());
         capture.web_search_policy = web_search_policy;
         capture.set_chat_provider(&configured_model.provider);

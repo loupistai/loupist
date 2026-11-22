@@ -7,9 +7,11 @@ import { evidenceLinkStarts } from "../../chat/evidenceLinkOrder";
 import { keepNumberParticles } from "../../chat/keepParticles";
 import { evidenceLinkAliases } from "../../chat/evidenceLinkAliases";
 import { CitationChip, UnavailableCitation } from "../chat/CitationChip";
+import { replayWarning } from "../chat/FigureWarnings";
 import { NumberChip, PendingNumber } from "../chat/NumberChip";
 import { useTurn } from "../chat/TurnProvider";
 import { useOpen, useOpenProps } from "../navigation/Open";
+import { isMacPlatform } from "../../lib/platform";
 import type { ChatDestination } from "../../chat/navigation";
 import { decodedWorkspaceLink, workspaceLinksPlugin, WORKSPACE_LINK_PROTOCOL } from "../../lib/workspaceFileLink";
 import { cn } from "@/lib/utils";
@@ -84,16 +86,18 @@ function EvidenceLink({ href, start, children }: { href: string; start?: number;
   const { numberChecks, streaming } = useContext(TextBlockContext);
   const block = useContext(BlockLinksContext);
   const evidenceRefs = turn?.evidenceRefs ?? [];
-  const evidence = evidenceRefs.find((ref) => href === `#evidence-${ref.id}`);
-  if (!evidence) {
-    const artifactId = artifactLinks.get(href);
-    return artifactId ? <ProseLink to={{ kind: "artifact-link", artifactId }} title={nodeText(children)}>{children}</ProseLink>
-      : <UnavailableCitation>{children}</UnavailableCitation>;
-  }
-  // A number link is the control for its own evidence: Rust checked it when the answer finished.
+  const evidenceId = href.slice("#evidence-".length);
+  const evidence = evidenceRefs.find(ref => ref.id === evidenceId);
+  // Rust identifies checks by the link's occurrence, evidence id and printed text.
   const linkText = nodeText(children).trim();
   const ordinal = start === undefined || !block ? -1 : block.starts.indexOf(start);
-  const check = checkFor(numberChecks, block && ordinal >= 0 ? block.base + ordinal : undefined, evidence.id, linkText);
+  const check = checkFor(numberChecks, block && ordinal >= 0 ? block.base + ordinal : undefined, evidenceId, linkText);
+  if (!evidence) {
+    const artifactId = artifactLinks.get(href);
+    const reason = check?.comparisonReplay?.reason === "evidence_unavailable" ? replayWarning(check) : undefined;
+    return artifactId ? <ProseLink to={{ kind: "artifact-link", artifactId }} title={nodeText(children)}>{children}</ProseLink>
+      : <UnavailableCitation reason={reason}>{children}</UnavailableCitation>;
+  }
   if (check) return <NumberChip check={check} checks={numberChecks} evidence={evidence} evidenceRefs={evidenceRefs} asOf={turn?.asOf}>{children}</NumberChip>;
   if (streaming && looksLikeNumber(linkText)) return <PendingNumber>{children}</PendingNumber>;
   const read = memoryReadForEvidence(evidence, turn?.memoryRefs);
@@ -106,12 +110,15 @@ function EvidenceLink({ href, start, children }: { href: string; start?: number;
 }
 
 /** A prose link: the underline is its affordance, so it carries no icon. */
-function ProseLink({ to, className, title, children }: { to: ChatDestination; className?: string; title: string; children?: ReactNode }) {
+function ProseLink({ to, className, title, children }: { to: ChatDestination; className?: string; title?: string; children?: ReactNode }) {
   useTranslation("chat");
   const link = useOpenProps(to);
   if (!link.available) return <span className={className}>{children}</span>;
+  const hint = to.kind !== "link" ? title : link.opensInBrowser
+    ? i18n.t("common:externalLink.opensInBrowser")
+    : t("messageResponse.opensBesideChat", { modifier: isMacPlatform() ? "⌘" : "Ctrl" });
   return <button type="button" role="link" className={cn(to.kind === "lens" ? "loupist-lens-link" : "loupist-external-link", className)} data-streamdown="link"
-    title={link.failed ? t("messageResponse.couldNotOpenThisLink") : title} {...link.props}>
+    title={link.failed ? t("messageResponse.couldNotOpenThisLink") : hint} {...link.props}>
     {children}
     {link.failed ? <span className="sr-only" role="alert">{t("messageResponse.couldNotOpenThisLinkAlert")}</span> : null}
   </button>;
@@ -161,7 +168,7 @@ function LoupistMarkdownLink({
       </span>
     );
   }
-  return <ProseLink to={{ kind: "link", url: externalUrl }} className={className} title={t("messageResponse.openExternalLink", { externalUrl })}>{children}</ProseLink>;
+  return <ProseLink to={{ kind: "link", url: externalUrl }} className={className}>{children}</ProseLink>;
 }
 
 export type MessageResponseProps = Omit<

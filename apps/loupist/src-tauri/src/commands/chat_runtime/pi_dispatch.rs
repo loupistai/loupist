@@ -125,8 +125,34 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
                 } else {
                     None
                 };
-                progress.start_tool(tool_call_id, tool_name, args, web_source.as_ref(), now_ms());
-                match activity_recorder.start(tool_call_id, tool_name, args, now_ms()) {
+                let file_tool = crate::chat::local_files::path_tool(tool_name);
+                let input_path = file_tool
+                    .then(|| crate::chat::local_files::named_path(args))
+                    .flatten();
+                let file = input_path
+                    .and_then(|path| capture.file_labels.display(path, capture.native.roots()?));
+                let title = file.as_ref().map(|file| file.title.as_str());
+                let display =
+                    file_tool.then(|| crate::chat::local_files::displayed_args(args, title));
+                let shown = display.as_ref().unwrap_or(args);
+                let started_at = now_ms();
+                progress.start_tool(
+                    tool_call_id,
+                    tool_name,
+                    args,
+                    web_source.as_ref(),
+                    started_at,
+                );
+                if input_path.is_some() {
+                    progress.show_file_target(tool_call_id, title);
+                }
+                match activity_recorder.start(
+                    tool_call_id,
+                    tool_name,
+                    shown,
+                    started_at,
+                    file.as_ref(),
+                ) {
                     Ok(Some(reference)) => progress.attach_activity(tool_call_id, reference),
                     Ok(None) => {}
                     Err(error) => {

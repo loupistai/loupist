@@ -131,10 +131,29 @@ export type ChatToolRefusal = {
 export type ChatToolRefusalReason =
   | "needs_approval"
   | "blocked_unattended"
+  | "saved_key_permission"
   | "taint"
   | "sensitive_memory"
   | "declined"
   | "other";
+
+export type DiscardedMemoryItem = { kind: DiscardedMemoryKind, title: string };
+
+export type DiscardedMemoryKind =
+  | "note"
+  | "journal_entry"
+  | "source"
+  | "lens_section"
+  | "lens_page"
+  | "principle"
+  | "method"
+  | "world_vocabulary"
+  | "thesis"
+  | "price_read"
+  | "bot_memory"
+  | "watchlist"
+  | "research_focus"
+  | "research_handoff";
 
 export type FiledOutcome = { opId: string, outcome: string, key?: string };
 
@@ -174,7 +193,10 @@ export type HomeDelivery = {
   schedule: Schedule | null,
   run_thread_id: string | null,
   status: RunStatus,
+  memory_save_skip?: MemorySaveSkipReason,
+  discarded_memory_items?: Array<DiscardedMemoryItem>,
   finished_at_ms: number,
+  skipped_saved_keys?: Array<string>,
   learned?: LearnedDigest,
 };
 
@@ -188,6 +210,8 @@ export type HomeHandoff = {
   title: string,
   connectionId?: string,
   status: HandoffStatus,
+  memorySaveSkip?: MemorySaveSkipReason,
+  discardedMemoryItems?: Array<DiscardedMemoryItem>,
   stopReason?: HandoffStopReason,
   learned?: LearnedDigest,
 };
@@ -211,6 +235,8 @@ export type HomeVocabulary = {
 
 export type MapKind = { name: string, label: string, labelKo?: string };
 
+export type MemorySaveSkipReason = "user" | "deadline" | "interrupted" | "failed" | "policy_changed";
+
 export type MemoryUpdateChange = {
   worldJobId?: string | null,
   worldStatus?: string | null,
@@ -229,6 +255,8 @@ export type MemoryUpdateChange = {
 
 export type MemoryUpdateResult = {
   status: MemoryUpdateStatus,
+  skipReason?: MemorySaveSkipReason,
+  discardedMemoryItems?: Array<DiscardedMemoryItem>,
   commitId: string | null,
   changes: Array<MemoryUpdateChange>,
   /**

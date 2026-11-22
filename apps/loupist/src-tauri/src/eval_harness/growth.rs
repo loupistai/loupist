@@ -172,7 +172,13 @@ async fn briefing(state: &AppState, loupist: &str) -> Result<Value> {
     )?
     .task
     .ok_or("missing briefing task")?;
-    if task.model_profile_id != MODEL || task.thinking_level != "medium" {
+    let selection = task
+        .model_selection
+        .as_ref()
+        .ok_or("missing briefing model selection")?;
+    if selection.model.as_ref().map(|m| m.id.as_str()) != Some(MODEL)
+        || selection.thinking_level.as_deref() != Some("medium")
+    {
         return Err("briefing model mismatch".into());
     }
     let captured = Arc::new(Mutex::new(trace::PiTrace::default()));

@@ -23,6 +23,7 @@
     "responseFailedQueuedMessagesWereKept": "응답하지 못했습니다. 대기 중인 메시지는 유지되어 있습니다.",
     "chartRange": "선택한 차트 범위: {{start}}~{{end}}.",
     "withChartRange": "{{text}}\n\n선택한 차트 범위: {{start}}~{{end}}.",
+    "waitingForMemory": "이 Loupist의 다른 작업이 저장을 마칠 때까지 기다리는 중입니다",
     "retainedRequestError": "{{error}} 요청은 보관되어 있습니다. 다시 보내기 전에 대화를 확인하십시오.",
     "appendWorkingNoteRequest": "{{prompt}}\n\n리서치 노트를 이렇게 바꿔 줘: "
   },
@@ -75,7 +76,7 @@
     "enabledForThisLoupist": "이 루피스트에서 켜짐",
     "commandsAndSkills": "명령 및 스킬",
     "noMatchingContext": "일치하는 맥락이 없습니다",
-    "noEnabledItems": "켜진 항목이 없습니다. 루피스트 설정에서 스킬과 연결을 선택하십시오.",
+    "noEnabledItems": "이 루피스트에 활성화된 스킬이나 데이터 연결이 없습니다.",
     "noMatchingItem": "일치하는 항목이 없습니다",
     "results": "결과",
     "promptShortcuts": "자주 쓰는 요청",
@@ -84,7 +85,6 @@
     "clipboardAccessWasNotAllowed": "클립보드 접근이 허용되지 않았습니다.",
     "couldNotAttachClipboardContents": "클립보드 내용을 첨부하지 못했습니다. 다시 시도하십시오.",
     "addToThisMessage": "메시지에 추가",
-    "addFilesOrImages": "파일 또는 이미지 추가",
     "manageSkillsTools": "스킬 및 도구 관리",
     "memory": "기억",
     "sendNext": "다음에 보내기",
@@ -94,9 +94,6 @@
     "messageLoupist": "루피스트에게 메시지",
     "askLoupistToAddContextForCommands": "{{loupistName}}에게 메시지",
     "askYourLoupist": "루피스트에게 메시지",
-    "newChat": "새 리서치",
-    "model": "모델",
-    "attachFiles": "파일 첨부",
     "manageSkillsAndConnections": "스킬 및 연결 관리",
     "useSendNextToIncludeAttachedFilesOrReferences": "첨부 파일이나 참고 자료를 다음 응답에 포함하려면 다음에 보내기를 사용하십시오.",
     "theSelectedModelDoesNotAcceptImages": "선택한 모델은 이미지를 지원하지 않습니다.",
@@ -118,8 +115,6 @@
     "shortcutClose": "닫기",
     "escapeKey": "esc",
     "versionLabel": "버전 {{version}}",
-    "startAFreshConversation": "리서치 세션 시작",
-    "chooseTheModel": "모델 선택",
     "chooseWhatThisLoupistCanUse": "이 루피스트가 사용할 기능 선택",
     "attachmentName": "첨부 파일",
     "removeAttachment": "{{value1}} 제거",
@@ -143,21 +138,14 @@
     "attach": {
       "files": "파일…",
       "pasteImage": "이미지 붙여넣기",
-      "mapScreenshot": "지도 스크린샷",
-      "mapEmpty": "지도가 비어 있습니다",
-      "mapClosed": "먼저 패널에서 지도를 여십시오",
-      "mapFailed": "지도를 캡처하지 못했습니다. 다시 시도하십시오.",
+      "mapScreenshot": "월드 스크린샷",
+      "mapEmpty": "월드가 비어 있습니다",
+      "mapClosed": "먼저 패널에서 월드를 여십시오",
+      "mapFailed": "월드를 캡처하지 못했습니다. 다시 시도하십시오.",
       "fromEvidence": "근거에서 추가",
-      "mapStats_other": "지도에 {{formattedCount}}개"
+      "mapStats_other": "월드에 {{formattedCount}}개"
     },
-    "briefDetail": "관심 자산을 간단히 브리핑합니다.",
     "asofDetail": "그날 알 수 있었던 정보만으로 답합니다.",
-    "compareDetail": "루피스트가 아는 내용으로 두 자산을 비교합니다.",
-    "checkDetail": "주장을 내 원칙에 비춰 점검합니다.",
-    "briefPrompt": "간단히 브리핑해 줘: ",
-    "comparePrompt": "비교해 줘: ",
-    "checkPrompt": "내 원칙에 비춰 점검해 줘: ",
-    "actions": "동작",
     "attachmentTooLarge": "파일은 하나에 25 MB까지 보낼 수 있습니다. 큰 파일을 빼고 다시 보내십시오."
   },
   "chatConversation": {
@@ -187,6 +175,7 @@
     "answerCopied": "답변을 복사했습니다",
     "copyAnswer": "답변 복사",
     "copied": "복사했습니다",
+    "afterCurrentReply": "현재 답변이 끝나면 사용할 수 있습니다.",
     "editMessage": "메시지 편집",
     "edit": "편집",
     "couldNotCopySelectTheAnswerToCopyIt": "복사하지 못했습니다. 답변을 선택해 복사하십시오.",
@@ -232,14 +221,10 @@
   },
   "chatModelMenu": {
     "modelSettingsForThisMessage": "이 메시지의 모델 설정",
-    "chooseModel": "모델 선택",
     "modelForThisMessage": "이 메시지의 모델",
     "advanced": "고급 설정",
-    "auto": "자동",
-    "autoDescription": "기본 모델 설정을 따릅니다.",
-    "autoRecommended": "자동 (권장)",
-    "resetToAuto": "자동으로 되돌리기",
-    "connectAccount": "AI 계정 연결"
+    "default": "기본값",
+    "noAccount": "연결된 AI 계정 없음"
   },
   "chatPendingQueue": {
     "pendingChatInstructions": "대기 중인 대화 지침",
@@ -272,10 +257,11 @@
     "inspectAction": "{{action}} 살펴보기",
     "paused": {
       "status": "일시 중지",
-      "instructions": "일시 중지: 이 답변은 다른 사이트의 글을 읽었으므로, 이번 답변에서는 지침 파일과 스킬 파일 변경이 꺼져 있습니다.",
+      "instructions": "일시 중지: 이 답변은 다른 사이트의 글을 읽었으므로, 이번 답변에서는 지침 파일을 수정할 수 없습니다.",
+      "instructionsWithSkills": "일시 중지: 이 답변은 다른 사이트의 글을 읽었으므로, 이번 답변에서는 지침 파일과 스킬 파일 변경이 꺼져 있습니다.",
       "site": "일시 중지: 이 답변은 다른 사이트의 글을 읽었으므로, 이번 답변에서는 이 페이지 열기가 꺼져 있습니다.",
       "schedule": "일시 중지: 이 답변은 다른 사이트의 글을 읽었으므로, 이번 답변에서는 예약 만들기와 변경이 꺼져 있습니다.",
-      "connection": "일시 중지: 이 답변은 다른 사이트의 글을 읽었으므로, 이번 답변에서는 직접 추가한 연결이 꺼져 있습니다.",
+      "connection": "일시 중지: 이 답변이 다른 사이트의 글을 읽은 후 이 연결이 일시 중지되었습니다.",
       "other": "일시 중지: 이 답변은 다른 사이트의 글을 읽었으므로, 이번 답변에서는 이 단계가 꺼져 있습니다.",
       "why": "다른 사이트의 글에는 숨은 지시가 들어 있을 수 있습니다. 이 안전 규칙은 그런 지시가 대신 실행되지 않게 막으며, 새 메시지는 이 제한 없이 시작합니다."
     },
@@ -283,8 +269,8 @@
       "protectedPath": "허용되지 않음: 이 경로는 앱의 비공개 데이터(자격 증명, 데이터베이스, 실행 파일) 안에 있어 루피스트가 읽거나 쓰지 않습니다.",
       "outsideWorkspace": "허용되지 않음: 이 파일은 루피스트 폴더 밖에 있습니다. 채팅에 첨부하거나 폴더 안으로 복사하면 루피스트가 다룰 수 있습니다."
     },
-    "namesTouched_other": "지도에 {{formattedCount}}개",
-    "namesTouchedOnMap_other": "지도에서 {{formattedCount}}개 보기",
+    "namesTouched_other": "월드에 {{formattedCount}}개",
+    "namesTouchedOnMap_other": "월드에서 {{formattedCount}}개 보기",
     "plan": "계획",
     "notDone": "하지 않음",
     "planDone": "완료",
@@ -301,6 +287,7 @@
     "thisSampleAlsoHasADisplayLimit": "이 데이터도 표시되는 양에 한도가 있습니다.",
     "resultDetails": "결과 세부 정보",
     "recorded": "기록됨",
+    "updated": "갱신",
     "provider": "제공처",
     "dataAsOf": "데이터 기준일",
     "published": "발행일",
@@ -333,29 +320,67 @@
     "updatedDate": "{{date}} 업데이트",
     "attributedSource": "출처: {{attribution}}",
     "numberedSource": "자료 {{value1}}",
-    "numberedWorld": "지도 {{value1}}",
+    "numberedWorld": "월드 {{value1}}",
     "numberedLens": "렌즈 {{value1}} · {{value2}}"
   },
   "messageMemoryRow": {
     "savedInThisAnswer": "이 답변에서 저장됨",
     "userProvided": "사용자 제공",
-    "showRelation": "지도에서 보기: {{source}} {{relation}} {{target}}",
+    "showRelation": "월드에서 보기: {{source}} {{relation}} {{target}}",
     "basis": "근거: {{value}}",
     "nextUse": "다음 사용: {{value}}",
     "openIn": "{{value}}에서 열기"
   },
+  "memorySaving": {
+    "label": "메모리에 저장 중",
+    "inProgress": "메모리에 저장 중…",
+    "waitingForChat": "메모리에 저장 중 · ‘{{title}}’ 대화가 끝나기를 기다리는 중",
+    "waitingForOthers": "메모리에 저장 중 · 이 루피스트의 다른 대화가 끝나기를 기다리는 중",
+    "skip": "저장 건너뛰기",
+    "skipDetail": "답변은 그대로 두고 메모리 저장만 건너뜁니다.",
+    "skipFailed": "저장을 건너뛰지 못했습니다. 다시 시도하십시오.",
+    "queueHelp": "{{send}} 키를 누르면 저장이 끝난 뒤 보낼 메시지로 추가됩니다. {{newline}} 키를 누르면 줄을 바꿉니다.",
+    "unfinished": "저장이 끝나지 않았습니다",
+    "waitedForChat": "‘{{title}}’ 대화가 끝나기를 {{duration}} 기다림",
+    "waitedForOthers": "이 루피스트의 다른 대화가 끝나기를 {{duration}} 기다림",
+    "claimNotKept": "이 답변에서 저장했다고 한 내용은 보관되지 않았습니다.",
+    "notKept": "보관되지 않음",
+    "discardedKind": {
+      "note": "메모",
+      "journal_entry": "저널 항목",
+      "source": "출처",
+      "lens_section": "렌즈 구획",
+      "lens_page": "렌즈 페이지",
+      "principle": "원칙",
+      "method": "분석 방법",
+      "world_vocabulary": "월드 용어",
+      "thesis": "투자 논리",
+      "price_read": "시세 조회",
+      "bot_memory": "봇 메모리",
+      "watchlist": "관심 자산",
+      "research_focus": "리서치 초점",
+      "research_handoff": "리서치 인계"
+    },
+    "skipped": {
+      "user": "메모리에 저장하지 않음: 저장을 건너뛰었습니다.",
+      "deadline": "메모리에 저장하지 않음: 10분이 지나도 다른 대화가 끝나지 않았습니다.",
+      "interrupted": "메모리에 저장하지 않음: 저장이 끝나기 전에 Loupist가 종료되었습니다.",
+      "failed": "메모리에 저장하지 않음: 저장에 실패했습니다.",
+      "policy_changed": "메모리에 저장하지 않음: 답변을 작성하는 동안 메모리가 초기화되었습니다."
+    }
+  },
   "chatReceipt": {
     "label": "이 답변이 쓰고 저장한 것",
     "sourcesRead": "이 답변에서 읽은 자료",
-    "names_other": "지도에 이름 {{formattedCount}}개 추가",
-    "namesOnMap_other": "지도에서 새 항목 {{formattedCount}}개 보기",
+    "names_other": "월드에 이름 {{formattedCount}}개 추가",
+    "namesOnMap_other": "월드에서 새 항목 {{formattedCount}}개 보기",
     "relationships_other": "관계 {{formattedCount}}개 갱신",
-    "relationshipsOnMap_other": "지도에서 관계 {{formattedCount}}개 갱신",
+    "relationshipsOnMap_other": "월드에서 관계 {{formattedCount}}개 갱신",
     "savedSources_other": "자료 {{formattedCount}}개 저장",
     "savedPrinciples_other": "원칙 {{formattedCount}}개 저장",
     "savedJournal_other": "저널 {{formattedCount}}개 저장",
     "savedNotes_other": "리서치 노트 {{formattedCount}}개 저장",
-    "savedWorld_other": "지도에 {{formattedCount}}개 추가",
+    "savedWorld_other": "월드에 {{formattedCount}}개 추가",
     "nothingNew": "새로 저장한 내용 없음",
     "thesisMoved": "{{name}}: {{verdict}}",
     "thesisMovedFrom": "{{name}}: {{from}} → {{verdict}}",
@@ -363,9 +388,9 @@
     "following": "{{name}} 관심 자산에 추가",
     "unfollowed": "{{name}} 관심 자산에서 제외",
     "focusUpdated": "리서치 주제 변경",
-    "mapTracks": "이제 지도가 {{list}}도 추적합니다",
+    "mapTracks": "이제 월드가 {{list}}도 추적합니다",
     "journalNotSaved": "저널 항목을 저장하지 못했습니다",
-    "kindNotAdded": "{{name}}: 지도에 추가하지 않았습니다",
+    "kindNotAdded": "{{name}}: 월드에 추가하지 않았습니다",
     "numbersToCheck_other": "확인할 숫자 {{formattedCount}}개",
     "learned_other": "새로 배운 것 {{formattedCount}}개",
     "ideas_other": "아이디어 {{formattedCount}}개",
@@ -395,21 +420,21 @@
     "spending": "예약 작업은 실행할 때마다 AI 계정을 사용합니다."
   },
   "worldProcessingStatus": {
-    "sourceSavedCouldNotRefreshWorldStatus": "자료 저장됨 · 지도 상태를 새로고침하지 못했습니다",
-    "sourceSavedCheckWorldForProcessingDetails": "자료 저장됨 · 지도에서 처리 내용을 확인하십시오",
+    "sourceSavedCouldNotRefreshWorldStatus": "자료 저장됨 · 월드 상태를 새로고침하지 못했습니다",
+    "sourceSavedCheckWorldForProcessingDetails": "자료 저장됨 · 월드에서 처리 내용을 확인하십시오",
     "refreshStatus": "상태 새로고침",
-    "queued": "지도: 대기 중",
-    "running": "지도: 관계 연결 중",
-    "completed": "지도: 관계 업데이트 완료",
-    "paused": "지도: 구성 일시정지",
-    "paused_budget": "지도: 이 자료의 지도 구성 멈춤",
-    "failed_before_mutation": "지도: 구성 실패",
-    "reconcile_required": "지도: 결과 불확실 — 지도에서 확인하십시오",
-    "reconciled_without_retry": "자료 유지됨 · 중단된 지도 구성은 재시도하지 않았습니다",
-    "cancelled_before_start": "지도: 구성 취소됨",
-    "no_text": "자료 저장됨 · 지도에 반영할 수 있는 텍스트가 없습니다",
-    "disabled": "자료 저장됨 · 지도 구성 꺼짐",
-    "not_configured": "자료 저장됨 · 루피스트 설정에서 지도 구성을 설정하십시오",
+    "queued": "월드: 대기 중",
+    "running": "월드: 관계 연결 중",
+    "completed": "월드: 관계 업데이트 완료",
+    "paused": "월드: 구성 일시정지",
+    "paused_budget": "월드: 이 자료의 월드 구성 멈춤",
+    "failed_before_mutation": "월드: 구성 실패",
+    "reconcile_required": "월드: 결과 불확실 — 월드에서 확인하십시오",
+    "reconciled_without_retry": "자료 유지됨 · 중단된 월드 구성은 재시도하지 않았습니다",
+    "cancelled_before_start": "월드: 구성 취소됨",
+    "no_text": "자료 저장됨 · 월드에 반영할 수 있는 텍스트가 없습니다",
+    "disabled": "자료 저장됨 · 월드 구성 꺼짐",
+    "not_configured": "자료 저장됨 · 루피스트 설정에서 월드 구성을 설정하십시오",
     "saved": "자료를 저장했습니다"
   },
   "chatStatusPill": {
@@ -487,7 +512,7 @@
       "source": "자료",
       "savedSource": "저장한 자료",
       "lens": "렌즈",
-      "world": "지도",
+      "world": "월드",
       "journal": "저널",
       "note": "리서치 노트",
       "file": "파일"
@@ -496,6 +521,7 @@
     "createdIn": "생성 위치",
     "provider": "제공처",
     "retrieved": "조회일",
+    "updated": "갱신",
     "published": "발행일",
     "dataAsOf": "데이터 기준일",
     "coverage": "제공 범위",
@@ -544,7 +570,38 @@
     "preview": "미리보기",
     "source": "원문",
     "showFile": "파일 보기",
-    "noTextPreviewForThisFileUseShowIn": "이 파일의 텍스트 미리보기가 없습니다. 파일 관리자에서 보기를 눌러 여십시오.",
+    "noPreviewForThisKindOfFile": "이 형식은 미리보기를 지원하지 않습니다.",
+    "documentOpen": {
+      "open": "열기",
+      "openIn": "{{application}}에서 열기",
+      "outsideWorkspace": "이 파일은 작업 폴더 밖에 있습니다.",
+      "unsupportedType": "파일 패널에서 열 수 없는 형식입니다.",
+      "inaccessibleFile": "이 파일을 사용할 수 없습니다.",
+      "unsafeDocument": "이 파일을 안전하게 열 수 없습니다.",
+      "failedIn": "이 파일을 {{application}}에서 열지 못했습니다.",
+      "handlerUnavailable": "시스템에서 이 파일을 기본 앱으로 열 수 없습니다.",
+      "couldNotOpen": "이 파일을 열 수 없습니다."
+    },
+    "workbook": {
+      "sheets": "시트",
+      "hidden": "숨김",
+      "reading": "통합 문서를 읽는 중…",
+      "valuesOnly": "값만 표시합니다. 차트, 이미지, 서식은 표시되지 않습니다.",
+      "truncated": "전체 {{total}}개 행 중 처음 {{rows}}개를 표시합니다.",
+      "emptySheet": "이 시트에는 데이터가 없습니다.",
+      "noVisibleSheets": "이 통합 문서에 표시할 시트가 없습니다.",
+      "unsupportedFormat": "{{format}} 형식의 통합 문서는 미리보기를 지원하지 않습니다.",
+      "encrypted": "이 통합 문서는 암호로 보호되어 있습니다.",
+      "invalidWorkbook": "이 통합 문서가 손상되었거나 유효하지 않습니다.",
+      "unknownSheet": "이 시트는 더 이상 사용할 수 없습니다.",
+      "unsupportedSheet": "이 시트는 미리보기를 지원하지 않습니다.",
+      "limitExceeded": "이 통합 문서가 미리보기 한도를 초과합니다.",
+      "unavailable": "통합 문서 미리보기를 사용할 수 없습니다.",
+      "timedOut": "통합 문서를 읽는 시간이 초과되었습니다.",
+      "couldNotRead": "통합 문서를 읽을 수 없습니다.",
+      "cachedFormula": "수식으로 계산된 값입니다. 저장된 결과를 표시합니다.",
+      "uncachedFormula": "이 수식에는 아직 저장된 결과가 없습니다. 스프레드시트 앱에서 파일을 열면 계산됩니다."
+    },
     "openInFileManager": "파일 관리자에서 열기",
     "couldNotDisplayThisImage": "이미지를 표시하지 못했습니다. 파일을 확인하십시오.",
     "fitToPanel": "패널에 맞춤",
@@ -575,8 +632,8 @@
   },
   "workspaceKnowledgeReader": {
     "couldNotOpenThisSavedReference": "저장된 참고 자료를 열지 못했습니다. 다시 시도하십시오.",
-    "exploreThisSavedWorldAndItsEvidence": "저장된 지도와 근거를 살펴봅니다.",
-    "openWorld": "지도 열기",
+    "exploreThisSavedWorldAndItsEvidence": "저장된 월드와 근거를 살펴봅니다.",
+    "openWorld": "월드 열기",
     "openInLens": "렌즈에서 열기",
     "retryReference": "참고 자료 다시 불러오기",
     "openingSavedReference": "저장된 참고 자료 여는 중…",
@@ -593,7 +650,7 @@
     "chart": "차트",
     "document": "문서",
     "closeTab": "{{title}} 탭 닫기",
-    "map": "대화 지도",
+    "map": "이 대화의 월드",
     "evidence": "근거",
     "newContent": "{{tab}}에 새 항목",
     "work": "결과물",
@@ -684,7 +741,15 @@
     "titleWithUnit": "{{label}} ({{unit}})",
     "unitOnly": "단위: {{unit}}",
     "series": "계열",
-    "value": "값"
+    "value": "값",
+    "chart": "차트",
+    "namedAxis": "{{title}} 축",
+    "range": "{{title}} 축, {{min}}부터 {{max}}까지",
+    "legend": "{{title}} 범례",
+    "barMark": "막대",
+    "lineMark": "선",
+    "areaMark": "영역",
+    "pointMark": "데이터 점"
   },
   "financialChart": {
     "chartControls": "차트 도구",
@@ -745,6 +810,16 @@
     "explainQuote": "이 부분을 설명해 줘."
   },
   "evidence": {
+    "provenance": {
+      "updated": "{{date}} 갱신",
+      "fetched": "{{date}} 읽음",
+      "saved": "{{date}} 저장",
+      "route": {
+        "world": "월드에서 가져옴",
+        "lens": "렌즈에서 가져옴",
+        "source": "출처에서 가져옴"
+      }
+    },
     "selectedPassageFromTheRetrievedDocument": "가져온 문서에서 선택한 구절",
     "retrievedSource": "가져온 자료",
     "contentReturnedByTheSourceWhenThisAnswerWas": "이 답변을 조사할 때 자료에서 받은 내용입니다.",
@@ -772,14 +847,25 @@
     "datasetResult": "데이터셋 결과",
     "toolResult": "도구 결과",
     "aSavedAnalysisResultThisIsNotAnOriginal": "저장된 분석 결과입니다. 원본 자료나 별도로 검증된 사실이 아닙니다.",
-    "worldSearch": "지도 검색",
+    "worldSearch": "월드 검색",
     "lensSearch": "렌즈 검색",
     "numberedSource": "출처 {{number}}: {{title}}",
     "memoryLabel": "기억: {{memoryTitle}}",
     "resultLabel": "결과: {{title}}",
-    "map": "지도",
+    "map": "월드",
     "lens": "렌즈",
-    "marketData": "시장 데이터"
+    "marketData": "시장 데이터",
+    "warnings": {
+      "navigation_heavy": "저장된 텍스트에 페이지 메뉴와 탐색 링크가 포함되어 있어 인용 구절 앞뒤에 관련 없는 내용이 있을 수 있습니다.",
+      "decoding_replaced": "일부 문자를 읽을 수 없어 저장된 텍스트에 대체 문자로 표시했습니다.",
+      "javascript_required": "이 페이지는 자바스크립트로 내용을 표시하므로 저장된 구절에 일부 내용이 빠졌을 수 있습니다.",
+      "very_short": "이 페이지에서 저장한 텍스트가 짧아 구절의 맥락을 파악하기 어려울 수 있습니다.",
+      "official_fallback": "공식 문서 서비스를 이용할 수 없어 웹페이지에서 이 구절을 저장했습니다.",
+      "undated_result": "일부 검색 결과에 게시일이 없습니다.",
+      "usage_metadata_unavailable": "검색 제공자가 이번 검색의 사용량 정보를 제공하지 않았습니다.",
+      "provider_fallback": "다른 검색 제공자가 이 결과를 제공했습니다.",
+      "unknown": "자료를 가져오는 데 제약이 있었습니다. 맥락을 파악하려면 원문을 확인하십시오."
+    }
   },
   "memoryActivity": {
     "reviseNote": "수정된 노트",
@@ -795,11 +881,11 @@
       "principle": "원칙",
       "thesis": "투자 논지",
       "record": "기록",
-      "world": "지도 항목"
+      "world": "월드 항목"
     }
   },
   "memoryPreview": {
-    "thisSavedPreviewIsIncompleteOpenTheRelatedRecord": "저장된 미리보기가 완전하지 않습니다. 지도나 렌즈에서 관련 기록을 열어 내용을 읽으십시오.",
+    "thisSavedPreviewIsIncompleteOpenTheRelatedRecord": "저장된 미리보기가 완전하지 않습니다. 월드나 렌즈에서 관련 기록을 열어 내용을 읽으십시오.",
     "noMatchingSavedRecords": "검색한 저장 기록이 없습니다.",
     "moreMatchesAreAvailableInMemory": "기억에 더 많은 검색 결과가 있습니다.",
     "noEntitiesOrRelationshipsInThisSavedView": "저장된 화면에 이름이나 관계가 없습니다.",
@@ -852,7 +938,7 @@
     "couldNotOpenThisLinkAlert": "링크를 열지 못했습니다. 주소를 확인하십시오.",
     "openLinkedLens": "연결된 렌즈 열기",
     "openFile": "{{localPath}} 열기",
-    "openExternalLink": "{{externalUrl}} 열기",
+    "opensBesideChat": "채팅 옆에서 열립니다. {{modifier}} 클릭하면 브라우저에서 열립니다.",
     "streamdown": {
       "close": "닫기",
       "copied": "복사됨",
@@ -1000,7 +1086,7 @@
     "youCouldAsk": "질문 예시",
     "askGreeting": "무엇을 리서치하시겠습니까?",
     "reason": {
-      "new": "지도에 새로 추가됨",
+      "new": "월드에 새로 추가됨",
       "relation": "새 관계",
       "source": "{{title}}에서",
       "check": "{{date}}까지 확인할 것",
@@ -1130,8 +1216,8 @@
       "done": "원칙 저장함"
     },
     "world_schema_update": {
-      "running": "지도가 추적하는 것 고치는 중",
-      "done": "지도가 추적하는 것 고침"
+      "running": "월드가 추적하는 것 고치는 중",
+      "done": "월드가 추적하는 것 고침"
     },
     "loupist_setup": {
       "running": "이 루피스트 설정하는 중",
@@ -1347,12 +1433,13 @@
     "declined": "비밀번호나 키 같은 비밀 정보로 보이는 항목 하나는 저장하지 않았습니다."
   },
   "thread": {
+    "scheduleOrigin": "예약 · {{title}} · {{time}}",
     "open": "열기",
     "couldNotFinish": "이번 실행을 끝내지 못했습니다.",
     "runRemoved": "이 실행의 기록은 삭제되었습니다.",
     "deliveryLabel": "{{title}} 결과",
     "handoffLabel": "조사: {{title}}",
-    "researched": "조사 결과: {{title}}",
+    "sessionEnded": "세션 종료: {{title}}",
     "handoffFailed": "완료하지 못함",
     "handoffStopped": "중지됨",
     "handoffInterrupted": "중단됨",
@@ -1413,7 +1500,7 @@
     "learned": {
       "title": "배운 것",
       "processing": "자료 정리 중…",
-      "names_other": "지도에 +{{formattedCount}}",
+      "names_other": "월드에 +{{formattedCount}}",
       "relationships_other": "관계 {{formattedCount}}개",
       "methods_other": "분석 방법 {{formattedCount}}개",
       "statusUnavailable": "자료 정리 대기 중"
@@ -1426,19 +1513,20 @@
     },
     "pill": {
       "files_other": "파일 {{formattedCount}}개",
-      "names_other": "지도에 +{{formattedCount}}"
+      "names_other": "월드에 +{{formattedCount}}"
     }
   },
   "workList": {
-    "label": "차트, 표, 문서",
+    "label": "이 대화의 결과물",
     "loading": "루피스트의 결과물을 불러오는 중…",
-    "empty": "루피스트가 만든 차트, 표, 문서가 여기에 모입니다.",
+    "empty": "이 대화에서 루피스트가 만든 차트, 표, 문서와 파일이 여기에 모입니다.",
     "showOlder": "이전 항목 더 보기",
     "allWork": "전체 결과물",
     "charts_other": "차트 {{formattedCount}}개",
     "documents_other": "문서 {{formattedCount}}개",
     "tables_one": "표 {{formattedCount}}개",
-    "tables_other": "표 {{formattedCount}}개"
+    "tables_other": "표 {{formattedCount}}개",
+    "files_other": "파일 {{formattedCount}}개"
   },
   "chatDivider": {
     "today": "오늘",
@@ -1492,17 +1580,17 @@
     "valuation": "기업 가치를 추정합니다",
     "visualize": "데이터로 차트를 그립니다",
     "why-it-moved": "가격이 왜 움직였는지 찾아봅니다",
-    "world": "루피스트가 이미 아는 내용을 찾아봅니다"
+    "world": "기록된 사실과 관계를 찾아봅니다"
   },
   "modelNotice": {
-    "nowUsing": "이제 {{model}}을(를) 사용합니다.",
     "change": "바꾸기",
-    "removed": "{{model}}은(는) 더 이상 제공되지 않습니다. 이제 대화는 자동 모델을 사용합니다.",
-    "dismiss": "닫기"
+    "dismiss": "닫기",
+    "changed": "이제 {{current}} 모델로 답변합니다(이전: {{previous}})",
+    "available": "이제 {{current}} 모델로 답변합니다"
   },
   "vocabulary": {
-    "message": "이제 지도가 {{list}}도 추적합니다.",
-    "label": "지도에 추가된 항목: {{list}}",
+    "message": "이제 월드가 {{list}}도 추적합니다.",
+    "label": "월드에 추가된 항목: {{list}}",
     "undo": "되돌리기",
     "undone": "되돌렸습니다. 이 항목은 다시 기본 항목으로만 추적합니다.",
     "error": "되돌리지 못했습니다. 다시 시도하십시오."
@@ -1522,7 +1610,7 @@
     "gone": "이 연결은 더 이상 열 수 없습니다. 메시지로 직접 물어보십시오.",
     "startError": "조사를 시작하지 못했습니다. 입력창의 모델을 확인한 뒤 다시 시도하십시오.",
     "conflict": "이 연결은 다른 설정으로 이미 조사 중입니다. 결과는 여기에 표시됩니다.",
-    "showPath": "지도에서 보기"
+    "showPath": "월드에서 보기"
   },
   "handoff": {
     "linkStart": "시작: {{name}}",
@@ -1530,6 +1618,9 @@
     "linkEnd": "끝: {{name}}",
     "linkUnavailable": "연결 정보를 확인할 수 없습니다.",
     "fromBot": "봇이 전달한 내용",
+    "brief": "봇의 작업 요청",
+    "details": "전달 내용 보기",
+    "youSaid": "봇에서 보낸 메시지",
     "linkDetails": "연결 정보",
     "choseLink": "봇의 연결에서 ‘살펴보기’를 선택했습니다."
   },
@@ -1562,7 +1653,62 @@
     "more": "저장된 시세 {{count}}개 더 있음",
     "technicalOriginal": "원문 데이터"
   },
+  "figureWarning": {
+    "explanation": "루피스트가 인용된 각 수치를 자료와 대조했습니다. 다음 수치는 확인하지 못했습니다.",
+    "calculation": "계산 결과",
+    "answer": "답변의 값",
+    "source": "자료의 값",
+    "result": "계산 결과의 값",
+    "openSource": "자료 열기",
+    "openStep": "계산 단계 열기",
+    "legacyStep": "계산 결과에서 이 값을 확인하지 못했습니다.",
+    "missingStep": "계산 결과에 이 값이 나오지 않았습니다.",
+    "replay": {
+      "retainedPassage": "이 값은 이 출처의 저장된 구간에 없습니다.",
+      "evidenceUnavailable": "이 숫자의 근거는 더 이상 저장되어 있지 않습니다."
+    },
+    "reasons": {
+      "digits_differ": "두 수치가 다릅니다.",
+      "scale_conflict": "숫자는 같지만 표시 단위가 다릅니다.",
+      "sign_conflict": "부호가 다릅니다.",
+      "incompatible_unit": "자료의 수치는 다른 종류의 양을 나타냅니다.",
+      "no_candidate": "자료에서 이 값을 찾지 못했습니다."
+    },
+    "short": {
+      "digits_differ": "수치 불일치",
+      "scale_conflict": "표시 단위 불일치",
+      "sign_conflict": "부호 불일치",
+      "incompatible_unit": "수치 종류 불일치",
+      "no_candidate": "값을 찾지 못함",
+      "legacy": "확인되지 않음"
+    },
+    "scales": {
+      "0": "일 단위",
+      "3": "천 단위",
+      "4": "만 단위",
+      "6": "백만 단위",
+      "8": "억 단위",
+      "9": "십억 단위",
+      "12": "조 단위",
+      "other": "{{factor}} 단위"
+    },
+    "units": {
+      "dollars": "달러",
+      "pounds": "파운드",
+      "won": "원",
+      "euros": "유로",
+      "yenOrYuan": "엔 또는 위안",
+      "perShare": "주당",
+      "index": "지수 포인트",
+      "shares": "주",
+      "percent": "퍼센트",
+      "points": "퍼센트포인트",
+      "bp": "베이시스포인트",
+      "multiple": "배"
+    }
+  },
   "numberChip": {
+    "incompatibleCurrency": "자료는 이 금액을 {{sourceCurrency}}(으)로, 답변은 {{answerCurrency}}(으)로 적었습니다.",
     "labelCalculated": "{{value}}, 계산값. 계산 보기",
     "labelSourced": "{{value}}, 출처: {{source}}",
     "labelUnmatched": "{{value}}, {{source}}에서 확인되지 않음",
@@ -1577,10 +1723,13 @@
     "copyFormula": "계산식 복사",
     "copied": "복사됨",
     "openEvidence": "근거에서 열기",
-    "published": "{{source}} · {{date}} 발행",
+    "published": "{{date}} 발행",
     "filedFetched": "{{provider}} · {{filed}} 공시 · {{fetched}} 조회",
     "notFound": "이 숫자가 인용한 자료에 그대로 나오지 않습니다. 자료를 확인하십시오.",
     "differs": "계산 결과는 {{nearest}}인데, 답변에는 {{shown}}(으)로 적혀 있습니다.",
+    "matchedScaleConversion": "자료와 일치: {{sourceValue}}{{currency}} ({{scale}}(으)로 표시)",
+    "unstatedSourceScale": "자료의 숫자와 일치합니다. 이 구간에는 자료의 단위가 적혀 있지 않습니다.",
+    "unstatedAnswerScale": "자료의 숫자와 일치합니다. 답변에는 단위가 적혀 있지 않습니다.",
     "rounded": "{{exact}}에서 반올림",
     "knownAsOf": "{{date}}에 알 수 있었던 값",
     "exportCalculated": "Loupist에서 계산; 입력값: {{inputs}}",
@@ -1641,6 +1790,8 @@
     "field": {
       "item": "항목",
       "period": "기간",
+      "date": "날짜",
+      "value": "값",
       "amount": "금액",
       "unit": "단위",
       "basis": "기준"
@@ -1726,7 +1877,7 @@
     "used": "채택",
     "why": "차이가 나는 이유:",
     "undated": "날짜 없음",
-    "seeMap": "지도에서 보기",
+    "seeMap": "월드에서 보기",
     "reason": {
       "basis": "기준 다름",
       "period": "기간 다름",
@@ -1820,6 +1971,8 @@
       "dataset_query": "분석 데이터",
       "dataset_describe": "분석 데이터",
       "chart_query": "차트 데이터",
+      "artifact_read": "대화 문서",
+      "artifact_list": "대화 문서 목록",
       "calculate": "계산",
       "equity_search": "기업 검색",
       "equity_profile": "기업 개요",
@@ -1881,6 +2034,7 @@
     },
     "status": {
       "working": "작업 중",
+      "failedAt": "{{time}} 실패",
       "answeredAt": "{{time}} 답변",
       "noAnswer": "아직 답변 없음"
     },
@@ -1899,6 +2053,7 @@
     },
     "read": {
       "title": "읽은 자료",
+      "citations_other": "인용 {{formattedCount}}회",
       "empty": "이 답변이 인용한 자료가 없습니다."
     },
     "checked": {
@@ -1914,9 +2069,9 @@
     },
     "learned": {
       "saved": "이번 답변에서 저장한 내용",
-      "map": "이 대화에서 지도에 추가한 내용",
+      "map": "이 대화에서 월드에 추가한 내용",
       "none": "이 대화에서 아직 저장한 내용이 없습니다.",
-      "openMap": "지도에서 보기"
+      "openMap": "월드에서 보기"
     },
     "using": {
       "title": "사용 중인 연결과 기억",

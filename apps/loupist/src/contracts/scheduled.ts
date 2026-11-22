@@ -24,6 +24,7 @@ export type ScheduledTaskDefinition = {
 /** The scheduler holds only agent work: the briefing and custom tasks (an alert is a custom task whose prompt states the condition). */
 export type ScheduledTaskKind = "custom" | "briefing";
 export type ScheduledTask = Omit<ScheduledTaskDefinition, "status"> & {
+  model_selection?: Wire.ResolvedModelSelection;
   kind: ScheduledTaskKind;
   id: string;
   loupist_id: string;
@@ -72,7 +73,7 @@ export type SkippedTool = Wire.SkippedTool;
 export type BriefingSettings = { enabled: boolean; schedule: ScheduledCadence; task: ScheduledTask | null };
 /** App-wide: keep the process in the menu bar after the window closes so schedules keep running. */
 /** `keepRunningChoice` is the user's explicit menu-bar choice, which the host never overrides; null keeps the automatic default. */
-export type BriefingResidentSettings = { keepRunning: boolean; notificationPermissionAsked: boolean; keepRunningChoice: boolean | null };
+export type BriefingResidentSettings = Wire.DesktopSettings;
 export type BriefingSettingsRequest = Wire.BriefingSettingsRequest;
 export type InboxItem = Wire.InboxItem;
 export type InboxRequest = Wire.InboxRequest;

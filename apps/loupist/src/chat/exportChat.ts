@@ -24,12 +24,11 @@ export function chatMarkdown(thread: ChatThread, loupistName: string, nowMs = Da
   if (models.length) lines.push(t("chatExport.madeWithAi", { models: models.join(", ") }), "");
   const footnotes: string[] = [];
   for (const message of thread.messages) {
-    if (message.role !== "user" && message.role !== "assistant") continue;
     const time = Date.parse(message.created_at);
     // A scheduled run's request is its task's, not the user's; the briefing's is the host's and is left out.
     const turn = message.role === "user" ? message.scheduled : undefined;
     const who = turn ? t("scheduledTurn.ran", { title: chatTitle({ title: turn.task_title, messages: [message] }) })
-      : message.role === "user" ? t("chatExport.you") : loupistName;
+      : message.role === "bot_handoff" ? t("handoff.fromBot") : message.role === "user" ? t("chatExport.you") : loupistName;
     lines.push(`## ${who}${Number.isFinite(time) ? ` · ${formatDateTime(time)}` : ""}`, "");
     if (turn?.task_kind === "briefing") continue;
     let content = message.content.trim();
@@ -55,6 +54,9 @@ export function chatMarkdown(thread: ChatThread, loupistName: string, nowMs = Da
       footnotes.push(`[^${number}]: ${evidence.title}${evidence.url ? ` — ${evidence.url}` : ""}`);
     }
     lines.push(content, "");
+    if (message.role === "bot_handoff" && message.handoff_note?.userMessageInBot) {
+      lines.push(t("handoff.youSaid"), "", ...message.handoff_note.userMessageInBot.split(/\r?\n/u).map(line => `> ${line}`), "");
+    }
   }
   if (footnotes.length) lines.push("---", "", ...footnotes, "");
   if (notice) lines.push(`_${t("chatExport.notice")}_`, "");

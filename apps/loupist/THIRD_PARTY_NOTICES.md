@@ -1,5 +1,13 @@
 # Third-party notices
 
+## Native browser history
+
+The macOS host uses [objc2-web-kit](https://docs.rs/objc2-web-kit/0.3.2) 0.3.2 under its MIT license option. The Linux host uses [webkit2gtk](https://docs.rs/webkit2gtk/2.0.2) 2.0.2 under the MIT License reproduced below, copyright 2016 Antoni Boucher, 2017–2021 the Gtk-rs Project Developers, and 2021 Tauri Programme within The Commons Conservancy.
+
+## OpenFIGI venue directory
+
+The bundled equity venue names and ISO country codes are drawn from OpenFIGI’s published exchange directory, retrieved 2026-11-21. [OpenFIGI exchange codes](https://www.openfigi.com/about/exchange-codes) · [Source CSV](https://www.openfigi.com/docs/OpenFIGI-exchange-codes.csv) · [Terms](https://www.openfigi.com/docs/terms-of-service).
+
 ## Component styles
 
 Loupist retains the component state variants and scrollbar utility from
@@ -89,6 +97,12 @@ is included in the bundle at `loupist-agent/skills/licenses/Apache-2.0-financial
 Display previews use unicode-segmentation 1.13.3, copyright (c) 2015 The Rust
 Project Developers. The crate is distributed under the MIT or Apache-2.0
 license. Its MIT license uses the terms reproduced above.
+
+## macOS login items
+
+The macOS host uses objc2 0.6.5 and objc2-foundation 0.3.2 by Mads Marquart
+and contributors for login items and launch Apple events. Both crates use the
+MIT terms reproduced above. [Upstream license](https://github.com/madsmtm/objc2/blob/master/LICENSE.md)
 
 ## keyring
 

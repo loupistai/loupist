@@ -55,6 +55,65 @@ pub enum MemoryUpdateStatus {
     NoChange,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum MemorySaveSkipReason {
+    User,
+    Deadline,
+    Interrupted,
+    Failed,
+    PolicyChanged,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum DiscardedMemoryKind {
+    Note,
+    JournalEntry,
+    Source,
+    LensSection,
+    LensPage,
+    Principle,
+    Method,
+    WorldVocabulary,
+    Thesis,
+    PriceRead,
+    BotMemory,
+    Watchlist,
+    ResearchFocus,
+    ResearchHandoff,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct DiscardedMemoryItem {
+    pub kind: DiscardedMemoryKind,
+    pub title: String,
+}
+
+pub(crate) const MAX_DISCARDED_MEMORY_ITEMS: usize = 32;
+pub(crate) const MAX_DISCARDED_MEMORY_TITLE_CHARS: usize = 160;
+
+pub(crate) fn validate_discarded_memory_items(
+    items: Option<&[DiscardedMemoryItem]>,
+    skipped: bool,
+) -> Result<(), DomainError> {
+    if items.is_some_and(|items| {
+        items.len() > MAX_DISCARDED_MEMORY_ITEMS
+            || (!items.is_empty() && !skipped)
+            || items.iter().any(|item| {
+                item.title.trim().is_empty()
+                    || item.title.chars().count() > MAX_DISCARDED_MEMORY_TITLE_CHARS
+                    || item.title.chars().any(char::is_control)
+            })
+    }) {
+        return Err(DomainError::Invalid("discarded Memory items are invalid"));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(rename_all = "camelCase")]
@@ -130,6 +189,12 @@ impl Serialize for MemoryUpdateChange {
 #[serde(rename_all = "camelCase")]
 pub struct MemoryUpdateResult {
     pub status: MemoryUpdateStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub skip_reason: Option<MemorySaveSkipReason>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub discarded_memory_items: Option<Vec<DiscardedMemoryItem>>,
     #[serde(deserialize_with = "required_option")]
     pub commit_id: Option<String>,
     pub changes: Vec<MemoryUpdateChange>,
@@ -190,10 +255,10 @@ pub enum SetupChange {
 
 impl MapKind {
     fn validate(&self) -> Result<(), DomainError> {
-        require_bounded_text(&self.name, 64, "map kind is invalid")?;
-        require_bounded_text(&self.label, 512, "map kind is invalid")?;
+        require_bounded_text(&self.name, 64, "World kind is invalid")?;
+        require_bounded_text(&self.label, 512, "World kind is invalid")?;
         if let Some(label) = &self.label_ko {
-            require_bounded_text(label, 512, "map kind is invalid")?;
+            require_bounded_text(label, 512, "World kind is invalid")?;
         }
         Ok(())
     }
@@ -238,6 +303,10 @@ impl SetupChange {
 
 impl MemoryUpdateResult {
     pub fn validate(&self) -> Result<(), DomainError> {
+        validate_discarded_memory_items(
+            self.discarded_memory_items.as_deref(),
+            self.skip_reason.is_some(),
+        )?;
         if self.changes.len() > 18 {
             return Err(DomainError::Invalid("memory update has too many changes"));
         }
@@ -293,6 +362,11 @@ impl MemoryUpdateResult {
             change.validate()?;
         }
         let changed = !self.changes.is_empty() || !self.setup.is_empty();
+        if self.skip_reason.is_some()
+            && (self.status != MemoryUpdateStatus::NoChange || !self.skipped_kinds.is_empty())
+        {
+            return Err(DomainError::Invalid("skipped memory update is invalid"));
+        }
         match self.status {
             MemoryUpdateStatus::Applied => {
                 if self.commit_id.as_deref().is_none_or(str::is_empty) || !changed {
@@ -635,6 +709,12 @@ pub struct HomeHandoff {
     pub status: crate::chat::handoff::HandoffStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
+    pub memory_save_skip: Option<MemorySaveSkipReason>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub discarded_memory_items: Option<Vec<DiscardedMemoryItem>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub stop_reason: Option<crate::chat::handoff::HandoffStopReason>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
@@ -724,7 +804,16 @@ pub struct HomeDelivery {
     pub schedule: Option<crate::scheduled_tasks::types::Schedule>,
     pub run_thread_id: Option<String>,
     pub status: crate::scheduled_tasks::types::RunStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub memory_save_skip: Option<MemorySaveSkipReason>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub discarded_memory_items: Option<Vec<DiscardedMemoryItem>>,
     pub finished_at_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub skipped_saved_keys: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub learned: Option<crate::knowledge::LearnedDigest>,
@@ -745,6 +834,7 @@ pub struct ChatToolRefusal {
 pub enum ChatToolRefusalReason {
     NeedsApproval,
     BlockedUnattended,
+    SavedKeyPermission,
     Taint,
     /// The host refused a Memory write that looked like a credential or secret.
     SensitiveMemory,
@@ -962,6 +1052,18 @@ impl ChatAttachment {
 
 impl ChatMessage {
     pub fn validate(&self) -> Result<(), DomainError> {
+        if let Some(delivery) = &self.delivery {
+            validate_discarded_memory_items(
+                delivery.discarded_memory_items.as_deref(),
+                delivery.memory_save_skip.is_some(),
+            )?;
+        }
+        if let Some(handoff) = &self.handoff {
+            validate_discarded_memory_items(
+                handoff.discarded_memory_items.as_deref(),
+                handoff.memory_save_skip.is_some(),
+            )?;
+        }
         if let Some(id) = &self.research_session_id {
             require_identifier(id, "invalid research session id")?;
             if self.role != ChatRole::Assistant || self.status != ChatMessageStatus::Complete {
@@ -1934,6 +2036,8 @@ mod tests {
         assert!(prepare_chat_retry(&completed, 4).is_err());
         let mut saved = chat;
         saved.messages[1].memory_update = Some(MemoryUpdateResult {
+            discarded_memory_items: None,
+            skip_reason: None,
             status: MemoryUpdateStatus::NoChange,
             commit_id: None,
             changes: vec![],

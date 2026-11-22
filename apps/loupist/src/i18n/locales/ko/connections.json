@@ -1,4 +1,13 @@
 {
+  "savedKeyPermission": {
+    "cancel": "취소",
+    "notice": "Loupist가 업데이트되어 저장된 키 {{count}}개를 사용하려면 macOS 권한이 필요합니다. macOS가 키마다 한 번씩 묻습니다. '항상 허용'을 선택하십시오.",
+    "allow": "접근 허용",
+    "progress": "{{total}}개 중 {{settled}}개",
+    "closePrompt": "취소를 완료하려면 열려 있는 macOS 권한 창을 닫으십시오.",
+    "denied": "macOS가 이 키에 대한 접근을 허용하지 않았습니다.",
+    "error": "저장된 키를 모두 확인하지 못했습니다. 다시 시도하십시오."
+  },
   "_status": "translated",
   "marketplaceCard": {
     "preview": "미리보기",
@@ -16,17 +25,22 @@
     "continueEntry": "{{name}} 설정 계속",
     "setupEntry": "{{name}} 설정",
     "contactEmailOnly": "연락처 이메일만 필요",
-    "lockedExplanation": "업데이트할 때마다 macOS가 저장된 키를 쓰기 전에 로그인 암호를 한 번 묻습니다. 이 베타 버전은 Apple Developer ID로 서명되지 않았기 때문입니다. ‘항상 허용’을 선택하면 다음 업데이트까지 다시 묻지 않습니다.",
+    "lockedExplanation": "macOS가 아직 Loupist의 이 저장된 키 사용을 허용하지 않았습니다. macOS가 물으면 '항상 허용'을 선택한 뒤 다시 확인하십시오.",
+    "checkSavedKey": "저장된 키 확인",
+    "checkSavedKeyEntry": "{{name}}의 저장된 키 확인",
+    "checkSavedKeyDetail": "이 연결에 저장된 키가 있습니다. macOS가 접근 허용을 요청할 수 있습니다.",
+    "checkSavedKeyUnknownDetail": "이 연결에 저장된 키가 있는지 확인하십시오.",
+    "couldNotCheckSavedKey": "이 연결에 저장된 키가 있는지 확인하지 못했습니다.",
+    "keychainBusy": "저장된 키 작업이 아직 macOS의 응답을 기다리고 있습니다. 잠시 후 다시 시도하십시오.",
+    "keychainUnavailable": "키체인이 제한 시간 안에 응답하지 않았습니다. macOS에서 키체인을 사용할 수 있게 되면 다시 시도하십시오.",
     "tryAgain": "다시 시도",
     "tryAgainEntry": "{{name}} 다시 시도",
-    "stillLocked": "macOS가 접근을 허용하지 않았습니다. 다시 시도하고 로그인 암호를 입력하십시오.",
     "offFor": "{{loupist}}에서 꺼짐",
     "brokerageRequired": "증권계좌 필요",
     "freeTierRequiresCard": "무료 요금제도 결제 카드 필요"
   },
   "marketplaceSetupDialog": {
     "couldNotDeleteTheSavedCredentialsTryAgain": "저장된 인증 정보를 삭제하지 못했습니다. 다시 시도하십시오.",
-    "couldNotOpenTheSetupGuide": "설정 안내를 열지 못했습니다. 다시 시도하십시오.",
     "connectionUnavailable": "연결을 사용할 수 없습니다",
     "noSetupNeededChooseWhichLoupistsCanUse": "별도 설정이 필요 없습니다. 루피스트 설정에서 이 연결을 사용할 루피스트를 선택하십시오.",
     "setupHelp": "설정 도움말",
@@ -100,7 +114,6 @@
     "couldNotSaveSetup": "설정을 저장하지 못했습니다",
     "credentialsDeleted": "인증 정보를 삭제했습니다",
     "couldNotDeleteCredentials": "인증 정보를 삭제하지 못했습니다",
-    "couldNotOpenSetupGuide": "설정 안내를 열지 못했습니다",
     "searchRouting": "검색 서비스 선택",
     "connectionSettings": "연결 설정",
     "automaticChoosesAnAvailableSearchServiceForYour": "자동은 현재 모델에서 사용 가능한 검색 서비스를 선택합니다.",

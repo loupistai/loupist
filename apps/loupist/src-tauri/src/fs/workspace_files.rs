@@ -81,7 +81,7 @@ pub(crate) fn relative_path(input: &str) -> Result<String, CommandError> {
 }
 
 #[cfg(unix)]
-fn open_relative(
+pub(super) fn open_relative(
     root: &BoundLoupistRoot,
     path: &str,
     directory: bool,
@@ -116,7 +116,7 @@ fn open_relative(
 }
 
 #[cfg(windows)]
-fn open_relative(
+pub(super) fn open_relative(
     root: &BoundLoupistRoot,
     path: &str,
     directory: bool,
@@ -132,7 +132,7 @@ fn open_relative(
 }
 
 #[cfg(not(any(unix, windows)))]
-fn open_relative(
+pub(super) fn open_relative(
     _root: &BoundLoupistRoot,
     _path: &str,
     _directory: bool,
@@ -303,7 +303,7 @@ pub(crate) fn read(root: &BoundLoupistRoot, input: &str) -> Result<WorkspaceFile
     })
 }
 
-fn raster_media_type(bytes: &[u8]) -> Option<&'static str> {
+pub(super) fn raster_media_type(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         Some("image/png")
     } else if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
@@ -334,7 +334,11 @@ pub(crate) fn exact_bytes(
         } else {
             format!("{limit} bytes")
         };
-        CommandError::invalid(format!("workspace file exceeds {size}; split the input"))
+        CommandError::with_detail(
+            crate::app::CommandErrorCode::InvalidRequest,
+            format!("workspace file exceeds {size}; split the input"),
+            serde_json::json!({ "limit_bytes": limit }),
+        )
     };
     if before.len() > limit as u64 {
         return Err(limit_error());

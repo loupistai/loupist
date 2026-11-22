@@ -1,11 +1,16 @@
-import { sourceIdentityLabel } from "../../chat/evidence";
+import { skippedSavedKeyLabel, skippedSavedKeyNames } from "../briefings/scheduledPresentation";
+import { answerSourceOrigin } from "../../chat/answerSources";
 import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import { Disclosure } from "../ui/disclosure";
+import { useExtensionAvailability } from "../../app/extensionAvailability";
 import { ApprovalCards } from "./ApprovalCard";
 import { holdTurnHeight, QuestionCards } from "./QuestionCard";
 import type { ChatThread, LoupistBridge } from "../../types";
 import { formatNumber, formatTime } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
+import { ContextTitle, titlePlaceholder } from "../ui/context-title";
+import { chatTitle } from "../../app/chatTitle";
+import { Spinner } from "../ui/spinner";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { useConversationScroll } from "../ai-elements/conversation";
 import { AnswerFeedback, type SaveAnswerFeedback } from "./AnswerFeedback";
@@ -25,7 +30,6 @@ import { DRAIN_LIMIT_MS } from "../../chat/usePacedText";
 import { openActivitySheet, TurnArrivalProvider, useArrived, useChatSurface } from "./turnMotion";
 import { LoupistAvatar } from "../app/LoupistAvatar";
 import { AnswerTrace } from "./ChatReceipt";
-import { useRevealNumberToCheck } from "./NumberChip";
 import { needsChecking } from "../../chat/numberChecks";
 import { deliveredFiles } from "../../chat/deliveredFiles";
 import { DeliveredFiles } from "./DeliveredFiles";
@@ -64,7 +68,8 @@ import { ChatErrorState, type ProviderErrorAction } from "./ChatErrorState";
 import { AsOfNote } from "./AsOfNote";
 import { AsOfTag } from "./ComposerAsOf";
 import { ResearchSessionLink } from "./ThreadLink";
-import { HandoffNote } from "./HandoffNote";
+import type { LoupistAvatarId } from "../../contracts/loupist";
+import { BotHandoffOpening, HandoffNote } from "./HandoffNote";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -166,16 +171,20 @@ function MessageAttachment({
 type Props = {
   bridge?: LoupistBridge;
   onSaveFeedback?: SaveAnswerFeedback;
+  feedbackHeld?: boolean;
   onTeachFeedback?: (text: string) => void;
-  feedbackBusy?: boolean;
   active?: boolean;
+  /** The scheduled run header already identifies the author and time. */
+  showIdentity?: boolean;
   message: ChatMessage;
   researchSession?: ChatThread;
   loupistId: string;
   chatId?: string;
   loupistName: string;
+  loupistAvatar?: LoupistAvatarId;
   workspacePath?: string;
   progressFocus?: string | null;
+  blockingChat?: ChatThread;
   guiding?: readonly string[];
   /** Set on the latest finished answer: follow-up questions go into the composer. */
   onNextStep?: (question: string) => void;
@@ -259,6 +268,7 @@ function UserMessageText({
 function ChatMessageCardComponent({
   bridge,
   active = true,
+  showIdentity = true,
   message,
   researchSession,
   loupistId,
@@ -266,6 +276,7 @@ function ChatMessageCardComponent({
   loupistName,
   workspacePath,
   progressFocus,
+  blockingChat,
   guiding,
   onNextStep,
   onFillComposer,
@@ -290,8 +301,8 @@ function ChatMessageCardComponent({
   onProviderAction,
   note,
   onSaveFeedback,
+  feedbackHeld,
   onTeachFeedback,
-  feedbackBusy = false,
   entering = false,
 }: Props) {
   useTranslation("chat");
@@ -299,15 +310,16 @@ function ChatMessageCardComponent({
   const revealedResult = useTurn()?.revealedResult ?? null;
   const go = useGo();
   // Memory declines are told once per chat by the memory row, not as connection activity.
-  const connectionRefusals = (message.tool_refusals ?? []).filter(refusal => refusal.reason !== "sensitive_memory");
+  const connectionRefusals = (message.tool_refusals ?? []).filter(refusal => refusal.reason !== "sensitive_memory" && refusal.reason !== "saved_key_permission");
+  const skippedSavedKeys = skippedSavedKeyLabel(skippedSavedKeyNames(message.tool_refusals));
   const lastActivityAt = useLastActivity(message);
-  const now = useStallClock(lastActivityAt, message.status === "streaming");
-  const [holding, releaseCommit] = useCommitGate(message.status, Boolean(message.content));
+  const now = useStallClock(lastActivityAt, message.status === "streaming" && !message.memorySaving);
+  const [holding, releaseCommit] = useCommitGate(message.memorySaving ? "saving" : message.status, Boolean(message.content));
   const retryOffered = Boolean(onRetry);
-  const view = useMemo(() => deriveTurnView({ message, now, lastActivityAt, stopping, holding, retry: { attempt: retryAttempt, offered: retryOffered } }), [message, now, lastActivityAt, stopping, holding, retryAttempt, retryOffered]);
+  const { customConnections } = useExtensionAvailability();
+  const view = useMemo(() => deriveTurnView({ message, customConnections, now, lastActivityAt, stopping, holding, retry: { attempt: retryAttempt, offered: retryOffered } }), [message, customConnections, now, lastActivityAt, stopping, holding, retryAttempt, retryOffered]);
   const halted = message.status === "aborted" || message.status === "error";
   const conversation = useConversationScroll();
-  const revealNumberToCheck = useRevealNumberToCheck();
   const surface = useChatSurface();
   // Bot draws the Loupist's answer as a message from a person: its face, its name, bubbles, one quiet working line.
   const bot = surface.kind === "bot" && message.role === "assistant";
@@ -327,8 +339,9 @@ function ChatMessageCardComponent({
   // Bot shows no steps; "Show step" from a figure opens the activity sheet at this answer instead.
   const revealedRequest = revealedResult?.request;
   useEffect(() => {
-    if (bot && revealedRequest !== undefined && view.segments.some((segment) => segment.kind === "ledger" && segment.evidence.some((item) => item.id === revealedResult?.id))) {
-      openActivitySheet({ messageId: message.id, tab: "steps" });
+    if (!bot || !revealedResult) return;
+    if (revealedResult.comparison || view.segments.some(segment => segment.kind === "ledger" && segment.evidence.some(item => item.id === revealedResult.id))) {
+      openActivitySheet({ messageId: message.id, tab: "steps", figureIndex: revealedResult.comparison?.link_index });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- one request opens the sheet once.
   }, [bot, revealedRequest]);
@@ -371,7 +384,7 @@ function ChatMessageCardComponent({
   const prose = (segment: { key: string; text: string; streaming: boolean; tone: "answer" | "note"; short?: boolean; checks?: ChatMessage["number_checks"] }) =>
     <ProseSegment key={segment.key} text={segment.text} streaming={segment.streaming} tone={segment.tone} short={segment.short} checks={segment.checks}
       // A note a tool call followed shows what it received at once, so the ledger under it never moves.
-      halted={halted || segment.tone === "note"} paused={stopping} onDrained={segment.tone === "answer" ? releaseCommit : undefined} workspacePath={workspacePath} />;
+      halted={halted || Boolean(message.memorySaving) || segment.tone === "note"} paused={stopping} onDrained={segment.tone === "answer" ? releaseCommit : undefined} workspacePath={workspacePath} />;
   const cardBlocks = (tool: "chart_publish" | "grid_publish") => tool === "chart_publish" ? charts : grids;
   const placedSteps = new Set(view.segments.flatMap((segment) => segment.kind === "card" ? [segment.itemId] : []));
   const renderBlock = (tool: "chart_publish" | "grid_publish", block: ChartBlock, key: string) => tool === "chart_publish"
@@ -414,7 +427,8 @@ function ChatMessageCardComponent({
       }
       transcript.push(prose(segment));
     }
-    if (bridge && connectionRefusals.length) transcript.push(<ApprovalCards key="refusals" approvals={[]} refusals={connectionRefusals} bridge={bridge} loupistId={loupistId} />);
+    if (skippedSavedKeys) transcript.push(<p key="skipped-saved-keys">{skippedSavedKeys}</p>);
+    if (customConnections && bridge && connectionRefusals.length) transcript.push(<ApprovalCards key="refusals" approvals={[]} refusals={connectionRefusals} bridge={bridge} loupistId={loupistId} />);
   }
   // A card no step names (an answer stored before steps were kept) follows the answer, as before.
   const unplaced = (blocks: ChartBlock[]) => blocks.filter((block) => !block.stepId || !placedSteps.has(block.stepId));
@@ -463,7 +477,7 @@ function ChatMessageCardComponent({
         </div>
       )}
   </>;
-  const memoryRow = <MessageMemoryRow
+  const memoryRow = message.memorySaving ? null : <MessageMemoryRow
     bridge={bridge}
     active={active}
     loupistId={loupistId}
@@ -472,13 +486,23 @@ function ChatMessageCardComponent({
     onReadWorldJob={onReadWorldJob}
     onWorldChanged={onWorldChanged}
   />;
+  const saving = message.memorySaving;
+  const savingLine = saving ? <div className="turn-live" data-kind="saving" role="status">
+    <Spinner className="turn-live-glyph" aria-hidden="true" />
+    {saving.waiting_for_other_chat
+      ? blockingChat
+        ? <ContextTitle template={t("memorySaving.waitingForChat", { title: titlePlaceholder })} title={chatTitle(blockingChat)}><BlockingChatLink thread={blockingChat} /></ContextTitle>
+        : t("memorySaving.waitingForOthers")
+      : t("memorySaving.inProgress")}
+  </div> : undefined;
   const copyAction = copyText !== null ? <div className="message-actions">
     <button type="button" aria-label={copyState === "copied" ? t("chatMessageCard.answerCopied") : t("chatMessageCard.copyAnswer")} title={copyState === "copied" ? t("chatMessageCard.copied") : t("chatMessageCard.copyAnswer")} onClick={() => {
       void copy(copyText);
     }}>{copyState === "copied" ? <CheckIcon /> : <CopyIcon />}</button>
     {copyState === "failed" ? <span role="alert">{t("chatMessageCard.couldNotCopySelectTheAnswerToCopyIt")}</span> : null}
   </div> : null;
-  const feedback = settled?.feedback && onSaveFeedback && onTeachFeedback ? <AnswerFeedback bridge={bridge} loupistId={loupistId} chatId={chatId} message={message} onSave={onSaveFeedback} onTeach={onTeachFeedback} feedbackBusy={feedbackBusy} /> : null;
+  const writingFeedback = view.footer.kind === "live" && message.status === "streaming" && Boolean(message.content.trim());
+  const feedback = (settled?.feedback || writingFeedback) && onSaveFeedback && onTeachFeedback ? <AnswerFeedback bridge={bridge} loupistId={loupistId} chatId={chatId} message={message} threadRunning={feedbackHeld} onSave={onSaveFeedback} onTeach={onTeachFeedback} /> : null;
   const modelNote = note ? <p className="message-model-note">{note}</p> : null;
   const runState = settled?.runState ? (
     // A failure is a bordered block with its actions; a stop is the user's own doing: one quiet line.
@@ -512,24 +536,24 @@ function ChatMessageCardComponent({
         </button>
         <div className="bot-col" ref={blocks}>
           <div className="message-meta bot-who">
-            <span>{loupistName}</span>
-            <time>{formatTime(new Date(message.created_at))}</time>
+            {showIdentity ? <><span>{loupistName}</span><time>{formatTime(new Date(message.created_at))}</time></> : null}
             {message.as_of ? <AsOfTag asOf={message.as_of} kind="answer" /> : null}
           </div>
           {transcript}
           {extras}
           {/* Settled, the thread says no step counts or failed attempts, aloud either; the sheet lists them. */}
-          <TurnFooter footer={view.footer} announce={view.footer.kind === "live" ? view.announce : ""} guiding={guiding} onOpenActivity={openActivity} noteOnPage={!hideNotes}>
+          <TurnFooter footer={view.footer} savingLine={savingLine} announce={view.footer.kind === "live" ? view.announce : ""} guiding={guiding} onOpenActivity={openActivity} noteOnPage={!hideNotes}>
             {settled ? <>
               {runState}
               <AnswerTrace figures={checks.length - toCheck} sources={settled.sources.length} toCheck={toCheck}
-                onOpen={() => openActivitySheet({ messageId: message.id, tab: "sources" })} onCheck={() => revealNumberToCheck(message.id)} />
+                onOpen={() => openActivitySheet({ messageId: message.id, tab: "sources" })} message={message} />
               {copyAction}
               {feedback}
               {modelNote}
               {memoryRow}
             </> : null}
           </TurnFooter>
+          {writingFeedback && feedback}
           {asOfNote}
           {nextSteps}
         </div>
@@ -541,8 +565,10 @@ function ChatMessageCardComponent({
     <article ref={article} data-message-id={message.id} data-latest={latest || undefined} data-entering={entering || undefined} data-turn-message=""
       className={`message ${message.role} ${message.status ?? ""}`}>
       <div className="message-meta">
-        <span>{message.role === "user" ? t("chatMessageCard.you") : loupistName}</span>
-        <time>{formatTime(new Date(message.created_at))}</time>
+        {showIdentity ? <>
+          <span>{message.role === "user" ? t("chatMessageCard.you") : loupistName}</span>
+          <time>{formatTime(new Date(message.created_at))}</time>
+        </> : null}
         {message.role === "assistant" && message.as_of ? <AsOfTag asOf={message.as_of} kind="answer" /> : null}
         {message.role === "assistant" && answerText ? <LateTrigger><AnswerOutline messageId={message.id} markdown={answerText} /></LateTrigger> : null}
         {message.execution_model || message.performance || message.host_composed ? <LateTrigger><Popover>
@@ -567,15 +593,15 @@ function ChatMessageCardComponent({
           </MessageContent>
         </Message>
       ) : null}
-      {message.role === "user" && message.handoff_note ? <HandoffNote note={message.handoff_note} fromLink={Boolean(message.handoff_action)} /> : null}
+      {message.role === "user" && message.handoff_action && message.handoff_note ? <HandoffNote note={message.handoff_note} fromLink /> : null}
       {transcript}
       {extras}
 
-      {message.role === "assistant" ? <TurnFooter footer={view.footer} announce={view.announce} guiding={guiding} noteOnPage>
+      {message.role === "assistant" ? <TurnFooter footer={view.footer} savingLine={savingLine} announce={saving ? "" : view.announce} guiding={guiding} noteOnPage>
         {settled ? <>
           {settled.sources.length > 0 ? (
-            <Disclosure className="message-sources" aria-label={t("chatMessageCard.researchSources")} title={<><span>{t("chatMessageCard.sourceCount", { formattedCount: formatNumber(settled.sources.length) })}</span><span className="message-sources-site"> · {sourceIdentityLabel(settled.sources[0]!)}{settled.sources.length > 1 ? ` +${formatNumber(settled.sources.length - 1)}` : ""}</span></>}>
-              <ol>{settled.sources.map((evidence, index) => <SourceRow key={evidence.id} evidence={evidence} number={index + 1} />)}</ol>
+            <Disclosure className="message-sources" aria-label={t("chatMessageCard.researchSources")} title={<><span>{t("chatMessageCard.sourceCount", { formattedCount: formatNumber(settled.sources.length) })}</span><span className="message-sources-site"> · {answerSourceOrigin(settled.sources[0]!)}{settled.sources.length > 1 ? ` +${formatNumber(settled.sources.length - 1)}` : ""}</span></>}>
+              <ol>{settled.sources.map((source, index) => <SourceRow key={source.evidence.id} loupistId={loupistId} source={source} number={index + 1} />)}</ol>
             </Disclosure>
           ) : null}
           {memoryRow}
@@ -585,15 +611,24 @@ function ChatMessageCardComponent({
           {runState}
         </> : null}
       </TurnFooter> : null}
+      {writingFeedback && feedback}
       {asOfNote}
       {nextSteps}
       {message.role === "user" && (onEditUser || onEarlierVersion || onLaterVersion) ? <div className="message-actions message-action-bar">
-        {onEditUser ? <button type="button" aria-label={t("chatMessageCard.editMessage")} title={t("chatMessageCard.edit")} disabled={editDisabled} onClick={() => onEditUser(message)}>{t("chatMessageCard.edit")}</button> : null}
+        {onEditUser ? <button type="button" aria-label={t("chatMessageCard.editMessage")} title={editDisabled ? t("chatMessageCard.afterCurrentReply") : t("chatMessageCard.edit")} disabled={editDisabled} onClick={() => onEditUser(message)}>{t("chatMessageCard.edit")}</button> : null}
         {onEarlierVersion ? <button type="button" className="message-version-link" onClick={onEarlierVersion}>{t("chatBranch.earlierVersion")}</button> : null}
         {onLaterVersion ? <button type="button" className="message-version-link" onClick={onLaterVersion}>{t("chatBranch.laterVersion")}</button> : null}
       </div> : null}
     </article>
   );
+}
+
+function BlockingChatLink({ thread }: { thread: ChatThread }) {
+  const go = useGo();
+  const title = chatTitle(thread);
+  return go
+    ? <a href="#" onClick={event => { event.preventDefault(); go({ kind: "chat", threadId: thread.id }); }}>{title}</a>
+    : <span>{title}</span>;
 }
 
 /** A block of the turn (a card, a question, an approval) that rises in when it arrives while the reader watches. */
@@ -655,7 +690,7 @@ function useStallClock(lastActivityAt: number, running: boolean): number {
  * The host's `completed` is not the commit: the turn reads as running until the
  * answer's last received word is revealed, at most 400 ms (DIRECTION 5.9).
  */
-function useCommitGate(status: ChatMessage["status"], hasAnswer: boolean): [boolean, () => void] {
+function useCommitGate(status: ChatMessage["status"] | "saving", hasAnswer: boolean): [boolean, () => void] {
   const [previous, setPrevious] = useState(status);
   const [holding, setHolding] = useState(false);
   if (previous !== status) {
@@ -681,6 +716,9 @@ function NextSteps({ loupistId, chatId, messageId, onAsk }: { loupistId: string;
 }
 
 function ChatMessageCardInTurn(props: Props) {
+  if (props.message.role === "bot_handoff") return <TurnProvider message={props.message} loupistId={props.loupistId}>
+    <BotHandoffOpening message={props.message} workspacePath={props.workspacePath} loupist={{ id: props.loupistId, name: props.loupistName, avatar: props.loupistAvatar }} />
+  </TurnProvider>;
   return <TurnProvider message={props.message} loupistId={props.loupistId}><TurnArrivalProvider><ChatMessageCardComponent {...props} /></TurnArrivalProvider></TurnProvider>;
 }
 

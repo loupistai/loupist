@@ -52,6 +52,13 @@ class ReleaseAssetsContractTest(unittest.TestCase):
         self.profile = self.root / "profile.json"
         profile = json.loads((SCRIPTS.parent / "release-profile.json").read_text())
         profile["channel"] = "stable"
+        profile["macos_signing"].update(
+            mode="self-signed",
+            team_id=None,
+            certificate_common_name="Fixture",
+            certificate_sha1="A" * 40,
+            certificate_sha256="B" * 64,
+        )
         write_json(self.profile, profile)
         signing = {
             "mode": "self-signed",

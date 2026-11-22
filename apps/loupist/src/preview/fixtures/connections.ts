@@ -11,6 +11,7 @@ function customConnectionFixture(id = "preview-custom-ready"): import("../../con
 }
 
 export async function prepareCustomConnectionFixture(bridge: PreviewBridge, scenario: string) {
+  bridge.extensionFlags.customConnectionsAvailable = true;
   await prepareFixture(bridge, scenario === "chat-needs-approval" ? "answer" : undefined);
   const ready = customConnectionFixture();
   const changed = { ...customConnectionFixture("preview-custom-changed"), name: "Morrow research tools", needs_review: true };

@@ -10,7 +10,7 @@ use super::internal;
 use crate::app::{AppState, CommandError};
 use crate::sharing::github::{self, ApiError, Github, Poll};
 
-pub(super) fn api_error(error: ApiError, environment: &str, state: &AppState) -> CommandError {
+pub(super) fn api_error(error: ApiError, state: &AppState) -> CommandError {
     match error {
         ApiError::Offline => CommandError::new("offline", "Couldn't reach GitHub."),
         ApiError::LicenseNotShareable => CommandError::new(
@@ -20,10 +20,10 @@ pub(super) fn api_error(error: ApiError, environment: &str, state: &AppState) ->
         ApiError::NameTaken => CommandError::new("name_taken", "That repository name is taken."),
         ApiError::RateLimited => CommandError::new("rate_limited", "GitHub asked to slow down."),
         ApiError::Denied => {
-            github::delete_token(environment);
-            if let Ok(connection) = state.store.lock() {
-                let _ = github::store_login(&connection, None);
-            }
+            let state = state.clone();
+            tokio::task::spawn_blocking(move || {
+                let _ = github::delete_token_for_state(&state);
+            });
             CommandError::new("publish_denied", "GitHub didn't allow this. Sign in again.")
         }
         ApiError::NotFound => CommandError::new("repo_gone", "The repository is gone."),
@@ -149,14 +149,12 @@ pub async fn github_sign_in(
                         return Ok(account(state));
                     }
                 };
-                let environment = state.credential_environment.to_string();
-                if !github::save_token(&environment, &token) {
-                    fail("offline");
-                    return Ok(account(state));
-                }
-                if let Ok(connection) = state.store.lock() {
-                    github::store_login(&connection, Some(&login)).map_err(internal)?;
-                }
+                let saved_login = login.clone();
+                crate::app::off_main_thread(state, move |state| {
+                    github::save_token_for_state(state, token, saved_login)
+                        .map_err(|error| error.command_error())
+                })
+                .await?;
                 let _ = on_event.send(SignInEvent::SignedIn { login });
                 return Ok(account(state));
             }
@@ -206,10 +204,7 @@ pub fn github_sign_in_cancel(state: State<'_, AppState>) {
 #[tauri::command(rename_all = "snake_case")]
 pub async fn github_sign_out(state: State<'_, AppState>) -> Result<GithubAccount, CommandError> {
     crate::app::off_main_thread(&state, |state| {
-        github::delete_token(&state.credential_environment);
-        if let Ok(connection) = state.store.lock() {
-            github::store_login(&connection, None).map_err(internal)?;
-        }
+        github::delete_token_for_state(state).map_err(|error| error.command_error())?;
         Ok(account(state))
     })
     .await

@@ -22,8 +22,7 @@ import type {
   ScheduledRun,
 } from "../types";
 import { extractMentionedConnectionIds } from "./composerMentions";
-import { commandErrorCode, errorMessage } from "../lib/errors";
-import type { ChatAdmission } from "./submission";
+import { admissionRefusal, type ChatAdmission } from "./submission";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -43,7 +42,7 @@ const HOST_POST_FIELDS = Object.keys(HOST_POST_KEYS) as (keyof HostPostRecords)[
 // a Rust variant is missing here. An event of any other type is ignored, not fatal.
 const STREAM_EVENT_TYPES: Record<ChatStreamEvent["type"], true> = {
   started: true, memory: true, schedule: true, evidence: true, delta: true, generation_finished: true, title: true,
-  progress: true, progress_patch: true, phase: true, memory_update: true, artifact_staged: true, artifact: true, completed: true,
+  progress: true, progress_patch: true, phase: true, saving: true, memory_update: true, artifact_staged: true, artifact: true, completed: true,
   aborted: true, error: true, stream_reset: true,
 };
 
@@ -67,6 +66,8 @@ export type LoupistChatMetadata = HostPostRecords & Pick<ChatMessage, "research_
   number_checks?: ChatMessage["number_checks"];
   as_of_report?: ChatMessage["as_of_report"];
   feedback?: ChatMessage["feedback"];
+  /** A host-authored request occupies a request slot in the SDK transcript. */
+  host_role?: "bot_handoff";
   native_message_id?: string;
   created_at?: string;
   status?: ChatMessage["status"];
@@ -86,6 +87,10 @@ export type LoupistChatMetadata = HostPostRecords & Pick<ChatMessage, "research_
   placeholder?: boolean;
   progress?: ChatProgress;
   phase?: ChatMessage["phase"];
+  memorySaving?: ChatMessage["memorySaving"];
+  saveActivity?: Omit<NonNullable<ChatProgress["saveActivity"]>, "blockingChatId"> & { blockingChatId: string | null };
+  memorySaveSkip?: MemoryUpdateResult["skipReason"];
+  discardedMemoryItems?: MemoryUpdateResult["discardedMemoryItems"];
   draft?: ChatMessage["draft"];
   answer_key?: string;
   performance?: ChatPerformance;
@@ -238,7 +243,8 @@ const dataUrlPayload = (file: FileUIPart) => {
 /**
  * The store's copy of a thread, with the key each settled answer's Markdown node was
  * drawn under carried over from the live messages. The store never holds that key, so
- * without it a refresh remounts the answer and replays its reveal.
+ * without it a refresh remounts the answer and replays its reveal. A save failure
+ * keeps its unsaved text in this window across a refresh of the failure placeholder.
  */
 export function fromStoreKeepingAnswers(current: readonly LoupistUIMessage[], stored: readonly ChatMessage[]): LoupistUIMessage[] {
   const storedIds = new Set(stored.map((message) => message.id));
@@ -246,21 +252,37 @@ export function fromStoreKeepingAnswers(current: readonly LoupistUIMessage[], st
   // that id (its view's key) when the saved message in its place is the same one.
   const clientId = (message: ChatMessage, index: number) => {
     const shown = current[index];
-    if (!shown || shown.metadata?.native_message_id || storedIds.has(shown.id) || shown.role !== message.role) return undefined;
+    if (!shown || shown.metadata?.native_message_id || storedIds.has(shown.id) || (shown.metadata?.host_role ?? shown.role) !== message.role) return undefined;
     if (message.role === "user" && fromLoupistUIMessage(shown).content !== message.content) return undefined;
     return shown.id;
   };
-  const answerKeys = new Map(current.flatMap((message, index) => {
-    const key = message.metadata?.answer_key;
-    if (!key) return [];
-    const native = message.metadata?.native_message_id ?? (stored[index] && clientId(stored[index], index) ? stored[index].id : message.id);
-    return [[native, key]];
-  }));
+  const answerKeys = new Map<string, string>();
+  const unsavedAnswers = new Map<string, string>();
+  for (const [index, message] of current.entries()) {
+    const metadata = message.metadata;
+    if (metadata?.answer_key) {
+      const native = metadata.native_message_id ?? (stored[index] && clientId(stored[index], index) ? stored[index].id : message.id);
+      answerKeys.set(native, metadata.answer_key);
+    }
+    if (metadata?.native_message_id && metadata.failure_kind === "store_failed"
+      && !metadata.placeholder && metadata.final_text) {
+      unsavedAnswers.set(metadata.native_message_id, metadata.final_text);
+    }
+  }
   return stored.map((message, index) => {
     const ui = toLoupistUIMessage(message);
     const answerKey = answerKeys.get(message.id);
-    const keptId = clientId(message, index);
-    return { ...ui, ...(keptId ? { id: keptId } : {}), ...(answerKey ? { metadata: { ...ui.metadata, answer_key: answerKey } } : {}) };
+    const unsavedText = message.failure_kind === "store_failed" && message.placeholder
+      ? unsavedAnswers.get(message.id) : undefined;
+    return {
+      ...ui,
+      id: clientId(message, index) ?? ui.id,
+      metadata: {
+        ...ui.metadata,
+        ...(answerKey ? { answer_key: answerKey } : {}),
+        ...(unsavedText ? { final_text: unsavedText, placeholder: false } : {}),
+      },
+    };
   });
 }
 
@@ -272,8 +294,9 @@ const estimatedBase64Bytes = (url: string) => {
 export const toLoupistUIMessage = (message: ChatMessage): LoupistUIMessage => {
   return {
     id: message.id,
-    role: message.role,
+    role: message.role === "bot_handoff" ? "user" : message.role,
     metadata: {
+      ...(message.role === "bot_handoff" ? { host_role: message.role } : {}),
       native_message_id: message.id,
       created_at: message.created_at,
       status: message.status ?? "complete",
@@ -362,7 +385,7 @@ export const fromLoupistUIMessage = (message: LoupistUIMessage): ChatMessage => 
     switch (part.type) {
       case "text": text.push(part.text); break;
       case "data-memory": memoryRefs ??= part.data; break;
-      case "data-memory_update": memoryUpdate ??= part.data; break;
+      case "data-memory_update": memoryUpdate = part.data; break;
       case "data-progress": progress ??= part.data; break;
       case "data-artifact": artifactRefs.push(part.data); break;
       case "data-staged_artifact": stagedArtifacts.push(part.data); break;
@@ -383,9 +406,19 @@ export const fromLoupistUIMessage = (message: LoupistUIMessage): ChatMessage => 
     }
   }
 
+  const saving = message.metadata?.saveActivity;
+  if (saving) {
+    const { blockingChatId, ...saveActivity } = saving;
+    progress = {
+      ...(progress ?? { startedAtMs: saveActivity.startedAtMs, finishedAtMs: saveActivity.finishedAtMs, items: [] }),
+      saveActivity: { ...saveActivity, ...(blockingChatId ? { blockingChatId } : {}) },
+    };
+  }
+  const skipReason = message.metadata?.memorySaveSkip;
+  const discardedMemoryItems = message.metadata?.discardedMemoryItems ?? memoryUpdate?.discardedMemoryItems;
   return {
     id: message.metadata?.native_message_id ?? message.id,
-    role: message.role === "assistant" ? "assistant" : "user",
+    role: message.metadata?.host_role ?? (message.role === "assistant" ? "assistant" : "user"),
     content:
       message.role === "assistant" && message.metadata?.final_text !== undefined
         ? message.metadata.final_text
@@ -397,7 +430,10 @@ export const fromLoupistUIMessage = (message: LoupistUIMessage): ChatMessage => 
     lens_receipts: message.metadata?.lens_receipts,
     schedule_receipts: scheduleReceipts,
     evidence_refs: evidenceRefs,
-    memory_update: memoryUpdate,
+    memory_update: skipReason
+      ? { status: "no_change", commitId: null, changes: [], skipReason, discardedMemoryItems }
+      : memoryUpdate,
+    memorySaving: status === "streaming" ? message.metadata?.memorySaving : undefined,
     memory_revision: message.metadata?.memory_revision,
     observed_exact_count: message.metadata?.observed_exact_count,
     refs_truncated: message.metadata?.refs_truncated,
@@ -442,6 +478,7 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
     private readonly bridge: LoupistBridge,
     private readonly onTitle?: ChatTitleHandler,
     private readonly onArtifact?: ChatArtifactHandler,
+    private readonly onSaving?: (loupistId: string, threadId: string) => void,
   ) {}
 
   async sendMessages({
@@ -456,7 +493,7 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
 
     const lastUserMessage = [...messages]
       .reverse()
-      .find((message) => message.role === "user");
+      .find((message) => message.role === "user" && !message.metadata?.host_role);
     const prompt = lastUserMessage ? messageText(lastUserMessage).trim() : "";
     const attachments = lastUserMessage
       ? lastUserMessage.parts
@@ -706,6 +743,18 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
             enqueue({ type: "message-metadata", messageMetadata: { phase: event.phase } });
             return;
           }
+          if (event.type === "saving") {
+            const { run_id, waiting_for_other_chat, blocking_chat_id, final_text, number_checks, save_activity } = event;
+            enqueue({ type: "message-metadata", messageMetadata: {
+              // The SDK merges metadata. Null clears a blocker from an earlier saving event.
+              memorySaving: { run_id, waiting_for_other_chat, blocking_chat_id: blocking_chat_id ?? null },
+              ...(final_text !== undefined ? { final_text } : {}),
+              ...(number_checks !== undefined ? { number_checks } : {}),
+              ...(save_activity ? { saveActivity: { ...save_activity, blockingChatId: save_activity.blockingChatId ?? null } } : {}),
+            } });
+            this.onSaving?.(context.loupist_id, context.thread_id);
+            return;
+          }
           if (event.type === "progress" || event.type === "progress_patch") {
             const next = event.type === "progress"
               ? applyChatProgressSnapshot(progressState, event.progress, event.sequence)
@@ -717,7 +766,7 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
             return;
           }
           if (event.type === "memory_update") {
-            enqueue({ type: "data-memory_update", data: event.result });
+            enqueue({ type: "data-memory_update", id: "memory-update", data: event.result });
             return;
           }
           if (event.type === "artifact_staged") {
@@ -753,7 +802,10 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
                 final_text: event.final_text,
                 created_at: event.created_at,
                 status: "complete",
-                research_session_id: event.research_session_id,
+                memorySaveSkip: event.memory_save_skip,
+                discardedMemoryItems: event.discarded_memory_items,
+                ...(event.save_activity ? { saveActivity: { ...event.save_activity, blockingChatId: event.save_activity.blockingChatId ?? null } } : {}),
+                  research_session_id: event.research_session_id,
                 lens_receipts: event.lens_receipts,
                 execution_model: event.execution_model,
                 agent_harness: event.agent_harness,
@@ -787,7 +839,7 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
               type: "message-metadata",
               messageMetadata: {
                 status: "aborted",
-              },
+                },
             });
             if (textStarted) enqueue({ type: "text-end", id: textId });
             enqueue({ type: "abort", reason: t("aiSdk.stoppedByUser") });
@@ -801,13 +853,14 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
           event satisfies never;
         };
 
-        const rejectStart = (message: string) => {
-          if (admissionDelivered) { fail(message); return; }
-          admit({ accepted: false, error: message });
+        const rejectStart = (cause: unknown) => {
+          const receipt = admissionRefusal(cause, t("aiSdk.couldNotStartTheResponse"));
+          if (admissionDelivered) { fail(receipt.error); return; }
+          admit(receipt);
           finished = true;
           if (abortRetry !== undefined) window.clearTimeout(abortRetry);
           abortSignal?.removeEventListener("abort", abortNativeRun);
-          controller.error(new Error(message));
+          controller.error(Object.assign(new Error(receipt.error), { code: receipt.code }));
         };
 
         void connect(onEvent)
@@ -820,11 +873,7 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
             if (abortSignal?.aborted) abortNativeRun();
           })
           .catch((cause) => {
-            // Rust refuses a file over its limit by code; the reader gets the limit in their language.
-            const tooLarge = commandErrorCode(cause) === "attachment_too_large";
-            const message = tooLarge ? t("chatComposer.attachmentTooLarge") : errorMessage(cause, t("aiSdk.couldNotStartTheResponse"));
-            if (finished) return;
-            rejectStart(message);
+            if (!finished) rejectStart(cause);
           });
       },
     });

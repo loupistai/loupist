@@ -39,9 +39,8 @@ covers user saves/reviews; Lens covers methods/library maintenance. The source
 prompt retains `safety:locked` annotations for review, but launch strips those
 comments while preserving every enclosed instruction.
 
-User-facing names are Bot, research session, the Map, Schedule and Market data
-platform. Answers, questions and scheduled prompts never write World
-or OpenBB; internal identifiers and tool names are unchanged. An unattended comparison can use prose or a Markdown
+User-facing names are Bot, research session, World, Schedule and Market data
+platform. Answers, questions and scheduled prompts never use the name OpenBB. Internal tool names stay the same. An unattended comparison can use prose or a Markdown
 table, with the usual number links. Interactive research can also publish a
 checked table for sorting and export.
 
@@ -113,8 +112,8 @@ used to:
   interactive research turns, `interface_labels` can read selected product or
   navigation labels in the appearance captured for the turn. The envelope
   carries only `interface.display_currency` if set and omits the block otherwise.
-  Scheduled, delegated and host-started Map-link turns receive the resolved
-  language and five localized product names, plus any selected display currency. Scheduled runs answer in
+  Scheduled, delegated and host-started World-link turns receive the resolved
+  language and localized product and navigation names, plus any selected display currency. Scheduled runs answer in
   the language their task names or, by default, the language it is written in.
   A briefing follows `appLanguage`. A link-action hand-off follows
   `interface.language`, because its first message is the host's caption. A

@@ -33,7 +33,7 @@ impl ExportKind {
     }
     fn fallback_stem(self) -> &'static str {
         match self {
-            Self::Png | Self::Mp4 | Self::Webm => "map",
+            Self::Png | Self::Mp4 | Self::Webm => "world",
             Self::Md => "chat",
             Self::Csv => "data",
         }
@@ -241,6 +241,7 @@ mod tests {
             assert!(!dir.path().join("map.exe").exists());
         }
         assert_eq!(suggested_name("../map.exe", ExportKind::Png), "map.png");
+        assert_eq!(suggested_name("", ExportKind::Png), "world.png");
         assert_eq!(suggested_name("../notes.exe", ExportKind::Md), "notes.md");
         assert_eq!(suggested_name("", ExportKind::Csv), "data.csv");
     }

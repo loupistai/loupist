@@ -58,12 +58,12 @@ it("returns focus to Suggest a correction when the editor closes by Cancel, Esca
 it("disables feedback while a reply is in progress and restores it when the reply finishes", async () => {
   const user = userEvent.setup();
   const onSave = vi.fn(async (_id, value) => ({ ...value, correction: value.correction ?? null, updatedAt: 1 }));
-  const view = render(<AnswerFeedback message={message} onSave={onSave} onTeach={vi.fn()} feedbackBusy />);
+  const view = render(<AnswerFeedback message={{ ...message, status: "streaming" }} onSave={onSave} onTeach={vi.fn()} />);
   expect(screen.getByRole("button", { name: "Helpful" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Suggest a correction" })).toBeDisabled();
   screen.getByRole("button", { name: "Helpful" }).click();
   expect(onSave).not.toHaveBeenCalled();
-  view.rerender(<AnswerFeedback message={message} onSave={onSave} onTeach={vi.fn()} feedbackBusy={false} />);
+  view.rerender(<AnswerFeedback message={message} onSave={onSave} onTeach={vi.fn()} />);
   await user.click(screen.getByRole("button", { name: "Helpful" }));
   expect(onSave).toHaveBeenCalledTimes(1);
 });
@@ -88,7 +88,7 @@ it("keeps the correction editable after a failed save", async () => {
   expect(screen.getByRole("textbox")).toHaveValue("Correction draft");
 });
 
-it.each(["streaming", "aborted", "error", "user"] as const)("hides feedback for %s messages", (state) => {
+it.each(["aborted", "error", "user"] as const)("hides feedback for %s messages", (state) => {
   const item = state === "user" ? { ...message, role: "user" as const } : { ...message, status: state };
   render(<ChatMessageCard message={item} loupistId="loupist" loupistName="Loupist" onReadAttachment={vi.fn()} onSaveFeedback={vi.fn()} onTeachFeedback={vi.fn()} />);
   expect(screen.queryByRole("button", { name: "Helpful" })).toBeNull();

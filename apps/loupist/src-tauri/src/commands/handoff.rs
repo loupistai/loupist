@@ -56,7 +56,7 @@ pub(super) fn start_link(
     } = request;
     state.ensure_loupist_available(&loupist_id)?;
     let connection_id = super::require_text(&connection_id, "connection id", 128)?;
-    let profile = state
+    state
         .store
         .get_loupist(&loupist_id)
         .map_err(map_store)?
@@ -91,7 +91,6 @@ pub(super) fn start_link(
         .model_profile_id
         .as_deref()
         .or(defaults.model_profile_id.as_deref())
-        .or(profile.last_model_profile_id.as_deref())
         .unwrap_or_default();
     let requested_level = options
         .thinking_level
@@ -116,7 +115,7 @@ pub(super) fn start_link(
     if options
         .model_profile_id
         .as_deref()
-        .is_some_and(|id| !id.is_empty() && id != execution.model.id)
+        .is_some_and(|id| !crate::providers::auto::uses_default(id) && id != execution.model.id)
         || requested_level.is_some_and(|level| level != execution.thinking_level)
         || options.run_options.as_ref().is_some_and(|controls| {
             controls

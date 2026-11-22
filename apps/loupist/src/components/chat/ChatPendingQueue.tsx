@@ -19,6 +19,8 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 
+import { MEMORY_BUSY, type QueueHold } from "../../chat/draftSession";
+
 const t = i18n.getFixedT(null, "chat");
 
 export type QueuedChatMessage = ChatSubmission;
@@ -26,7 +28,7 @@ export type QueuedChatMessage = ChatSubmission;
 type Props = {
   queued: QueuedChatMessage[];
   models: ModelCatalog["models"];
-  holdReason?: string | null;
+  holdReason?: QueueHold;
   onRemove: (id: string) => void;
   onEdit: (id: string, text: string) => void;
   onMove: (id: string, offset: -1 | 1) => void;
@@ -77,6 +79,15 @@ export function ChatPendingQueue({
   const leave = (id: string, index: number) => { leaving.current = { id, index }; };
   const unavailable = offline ? t("chatPendingQueue.waitsUntilOnline") : blockedReason ?? t("chatPendingQueue.waitsUntilTheCurrentResponseFinishes");
 
+  const notice = holdReason && (
+    <p className="chat-pending-hold" role="status">
+      <span>{holdReason === MEMORY_BUSY ? t("chatView.waitingForMemory") : holdReason}</span>
+      {queued[0] && sendable ? <button type="button" className="chat-pending-resume" onClick={() => { leave(queued[0]!.id, 0); onSendNow(queued[0]!.id); }}>
+        {t("chatPendingQueue.sendNextNow")}
+      </button> : null}
+    </p>
+  );
+
   return (
     <div ref={rootRef} className="chat-pending-queue" role="group" aria-label={t("chatPendingQueue.pendingChatInstructions")}>
       {queued.length > 0 ? (
@@ -92,15 +103,7 @@ export function ChatPendingQueue({
           <ChevronDownIcon aria-hidden="true" />
         </button>
       ) : null}
-      {holdReason && (
-        <p className="chat-pending-hold" role="status">
-          <span>{holdReason}</span>
-          {/* A stopped or failed reply holds the queue; the next message is one press away. */}
-          {queued[0] && sendable ? <button type="button" className="chat-pending-resume" onClick={() => { leave(queued[0]!.id, 0); onSendNow(queued[0]!.id); }}>
-            {t("chatPendingQueue.sendNextNow")}
-          </button> : null}
-        </p>
-      )}
+      {holdReason !== MEMORY_BUSY && notice}
       {queued.length > 0 ? (
         <ul id={listId} className="chat-pending-list" hidden={!expanded}>
           {queued.map((item, index) => (
@@ -122,6 +125,7 @@ export function ChatPendingQueue({
           ))}
         </ul>
       ) : null}
+      {holdReason === MEMORY_BUSY && notice}
     </div>
   );
 }

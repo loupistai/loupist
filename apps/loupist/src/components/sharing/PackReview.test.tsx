@@ -61,7 +61,7 @@ it("lists flagged map records and the pack's own words, not only counts", async 
   expect(rows[0]).toHaveTextContent("Kestrel Fabrication");
   expect(rows[0]).toHaveTextContent("Looks like an instruction to the AI · Had hidden characters (removed)");
   expect(rows[1]).toHaveTextContent("Has a link that could send data out");
-  expect(within(page).getByText("3 more on the map")).toBeVisible();
+  expect(within(page).getByText("3 more in World")).toBeVisible();
   const profile = within(page).getByRole("region", { name: "Profile" });
   expect(within(profile).getByText("Looks like an instruction to the AI")).toBeVisible();
 });
@@ -102,6 +102,15 @@ it("names the pack's license with a link to its text and says what anyone may do
   expect(within(page).getByText("Anyone can share and adapt it for any purpose, with credit.")).toBeVisible();
   await user.click(license);
   expect(opened).toHaveBeenCalledWith("https://creativecommons.org/licenses/by/4.0/legalcode");
+});
+
+it("shows the copyable license URL when the default browser cannot open it", async () => {
+  const { bridge, page, user } = await review();
+  vi.spyOn(bridge, "openExternalUrl").mockRejectedValueOnce(new Error("Browser unavailable"));
+  await user.click(within(page).getByRole("button", { name: "CC BY 4.0" }));
+  const alert = await within(page).findByRole("alert");
+  expect(alert).toHaveTextContent("Couldn’t open the link in your browser.");
+  expect(alert).toHaveTextContent("https://creativecommons.org/licenses/by/4.0/legalcode");
 });
 
 it("says a Personal-licensed pack is for the user's use only and links its terms", async () => {

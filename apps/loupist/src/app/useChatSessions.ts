@@ -40,6 +40,7 @@ export function useChatSessions(bridge: LoupistBridge) {
   const [chatStatuses, setChatStatuses] = useState<Record<string, ChatStatus>>(
     {},
   );
+  const [savingThreadKeys, setSavingThreadKeys] = useState<ReadonlySet<string>>(() => new Set());
   const threadsByLoupistRef = useRef(threadsByLoupist);
   const activeThreadIdsRef = useRef(activeThreadIds);
   const activeThreadEpochsRef = useRef<Record<string, number>>({});
@@ -122,6 +123,13 @@ export function useChatSessions(bridge: LoupistBridge) {
       const key = chatSessionKey(loupistId, threadId);
       if (isActiveChatStatus(status)) {
         runRegistryRef.current?.claimLocalChat(loupistId, threadId);
+      } else {
+        setSavingThreadKeys((current) => {
+          if (!current.has(key)) return current;
+          const next = new Set(current);
+          next.delete(key);
+          return next;
+        });
       }
       setChatStatuses((current) => {
         if (isActiveChatStatus(status)) {
@@ -136,6 +144,11 @@ export function useChatSessions(bridge: LoupistBridge) {
     },
     [],
   );
+
+  const markChatSaving = useCallback((loupistId: string, threadId: string) => {
+    const key = chatSessionKey(loupistId, threadId);
+    setSavingThreadKeys(current => current.has(key) ? current : new Set([...current, key]));
+  }, []);
 
   const publishChatArtifact = useCallback(
     (loupistId: string, threadId: string, artifact: ChatArtifactRef) => {
@@ -173,6 +186,7 @@ export function useChatSessions(bridge: LoupistBridge) {
         onArtifact: publishChatArtifact,
         onMessages: updateChatMessages,
         onStatus: updateChatStatus,
+        onSaving: markChatSaving,
         onTitle: updateChatTitle,
         onAttachedThread: (thread) => setThreadsForLoupist(thread.loupist_id, (current) => current.some((item) => item.id === thread.id)
           ? current.map((item) => item.id === thread.id ? thread : item)
@@ -222,6 +236,7 @@ export function useChatSessions(bridge: LoupistBridge) {
     threadsByLoupist,
     activeThreadIds,
     chatStatuses,
+    savingThreadKeys,
     threadsByLoupistRef,
     activeThreadIdsRef,
     activeThreadEpochsRef,

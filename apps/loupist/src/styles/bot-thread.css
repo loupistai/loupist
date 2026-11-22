@@ -50,7 +50,6 @@
   font-size: var(--gg-text-reading); line-height: var(--gg-leading-reading);
 }
 [data-surface="bot"] .bot-col > [data-turn-item="prose"] .message-content { width: auto; }
-[data-surface="bot"] .bot-col > [data-turn-item="prose"] .message-content :is(p, ul, ol, blockquote) { max-width: 60ch; }
 [data-surface="bot"] .bot-col > [data-turn-item="prose"] + [data-turn-item="prose"] { border-top-left-radius: var(--gg-radius-bubble); }
 
 /* Working: one quiet line by the face. It opens the activity sheet. */
@@ -97,7 +96,7 @@
   [data-surface="bot"] .message.assistant[data-bot-message] .message-action-bar > :is(.message-actions, .answer-feedback) { opacity: 0; transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
   [data-surface="bot"] .message.assistant[data-bot-message]:is(:hover, :focus-within) .message-action-bar > :is(.message-actions, .answer-feedback) { opacity: 1; }
   /* What the answer saved stays one pointer away; the activity sheet lists it too. */
-  [data-surface="bot"] .message.assistant[data-bot-message] .memory-row:not([data-expanded="true"]) .chat-receipt { opacity: 0; transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
+  [data-surface="bot"] .message.assistant[data-bot-message] .memory-row:not([data-expanded="true"]) .chat-receipt:not([data-save-skipped]) { opacity: 0; transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
   [data-surface="bot"] .message.assistant[data-bot-message]:is(:hover, :focus-within) .memory-row .chat-receipt { opacity: 1; }
 }
 [data-surface="bot"] .bot-col .chat-receipt { font-size: var(--gg-text-meta); }
@@ -142,8 +141,7 @@
 .bot-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .bot-ask {
   display: flex; align-items: center; gap: 12px; width: 100%; height: 100%; padding: 11px 14px;
-  border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-lg); background: var(--gg-color-bg-raised);
-  box-shadow: var(--gg-shadow-card); color: var(--gg-color-text-primary); font: inherit; text-align: left; cursor: pointer;
+  color: var(--gg-color-text-primary); font: inherit; text-align: left; cursor: pointer;
 }
 .bot-ask > span { display: grid; flex: 1 1 auto; min-width: 0; }
 .bot-ask strong { font-size: var(--gg-text-body); font-weight: var(--gg-weight-semibold); }

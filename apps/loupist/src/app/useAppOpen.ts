@@ -1,6 +1,7 @@
 import i18n from "@/i18n";
 import { useCallback, useRef, useState } from "react";
 import type { AssetPageTarget } from "../contracts/assets";
+import type { SourceFigureRequest } from "../contracts/knowledge";
 import type { ChatArtifactRef, ChatArtifactView, ChatEvidenceRef, KnowledgeLocation } from "../types";
 import { evidenceTitle } from "../chat/evidence";
 import { evidenceTarget, externalUrl, RunRecordRemoved, type ChatDestination, type Open, type OpenHow } from "../chat/navigation";
@@ -20,19 +21,16 @@ export type AppOpenShell = {
   panel: {
     openEvidence: (loupistId: string, threadId: string, evidence: ChatEvidenceRef, step?: EvidenceStepLink) => void;
     openBrowser: (loupistId: string, threadId: string, url?: string) => void;
-    openMemory: (loupistId: string, threadId: string, location: KnowledgeLocation, title: string) => void;
+    openMemory: (loupistId: string, threadId: string, location: KnowledgeLocation, title: string, figure?: SourceFigureRequest) => void;
     openArtifact: (loupistId: string, threadId: string, artifact: ChatArtifactRef) => void;
     openFiles: (loupistId: string, threadId: string, path?: string) => void;
   };
   /** Shows another chat of the selected Loupist, on the Chat tab. */
   showThread: (loupistId: string, threadId: string) => void;
-  /** Whether the host still has this chat, read again now. */
-  chatExists: (loupistId: string, threadId: string) => Promise<boolean>;
-  /** Whether the host still has this scheduled task. */
-  scheduledTaskExists: (loupistId: string, taskId: string) => Promise<boolean>;
+  openScheduledRun: (loupistId: string, taskId: string, runId: string) => Promise<boolean>;
   openKnowledgePage: (location: KnowledgeLocation) => void;
   openAssetPage: (target: AssetPageTarget) => void;
-  openScheduledTask: (taskId: string) => void;
+  openScheduledTask: (taskId: string, handoffReceipt?: boolean) => void;
   showBriefing: (loupistId: string, runId: string) => void;
   openSettings: (section: SettingsSection) => void;
   openFollowing: () => void;
@@ -70,7 +68,7 @@ async function route(shell: AppOpenShell, host: PanelHost, to: ChatDestination, 
       // A step, a quote, Memory or an asset page resolves in the answer's TurnProvider;
       // outside one the card's fallback stands in.
       const target = evidenceTarget(to.evidence, undefined, loupistId ?? "").kind;
-      if (target !== "browser" && target !== "reader") { if (to.fallback) await route(shell, host, to.fallback, how, announce); return; }
+      if (!to.step?.comparison && target !== "browser" && target !== "reader") { if (to.fallback) await route(shell, host, to.fallback, how, announce); return; }
       const chat = beside();
       if (!chat) { await elsewhere(); return; }
       shell.panel.openEvidence(chat.loupistId, chat.threadId, to.evidence, to.step);
@@ -97,7 +95,7 @@ async function route(shell: AppOpenShell, host: PanelHost, to: ChatDestination, 
       if (to.location.surface === "world") { shell.openKnowledgePage(to.location); return; }
       const chat = beside();
       if (!chat) return;
-      shell.panel.openMemory(chat.loupistId, chat.threadId, to.location, to.title);
+      shell.panel.openMemory(chat.loupistId, chat.threadId, to.location, to.title, to.figure && { ...to.figure, threadId: chat.threadId });
       announce(to.title);
       return;
     }
@@ -133,15 +131,14 @@ async function route(shell: AppOpenShell, host: PanelHost, to: ChatDestination, 
       shell.openAssetPage(to.target);
       return;
     case "schedule":
-      shell.openScheduledTask(to.taskId);
+      shell.openScheduledTask(to.taskId, to.handoffReceipt);
       return;
     case "chat":
       if (loupistId) shell.showThread(loupistId, to.threadId);
       return;
     case "run":
       if (!loupistId) return;
-      if (to.threadId && await shell.chatExists(loupistId, to.threadId)) { shell.showThread(loupistId, to.threadId); return; }
-      if (await shell.scheduledTaskExists(loupistId, to.taskId)) { shell.openScheduledTask(to.taskId); return; }
+      if (await shell.openScheduledRun(loupistId, to.taskId, to.runId)) return;
       throw new RunRecordRemoved();
     case "briefing":
       if (loupistId) shell.showBriefing(loupistId, to.runId);

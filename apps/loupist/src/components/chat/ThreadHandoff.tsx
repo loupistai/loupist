@@ -1,14 +1,16 @@
 import i18n, { useTranslation } from "@/i18n";
+import { skippedSavedKeyLabel, skippedSavedKeyNames } from "../briefings/scheduledPresentation";
 import { useGo } from "../navigation/Open";
 import { formatNumber } from "@/i18n/format";
 import { learnedSummary } from "../../chat/receipt";
 import type { ChatMessage, HomeHandoff } from "../../types";
 import { BotPostBody, MetaLine } from "./BotPost";
+import { MemorySaveWarning } from "./ChatReceipt";
 import "@/styles/bot-cards.css";
 
 const t = i18n.getFixedT(null, "chat");
 
-/** How a session ended without an answer. A finished one needs none: "Researched" says it. */
+/** How a session ended without an answer. The heading covers an ordinary end. */
 const endedLabel = (handoff: HomeHandoff) => handoff.stopReason === "interrupted" ? t("thread.handoffInterrupted")
   : handoff.status === "failed" ? t("thread.handoffFailed")
   : handoff.status === "stopped" ? t("thread.handoffStopped")
@@ -20,7 +22,8 @@ const endedLabel = (handoff: HomeHandoff) => handoff.stopReason === "interrupted
  */
 const hostCaption = (handoff: HomeHandoff, content: string) => {
   const text = content.trim();
-  return text === `Researched: ${handoff.title}.` || (Boolean(handoff.connectionId) && text === "Researched: Look into it.");
+  return ["Session ended", "Researched"].some(prefix =>
+    text === `${prefix}: ${handoff.title}.` || (handoff.connectionId && text === `${prefix}: Look into it.`));
 };
 
 /**
@@ -33,9 +36,11 @@ export function ThreadHandoff({ message, loupistName }: { message: ChatMessage; 
   const go = useGo();
   const handoff = message.handoff!;
   const done = handoff.status === "done";
-  const heading = t(done ? "thread.researched" : "thread.handoffLabel", { title: handoff.title });
+  const heading = t(done ? "thread.sessionEnded" : "thread.handoffLabel", { title: handoff.title });
   // The same count and words as the session answer's receipt.
-  const learned = learnedSummary(handoff.learned)?.sections;
+  const skippedSavedKeys = skippedSavedKeyLabel(skippedSavedKeyNames(message.tool_refusals));
+  const skipped = handoff.memorySaveSkip;
+  const learned = skipped ? undefined : learnedSummary(handoff.learned)?.sections;
   const preview = done && !hostCaption(handoff, message.content) ? message.content.trim() : "";
   const ended = endedLabel(handoff);
   // The host stopped it without running, or the app quit while it ran: say why.
@@ -45,6 +50,8 @@ export function ThreadHandoff({ message, loupistName }: { message: ChatMessage; 
     <BotPostBody loupistName={loupistName} at={at}>
       <div className="bot-card">
         {preview ? <p className="thread-delivery-text">{preview}</p> : null}
+        {skippedSavedKeys && <p className="thread-delivery-source">{skippedSavedKeys}</p>}
+        <MemorySaveWarning reason={skipped} items={handoff.discardedMemoryItems} />
         {reason ? <p className="thread-delivery-text" data-stop-reason={reason}>{t(`thread.stopped.${reason}`)}</p> : null}
         <div className="bot-card-foot">
           <MetaLine className="thread-delivery-source" items={[

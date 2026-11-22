@@ -70,7 +70,7 @@ pub(in crate::commands) fn emit_completed_chat(
     for evidence in &message.evidence_refs {
         let _ = on_event.send(ChatStreamEvent::Evidence {
             run_id: run_id.to_owned(),
-            evidence: Box::new(evidence.clone()),
+            evidence: Box::new(on_event.evidence_view(evidence)),
         });
     }
     for artifact in &message.artifact_refs {
@@ -80,6 +80,18 @@ pub(in crate::commands) fn emit_completed_chat(
         });
     }
     let _ = on_event.send(ChatStreamEvent::Completed {
+        discarded_memory_items: message
+            .memory_update
+            .as_ref()
+            .and_then(|update| update.discarded_memory_items.clone()),
+        save_activity: message
+            .progress
+            .as_ref()
+            .and_then(|progress| progress.save_activity.clone()),
+        memory_save_skip: message
+            .memory_update
+            .as_ref()
+            .and_then(|update| update.skip_reason),
         research_session_id: message.research_session_id.clone(),
         lens_receipts: message.lens_receipts.clone(),
         tool_refusals: message.tool_refusals.clone(),
@@ -134,6 +146,10 @@ pub(in crate::commands) fn recovered_canonical_completion(
         || message.execution_model.as_ref() != Some(expected.execution_model)
         || message.agent_harness.as_ref() != Some(expected.agent_harness)
         || message.performance.as_ref() != Some(expected.performance)
+        || message
+            .memory_update
+            .as_ref()
+            .is_some_and(|update| update.skip_reason.is_some())
     {
         return None;
     }
@@ -149,6 +165,7 @@ pub(in crate::commands) const FAILED_CHAT_CONTENT: &str = "Response could not be
 pub(super) enum ChatTerminalStatus {
     Aborted,
     Error,
+    StoreFailed,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -170,6 +187,15 @@ pub(super) fn persist_and_emit_terminal_chat(
         .get_chat(thread_id)
         .map_err(map_store)?
         .ok_or_else(|| CommandError::not_found("chat thread"))?;
+    let store_failed = matches!(terminal_status, ChatTerminalStatus::StoreFailed);
+    if store_failed
+        && expected
+            .messages
+            .iter()
+            .any(|message| message.id == message_id)
+    {
+        return Err(CommandError::conflict("Chat response is already saved"));
+    }
     let created_at_ms = now_ms().max(expected.updated_at_ms + 1);
     let mut chat = expected.clone();
     chat.messages.push(ChatMessage {
@@ -178,7 +204,7 @@ pub(super) fn persist_and_emit_terminal_chat(
         feedback: None,
         tool_trace: Some(on_event.tool_trace.snapshot()),
         schedule_receipts: on_event.schedule_receipts(),
-        failure_kind: matches!(terminal_status, ChatTerminalStatus::Error)
+        failure_kind: (!matches!(terminal_status, ChatTerminalStatus::Aborted))
             .then(|| on_event.failure_kind()),
         host_composed: false,
         steer: false,
@@ -206,9 +232,13 @@ pub(super) fn persist_and_emit_terminal_chat(
         role: ChatRole::Assistant,
         status: match terminal_status {
             ChatTerminalStatus::Aborted => ChatMessageStatus::Aborted,
-            ChatTerminalStatus::Error => ChatMessageStatus::Error,
+            ChatTerminalStatus::Error | ChatTerminalStatus::StoreFailed => ChatMessageStatus::Error,
         },
-        content: content.clone(),
+        content: if store_failed {
+            FAILED_CHAT_CONTENT.into()
+        } else {
+            content.clone()
+        },
         created_at_ms,
         lens_receipts: Vec::new(),
         memory_refs: memory_trace.refs,
@@ -230,13 +260,13 @@ pub(super) fn persist_and_emit_terminal_chat(
         ChatTerminalStatus::Aborted => ChatStreamEvent::Aborted {
             run_id: run_id.to_owned(),
         },
-        ChatTerminalStatus::Error => ChatStreamEvent::Error {
+        ChatTerminalStatus::Error | ChatTerminalStatus::StoreFailed => ChatStreamEvent::Error {
             failure_kind: on_event.failure_kind(),
             retry_after_seconds: on_event.retry_after_seconds(),
             run_id: run_id.to_owned(),
             message: FAILED_CHAT_CONTENT.into(),
             message_id: message_id.to_owned(),
-            placeholder: content == FAILED_CHAT_CONTENT,
+            placeholder: !store_failed && content == FAILED_CHAT_CONTENT,
             final_text: content,
             created_at: iso_time(created_at_ms).unwrap_or_default(),
             execution_model: Box::new(execution_model),
@@ -425,6 +455,7 @@ pub(super) struct TerminalReply<'a> {
     pub state: &'a AppState,
     pub on_event: &'a ChatEventSink,
     pub run_id: &'a str,
+    pub loupist_id: &'a str,
     pub thread_id: &'a str,
     pub message_id: &'a str,
     pub memory_revision: &'a Option<String>,
@@ -432,6 +463,49 @@ pub(super) struct TerminalReply<'a> {
 }
 
 impl TerminalReply<'_> {
+    /// Keep the answer in the live view and try to record a failure for reopen.
+    pub fn emit_unsaved_response(
+        &self,
+        content: String,
+        execution_model: ExecutionModelLock,
+        progress: Option<ChatProgress>,
+    ) {
+        self.on_event.set_failure_kind(ChatFailureKind::StoreFailed);
+        if crate::store::bounded_chat_save(|| {
+            persist_and_emit_terminal_chat(
+                self.state.store.as_ref(),
+                self.on_event,
+                self.run_id,
+                self.thread_id,
+                self.message_id,
+                content.clone(),
+                empty_memory_trace()?,
+                self.memory_revision.clone(),
+                execution_model.clone(),
+                self.harness.clone(),
+                progress.clone(),
+                ChatTerminalStatus::StoreFailed,
+            )
+        })
+        .is_ok()
+        {
+            return;
+        }
+        let _ = self.on_event.send(ChatStreamEvent::Error {
+            failure_kind: ChatFailureKind::StoreFailed,
+            retry_after_seconds: None,
+            run_id: self.run_id.to_owned(),
+            message: FAILED_CHAT_CONTENT.into(),
+            message_id: self.message_id.to_owned(),
+            final_text: content,
+            placeholder: false,
+            created_at: iso_time(now_ms()).unwrap_or_default(),
+            execution_model: Box::new(execution_model),
+            agent_harness: Box::new(self.harness.clone()),
+            progress,
+        });
+    }
+
     /// Records a failed reply unless Stop claimed the run first.
     pub fn failed_with_stop_precedence(
         &self,

@@ -2,8 +2,7 @@ import { useTranslation } from "@/i18n";
 import { Popover } from "radix-ui";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { ChatEvidenceRef } from "../../types";
-import { evidenceExcerptParts } from "../../chat/evidence";
-import { evidenceDate } from "../../chat/numberChecks";
+import { evidenceExcerptParts, evidenceProvenance } from "../../chat/evidence";
 import { quoteEvidence } from "../../chat/quoteEvidence";
 import { quotePreviewLine } from "./QuoteEvidence";
 import { narrowWindow } from "../../chat/narrowWindow";
@@ -17,9 +16,11 @@ import { useConversationScroll } from "../ai-elements/conversation";
 export const LONG_PRESS_MS = 500;
 
 /** A citation nothing can open: the number stays in the text, with the reason on hover. */
-export function UnavailableCitation({ children }: { children: ReactNode }) {
+export function UnavailableCitation({ children, reason }: { children: ReactNode; reason?: string }) {
   const { t } = useTranslation("chat");
-  return <span className="loupist-unavailable-citation" title={t("messageResponse.sourceUnavailableInThisReply")}>{children}</span>;
+  return <span className="loupist-unavailable-citation" title={reason ?? t("messageResponse.sourceUnavailableInThisReply")}>
+    {children}{reason ? <span className="sr-only"> {reason}</span> : null}
+  </span>;
 }
 
 /**
@@ -58,7 +59,8 @@ export function CitationChip({ evidence, label, title, source, to, children }: {
   // Focus that follows a press is a click; focus without one came from the keyboard.
   const pressed = useRef(false);
   const cardId = useId();
-  const date = evidenceDate(evidence);
+  const provenance = open ? evidenceProvenance(evidence, source) : null;
+  const meta = provenance && [provenance.attribution, provenance.dateLabel].filter(Boolean).join(" · ");
   // The chip whose passage the Evidence reader shows now reads as the current one.
   const current = useOpenEvidenceId() === evidence.id;
   const schedule = (next: boolean, delay: number) => {
@@ -130,7 +132,8 @@ export function CitationChip({ evidence, label, title, source, to, children }: {
         collisionPadding={{ top: 112, right: 8, bottom: 8, left: 8 }} onOpenAutoFocus={(event) => event.preventDefault()} onCloseAutoFocus={(event) => event.preventDefault()}
         onPointerEnter={() => { if (!pinned) schedule(true, 0); }} onPointerLeave={() => { if (!pinned) schedule(false, CLOSE_DELAY_MS); }}>
         <strong>{title}</strong>
-        <small className="source-site"><span>{[source, date].filter(Boolean).join(" · ")}</span></small>
+        {meta ? <small className="source-site">{meta}</small> : null}
+        {provenance?.route ? <small className="source-site">{provenance.route}</small> : null}
         {(() => {
           const quote = quoteEvidence(evidence);
           if (quote) {

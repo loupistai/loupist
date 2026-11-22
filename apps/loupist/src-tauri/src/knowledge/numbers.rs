@@ -17,13 +17,17 @@
 //!
 //! A bare number in text also takes a unit stated apart from it, within its
 //! row or table or in words after it (`배당금총액(원)`, `(단위: 백만원)`,
-//! `184.6이고 단위는 십억 원`). A word of decrease right after an unsigned
-//! number (`9% 줄었고`) states a fall that a figure's own sign must agree with.
+//! `184.6이고 단위는 십억 원`). A local direction cue (`跌幅4.81%`, `9% 줄었고`)
+//! gives an unsigned number the direction a signed answer must agree with.
+mod currency;
+mod direction;
+pub(crate) use currency::{agrees as currencies_agree, Currency};
+use direction::Direction;
 use serde_json::{Map, Value};
 
 /// Candidates read from one payload; bounds the work on large datasets.
 const MAX_CANDIDATES: usize = 50_000;
-const MAX_TEXT_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_TEXT_BYTES: usize = 1024 * 1024;
 
 /// What a line's unit, or a printed number, measures.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -46,15 +50,8 @@ pub enum Unit {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AmbiguousUnit(pub String);
 
-use crate::finance_data::fx::{is_currency_code, is_currency_marker, CURRENCY_CODES};
-const CURRENCY_WORDS: &[&str] = &[
-    "won", "dollar", "dollars", "euro", "euros", "yen", "yuan", "pound", "pounds",
-];
-const CURRENCY_SYMBOLS: &[char] = &['$', '₩', '€', '£', '¥', '￦'];
-/// Korean currency suffixes after an optional scale (`억원`, `백만달러`).
-const KOREAN_CURRENCY: &[&str] = &["원", "달러", "엔", "위안", "유로"];
-/// Korean scales, longest first so `천억` wins over `억`.
-const KOREAN_SCALES: &[(&str, f64)] = &[
+/// CJK scales, longest first so `천억` wins over `억`.
+const CJK_SCALES: &[(&str, f64)] = &[
     ("천억", 1e11),
     ("백억", 1e10),
     ("십억", 1e9),
@@ -65,97 +62,40 @@ const KOREAN_SCALES: &[(&str, f64)] = &[
     ("억", 1e8),
     ("만", 1e4),
     ("천", 1e3),
+    ("百万", 1e6),
+    ("百萬", 1e6),
+    ("万", 1e4),
+    ("萬", 1e4),
+    ("亿", 1e8),
+    ("億", 1e8),
 ];
 
-/// The ISO 4217 currency a unit names ("USD millions", "₩", "억원", "KRW bn"),
-/// when it names exactly one.
-pub fn currency_code(unit: &str) -> Option<String> {
-    let mut found = currency_markers(unit, false);
-    (found.len() == 1).then(|| found.remove(0))
-}
-
-/// Currency markers in a printed figure that identify a single currency each.
-/// Bare dollar and yen signs, and dollar words, are shared by several currencies.
-pub(crate) fn unambiguous_currency_markers(text: &str) -> Vec<String> {
-    currency_markers(text, true)
-}
-
-fn currency_markers(unit: &str, unambiguous: bool) -> Vec<String> {
-    const PREFIXED_DOLLARS: &[(&str, &str)] = &[
-        ("us$", "USD"),
-        ("hk$", "HKD"),
-        ("nz$", "NZD"),
-        ("a$", "AUD"),
-        ("c$", "CAD"),
-        ("s$", "SGD"),
-    ];
-    const SYMBOLS: &[(char, &str)] = &[
-        ('$', "USD"),
-        ('₩', "KRW"),
-        ('￦', "KRW"),
-        ('€', "EUR"),
-        ('£', "GBP"),
-        ('¥', "JPY"),
-    ];
-    const WORDS: &[(&str, &str)] = &[
-        ("won", "KRW"),
-        ("dollar", "USD"),
-        ("dollars", "USD"),
-        ("euro", "EUR"),
-        ("euros", "EUR"),
-        ("yen", "JPY"),
-        ("yuan", "CNY"),
-        ("pound", "GBP"),
-        ("pounds", "GBP"),
-    ];
-    const KOREAN: &[(&str, &str)] = &[
-        ("원", "KRW"),
-        ("달러", "USD"),
-        ("엔", "JPY"),
-        ("위안", "CNY"),
-        ("유로", "EUR"),
-    ];
-    let mut rest = unit.trim().to_lowercase();
-    let mut found: Vec<String> = Vec::new();
-    let mut add = |code: String| {
-        if !found.contains(&code) {
-            found.push(code);
+/// The currency a monetary unit names, including a shared sign if unresolved.
+pub(crate) fn stated_currency(text: &str) -> Option<Currency> {
+    let numerator = text.split('/').next().unwrap_or(text);
+    let mut found = None;
+    for currency in currency::markers(numerator, false) {
+        if !currencies_agree(found, Some(currency)) {
+            return None;
         }
-    };
-    for (prefix, code) in PREFIXED_DOLLARS {
-        if rest.contains(prefix) {
-            add((*code).to_owned());
-            rest = rest.replace(prefix, " ");
-        }
-    }
-    for (symbol, code) in SYMBOLS {
-        if (!unambiguous || !matches!(symbol, '$' | '¥')) && rest.contains(*symbol) {
-            add((*code).to_owned());
-        }
-    }
-    // A printed figure can start with a code directly against the digits.
-    let separator = |c: char| {
-        if unambiguous {
-            !c.is_alphabetic()
-        } else {
-            !c.is_alphanumeric()
-        }
-    };
-    for word in unit.split(separator) {
-        if is_currency_marker(word) {
-            add(word.to_ascii_uppercase());
-        }
-    }
-    for word in rest.split(separator).filter(|word| !word.is_empty()) {
-        let marker = WORDS
-            .iter()
-            .find(|(name, _)| *name == word)
-            .or_else(|| KOREAN.iter().find(|(suffix, _)| word.ends_with(suffix)));
-        if let Some((_, code)) = marker.filter(|(_, code)| !unambiguous || *code != "USD") {
-            add((*code).to_owned());
-        }
+        found = currency::contextual(found, Some(currency));
     }
     found
+}
+
+/// The ISO currency a unit names, with the conventional default for a sign.
+pub fn currency_code(unit: &str) -> Option<String> {
+    let currency = match stated_currency(unit)? {
+        "$" => "USD",
+        "¥" => "JPY",
+        "元" => return None,
+        code => code,
+    };
+    Some(currency.into())
+}
+
+pub(crate) fn unambiguous_currency_markers(text: &str) -> Vec<Currency> {
+    currency::markers(text, true)
 }
 
 fn english_scale(word: &str) -> Option<f64> {
@@ -179,23 +119,14 @@ fn letter_scale(word: &str) -> Option<f64> {
     }
 }
 
-fn korean_amount(text: &str) -> Option<f64> {
-    let mut rest = text;
-    let mut currency = false;
-    for suffix in KOREAN_CURRENCY {
-        if let Some(stripped) = rest.strip_suffix(suffix) {
-            rest = stripped;
-            currency = true;
-            break;
-        }
-    }
-    if rest.is_empty() {
-        return currency.then_some(1.0);
-    }
-    KOREAN_SCALES
+fn cjk_amount(text: &str) -> Option<f64> {
+    CJK_SCALES
         .iter()
-        .find(|(word, _)| *word == rest)
-        .map(|(_, scale)| *scale)
+        .find_map(|(word, scale)| {
+            let rest = text.strip_prefix(word)?;
+            (rest.is_empty() || currency::exact(rest).is_some()).then_some(*scale)
+        })
+        .or_else(|| currency::exact(text).map(|_| 1.0))
 }
 
 /// The multiplier a unit's number states (`100` in "KRW 100 million"): a
@@ -247,14 +178,17 @@ impl Unit {
             "x" | "times" | "multiple" | "배" => return Ok(Self::Multiple),
             _ => {}
         }
-        if let Some(scale) = korean_amount(&compact) {
+        if let Some(scale) = cjk_amount(raw).or_else(|| {
+            CJK_SCALES
+                .iter()
+                .any(|(word, _)| compact.starts_with(word))
+                .then(|| cjk_amount(&compact))
+                .flatten()
+        }) {
             return Ok(Self::Amount(scale));
         }
         let ambiguous = || AmbiguousUnit(raw.to_owned());
-        let mut currency = text.chars().any(|c| CURRENCY_SYMBOLS.contains(&c))
-            || raw
-                .split(|c: char| !c.is_alphanumeric())
-                .any(is_currency_marker);
+        let currency = stated_currency(raw).is_some();
         let mut scale: Option<f64> = None;
         let mut letters: Option<f64> = None;
         let mut multiplier: Option<f64> = None;
@@ -284,9 +218,7 @@ impl Unit {
             if word.is_empty() {
                 continue;
             }
-            if CURRENCY_WORDS.contains(&word) {
-                currency = true;
-            } else if per {
+            if per {
                 continue;
             } else if let Some(found) = english_scale(word) {
                 if scale.replace(found).is_some_and(|known| known != found) {
@@ -294,8 +226,7 @@ impl Unit {
                 }
             } else if let Some(found) = letter_scale(word) {
                 letters = Some(found);
-            } else if let Some(found) = korean_amount(word) {
-                currency |= found == 1.0;
+            } else if let Some(found) = cjk_amount(word) {
                 if found != 1.0 && scale.replace(found).is_some_and(|known| known != found) {
                     return Err(ambiguous());
                 }
@@ -370,47 +301,90 @@ pub struct Candidate {
     pub value: f64,
     pub unit: Unit,
     pub place: Place,
-    /// A word of decrease right after the unsigned number and its unit
-    /// states a fall (`9% 줄었고`, `14억원 감소`, `9% lower`): a figure with
-    /// its own sign reads the number as negative.
-    pub stated_fall: bool,
+    pub(crate) currency: Option<Currency>,
+    pub(crate) inferred_scale: bool,
+    /// Direction stated by the wording governing an unsigned figure.
+    pub(crate) direction: Option<Direction>,
 }
 
-/// A Korean scale and currency printed after a number, before any particle
+impl Candidate {
+    pub(crate) fn value_for(&self, printed: &Printed) -> f64 {
+        if printed.signed && self.direction == Some(Direction::Fall) {
+            -self.value
+        } else {
+            self.value
+        }
+    }
+}
+
+/// A currency between figures can prefix the following figure, as in
+/// "$ 94,930 $ 89,498". Keep it with that figure when digits follow.
+fn currency_suffix(text: &str) -> Option<(Currency, usize)> {
+    let (currency, length) = currency::leading(text)?;
+    let after = text[length..].trim_start_matches(UNIT_SPACES);
+    let after = after.strip_prefix(['-', '−', '+']).unwrap_or(after);
+    (!after.starts_with(|c| numeric_char(c).is_ascii_digit())).then_some((currency, length))
+}
+
+/// A CJK scale and currency printed after a number, before any particle
 /// (`4,523억원으로`, `3천만`, `300원`), with the bytes they take and whether
 /// the scale stood alone (so `1조 2,345억` can join into one amount).
-fn korean_suffix(word: &str) -> Option<(f64, usize, bool)> {
-    let currency = |rest: &str| {
-        KOREAN_CURRENCY
-            .iter()
-            .find(|unit| rest.starts_with(**unit))
-            .map(|unit| unit.len())
-    };
-    for (scale_word, scale) in KOREAN_SCALES {
+fn cjk_suffix(word: &str) -> Option<(f64, usize, bool)> {
+    for (scale_word, scale) in CJK_SCALES {
         if let Some(rest) = word.strip_prefix(scale_word) {
-            if let Some(length) = currency(rest) {
-                return Some((*scale, scale_word.len() + length, false));
+            let after = rest.trim_start_matches(UNIT_SPACES);
+            if let Some((_, length)) = currency_suffix(after) {
+                return Some((
+                    *scale,
+                    scale_word.len() + rest.len() - after.len() + length,
+                    false,
+                ));
             }
-            // A bare scale counts only when nothing but a particle follows.
-            if rest.chars().count() <= 1 {
+            // A direction can touch a bare scale, as in ２億下落.
+            if rest.is_empty()
+                || rest.starts_with(|c: char| !c.is_alphanumeric())
+                || (rest.chars().count() == 1 && rest.chars().all(is_hangul))
+                || direction::around("", rest).is_some()
+            {
                 return Some((*scale, scale_word.len(), true));
             }
         }
     }
-    currency(word).map(|length| (1.0, length, false))
+    None
+}
+
+const UNIT_SPACES: [char; 5] = [' ', '\u{a0}', '\u{3000}', '\u{202f}', '\u{2009}'];
+
+/// Read a scale in the same quantity. A comma, conjunction or line break
+/// ends it. Short scales like “m” need an adjacent digit or a currency.
+fn leading_scale(rest: &str, has_currency: bool) -> Option<(f64, usize)> {
+    let tail = rest.trim_start_matches(UNIT_SPACES);
+    let gap = rest.len() - tail.len();
+    let length = tail.bytes().take_while(u8::is_ascii_alphabetic).count();
+    let after = &tail[length..];
+    if after.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+        return None;
+    }
+    let word = tail[..length].to_ascii_lowercase();
+    let scale = english_scale(&word).or_else(|| {
+        (has_currency || gap == 0)
+            .then(|| letter_scale(&word))
+            .flatten()
+    })?;
+    Some((scale, gap + length))
 }
 
 /// What a printed number states right after it: its unit, the bytes of
-/// `rest` the unit takes, and the Korean scale when one stood alone.
-fn suffix_unit(rest: &str) -> (Unit, usize, Option<f64>) {
+/// `rest` the unit takes, and the scale when one stood alone.
+fn suffix_unit(rest: &str, prefixed: bool) -> (Unit, usize, Option<f64>) {
     // A unit is a few short words: reading further would rescan the text
     // after every number.
     let rest = &rest[..rest.char_indices().nth(48).map_or(rest.len(), |(at, _)| at)];
-    // ASCII lowercase keeps byte offsets; the unit words below are ASCII or Korean.
+    // ASCII lowercase keeps byte offsets; CJK unit tokens need no case folding.
     let lower = rest.to_ascii_lowercase();
-    let trimmed = lower.trim_start_matches([' ', '\u{a0}']);
+    let trimmed = rest.trim_start_matches(UNIT_SPACES);
     let gap = lower.len() - trimmed.len();
-    let word: String = trimmed
+    let word: String = lower[gap..]
         .chars()
         .take_while(|c| c.is_alphanumeric() || matches!(c, '%' | '％'))
         .collect();
@@ -443,8 +417,13 @@ fn suffix_unit(rest: &str) -> (Unit, usize, Option<f64>) {
             return (Unit::BasisPoints, gap + phrase.len(), None);
         }
     }
-    if matches!(word.as_str(), "bp" | "bps") {
-        return (Unit::BasisPoints, gap + word.len(), None);
+    for suffix in ["bps", "bp"] {
+        if trimmed
+            .strip_prefix(suffix)
+            .is_some_and(|rest| !rest.starts_with(is_word_char))
+        {
+            return (Unit::BasisPoints, gap + suffix.len(), None);
+        }
     }
     let multiple = word == "배"
         || (word.starts_with('배') && word.chars().count() == 2 && !word.starts_with("배당"));
@@ -452,23 +431,28 @@ fn suffix_unit(rest: &str) -> (Unit, usize, Option<f64>) {
         let length = if multiple { "배".len() } else { word.len() };
         return (Unit::Multiple, gap + length, None);
     }
-    if let Some(scale) = english_scale(&word) {
-        return (Unit::Amount(scale), gap + word.len(), None);
+    if let Some((scale, length)) = leading_scale(rest, prefixed) {
+        let after = &rest[length..];
+        let tail = after.trim_start_matches(UNIT_SPACES);
+        let currency_length =
+            currency_suffix(tail).map_or(0, |(_, end)| after.len() - tail.len() + end);
+        return (Unit::Amount(scale), length + currency_length, None);
     }
-    if gap == 0 {
-        if let Some(scale) = letter_scale(&word) {
-            return (Unit::Amount(scale), word.len(), None);
-        }
-    }
-    if let Some((scale, length, bare)) = korean_suffix(&word) {
+    if let Some((scale, length, bare)) = cjk_suffix(trimmed) {
         return (Unit::Amount(scale), gap + length, bare.then_some(scale));
     }
-    if rest
-        .get(gap..gap + word.len())
-        .is_some_and(is_currency_marker)
-        || CURRENCY_WORDS.contains(&word.as_str())
-    {
-        return (Unit::Amount(1.0), gap + word.len(), None);
+    if let Some((_, length)) = currency_suffix(trimmed) {
+        let end = gap + length;
+        let after = &rest[end..];
+        let scale = leading_scale(after, true).or_else(|| {
+            let trimmed = after.trim_start_matches(UNIT_SPACES);
+            let (scale, length, bare) = cjk_suffix(trimmed)?;
+            bare.then_some((scale, after.len() - trimmed.len() + length))
+        });
+        return match scale {
+            Some((scale, length)) => (Unit::Amount(scale), end + length, None),
+            None => (Unit::Amount(1.0), end, None),
+        };
     }
     (Unit::Plain, 0, None)
 }
@@ -477,57 +461,11 @@ fn is_word_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 
-/// Korean words of decrease, as the start of the word after a number
-/// (`줄었고`, `감소한`, `하락했다`, `떨어졌다`, `낮아졌다`).
-const KOREAN_FALLS: &[&str] = &[
-    "감소", "줄었", "줄어", "줄고", "줄인", "줄여", "하락", "떨어", "낮아", "낮은", "축소", "급감",
-    "급락",
-];
-/// English words of decrease after a number (`9% lower`, `a 9% decline`).
-const ENGLISH_FALLS: &[&str] = &[
-    "lower",
-    "less",
-    "below",
-    "decline",
-    "declines",
-    "declined",
-    "decrease",
-    "decreases",
-    "decreased",
-    "drop",
-    "drops",
-    "dropped",
-    "fall",
-    "falls",
-];
-
-/// Whether the text right after a number and its unit states a fall: a word
-/// of decrease directly after it, or after at most two spaces. A particle or
-/// any other word between (`248달러보다 낮아졌다`, `9% 이상 줄었다`) states
-/// nothing, and words of increase need no reading: an unsigned number is
-/// already a rise.
-fn falls_after(rest: &str) -> bool {
-    let word = rest.trim_start_matches([' ', '\u{a0}']);
-    if rest[..rest.len() - word.len()].chars().count() > 2 {
-        return false;
-    }
-    // Every stem is two syllables; every English word is shorter than 16 letters.
-    let korean: String = word.chars().take_while(|c| is_hangul(*c)).take(2).collect();
-    if !korean.is_empty() {
-        return KOREAN_FALLS.iter().any(|stem| korean.starts_with(stem));
-    }
-    let english: String = word
-        .chars()
-        .take_while(char::is_ascii_alphabetic)
-        .take(16)
-        .collect::<String>()
-        .to_ascii_lowercase();
-    ENGLISH_FALLS.contains(&english.as_str())
-}
-
 /// A number found in text before Korean compounds are joined.
 struct Scanned {
-    currency_prefix_only: bool,
+    currency_only: bool,
+    currency: Option<Currency>,
+    direction_start: usize,
     value: f64,
     unit: Unit,
     start: usize,
@@ -538,18 +476,60 @@ struct Scanned {
     signed: bool,
 }
 
+impl Scanned {
+    fn direction(&self, text: &str) -> Option<Direction> {
+        if self.signed || self.value <= 0.0 {
+            return None;
+        }
+        direction::around(&text[..self.direction_start], &text[self.end..])
+    }
+}
+
+/// Fold numeric glyphs only. The scanner still indexes the original UTF-8
+/// bytes, so the receipt highlights exactly what the source printed.
+fn numeric_char(c: char) -> char {
+    match c {
+        '０'..='９' | '＋' | '－' | '．' | '，' | '％' => {
+            char::from_u32(c as u32 - 0xfee0).unwrap()
+        }
+        _ => c,
+    }
+}
+
+/// A company-concept observation stays in base units even if the retained
+/// passage begins after the series' unit key. Limit inspection to this fact.
+fn is_xbrl_value(text: &str, start: usize, end: usize) -> bool {
+    let before = &text[text.ceil_char_boundary(start.saturating_sub(512))..start];
+    let Some(key) = before.trim_end().strip_suffix(':') else {
+        return false;
+    };
+    if !key.trim_end().ends_with("\"val\"") {
+        return false;
+    }
+    let Some((_, left)) = before.rsplit_once('{') else {
+        return false;
+    };
+    let after = &text[end..text.floor_char_boundary((end + 512).min(text.len()))];
+    let right = after.split(['{', '}']).next().unwrap_or("");
+    let field = |name: &str| left.contains(name) || right.contains(name);
+    field("\"end\"") && field("\"accn\"")
+}
+
 /// Numbers written in `text`, each with the unit printed next to it and its
 /// byte range (sign, currency symbol and unit included). Digits group with
 /// `,` and take one decimal point. A run joined by `-`, `/` or `:` (dates,
 /// identifiers, times) or with a second `.` (`2026.03.18`) is skipped, as is a
 /// number glued to letters (`Q3`, `FY2026`, `10-K`). Korean compounds
 /// (`1조 2,345억원`) are one amount in the smallest scale.
-fn text_numbers(text: &str, out: &mut Vec<Candidate>) {
-    let chars: Vec<(usize, char)> = text.char_indices().collect();
+fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned> {
+    let chars: Vec<(usize, char)> = text
+        .char_indices()
+        .map(|(at, c)| (at, numeric_char(c)))
+        .collect();
     let byte = |index: usize| chars.get(index).map_or(text.len(), |(offset, _)| *offset);
     let mut scanned: Vec<Scanned> = Vec::new();
     let mut index = 0;
-    while index < chars.len() && out.len() + scanned.len() < MAX_CANDIDATES {
+    while index < chars.len() && scanned.len() < limit {
         let (_, c) = chars[index];
         if !c.is_ascii_digit() {
             index += 1;
@@ -587,7 +567,14 @@ fn text_numbers(text: &str, out: &mut Vec<Candidate>) {
             && after.is_some_and(|c| c.is_alphabetic())
             || (following.is_some_and(|c| c.is_ascii_alphabetic())
                 && after.is_some_and(|c| c.is_ascii_digit()));
-        if joined || points > 1 || glued_before || identifier_after {
+        let prefix_end = if matches!(previous, Some('-' | '−' | '+' | '△' | '▽' | '▼' | '▲'))
+        {
+            byte(start - 1)
+        } else {
+            byte(start)
+        };
+        let prefix = currency::before(&text[..prefix_end]);
+        if joined || points > 1 || (glued_before && prefix.is_none()) || identifier_after {
             continue;
         }
         let run: String = chars[start..end].iter().map(|(_, c)| *c).collect();
@@ -607,11 +594,17 @@ fn text_numbers(text: &str, out: &mut Vec<Candidate>) {
         };
         let mut span_start = byte(start);
         let mut signed = false;
-        // A sign only after a space, an opening bracket or the start of text.
-        if matches!(previous, Some('-' | '−'))
-            && !before.is_some_and(|c| c.is_alphanumeric() || matches!(c, ')' | ']' | '%'))
+        // A sign can touch a CJK label. An ASCII identifier still needs a word boundary.
+        if matches!(previous, Some('-' | '−' | '+'))
+            && (prefix.is_some()
+                || before.is_some_and(|c| {
+                    is_hangul(c) || matches!(c, 'ぁ'..='ヿ' | '㐀'..='䶿' | '一'..='鿿')
+                })
+                || !before.is_some_and(|c| c.is_alphanumeric() || matches!(c, ')' | ']' | '%')))
         {
-            value = -value;
+            if previous != Some('+') {
+                value = -value;
+            }
             span_start = byte(start - 1);
             signed = true;
         } else if let Some(mark) = previous.and_then(triangle_sign) {
@@ -621,74 +614,89 @@ fn text_numbers(text: &str, out: &mut Vec<Candidate>) {
             signed = true;
         }
         let rest_start = byte(end);
-        let (mut unit, length, bare_scale) = suffix_unit(&text[rest_start..]);
-        // A currency before the number makes it an amount ("$4.5bn", "₩41,200").
-        let prefix: String = chars[start.saturating_sub(5)..start]
-            .iter()
-            .map(|(_, c)| *c)
-            .collect::<String>()
-            .to_lowercase();
-        let symbol = prefix
-            .trim_end_matches(['-', '−', ' '])
-            .ends_with(|c: char| CURRENCY_SYMBOLS.contains(&c));
-        let prefix_text = &text[..byte(start)];
-        let before_number = prefix_text.trim_end_matches(' ');
-        let gap = prefix_text.len() - before_number.len();
-        let boundary = |text: &str| {
-            text.chars()
-                .next_back()
-                .is_none_or(|c| !c.is_alphanumeric() && c != '_')
+        let (mut unit, length, bare_scale) = suffix_unit(&text[rest_start..], prefix.is_some());
+        let suffix = match unit {
+            Unit::Amount(_) => stated_currency(&text[rest_start..rest_start + length]),
+            _ => None,
         };
-        let prefixed = symbol
-            || (gap <= 2
-                && CURRENCY_CODES.iter().any(|code| {
-                    let Some(at) = before_number.len().checked_sub(code.len()) else {
-                        return false;
-                    };
-                    before_number.get(at..).is_some_and(|tail| {
-                        tail.eq_ignore_ascii_case(code) && is_currency_marker(tail)
-                    }) && (boundary(&before_number[..at])
-                        || at.checked_sub(3).is_some_and(|pair_at| {
-                            before_number.get(pair_at..at).is_some_and(|first| {
-                                CURRENCY_CODES.iter().any(|code| {
-                                    first.eq_ignore_ascii_case(code) && is_currency_marker(first)
-                                })
-                            }) && boundary(&before_number[..pair_at])
-                        }))
-                }));
-        if prefixed && matches!(unit, Unit::Plain) {
+        let mut currency = currency::contextual(suffix, prefix.map(|(currency, _)| currency));
+        let before_number = text[..byte(start)].trim_end_matches(' ');
+        let gap = byte(start) - before_number.len();
+        // XBRL observation values are in the series' own base unit. A
+        // retained JSON fragment often starts after the enclosing USD key.
+        if unit == Unit::Plain && is_xbrl_value(text, byte(start), rest_start) {
+            unit = Unit::Raw;
+        }
+        // Printed column labels such as "op USDm 50368" or "YoY pct 11.72".
+        if unit == Unit::Plain && gap <= 2 {
+            let token = before_number
+                .rsplit(|c: char| !c.is_ascii_alphabetic())
+                .next()
+                .unwrap_or_default();
+            if let Some((code, scale)) = currency::scaled_prefix(token) {
+                unit = Unit::Amount(scale);
+                currency = Some(code);
+            } else if checking_amount {
+                unit = match token.to_ascii_lowercase().as_str() {
+                    "pct" | "percent" => Unit::Percent,
+                    "multiple" => Unit::Multiple,
+                    _ => Unit::Plain,
+                };
+            }
+        }
+        if prefix.is_some() && unit == Unit::Plain {
             unit = Unit::Amount(1.0);
         }
         let mut lead = start;
-        if symbol {
-            // Mark the symbol with the number (`₩41,200`, `-$3.1bn`).
-            let mut at = start;
-            while at > 0 && start - at < 5 {
-                at -= 1;
-                if CURRENCY_SYMBOLS.contains(&chars[at].1) {
-                    span_start = span_start.min(byte(at));
-                    lead = at;
-                    break;
+        if let Some((_, offset)) = prefix {
+            let marker = text[offset..prefix_end].trim_end();
+            if marker.ends_with(['$', '₩', '€', '£', '¥', '￦', '￥']) {
+                span_start = span_start.min(offset);
+                lead = chars[..start].partition_point(|&(at, _)| at < offset);
+            }
+            // An explicit sign before a currency prefix belongs to the amount.
+            if let Some((at, sign)) = text[..offset].char_indices().next_back() {
+                if !signed
+                    && matches!(sign, '-' | '−' | '－' | '+' | '＋')
+                    && !text[..at].ends_with(is_word_char)
+                {
+                    if !matches!(sign, '+' | '＋') {
+                        value = -value;
+                    }
+                    span_start = at;
+                    signed = true;
                 }
             }
         }
         let mut span_end = rest_start + length;
         // An accounting negative: a grouped amount wholly in brackets
         // (`(1,234)`, `(₩1,234)`, `(1,234억원)`), never a share or a multiple.
-        if !signed
-            && grouped
-            && matches!(unit, Unit::Plain | Unit::Amount(_))
-            && lead > 0
-            && chars[lead - 1].1 == '('
-            && text[span_end..].starts_with(')')
-        {
-            value = -value;
-            span_start = byte(lead - 1);
-            span_end += 1;
-            signed = true;
+        if !signed && lead > 0 && chars[lead - 1].1 == '(' && text[span_end..].starts_with(')') {
+            let opening = byte(lead - 1);
+            // SEC change columns print the percent sign in a separate cell
+            // after the closing parenthesis, yielding `| (4)% |`.
+            let accounting_percent = unit == Unit::Plain
+                && text[..opening].trim_end_matches([' ', '\t']).ends_with('|')
+                && text[span_end..]
+                    .strip_prefix(")%")
+                    .is_some_and(|rest| rest.trim_start_matches([' ', '\t']).starts_with('|'));
+            if accounting_percent || (grouped && matches!(unit, Unit::Plain | Unit::Amount(_))) {
+                value = -value;
+                span_start = opening;
+                span_end += 1;
+                if accounting_percent {
+                    unit = Unit::Percent;
+                    span_end += 1;
+                }
+                signed = true;
+            }
         }
         scanned.push(Scanned {
-            currency_prefix_only: prefixed && length == 0,
+            currency_only: unit == Unit::Amount(1.0) && (prefix.is_some() || suffix.is_some()),
+            currency: matches!(unit, Unit::Amount(_))
+                .then_some(currency)
+                .flatten(),
+            direction_start: prefix.map_or(span_start, |(_, start)| start.min(span_start)),
             value,
             unit,
             start: span_start,
@@ -705,6 +713,7 @@ fn text_numbers(text: &str, out: &mut Vec<Candidate>) {
             if let (Some(large), Unit::Amount(small)) = (last.bare_scale, next.unit) {
                 if small < large
                     && small > 1.0
+                    && currencies_agree(last.currency, next.currency)
                     && between.chars().all(char::is_whitespace)
                     && between.chars().count() <= 1
                     && last.value >= 0.0
@@ -712,6 +721,7 @@ fn text_numbers(text: &str, out: &mut Vec<Candidate>) {
                 {
                     last.value = last.value * large / small + next.value;
                     last.unit = Unit::Amount(small);
+                    last.currency = currency::contextual(next.currency, last.currency);
                     last.end = next.end;
                     last.bare_scale = next.bare_scale;
                     continue;
@@ -720,26 +730,115 @@ fn text_numbers(text: &str, out: &mut Vec<Candidate>) {
         }
         joined.push(next);
     }
-    let stated = stated_units(text, &joined);
-    for (found, stated) in joined.into_iter().zip(stated) {
+    joined
+}
+
+// A price heading can end in its currency on the line above the quote.
+pub(crate) fn preceding_price_unit(text: &str, start: usize) -> Option<&str> {
+    let from = text.floor_char_boundary(start.saturating_sub(240));
+    let (earlier, _) = text[from..start].rsplit_once('\n')?;
+    let line = earlier.trim_end().lines().next_back()?;
+    let code = line.split_whitespace().next_back()?;
+    (line
+        .split_whitespace()
+        .any(|word| word.eq_ignore_ascii_case("price"))
+        && crate::finance_data::fx::is_currency_marker(code))
+    .then_some(code)
+}
+
+fn text_numbers(text: &str, out: &mut Vec<Candidate>, amount: Option<&Printed>) {
+    let joined = scan_numbers(
+        text,
+        MAX_CANDIDATES.saturating_sub(out.len()),
+        amount.is_some(),
+    );
+    let stated = stated_units(text, &joined, amount.is_some());
+    for (found, cell) in joined.into_iter().zip(stated) {
+        let CellUnit {
+            unit: stated,
+            measure,
+            heading,
+        } = cell;
+        let price_heading = (found.unit == Unit::Plain)
+            .then(|| preceding_price_unit(text, found.start))
+            .flatten();
+        let currency = currency::contextual(
+            found.currency,
+            heading.or(price_heading).and_then(stated_currency),
+        );
+        let stated = stated.or(price_heading.map(|_| Unit::Amount(1.0)));
         let place = Place::Span {
             start: found.start,
             end: found.end,
         };
-        let stated_fall = !found.signed && found.value > 0.0 && falls_after(&text[found.end..]);
+        let direction = found.direction(text);
         // A number printed bare keeps its plain reading beside the stated unit.
-        let original = (!found.currency_prefix_only || stated.is_none()).then_some(found.unit);
+        let original = if let Some(printed) = amount {
+            if matches!(measure, FilingMeasure::Shares | FilingMeasure::Count)
+                || (measure == FilingMeasure::PerShare && printed.unit != Unit::Amount(1.0))
+            {
+                continue;
+            }
+            if stated.is_some() {
+                None
+            } else if found.unit == Unit::Plain {
+                // A year or numbered heading labels the following cells.
+                let token = &text[found.start..found.end];
+                if (token.len() == 4
+                    && (1900.0..=2100.0).contains(&found.value)
+                    && token.bytes().all(|c| c.is_ascii_digit()))
+                    || enumerator(text, &found)
+                    || text[found.end..]
+                        .trim_start_matches([' ', '|'])
+                        .starts_with('%')
+                {
+                    continue;
+                }
+                Some(unstated_amount_unit(printed, found.value))
+            } else {
+                Some(found.unit)
+            }
+        } else {
+            (!found.currency_only || stated.is_none()).then_some(found.unit)
+        };
         for unit in original.into_iter().chain(stated) {
             if out.len() < MAX_CANDIDATES {
                 out.push(Candidate {
                     value: found.value,
                     unit,
                     place: place.clone(),
-                    stated_fall,
+                    currency: matches!(unit, Unit::Amount(_))
+                        .then_some(currency)
+                        .flatten(),
+                    inferred_scale: stated.is_none()
+                        && !matches!(
+                            measure,
+                            FilingMeasure::Shares
+                                | FilingMeasure::Count
+                                | FilingMeasure::PerShare
+                                | FilingMeasure::Percent
+                        )
+                        && (found.unit == Unit::Amount(1.0)
+                            || (found.unit == Unit::Plain && amount.is_some())),
+                    direction,
                 });
             }
         }
     }
+}
+
+/// For an amount with a magnitude word and no stated source scale, align
+/// the most significant digits. The signed precision check decides whether
+/// the aligned value actually rounds to the figure.
+fn unstated_amount_unit(printed: &Printed, value: f64) -> Unit {
+    let Unit::Amount(scale) = printed.unit else {
+        return Unit::Plain;
+    };
+    if scale == 1.0 || value == 0.0 || printed.value == 0.0 {
+        return printed.unit;
+    }
+    let shift = (printed.value.abs().log10() - value.abs().log10()).round() as i32;
+    Unit::Amount(scale * 10f64.powi(shift))
 }
 
 /// How far a unit stated ahead of its numbers reaches.
@@ -775,11 +874,13 @@ fn is_hangul(c: char) -> bool {
 fn table_marker(text: &str) -> Option<&str> {
     // ASCII lowercase keeps byte offsets.
     let lower = text.to_ascii_lowercase();
-    ["단위", "units", "unit"].iter().find_map(|marker| {
-        let rest = lower.strip_prefix(marker)?.trim_start();
-        let after = rest.strip_prefix([':', '：'])?;
-        Some(text[text.len() - after.len()..].trim_start())
-    })
+    ["단위", "単位", "单位", "單位", "units", "unit"]
+        .iter()
+        .find_map(|marker| {
+            let rest = lower.strip_prefix(marker)?.trim_start();
+            let after = rest.strip_prefix([':', '：'])?;
+            Some(text[text.len() - after.len()..].trim_start())
+        })
 }
 
 /// The unit a bracket states (`(원)`, `(%)`, `(백만원)`, `(단위: 백만원)`,
@@ -798,20 +899,34 @@ fn bracket_unit(content: &str) -> Option<(Option<Unit>, Reach)> {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
-        .to_ascii_lowercase();
-    let declaration = normalized.strip_prefix("in ").unwrap_or(&normalized);
-    if let Some((scale, exceptions)) = declaration.split_once(", except ") {
+        .to_ascii_lowercase()
+        .replace("per-share", "per share");
+    let dollars = normalized
+        .strip_prefix("dollars in ")
+        .or_else(|| normalized.strip_prefix("$ in "));
+    let declaration = dollars
+        .or_else(|| normalized.strip_prefix("in "))
+        .unwrap_or(&normalized);
+    if let Some((scale, exceptions)) = declaration
+        .split_once(", except ")
+        .or_else(|| declaration.split_once(" except "))
+    {
         if matches!(
             exceptions,
             "percentages"
+                | "share data"
                 | "per share data"
                 | "per share amounts"
                 | "percentages and per share data"
                 | "percentages and per share amounts"
+                | "number of shares, which are reflected in thousands, and per share amounts"
         ) {
             return Some((english_scale(scale).map(Unit::Amount), Reach::Filing));
         }
         return Some((None, Reach::Table));
+    }
+    if let Some(scale) = dollars.and_then(english_scale) {
+        return Some((Some(Unit::Amount(scale)), Reach::Filing));
     }
     let table = table_marker(content).or_else(|| {
         let (marker, rest) = content.split_once(char::is_whitespace)?;
@@ -832,15 +947,11 @@ fn bracket_unit(content: &str) -> Option<(Option<Unit>, Reach)> {
 /// The bytes of a Korean scale and currency at the start of `word`
 /// (`십억원이다` → `십억원`), and whether a particle follows them.
 fn korean_unit(word: &str) -> Option<(usize, bool)> {
-    let scale = KOREAN_SCALES
+    let scale = CJK_SCALES
         .iter()
         .find(|(scale, _)| word.starts_with(scale))
         .map_or(0, |(scale, _)| scale.len());
-    let length = scale
-        + KOREAN_CURRENCY
-            .iter()
-            .find(|currency| word[scale..].starts_with(*currency))
-            .map_or(0, |currency| currency.len());
+    let length = scale + currency::leading(&word[scale..]).map_or(0, |(_, length)| length);
     let particle = &word[length..];
     (length > 0 && particle.chars().all(is_hangul)).then_some((length, !particle.is_empty()))
 }
@@ -850,7 +961,7 @@ fn korean_unit(word: &str) -> Option<(usize, bool)> {
 /// particle or punctuation follows).
 fn unit_word(word: &str) -> Option<(usize, bool)> {
     let body = word.trim_end_matches(|c: char| {
-        !c.is_alphanumeric() && !matches!(c, '%' | '％') && !CURRENCY_SYMBOLS.contains(&c)
+        !c.is_alphanumeric() && !matches!(c, '%' | '％' | '$' | '₩' | '€' | '£' | '¥' | '￦' | '￥')
     });
     let ends = body.len() < word.len();
     // A multiplier, alone or glued to a Korean unit (`1,000원`).
@@ -872,9 +983,7 @@ fn unit_word(word: &str) -> Option<(usize, bool)> {
     }
     let lower = core.to_lowercase();
     let unit = english_scale(&lower).is_some()
-        || CURRENCY_WORDS.contains(&lower.as_str())
-        || is_currency_marker(core)
-        || core.chars().all(|c| CURRENCY_SYMBOLS.contains(&c))
+        || currency::exact(core).is_some()
         || matches!(
             lower.as_str(),
             "%" | "％" | "percent" | "pct" | "%p" | "pp" | "bp" | "bps" | "of"
@@ -893,10 +1002,17 @@ fn unit_words(text: &str) -> Option<(Unit, usize, bool)> {
     for _ in 0..5 {
         let rest = &text[offset..];
         let start = offset + rest.len() - rest.trim_start().len();
-        let word = text[start..]
-            .split(char::is_whitespace)
-            .next()
-            .unwrap_or("");
+        let tail = &text[start..];
+        if let Some((_, length)) =
+            currency::leading(tail).filter(|&(_, length)| tail[..length].contains(' '))
+        {
+            phrase.push(' ');
+            phrase.push_str(&tail[..length]);
+            consumed = start + length;
+            offset = consumed;
+            continue;
+        }
+        let word = tail.split(char::is_whitespace).next().unwrap_or("");
         let Some((length, ends)) = unit_word(word).filter(|_| !word.is_empty()) else {
             break;
         };
@@ -1013,13 +1129,128 @@ fn filing_amount_label(label: &str) -> bool {
     })
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum FilingMeasure {
+    Unspecified,
+    Money,
+    Shares,
+    Count,
+    PerShare,
+    Percent,
+}
+
+fn filing_measure(label: &str, currency: Option<Currency>) -> FilingMeasure {
+    let lower = label.to_ascii_lowercase();
+    if lower.contains(['%', '％'])
+        || lower
+            .split(|c: char| !c.is_ascii_alphabetic())
+            .any(|word| matches!(word, "percent" | "percentage" | "percentages" | "pct"))
+    {
+        FilingMeasure::Percent
+    } else if lower.contains("shares used")
+        || lower.contains("shares outstanding")
+        || lower.contains("number of shares")
+        || lower.contains("shares issued")
+        || lower.contains("weighted-average shares")
+        || lower.contains("weighted average shares")
+        || lower.contains("share count")
+        || ["주식수", "주식 수", "株式数"]
+            .iter()
+            .any(|label| lower.contains(label))
+    {
+        FilingMeasure::Shares
+    } else if lower.contains("headcount")
+        || lower.contains("number of employees")
+        || lower.trim_matches(|c: char| !c.is_ascii_alphabetic()) == "employees"
+        || matches!(label.trim(), "직원" | "직원은" | "임직원" | "임직원은")
+        || ["직원 수", "従業員数"]
+            .iter()
+            .any(|label| lower.contains(label))
+    {
+        FilingMeasure::Count
+    } else if lower.contains("per share")
+        || lower.contains("per-share")
+        || ["주당", "株当たり", "株あたり"]
+            .iter()
+            .any(|label| lower.contains(label))
+        || lower
+            .split(|c: char| !c.is_ascii_alphabetic())
+            .any(|word| word == "eps")
+    {
+        FilingMeasure::PerShare
+    } else if lower.trim_matches(|c: char| !c.is_ascii_alphabetic()) == "shares"
+        || (currency.is_none()
+            && lower
+                .split(|c: char| !c.is_ascii_alphabetic())
+                .any(|word| word == "shares"))
+    {
+        FilingMeasure::Shares
+    } else if filing_amount_label(label) {
+        FilingMeasure::Money
+    } else {
+        FilingMeasure::Unspecified
+    }
+}
+
+fn table_edge(c: char) -> bool {
+    c == '|' || c.is_whitespace()
+}
+
+/// A PDF can separate "Net sales:" from "(1) Net sales by category:".
+fn filing_section_continues(label: &str, next: &str, number_onward: &str) -> bool {
+    let Some(label) = label.trim().strip_suffix(':') else {
+        return false;
+    };
+    if next.trim_start_matches(table_edge) != "(" || !filing_amount_label(label) {
+        return false;
+    }
+    let digits = number_onward
+        .bytes()
+        .take(2)
+        .take_while(u8::is_ascii_digit)
+        .count();
+    let Some(heading) = number_onward[digits..]
+        .strip_prefix(')')
+        .filter(|_| digits > 0)
+    else {
+        return false;
+    };
+    let heading = heading
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .trim_matches(table_edge);
+    heading.ends_with(':')
+        && heading
+            .get(..label.len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(label))
+}
+
+#[derive(Clone, Copy)]
+struct CellUnit<'a> {
+    unit: Option<Unit>,
+    measure: FilingMeasure,
+    heading: Option<&'a str>,
+}
+
 /// Units the text states apart from its plain numbers, one per number:
 /// a row label's (`5. 배당금총액(원) 6,000,000,000`), a table's (`(단위:
 /// 백만원)`) or words after one number (`184.6이고 단위는 십억 원`, `300
 /// (원)`). Words describe only the number before them; a heading reaches
 /// only bare numbers within its row or table, never an item's number.
-fn stated_units(text: &str, numbers: &[Scanned]) -> Vec<Option<Unit>> {
-    let mut stated = vec![None; numbers.len()];
+fn stated_units<'a>(
+    text: &'a str,
+    numbers: &[Scanned],
+    checking_amount: bool,
+) -> Vec<CellUnit<'a>> {
+    let mut stated = vec![
+        CellUnit {
+            unit: None,
+            measure: FilingMeasure::Unspecified,
+            heading: None
+        };
+        numbers.len()
+    ];
     if numbers.is_empty() {
         return stated;
     }
@@ -1049,7 +1280,7 @@ fn stated_units(text: &str, numbers: &[Scanned]) -> Vec<Option<Unit>> {
         let inside = at + open.len_utf8();
         let Some(length) = text[inside..]
             .char_indices()
-            .take_while(|(offset, _)| *offset <= 64)
+            .take_while(|(offset, _)| *offset <= 128)
             .find(|(_, c)| *c == close || matches!(c, '(' | '（' | '[' | '\n'))
             .filter(|(_, c)| *c == close)
             .map(|(offset, _)| offset)
@@ -1068,12 +1299,34 @@ fn stated_units(text: &str, numbers: &[Scanned]) -> Vec<Option<Unit>> {
                 reach = Reach::Table;
             }
         }
-        let end = inside + length + close.len_utf8();
+        let mut end = inside + length + close.len_utf8();
+        // HTML extraction can put a paragraph break between a filing caption
+        // and the Markdown table it introduces.
+        let after_caption = text[end..].trim_start_matches([' ', '\t']);
+        let after_caption = after_caption.strip_prefix(':').unwrap_or(after_caption);
+        let next_line = after_caption.trim_start();
+        let introduces_grid = after_caption[..after_caption.len() - next_line.len()].contains('\n')
+            && next_line.starts_with('|');
+        let table_scale = reach != Reach::Row
+            || content
+                .trim()
+                .to_ascii_lowercase()
+                .starts_with("dollars in ");
+        if introduces_grid && table_scale && matches!(unit, Some(Unit::Amount(_))) {
+            if reach == Reach::Row {
+                reach = Reach::Table;
+            }
+            end = text.len() - next_line.len();
+        } else if reach == Reach::Filing {
+            let table = text[end..].trim_start();
+            end = text.len() - table.len();
+        }
         match described(at, &spacing) {
             // `300 (원)` states the unit of the number it follows.
             Some((index, plain)) if reach == Reach::Row => {
                 if plain {
-                    stated[index] = unit;
+                    stated[index].unit = unit;
+                    stated[index].heading = Some(content);
                 }
             }
             _ => headings.push(Heading {
@@ -1084,10 +1337,38 @@ fn stated_units(text: &str, numbers: &[Scanned]) -> Vec<Option<Unit>> {
             }),
         }
     }
+    let mut line_at = 0;
+    for line in text.split_inclusive('\n') {
+        let head = line.trim_start_matches(table_edge);
+        let caption = head
+            .split('|')
+            .next()
+            .unwrap_or_default()
+            .trim_end_matches([' ', '\r', '\n', ':']);
+        if caption
+            .get(..3)
+            .is_some_and(|start| start.eq_ignore_ascii_case("in "))
+        {
+            if let Some((unit @ Some(_), Reach::Filing)) = bracket_unit(caption) {
+                let start = line_at + line.len() - head.len();
+                headings.push(Heading {
+                    start,
+                    end: start + caption.len(),
+                    unit,
+                    reach: Reach::Filing,
+                });
+            }
+        }
+        line_at += line.len();
+    }
+    headings.sort_by_key(|heading| heading.start);
     let lower = text.to_ascii_lowercase();
-    let markers = text
-        .match_indices("단위")
-        .map(|(at, marker)| (at, marker.len()))
+    let markers = ["단위", "単位", "单位", "單位"]
+        .into_iter()
+        .flat_map(|marker| {
+            text.match_indices(marker)
+                .map(|(at, marker)| (at, marker.len()))
+        })
         .chain(lower.match_indices("unit").filter_map(|(at, _)| {
             let length = if lower[at..].starts_with("units") {
                 5
@@ -1139,8 +1420,9 @@ fn stated_units(text: &str, numbers: &[Scanned]) -> Vec<Option<Unit>> {
                     .map(|word| &rest[word.len()..])
             });
         if let (Some(phrase), Some((index, true))) = (phrase, described(at, &particle)) {
-            if let Some((unit, _, _)) = unit_words(phrase) {
-                stated[index] = Some(unit);
+            if let Some((unit, length, _)) = unit_words(phrase) {
+                stated[index].unit = Some(unit);
+                stated[index].heading = Some(&phrase[..length]);
             }
         }
     }
@@ -1149,18 +1431,25 @@ fn stated_units(text: &str, numbers: &[Scanned]) -> Vec<Option<Unit>> {
     let mut row: Option<(Unit, usize, usize)> = None;
     let mut table: Option<Unit> = None;
     let mut mixed_filing = false;
-    let mut monetary_row = false;
+    let mut columns = Vec::new();
+    let mut table_label = None;
+    let mut row_label = None;
+    let mut section = FilingMeasure::Unspecified;
+    let mut row_measure = FilingMeasure::Unspecified;
     let mut headings = headings.into_iter().peekable();
     let mut cursor = 0;
+    let mut previous_number = 0;
+    let mut column = 0;
     let close_scopes = |gap: std::ops::Range<usize>,
                         row: &mut Option<(Unit, usize, usize)>,
-                        table: &mut Option<Unit>| {
+                        table: &mut Option<Unit>,
+                        mixed_filing: bool| {
         let between = &text[gap.clone()];
         let lines: Vec<&str> = between.split('\n').collect();
-        let blank = lines.len() > 2
-            && lines[1..lines.len() - 1]
-                .iter()
-                .any(|line| line.trim().is_empty());
+        let blank = lines.windows(3).any(|lines| {
+            lines[1].trim().is_empty()
+                && !(mixed_filing && filing_section_continues(lines[0], lines[2], &text[gap.end..]))
+        });
         if blank || ends_sentence(text, gap) {
             *row = None;
             *table = None;
@@ -1178,32 +1467,143 @@ fn stated_units(text: &str, numbers: &[Scanned]) -> Vec<Option<Unit>> {
         }
     };
     for (index, number) in numbers.iter().enumerate() {
+        let cell_gap = &text[previous_number..number.start];
+        let cell_prefix = cell_gap.rsplit_once('\n').map_or(cell_gap, |(_, line)| {
+            column = 0;
+            line
+        });
+        column += cell_prefix.bytes().filter(|byte| *byte == b'|').count();
+        previous_number = number.start;
         while let Some(heading) = headings.next_if(|heading| heading.start < number.start) {
             close_scopes(
                 cursor.min(heading.start)..heading.start,
                 &mut row,
                 &mut table,
+                mixed_filing,
             );
+            let label = Some(text[heading.start..heading.end].trim());
             match heading.reach {
                 Reach::Table | Reach::Filing => {
                     mixed_filing = heading.reach == Reach::Filing;
-                    monetary_row = false;
+                    section = FilingMeasure::Unspecified;
+                    row_measure = FilingMeasure::Unspecified;
                     table = heading.unit;
+                    table_label = label;
+                    let first = text[..heading.start].rfind('\n').map_or(0, |at| at + 1);
+                    let caption_line = text[first..].lines().next().unwrap_or_default();
+                    let line = if caption_line.trim_start().starts_with('|') {
+                        caption_line
+                    } else {
+                        text[heading.end..]
+                            .trim_start()
+                            .lines()
+                            .next()
+                            .unwrap_or_default()
+                    };
+                    columns.clear();
+                    if line.trim_start().starts_with('|') {
+                        columns.extend(line.split('|').map(|cell| {
+                            // The caption describes the table itself.
+                            if cell.contains(", except ") {
+                                FilingMeasure::Unspecified
+                            } else {
+                                filing_measure(cell, None)
+                            }
+                        }));
+                    }
                     row = None;
                 }
-                Reach::Row => row = heading.unit.map(|unit| (unit, 0, 0)),
+                Reach::Row => {
+                    row = heading.unit.map(|unit| (unit, 0, 0));
+                    row_label = label;
+                }
             }
             cursor = cursor.max(heading.end);
         }
         let gap = cursor.min(number.start)..number.start;
-        if mixed_filing && table.is_some() {
-            let between = &text[gap.clone()];
-            let label = between.rsplit_once('\n').map_or(between, |(_, last)| last);
-            if between.contains('\n') || label.contains(char::is_alphabetic) {
-                monetary_row = filing_amount_label(label);
+        // In "Revenue (USD millions): 2024 245,122; 2023 211,915", the
+        // years label successive values of the same metric. The separator
+        // continues the row only when another year and amount follow it.
+        if row.is_some()
+            && matches!(
+                text[gap.clone()].trim_matches([' ', '\t', '\u{a0}']),
+                ":" | ";"
+            )
+            && text[number.start..number.end].len() == 4
+            && number.unit == Unit::Plain
+            && (1900.0..=2100.0).contains(&number.value)
+            && numbers.get(index + 1).is_some_and(|next| {
+                number.end < next.start && spacing(&text[number.end..next.start])
+            })
+        {
+            cursor = number.end;
+            continue;
+        }
+        let between = &text[gap.clone()];
+        close_scopes(gap, &mut row, &mut table, mixed_filing);
+        if table.is_none() && (section == FilingMeasure::Money || between.contains("\n\n")) {
+            section = FilingMeasure::Unspecified;
+        }
+        if between.contains('\n') {
+            row_measure = section;
+        }
+        let governing_currency = number.currency.or_else(|| {
+            row.and(row_label)
+                .or(table.and(table_label))
+                .and_then(stated_currency)
+        });
+        for line in between
+            .split_inclusive('\n')
+            .filter(|_| mixed_filing || checking_amount || table.is_some())
+        {
+            let mut cells = line.trim_matches(table_edge).split('|');
+            let label = cells.next().unwrap_or_default().trim();
+            let section_row = line.ends_with('\n')
+                && line.trim_start().starts_with('|')
+                && cells.all(|cell| cell.trim().is_empty());
+            if label.chars().any(char::is_alphabetic) {
+                let measure = filing_measure(label, governing_currency);
+                if label.ends_with(':') || section_row {
+                    section = measure;
+                } else if measure != FilingMeasure::Unspecified {
+                    section = FilingMeasure::Unspecified;
+                }
+                row_measure = if measure == FilingMeasure::Unspecified {
+                    section
+                } else {
+                    measure
+                };
             }
         }
-        close_scopes(gap, &mut row, &mut table);
+        if mixed_filing && row_measure == FilingMeasure::Unspecified && number.currency.is_some() {
+            row_measure = FilingMeasure::Money;
+        }
+        let column_measure = if table.is_some() && !columns.is_empty() {
+            columns
+                .get(column)
+                .copied()
+                .unwrap_or(FilingMeasure::Unspecified)
+        } else {
+            FilingMeasure::Unspecified
+        };
+        let excluded = |measure| {
+            matches!(
+                measure,
+                FilingMeasure::Shares
+                    | FilingMeasure::Count
+                    | FilingMeasure::PerShare
+                    | FilingMeasure::Percent
+            )
+        };
+        let measure = if excluded(column_measure) {
+            column_measure
+        } else {
+            row_measure
+        };
+        stated[index].measure = measure;
+        if mixed_filing && table.is_some() && row_measure == FilingMeasure::Shares {
+            stated[index].heading = table_label;
+        }
         cursor = cursor.max(number.end);
         if enumerator(text, number) {
             row = None;
@@ -1211,14 +1611,44 @@ fn stated_units(text: &str, numbers: &[Scanned]) -> Vec<Option<Unit>> {
         }
         let heading = row.map(|(unit, _, _)| unit).or_else(|| {
             let next_cell = text[number.end..].trim_start_matches([' ', '\t', '\u{a0}', '|']);
-            table.filter(|_| !mixed_filing || (monetary_row && !next_cell.starts_with('%')))
+            table.filter(|unit| {
+                !matches!(unit, Unit::Amount(_))
+                    || (!excluded(measure)
+                        && !next_cell.starts_with('%')
+                        && (!mixed_filing
+                            || measure == FilingMeasure::Money
+                            || number.currency.is_some()))
+            })
         });
-        if stated[index].is_none()
+        if stated[index].unit.is_none()
+            && number.unit == Unit::Plain
+            && column_measure == FilingMeasure::Percent
+        {
+            stated[index].unit = Some(Unit::Percent);
+        }
+        if stated[index].unit.is_none()
             && bare(text, number.end)
             && (number.unit == Unit::Plain
-                || (number.currency_prefix_only && matches!(heading, Some(Unit::Amount(_)))))
+                || (number.currency_only && matches!(heading, Some(Unit::Amount(_)))))
         {
-            stated[index] = heading;
+            stated[index].unit = heading;
+            if heading.is_some() {
+                stated[index].heading = if row.is_some() {
+                    row_label
+                } else {
+                    table_label
+                };
+            }
+        }
+        if stated[index].heading.is_none()
+            && matches!(heading, Some(Unit::Amount(_)))
+            && matches!(number.currency, Some("$" | "¥" | "元"))
+        {
+            stated[index].heading = if row.is_some() {
+                row_label
+            } else {
+                table_label
+            };
         }
         if let Some((_, count, _)) = &mut row {
             *count += 1;
@@ -1228,7 +1658,7 @@ fn stated_units(text: &str, numbers: &[Scanned]) -> Vec<Option<Unit>> {
 }
 
 /// The unit a structured row states for its numeric fields.
-fn row_unit(row: &Map<String, Value>) -> Option<Unit> {
+fn row_unit(row: &Map<String, Value>) -> Option<(Unit, Option<Currency>)> {
     let scale = row
         .get("scale")
         .and_then(|value| match value {
@@ -1238,19 +1668,26 @@ fn row_unit(row: &Map<String, Value>) -> Option<Unit> {
         })
         .filter(|scale| scale.is_finite() && *scale > 0.0)
         .unwrap_or(1.0);
+    let currency = row
+        .get("currency")
+        .and_then(Value::as_str)
+        .and_then(currency::structured);
     if let Some(unit) = row.get("unit").and_then(Value::as_str) {
         // "KRW/share" is a per-share amount in base units.
         let unit = unit.split('/').next().unwrap_or(unit);
         return Some(match Unit::of_line(Some(unit)) {
-            Ok(Unit::Amount(found)) => Unit::Amount(found * scale),
+            Ok(Unit::Amount(found)) => (
+                Unit::Amount(found * scale),
+                currency::contextual(stated_currency(unit), currency),
+            ),
+            Ok(Unit::Plain) if currency.is_some() && matches!(unit.trim(), "" | "amount") => {
+                (Unit::Amount(scale), currency)
+            }
             Ok(Unit::Plain) | Err(_) => return None,
-            Ok(other) => other,
+            Ok(other) => (other, None),
         });
     }
-    row.get("currency")
-        .and_then(Value::as_str)
-        .is_some_and(|code| is_currency_code(code.trim().to_lowercase().as_str()))
-        .then_some(Unit::Amount(scale))
+    currency.map(|code| (Unit::Amount(scale), Some(code)))
 }
 
 /// A code written with digits: a leading zero (`005930`, `00126380`).
@@ -1272,7 +1709,14 @@ fn triangle_sign(mark: char) -> Option<f64> {
 /// the accounting negatives `"(1,234)"` and `"△1,234"`); dates, identifiers
 /// with inner hyphens and codes with a leading zero are not.
 fn field_number(text: &str) -> Option<f64> {
-    let text = text.trim();
+    let folded;
+    let text = if text.chars().any(|c| numeric_char(c) != c) {
+        folded = text.chars().map(numeric_char).collect::<String>();
+        folded.as_str()
+    } else {
+        text
+    }
+    .trim();
     // A bracketed or marked number carries its sign in the mark, never a `-`.
     let (body, sign) = if let Some(inner) = text.strip_prefix('(').and_then(|t| t.strip_suffix(')'))
     {
@@ -1404,10 +1848,11 @@ fn pointer_token(key: &str) -> String {
 
 fn collect(
     value: &Value,
-    unit: Option<Unit>,
+    unit: Option<(Unit, Option<Currency>)>,
     pointer: &mut String,
     out: &mut Vec<Candidate>,
     text_budget: &mut usize,
+    amount: Option<&Printed>,
 ) {
     if out.len() >= MAX_CANDIDATES {
         return;
@@ -1417,9 +1862,14 @@ fn collect(
             if let Some(value) = number.as_f64().filter(|value| value.is_finite()) {
                 out.push(Candidate {
                     value,
-                    unit: unit.unwrap_or(Unit::Raw),
+                    currency: unit.and_then(|(_, currency)| currency),
+                    unit: unit
+                        .map(|(unit, _)| unit)
+                        .or_else(|| amount.map(|printed| unstated_amount_unit(printed, value)))
+                        .unwrap_or(Unit::Raw),
                     place: Place::Pointer(pointer.clone()),
-                    stated_fall: false,
+                    inferred_scale: unit.is_none() && amount.is_some(),
+                    direction: None,
                 });
             }
         }
@@ -1434,7 +1884,7 @@ fn collect(
                 end -= 1;
             }
             let first = out.len();
-            text_numbers(&text[..end], out);
+            text_numbers(&text[..end], out, amount);
             for candidate in &mut out[first..] {
                 candidate.place = Place::Pointer(pointer.clone());
             }
@@ -1444,7 +1894,7 @@ fn collect(
                 let length = pointer.len();
                 pointer.push('/');
                 pointer.push_str(&index.to_string());
-                collect(item, None, pointer, out, text_budget);
+                collect(item, None, pointer, out, text_budget, amount);
                 pointer.truncate(length);
             }
         }
@@ -1457,7 +1907,7 @@ fn collect(
                 let length = pointer.len();
                 pointer.push('/');
                 pointer.push_str(&pointer_token(key));
-                collect_field(key, item, row, pointer, out, text_budget);
+                collect_field(key, item, row, pointer, out, text_budget, amount);
                 pointer.truncate(length);
             }
         }
@@ -1470,28 +1920,40 @@ fn collect(
 fn collect_field(
     key: &str,
     item: &Value,
-    row: Option<Unit>,
+    row: Option<(Unit, Option<Currency>)>,
     pointer: &mut String,
     out: &mut Vec<Candidate>,
     text_budget: &mut usize,
+    amount: Option<&Printed>,
 ) {
+    let unit = key_unit(key).map(|unit| (unit, None)).or(row);
     // Providers often send row values as strings ("41,200").
     if let Some(value) = item.as_str().and_then(field_number) {
         if out.len() < MAX_CANDIDATES {
             out.push(Candidate {
                 value,
-                unit: key_unit(key).or(row).unwrap_or(Unit::Raw),
+                currency: unit.and_then(|(_, currency)| currency),
+                unit: unit
+                    .map(|(unit, _)| unit)
+                    .or_else(|| amount.map(|printed| unstated_amount_unit(printed, value)))
+                    .unwrap_or(Unit::Raw),
                 place: Place::Pointer(pointer.clone()),
-                stated_fall: false,
+                inferred_scale: unit.is_none() && amount.is_some(),
+                direction: None,
             });
         }
     } else {
-        let unit = if item.is_number() {
-            key_unit(key).or(row)
-        } else {
-            None
-        };
-        collect(item, unit, pointer, out, text_budget);
+        let numeric = item.is_number().then_some(unit).flatten();
+        let start = out.len();
+        collect(item, numeric, pointer, out, text_budget, amount);
+        if item.is_string() {
+            let row_currency = unit.and_then(|(_, currency)| currency);
+            for candidate in &mut out[start..] {
+                if matches!(candidate.unit, Unit::Amount(_)) {
+                    candidate.currency = currency::contextual(candidate.currency, row_currency);
+                }
+            }
+        }
     }
 }
 
@@ -1513,12 +1975,155 @@ const KIS_DAILY_NET_PURCHASES_KRW_MILLIONS: &[&str] = &[
     "scrt_ntby_tr_pbmn",
 ];
 
+/// Units for one column, read from its own metadata and display labels.
+fn column_unit(column: &Value) -> Option<(Unit, Option<Currency>)> {
+    let declared = column.as_object().and_then(row_unit);
+    let labels = ["unit", "label", "axis_title", "semantic_type", "id"]
+        .into_iter()
+        .filter_map(|key| column[key].as_str());
+    let mut unit = declared;
+    for label in labels {
+        let label = label.replace('_', " ");
+        let Ok(named) = Unit::of_line(Some(&label)) else {
+            continue;
+        };
+        if named == Unit::Plain {
+            continue;
+        }
+        let code = stated_currency(&label);
+        unit = Some(match unit {
+            None => (named, code),
+            Some((Unit::Amount(current), currency)) if matches!(named, Unit::Amount(_)) => {
+                let next = if current == 1.0
+                    && column.get("scale").is_none()
+                    && currencies_agree(currency, code)
+                {
+                    named
+                } else {
+                    Unit::Amount(current)
+                };
+                (next, currency::contextual(currency, code))
+            }
+            Some(known) => known,
+        });
+    }
+    unit
+}
+
+fn column_descriptors(payload: &Value) -> Option<&Value> {
+    [
+        "/columns",
+        "/metadata/columns",
+        "/column_metadata",
+        "/metadata/column_metadata",
+    ]
+    .into_iter()
+    .find_map(|path| {
+        payload
+            .pointer(path)
+            .filter(|value| value.is_array() || value.is_object())
+    })
+}
+
+/// A query window supplies only its row values as evidence. Each numeric cell
+/// takes its own column's unit, independently of the other series in the row.
+pub(crate) fn query_candidates(payload: &Value) -> Vec<Candidate> {
+    let Some(rows) = payload["rows"].as_array() else {
+        return Vec::new();
+    };
+    let columns = column_descriptors(payload);
+    let named_units: std::collections::BTreeMap<_, _> = match columns {
+        Some(Value::Object(columns)) => columns
+            .iter()
+            .map(|(key, column)| (key.as_str(), column_unit(column)))
+            .collect(),
+        Some(Value::Array(columns)) => columns
+            .iter()
+            .filter_map(|column| {
+                let key = column["id"].as_str().or_else(|| column["name"].as_str())?;
+                Some((key, column_unit(column)))
+            })
+            .collect(),
+        _ => std::collections::BTreeMap::new(),
+    };
+    let indexed = columns.and_then(Value::as_array).map(|columns| {
+        columns
+            .iter()
+            .map(|column| {
+                let key = column["id"].as_str().unwrap_or_default();
+                let dimension = identifier_key(key)
+                    || matches!(
+                        column["kind"].as_str(),
+                        Some("date" | "datetime" | "boolean" | "string")
+                    );
+                (key, dimension, column_unit(column))
+            })
+            .collect::<Vec<_>>()
+    });
+    let mut out = Vec::new();
+    let mut budget = MAX_TEXT_BYTES;
+    for (index, row) in rows.iter().take(MAX_CANDIDATES).enumerate() {
+        if out.len() == MAX_CANDIDATES {
+            break;
+        }
+        if let Some(row) = row.as_object() {
+            let stated = row_unit(row);
+            for (key, item) in row {
+                if identifier_key(key) || matches!(key.as_str(), "unit" | "currency" | "scale") {
+                    continue;
+                }
+                let unit = named_units.get(key.as_str()).copied().flatten().or(stated);
+                collect_field(
+                    key,
+                    item,
+                    unit,
+                    &mut format!("/rows/{index}/{}", pointer_token(key)),
+                    &mut out,
+                    &mut budget,
+                    None,
+                );
+            }
+        } else if let (Some(cells), Some(columns)) = (row.as_array(), &indexed) {
+            for (column, (item, &(key, dimension, unit))) in cells.iter().zip(columns).enumerate() {
+                if !dimension {
+                    collect_field(
+                        key,
+                        item,
+                        unit,
+                        &mut format!("/rows/{index}/{column}"),
+                        &mut out,
+                        &mut budget,
+                        None,
+                    );
+                }
+            }
+        } else {
+            collect(
+                row,
+                None,
+                &mut format!("/rows/{index}"),
+                &mut out,
+                &mut budget,
+                None,
+            );
+        }
+    }
+    out
+}
+
 /// Every number in a structured payload (bounded), each with its JSON Pointer.
 /// Identifier, date and position fields are skipped.
 pub fn data_candidates(payload: &Value) -> Vec<Candidate> {
     let mut out = Vec::new();
     let mut budget = MAX_TEXT_BYTES;
-    collect(payload, None, &mut String::new(), &mut out, &mut budget);
+    collect(
+        payload,
+        None,
+        &mut String::new(),
+        &mut out,
+        &mut budget,
+        None,
+    );
     if payload["source_id"] == crate::finance_data::KIS_SOURCE_ID
         && payload
             .pointer("/query/operation_id")
@@ -1536,10 +2141,76 @@ pub fn data_candidates(payload: &Value) -> Vec<Candidate> {
                 && field.is_some_and(|key| KIS_DAILY_NET_PURCHASES_KRW_MILLIONS.contains(&key))
             {
                 candidate.unit = Unit::Amount(1e6);
+                candidate.currency = Some("KRW");
             }
         }
     }
     out
+}
+
+/// OpenBB returns dated observations by series symbol; units live in the
+/// corresponding results_metadata entry. Only measurements are candidates,
+/// even when the MCP envelope also echoes the response as text.
+pub fn series_observations(payload: &Value, printed: &Printed) -> Vec<Candidate> {
+    fred_observations(payload, Some(printed))
+}
+
+pub(crate) fn fred_observations(payload: &Value, printed: Option<&Printed>) -> Vec<Candidate> {
+    let body = &payload["structuredContent"];
+    let metadata = &body["extra"]["results_metadata"];
+    let Some(rows) = body["results"].as_array() else {
+        return Vec::new();
+    };
+    let mut candidates = Vec::new();
+    let mut remaining = MAX_CANDIDATES;
+    for (index, row) in rows.iter().take(MAX_CANDIDATES).enumerate() {
+        let Some(row) = row.as_object().filter(|row| row.contains_key("date")) else {
+            continue;
+        };
+        for (series, observation) in row {
+            if series == "date" {
+                continue;
+            }
+            if remaining == 0 {
+                return candidates;
+            }
+            remaining -= 1;
+            let Some(value) = observation
+                .as_f64()
+                .or_else(|| observation.as_str().and_then(field_number))
+            else {
+                continue;
+            };
+            let stated = metadata[series]["units"]
+                .as_str()
+                .map(str::trim)
+                .filter(|unit| !unit.is_empty());
+            let unit = match stated {
+                Some(unit) => match Unit::of_line(Some(unit)) {
+                    Ok(Unit::Plain) if printed.is_some_and(|p| p.unit != Unit::Plain) => continue,
+                    Ok(unit) => unit,
+                    Err(_) => continue,
+                },
+                None => match printed {
+                    None => Unit::Plain,
+                    Some(p) if value == p.value => p.unit,
+                    Some(_) => continue,
+                },
+            };
+            candidates.push(Candidate {
+                value,
+                unit,
+                currency: stated.and_then(stated_currency),
+                place: Place::Pointer(format!(
+                    "/structuredContent/results/{index}/{}",
+                    pointer_token(series)
+                )),
+                inferred_scale: stated.is_none(),
+                direction: None,
+            });
+        }
+    }
+    candidates
 }
 
 /// Fields that carry a result's content (a page's text, a passage, a row's
@@ -1553,6 +2224,7 @@ fn collect_content(
     pointer: &mut String,
     out: &mut Vec<Candidate>,
     text_budget: &mut usize,
+    amount: Option<&Printed>,
 ) {
     if out.len() >= MAX_CANDIDATES {
         return;
@@ -1568,9 +2240,9 @@ fn collect_content(
                 pointer.push('/');
                 pointer.push_str(&pointer_token(key));
                 if CONTENT_KEYS.contains(&key.to_ascii_lowercase().as_str()) {
-                    collect_field(key, item, row, pointer, out, text_budget);
+                    collect_field(key, item, row, pointer, out, text_budget, amount);
                 } else if item.is_object() || item.is_array() {
-                    collect_content(item, pointer, out, text_budget);
+                    collect_content(item, pointer, out, text_budget, amount);
                 }
                 pointer.truncate(length);
             }
@@ -1580,13 +2252,13 @@ fn collect_content(
                 let length = pointer.len();
                 pointer.push('/');
                 pointer.push_str(&index.to_string());
-                collect_content(item, pointer, out, text_budget);
+                collect_content(item, pointer, out, text_budget, amount);
                 pointer.truncate(length);
             }
         }
         // A result that is only text is all content.
         Value::String(_) if pointer.is_empty() => {
-            collect(value, None, pointer, out, text_budget);
+            collect(value, None, pointer, out, text_budget, amount);
         }
         _ => {}
     }
@@ -1594,22 +2266,70 @@ fn collect_content(
 
 /// Numbers in a result's content fields only (bounded), never its metadata:
 /// a page's `content`, a passage's `text`, a row's `value`.
-pub fn content_candidates(payload: &Value) -> Vec<Candidate> {
+pub fn content_candidates(payload: &Value, amount: Option<&Printed>) -> Vec<Candidate> {
     let mut out = Vec::new();
     let mut budget = MAX_TEXT_BYTES;
-    collect_content(payload, &mut String::new(), &mut out, &mut budget);
+    collect_content(payload, &mut String::new(), &mut out, &mut budget, amount);
     out
 }
 
 /// Every number printed in a passage, each with its byte range.
 pub fn passage_candidates(text: &str) -> Vec<Candidate> {
+    checked_passage_candidates(text, None)
+}
+
+pub fn checked_passage_candidates(text: &str, amount: Option<&Printed>) -> Vec<Candidate> {
     let mut end = text.len().min(MAX_TEXT_BYTES);
     while !text.is_char_boundary(end) {
         end -= 1;
     }
     let mut out = Vec::new();
-    text_numbers(&text[..end], &mut out);
+    text_numbers(&text[..end], &mut out, amount);
     out
+}
+
+/// Visit the original numeric tokens, including labelled share counts which a
+/// currency check correctly excluded. Never describe an inferred scale as stated.
+pub(crate) fn diagnostic_tokens(
+    text: &str,
+    mut visit: impl FnMut(Candidate, Option<&str>, Option<&str>),
+) {
+    let mut end = text.len().min(MAX_TEXT_BYTES);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    let text = &text[..end];
+    let scanned = scan_numbers(text, MAX_CANDIDATES, true);
+    let cells = stated_units(text, &scanned, true);
+    for (found, cell) in scanned.into_iter().zip(cells) {
+        let token = &text[found.start..found.end];
+        if enumerator(text, &found)
+            || (found.unit == Unit::Plain
+                && token.len() == 4
+                && token.bytes().all(|b| b.is_ascii_digit())
+                && (1900.0..=2100.0).contains(&found.value))
+        {
+            continue;
+        }
+        let measure = match cell.measure {
+            FilingMeasure::Shares => Some("shares"),
+            FilingMeasure::Count => Some("count"),
+            FilingMeasure::PerShare => Some("per_share"),
+            _ => None,
+        };
+        let candidate = Candidate {
+            value: found.value,
+            unit: cell.unit.unwrap_or(found.unit),
+            currency: currency::contextual(found.currency, cell.heading.and_then(stated_currency)),
+            inferred_scale: cell.unit.is_none() && found.unit == Unit::Amount(1.0),
+            direction: found.direction(text),
+            place: Place::Span {
+                start: found.start,
+                end: found.end,
+            },
+        };
+        visit(candidate, measure, cell.heading);
+    }
 }
 
 /// Candidates read as printed: an amount's number in its own scale (`52`
@@ -1652,6 +2372,7 @@ pub struct Printed {
     pub value: f64,
     pub unit: Unit,
     pub precision: f64,
+    pub(crate) currency: Option<Currency>,
     /// The figure carries its own sign (`+`, `-`, `−`, a triangle mark or
     /// accounting brackets), which a fall stated in words must agree with.
     pub signed: bool,
@@ -1705,32 +2426,8 @@ fn strip_sign(text: &str) -> (&str, bool, bool) {
     }
 }
 
-/// A currency written before the number: a symbol (`$`, `₩`), a prefixed
-/// dollar (`US$`, `HK$`) or an ISO code (`KRW 452.3bn`).
-fn strip_currency(text: &str) -> Option<&str> {
-    if let Some(rest) = text.strip_prefix(CURRENCY_SYMBOLS) {
-        return Some(rest);
-    }
-    let letters = text.bytes().take_while(u8::is_ascii_alphabetic).count();
-    if (1..=2).contains(&letters) && text.as_bytes().get(letters) == Some(&b'$') {
-        return Some(&text[letters + 1..]);
-    }
-    if letters == 3 {
-        let code = &text[..3];
-        let after = &text[3..];
-        if is_currency_marker(code)
-            && after.starts_with(|c: char| {
-                c == ' ' || c.is_ascii_digit() || matches!(c, '-' | '−' | '–')
-            })
-        {
-            return Some(after);
-        }
-    }
-    None
-}
-
-/// What may follow an amount: nothing, a currency word or code, or "per share".
-fn amount_tail(text: &str) -> bool {
+/// What may follow an amount: nothing, a currency token, or "per share".
+fn amount_tail(text: &str) -> Option<Option<Currency>> {
     let raw = text.trim();
     let lower = raw.to_ascii_lowercase();
     let text = lower
@@ -1739,10 +2436,11 @@ fn amount_tail(text: &str) -> bool {
         .or_else(|| lower.strip_suffix("/share"))
         .unwrap_or(&lower)
         .trim();
-    text.is_empty()
-        || raw.get(..text.len()).is_some_and(is_currency_marker)
-        || CURRENCY_WORDS.contains(&text)
-        || KOREAN_CURRENCY.contains(&text)
+    if text.is_empty() {
+        Some(None)
+    } else {
+        currency::exact(&raw[..text.len()]).map(Some)
+    }
 }
 
 /// Reads an answer's link text as one number with its unit (`8.4%`,
@@ -1751,13 +2449,24 @@ fn amount_tail(text: &str) -> bool {
 /// year (`2026`) or a bare one-to-three-digit integer such as a numbered
 /// citation (`1`).
 pub fn parse_printed(text: &str) -> Option<Printed> {
+    parse_with_unit(text, None)
+}
+
+/// A labelled cell or sentence states what a bare number measures, including
+/// small integers that elsewhere could be numbered citation links.
+pub(crate) fn parse_with_unit(
+    text: &str,
+    governing: Option<(Unit, Option<Currency>)>,
+) -> Option<Printed> {
+    let context = governing.and_then(|(_, currency)| currency);
+    let governing = governing.map(|(unit, _)| unit);
     let normalized: String = text
         .chars()
         .map(|c| {
             if matches!(c, '\u{a0}' | '\u{202f}' | '\u{2009}') {
                 ' '
             } else {
-                c
+                numeric_char(c)
             }
         })
         .collect();
@@ -1781,27 +2490,37 @@ pub fn parse_printed(text: &str) -> Option<Printed> {
     let (mut rest, mut negative, mut signed) = strip_sign(text);
     negative |= bracketed || marked == Some(true);
     signed |= bracketed || marked.is_some();
-    let currency = match strip_currency(rest) {
-        Some(after) => {
-            let (after, minus, sign) = strip_sign(after.trim_start());
-            negative |= minus;
-            signed |= sign;
-            rest = after.trim_start();
-            true
-        }
-        None => false,
-    };
+    let prefix = currency::leading(rest).map(|(code, length)| {
+        let (after, minus, sign) = strip_sign(rest[length..].trim_start());
+        negative |= minus;
+        signed |= sign;
+        rest = after.trim_start();
+        code
+    });
     let (first, mut decimals, grouped, length) = leading_number(rest)?;
     rest = &rest[length..];
+    let prefix =
+        if let Some((marker, length)) = currency_suffix(rest.trim_start_matches(UNIT_SPACES)) {
+            let after = &rest.trim_start_matches(UNIT_SPACES)[length..];
+            if leading_scale(after, true).is_some()
+                || cjk_suffix(after.trim_start_matches(UNIT_SPACES)).is_some()
+            {
+                rest = after;
+                currency::contextual(Some(marker), prefix)
+            } else {
+                prefix
+            }
+        } else {
+            prefix
+        };
+    let mut currency = prefix;
     // Korean scales add up in strictly decreasing order (`1조 2,300억원`).
     let mut total = 0.0;
     let mut scale: Option<f64> = None;
     let mut component = first;
     loop {
         let after = rest.trim_start();
-        let Some((word, found)) = KOREAN_SCALES
-            .iter()
-            .find(|(word, _)| after.starts_with(word))
+        let Some((word, found)) = CJK_SCALES.iter().find(|(word, _)| after.starts_with(word))
         else {
             break;
         };
@@ -1817,7 +2536,7 @@ pub fn parse_printed(text: &str) -> Option<Printed> {
         };
         // The next component must carry its own, smaller scale.
         let tail = next[length..].trim_start();
-        if !KOREAN_SCALES.iter().any(|(word, _)| tail.starts_with(word)) {
+        if !CJK_SCALES.iter().any(|(word, _)| tail.starts_with(word)) {
             return None;
         }
         component = value;
@@ -1827,12 +2546,11 @@ pub fn parse_printed(text: &str) -> Option<Printed> {
     let precision = 0.5 * 10f64.powi(-(decimals as i32));
     let sign = if negative { -1.0 } else { 1.0 };
     if let Some(scale) = scale {
-        if !amount_tail(rest) {
-            return None;
-        }
+        currency = currency::contextual(amount_tail(rest)?, prefix);
         return Some(Printed {
             value: sign * total / scale,
             unit: Unit::Amount(scale),
+            currency: currency::contextual(currency, context),
             precision,
             signed,
         });
@@ -1842,11 +2560,12 @@ pub fn parse_printed(text: &str) -> Option<Printed> {
     let tail = rest.trim();
     let lower = tail.to_ascii_lowercase();
     let unit = match lower.as_str() {
-        "" if currency => Unit::Amount(1.0),
+        "" if currency.is_some() => Unit::Amount(1.0),
         "" => {
             // Years and small counts are labels or numbered citations.
             let digits = text.trim_start_matches(['-', '−', '–', '+']);
-            if decimals == 0
+            if governing.is_none()
+                && decimals == 0
                 && !grouped
                 && (digits.len() <= 3 || (digits.len() == 4 && (1900.0..=2100.0).contains(&first)))
             {
@@ -1854,34 +2573,40 @@ pub fn parse_printed(text: &str) -> Option<Printed> {
             }
             Unit::Plain
         }
-        "%" | "％" | "percent" | "pct" if !currency => Unit::Percent,
+        "person" | "persons" | "people" | "명" if currency.is_none() => Unit::Plain,
+        "%" | "％" | "percent" | "pct" if currency.is_none() => Unit::Percent,
         "%p" | "%pt" | "%pts" | "pp" | "ppt" | "ppts" | "percentage point"
         | "percentage points" | "% point" | "% points" | "%포인트"
-            if !currency =>
+            if currency.is_none() =>
         {
             Unit::Points
         }
-        "bp" | "bps" | "basis point" | "basis points" if !currency => Unit::BasisPoints,
-        "x" if !gap && !currency => Unit::Multiple,
-        "×" | "times" | "배" if !currency => Unit::Multiple,
+        "bp" | "bps" | "basis point" | "basis points" if currency.is_none() => Unit::BasisPoints,
+        "x" if !gap && currency.is_none() => Unit::Multiple,
+        "×" | "times" | "배" if currency.is_none() => Unit::Multiple,
         _ => {
-            let (word, remainder) = lower.split_once(' ').unwrap_or((lower.as_str(), ""));
-            let letter = (currency || !gap).then(|| letter_scale(word)).flatten();
-            if let Some(found) = english_scale(word).or(letter) {
-                if !amount_tail(&tail[lower.len() - remainder.len()..]) {
-                    return None;
-                }
+            if let Some((found, length)) = leading_scale(rest, prefix.is_some()) {
+                currency = currency::contextual(amount_tail(&rest[length..])?, prefix);
                 Unit::Amount(found)
-            } else if amount_tail(tail) {
-                Unit::Amount(1.0)
             } else {
-                return None;
+                currency = currency::contextual(amount_tail(tail)?, prefix);
+                Unit::Amount(1.0)
             }
         }
+    };
+    let unit = match unit {
+        Unit::Plain => governing.unwrap_or(unit),
+        Unit::Amount(1.0) => governing
+            .filter(|u| matches!(u, Unit::Amount(_)))
+            .unwrap_or(unit),
+        _ => unit,
     };
     Some(Printed {
         value,
         unit,
+        currency: matches!(unit, Unit::Amount(_))
+            .then(|| currency::contextual(currency, context))
+            .flatten(),
         precision,
         signed,
     })
@@ -1919,6 +2644,66 @@ fn readings(printed: Unit, candidate: Unit, value: f64, calculated: bool) -> Vec
     }
 }
 
+/// The power of ten of a stated monetary scale.
+fn decimal_scale(scale: f64) -> Option<i16> {
+    let power = scale.log10().round();
+    (scale.is_finite() && (0.0..=18.0).contains(&power) && same(10f64.powi(power as i32), scale))
+        .then_some(power as i16)
+}
+
+/// An exact change of stated monetary scale, excluding the digit-alignment
+/// fallback used for passage amounts whose scale is absent.
+pub(crate) fn exact_scale_conversion(printed: &Printed, source: &Candidate) -> Option<(i16, i16)> {
+    if source.inferred_scale && !(source.unit == Unit::Amount(1.0) && source.currency.is_some()) {
+        return None;
+    }
+    let Unit::Amount(answer) = printed.unit else {
+        return None;
+    };
+    let from = match source.unit {
+        Unit::Amount(scale) => scale,
+        Unit::Raw => 1.0,
+        _ => return None,
+    };
+    let value = source.value_for(printed) * (from / answer);
+    let slack = 4.0 * f64::EPSILON * value.abs().max(printed.value.abs()).max(1.0);
+    if !value.is_finite() || (value - printed.value).abs() > slack {
+        return None;
+    }
+    let (from, answer) = (decimal_scale(from)?, decimal_scale(answer)?);
+    (from != answer).then_some((from, answer))
+}
+
+/// The same printed digits and currency agree even when only one side says
+/// how they were scaled. Raw observations can be read in base units for
+/// exact conversions, but their digits alone do not state a scale.
+pub(crate) fn unstated_scale(
+    printed: &Printed,
+    source: &Candidate,
+) -> Option<crate::domain::answer_checks::UnstatedScale> {
+    use crate::domain::answer_checks::UnstatedScale;
+    if printed.value != source.value_for(printed)
+        || !printed.value.is_finite()
+        || !currencies_agree(printed.currency, source.currency)
+    {
+        return None;
+    }
+    match (printed.unit, source.unit) {
+        (Unit::Amount(a), _)
+            if a != 1.0
+                && (source.inferred_scale || matches!(source.unit, Unit::Plain | Unit::Raw)) =>
+        {
+            Some(UnstatedScale::Source)
+        }
+        (Unit::Plain | Unit::Amount(1.0), Unit::Amount(b))
+            if b != 1.0 && !source.inferred_scale =>
+        {
+            Some(UnstatedScale::Answer)
+        }
+        _ => None,
+    }
+}
+
 /// Checks a printed number against evidence candidates. Returns the verdict
 /// and the index of the candidate it rests on: the match, or for `Differs` the
 /// nearest compatible value. `calculated` candidates come from a `calculate`
@@ -1928,33 +2713,94 @@ pub fn check(
     candidates: &[Candidate],
     calculated: bool,
 ) -> (Verdict, Option<usize>) {
+    check_with_scale_policy(printed, candidates, calculated, false)
+}
+
+/// A citation can report equal digits with an unknown scale, including when
+/// citing a calculation. Calculation inputs still use the strict checker.
+pub(crate) fn check_citation(
+    printed: &Printed,
+    candidates: &[Candidate],
+    calculated: bool,
+) -> (Verdict, Option<usize>) {
+    check_with_scale_policy(printed, candidates, calculated, true)
+}
+
+fn check_with_scale_policy(
+    printed: &Printed,
+    candidates: &[Candidate],
+    calculated: bool,
+    allow_unstated_scale: bool,
+) -> (Verdict, Option<usize>) {
+    let mut exact_conversion = None;
+    let mut same_digits = None;
     let mut rounded = None;
     let mut nearest: Option<(f64, usize)> = None;
     for (index, candidate) in candidates.iter().enumerate() {
+        if !currencies_agree(printed.currency, candidate.currency) {
+            continue;
+        }
         // A figure's own sign meets a fall the evidence states in words; an
         // unsigned figure compares the magnitude, its own words stating the fall.
-        let stated = if printed.signed && candidate.stated_fall {
-            -candidate.value
+        let stated = candidate.value_for(printed);
+        if allow_unstated_scale && unstated_scale(printed, candidate).is_some() {
+            same_digits.get_or_insert(index);
+            continue;
+        }
+        if allow_unstated_scale
+            && candidate.unit == Unit::Plain
+            && candidates.get(index + 1).is_some_and(|next| {
+                next.place == candidate.place && unstated_scale(printed, next).is_some()
+            })
+        {
+            continue;
+        }
+        let candidate_unit = if printed.unit == Unit::Plain
+            && candidate.unit == Unit::Amount(1.0)
+            && candidate.currency.is_some_and(currency::can_support_bare)
+        {
+            Unit::Plain
         } else {
-            candidate.value
+            candidate.unit
         };
-        for (value, converted) in readings(printed.unit, candidate.unit, stated, calculated) {
+        for (value, converted) in readings(printed.unit, candidate_unit, stated, calculated) {
             if !value.is_finite() {
                 continue;
             }
             let gap = (value - printed.value).abs();
-            let slack = 1e-9 * value.abs().max(printed.value.abs()).max(1.0);
-            if gap <= printed.precision + slack {
+            let epsilon = if matches!(printed.unit, Unit::Amount(_)) {
+                4.0 * f64::EPSILON
+            } else {
+                1e-9
+            };
+            let slack = epsilon * value.abs().max(printed.value.abs()).max(1.0);
+            // At an exact monetary midpoint only the digit rounded away from
+            // zero is correct. Preserve the earlier interval rule for ratios.
+            let midpoint = matches!(printed.unit, Unit::Amount(_))
+                && gap > slack
+                && (gap - printed.precision).abs() <= slack;
+            if gap <= printed.precision + slack && (!midpoint || printed.value.abs() > value.abs())
+            {
                 if !converted {
                     return (Verdict::Matched, Some(index));
                 }
-                rounded.get_or_insert(index);
+                if exact_scale_conversion(printed, candidate).is_some() {
+                    exact_conversion.get_or_insert(index);
+                } else {
+                    rounded.get_or_insert(index);
+                }
             }
             let relative = gap / printed.value.abs().max(1e-12);
             if nearest.is_none_or(|(best, _)| relative < best) {
                 nearest = Some((relative, index));
             }
         }
+    }
+    if let Some(index) = exact_conversion {
+        return (Verdict::Rounded, Some(index));
+    }
+    if let Some(index) = same_digits {
+        return (Verdict::Matched, Some(index));
     }
     if let Some(index) = rounded {
         return (Verdict::Rounded, Some(index));
@@ -1971,7 +2817,62 @@ pub fn check(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn v008_currency_and_scale_orders_work_in_passages_and_answers() {
+        for (text, base, currency) in [
+            ("USD 20 million", 20e6, "USD"),
+            ("20 million USD", 20e6, "USD"),
+            ("20 USD million", 20e6, "USD"),
+            ("$20 million", 20e6, "$"),
+            ("$20m", 20e6, "$"),
+            ("US$ 20 mn", 20e6, "USD"),
+            ("20 million dollars", 20e6, "USD"),
+            ("20 dollars million", 20e6, "USD"),
+            ("EUR 3.2bn", 3.2e9, "EUR"),
+            ("KRW 4.5 trillion", 4.5e12, "KRW"),
+            ("4.5조 원", 4.5e12, "KRW"),
+            ("4조 5천억 원", 4.5e12, "KRW"),
+            ("20百万ドル", 20e6, "USD"),
+            ("2,000万円", 20e6, "JPY"),
+            ("20亿元", 2e9, "元"),
+        ] {
+            let mut candidates = passage_candidates(text);
+            assert_eq!(candidates.len(), 1, "{text}: {candidates:?}");
+            let source = candidates.pop().unwrap();
+            let answer = parse_printed(text).unwrap_or_else(|| panic!("did not read {text}"));
+            for (value, unit, code) in [
+                (source.value, source.unit, source.currency),
+                (answer.value, answer.unit, answer.currency),
+            ] {
+                let Unit::Amount(scale) = unit else {
+                    panic!("{text}: {unit:?}")
+                };
+                assert_eq!(value * scale, base, "{text}");
+                assert_eq!(code, Some(currency), "{text}");
+            }
+        }
+    }
+
+    #[test]
+    fn v008_scale_words_stop_at_the_amount_boundary() {
+        for gap in [", ", " and ", "\n"] {
+            let text = format!("20 USD{gap}25 million");
+            let candidates = passage_candidates(&text);
+            let units: Vec<_> = candidates
+                .iter()
+                .map(|number| (number.value, number.unit))
+                .collect();
+            assert_eq!(
+                units,
+                [(20.0, Unit::Amount(1.0)), (25.0, Unit::Amount(1e6))],
+                "{text}"
+            );
+            assert!(parse_printed(&text).is_none());
+        }
+    }
+
     use super::*;
+    use crate::finance_data::fx::CURRENCY_CODES;
     use serde_json::json;
 
     fn percent(observed: f64, payload: &Value) -> Option<f64> {
@@ -2051,7 +2952,9 @@ mod tests {
                 }
             }
         }
-        for word in CURRENCY_WORDS {
+        for word in [
+            "won", "dollar", "dollars", "euro", "euros", "yen", "yuan", "pound", "pounds",
+        ] {
             for marker in [word.to_string(), word.to_ascii_uppercase()] {
                 let suffix = format!("12,000 {marker}");
                 assert_eq!(
@@ -2061,7 +2964,7 @@ mod tests {
                 assert_eq!(printed(&suffix).unit, Unit::Amount(1.0));
                 let prefix = format!("{marker} 12,000");
                 assert_eq!(
-                    verdict("12,000", &passage_candidates(&prefix), false),
+                    verdict(&prefix, &passage_candidates(&prefix), false),
                     Verdict::Matched
                 );
             }
@@ -2356,6 +3259,21 @@ mod tests {
             ),
             ("배당금(원)\n300", "₩300", Verdict::NotFound),
             ("배당금(원); 300", "₩300", Verdict::NotFound),
+            (
+                "Revenue (USD millions): 2024 245,122; headcount 211,915",
+                "$211,915m",
+                Verdict::NotFound,
+            ),
+            (
+                "Revenue (USD millions): 2024 245,122;\n2023 211,915",
+                "$211,915m",
+                Verdict::NotFound,
+            ),
+            (
+                "Revenue: 2024 245,122; 2023 211,915",
+                "$211,915m",
+                Verdict::NotFound,
+            ),
             // A number glued to a word has a counter of its own.
             ("임직원(원) 1,820명", "₩1,820", Verdict::NotFound),
             // A unit right after a number states that number's unit.
@@ -2410,20 +3328,21 @@ mod tests {
             assert_eq!(verdict(printed, &passage_candidates(passage), false), Verdict::Rounded, "{passage}");
         }
         let table = "(in millions, except percentages and per share data)\nNet revenue $ 35,926 | 10 | %\nEarnings per share | $ 14.04";
-        for wrong in [
-            "$35.926m",
-            "$35,926",
-            "$35.927bn",
-            "-$35.926bn",
-            "$14.04m",
-            "$10m",
-        ] {
+        for wrong in ["$35.926m", "$35.927bn", "-$35.926bn", "$14.04m", "$10m"] {
             assert_eq!(
                 verdict(wrong, &passage_candidates(table), false),
                 Verdict::NotFound,
                 "{wrong}"
             );
         }
+        let printed = printed("$35,926");
+        let candidates = passage_candidates(table);
+        let (status, at) = check_citation(&printed, &candidates, false);
+        assert_eq!(status, Verdict::Matched);
+        assert_eq!(
+            unstated_scale(&printed, &candidates[at.unwrap()]),
+            Some(crate::domain::answer_checks::UnstatedScale::Answer)
+        );
         assert_eq!(
             verdict(
                 "$35.926bn",
@@ -2614,6 +3533,7 @@ mod tests {
             passage_candidates("매출액은 675억원(전년동기 723억원), 영업이익 52억원, 12.3%");
         let plain = |value: f64| Printed {
             value,
+            currency: None,
             unit: Unit::Plain,
             precision: 0.5,
             signed: false,
@@ -2702,7 +3622,7 @@ mod tests {
         assert_eq!(verdict("₩452.3bn", &passage, false), Verdict::Matched);
         assert_eq!(verdict("₩452bn", &passage, false), Verdict::Matched);
         assert_eq!(verdict("8.5%", &passage, false), Verdict::NotFound);
-        // A passage never matches on a guessed scale or a bare number.
+        // Strict comparisons require compatible units.
         assert_eq!(verdict("452.3", &passage, false), Verdict::NotFound);
         // The rounding edge is half a unit of the last printed digit.
         let edge = passage_candidates("margin 8.45%");
@@ -2750,19 +3670,25 @@ mod tests {
                 value: 8.417_329,
                 unit: Unit::Percent,
                 place: Place::Pointer("/values/0".into()),
-                stated_fall: false,
+                inferred_scale: false,
+                direction: None,
+                currency: None,
             },
             Candidate {
                 value: 38_100_000_000.0,
                 unit: Unit::Plain,
                 place: Place::Pointer("/inputs/0".into()),
-                stated_fall: false,
+                inferred_scale: false,
+                direction: None,
+                currency: None,
             },
             Candidate {
                 value: 0.084_173,
                 unit: Unit::Plain,
                 place: Place::Pointer("/inputs/9".into()),
-                stated_fall: false,
+                inferred_scale: false,
+                direction: None,
+                currency: None,
             },
         ];
         assert_eq!(
@@ -2922,12 +3848,188 @@ mod tests {
         assert_eq!(verdict("−1.2%", &found, false), Verdict::Matched);
     }
 
+    fn check_direction(passage: &str, magnitude: &str, direction: Direction) {
+        let candidates = passage_candidates(passage);
+        assert!(
+            candidates.iter().any(|c| c.direction == Some(direction)),
+            "{passage}"
+        );
+        for (sign, expected) in [
+            ("", Verdict::Matched),
+            (
+                "−",
+                if direction == Direction::Fall {
+                    Verdict::Matched
+                } else {
+                    Verdict::NotFound
+                },
+            ),
+            (
+                "+",
+                if direction == Direction::Rise {
+                    Verdict::Matched
+                } else {
+                    Verdict::NotFound
+                },
+            ),
+        ] {
+            assert_eq!(
+                check(
+                    &parse_printed(&format!("{sign}{magnitude}")).unwrap(),
+                    &candidates,
+                    false
+                )
+                .0,
+                expected,
+                "{sign}{magnitude} in {passage}"
+            );
+        }
+    }
+
     #[test]
-    fn a_fall_is_stated_only_by_a_word_right_after_the_number() {
+    fn english_direction() {
+        for fall in [
+            "shares fell by 4.81%",
+            "not down 4.81%",
+            "a 4.81% decline",
+            "4.81% down.",
+        ] {
+            check_direction(fall, "4.81%", Direction::Fall);
+        }
+        check_direction("a loss of $70", "$70", Direction::Fall);
+        check_direction("shares rose by 4.81%", "4.81%", Direction::Rise);
+    }
+
+    #[test]
+    fn korean_direction() {
+        check_direction("전년보다 4.81% 줄었고", "4.81%", Direction::Fall);
+        check_direction("매출은 4.81% 증가했다", "4.81%", Direction::Rise);
+    }
+
+    #[test]
+    fn chinese_direction() {
+        for cue in [
+            "下跌",
+            "跌幅",
+            "跌",
+            "下降",
+            "减少",
+            "減少",
+            "亏损",
+            "虧損",
+            "跌幅收窄至",
+        ] {
+            check_direction(&format!("盈利{cue}70元"), "70元", Direction::Fall);
+        }
+        for cue in ["上涨", "上漲", "涨幅", "漲幅", "增长", "增長"] {
+            check_direction(&format!("盈利{cue}4.81%"), "4.81%", Direction::Rise);
+        }
+    }
+
+    #[test]
+    fn japanese_direction() {
+        for cue in ["下落", "減少", "安", "赤字"] {
+            check_direction(&format!("前日比70円{cue}"), "70円", Direction::Fall);
+        }
+        for cue in ["上昇", "増加", "高"] {
+            check_direction(&format!("前日比70円{cue}"), "70円", Direction::Rise);
+        }
+        check_direction("株価は４．８１％下落", "4.81%", Direction::Fall);
+    }
+
+    #[test]
+    fn german_direction() {
+        check_direction("Die Aktie fiel um 4.81 %.", "4.81%", Direction::Fall);
+        check_direction("Ein Anstieg von 4.81 %.", "4.81%", Direction::Rise);
+    }
+
+    #[test]
+    fn french_direction() {
+        check_direction("Une baisse de 4.81 %.", "4.81%", Direction::Fall);
+        check_direction("En hausse de 4.81 %.", "4.81%", Direction::Rise);
+    }
+
+    #[test]
+    fn spanish_direction() {
+        check_direction("La cotización cayó un 4.81%.", "4.81%", Direction::Fall);
+        check_direction("El precio subió un 4.81%.", "4.81%", Direction::Rise);
+    }
+
+    #[test]
+    fn direction_belongs_to_its_figure_and_never_overrides_a_printed_sign() {
+        for passage in [
+            "fell to 4.81%",
+            "shutdown 4.81%",
+            "down, 4.81%",
+            "下跌。收在4.81%",
+            "跌幅收窄至2%，收在4.81%",
+            "up 4.81%, down 2%",
+            "4.81% declined by 2%",
+            "4.81% declined to 2%",
+            "4.81%下跌至2%",
+            "4.81%下跌2%",
+            "4.81%安定",
+            "收在4.81% 高値",
+            "跌幅＋４．８１％",
+            "涨幅+4.81%下落",
+            "down +4.81%",
+            "4.81%",
+        ] {
+            assert_eq!(
+                verdict("−4.81%", &passage_candidates(passage), false),
+                Verdict::NotFound,
+                "{passage}"
+            );
+            assert_eq!(
+                verdict("+4.81%", &passage_candidates(passage), false),
+                Verdict::Matched,
+                "{passage}"
+            );
+        }
+    }
+
+    #[test]
+    fn cjk_figures_keep_their_stated_units_scales_and_original_byte_offsets() {
+        for (source, token, answer) in [
+            ("騰落率－４．８１％", "－４．８１％", "−４．８１％"),
+            ("４．８１bp下落", "４．８１bp", "−4.81bp"),
+            ("２億下落", "２億", "−20000万"),
+            ("変動 △７０円", "△７０円", "−70円"),
+            ("변동 ▲７０원", "▲７０원", "+70원"),
+            ("營收下降２，５００萬元", "２，５００萬元", "−0.25億元"),
+            ("營收上涨２亿元", "２亿元", "+20000万元"),
+            ("이익 ２조원 감소", "２조원", "−20000억원"),
+        ] {
+            let printed = parse_printed(answer).unwrap();
+            let candidates = passage_candidates(source);
+            let (status, matched) = check(&printed, &candidates, false);
+            assert!(
+                matches!(status, Verdict::Matched | Verdict::Rounded),
+                "{answer} in {source}: {candidates:?}"
+            );
+            let Place::Span { start, end } = candidates[matched.unwrap()].place else {
+                panic!()
+            };
+            assert_eq!(&source[start..end], token);
+        }
+        assert_eq!(field_number("－２，５００．５"), Some(-2500.5));
+        assert_eq!(
+            verdict("−25億元", &passage_candidates("下降２，５００萬元"), false),
+            Verdict::NotFound
+        );
+    }
+
+    #[test]
+    fn a_following_cue_must_govern_the_unsigned_number() {
         let falls = |text: &str| {
             passage_candidates(text)
                 .iter()
-                .map(|candidate| (candidate.value, candidate.stated_fall))
+                .map(|candidate| {
+                    (
+                        candidate.value,
+                        candidate.direction == Some(Direction::Fall),
+                    )
+                })
                 .collect::<Vec<_>>()
         };
         for text in [
@@ -2982,7 +4084,7 @@ mod tests {
         let page = json!({"status": 200, "content_bytes": 45231, "page_count": 12,
             "retrieved_at": "2026-03-18T00:00:00Z", "content": "Revenue rose to 4,523 units.",
             "rows": [{"value": "17", "page": 9}]});
-        let values: Vec<f64> = content_candidates(&page)
+        let values: Vec<f64> = content_candidates(&page, None)
             .into_iter()
             .map(|candidate| candidate.value)
             .collect();

@@ -1,0 +1,3 @@
+.context-title { display: inline-flex; flex-wrap: wrap; max-width: 100%; min-width: 0; align-items: baseline; }
+.context-title-label { flex: none; white-space: pre; }
+.context-title-name { flex: 1 1 0; min-width: 1ch; max-width: max-content; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -2,10 +2,14 @@
 // LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract
 
 import type { BriefingContext } from "../briefings";
+import type { DiscardedMemoryItem, MemorySaveSkipReason } from "../domain/chat";
+import type { ResolvedModelSelection } from "../providers/selection";
 
 export type QuestionReceipt = { task_id: string, title: string, question: string };
 
 export type Run = {
+  memory_save_skip?: MemorySaveSkipReason,
+  discarded_memory_items?: Array<DiscardedMemoryItem>,
   briefing_context: BriefingContext | null,
   kind: TaskKind,
   read_at_ms: number | null,
@@ -59,6 +63,7 @@ export type Task = {
   schedule: Schedule,
   target: TaskTarget,
   session_thread_id: string | null,
+  model_selection?: ResolvedModelSelection,
   model_profile_id: string,
   thinking_level: string,
   run_options: { [key in string]: string },
@@ -100,6 +105,7 @@ export type TaskListItem = {
   schedule: Schedule,
   target: TaskTarget,
   session_thread_id: string | null,
+  model_selection?: ResolvedModelSelection,
   model_profile_id: string,
   thinking_level: string,
   run_options: { [key in string]: string },

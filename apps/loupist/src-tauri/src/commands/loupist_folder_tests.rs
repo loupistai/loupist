@@ -1015,7 +1015,7 @@ async fn folder_registration_rejects_private_storage_duplicates_and_invalid_path
 #[tokio::test]
 async fn changed_connector_scope_stays_denied_when_missing_folder_blocks_cleanup() {
     use crate::marketplace::connector_config::{
-        configure_connector, connector_config_value, reconcile_connector_configs,
+        apply_pending_credential_scope, configure_connector, connector_config_value,
     };
     let temp = tempfile::tempdir().unwrap();
     let state = AppState::for_folder_test(temp.path().join("app"));
@@ -1023,6 +1023,12 @@ async fn changed_connector_scope_stays_denied_when_missing_folder_blocks_cleanup
     fs::create_dir(&folder).unwrap();
     let loupist = create_folder_loupist(&state, &folder).await.unwrap();
     let id = crate::finance_data::KIS_SOURCE_ID;
+    let entry = crate::marketplace::bundled_catalog()
+        .unwrap()
+        .entries
+        .into_iter()
+        .find(|entry| entry.id == id)
+        .unwrap();
     configure_connector(
         crate::marketplace::MarketplaceConnectorConfigureRequest {
             entry_id: id.into(),
@@ -1055,14 +1061,14 @@ async fn changed_connector_scope_stays_denied_when_missing_folder_blocks_cleanup
         &BTreeMap::from([("environment".into(), "demo".into())]),
     )
     .unwrap();
-    assert!(reconcile_connector_configs(&state).is_err());
+    assert!(apply_pending_credential_scope(&state, &entry).is_err());
     assert!(connector_config_value(&state, id, "environment").is_err());
     drop(state);
     // A failed cleanup must not attest the new scope even after startup retries.
     let state = AppState::for_folder_test(temp.path().join("app"));
     assert!(connector_config_value(&state, id, "environment").is_err());
     fs::rename(&moved, &folder).unwrap();
-    reconcile_connector_configs(&state).unwrap();
+    apply_pending_credential_scope(&state, &entry).unwrap();
     assert_eq!(
         connector_config_value(&state, id, "environment")
             .unwrap()

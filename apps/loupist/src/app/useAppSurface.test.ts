@@ -36,7 +36,7 @@ it("names the open asset page as the page shows it, and ignores a page already r
   expect(surfaceReducer(opened, { type: "nameAssetPage", key: 3, name: "Hanul Precision" })).toBe(opened);
 });
 
-it("opens Map and Lens as full pages and reads the destination keys from one list", () => {
+it("opens World and Lens as full pages and reads the destination keys from one list", () => {
   localStorage.setItem("loupist.lastView", "schedule");
   const { result } = renderHook(() => useAppSurface());
   expect(result.current.surface.tab).toBe("schedule");
@@ -49,9 +49,9 @@ it("opens Map and Lens as full pages and reads the destination keys from one lis
   act(() => result.current.goTo("schedule"));
   expect(result.current.surface.tab).toBe("schedule");
   expect(result.current.navigationEpoch.current).toBe(epoch + 1);
-  expect(APP_DESTINATIONS.map((item) => item.id)).toEqual(["chat", "map", "lens", "schedule"]);
-  expect(destinationForKey("2")?.page).toBe("map");
-  expect(destinationForKey("3")?.page).toBe("lens");
-  expect(destinationForKey("5")).toBeUndefined();
+  expect(APP_DESTINATIONS.map((item) => item.id)).toEqual(["chat", "following", "map", "lens", "schedule"]);
+  expect(destinationForKey("2")?.page).toBe("following");
+  expect(destinationForKey("3")?.page).toBe("map");
+  expect(destinationForKey("5")?.page).toBe("schedule");
   expect(destinationForKey("0")).toBeUndefined();
 });

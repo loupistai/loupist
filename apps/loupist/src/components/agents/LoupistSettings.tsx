@@ -1,5 +1,6 @@
-import { SKILL_TOOLING_IDS, skillBlurb, skillPresentation } from "../../lib/agentSkills";
+import { SKILL_TOOLING_IDS, skillBlurb, skillPresentation, visibleSkill } from "../../lib/agentSkills";
 import i18n, { useTranslation } from "../../i18n";
+import { useExtensionAvailability } from "../../app/extensionAvailability";
 import { CONFIG_CHANGED_EVENT, notifyConfigurationChanged } from "../../app/useConfiguration";
 import { Disclosure } from "../ui/disclosure";
 import { LoupistIdentityFields } from "../onboarding/LoupistIdentityFields";
@@ -74,6 +75,7 @@ type Props = {
   initialRemove?: boolean;
   onOpenMarketplace: (entryId?: string) => void;
   onManageProviders: () => void;
+  onConnectAccount?: () => void;
   onDraftSkill?: (scope: ConfigScope, brief: string) => void | Promise<void>;
   onDelete: () => Promise<void>;
   onAgentUpdated: (agent: LoupistSummary) => void;
@@ -91,7 +93,7 @@ export function LoupistSettings({
   initialSection,
   initialRemove = false,
   onOpenMarketplace,
-  onManageProviders,
+  onManageProviders, onConnectAccount,
   onDraftSkill,
   onDelete,
   onAgentUpdated,
@@ -115,7 +117,9 @@ export function LoupistSettings({
   const [busyCapabilityId, setBusyCapabilityId] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
-  const [manageSkills, setManageSkills] = useState(false);
+  const { userSkills } = useExtensionAvailability();
+  const [managingSkills, setManageSkills] = useState(false);
+  const manageSkills = userSkills && managingSkills;
   const [worldOpen, setWorldOpen] = useState(initialSection === "world");
   const selectedAgentId = selectedAgent?.id ?? null;
   const selectedAgentIdRef = useRef(selectedAgentId);
@@ -261,7 +265,7 @@ export function LoupistSettings({
 
   const skillItems = useMemo<AgentCapabilityItem[]>(
     () =>
-      skills.filter((skill) => !skill.fixed)
+      skills.filter((skill) => !skill.fixed && visibleSkill(skill, userSkills))
         // Tools for making Skills come last under "Advanced", as in Settings › Skills.
         .sort((a, b) => Number(SKILL_TOOLING_IDS.has(a.id)) - Number(SKILL_TOOLING_IDS.has(b.id)))
         .map((skill) => ({
@@ -274,7 +278,7 @@ export function LoupistSettings({
           ...(SKILL_TOOLING_IDS.has(skill.id) ? { group: i18n.t("settings:skillsSettings.advancedSkills") } : {}),
         })),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the interface language is the recompute trigger; `i18n` itself is not reactive.
-    [skills, i18n.language],
+    [skills, userSkills, i18n.language],
   );
 
   const matchesCapability = (item: AgentCapabilityItem) => (capabilityFilter === "all" || (capabilityFilter === "enabled" ? item.enabled : item.locked)) && `${item.name} ${item.description} ${item.note ?? ""}`.toLowerCase().includes(capabilityQuery.trim().toLowerCase());
@@ -381,7 +385,7 @@ export function LoupistSettings({
             <LoupistProfileEditor key={selectedAgent.id} bridge={bridge} loupist={selectedAgent} disabled={mutationBusy || !available} onUpdated={onAgentUpdated} />
             {available ? <>
               <Disclosure title={i18n.t("settings:loupistSettings.chatPreferences")} defaultOpen={initialSection === "chat"} data-loupist-section="chat">
-                <AgentSettings bridge={bridge} loupists={[selectedAgent]} catalog={catalog} scope={{ kind: "project", loupistId: selectedAgent.id }} />
+                <AgentSettings onConnectAccount={onConnectAccount} bridge={bridge} loupists={[selectedAgent]} catalog={catalog} scope={{ kind: "project", loupistId: selectedAgent.id }} />
               </Disclosure>
               <Disclosure title={i18n.t("knowledge:memoryPage.about.learning")} data-loupist-section="learning">
                 <LoupistLearningSettings key={selectedAgent.id} bridge={bridge} loupistId={selectedAgent.id} onChanged={onChanged} />
@@ -397,7 +401,7 @@ export function LoupistSettings({
                 <SegmentedControl value={capabilityFilter} onValueChange={setCapabilityFilter} aria-label={i18n.t("settings:loupistSettings.capabilityStatus")}><SegmentedControlItem value="all">{i18n.t("settings:loupistSettings.all")}</SegmentedControlItem><SegmentedControlItem value="enabled">{i18n.t("settings:loupistSettings.enabled")}</SegmentedControlItem><SegmentedControlItem value="setup">{i18n.t("settings:loupistSettings.needsSetup")}</SegmentedControlItem></SegmentedControl>
               </div>
 
-              {capabilityFilter !== "setup" ? manageSkills ? <div className="agent-section-heading"><h2>{i18n.t("settings:loupistSettings.skills")}</h2><Button variant="ghost" size="sm" aria-expanded onClick={() => setManageSkills(false)}>{i18n.t("settings:loupistSettings.manageSkills")}</Button></div> : <AgentCapabilityList title={i18n.t("settings:loupistSettings.skills")} action={<Button variant="ghost" size="sm" aria-expanded={manageSkills} onClick={() => setManageSkills(value => !value)}>{i18n.t("settings:loupistSettings.manageSkills")}</Button>} description={i18n.t("settings:loupistSettings.optionalResearchAndDocumentWorkflowsEnabledByDefault")} items={skillItems.filter(matchesCapability)} busyId={busyCapabilityId} error={configurationError && failedCapabilityId ? { id: failedCapabilityId, message: configurationError } : undefined} emptyLabel={configurationLoading ? i18n.t("settings:loupistSettings.loadingSkills") : capabilityQuery || capabilityFilter !== "all" ? i18n.t("settings:loupistSettings.noMatchingSkills") : i18n.t("settings:loupistSettings.noSkillsAvailable")} onToggle={(id) => void toggleSkill(id)} /> : null}
+              {capabilityFilter !== "setup" ? manageSkills ? <div className="agent-section-heading"><h2>{i18n.t("settings:loupistSettings.skills")}</h2><Button variant="ghost" size="sm" aria-expanded onClick={() => setManageSkills(false)}>{i18n.t("settings:loupistSettings.manageSkills")}</Button></div> : <AgentCapabilityList title={i18n.t("settings:loupistSettings.skills")} action={userSkills ? <Button variant="ghost" size="sm" aria-expanded={manageSkills} onClick={() => setManageSkills(value => !value)}>{i18n.t("settings:loupistSettings.manageSkills")}</Button> : undefined} description={i18n.t("settings:loupistSettings.optionalResearchAndDocumentWorkflowsEnabledByDefault")} items={skillItems.filter(matchesCapability)} busyId={busyCapabilityId} error={configurationError && failedCapabilityId ? { id: failedCapabilityId, message: configurationError } : undefined} emptyLabel={configurationLoading ? i18n.t("settings:loupistSettings.loadingSkills") : capabilityQuery || capabilityFilter !== "all" ? i18n.t("settings:loupistSettings.noMatchingSkills") : i18n.t("settings:loupistSettings.noSkillsAvailable")} onToggle={(id) => void toggleSkill(id)} /> : null}
               {manageSkills && capabilityFilter !== "setup" ? <SkillsSettings bridge={bridge} loupists={[selectedAgent]} scope={{ kind: "project", loupistId: selectedAgent.id }} onDraftSkill={onDraftSkill} /> : null}
               <AgentCapabilityList section="connections" title={i18n.t("settings:loupistSettings.connections")} description={i18n.t("settings:loupistSettings.chooseTheDataSourcesThisLoupistCanUse")} action={<Button type="button" size="sm" variant="ghost" onClick={() => onOpenMarketplace()}><StoreIcon /> {i18n.t("settings:loupistSettings.manageConnections")}</Button>} items={toolItems.filter(matchesCapability)} busyId={busyCapabilityId} error={configurationError && failedCapabilityId ? { id: failedCapabilityId, message: configurationError } : undefined} emptyLabel={configurationLoading ? i18n.t("settings:loupistSettings.loadingConnections") : capabilityQuery || capabilityFilter !== "all" ? i18n.t("settings:loupistSettings.noMatchingConnections") : i18n.t("settings:loupistSettings.connectAServiceToGiveThisLoupistMore")} onToggle={(id) => void toggleTool(id)} onSetup={onOpenMarketplace} />
             </Disclosure> : null}

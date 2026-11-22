@@ -173,6 +173,7 @@ pub fn classify(path: &Path, roots: &NativeRoots) -> Classified {
         .as_ref()
         .is_some_and(|root| path.starts_with(root) || path.starts_with(resolved(root)));
     let declared_git = git_dir(&lexical(&path), roots);
+    let declared_disabled_skill = disabled_skill_path(&lexical(&path), roots);
     let Some(path) = resolve_links(&path) else {
         return Classified {
             class: PathClass::Unresolvable,
@@ -192,6 +193,8 @@ pub fn classify(path: &Path, roots: &NativeRoots) -> Classified {
         || under(&path, &resolved(&roots.workspace.join(".git")))
     {
         PathClass::GitDir
+    } else if declared_disabled_skill || disabled_skill_path(&path, roots) {
+        PathClass::AppPrivate
     } else if bundled {
         PathClass::BundledSkill
     } else if roots
@@ -338,6 +341,28 @@ fn hard_linked(_path: &Path) -> bool {
 }
 
 const ROOT_INSTRUCTIONS: &[&str] = &["AGENTS.override.md", "AGENTS.md", "CLAUDE.md"];
+
+fn disabled_skill_path(target: &Path, roots: &NativeRoots) -> bool {
+    if crate::extension_availability::user_skills() {
+        return false;
+    }
+    below(target, &roots.workspace).is_some_and(|parts| match parts.as_slice() {
+        [folder, skills, ..] => {
+            [".loupist", ".agents", ".pi"]
+                .iter()
+                .any(|name| named(folder, name))
+                && named(skills, "skills")
+        }
+        _ => false,
+    }) || below(target, &roots.global)
+        .and_then(|parts| parts.into_iter().next())
+        .is_some_and(|name| named(&name, "skills"))
+        || roots.agent_skills.as_ref().is_some_and(|root| {
+            below(target, root)
+                .and_then(|parts| parts.into_iter().next())
+                .is_some_and(|name| named(&name, "skill-creator"))
+        })
+}
 
 /// Matches what workspace discovery loads: root instructions,
 /// `.loupist/AGENTS.md`, `.loupist/config.toml`, Skill entries (`skills/*.md`,
@@ -487,7 +512,7 @@ fn under(target: &Path, root: &Path) -> bool {
 /// identity (`(dev, ino)`, like `fs/pinned_root.rs`). A firmlink or a case
 /// alias of a root therefore counts at whatever depth it spells the root, and
 /// a case variant that is a different folder, or none, does not.
-fn below(target: &Path, root: &Path) -> Option<Vec<String>> {
+pub(crate) fn below(target: &Path, root: &Path) -> Option<Vec<String>> {
     if root.as_os_str().is_empty() {
         return None;
     }

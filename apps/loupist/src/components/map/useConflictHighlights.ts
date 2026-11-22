@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { LoupistBridge, KnowledgeLocation, WorldGraphView } from "../../types";
-import type { KnowledgeMap, KnowledgeMapEdge } from "../../contracts/knowledge";
+import type { KnowledgeMap } from "../../contracts/knowledge";
+import { projectClaim } from "../../knowledge/mapItems";
 
 /** Exact-read briefing pointers omitted by the default bounded Map projection. */
 export function useConflictHighlights(bridge: LoupistBridge, location: KnowledgeLocation, base?: KnowledgeMap) {
@@ -27,14 +28,9 @@ export function useConflictHighlights(bridge: LoupistBridge, location: Knowledge
     for (const graph of result.graphs) {
       for (const node of graph.nodes) if (ids.includes(node.id) && !nodes.has(node.id)) nodes.set(node.id, { id: node.id, label: node.name, kind: "entity", entityKind: node.kind, degree: graph.edges.filter(edge => edge.endpoints.some(end => end.nodeId === node.id)).length, watched: false });
       for (const { claim } of graph.edges) {
-        const source = claim.endpoints[0]?.nodeId;
-        if (!source || !nodes.has(source) || claim.status !== "disputed") continue;
-        const targets = [...new Set(claim.endpoints.slice(1).map(endpoint => endpoint.nodeId))];
-        if (!targets.length) targets.push(source);
-        for (const target of targets) if (nodes.has(target)) {
-          const id = targets.length === 1 ? claim.id : `${claim.id}:${JSON.stringify(target)}`;
-          const edge: KnowledgeMapEdge = { id, kind: "claim", source, target, status: claim.status, relation: claim.relation, firstSeenAtMs: claim.recordedAtMs ?? undefined };
-          edges.set(id, edge);
+        if (claim.status !== "disputed") continue;
+        for (const edge of projectClaim(claim)) {
+          if (nodes.has(edge.source) && nodes.has(edge.target)) edges.set(edge.id, edge);
         }
       }
     }

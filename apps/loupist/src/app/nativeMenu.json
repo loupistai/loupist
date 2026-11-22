@@ -1,0 +1,72 @@
+[
+  {
+    "id": "app",
+    "labels": ["{app}", "{app}"],
+    "items": [
+      { "id": "about", "role": "about", "labels": ["About {app}", "{app}에 관하여"] },
+      { "id": "check-updates", "labels": ["Check for Updates…", "업데이트 확인…"], "when": "shell" },
+      { "id": "settings", "translation": "shell.settings", "ellipsis": true, "accelerator": "CmdOrCtrl+,", "when": "shell" },
+      { "role": "separator" },
+      { "id": "services", "role": "services", "labels": ["Services", "서비스"], "macOnly": true },
+      { "role": "separator", "macOnly": true },
+      { "id": "hide", "role": "hide", "labels": ["Hide {app}", "{app} 가리기"], "accelerator": "Cmd+H", "macOnly": true },
+      { "id": "hide-others", "role": "hide_others", "labels": ["Hide Others", "기타 가리기"], "macOnly": true },
+      { "id": "show-all", "role": "show_all", "labels": ["Show All", "모두 보기"], "macOnly": true },
+      { "role": "separator", "macOnly": true },
+      { "id": "quit", "role": "quit", "labels": ["Quit {app}", "{app} 종료"], "accelerator": "CmdOrCtrl+Q", "when": "always" }
+    ]
+  },
+  {
+    "id": "file",
+    "labels": ["File", "파일"],
+    "items": [
+      { "id": "new-chat", "translation": "shell.newChat", "accelerator": "CmdOrCtrl+N", "when": "loupist" },
+      { "id": "new-loupist", "translation": "shell.newLoupist", "ellipsis": true, "when": "shell" },
+      { "role": "separator" },
+      { "id": "print-chat", "labels": ["Print…", "인쇄…"], "accelerator": "CmdOrCtrl+P", "when": "print" },
+      { "id": "close-window", "labels": ["Close Window", "윈도우 닫기"], "accelerator": "CmdOrCtrl+W", "when": "window" }
+    ]
+  },
+  {
+    "id": "edit",
+    "labels": ["Edit", "편집"],
+    "items": [
+      { "id": "undo", "role": "undo", "labels": ["Undo", "실행 취소"] },
+      { "id": "redo", "role": "redo", "labels": ["Redo", "실행 복귀"] },
+      { "role": "separator" },
+      { "id": "cut", "role": "cut", "labels": ["Cut", "오려두기"] },
+      { "id": "copy", "role": "copy", "labels": ["Copy", "복사하기"] },
+      { "id": "paste", "role": "paste", "labels": ["Paste", "붙여넣기"] },
+      { "id": "select-all", "role": "select_all", "labels": ["Select All", "모두 선택"] }
+    ]
+  },
+  {
+    "id": "view",
+    "labels": ["View", "보기"],
+    "items": [
+      { "id": "toggle-sidebar", "labels": ["Toggle Sidebar", "사이드바 표시 전환"], "accelerator": "CmdOrCtrl+B", "when": "sidebar" },
+      { "role": "separator" },
+      { "id": "chat", "translation": "shell.tabs.chat", "accelerator": "CmdOrCtrl+1", "when": "loupist", "destination": true },
+      { "id": "following", "translation": "shell.tabs.following", "accelerator": "CmdOrCtrl+2", "when": "loupist", "destination": true },
+      { "id": "map", "translation": "shell.tabs.map", "accelerator": "CmdOrCtrl+3", "when": "loupist", "destination": true },
+      { "id": "lens", "translation": "shell.tabs.lens", "accelerator": "CmdOrCtrl+4", "when": "loupist", "destination": true },
+      { "id": "schedule", "translation": "shell.tabs.schedule", "accelerator": "CmdOrCtrl+5", "when": "loupist", "destination": true },
+      { "role": "separator" },
+      { "id": "zoom-in", "labels": ["Zoom In", "확대"], "accelerator": "CmdOrCtrl+Shift+Equal", "displayKey": "+", "when": "zoom_in" },
+      { "id": "zoom-out", "labels": ["Zoom Out", "축소"], "accelerator": "CmdOrCtrl+-", "when": "zoom_out" },
+      { "id": "actual-size", "labels": ["Actual Size", "실제 크기"], "accelerator": "CmdOrCtrl+0", "when": "zoom_reset" },
+      { "role": "separator" },
+      { "id": "fullscreen", "role": "fullscreen", "labels": ["Enter Full Screen", "전체 화면 시작"], "alternate": ["Exit Full Screen", "전체 화면 종료"], "accelerator": "F11", "macAccelerator": "Ctrl+Cmd+F", "when": "window" }
+    ]
+  },
+  {
+    "id": "window",
+    "labels": ["Window", "윈도우"],
+    "items": [
+      { "id": "minimize", "role": "minimize", "labels": ["Minimize", "최소화"], "accelerator": "CmdOrCtrl+M", "when": "window" },
+      { "id": "maximize", "role": "maximize", "labels": ["Maximize", "최대화"], "macLabels": ["Zoom", "확대/축소"], "alternate": ["Restore", "복원"], "when": "window" },
+      { "role": "separator", "macOnly": true },
+      { "id": "bring-all-to-front", "role": "bring_all_to_front", "labels": ["Bring All to Front", "모두 앞으로 가져오기"], "macOnly": true }
+    ]
+  }
+]

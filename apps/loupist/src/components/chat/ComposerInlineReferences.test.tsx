@@ -19,8 +19,8 @@ function Composer({ draft, onSend = vi.fn() }: { draft: ChatDraft; onSend?: (tex
     <button onClick={() => { const next = [...chips, quoteChip("answer", "Margin fell last year.")]; draft.chips = next; setChips(next); }}>Add quote</button>
     <ChatComposer attachmentDraft={draft} prompt={prompt} onPromptChange={value => { draft.prompt = value; setPrompt(value); }}
       privateChat isRunning={false} error={null} streamAnnouncement="" asOf="2026-03-03" onAsOfChange={vi.fn()}
-      models={[{ id: "model", provider: "test", model: "model", name: "Model", input: ["text"], reasoning: true, context_window: 10000, max_tokens: 1000, thinking_levels: ["medium"], thinking_level_map: {}, run_controls: [], credential_source: "saved" }]} providers={[]} modelSelection={{ model_profile_id: "model", thinking_level: "medium", run_options: {} }} modelAuto onModelResetToAuto={() => {}}
-      skills={[{ id: "research", name: "Research", description: "Research a topic" }]} plugins={[]}
+      models={[{ id: "model", provider: "test", model: "model", name: "Model", input: ["text"], reasoning: true, context_window: 10000, max_tokens: 1000, thinking_levels: ["medium"], thinking_level_map: {}, run_controls: [], credential_source: "saved" }]} providers={[]} modelSelection={{ model_profile_id: "model", thinking_level: "medium", run_options: {} }} modelIsDefault onChooseDefault={() => {}}
+      skills={[{ id: "research", name: "Research", description: "Research a topic", source: "personal" }]} plugins={[]}
       chips={chips} onChipsChange={next => { draft.chips = next; setChips(next); }} knowledgePins={pins}
       onAddKnowledgePin={restored => { const next = [...draft.pins.filter(item => item.objectId !== restored.objectId), restored]; draft.pins = next; setPins(next); }}
       onRemoveKnowledgePin={removed => { const next = draft.pins.filter(item => item.objectId !== removed.objectId); draft.pins = next; setPins(next); }}

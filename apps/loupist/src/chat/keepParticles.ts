@@ -17,6 +17,39 @@ const isCitation = (node: Element) =>
 
 const text = (value: string): Text => ({ type: "text", value });
 
+/** Move the trailing word, including emphasis, punctuation and its original spacing,
+ * into the first citation's group. Stop at another chip or a block boundary. */
+function takeCitationLead(nodes: ElementContent[], end: number): ElementContent[] {
+  const lead: ElementContent[] = [];
+  while (end > 0) {
+    const node = nodes[end - 1]!;
+    if (node.type === "text") {
+      const tail = node.value.match(/\S+\s*$|\s+$/u)?.[0];
+      if (!tail) break;
+      node.value = node.value.slice(0, -tail.length);
+      if (!node.value) nodes.splice(--end, 1);
+      lead.unshift(text(tail));
+      if (/[^\s\p{P}]/u.test(tail)) break;
+    } else if (node.type === "element" && ["strong", "em", "del"].includes(node.tagName)) {
+      const tail = takeCitationLead(node.children, node.children.length);
+      if (!tail.length) break;
+      lead.unshift({ ...node, children: tail });
+      if (!node.children.length) nodes.splice(--end, 1);
+      break;
+    } else {
+      // Keep an interactive word intact. Never split a link into duplicate controls.
+      if (node.type === "element" && (node.tagName === "a" || node.tagName === "code" ||
+          (node.tagName === "span" && node.properties.className?.toString() === "number-keep" &&
+            node.children.some(part => isEvidenceLink(part) && !isCitation(part))))) {
+        lead.unshift(node);
+        nodes.splice(end - 1, 1);
+      }
+      break;
+    }
+  }
+  return lead;
+}
+
 function keep(parent: Root | Element) {
   const children = parent.children as ElementContent[];
   for (let index = 0; index < children.length; index += 1) {
@@ -26,10 +59,7 @@ function keep(parent: Root | Element) {
       keep(child);
       continue;
     }
-    // A numbered citation never starts a line on its own: the space before it does not break.
-    // Code never holds a parsed link, so its spaces stay as written.
     const previous = children[index - 1];
-    if (isCitation(child) && previous?.type === "text") previous.value = previous.value.replace(/[ \t]+$/u, " ");
     const next = children[index + 1];
     const opening = previous?.type === "text" ? previous.value.match(LEADING)?.[0] : undefined;
     const closing = next?.type === "text" ? next.value.match(TRAILING)?.[0] : undefined;
@@ -50,6 +80,19 @@ function keep(parent: Root | Element) {
       if (!previous.value) { start -= 1; count += 1; }
     }
     children.splice(start, count, group, ...after);
+    if (isCitation(child)) {
+      const lead = takeCitationLead(children, start);
+      if (lead.length) {
+        start = children.indexOf(group);
+        // A space between consecutive chips remains an ordinary break opportunity.
+        if (lead.every(part => part.type === "text" && !part.value.trim())) {
+          children.splice(start, 0, ...lead);
+          start += lead.length;
+        } else {
+          children[start] = { type: "element", tagName: "span", properties: { className: ["citation-keep"] }, children: [...lead, group] };
+        }
+      }
+    }
     index = start;
   }
 }

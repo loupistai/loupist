@@ -1,6 +1,7 @@
 import i18n, { useTranslation } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import type { LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin } from "../../types";
+import type { SourceOpen } from "../../knowledge/location";
 import { errorMessage } from "../../lib/errors";
 import { PageReader } from "../memory/PageReader";
 import { SourceWorkspace } from "../knowledge/SourceWorkspace";
@@ -13,6 +14,7 @@ const t = i18n.getFixedT(null, "chat");
 type Props = {
   bridge: LoupistBridge;
   location: KnowledgeLocation;
+  sourceOpen?: SourceOpen;
   onOpen: (location: KnowledgeLocation) => void;
   onPatch: (location: KnowledgeLocation) => void;
   onOpenPage: (location: KnowledgeLocation) => void;
@@ -21,7 +23,7 @@ type Props = {
 };
 
 /** The same exact readers used by World and Lens, without their library navigation. */
-export function WorkspaceKnowledgeReader({ bridge, location, onOpen, onPatch, onOpenPage, onAsk, onOpenLink }: Props) {
+export function WorkspaceKnowledgeReader({ bridge, location, sourceOpen, onOpen, onPatch, onOpenPage, onAsk, onOpenLink }: Props) {
   useTranslation("chat");
   const [catalog, setCatalog] = useState<KnowledgeCatalog | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,5 +50,5 @@ export function WorkspaceKnowledgeReader({ bridge, location, onOpen, onPatch, on
   const page = lensId ? <div className="workspace-page-reader"><div className="evidence-actions"><Button type="button" variant="outline" size="sm" onClick={() => onOpenPage({ loupistId: location.loupistId, surface: "lens", recordId: lensId })}>{t("workspaceKnowledgeReader.openInLens")}</Button></div><PageReader bridge={bridge} loupistId={location.loupistId} recordId={lensId} catalog={catalog} onOpen={onOpen}
     onOpenPage={(recordId) => onOpen({ loupistId: location.loupistId, surface: "lens", recordId, objectId: recordId, selection: { kind: "lens", recordId } })}
     onAsk={onAsk} onChanged={changed} /></div> : <p>{t("workspaceKnowledgeReader.thisReferenceIsUnavailable")}</p>;
-  return <div className="workspace-knowledge-reader">{location.surface === "lens" ? page : location.surface === "source" ? <SourceWorkspace {...props} /> : <p>{t("workspaceKnowledgeReader.thisReferenceIsUnavailable")}</p>}</div>;
+  return <div className="workspace-knowledge-reader">{location.surface === "lens" ? page : location.surface === "source" ? <SourceWorkspace {...props} sourceOpen={sourceOpen} opensLinksInPanel /> : <p>{t("workspaceKnowledgeReader.thisReferenceIsUnavailable")}</p>}</div>;
 }

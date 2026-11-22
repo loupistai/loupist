@@ -4,9 +4,17 @@ A pack is a folder, ZIP or public GitHub repo of selected Memory. Scan and licen
 
 ## This release
 
-Pack sharing stays in the program. The user app leaves out Share on Lens and in Settings › Loupists, the Gallery, "use a link or file", pack review, the list of packs already added, and suggestions from those packs. A `loupist://import` link is dismissed, and no dialog opens. There is no settings switch, and no address opens those screens. Map and Lens reading stay, including "Shared · {pack}" on a name or page that already came from a pack. Map image and replay export stay under More → Export. Importing a local Loupist folder stays. Rust (`src-tauri/src/sharing/`, `src-tauri/src/knowledge/shared_pack.rs`) still owns the format, scans, network calls and storage. The screens in `src/components/sharing/` stay, and the development preview harness can still open them. Set `SHARING_UI_IN_RELEASE` in `src/sharing/releaseVisibility.ts` to show the entry points again.
+Pack sharing stays in the program. The user app leaves out Share on Lens and in Settings › Loupists, the Gallery, "use a link or file", pack review, the list of packs already added, and suggestions from those packs. A `loupist://import` link is dismissed, and no dialog opens. There is no settings switch, and no address opens those screens. World and Lens reading stay, including "Shared · {pack}" on a name or page that already came from a pack. World image and replay export stay under More → Export. Importing a local Loupist folder stays. Rust (`src-tauri/src/sharing/`, `src-tauri/src/knowledge/shared_pack.rs`) still owns the format, scans, network calls and storage. The screens in `src/components/sharing/` stay, and the development preview harness can still open them. Set `SHARING_UI_IN_RELEASE` in `src/sharing/releaseVisibility.ts` to show the entry points again.
 
 ## Sharing
+
+User-added Skills and custom MCP connections stay in the code and are off in shipped
+builds. Updating from 0.1.2 preserves those local files and records. A pack can neither
+include nor install either kind of extension, even in a local debug build launched with
+`LOUPIST_DEV_USER_SKILLS=1` or `LOUPIST_DEV_CUSTOM_CONNECTIONS=1`. The private-string
+scan leaves dormant custom MCP credentials unopened and resumes checking them in debug
+when the custom connections switch is on. Pack validation continues to refuse executable
+or authority-bearing entries.
 
 A Loupist can be shared as a `loupist-pack/1` pack: a folder, a ZIP, a public GitHub
 repository, or a gist holding one method or principle. Rust (`src-tauri/src/sharing/`,
@@ -16,11 +24,11 @@ matched value) and validated text. [Pack bounds and scans](../capabilities/packs
 own file and text rules; [Trust](../architecture.md#trust) owns GitHub, deep links and how
 shared text reaches the model.
 
-When the entry points are shown, Share opens from "What {Loupist} knows" and each Settings › Loupists row; Share on a
-method in the Lens reader, or on a principle on "What {Loupist} knows", shares that item
+When the entry points are shown, Share opens from "{Loupist}’s Lens" and each Settings › Loupists row; Share on a
+method in the Lens reader, or on a principle on "{Loupist}’s Lens", shares that item
 alone. [This release](#this-release) leaves those controls out of the user app. A pack carries the Profile (name,
 focus, tone, avatar), a standing perspective other than the default, active methods and
-principles, and the Map's names, relationships and Sources, each section switchable.
+principles, and World's names, relationships and Sources, each section switchable.
 Sources travel as references (title, host, URL, EDGAR or DART filing ID, DOI, publication
 date) without bytes or quotes. Record IDs never leave: items carry keys derived from the
 pack ID, and `lens:` links keep only their label. The export reads nothing else, so
@@ -41,7 +49,7 @@ every Source is private or restricted is left out and counted. A name leaves onl
 a relationship.
 
 Before a save or publish, Rust scans every string that would leave. A store, SQL,
-row-decoding, provider-auth-file, custom-connection-file or credential read error
+row-decoding, provider-auth-file, active custom-connection-file or credential read error
 blocks sharing; an absent credential stays empty. If saved credentials cannot be
 checked, sharing asks the person to unlock the Keychain or reconnect and try again;
 it never scans with a partial credential list. Saved credentials of eight or more
@@ -55,8 +63,8 @@ shorter than four characters are not matched and do not block sharing. Ordinary
 short settings such as ports, locales and modes are not credential substrings.
 GitHub Keychain read failures also block the scan; short finance credential fields
 enter the same saved-credential matching rules instead of being discarded. Credentials
-(including every stored provider key or sign-in token, custom-connection secret,
-connector credential and the GitHub token) and account numbers from connections
+(including every stored provider key or sign-in token, secrets for available custom
+connections, connector credentials and the GitHub token) and account numbers from connections
 block until that item is left out; an email, phone number, the macOS
 full name or home path warns and can be accepted ("It's fine"). Export rebuilds the pack
 and refuses unresolved findings (`findings_unresolved`). The scan has no holding class

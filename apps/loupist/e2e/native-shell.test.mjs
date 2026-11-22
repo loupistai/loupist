@@ -1,7 +1,35 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
-import { measureMapDrawProbe, measureMapProbe, openMapLibrary, openCustomConnections, openMainTab, readVisibleMapStats, selectLoupistTemplate } from "./native-shell.mjs";
+import { measureMapDrawProbe, measureMapProbe, openMapLibrary, openCustomConnections, openLoupistSwitcher, openMainTab, readVisibleMapStats, selectLoupistTemplate } from "./native-shell.mjs";
+
+test("reopening the Loupist switcher activates its trigger during menu exit", async () => {
+  let expanded = false;
+  let clicks = 0;
+  const trigger = "[data-testid=loupist-header-identity]";
+  const browser = {
+    execute: async (_callback, selector) => {
+      assert.equal(selector, trigger);
+      return "ready";
+    },
+    $: selector => selector === trigger ? {
+      getAttribute: async name => name === "aria-haspopup" ? "menu" : String(expanded),
+      isDisplayed: async () => true,
+      click: async () => { clicks++; expanded = true; },
+    } : {
+      // A closing Radix menu can still have layout and be displayed.
+      isDisplayed: async () => true,
+      waitForDisplayed: async () => assert(expanded),
+    },
+    waitUntil: async condition => {
+      assert(await condition());
+      return true;
+    },
+  };
+  await openLoupistSwitcher(browser);
+  await openLoupistSwitcher(browser);
+  assert.equal(clicks, 1);
+});
 
 test("map counts come from the visible map after routing, never a retained hidden view", async () => {
   const span = (textContent, { hidden = false, width = 200, visibility = "visible" } = {}) => ({
@@ -9,10 +37,10 @@ test("map counts come from the visible map after routing, never a retained hidde
     closest: () => hidden ? {} : null,
     getClientRects: () => width ? [{}] : [],
   });
-  let spans = [span("99 on the map · 88 relationships", { hidden: true }),
-    span("77 on the map · 66 relationships", { width: 0 }),
-    span("55 on the map · 44 relationships", { visibility: "hidden" }),
-    span(" · 1 new this week"), span("34 on the map · 34 relationships")];
+  let spans = [span("99 in World · 88 relationships", { hidden: true }),
+    span("77 in World · 66 relationships", { width: 0 }),
+    span("55 in World · 44 relationships", { visibility: "hidden" }),
+    span(" · 1 new this week"), span("34 in World · 34 relationships")];
   const browser = { execute: async script => runInNewContext(`(${script})()`, {
     document: { querySelectorAll: selector => {
       assert.equal(selector, "[data-testid=map-view] [data-testid=map-stats] > span");
@@ -20,8 +48,8 @@ test("map counts come from the visible map after routing, never a retained hidde
     } },
     getComputedStyle: element => ({ visibility: element.visibility }),
   }) };
-  assert.equal(await readVisibleMapStats(browser), "34 on the map · 34 relationships");
-  spans = [span("99 on the map · 88 relationships", { hidden: true }), span("Loading")];
+  assert.equal(await readVisibleMapStats(browser), "34 in World · 34 relationships");
+  spans = [span("99 in World · 88 relationships", { hidden: true }), span("Loading")];
   assert.equal(await readVisibleMapStats(browser), "");
 });
 
@@ -66,7 +94,7 @@ function browserFixture(frames) {
   return { browser, reads: () => reads, url: () => requestedUrl };
 }
 
-test("frame probe waits through old document and unfinished render, then samples the visible Map together", async () => {
+test("frame probe waits through old document and unfinished render, then samples the visible World together", async () => {
   const source = browserFixture([
     { url: `${origin}/preview.html?scenario=map-1000&probe=1`, text: "1000 nodes · median 21.00 ms · p95 26.00 ms" },
     { ready: "loading" },
@@ -174,7 +202,7 @@ test("a stuck model menu moves focus to the current Chat before retrying dismiss
 });
 
 for (const initiallyOpen of [false, true]) {
-  test(`Map Library ${initiallyOpen ? "keeps its open state" : "opens from the persistent toolbar button"}`, async () => {
+  test(`World Library ${initiallyOpen ? "keeps its open state" : "opens from the persistent toolbar button"}`, async () => {
     let libraryOpen = initiallyOpen;
     const clicks = [];
     const librarySelector = "[data-testid=map-view] aside[data-testid=map-library]";

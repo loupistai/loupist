@@ -54,7 +54,7 @@ qualify native file dialogs, the child browser or WKWebView form legends.
 
 Capture readiness first waits for each scenario’s visible landmark. Inline and revised financial-chart
 scenarios require their chart canvas in a browser. It then waits for rendered Markdown, loaded
-fonts, settled lazy requests and DOM, and unchanged Map canvas pixels. Readable Markdown
+fonts, settled lazy requests and DOM, and unchanged World canvas pixels. Readable Markdown
 fallbacks must disappear before capture, even when their text has no formatting markers.
 Preview framing waits for rendered content and fonts before scrolling the target into view;
 Bot alert and results previews also wait for morning content to finish its automatic scroll.

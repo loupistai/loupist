@@ -36,7 +36,7 @@ sign-in code in the provider extension.
 
 ## Shared providers and World processing
 
-Settings › AI accounts owns shared sign-ins, keys and the model catalog; it is the first Settings destination, followed by Loupists, Data connections, Chat defaults and Skills, then General (menu-bar residence, the AI notice and a privacy summary), Appearance, Keyboard and Updates. The global Chat default model's empty choice reads "Auto · recommended model": Auto picks a recommended model at admission and never follows the last answer's model. Response speed (Standard or Fast) sits under Advanced and says Fast may cost more on API keys.
+Settings › AI accounts owns shared sign-ins, keys and the model catalog; it is the first Settings destination, followed by Loupists, Data connections, Chat defaults and Skills, then General (menu-bar residence, the AI notice and a privacy summary), Appearance, Keyboard and Updates. An unset Chat model follows the host’s recommended model. The catalog and scoped Settings snapshots identify the concrete choice before a turn starts. Response speed (Standard or Fast) sits under Advanced and says Fast may cost more on API keys.
 Its Add a provider sheet and onboarding share one list of ways to connect
 (`components/settings/ProviderWays.tsx`, featured rows from the provider
 manifest); the sheet adds Pi's other key providers
@@ -93,18 +93,38 @@ Removing a custom endpoint always deletes its card and status row, even when sav
 Startup also removes status rows left by older builds for custom endpoints absent from `models.json`.
 Once sign-in is stored, a closed renderer event channel does not fail the completed connection.
 Progress and completion messages use host copy, never provider-supplied prose that might contain a credential.
-A rejected OpenAI OAuth token exchange containing `invalid_grant` becomes the fixed
-`chatgpt_connection_rejected` reason. Pi's browser callback confirms receipt of the
-authorization code before the exchange runs. The rejection alone gives no account
-eligibility or workspace-policy diagnosis, so the recoverable warning names no
-cause: it says the browser sign-in was approved but ChatGPT did not finish
-connecting and gave no reason, that Retry starts a new browser authorization and
-may work, and that an OpenAI API key is another way to connect.
+ChatGPT's loopback callback shows a self-contained Loupist page in the current
+interface language (English or Korean). Pi confirms receipt of the authorization
+code before token exchange. The page reads “Return to Loupist” and says the
+provider approved the sign-in and Loupist finishes connecting in the app. It
+ends with “You can close this tab.” Settings shows whether the exchange succeeded. On success or failure after handing off to the browser, the host
+brings the main window forward. Cancelling from Loupist ends quietly. SuperGrok
+uses xAI’s device-code page and has no local callback page.
+
+For one ChatGPT login, including the development Codex client, the provider
+extension observes the HTTP response headers and single-chunk body. It recognizes
+`text/html` with Pi’s exact document title `Authentication successful` or
+`Authentication failed`, preserves the HTTP status and escapes Pi's failure
+message and details. Other titles and streaming pages pass through. Replacing a
+fixed-length body updates its UTF-8 byte count. The extension restores the HTTP
+method when login exits. Remove this wrapper if Pi gains a callback-page option.
+The release sidecar check starts both real loopback flows and submits a wrong
+state offline.
+
+The callback uses the app's native icon and the light/dark values of
+`--gg-color-bg-app`, `--gg-color-text-primary`, `--gg-color-text-secondary` and
+`--gg-color-text-tertiary` from `src/styles/tokens.css`. It loads no external assets.
+
+On a rejected exchange, the extension reports the HTTP status and a
+fixed OAuth error code. Rust checks the code against its allowlist before logging
+it and uses `unknown` for other values. The UI offers a fresh sign-in or an API key.
+An explicit eligibility error selects the plan warning. A bare `invalid_grant`
+selects `chatgpt_connection_rejected` because it does not identify a plan restriction.
 An OpenAI consent cancellation (`access_denied`) keeps the declined wording and offers
 the same key action. A failed extension event ends the support operation immediately,
 including when Pi already acknowledged the command and writes no credential result;
 the waiting card clears and other connection methods remain available. Pi owns OAuth
-unchanged; no provider error text leaves the extension.
+validation and exchange. The host and its logs receive only typed failure categories.
 An API-key change sends the key only over Pi's private stdin RPC answer, once,
 after the extension's secret-login callback requests `ctx.ui.input` with the exact
 title `loupist-provider/1:api_key`. Rust checks the request type, method, title and
@@ -155,7 +175,9 @@ An in-process permit excludes concurrent probes. Preparation, runtime launch fai
 dispatch and a confirmed `not_sent` result leave the window available; a completed or uncertain dispatch
 spends it when its outcome is consumed.
 
-The composer’s Auto tooltip describes admission-time resolution rather than displaying the last answer’s model. Its explicit per-Loupist message override is session state; a saved Chat default remains host state.
+The catalog exposes its current recommended model in `default_selection`. Global and project configuration snapshots carry the effective `modelSelection`, including a model identity, default flag, supported thinking levels and run controls, and the chosen settings. An unavailable selection has a null model and a typed reason. A composer override belongs to the renderer session. The host keeps the stored Chat preference unset until the user chooses a model.
+
+Each project snapshot can carry a `defaultModelChange` with previous and current identities. Refresh the project configuration when catalog or provider status changes, and acknowledge a displayed change by ID with `model_notice_ack`. The host retains the notice across reads and restart until acknowledgement. The global catalog stores this per-Loupist observation separately from the selected model, using the extensible `app_settings` key space.
 
 Auto is resolved in Rust (`providers/auto.rs`) at each Chat or scheduled
 admission: an explicit model that is still offered runs; an empty choice, or one
@@ -174,9 +196,7 @@ wins (`flash-lite` is Flash), and an undeclared family takes the `unknown` tier,
 ordering. Auto excludes Astra from the reviewed Chat defaults and from fallback.
 Chat keeps GPT-6.1 Sol first and includes GPT-6.2 Sol at medium when it is available. With nothing connected, admission fails with a pointer to
 Settings. An empty choice keeps the requested reasoning and run options only where
-the resolved model supports them. Rust remembers each provider's last Auto model;
-when Auto changes because that model is gone, or an explicit Chat default leaves
-the catalog, a line above the composer says so once (`model_notice_ack`).
+the resolved model supports them. Rust remembers each provider’s last admitted default model. Scoped change notices cover default moves. The catalog also reports removal of an explicitly configured global model.
 
 Bot and research use the same reasoning-level resolution: an explicit choice,
 then the saved Chat default when supported, then the model default from

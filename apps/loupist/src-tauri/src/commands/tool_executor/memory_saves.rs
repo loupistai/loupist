@@ -278,6 +278,15 @@ impl AppToolExecutor {
             return Err(BrokerError::Execution("Only a summary of this result was delivered. Read a narrower original result before saving its exact payload as a Source".into()));
         }
         let workspace_file = result.producer.origin == RunResultOrigin::WorkspaceFile;
+        let title = if workspace_file {
+            result.payload["path"]
+                .as_str()
+                .and_then(|path| self.captured_attachment_snapshot_title(path))
+                .and_then(|title| self.capture.file_labels.stored_title(&title))
+                .unwrap_or(title)
+        } else {
+            title
+        };
         let provided = self.provided_origin(policy, &result)?;
         let bytes = if workspace_file || provided.is_some() {
             result

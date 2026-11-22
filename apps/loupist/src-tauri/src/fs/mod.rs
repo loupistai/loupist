@@ -9,4 +9,5 @@ pub(crate) mod pinned_root;
 pub(crate) mod secure_delete;
 #[cfg(windows)]
 pub(crate) mod windows;
+pub(crate) mod workspace_document;
 pub(crate) mod workspace_files;

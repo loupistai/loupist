@@ -11,8 +11,8 @@ import {
   type SetStateAction,
 } from "react";
 import type { ChatFeedback, ChatArtifactSelection, ChatKnowledgePin, ChatMessage, ChatThread, LoupistBridge } from "../types";
-import { errorMessage } from "../lib/errors";
-import type { ChatAdmission } from "./submission";
+import { commandErrorCode, errorMessage } from "../lib/errors";
+import { admissionRefusal, type ChatAdmission } from "./submission";
 import { markActive } from "../app/loupistVisit";
 import {
   RUNTIME_STOP_MARKER,
@@ -93,6 +93,7 @@ export function useLoupistChat({
   const [announcement, setAnnouncement] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isStopping, setIsStopping] = useState(false);
+  const [skipRequested, setSkipRequested] = useState<string>();
   const mountedRef = useRef(true);
   const retryGuard = useRef(false);
   const {
@@ -147,10 +148,14 @@ export function useLoupistChat({
   const isRunning =
     status === "submitted" || status === "streaming" || isStopping;
   const lastMessageStatus = messages.at(-1)?.status;
+  const savingRunId = messages.at(-1)?.memorySaving?.run_id;
+  const isSkipping = savingRunId !== undefined && skipRequested === savingRunId;
   // Only the run's transitions are said here. Each step's label is the turn's own live
   // region (TurnFooter), throttled; saying it here too repeated every step at once.
-  const visibleAnnouncement = isStopping
+  const waitingForMemory = commandErrorCode(chatError) === "memory_busy";
+  const visibleAnnouncement = waitingForMemory ? "" : isStopping
     ? t("useLoupistChat.stoppingResponse")
+    : savingRunId ? ""
     : isRunning
       ? t("useLoupistChat.loupistIsGeneratingAResponse")
       : lastMessageStatus === "aborted"
@@ -209,8 +214,10 @@ export function useLoupistChat({
             : thread,
         ),
       );
-      setError(null);
-      setAnnouncement(t("useLoupistChat.loupistIsGeneratingAResponse"));
+      if (mountedRef.current && chatScope.current.chat === chat) {
+        setError(null);
+        setAnnouncement(t("useLoupistChat.loupistIsGeneratingAResponse"));
+      }
       return new Promise<ChatAdmission>((resolve) => {
         let settled = false;
         let admitted = false;
@@ -221,8 +228,8 @@ export function useLoupistChat({
           admitted = receipt.accepted;
           // A message the host accepted makes this a working visit: Bot's news waits.
           if (receipt.accepted) markActive(loupistId);
-          if (!receipt.accepted && mountedRef.current && chatScope.current.epoch === capturedEpoch) {
-            setError(receipt.error);
+          if (!receipt.accepted && mountedRef.current && chatScope.current.chat === chat && chatScope.current.epoch === capturedEpoch) {
+            setError(receipt.code === "memory_busy" ? null : receipt.error);
           }
           resolve(receipt);
         };
@@ -258,7 +265,7 @@ export function useLoupistChat({
         ).then(() => {
           onAdmission({ accepted: false, error: t("useLoupistChat.theReplyDidNotStartCheckTheConversationBeforeTryingAgain") });
         }).catch((cause) => {
-          onAdmission({ accepted: false, error: errorMessage(cause, t("useLoupistChat.couldNotStartTheResponse")) });
+          onAdmission(admissionRefusal(cause, t("useLoupistChat.couldNotStartTheResponse")));
         }).finally(() => {
           // A failed admission belongs in the outbox, not the saved conversation.
           if (!admitted && chat.messages) chat.messages = chat.messages.filter((message) => message.id !== optimisticId);
@@ -337,7 +344,7 @@ export function useLoupistChat({
 
 
   const abort = useCallback(async () => {
-    if (!isRunning || isStopping || !activeThread?.id) return;
+    if (!isRunning || isStopping || isSkipping || !activeThread?.id) return;
     const threadId = activeThread.id;
     const capturedLoupist = loupistId;
     const capturedEpoch = chatScope.current.epoch;
@@ -348,6 +355,19 @@ export function useLoupistChat({
       chatScope.current.chat === chat &&
       chatScope.current.loupistId === capturedLoupist &&
       chatScope.current.threadId === threadId;
+    if (savingRunId) {
+      // Keep the stream open for the completed answer and its Memory receipt.
+      setSkipRequested(savingRunId);
+      setError(null);
+      try { await bridge.chatAbort(savingRunId); }
+      catch (cause) {
+        setSkipRequested(current => current === savingRunId ? undefined : current);
+        if (stillThisChat() && chat.lastMessage?.metadata?.status === "streaming") {
+          setError(errorMessage(cause, t("memorySaving.skipFailed")));
+        }
+      }
+      return;
+    }
     setIsStopping(true);
     try {
       await stop();
@@ -401,6 +421,8 @@ export function useLoupistChat({
     loupistId,
     isRunning,
     isStopping,
+    isSkipping,
+    savingRunId,
     setMessages,
     stop,
     uiMessages.length,
@@ -493,11 +515,11 @@ export function useLoupistChat({
     messages,
     messageKeys,
     isRunning,
-    isStopping,
+    isStopping: isStopping || isSkipping,
     announcement: visibleAnnouncement,
     // A terminal assistant error has its own localized notice. Local operation
     // failures still belong beside the composer, including a failed retry.
-    error: error ?? (messages.at(-1)?.role === "assistant" && lastMessageStatus === "error" ? null : chatError?.message ?? null),
+    error: error ?? (waitingForMemory || messages.at(-1)?.role === "assistant" && lastMessageStatus === "error" ? null : chatError?.message ?? null),
     submit,
     steer,
     commitSteers,

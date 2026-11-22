@@ -21,6 +21,7 @@ use crate::{
     app::AppState,
     fs::artifact_trust::{ensure_private_directory, ensure_private_regular_file},
     mcp::{McpCallResult, McpError, McpLaunchConfig, McpSession, McpTool},
+    runs::maintenance::MaintenanceCoordinator,
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -45,6 +46,8 @@ pub struct ConnectionRecord {
     pub env_keys: Vec<String>,
     pub header_names: Vec<String>,
     pub last_error: Option<String>,
+    #[serde(default)]
+    pub verified_at_ms: Option<i64>,
     pub needs_review: bool,
     pub auth_state: AuthState,
 }
@@ -98,26 +101,144 @@ pub struct Service {
     credential_environment: String,
     stored: StoredConnections,
     sessions: BTreeMap<String, Session>,
+    partition: Option<String>,
+    maintenance: MaintenanceCoordinator,
 }
 
-pub type SharedService = Arc<tokio::sync::Mutex<Service>>;
+pub type SharedService = Arc<ConnectionServices>;
+
+type ScopedService = Arc<tokio::sync::Mutex<Service>>;
+
+pub struct ConnectionServices {
+    root: PathBuf,
+    environment: String,
+    maintenance: MaintenanceCoordinator,
+    services: Mutex<BTreeMap<String, ScopedService>>,
+}
+
+impl ConnectionServices {
+    pub fn for_connection(
+        &self,
+        id: &str,
+    ) -> Result<tokio::sync::OwnedMutexGuard<Service>, ConnectionError> {
+        if !valid_id(id) {
+            return Err(ConnectionError::Configuration);
+        }
+        let stored = load_stored(&self.root)?;
+        if !stored.connections.contains_key(id) {
+            return Err(ConnectionError::Configuration);
+        }
+        self.open_partition(id, false)
+    }
+
+    pub fn for_new_connection(
+        &self,
+    ) -> Result<tokio::sync::OwnedMutexGuard<Service>, ConnectionError> {
+        let stored = load_stored(&self.root)?;
+        if stored.connections.len() >= 32 {
+            return Err(ConnectionError::Configuration);
+        }
+        self.open_partition(&format!("custom-{}", uuid::Uuid::new_v4().simple()), true)
+    }
+
+    fn open_partition(
+        &self,
+        id: &str,
+        new: bool,
+    ) -> Result<tokio::sync::OwnedMutexGuard<Service>, ConnectionError> {
+        let mut services = self
+            .services
+            .lock()
+            .map_err(|_| ConnectionError::Configuration)?;
+        let scoped = match services.get(id) {
+            Some(scoped) => scoped.clone(),
+            None => {
+                let scoped = Arc::new(tokio::sync::Mutex::new(Service {
+                    root: self.root.clone(),
+                    credential_environment: self.environment.clone(),
+                    stored: StoredConnections::default(),
+                    sessions: BTreeMap::new(),
+                    partition: Some(id.to_owned()),
+                    maintenance: self.maintenance.clone(),
+                }));
+                services.insert(id.to_owned(), scoped.clone());
+                scoped
+            }
+        };
+        drop(services);
+        let mut service = scoped
+            .try_lock_owned()
+            .map_err(|_| ConnectionError::KeychainBusy)?;
+        if credentials::is_pending(&self.environment, id)? {
+            return Err(ConnectionError::KeychainBusy);
+        }
+        let stored = load_stored(&self.root)?;
+        if !new && !stored.connections.contains_key(id) {
+            return Err(ConnectionError::Configuration);
+        }
+        service.stored.connections = stored
+            .connections
+            .get(id)
+            .cloned()
+            .map(|record| (id.to_owned(), record))
+            .into_iter()
+            .collect();
+        service
+            .stored
+            .approvals
+            .replace_connection(id, &stored.approvals);
+        Ok(service)
+    }
+
+    pub fn add(&self, parsed: ParsedConnection) -> Result<ConnectionView, ConnectionError> {
+        let mut service = self.for_new_connection()?;
+        let id = service
+            .partition
+            .clone()
+            .ok_or(ConnectionError::Configuration)?;
+        let result = service.add_pending(parsed);
+        drop(service);
+        if result.is_err()
+            && load_stored(&self.root).is_ok_and(|stored| !stored.connections.contains_key(&id))
+        {
+            self.forget(&id);
+        }
+        result
+    }
+
+    pub fn forget(&self, id: &str) {
+        if let Ok(mut services) = self.services.lock() {
+            services.remove(id);
+        }
+    }
+}
 
 pub fn for_state(state: &AppState) -> Result<SharedService, ConnectionError> {
-    static SERVICES: OnceLock<Mutex<BTreeMap<PathBuf, SharedService>>> = OnceLock::new();
-    let mut services = SERVICES
-        .get_or_init(Default::default)
+    if !crate::extension_availability::custom_connections() {
+        return Err(ConnectionError::Unavailable);
+    }
+    let mut holder = state
+        .custom_services
         .lock()
         .map_err(|_| ConnectionError::Configuration)?;
-    let root = state.artifacts.app_data_dir.join("custom-connections");
-    if let Some(service) = services.get(&root) {
+    if let Some(service) = holder.as_ref() {
         return Ok(service.clone());
     }
-    let service = Arc::new(tokio::sync::Mutex::new(Service::open(
-        root.clone(),
-        state.credential_environment.to_string(),
-    )?));
-    services.insert(root, service.clone());
+    let root = state.artifacts.app_data_dir.join("custom-connections");
+    Service::open(root.clone(), state.credential_environment.to_string())?;
+    let service = Arc::new(ConnectionServices {
+        root,
+        environment: state.credential_environment.to_string(),
+        maintenance: state.maintenance.clone(),
+        services: Mutex::new(BTreeMap::new()),
+    });
+    *holder = Some(service.clone());
     Ok(service)
+}
+
+fn persistence_lock() -> &'static Mutex<()> {
+    static PERSIST: OnceLock<Mutex<()>> = OnceLock::new();
+    PERSIST.get_or_init(Default::default)
 }
 
 fn load_stored(root: &Path) -> Result<StoredConnections, ConnectionError> {
@@ -155,6 +276,9 @@ fn load_stored(root: &Path) -> Result<StoredConnections, ConnectionError> {
 }
 
 pub fn records_for_state(state: &AppState) -> Result<Vec<ConnectionRecord>, ConnectionError> {
+    if !crate::extension_availability::custom_connections() {
+        return Ok(Vec::new());
+    }
     Ok(
         load_stored(&state.artifacts.app_data_dir.join("custom-connections"))?
             .connections
@@ -167,14 +291,40 @@ pub fn views_for_state(
     state: &AppState,
     loupist: Option<&str>,
 ) -> Result<Vec<ConnectionView>, ConnectionError> {
+    if !crate::extension_availability::custom_connections() {
+        return Ok(Vec::new());
+    }
     let root = state.artifacts.app_data_dir.join("custom-connections");
     let service = Service {
         stored: load_stored(&root)?,
         root,
         credential_environment: state.credential_environment.to_string(),
         sessions: BTreeMap::new(),
+        partition: None,
+        maintenance: state.maintenance.clone(),
     };
     Ok(service.list(loupist))
+}
+
+pub fn approval_pending_for_state(
+    state: &AppState,
+    loupist: &str,
+    id: &str,
+    tool_name: &str,
+) -> Result<bool, ConnectionError> {
+    if !crate::extension_availability::custom_connections() {
+        return Ok(false);
+    }
+    let root = state.artifacts.app_data_dir.join("custom-connections");
+    let service = Service {
+        stored: load_stored(&root)?,
+        root,
+        credential_environment: state.credential_environment.to_string(),
+        sessions: BTreeMap::new(),
+        partition: None,
+        maintenance: state.maintenance.clone(),
+    };
+    Ok(service.approval_pending(loupist, id, tool_name))
 }
 
 /// Every stored secret of every custom connection (headers, environment,
@@ -200,6 +350,96 @@ pub fn valid_id(id: &str) -> bool {
         .is_some_and(|suffix| suffix.len() == 32 && suffix.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
+#[derive(Clone)]
+struct CredentialAccess {
+    root: PathBuf,
+    environment: String,
+    maintenance: MaintenanceCoordinator,
+}
+
+impl CredentialAccess {
+    fn save(
+        &self,
+        id: &str,
+        secrets: &Secrets,
+        auth_state: AuthState,
+    ) -> Result<(), ConnectionError> {
+        let root = self.root.clone();
+        let entry = id.to_owned();
+        credentials::save(
+            &self.environment,
+            id,
+            secrets,
+            &self.maintenance,
+            move |saved| update_saved_credential_state(&root, &entry, saved, Some(auth_state)),
+        )
+    }
+
+    async fn save_async(
+        &self,
+        id: &str,
+        secrets: &Secrets,
+        auth_state: AuthState,
+    ) -> Result<(), ConnectionError> {
+        let access = self.clone();
+        let secrets = secrets.clone();
+        let id = id.to_owned();
+        tokio::task::spawn_blocking(move || access.save(&id, &secrets, auth_state))
+            .await
+            .map_err(|_| ConnectionError::KeychainUnavailable)?
+    }
+
+    fn remove(&self, id: &str) -> Result<(), ConnectionError> {
+        let root = self.root.clone();
+        let entry = id.to_owned();
+        credentials::remove(&self.environment, id, &self.maintenance, move |removed| {
+            if removed {
+                match std::fs::remove_dir_all(root.join(&entry)) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(_) => {
+                        update_saved_credential_state(&root, &entry, false, None)?;
+                        return Err(ConnectionError::Configuration);
+                    }
+                }
+            }
+            update_saved_credential_state(&root, &entry, removed, None)
+        })
+    }
+}
+
+fn update_saved_credential_state(
+    root: &Path,
+    id: &str,
+    succeeded: bool,
+    auth_state: Option<AuthState>,
+) -> Result<(), ConnectionError> {
+    let _guard = persistence_lock()
+        .lock()
+        .map_err(|_| ConnectionError::Configuration)?;
+    let mut stored = load_stored(root)?;
+    let Some(record) = stored.connections.get_mut(id) else {
+        return Ok(());
+    };
+    match (succeeded, auth_state) {
+        (true, Some(auth_state)) => {
+            record.auth_state = auth_state;
+            record.last_error = None;
+            if auth_state == AuthState::SignedIn {
+                record.verified_at_ms = Some(chrono::Utc::now().timestamp_millis());
+            }
+        }
+        (true, None) => {
+            stored.connections.remove(id);
+            stored.approvals.remove_connection(id);
+        }
+        (false, _) => {
+            record.last_error = Some("credential_store_unavailable".into());
+        }
+    }
+    write_stored(root, &stored)
+}
+
 impl Service {
     pub fn open(root: PathBuf, credential_environment: String) -> Result<Self, ConnectionError> {
         ensure_private_directory(&root).map_err(|_| ConnectionError::Configuration)?;
@@ -216,6 +456,8 @@ impl Service {
             credential_environment,
             stored,
             sessions: BTreeMap::new(),
+            partition: None,
+            maintenance: MaintenanceCoordinator::default(),
         };
         if interrupted {
             service.persist()?;
@@ -236,23 +478,62 @@ impl Service {
     }
 
     fn persist_inner(&self) -> Result<(), ConnectionError> {
-        let encoded =
-            serde_json::to_vec(&self.stored).map_err(|_| ConnectionError::Configuration)?;
-        if encoded.len() > 16 * 1024 * 1024 {
-            return Err(ConnectionError::Configuration);
-        }
-        let mut file = tempfile::NamedTempFile::new_in(&self.root)
+        let _guard = persistence_lock()
+            .lock()
             .map_err(|_| ConnectionError::Configuration)?;
-        file.write_all(&encoded)
-            .map_err(|_| ConnectionError::Configuration)?;
-        file.as_file()
-            .sync_all()
-            .map_err(|_| ConnectionError::Configuration)?;
-        file.persist(self.root.join("connections.json"))
-            .map_err(|_| ConnectionError::Configuration)?;
-        Ok(())
+        let merged;
+        let stored = match &self.partition {
+            Some(id) => {
+                let mut latest = load_stored(&self.root)?;
+                match self.stored.connections.get(id) {
+                    Some(record) => {
+                        latest.connections.insert(id.clone(), record.clone());
+                    }
+                    None => {
+                        latest.connections.remove(id);
+                    }
+                }
+                if latest.connections.len() > 32 {
+                    return Err(ConnectionError::Configuration);
+                }
+                latest
+                    .approvals
+                    .replace_connection(id, &self.stored.approvals);
+                merged = latest;
+                &merged
+            }
+            None => &self.stored,
+        };
+        write_stored(&self.root, stored)
     }
 
+    fn credential_access(&self) -> CredentialAccess {
+        CredentialAccess {
+            root: self.root.clone(),
+            environment: self.credential_environment.clone(),
+            maintenance: self.maintenance.clone(),
+        }
+    }
+}
+
+fn write_stored(root: &Path, stored: &StoredConnections) -> Result<(), ConnectionError> {
+    let encoded = serde_json::to_vec(stored).map_err(|_| ConnectionError::Configuration)?;
+    if encoded.len() > 16 * 1024 * 1024 {
+        return Err(ConnectionError::Configuration);
+    }
+    let mut file =
+        tempfile::NamedTempFile::new_in(root).map_err(|_| ConnectionError::Configuration)?;
+    file.write_all(&encoded)
+        .map_err(|_| ConnectionError::Configuration)?;
+    file.as_file()
+        .sync_all()
+        .map_err(|_| ConnectionError::Configuration)?;
+    file.persist(root.join("connections.json"))
+        .map_err(|_| ConnectionError::Configuration)?;
+    Ok(())
+}
+
+impl Service {
     pub fn list(&self, loupist: Option<&str>) -> Vec<ConnectionView> {
         self.stored
             .connections
@@ -304,7 +585,11 @@ impl Service {
                 .collect(),
             env_keys: record.env_keys.clone(),
             header_names: record.header_names.clone(),
-            last_error: record.last_error.clone(),
+            last_error: if credentials::read_blocked(&self.credential_environment, &record.id) {
+                Some("credential_access_unavailable".into())
+            } else {
+                record.last_error.clone()
+            },
             needs_review: record.needs_review
                 || loupist.is_some_and(|loupist| {
                     record.tools.iter().any(|tool| {
@@ -341,8 +626,10 @@ impl Service {
         ) {
             return Err(ConnectionError::Configuration);
         }
-        let id = format!("custom-{}", uuid::Uuid::new_v4().simple());
-        credentials::save(&self.credential_environment, &id, &parsed.secrets)?;
+        let id = self
+            .partition
+            .clone()
+            .unwrap_or_else(|| format!("custom-{}", uuid::Uuid::new_v4().simple()));
         let record = ConnectionRecord {
             id: id.clone(),
             name: parsed.name,
@@ -354,15 +641,14 @@ impl Service {
             env_keys: parsed.secrets.env.keys().cloned().collect(),
             header_names: parsed.secrets.headers.keys().cloned().collect(),
             last_error: None,
+            verified_at_ms: None,
             needs_review: true,
             auth_state: AuthState::NotRequired,
         };
         self.stored.connections.insert(id.clone(), record);
-        if let Err(error) = self.persist() {
-            self.stored.connections.remove(&id);
-            let _ = credentials::remove(&self.credential_environment, &id);
-            return Err(error);
-        }
+        self.persist()?;
+        self.credential_access()
+            .save(&id, &parsed.secrets, AuthState::NotRequired)?;
         self.get(&id, None)
     }
 
@@ -378,7 +664,11 @@ impl Service {
         id: &str,
         loupist_id: Option<&str>,
     ) -> Result<ConnectionView, ConnectionError> {
-        let view = self.inspect(id, false, true).await?;
+        if loupist_id.is_none() && credentials::read_blocked(&self.credential_environment, id) {
+            self.load_credentials(id, true).await?;
+            return self.get(id, None);
+        }
+        let view = self.inspect(id, false, true, None).await?;
         match loupist_id
             .map(str::trim)
             .filter(|loupist| !loupist.is_empty())
@@ -391,7 +681,7 @@ impl Service {
     }
 
     pub async fn probe(&mut self, id: &str) -> Result<ConnectionView, ConnectionError> {
-        self.inspect(id, false, false).await
+        self.inspect(id, false, false, None).await
     }
 
     pub fn begin_sign_in(&mut self, id: &str) -> Result<(), ConnectionError> {
@@ -420,7 +710,7 @@ impl Service {
     }
 
     pub async fn sign_in(&mut self, id: &str) -> Result<ConnectionView, ConnectionError> {
-        self.inspect(id, true, true).await
+        self.inspect(id, true, true, None).await
     }
 
     async fn inspect(
@@ -428,27 +718,46 @@ impl Service {
         id: &str,
         interactive: bool,
         confirm: bool,
+        secrets: Option<Secrets>,
     ) -> Result<ConnectionView, ConnectionError> {
-        let result = self.open_session(id, interactive).await;
+        let result = match secrets {
+            Some(secrets) => self.open_with_credentials(id, interactive, secrets).await,
+            None => match self.load_credentials(id, confirm).await {
+                Ok(secrets) => self.open_with_credentials(id, interactive, secrets).await,
+                Err(error) => Err(error),
+            },
+        };
         let record = self
             .stored
             .connections
             .get_mut(id)
             .ok_or(ConnectionError::Configuration)?;
         match result {
-            Ok(()) => {
+            Ok(secrets) => {
                 if confirm {
                     record.pending = false;
                 }
                 record.last_error = None;
-                record.auth_state = if credentials::load(&self.credential_environment, id)?
-                    .tokens
-                    .is_some()
-                {
+                record.verified_at_ms = Some(chrono::Utc::now().timestamp_millis());
+                record.auth_state = if secrets.tokens.is_some() {
                     AuthState::SignedIn
                 } else {
                     AuthState::NotRequired
                 };
+            }
+            Err(ConnectionError::KeychainMutationPending) => {
+                // The native completion publishes this record. Do not apply
+                // stale local state after the caller's wait expires.
+                return Err(ConnectionError::KeychainMutationPending);
+            }
+            Err(error @ (ConnectionError::KeychainBusy | ConnectionError::KeychainUnavailable)) => {
+                // The read itself owns its current Keychain status. A caller
+                // timeout must leave the saved setup and grants intact.
+                if record.auth_state == AuthState::InProgress {
+                    record.auth_state = AuthState::SignInNeeded;
+                    self.persist()?;
+                }
+                return Err(error);
             }
             Err(error) => {
                 if matches!(
@@ -521,14 +830,13 @@ impl Service {
         if let Some(Session::Stdio(session)) = self.sessions.remove(id) {
             let _ = session.shutdown(Duration::from_secs(1)).await;
         }
-        credentials::remove(&self.credential_environment, id)?;
-        match std::fs::remove_dir_all(self.root.join(id)) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => return Err(ConnectionError::Configuration),
-        }
+        let access = self.credential_access();
+        let entry = id.to_owned();
+        tokio::task::spawn_blocking(move || access.remove(&entry))
+            .await
+            .map_err(|_| ConnectionError::KeychainUnavailable)??;
         self.stored.connections.remove(id);
-        self.persist()
+        Ok(())
     }
 
     pub async fn set_client(
@@ -548,7 +856,7 @@ impl Service {
         {
             return Err(ConnectionError::Configuration);
         }
-        let mut secrets = credentials::load(&self.credential_environment, id)?;
+        let mut secrets = self.load_credentials(id, true).await?;
         secrets.replace_registration(auth::Registration {
             issuer: issuer.into(),
             client_id,
@@ -561,41 +869,83 @@ impl Service {
             client_secret,
             dynamically_registered: false,
         });
-        credentials::save(&self.credential_environment, id, &secrets)?;
+        self.credential_access()
+            .save_async(id, &secrets, AuthState::SignInNeeded)
+            .await?;
         self.begin_sign_in(id)?;
-        self.sign_in(id).await
+        self.inspect(id, true, true, Some(secrets)).await
     }
 
-    async fn open_session(&mut self, id: &str, interactive: bool) -> Result<(), ConnectionError> {
+    async fn load_credentials(
+        &mut self,
+        id: &str,
+        recheck: bool,
+    ) -> Result<Secrets, ConnectionError> {
+        let result = credentials::load_async(&self.credential_environment, id, recheck).await?;
+        if let Some(secrets) = result {
+            return Ok(secrets);
+        }
+        let record = self
+            .stored
+            .connections
+            .get_mut(id)
+            .ok_or(ConnectionError::Configuration)?;
+        if !record.header_names.is_empty()
+            || !record.env_keys.is_empty()
+            || record.auth_state == AuthState::SignedIn
+        {
+            record.pending = true;
+            record.last_error = Some("credential_missing".into());
+            if record.auth_state == AuthState::SignedIn {
+                record.auth_state = AuthState::SignInNeeded;
+            }
+            self.sessions.remove(id);
+            self.persist()?;
+            return Err(ConnectionError::CredentialStore);
+        }
+        Ok(Secrets::default())
+    }
+
+    async fn open_session(
+        &mut self,
+        id: &str,
+        interactive: bool,
+    ) -> Result<Secrets, ConnectionError> {
+        let secrets = self.load_credentials(id, false).await?;
+        self.open_with_credentials(id, interactive, secrets).await
+    }
+
+    async fn open_with_credentials(
+        &mut self,
+        id: &str,
+        interactive: bool,
+        mut secrets: Secrets,
+    ) -> Result<Secrets, ConnectionError> {
         if self.sessions.contains_key(id) {
-            return self.refresh_inventory(id, interactive).await;
+            self.refresh_inventory(id, interactive, &mut secrets)
+                .await?;
+            return Ok(secrets);
         }
         let record = self.record(id)?.clone();
-        let mut secrets = credentials::load(&self.credential_environment, id)?;
+        let access = self.credential_access();
         let (session, tools) = match record.transport {
             TransportConfig::Http { url } => {
                 let mut transport = HttpTransport::new(&url)?;
                 transport.set_headers(&secrets.headers)?;
-                authorized_request(&mut transport, "initialize", json!({"protocolVersion":crate::mcp::MCP_PROTOCOL_VERSION,"capabilities":{},"clientInfo":{"name":"Loupist","version":env!("CARGO_PKG_VERSION")}}), &mut secrets, &self.credential_environment, id, interactive).await?;
+                authorized_request(&mut transport, "initialize", json!({"protocolVersion":crate::mcp::MCP_PROTOCOL_VERSION,"capabilities":{},"clientInfo":{"name":"Loupist","version":env!("CARGO_PKG_VERSION")}}), &mut secrets, &access, id, interactive).await?;
                 authorized_request(
                     &mut transport,
                     "notifications/initialized",
                     json!({}),
                     &mut secrets,
-                    &self.credential_environment,
+                    &access,
                     id,
                     interactive,
                 )
                 .await?;
                 let mut session = Session::Http(transport);
-                let tools = list_tools(
-                    &mut session,
-                    &mut secrets,
-                    &self.credential_environment,
-                    id,
-                    interactive,
-                )
-                .await?;
+                let tools =
+                    list_tools(&mut session, &mut secrets, &access, id, interactive).await?;
                 (session, tools)
             }
             TransportConfig::Stdio { command, args } => {
@@ -625,7 +975,7 @@ impl Service {
         };
         self.accept_inventory(id, tools, &secrets)?;
         self.sessions.insert(id.into(), session);
-        Ok(())
+        Ok(secrets)
     }
 
     fn accept_inventory(
@@ -664,22 +1014,16 @@ impl Service {
         &mut self,
         id: &str,
         interactive: bool,
+        secrets: &mut Secrets,
     ) -> Result<(), ConnectionError> {
-        let mut secrets = credentials::load(&self.credential_environment, id)?;
+        let access = self.credential_access();
         let session = self
             .sessions
             .get_mut(id)
             .ok_or(ConnectionError::Configuration)?;
         // Re-list before every invocation, including notifications/list_changed.
         // Approvals never outlive a changed descriptor even if a server omits notifications.
-        let tools = list_tools(
-            session,
-            &mut secrets,
-            &self.credential_environment,
-            id,
-            interactive,
-        )
-        .await;
+        let tools = list_tools(session, secrets, &access, id, interactive).await;
         let tools = match tools {
             Ok(tools) => tools,
             Err(error) => {
@@ -689,7 +1033,7 @@ impl Service {
                 return Err(error);
             }
         };
-        self.accept_inventory(id, tools, &secrets)
+        self.accept_inventory(id, tools, secrets)
     }
 
     pub async fn connect(
@@ -796,7 +1140,7 @@ impl Service {
         {
             return Err(ConnectionError::Configuration);
         }
-        self.open_session(id, !unattended).await?;
+        let mut secrets = self.open_session(id, !unattended).await?;
         let tool = self
             .record(id)?
             .tools
@@ -816,7 +1160,7 @@ impl Service {
         if allow_once {
             self.persist()?;
         }
-        let mut secrets = credentials::load(&self.credential_environment, id)?;
+        let access = self.credential_access();
         let exchange = async {
             match self
                 .sessions
@@ -829,7 +1173,7 @@ impl Service {
                         "tools/call",
                         json!({"name":name,"arguments":arguments}),
                         &mut secrets,
-                        &self.credential_environment,
+                        &access,
                         id,
                         !unattended,
                     )
@@ -848,6 +1192,9 @@ impl Service {
                         .await
                     {
                         Ok(result) => result,
+                        Err(McpError::InvalidParams) => {
+                            return Err(ConnectionError::InvalidArguments)
+                        }
                         Err(error) => return Err(stdio_error(session, error).await),
                     };
                     let result =
@@ -870,7 +1217,7 @@ impl Service {
             return Err(ConnectionError::Protocol);
         }
         if changed {
-            self.refresh_inventory(id, false).await?;
+            self.refresh_inventory(id, false, &mut secrets).await?;
         }
         Ok(result)
     }
@@ -896,7 +1243,7 @@ async fn stdio_error(session: &McpSession, error: McpError) -> ConnectionError {
 async fn list_tools(
     session: &mut Session,
     secrets: &mut Secrets,
-    environment: &str,
+    access: &CredentialAccess,
     id: &str,
     interactive: bool,
 ) -> Result<Vec<McpTool>, ConnectionError> {
@@ -920,7 +1267,7 @@ async fn list_tools(
                     "tools/list",
                     params,
                     secrets,
-                    environment,
+                    access,
                     id,
                     interactive,
                 )
@@ -947,7 +1294,7 @@ async fn authorized_request(
     method: &str,
     params: Value,
     secrets: &mut Secrets,
-    environment: &str,
+    access: &CredentialAccess,
     id: &str,
     interactive: bool,
 ) -> Result<Value, ConnectionError> {
@@ -990,7 +1337,7 @@ async fn authorized_request(
                     if let Ok(tokens) = auth::refresh(&found.metadata, registration, tokens).await {
                         secrets.replace_tokens(tokens);
                         secrets.metadata = Some(found.metadata);
-                        credentials::save(environment, id, secrets)?;
+                        access.save_async(id, secrets, AuthState::SignedIn).await?;
                         continue;
                     }
                 }
@@ -1025,6 +1372,6 @@ async fn authorized_request(
         secrets.replace_registration(registration);
         secrets.metadata = Some(found.metadata);
         secrets.replace_tokens(tokens);
-        credentials::save(environment, id, secrets)?;
+        access.save_async(id, secrets, AuthState::SignedIn).await?;
     }
 }

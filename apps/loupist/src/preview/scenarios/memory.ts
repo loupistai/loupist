@@ -36,11 +36,11 @@ export const principleScenarios: PreviewScenario[] = [
   })),
 ];
 
-/** "What {Loupist} knows" and corrections under an answer. */
+/** "{Loupist}’s Lens" and corrections under an answer. */
 export const memoryScenarios: PreviewScenario[] = [
-  // W15.15–W15.17: "What {Loupist} knows", the inline correction under an answer, and the once-per-chat decline.
+  // W15.15–W15.17: "{Loupist}’s Lens", the inline correction under an answer, and the once-per-chat decline.
   ...(["memory-page", "memory-page-empty", "memory-paused", "memory-reset-dialog"] as const).map((id): PreviewScenario => ({
-    ...base(id, id === "memory-page" ? "What the Loupist knows, with a principle open" : id === "memory-paused" ? "Learning is paused" : "A new Loupist has no pages yet",
+    ...base(id, id === "memory-page" ? "The Loupist’s Lens, with a principle open" : id === "memory-paused" ? "Learning is paused" : "A new Loupist has no pages yet",
       () => select(id === "memory-reset-dialog" ? ".memory-reset-dialog" : id === "memory-page" ? ".memory-reader:not(.is-empty)" : id === "memory-paused" ? ".memory-page-paused" : ".memory-empty"), async root => {
         await until(() => root.querySelector("textarea[data-chat-composer]"), "Chat did not initialize");
         if (id === "memory-reset-dialog") {
@@ -76,7 +76,7 @@ export const memoryScenarios: PreviewScenario[] = [
       }
     },
   })),
-  { ...base("memory-pages", "What the Loupist knows: a topic page open with every kind of basis", () => {
+  { ...base("memory-pages", "The Loupist’s Lens: a topic page open with every kind of basis", () => {
     const reader = select(".memory-reader .page-reader");
     return reader && reader.querySelector(".page-contested") && reader.querySelector('[data-chip="said"]') && reader.querySelector('[data-chip="view"]') ? reader : null;
   }, async root => {
@@ -142,7 +142,7 @@ export const receiptScenarios: PreviewScenario[] = [
       }
       if (hasLayout()) {
         await until(() => id === "chat-receipt-empty" ? select(".chat-receipt") : root.querySelector("button.loupist-citation"), "Answer rendering did not finish");
-        await until(() => id === "chat-receipt-empty" || select('.chat-receipt [data-receipt="names"]'), "Map growth did not reach the receipt");
+        await until(() => id === "chat-receipt-empty" || select('.chat-receipt [data-receipt="names"]'), "World growth did not reach the receipt");
         select(id === "chat-learned" ? ".learned-card" : ".chat-receipt")?.scrollIntoView({ block: "center" });
       }
     }),

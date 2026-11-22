@@ -1,4 +1,4 @@
-import type { KnowledgeMapEdge, KnowledgeMapNode } from "../contracts/knowledge";
+import type { GraphClaim, KnowledgeMapEdge, KnowledgeMapNode } from "../contracts/knowledge";
 
 /** Language tag → the script its Map names prefer. Another locale adds a row here. */
 const localScripts: Record<string, RegExp> = {
@@ -36,4 +36,16 @@ export const isDrawnRelation = (edge: Pick<KnowledgeMapEdge, "source" | "target"
 export function claimIdForEdge(edge: KnowledgeMapEdge) {
   const projectedSuffix = `:${JSON.stringify(edge.target)}`;
   return edge.id.endsWith(projectedSuffix) ? edge.id.slice(0, -projectedSuffix.length) : edge.id;
+}
+
+/** The host Map represents multi-endpoint claims as stars, and single-endpoint facts as self edges. */
+export function projectClaim(claim: GraphClaim): KnowledgeMapEdge[] {
+  const source = claim.endpoints[0]?.nodeId;
+  if (!source) return [];
+  const targets = [...new Set(claim.endpoints.slice(1).map(endpoint => endpoint.nodeId))];
+  if (!targets.length) targets.push(source);
+  return targets.map(target => ({
+    id: targets.length === 1 ? claim.id : `${claim.id}:${JSON.stringify(target)}`,
+    kind: "claim", source, target, relation: claim.relation, status: claim.status, firstSeenAtMs: claim.recordedAtMs ?? undefined,
+  }));
 }

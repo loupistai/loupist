@@ -17,6 +17,77 @@ const REGENERATE: &str = "LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path a
 const HEADER: &str = "// Generated from Rust by ts-rs; do not edit. Regenerate with:\n// LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract\n";
 const WIDTH: usize = 100;
 
+#[test]
+fn a_memory_skip_receipt_serializes_only_the_item_kind_and_title() {
+    use crate::domain::{
+        DiscardedMemoryItem, DiscardedMemoryKind, MemorySaveSkipReason, MemoryUpdateResult,
+        MemoryUpdateStatus,
+    };
+    use serde_json::json;
+
+    let receipt = MemoryUpdateResult {
+        status: MemoryUpdateStatus::NoChange,
+        skip_reason: Some(MemorySaveSkipReason::User),
+        discarded_memory_items: Some(vec![DiscardedMemoryItem {
+            kind: DiscardedMemoryKind::Note,
+            title: "Short overlap check".into(),
+        }]),
+        commit_id: None,
+        changes: vec![],
+        skipped_kinds: vec![],
+        setup: vec![],
+    };
+    assert_eq!(
+        serde_json::to_value(receipt).unwrap(),
+        json!({
+            "status": "no_change",
+            "skipReason": "user",
+            "discardedMemoryItems": [{"kind": "note", "title": "Short overlap check"}],
+            "commitId": null,
+            "changes": []
+        })
+    );
+}
+
+#[test]
+fn saving_serializes_the_finished_answer_with_its_number_marks() {
+    use crate::{chat::progress::ChatSaveActivity, commands::types::ChatStreamEvent};
+    use serde_json::json;
+
+    let number_check = json!({
+        "link_index": 0, "text": "96,169", "evidence_id": "ev_sales",
+        "kind": "passage", "status": "matched", "span": {"start": 14, "end": 20}
+    });
+    let event = ChatStreamEvent::Saving {
+        run_id: "run-chart".into(),
+        waiting_for_other_chat: true,
+        blocking_chat_id: Some("chat-older".into()),
+        final_text: Some("Services were [96,169](#evidence-ev_sales).".into()),
+        number_checks: Some(vec![serde_json::from_value(number_check.clone()).unwrap()]),
+        save_activity: Some(ChatSaveActivity {
+            started_at_ms: 1000,
+            finished_at_ms: None,
+            waited_ms: 1200,
+            blocking_chat_id: Some("chat-older".into()),
+        }),
+    };
+    assert_eq!(
+        serde_json::to_value(event).unwrap(),
+        json!({
+            "type": "saving",
+            "run_id": "run-chart",
+            "waiting_for_other_chat": true,
+            "blocking_chat_id": "chat-older",
+            "final_text": "Services were [96,169](#evidence-ev_sales).",
+            "number_checks": [number_check],
+            "save_activity": {
+                "startedAtMs": 1000, "finishedAtMs": null,
+                "waitedMs": 1200, "blockingChatId": "chat-older"
+            }
+        })
+    );
+}
+
 /// Every bridge request, response, stream event and emitted payload. Their
 /// field types follow automatically.
 fn roots(collector: &mut Collector<'_>) {
@@ -36,6 +107,7 @@ fn roots(collector: &mut Collector<'_>) {
         crate::commands::legacy_holdings::LegacyHoldingsStatus,
         crate::events::WorldSchemaChanged,
         crate::agent_harness::AgentSkillSummary,
+        crate::app_menu::AppMenuContext,
         crate::briefings::commands::BriefingSettings,
         crate::briefings::commands::InboxPage,
         crate::briefings::commands::InboxRequest,
@@ -171,9 +243,16 @@ fn roots(collector: &mut Collector<'_>) {
         crate::custom_connections::commands::ListRequest,
         crate::custom_connections::commands::MemoryRequest,
         crate::custom_connections::service::ConnectionView,
+        crate::domain::ChatEvidenceRef,
         crate::domain::ChatFeedback,
         crate::fs::workspace_files::WorkspaceDirectory,
+        crate::fs::workspace_document::WorkspaceDocumentRequest,
+        crate::fs::workspace_document::WorkspaceDocumentHandler,
+        crate::fs::workspace_document::WorkspaceDocumentOpen,
         crate::fs::workspace_files::WorkspaceFile,
+        crate::python_run::workbook::WorkbookRequest,
+        crate::python_run::workbook::WorkbookRead,
+        crate::python_run::workbook::WorkbookProgress,
         crate::knowledge::FollowedStatus,
         crate::knowledge::GraphJobView,
         crate::knowledge::GraphProcessingView,
@@ -264,6 +343,7 @@ fn roots(collector: &mut Collector<'_>) {
         crate::updater::UpdateInstallResult,
         crate::updater::UpdateStateDto,
         crate::web::browser::BrowserTabBoundsRequest,
+        crate::marketplace::key_permission::PermissionProgress,
         crate::web::browser::BrowserTabEvent,
         crate::web::browser::BrowserTabHistoryRequest,
         crate::web::browser::BrowserTabNavigateRequest,
@@ -285,13 +365,17 @@ macro_rules! commands {
 }
 
 commands! {
+        app_menu_update: crate::app_menu::AppMenuContext => ();
         briefing_settings_get: crate::briefings::commands::LoupistRequest => crate::briefings::commands::BriefingSettings;
         briefing_settings_set: crate::briefings::commands::SettingsRequest => crate::briefings::commands::BriefingSettings;
         inbox_list: crate::briefings::commands::InboxRequest => crate::briefings::commands::InboxPage;
         inbox_mark_read: crate::briefings::commands::ReadRequest => ();
         inbox_unread_counts: () => Vec<crate::briefings::commands::UnreadCount>;
-        briefing_resident_settings_get: () => crate::briefings::desktop::ResidentSettings;
-        briefing_resident_settings_set: crate::briefings::desktop::ResidentRequest => crate::briefings::desktop::ResidentSettings;
+        briefing_resident_settings_get: () => crate::briefings::login_item::DesktopSettings;
+        briefing_resident_settings_set: crate::briefings::desktop::ResidentRequest => crate::briefings::login_item::DesktopSettings;
+        login_item_set: crate::briefings::login_item::LoginItemRequest => crate::briefings::login_item::DesktopSettings;
+        login_item_hint_dismiss: () => crate::briefings::login_item::DesktopSettings;
+        login_item_open_settings: () => ();
         model_catalog_get: () => crate::providers::catalog::ModelCatalogView;
         model_visibility_update: crate::commands::ModelVisibilityUpdateRequest => crate::providers::catalog::ModelCatalogView;
         open_external_url: () => ();
@@ -420,7 +504,10 @@ commands! {
         legacy_holdings_dismiss: () => crate::commands::legacy_holdings::LegacyHoldingsStatus;
         chat_activity_read: crate::commands::workspace::ChatActivityRequest => crate::chat::activity::ChatActivityDetail;
         workspace_list: crate::commands::workspace::WorkspacePathRequest => crate::fs::workspace_files::WorkspaceDirectory;
+        workspace_workbook_read: crate::python_run::workbook::WorkbookRequest => crate::python_run::workbook::WorkbookRead;
         workspace_read: crate::commands::workspace::WorkspacePathRequest => crate::fs::workspace_files::WorkspaceFile;
+        workspace_document_handler: crate::fs::workspace_document::WorkspaceDocumentRequest => crate::fs::workspace_document::WorkspaceDocumentHandler;
+        workspace_document_open: crate::fs::workspace_document::WorkspaceDocumentRequest => crate::fs::workspace_document::WorkspaceDocumentOpen;
         workspace_reveal: crate::commands::workspace::WorkspacePathRequest => ();
         chat_draft_files_read: crate::commands::workspace_ui::DraftIdentity => Vec<crate::commands::workspace_ui::DraftAttachment>;
         chat_draft_files_write: crate::commands::workspace_ui::DraftIdentity => ();
@@ -448,6 +535,8 @@ commands! {
         marketplace_credential_delete: crate::marketplace::MarketplaceCredentialRequest => Vec<crate::marketplace::MarketplaceCredentialStatusDto>;
         marketplace_credential_save: crate::marketplace::MarketplaceCredentialSaveRequest => Vec<crate::marketplace::MarketplaceCredentialStatusDto>;
         marketplace_credential_unlock: crate::marketplace::MarketplaceCredentialRequest => Vec<crate::marketplace::MarketplaceCredentialStatusDto>;
+        marketplace_credentials_allow_access: String => ();
+        marketplace_credentials_cancel_access: String => ();
         marketplace_credential_verify: crate::marketplace::MarketplaceCredentialRequest => Vec<crate::marketplace::MarketplaceCredentialStatusDto>;
         model_notice_ack: crate::providers::connection::ModelNoticeAckRequest => crate::providers::catalog::ModelCatalogView;
         provider_configure: crate::providers::connection::ProviderConfigureRequest => crate::providers::catalog::ModelCatalogView;
@@ -566,13 +655,21 @@ async fn command_signatures() {
     );
     let _: Result<Vec<crate::briefings::commands::UnreadCount>, CommandError> =
         crate::briefings::commands::inbox_unread_counts(any());
-    let _: Result<crate::briefings::desktop::ResidentSettings, CommandError> =
+    let _: Result<crate::briefings::login_item::DesktopSettings, CommandError> =
         crate::briefings::desktop::briefing_resident_settings_get(any());
-    let _: Result<crate::briefings::desktop::ResidentSettings, CommandError> =
+    let _: Result<crate::briefings::login_item::DesktopSettings, CommandError> =
         crate::briefings::desktop::briefing_resident_settings_set(
             any::<crate::briefings::desktop::ResidentRequest>(),
             any(),
         );
+    let _: Result<crate::briefings::login_item::DesktopSettings, CommandError> =
+        crate::briefings::login_item::login_item_set(
+            any::<crate::briefings::login_item::LoginItemRequest>(),
+            any(),
+        );
+    let _: Result<crate::briefings::login_item::DesktopSettings, CommandError> =
+        crate::briefings::login_item::login_item_hint_dismiss(any());
+    let _: Result<(), CommandError> = crate::briefings::login_item::login_item_open_settings();
     let _: Result<crate::providers::catalog::ModelCatalogView, CommandError> =
         crate::commands::model_catalog_get(any()).await;
     let _: Result<crate::providers::catalog::ModelCatalogView, CommandError> =
@@ -581,6 +678,7 @@ async fn command_signatures() {
             any(),
         );
     let _: Result<(), CommandError> = crate::commands::open_external_url(any());
+    let _: Result<(), CommandError> = crate::app_menu::app_menu_update(any(), any(), any());
     let _: Result<Vec<crate::runs::coordinator::RunActivity>, CommandError> =
         crate::commands::run_activity_list(any());
     let _: Result<crate::store::app_settings::AppSettings, CommandError> =
@@ -1123,6 +1221,12 @@ async fn command_signatures() {
             any(),
         )
         .await;
+    let _: Result<crate::python_run::workbook::WorkbookRead, CommandError> =
+        crate::commands::workspace::workspace_workbook_read(any(), any(), any()).await;
+    let _: Result<crate::fs::workspace_document::WorkspaceDocumentHandler, CommandError> =
+        crate::commands::workspace::workspace_document_handler(any(), any()).await;
+    let _: Result<crate::fs::workspace_document::WorkspaceDocumentOpen, CommandError> =
+        crate::commands::workspace::workspace_document_open(any(), any()).await;
     let _: Result<(), CommandError> = crate::commands::workspace::workspace_reveal(
         any::<crate::commands::workspace::WorkspacePathRequest>(),
         any(),
@@ -1262,9 +1366,18 @@ async fn command_signatures() {
     let _: Result<Vec<crate::marketplace::MarketplaceCredentialStatusDto>, CommandError> =
         crate::marketplace::credentials::marketplace_credential_unlock(
             any::<crate::marketplace::MarketplaceCredentialRequest>(),
+            any::<Option<bool>>(),
             any(),
         )
         .await;
+    let _: Result<(), CommandError> =
+        crate::marketplace::key_permission::marketplace_credentials_allow_access(
+            any(),
+            any(),
+            any(),
+        )
+        .await;
+    crate::marketplace::key_permission::marketplace_credentials_cancel_access(any(), any());
     let _: Result<Vec<crate::marketplace::MarketplaceCredentialStatusDto>, CommandError> =
         crate::marketplace::credentials::marketplace_credential_verify(
             any::<crate::marketplace::MarketplaceCredentialRequest>(),
@@ -1285,6 +1398,7 @@ async fn command_signatures() {
     let _: Result<crate::providers::catalog::ModelCatalogView, CommandError> =
         crate::providers::connection::provider_connect(
             any::<crate::providers::connection::ProviderConnectionRequest>(),
+            any(),
             any(),
             any(),
         )
@@ -1447,7 +1561,8 @@ async fn command_signatures() {
         crate::sharing::commands::share::share_copy_text(
             any::<crate::sharing::commands::share::ShareRequest>(),
             any(),
-        );
+        )
+        .await;
     let _: Result<Option<serde_json::Value>, CommandError> =
         crate::sharing::commands::save::share_export(
             any::<crate::sharing::commands::save::ShareExportRequest>(),
@@ -1469,7 +1584,8 @@ async fn command_signatures() {
         crate::sharing::commands::share::share_summary(
             any::<crate::sharing::commands::share::ShareSummaryRequest>(),
             any(),
-        );
+        )
+        .await;
     let _: Result<crate::updater::UpdateStateDto, CommandError> =
         crate::updater::update_check(any(), any()).await;
     let _: Result<crate::updater::UpdateInstallResult, CommandError> =

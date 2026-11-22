@@ -501,6 +501,10 @@ fn valid_network_host(host: &str) -> bool {
         })
 }
 
+pub(crate) fn is_invalid_params(error: &Value) -> bool {
+    error.get("code").and_then(Value::as_i64) == Some(-32602)
+}
+
 #[derive(Debug, Error)]
 pub enum McpError {
     #[error("MCP server executable is missing")]
@@ -517,6 +521,8 @@ pub enum McpError {
     Timeout,
     #[error("MCP server did not finish starting")]
     StartupTimeout,
+    #[error("MCP server rejected the arguments")]
+    InvalidParams,
     #[error("MCP server rejected the request: {0}")]
     Remote(String),
     #[error("MCP server stopped")]
@@ -1370,6 +1376,7 @@ where
     if let Some(sender) = pending.lock().await.remove(&id) {
         let result = match (object.get("result"), object.get("error")) {
             (Some(result), None) => Ok(result.clone()),
+            (None, Some(error)) if is_invalid_params(error) => Err(McpError::InvalidParams),
             (None, Some(error)) => {
                 let message = error
                     .get("message")

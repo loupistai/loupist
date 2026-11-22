@@ -75,8 +75,8 @@ test('judge follow-ups retain earlier turns from the current session and exclude
 
 test('Claude receives the turn’s exact screen labels for directions even without tool calls', async (t) => {
   const rows = [
-    ['F3-UI-01', 'ko', 0, '**봇** opens chat. **지도** opens relationships. **예약** opens schedules.',
-      { bot: '봇', map: '지도', schedule: '예약' }, true],
+    ['F3-UI-01', 'ko', 0, '**봇** opens chat. **월드** opens relationships. **예약** opens schedules.',
+      { bot: '봇', map: '월드', schedule: '예약' }, true],
     ['F3-UI-02', 'en', 1, '사이드바 제목은 **Research sessions**, 연결 그룹은 **Market data**입니다.',
       { research_sessions_heading: 'Research sessions', market_data_group: 'Market data' }, true],
     ['F3-UI-02', 'en', 1, '사이드바 제목은 **Research sessions**, 연결 그룹은 **Market data platform**입니다.',

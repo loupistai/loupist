@@ -1,5 +1,5 @@
 import i18n, { useTranslation } from "@/i18n";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { KnowledgeSourceSelectionRequest } from "../../types";
 
@@ -95,7 +95,7 @@ function visibleBounds(content: Element): Box {
   return viewport;
 }
 
-function selectionIn(scope: Scope): Anchor | null {
+function selectionIn(scope: Scope, within?: RefObject<HTMLElement | null>): Anchor | null {
   const selection = document.getSelection();
   if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
   const range = selection.getRangeAt(0);
@@ -103,6 +103,7 @@ function selectionIn(scope: Scope): Anchor | null {
   const found = quotableContainer(node instanceof Element ? node : node.parentElement, scope);
   if (!found) return null;
   const { content } = found;
+  if (within && !within.current?.contains(content)) return null;
   const text = selection.toString().replace(/\s+/gu, " ").trim();
   if (text.split(" ").length < MIN_WORDS && [...text].length < MIN_CHARS) return null;
   // Layout-free environments lack range geometry; fall back to the answer's box.
@@ -114,8 +115,9 @@ function selectionIn(scope: Scope): Anchor | null {
     const prefix = range.cloneRange();
     prefix.selectNodeContents(content);
     prefix.setEnd(range.startContainer, range.startOffset);
-    const startUtf16 = prefix.toString().length;
-    retained = { source: JSON.parse(reference), selection: { startUtf16, endUtf16: startUtf16 + range.toString().length, text: range.toString() } };
+    const startUtf16 = prefix.toString().length + Number(content.getAttribute("data-quote-start-utf16") ?? 0);
+    const exactText = range.toString();
+    retained = { source: JSON.parse(reference), selection: { startUtf16, endUtf16: startUtf16 + exactText.length, text: exactText } };
   }
   return { lines, bounds: visibleBounds(content), messageId: found.id, text, retained, portal: content.closest<HTMLElement>(".workspace-panel") ?? document.body };
 }
@@ -128,11 +130,12 @@ function selectionIn(scope: Scope): Anchor | null {
  * as a quote chip, or resolves a retained Source selection through the host,
  * and focuses the composer; it never sends by itself.
  */
-export function QuoteAsk({ onQuote, scope = "answer" }: {
+export function QuoteAsk({ onQuote, scope = "answer", within }: {
   /** Receives the answer's message id, or the reader's `data-quote-source`, and the selected text. */
   onQuote: (sourceId: string, text: string, retained?: KnowledgeSourceSelectionRequest) => void | Promise<void>;
   /** "reader": selections in panel readers (Evidence, files) become "Add to question". */
   scope?: Scope;
+  within?: RefObject<HTMLElement | null>;
 }) {
   useTranslation("chat");
   const [busy, setBusy] = useState(false);
@@ -150,10 +153,10 @@ export function QuoteAsk({ onQuote, scope = "answer" }: {
   }, [anchor, failed, size.width, size.height]);
   useEffect(() => {
     // Wait for the pointer or keyboard to finish selecting, then read the result once.
-    const settle = () => window.setTimeout(() => { setAnchor(selectionIn(scope)); setFailed(false); }, 0);
+    const settle = () => window.setTimeout(() => { setAnchor(selectionIn(scope, within)); setFailed(false); }, 0);
     const clearIfCollapsed = () => { if (document.getSelection()?.isCollapsed) setAnchor(null); };
     // Scrolling or resizing moves the selection; the button follows it rather than vanishing.
-    const follow = () => setAnchor(selectionIn(scope));
+    const follow = () => setAnchor(selectionIn(scope, within));
     document.addEventListener("mouseup", settle);
     document.addEventListener("keyup", settle);
     document.addEventListener("selectionchange", clearIfCollapsed);
@@ -166,7 +169,7 @@ export function QuoteAsk({ onQuote, scope = "answer" }: {
       window.removeEventListener("scroll", follow, true);
       window.removeEventListener("resize", follow);
     };
-  }, [scope]);
+  }, [scope, within]);
   if (!anchor) return null;
   const { left, top } = quoteAskPosition(anchor.lines, size, anchor.bounds);
   return createPortal(

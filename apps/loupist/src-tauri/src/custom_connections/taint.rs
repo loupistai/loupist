@@ -20,6 +20,16 @@ use crate::{
 
 pub const OUTBOUND_REFUSAL: &str = "Outbound access is paused for this turn because it read content from a custom connection. The user can ask again in a new message.";
 pub const UNTRUSTED_TEXT_REFUSAL: &str = "This reply read outside text, so schedule changes and custom connections are paused until it ends. Do not retry here. Finish the answer and tell the user they can ask for this in their next message.";
+pub(crate) fn untrusted_text_refusal() -> std::borrow::Cow<'static, str> {
+    if crate::extension_availability::custom_connections() {
+        UNTRUSTED_TEXT_REFUSAL.into()
+    } else {
+        UNTRUSTED_TEXT_REFUSAL
+            .replace(" and custom connections", "")
+            .into()
+    }
+}
+
 /// A native file tool aimed outside the Loupist folder, scratch and this
 /// Chat's attachments.
 pub const OUTSIDE_WORKSPACE_REFUSAL: &str = "This path is outside the Loupist folder, so native file tools do not touch it. Ask the user to attach the file to this chat or copy it into the Loupist folder, then work with that copy. Do not retry the outside path.";
@@ -29,6 +39,14 @@ pub const WEB_FETCH_PRIVATE_REFUSAL: &str = "This URL carries the user's own tex
 pub const WEB_FETCH_SITE_REFUSAL: &str = "After third-party text, this reply opens only search results, sites it already read, sites in the user's message and official filing and statistics sites; this address is new or long, so it did not open. Find the page with web_search and fetch the result's URL, which opens. Do not retry this address as typed.";
 /// An instruction or Skill write after third-party text.
 pub const INSTRUCTION_WRITE_REFUSAL: &str = "This file becomes instructions on later replies, and this reply read third-party text, so it is not written. Instruction and Skill writes stay paused for the rest of this reply; other workspace writes still work. Do not retry it in this reply; tell the user they can ask for it in their next message.";
+pub(crate) fn instruction_write_refusal() -> std::borrow::Cow<'static, str> {
+    if crate::extension_availability::user_skills() {
+        INSTRUCTION_WRITE_REFUSAL.into()
+    } else {
+        INSTRUCTION_WRITE_REFUSAL.replace(" and Skill", "").into()
+    }
+}
+
 /// A write to a hard-linked file after third-party text.
 pub const HARD_LINK_WRITE_REFUSAL: &str = "This file has another name on disk and is not touched.";
 
@@ -53,6 +71,7 @@ pub struct CustomOrigin {
 #[derive(Default)]
 pub struct TurnTaint {
     tainted: AtomicBool,
+    pub(crate) custom_outbound: tokio::sync::Mutex<()>,
     untrusted_text: AtomicBool,
     memory_blocked: AtomicBool,
     /// A missing answer never grants destructive authority later in this reply.
@@ -298,6 +317,12 @@ impl TurnTaint {
     }
 
     pub fn enforce(&self, method: ToolMethod, params: &Value) -> Result<(), BrokerError> {
+        if !crate::extension_availability::custom_connections()
+            && matches!(method, ToolMethod::McpConnect | ToolMethod::McpCall)
+            && custom_server(params)
+        {
+            return Err(BrokerError::MethodDenied);
+        }
         // Read the counter before the flag: an unanswered call sets the flag
         // before dropping its counter, leaving no settlement gap.
         let pending_question = self.pending_questions.load(Ordering::Acquire) > 0;
@@ -691,9 +716,8 @@ fn wrap_json(value: Option<&mut Value>, source: &str, id: &str) {
     }
 }
 
-/// The original text inside one delimited block, for tests that compare a
-/// delivered body with source bytes.
-#[cfg(test)]
+/// The original text inside one delimited block. Callers establish the
+/// payload's authority separately.
 pub(crate) fn delimited_body(text: &str) -> Option<&str> {
     let (begin, rest) = text.split_once('\n')?;
     let id = begin.strip_prefix("<<untrusted id=")?.split_once(' ')?.0;

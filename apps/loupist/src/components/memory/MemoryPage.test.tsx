@@ -23,7 +23,7 @@ it("opens on Pages with your principles grouped in, shows where one was used, an
   });
 
   render(view());
-  const page = await screen.findByRole("region", { name: /What .* knows/ });
+  const page = await screen.findByRole("region", { name: /’s Lens$/ });
   const tabs = within(page).getByRole("tablist");
   expect(within(tabs).getByRole("tab", { name: /Pages/ })).toHaveAttribute("aria-selected", "true");
   // Lens is Pages and History; what you follow lives on the Following page.
@@ -102,22 +102,27 @@ it("pauses and resumes a principle and a method in answers through the host, say
 it("groups pages by kind and narrows them with search", async () => {
   const { view, user } = await fixture();
   render(view());
-  await screen.findByRole("region", { name: /What .* knows/ });
+  await screen.findByRole("region", { name: /’s Lens$/ });
   const groups = await screen.findAllByRole("region", { name: /^(Topics|Ideas|Methods|Your principles|Perspective)$/ });
-  expect(groups.map(group => group.getAttribute("aria-label"))).toEqual(["Topics", "Ideas", "Methods", "Your principles", "Perspective"]);
-  const header = within(groups[0]!).getByRole("heading", { level: 3 });
+  expect(groups.map(group => group.getAttribute("aria-label"))).toEqual(["Perspective", "Your principles", "Methods", "Topics", "Ideas"]);
+  const header = within(groups[3]!).getByRole("heading", { level: 3 });
   expect(header.children).toHaveLength(3);
   expect(header.children[0]).toHaveTextContent(/^Topics$/);
   expect(header.children[1]).toHaveAttribute("aria-hidden", "true");
   expect(header.children[2]).toHaveTextContent(/^1 page$/);
-  expect(within(groups[0]!).getByRole("button", { name: /^TCP, Topic/ })).toBeVisible();
-  expect(within(groups[1]!).getByRole("button", { name: /QUIC could displace TCP/ })).toBeVisible();
-  await user.type(screen.getByRole("searchbox", { name: "Search what it knows" }), "head-of-line");
+  expect(within(groups[3]!).getByRole("button", { name: /^TCP, Topic/ })).toBeVisible();
+  expect(within(groups[4]!).getByRole("button", { name: /QUIC could displace TCP/ })).toBeVisible();
+  await user.click(within(groups[3]!).getByRole("button", { name: /^TCP, Topic/ }));
+  await user.type(screen.getByRole("searchbox", { name: "Search the Lens" }), "head-of-line");
   expect(await screen.findByRole("button", { name: /^TCP, Topic/ })).toBeVisible();
   expect(screen.queryByRole("button", { name: /Compare independent accounts/ })).toBeNull();
-  await user.clear(screen.getByRole("searchbox", { name: "Search what it knows" }));
-  await user.type(screen.getByRole("searchbox", { name: "Search what it knows" }), "zzzz");
+  await user.clear(screen.getByRole("searchbox", { name: "Search the Lens" }));
+  await user.type(screen.getByRole("searchbox", { name: "Search the Lens" }), "zzzz");
   expect(await screen.findByText("No matching pages")).toBeVisible();
+  expect(screen.queryByRole("button", { name: /Forget|Archive/ })).toBeNull();
+  expect(screen.getByTestId("memory-reader")).toHaveTextContent("Clear the search to return to the open page.");
+  await user.clear(screen.getByRole("searchbox"));
+  expect(await within(screen.getByTestId("memory-reader")).findByRole("heading", { name: "TCP" })).toBeVisible();
 });
 
 it("shows the home Thread as Bot in Used in and in History, never its stored title", async () => {
@@ -141,12 +146,35 @@ it("shows the home Thread as Bot in Used in and in History, never its stored tit
   expect(screen.queryByText(/Thread/)).toBeNull();
 });
 
-it("returns to the page after opening a Source from its basis chip", async () => {
+it("names historical section edits even when the page no longer contains the section", async () => {
+  const { bridge, loupist, view, user } = await fixture();
+  const recordId = "lens-subject-tcp";
+  const read = bridge.knowledgeLensRead.bind(bridge);
+  vi.spyOn(bridge, "knowledgeLensRead").mockImplementation(async request => ({
+    ...await read(request), history: [
+      { opId: "1", key: "facts", sectionHeading: "Annual results", origin: "turn", op: "put", outcome: "added", createdAtMs: 1 },
+      { opId: "2", key: "facts", sectionHeading: "Revised results", origin: "turn", op: "put", outcome: "replaced", createdAtMs: 2 },
+      { opId: "3", key: "facts", origin: "user", op: "retire", outcome: "retired", createdAtMs: 3 },
+    ],
+  }));
+  vi.spyOn(bridge, "knowledgeGrowthEvents").mockResolvedValue({ events: [{
+    eventId: "revision", loupistId: loupist.id, atMs: 3, kind: "lens_revised", actor: "user", recordId, subjectId: null,
+    originChatId: null, originMessageId: null, summary: "", beforeSummary: null, afterSummary: null,
+  }], nextCursor: null });
+  render(view());
+  await user.click(await screen.findByRole("tab", { name: /History/ }));
+  for (const text of ["Added “Annual results” on TCP", "Updated “Revised results” on TCP", "You forgot “Facts” on TCP"]) {
+    expect(await screen.findByRole("button", { name: new RegExp(text) })).toBeVisible();
+  }
+});
+
+it("returns to the page after opening a Source from its sources list", async () => {
   const { handlers, view, user } = await fixture();
   render(view("lens-subject-tcp"));
   await screen.findByRole("heading", { name: "TCP" });
   const overview = (await screen.findByRole("heading", { name: "Overview" })).closest("section")!;
-  await user.click(within(overview).getByRole("button", { name: /^Source · / }));
+  await user.click(within(overview).getByText("Sources 1"));
+  await user.click(within(overview).getByRole("link", { name: /RFC 9110 HTTP semantics/ }));
   expect(await screen.findByRole("button", { name: "Back to page" })).toBeVisible();
   expect(handlers.onOpenKnowledge).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Back to page" }));
@@ -159,7 +187,7 @@ it("never takes focus for the page it opens by itself, and focuses the page you 
   render(<><button type="button">Elsewhere</button>{view()}</>);
   const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
   elsewhere.focus();
-  expect(await screen.findByRole("heading", { level: 2, name: "TCP" })).toBeVisible();
+  expect(await screen.findByRole("heading", { level: 2, name: "Evidence-led perspective" })).toBeVisible();
   expect(elsewhere).toHaveFocus();
   await user.click(screen.getByRole("button", { name: /^QUIC could displace TCP for mobile traffic, Idea/ }));
   await waitFor(() => expect(screen.getByRole("heading", { level: 2, name: /QUIC could displace TCP/ })).toHaveFocus());
@@ -207,7 +235,7 @@ it("offers + Add principle on an empty Lens and opens the principle it saves", a
   vi.spyOn(bridge, "knowledgeCatalog").mockImplementation(async request => ({ ...await catalog(request), lenses: [] }));
   for (const principle of await bridge.principleList({ loupistId: loupist.id })) await bridge.principleArchive({ loupistId: loupist.id, recordId: principle.recordId, archived: true });
   render(view());
-  const page = await screen.findByRole("region", { name: /What .* knows/ });
+  const page = await screen.findByRole("region", { name: /’s Lens$/ });
   await within(page).findByText(/Nothing here yet/);
   // Nothing to search yet.
   expect(within(page).queryByRole("searchbox")).toBeNull();

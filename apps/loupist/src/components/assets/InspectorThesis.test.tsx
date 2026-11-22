@@ -4,7 +4,7 @@ import type { LoupistSummary } from "../../types";
 import { HANUL, hanulFixture } from "../../preview/assets";
 import { InspectorThesis } from "./InspectorThesis";
 
-it("words an undone move in the Map inspector the way the asset page does", async () => {
+it("words an undone move in World inspector the way the asset page does", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const [loupist] = await bridge.loupistList() as LoupistSummary[];
   const asset = hanulFixture();

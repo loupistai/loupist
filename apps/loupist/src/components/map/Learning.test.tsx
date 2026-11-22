@@ -20,7 +20,7 @@ async function fixture() {
   return { bridge, review, catalog, map, node, location };
 }
 
-it("Keep clears the recent ring and stays acknowledged across a Map remount", async () => {
+it("Keep clears the recent ring and stays acknowledged across a World remount", async () => {
   const { bridge, catalog, location, node } = await fixture();
   const list = bridge.learningReviewList.bind(bridge);
   bridge.learningReviewList = async request => (await list(request)).map(review => ({ ...review, createdAtMs: review.createdAtMs - 60000 }));

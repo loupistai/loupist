@@ -160,6 +160,7 @@ export type ChartView =
     x: string,
     y: Array<string>,
     color: string | null,
+    stack?: boolean,
     semantic_types: { [key in string]: string },
     title: string | null,
     subtitle: string | null,

@@ -146,7 +146,8 @@ async function visibleMenuItem(exactText) {
   for (const menu of await browser.$$('[data-slot="dropdown-menu-content"]')) {
     if (!(await menu.isDisplayed().catch(() => false))) continue;
     for (const item of await menu.$$('[role="menuitemradio"]')) {
-      if ((await item.getText()).trim() === exactText) return item;
+      const name = await item.$(".model-menu-name");
+      if ((await (await name.isExisting() ? name : item).getText()).trim() === exactText) return item;
     }
   }
   return null;
@@ -211,7 +212,7 @@ async function choosePreset() {
   }
   await browser.keys("Escape");
   await composer.click();
-  assert.ok((await modelMenu.getAttribute("aria-label"))?.startsWith(`${preset.modelLabel} ·`), "Journey must select an explicit model, not Auto");
+  assert.ok((await modelMenu.getAttribute("aria-label"))?.startsWith(`${preset.modelLabel} ·`), "Journey must show the selected model");
   assertPresetSelection(await modelMenu.getAttribute("aria-description"), "Journey model menu");
 }
 
@@ -612,7 +613,7 @@ try {
     }, {
       timeout: 600_000,
       interval: 2_000,
-      timeoutMsg: `Map node count did not increase from ${beforeNames}. Last status: ${after?.text ?? "missing"}`,
+      timeoutMsg: `World node count did not increase from ${beforeNames}. Last status: ${after?.text ?? "missing"}`,
     });
     await openDestination(browser, "chat");
     let chip = "";
@@ -623,8 +624,8 @@ try {
           [...document.querySelectorAll('.chat-receipt [data-receipt="names"]')].map((element) => element.textContent?.trim() ?? "").find(Boolean) ?? "",
         );
         return Boolean(chip);
-      }, { timeout: 180_000, interval: 2_000, timeoutMsg: `Map grew to ${after?.text ?? "unknown"} but the answer receipt shows no added-names segment` });
-      assert.match(chip, /[\d,]+\s+names? added to the map/u);
+      }, { timeout: 180_000, interval: 2_000, timeoutMsg: `World grew to ${after?.text ?? "unknown"} but the answer receipt shows no added-names segment` });
+      assert.match(chip, /[\d,]+\s+names? added to World/u);
     } catch (error) {
       chipError = error instanceof Error ? error.message : String(error);
     }
@@ -952,10 +953,9 @@ try {
           set: { pi: { compaction: { reserve_tokens: 16384, keep_recent_tokens: 1 } } }, unset: [],
         } });
       });
-      const picker = await displayed('[aria-label$="Model settings for this message"]');
-      assert.match(await picker.getAttribute("aria-label") ?? "", /^Auto ·/u);
-      assert.match(await picker.getAttribute("aria-description") ?? "", /Uses your default model settings/u);
-      // Assert the actual Auto model on the host request below, after admission.
+      const picker = await displayed("[data-testid=composer-model-menu]");
+      assert.match(await picker.getAttribute("aria-label") ?? "", /local-test-model/u);
+      assert.match(await picker.getAttribute("aria-description") ?? "", /local-test-model/u);
       const firstTiming = await sendPrompt("Say hello.");
       const answer = await answerText();
       await shot("07-custom-answer");

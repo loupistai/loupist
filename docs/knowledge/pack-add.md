@@ -14,7 +14,7 @@ review; the Gallery in the same layer still scrolls. Its typed manifest also exp
 and version: review links the license name to `licenseUrl` with its plain line,
 or, when not redistributable, says "For your use only. You can't share these items
 again." A Credits list names each `credits` origin (linked when it has a URL) with its
-author, version and license. Review includes the map's counts and Source hosts, flagged map
+author, version and license. Review includes World counts and Source hosts, flagged World
 records (50 listed, the rest counted) and flags on the pack's own name and author. A pack on the community
 index's blocked list can be reviewed but not added (`safety_blocked`).
 
@@ -22,35 +22,35 @@ Add creates a new Loupist through the ordinary creation path (name and tone chos
 review; the pack's focus only when the scan found nothing in it; a known avatar) or adds
 to an existing one, whose principles and perspective stay as they are (the pack's
 perspective is not offered). One transaction records the import, its items as pending
-suggestions and its map; a failure rolls back and deletes a Loupist Add created. Adding
+suggestions and its view of World; a failure rolls back and deletes a Loupist Add created. Adding
 changes no bindings, tool approvals, Skill enablement, Memory permissions, schedules,
 model settings or instructions.
 
-Suggestions sit at the top of Your principles and Methods on "What {Loupist} knows"
+Suggestions sit at the top of Your principles and Methods on "{Loupist}’s Lens"
 until accepted or skipped item by item. Clean items can be accepted together; an item
 with a scan finding only on its own (`flagged_one_at_a_time`). A review decision refuses repeated suggestion keys before any Lens write. Accept checks the stored
 body against its hash and creates an ordinary Lens method (its title made unique with
 "· {pack}"), a principle with origin `shared`, or a new Loupist's standing perspective;
 a principle the Loupist already holds is marked skipped.
 
-The map merges in the same transaction without a model call. A running World job
+World merges in the same transaction without a model call. A running World job
 refuses it (`world_busy`); Add first waits up to five minutes for one. Each pack Source
 becomes a reference Source (`imported_contributor`, provider `shared_pack:<import>`)
 whose retained text is the pack's Source record and the claims citing it; it is never
 sent for extraction. A pack name matches an existing name by identifier (ticker with
 exchange, CIK, DART corp code, ISIN), then by name or alias of the same kind, and is
-otherwise added. A relationship identical to one on the map (relation, ends and
+otherwise added. A relationship identical to one in World (relation, ends and
 proposition) adds the pack's Source to it. A pack `REPORTS` relationship with the same
 ends and period, the same unit and currency and another value is added as the pack's own
-disputed claim with the note "Differs from a value already on your map"; the user's own
-claims never change. The merged map must fit the derived index's load bounds (10,000
+disputed claim with the note "Differs from a value already in your World"; the user's own
+claims never change. The merged World must fit the derived index's load bounds (10,000
 names, 10,000 relationships, 5,000 cited spans). A load of the new snapshot into the
 derived index is queued ahead of extraction ([Runs](../runtime/scheduled-runs.md#runs)), so the next
 extraction keeps the shared content.
 
 Remove what it added takes back the pack's own relationships, the support it added to
 others (a relationship left without a Source goes), the names nothing else uses and its
-Sources' place in the World, then queues the same load; a running World job refuses it.
+Sources' place in World, then queues the same load; a running World job refuses it.
 Source records are immutable, so the pack's Sources are hidden from the Library, search
 and reads, including direct reads by record and revision id. A capture independently
 retained by the user's research or a Source read saved with a Chat keeps that Source
@@ -58,9 +58,9 @@ available after removal. Pending suggestions are dropped; accepted items stay un
 archives them (a standing perspective is never archived).
 
 `packOrigin` names the pack behind an accepted Lens item, or a name or relationship a
-pack added, while that pack is not removed; the Lens reader and Map inspector show
+pack added, while that pack is not removed; the Lens reader and World inspector show
 "Shared · {pack} by {author}". When sharing entry points are shown, it links to Shared
-Loupists you added on "What {Loupist} knows"; this release hides that link and list.
+Loupists you added on "{Loupist}’s Lens"; this release hides that link and list.
 That section lists each pack with Remove and, when the community index
 is configured and the pack came from a link, Report (the index's GitHub issue form with
 only the pack link filled in). Add also copies the pack's files to

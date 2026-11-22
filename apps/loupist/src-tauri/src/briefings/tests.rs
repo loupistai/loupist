@@ -85,6 +85,21 @@ fn state_fixture() -> (tempfile::TempDir, AppState, String) {
     (root, state, loupist.id)
 }
 
+fn connect_fixture_accounts(state: &AppState, providers: &[&str]) {
+    let auth = state.artifacts.app_data_dir.join("pi/auth.json");
+    crate::fs::artifact_trust::ensure_private_regular_file(&auth).unwrap();
+    let accounts: serde_json::Map<_, _> = providers
+        .iter()
+        .map(|provider| {
+            (
+                provider.to_string(),
+                serde_json::json!({"type":"api_key","key":"fixture"}),
+            )
+        })
+        .collect();
+    std::fs::write(auth, serde_json::to_vec(&accounts).unwrap()).unwrap();
+}
+
 #[test]
 fn settings_opt_in_is_single_task_and_pause_preserves_its_chat_definition() {
     let (_root, state, loupist) = state_fixture();
@@ -178,6 +193,8 @@ fn notification_effects_include_loupist_status_summary_and_navigation_target() {
         calls: RefCell::new(Vec::new()),
     };
     let run = crate::scheduled_tasks::types::Run {
+        discarded_memory_items: None,
+        memory_save_skip: None,
         briefing_context: None,
         kind: crate::scheduled_tasks::types::TaskKind::Briefing,
         read_at_ms: None,
@@ -283,7 +300,7 @@ fn tray_actions_focus_select_quit_and_residency_controls_close() {
 }
 
 #[test]
-fn opt_in_uses_the_model_a_new_chat_would_not_the_raw_catalog_order() {
+fn opt_in_keeps_an_unset_model_so_the_briefing_can_follow_the_catalog() {
     let (_root, state, loupist) = state_fixture();
     let model = |provider: &str, name: &str| crate::providers::catalog::ConfiguredModel {
         id: format!("{provider}/{name}"),
@@ -298,7 +315,6 @@ fn opt_in_uses_the_model_a_new_chat_would_not_the_raw_catalog_order() {
         thinking_level_map: std::collections::BTreeMap::new(),
         run_controls: vec![],
     };
-    // The configuration lists a provider the user may never connect first.
     state
         .set_model_catalog(crate::providers::catalog::ModelCatalog {
             models: vec![
@@ -307,37 +323,31 @@ fn opt_in_uses_the_model_a_new_chat_would_not_the_raw_catalog_order() {
             ],
         })
         .unwrap();
-    let picker_first = state.model_catalog_view().unwrap().models[0].id.clone();
-    assert_eq!(picker_first, "openai-codex/gpt-fixture");
-    let enable = |state: &AppState| {
-        commands::settings_set(
-            state,
-            commands::SettingsRequest {
-                loupist_id: loupist.clone(),
-                enabled: true,
-                schedule: None,
-            },
-        )
+    connect_fixture_accounts(&state, &["anthropic", "openai-codex"]);
+    let task = commands::settings_set(
+        &state,
+        commands::SettingsRequest {
+            loupist_id: loupist.clone(),
+            enabled: true,
+            schedule: None,
+        },
+    )
+    .unwrap()
+    .task
+    .unwrap();
+    assert!(task.model_profile_id.is_empty());
+    let first = task.model_selection.unwrap().model.unwrap().id;
+    state.set_model_visible(&first, false).unwrap();
+    let current = commands::settings_get(&state, &loupist)
         .unwrap()
         .task
-        .unwrap()
-    };
-    assert_eq!(enable(&state).model_profile_id, picker_first);
-
-    // A hidden model is skipped, as the Chat picker skips it.
-    let task = state
-        .store
-        .scheduled_tasks_list(&loupist)
-        .unwrap()
-        .remove(0);
-    state
-        .store
-        .scheduled_task_delete(&loupist, &task.id, task.revision)
         .unwrap();
-    state
-        .set_model_visible("openai-codex/gpt-fixture", false)
-        .unwrap();
-    assert_eq!(enable(&state).model_profile_id, "anthropic/claude-fixture");
+    assert_eq!(current.id, task.id);
+    assert_eq!(current.revision, task.revision);
+    assert!(current.model_profile_id.is_empty());
+    let selection = current.model_selection.unwrap();
+    assert!(selection.is_default);
+    assert_ne!(selection.model.unwrap().id, first);
 }
 
 #[test]
@@ -387,6 +397,7 @@ fn resuming_a_briefing_or_custom_task_enables_the_automatic_resident_setting() {
     for custom in [false, true] {
         let (fixture, mut state, loupist) = state_fixture();
         let path = fixture.path().to_path_buf();
+        connect_fixture_accounts(&state, &["openai"]);
         // Status admission checks the runtime configuration without starting Pi.
         std::sync::Arc::make_mut(&mut state.artifacts).pi = Some(crate::app::PiArtifacts {
             executable: path.clone(),

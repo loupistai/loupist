@@ -2,12 +2,14 @@ import { StrictMode, useState, type ComponentProps } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import i18n from "@/i18n";
+import { ExtensionAvailabilityProvider } from "@/app/extensionAvailability";
 import { AGENT_SKILLS, FIXED_AGENT_SKILLS } from "@/lib/agentSkills";
 import { TooltipProvider } from "../ui/tooltip";
 import { ChatComposer } from "./ChatComposer";
 
-function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), onAbort = vi.fn(), isRunning = true, onSearchContext, chips, layerOpen, modelCount = 1, skills = [{ id: "research", name: "Research", description: "Research a topic" }] }: {
+function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), onAbort = vi.fn(), isRunning = true, onSearchContext, chips, layerOpen, userSkills = true, modelCount = 1, skills = [{ id: "research", name: "Research", description: "Research a topic", source: "personal" }] }: {
   layerOpen?: boolean;
+  userSkills?: boolean;
   modelCount?: number;
   skills?: ComponentProps<typeof ChatComposer>["skills"];
   onFollowUp?: ComponentProps<typeof ChatComposer>["onFollowUp"];
@@ -19,18 +21,18 @@ function RunningComposer({ onFollowUp = vi.fn(), onSend = vi.fn(), onAbort = vi.
 }) {
   const [prompt, setPrompt] = useState("");
   const [privateChat, setPrivateChat] = useState(false);
-  return <TooltipProvider><ChatComposer
+  return <ExtensionAvailabilityProvider value={{ userSkills, customConnections: false }}><TooltipProvider><ChatComposer
     prompt={prompt} onPromptChange={setPrompt}
     privateChat={privateChat} isRunning={isRunning} error={null} streamAnnouncement=""
-    models={Array.from({ length: modelCount }, (_, index) => ({ id: index ? `model-${index}` : "model", provider: "test", model: "model", name: index ? `Model ${index}` : "Model", input: ["text", "image"] as ("text" | "image")[], reasoning: true, context_window: 10000, max_tokens: 1000, thinking_levels: ["medium"], thinking_level_map: {}, run_controls: [], credential_source: "saved" as const }))} providers={[]} modelSelection={{ model_profile_id: "model", thinking_level: "medium", run_options: {} }} modelAuto onModelResetToAuto={() => {}}
-    skills={skills}
+    models={Array.from({ length: modelCount }, (_, index) => ({ id: index ? `model-${index}` : "model", provider: "test", model: "model", name: index ? `Model ${index}` : "Model", input: ["text", "image"] as ("text" | "image")[], reasoning: true, context_window: 10000, max_tokens: 1000, thinking_levels: ["medium"], thinking_level_map: {}, run_controls: [], credential_source: "saved" as const }))} providers={[]} modelSelection={{ model_profile_id: "model", thinking_level: "medium", run_options: {} }} modelIsDefault onChooseDefault={() => {}}
+    skills={skills} onAsOfChange={vi.fn()}
     plugins={[]}
     onPrivateChatChange={setPrivateChat} onModelSelectionChange={vi.fn()}
     onSend={onSend} onFollowUp={onFollowUp} onAbort={onAbort}
     onSearchContext={onSearchContext}
     chips={chips}
     layerOpen={layerOpen}
-  /></TooltipProvider>;
+  /></TooltipProvider></ExtensionAvailabilityProvider>;
 }
 
 describe("ChatComposer input", () => {
@@ -82,17 +84,35 @@ describe("ChatComposer input", () => {
     expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveFocus();
   });
 
-  it("names private chat in the / menu and says what choosing it does", async () => {
+  it("groups the default slash menu by Memory, every installed Skill by name, and commands", async () => {
     const user = userEvent.setup();
-    render(<RunningComposer isRunning={false} />);
-    const textarea = screen.getByRole("textbox", { name: "Message Loupist" });
-    await user.type(textarea, "/private");
-    expect(screen.getByRole("option", { name: "Private chat" })).toHaveAccessibleDescription("Doesn't use or add to what your Loupist remembers");
-    await user.keyboard("{Enter}");
-    expect(screen.getByText("Private · memory off")).toBeVisible();
-    // The old name still finds it, now offering to turn it off.
-    await user.type(textarea, "/memory");
-    expect(screen.getByRole("option", { name: "Private chat" })).toHaveAccessibleDescription("Turn off private chat");
+    const installed = Array.from({ length: 10 }, (_, i) => ({
+      id: `custom-${i}`, name: `Review ${i}`, description: "My review", source: "personal" as const,
+    }));
+    render(<RunningComposer skills={[
+      ...[...AGENT_SKILLS, ...FIXED_AGENT_SKILLS].map(skill => ({ ...skill, source: "bundled" as const })),
+      ...[...installed].reverse(),
+      { id: "local", name: "Local review", description: "A project Skill", source: "loupist" },
+    ]} />);
+    await user.type(screen.getByRole("textbox"), "/");
+    const menu = within(screen.getByRole("listbox"));
+    const rows = (group: HTMLElement) => within(group).getAllByRole("option").map(row => row.getAttribute("aria-label"));
+    expect(menu.getAllByRole("group").map(group => group.getAttribute("aria-label"))).toEqual(["Memory", "Skills", "Commands"]);
+    expect(rows(menu.getByRole("group", { name: "Memory" }))).toEqual(["World", "Lens", "Journal"]);
+    expect(rows(menu.getByRole("group", { name: "Skills" }))).toEqual(["Local review", ...installed.map(skill => skill.name)]);
+    expect(rows(menu.getByRole("group", { name: "Commands" }))).toEqual(["/asof"]);
+    await user.keyboard("val");
+    expect(menu.getByRole("option", { name: "Valuation" })).toBeVisible();
+  });
+
+  it("keeps an installed replacement for a bundled Skill under Skills with its own description", async () => {
+    const user = userEvent.setup();
+    render(<RunningComposer skills={[{ id: "world", name: "My atlas", description: "My field notes", source: "loupist" }]} />);
+    await user.type(screen.getByRole("textbox"), "/");
+    const menu = within(screen.getByRole("listbox"));
+    expect(menu.queryByRole("group", { name: "Memory" })).toBeNull();
+    expect(within(menu.getByRole("group", { name: "Skills" })).getByRole("option", { name: "My atlas" }))
+      .toHaveAccessibleDescription("My field notes");
   });
 
   it("keeps focus in the message when an attachment is removed by its button", async () => {
@@ -165,21 +185,6 @@ describe("ChatComposer input", () => {
     expect(onSend).toHaveBeenCalledWith(text, [], text);
   });
 
-  it.each([
-    ["/brief", "Give me a quick briefing on "],
-    ["/compare", "Compare "],
-  ])("starts %s as editable prose", async (command, starter) => {
-    const user = userEvent.setup();
-    const onSend = vi.fn();
-    render(<RunningComposer isRunning={false} onSend={onSend} />);
-    const textarea = screen.getByRole("textbox", { name: "Message Loupist" });
-    await user.type(textarea, command);
-    await user.click(screen.getByRole("option", { name: command }));
-    expect(textarea).toHaveValue(starter);
-    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-    expect(onSend).not.toHaveBeenCalled();
-  });
-
   it("keeps the empty composer short and opens each typed shortcut menu", async () => {
     const user = userEvent.setup();
     render(<div style={{ width: 280 }}><RunningComposer isRunning={false} /></div>);
@@ -200,10 +205,9 @@ describe("ChatComposer input", () => {
     await user.type(textarea, "/");
     const commands = screen.getByRole("listbox", { name: "Prompt shortcuts" });
     expect(commands).toHaveAttribute("data-symbol", "/");
-    // One heading names the menu; its sections (Commands, Skills, Actions) are not named twice above them.
     expect(within(commands).getByText("Commands and skills")).toBeVisible();
     expect(within(commands).getAllByText("Commands")).toHaveLength(1);
-    expect(screen.getByRole("option", { name: /\/brief/ })).toBeVisible();
+    expect(screen.getByRole("option", { name: "/asof" })).toBeVisible();
     expect(textarea).toHaveAccessibleName("Message Loupist");
   });
 
@@ -218,10 +222,11 @@ describe("ChatComposer input", () => {
       render(<RunningComposer isRunning={false} />);
       const textarea = screen.getByRole("textbox", { name: "Message Loupist" });
       const height = () => parseFloat(textarea.style.height);
-      // One line and the padding, plus whatever border jsdom's default style gives a textarea.
+      expect(textarea.style.height).toBe("");
+      await user.type(textarea, "First line");
       const oneLine = height();
       expect(oneLine).toBeGreaterThanOrEqual(36);
-      await user.type(textarea, "First line{Shift>}{Enter}{/Shift}second line");
+      await user.type(textarea, "{Shift>}{Enter}{/Shift}second line");
       expect(textarea).toHaveValue("First line\nsecond line");
       expect(height()).toBe(oneLine + 22);
       await user.type(textarea, "{Shift>}{Enter}{/Shift}third{Shift>}{Enter}{/Shift}fourth");
@@ -229,7 +234,7 @@ describe("ChatComposer input", () => {
       // Measured with the scrollbar hidden, then handed back to the stylesheet's overflow.
       expect(textarea.style.overflowY).toBe("");
       await user.clear(textarea);
-      expect(height()).toBe(oneLine);
+      expect(textarea.style.height).toBe("");
     } finally {
       delete (HTMLTextAreaElement.prototype as { scrollHeight?: number }).scrollHeight;
     }
@@ -302,13 +307,26 @@ describe("ChatComposer input", () => {
     await act(async () => { await i18n.changeLanguage("ko"); });
     const user = userEvent.setup();
     const map = [...AGENT_SKILLS, ...FIXED_AGENT_SKILLS].find(skill => skill.id === "world")!;
-    render(<RunningComposer isRunning={false} skills={[{ id: map.id, name: map.name, description: map.description }]} />);
+    render(<RunningComposer isRunning={false} skills={[{ ...map, source: "bundled" }]} />);
     const textarea = screen.getByRole("textbox");
-    await user.type(textarea, "/지도");
-    const option = screen.getByRole("option", { name: /지도/ });
+    await user.type(textarea, "/월드");
+    const option = screen.getByRole("option", { name: /월드/ });
     expect(option).not.toHaveTextContent(/\bMap\b/);
     await user.keyboard("{Enter}");
-    expect(screen.getByText("지도")).toBeVisible();
+    expect(screen.getByText("월드")).toBeVisible();
+  });
+
+  it("searches a hidden bundled Skill by localized name, description and id", async () => {
+    await act(async () => { await i18n.changeLanguage("ko"); });
+    const user = userEvent.setup();
+    const valuation = AGENT_SKILLS.find(skill => skill.id === "valuation")!;
+    render(<RunningComposer skills={[{ ...valuation, source: "bundled" }]} />);
+    const textarea = screen.getByRole("textbox");
+    for (const query of ["가치", "민감도", "val"]) {
+      await user.clear(textarea);
+      await user.type(textarea, `/${query}`);
+      expect(screen.getByRole("option", { name: "가치 평가" })).toBeVisible();
+    }
   });
 
   it("dismisses shortcuts without bubbling Escape and ignores IME Enter", async () => {
@@ -507,4 +525,22 @@ describe("Chat attachment submission recovery", () => {
     expect(prompt).toHaveValue("Read the file and a new thought");
     expect(fetchFile).toHaveBeenCalledOnce();
   });
+});
+
+it("keeps bundled commands and Skills while omitting dormant user Skills from the slash menu", async () => {
+  const user = userEvent.setup();
+  render(<RunningComposer userSkills={false} skills={[
+    ...[...AGENT_SKILLS, ...FIXED_AGENT_SKILLS].map(skill => ({ ...skill, source: "bundled" as const })),
+    { id: "local-review", name: "Local review", description: "My saved Skill", source: "loupist" },
+  ]} />);
+  const input = screen.getByRole("textbox", { name: "Message Loupist" });
+  await user.type(input, "/");
+  expect(screen.getByRole("option", { name: "World" })).toBeVisible();
+  expect(screen.getByRole("option", { name: "/asof" })).toBeVisible();
+  expect(screen.queryByRole("option", { name: "Local review" })).toBeNull();
+  await user.keyboard("skill-creator");
+  expect(screen.queryByRole("option", { name: "Skill Creator" })).toBeNull();
+  await user.clear(input);
+  await user.type(input, "/valuation");
+  expect(screen.getByRole("option", { name: "Valuation" })).toBeVisible();
 });

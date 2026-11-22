@@ -68,6 +68,20 @@ pub(crate) fn validate_reference(fields: &AssetReferenceFields) -> StoreResult<(
     Ok(())
 }
 
+fn with_exchange_name(mut reference: AssetReference) -> AssetReference {
+    if reference.origin == AssetReferenceOrigin::Openfigi
+        && reference.fields.exchange_name.is_none()
+    {
+        reference.fields.exchange_name = reference
+            .fields
+            .exchange
+            .as_deref()
+            .and_then(crate::finance_data::openfigi::exchange_name)
+            .map(str::to_owned);
+    }
+    reference
+}
+
 fn read_asset(row: &rusqlite::Row<'_>) -> rusqlite::Result<AssetRow> {
     let reference: Option<String> = row.get(2)?;
     Ok(AssetRow {
@@ -82,7 +96,8 @@ fn read_asset(row: &rusqlite::Row<'_>) -> rusqlite::Result<AssetRow> {
                     rusqlite::types::Type::Text,
                     Box::new(error),
                 )
-            })?,
+            })?
+            .map(with_exchange_name),
         followed_at_ms: row.get(3)?,
         created_at_ms: row.get(4)?,
     })
@@ -209,7 +224,7 @@ pub(crate) fn plan_follow(
     });
     add_reference(
         &mut row.reference,
-        fields.map(|fields| AssetReference { fields, origin }),
+        fields.map(|fields| with_exchange_name(AssetReference { fields, origin })),
     );
     Ok(row)
 }
@@ -221,8 +236,16 @@ fn add_reference(stored: &mut Option<AssetReference>, requested: Option<AssetRef
     match stored {
         None => *stored = Some(requested),
         Some(reference)
-            if reference.fields.exchange_name.is_none()
+            if (reference.fields.exchange_name.is_none()
+                || (reference.origin == AssetReferenceOrigin::Openfigi
+                    && reference.fields.exchange_name.as_deref()
+                        == reference
+                            .fields
+                            .exchange
+                            .as_deref()
+                            .and_then(crate::finance_data::openfigi::exchange_name)))
                 && requested.fields.exchange_name.is_some()
+                && requested.fields.exchange_name != reference.fields.exchange_name
                 && same_reference(&reference.fields, &requested.fields)
                 && reference.fields.exchange == requested.fields.exchange =>
         {

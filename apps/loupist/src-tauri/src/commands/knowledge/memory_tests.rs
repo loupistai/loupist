@@ -647,7 +647,7 @@ fn journals_keep_the_acknowledged_snapshot_and_refuse_unacknowledged_or_foreign_
         let world = write.create_record(CreateRecord {
             loupist_id: "loupist-a".into(),
             kind: RecordKind::World,
-            title: "Map".into(),
+            title: "World".into(),
             at_ms: 7,
         })?;
         write.seal_world(SealWorld {
@@ -874,7 +874,7 @@ async fn source_catalog_lists_bounded_text_while_exact_reads_verify_the_blob() {
     .unwrap();
     assert_eq!(
         page.sources[0].objects[0].summary.as_deref(),
-        Some(format!("{}…", original[..239].trim_end()).as_str())
+        Some("Visible source preview…")
     );
     let span_id = saved.span_id.unwrap();
     with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
@@ -941,6 +941,7 @@ fn retained_file_survives_restart_with_original_bytes_and_guarded_export() {
         purpose: "renderer_inspection".into(),
         world_record_id: None,
         world_revision_id: None,
+        figure: None,
     };
     let span_id = saved.span_id.clone().unwrap();
     let before = source_read(&state, read_request("loupist-file", &span_id)).unwrap();
@@ -1083,7 +1084,10 @@ fn lens_delivery_includes_every_section_and_large_base_requires_an_exact_read() 
     };
     let context = host_memory_context(&state, "loupist-a", "").unwrap();
     let delivered: PageRead = serde_json::from_str(context.charter.as_ref().unwrap()).unwrap();
-    assert_eq!(delivered, read(&lens));
+    assert_eq!(
+        context.charter.as_deref().unwrap(),
+        read(&lens).delivery_text().unwrap()
+    );
     assert_eq!(delivered.body.sections().len(), 3);
     assert!(context.charter_delivery.is_some());
     assert!(context.entries.iter().all(|entry| entry.id != lens));
@@ -1099,10 +1103,7 @@ fn lens_delivery_includes_every_section_and_large_base_requires_an_exact_read() 
     assert!(context.charter_delivery.is_none());
     assert!(context.charter.as_ref().unwrap().contains("readRequired"));
     let (delivered, _) = host_prepare_read(&state, "loupist-a", &empty_read(&lens)).unwrap();
-    assert_eq!(
-        serde_json::from_str::<PageRead>(&delivered).unwrap(),
-        read(&lens)
-    );
+    assert_eq!(delivered, read(&lens).delivery_text().unwrap());
 }
 
 #[test]
@@ -1236,6 +1237,7 @@ fn custom_connection_origin_is_retained_in_source_readers_catalog_and_map() {
             purpose: "renderer_inspection".into(),
             world_record_id: None,
             world_revision_id: None,
+            figure: None,
         },
     )
     .unwrap();
@@ -1401,6 +1403,7 @@ fn removed_pack_sources_are_unreadable_unless_research_independently_retained_th
         purpose: "renderer_inspection".into(),
         world_record_id: None,
         world_revision_id: None,
+        figure: None,
     };
     assert!(source_read(&state, request(&pack_only)).is_ok());
     with_loupist_knowledge(&state, "loupist-a", |tx, _| {

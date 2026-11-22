@@ -3,7 +3,36 @@
 use super::*;
 
 pub(super) fn command_error(error: crate::app::CommandError) -> BrokerError {
+    if error.code == "credential_locked" {
+        return BrokerError::KeychainUnavailable;
+    }
+    if error.code == "credential_unavailable" {
+        match error
+            .detail
+            .as_ref()
+            .and_then(|detail| detail.get("kind"))
+            .and_then(Value::as_str)
+        {
+            Some("keychain_busy") => return BrokerError::KeychainBusy,
+            Some("keychain_unavailable") => return BrokerError::KeychainUnavailable,
+            _ => {}
+        }
+    }
     BrokerError::Execution(command_message(error))
+}
+
+pub(super) fn credential_read_error(
+    error: crate::finance_credentials::FinanceCredentialError,
+) -> BrokerError {
+    use crate::finance_credentials::FinanceCredentialError;
+    match error {
+        FinanceCredentialError::PermissionRequired => BrokerError::KeychainPermissionRequired,
+        FinanceCredentialError::Busy => BrokerError::KeychainBusy,
+        FinanceCredentialError::Locked | FinanceCredentialError::Unavailable => {
+            BrokerError::KeychainUnavailable
+        }
+        _ => BrokerError::Execution("credential lookup failed".into()),
+    }
 }
 
 pub(super) fn command_message(error: crate::app::CommandError) -> String {
@@ -46,6 +75,46 @@ pub(super) fn knowledge_error(error: crate::knowledge::KnowledgeError) -> Broker
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bundled_keychain_failures_keep_the_model_recovery_contract() {
+        use crate::{
+            broker::error_body, finance_credentials::FinanceCredentialError,
+            keychain_operation::KeychainError,
+        };
+        let busy = json!({
+            "code": "keychain_busy",
+            "message": "The saved key for this connection is being changed right now, so it was not read.",
+            "retryable": true,
+            "next": "Call this once more. If it fails again, tell the user the key change has not finished and continue without this connection.",
+        });
+        let unavailable = json!({
+            "code": "keychain_unavailable",
+            "message": "macOS did not release the saved key for this connection. It may be showing the user a permission prompt, or the keychain is locked.",
+            "retryable": false,
+            "next": "Tell the user to answer the macOS prompt with Always Allow, or unlock the keychain, and then ask again. Continue this reply without this connection.",
+        });
+        assert_eq!(
+            error_body(&credential_read_error(FinanceCredentialError::Busy)),
+            busy
+        );
+        assert_eq!(
+            error_body(&command_error(KeychainError::Busy.command_error())),
+            busy
+        );
+        for error in [
+            FinanceCredentialError::Locked,
+            FinanceCredentialError::Unavailable,
+        ] {
+            assert_eq!(error_body(&credential_read_error(error)), unavailable);
+        }
+        for error in [KeychainError::TimedOut, KeychainError::Unavailable] {
+            assert_eq!(
+                error_body(&command_error(error.command_error())),
+                unavailable
+            );
+        }
+    }
 
     #[test]
     fn local_diagnostics_hide_private_details_and_keep_validation_repairs() {

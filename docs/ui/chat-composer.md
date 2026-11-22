@@ -1,6 +1,6 @@
 # Chat composer
 
-The composer attaches context and does not send it. It is a compact pill (24 px radius) as wide as the reading column: one row holding, in reading and tab order, the + menu, the message, a quiet model label ("Auto") and the accent Send tile. The message starts one line high and grows with its text, line by line, up to 200 px or 30% of the window height, whichever is less; past that it scrolls and keeps the caret's line in view. The controls stay on its last line. `ChatComposer` sets that height from the text itself: the WebKit of supported macOS releases has no `field-sizing: content`, so a CSS-only composer stayed one line high there (`assertComposerGrows` in `e2e/native-forms.mjs` measures it in the WebView). The placeholder addresses the Loupist by name ("Message Lumi", "루미에게 메시지"), and the one-line notice ("AI can be wrong. Not a licensed financial adviser.") sits under the pill in 11 px. Text and object references appear at the textarea cursor; attachments and guidance sit above the row inside the pill, and whole-message settings (private chat, Skills and the as-of date) sit under it, aligned with the text. Focus on the composer, including the automatic focus of a new chat, turns its 1px edge to the accent ink. It draws no 2px outline, which would frame the whole composer. Controls keep their own outline. Styles: `src/styles/composer.css`. `/asof` is the [date control](../analysis/point-in-time.md#composer-date-control). Width and the browser: [Evidence](evidence-browser.md).
+The composer attaches context and does not send it. It is a compact pill (24 px radius) as wide as the reading column: one row holding, in reading and tab order, the + menu, the message, the name and thinking level of the model that will answer and the accent Send tile. The message starts one line high and grows with its text, line by line, up to 200 px or 30% of the window height, whichever is less; past that it scrolls and keeps the caret's line in view. The controls stay on its last line. An empty composer uses its one-line CSS height, including after the first message in a research session with a docked panel. `ChatComposer` measures height only while the textarea holds draft text: the WebKit of supported macOS releases has no `field-sizing: content`, so a CSS-only composer stayed one line high there (`assertComposerGrows` in `e2e/native-forms.mjs` measures it in the WebView). The placeholder addresses the Loupist by name ("Message Lumi", "루미에게 메시지"), and the one-line notice ("AI can be wrong. Not a licensed financial adviser.") sits under the pill in 11 px. Text and object references appear at the textarea cursor; attachments and guidance sit above the row inside the pill, and whole-message settings (private chat, Skills and the as-of date) sit under it, aligned with the text. Focus on the composer, including the automatic focus of a new chat, turns its 1px edge to the accent ink. It draws no 2px outline, which would frame the whole composer. Controls keep their own outline. Styles: `src/styles/composer.css`. `/asof` is the [date control](../analysis/point-in-time.md#composer-date-control). Width and the browser: [Evidence](evidence-browser.md).
 Answer table, code and diagram controls use the current UI language for their tooltips and accessible names. Copy confirmation clears after a short delay; refreshed snapshots of the same answer, number or grid preserve it. A stopped reply shows the localized run state without the runtime's English stop marker in the answer or its copy action.
 The transcript keeps public progress notes, findings and citations in reading
 order. While work runs, short action labels grow down the conversation between
@@ -61,10 +61,10 @@ stopped answer says what it kept. Queued messages sit in a compact list above th
 composer: a count, one short row each, and Edit, reorder, Remove, and Send now in that
 row's menu. When Send now cannot go, the menu says why under it (the running reply, offline,
 or what to reconnect). A stopped or failed reply holds the queue with a line that says so and
-offers Send next now. Removing or sending a row from its menu moves focus to the row in its
+offers Send next now. If another task is saving to this Loupist’s Memory, the queue shows a waiting line. When the host’s activity list clears its last Memory writer for that Loupist, the oldest queued instruction retries automatically. Send next now still retries immediately. Removing or sending a row from its menu moves focus to the row in its
 place, or to the message when none is left. The list can fold. It keeps queue order and the queued payload. Up to three
 next-step chips after the latest answer come from the conflicts and names it
-found and fill the composer without sending. A chip names only a company the Map
+found and fill the composer without sending. A chip names only a company World
 matched by listing to something followed; currencies, places, sectors,
 metrics and other or unknown kinds offer none, so an answer may have no chips. Leaving a view or switching Loupist does not cancel an admitted
 Chat. Private chat is a checkbox in the composer's + menu; while it is on, a "Private · memory off" chip with an off button sits under the message row. Without an AI account, Connect an AI account takes the send slot and the placeholder says so. Private chat is described under
@@ -94,23 +94,27 @@ After a reply saves a Source, a running World job, or a queued job whose process
 appear on that tab; when all work settles, the tab shows the chat's learned names or says nothing was saved.
 
 The composer's "+" menu opens above the composer, aligned to its left edge like the `@` and `/` menus, and holds
-Files…, Paste image, Screenshot of the map (disabled with a reason when no map is
+Files…, Paste image, Screenshot of World (disabled with a reason when World is not
 open or it is empty) and Add from Evidence (this chat's saved Sources as pins);
 dragging files over the chat column shows one drop overlay with the limits. The tray shows each file's size. Each file may be up to 25 MB (images 5 MB); Rust enforces it in `prepare_chat_attachments` and refuses a larger file with `attachment_too_large`, which the composer words in the reader's language.
 
 The composer has `@` for existing context and `/` for commands and Skills.
 `@` searches files, knowledge, work and connections, including existing World
 references, while a reply streams as well as while idle. It does not search the watchlist or offer free-form ticker selection.
-`/` lists `/brief`, `/compare`, `/check`, `/asof` and then Skills by name, then the
-composer's actions: New research, Model, Private chat (named as in the + menu, with what
-choosing it does now under it; `/memory` finds it too) and Attach files.
-`/brief` and `/compare` start editable prose. Dollar amounts and ticker text,
+`/` lists the bundled World (`world`), Lens and Journal Skills under Memory and
+the `/asof` date control under Commands. In a debug launch with user Skills
+enabled, the menu also lists enabled personal and Loupist Skills by name.
+Typing after the slash searches all available enabled Skills by
+name, ID and description in the interface language. Selecting a Skill adds its
+chip to the message. Dollar amounts and ticker text,
 including old `$SYMBOL:MARKET (Name)` messages, remain ordinary text. They do not
 open a menu, attach a company chip, or add an asset card to an answer. Skills keep
 their `$skill_id` submission syntax.
 
-When a read-only tool of a custom connection needs approval during an
-interactive run, Rust records it on `ChatProgress.approvals` and waits up to five
+Shipped builds keep recorded custom connection approval outcomes and their source
+names as read-only text. Waiting requests are absent from the answer and the
+activity sheet. When custom connections are enabled in debug and a read-only
+tool needs approval during an interactive run, Rust records it on `ChatProgress.approvals` and waits up to five
 minutes; the card, under the step that waits (after the steps when the step is unknown; under the header while the steps are folded), offers Allow once, Always and Not now through
 `chat_approval_decide` (Rust checks the Loupist), Always reuses the stored per-tool
 approval that Settings › Connections shows and revokes, and Not now records a
@@ -155,7 +159,7 @@ removes its unsent prompt, context and attachment drafts from the app profile; a
 failed deletion keeps them. A draft write
 that arrives after deletion cannot recreate them. Drafts for other Chats stay.
 
-Selected workspace files, connections, quoted text, knowledge and work are inserted inline at the current cursor or selection. An action elsewhere that puts words or a reference in the composer (a chart's or table's Ask, Ask in Chat from the Map or Lens, Explain the disagreement, a suggested question, Use in Chat, a quote) then hands it the keyboard with the caret after everything in it (`focusComposerAtEnd`); the reference it adds does not place the caret itself, because WebKit would take focus there, before any text after it. The editor uses a native textarea with a synchronized highlight layer; reference styling has the same text metrics, so wrapping, scrolling, selection and IME remain native. The draft retains bounded UTF-16 ranges alongside its existing typed pins, selected artifact and chip metadata. Typing before a reference shifts its range; editing inside it detaches the structured reference and leaves ordinary text. Backspace immediately after a reference, or Delete immediately before one, removes that occurrence atomically. Repeated references keep distinct offsets and serialize at each position; their shared typed context stays until the last occurrence is removed. The named removal action removes every occurrence of that context. Named removal controls are available to screen readers and reveal themselves when reached with Tab. Inserting or removing one reference preserves the surrounding question and other references. External draft restoration waits for the textarea to adopt the saved text before anchoring its references.
+Selected workspace files, connections, quoted text, knowledge and work are inserted inline at the current cursor or selection. An action elsewhere that puts words or a reference in the composer (a chart's or table's Ask, Ask in Chat from World or Lens, Explain the disagreement, a suggested question, Use in Chat, a quote) then hands it the keyboard with the caret after everything in it (`focusComposerAtEnd`); the reference it adds does not place the caret itself, because WebKit would take focus there, before any text after it. The editor uses a native textarea with a synchronized highlight layer; reference styling has the same text metrics, so wrapping, scrolling, selection and IME remain native. The draft retains bounded UTF-16 ranges alongside its existing typed pins, selected artifact and chip metadata. Typing before a reference shifts its range; editing inside it detaches the structured reference and leaves ordinary text. Backspace immediately after a reference, or Delete immediately before one, removes that occurrence atomically. Repeated references keep distinct offsets and serialize at each position; their shared typed context stays until the last occurrence is removed. The named removal action removes every occurrence of that context. Named removal controls are available to screen readers and reveal themselves when reached with Tab. Inserting or removing one reference preserves the surrounding question and other references. External draft restoration waits for the textarea to adopt the saved text before anchoring its references.
 
 Skills are whole-message modes and stay in a compact row below the textarea with the as-of date. Privacy status and model controls also stay below the text; attached file previews retain their own tray. Inline serialization keeps the reference's place in the sentence: connections use `@entry_id`, and workspace files use relative paths. Knowledge and work show their natural labels in the sent prose while their existing typed fields carry identity and ownership. No opaque editor key is put into the prompt. Rust removes retired company chips when `chat_draft_read` restores a saved draft. An inline ticker keeps its visible text and loses its reference metadata. A tray-only ticker becomes ordinary name, symbol and market prose before the existing question, and retained inline offsets shift by the prefix's UTF-16 length. Supported chips, pins, work and the as-of date stay intact. Legacy supported chips without inline ranges retain their previous serialization until the editor migrates them. Queued messages already hold serialized prose and typed context, so they need no chip migration. Selecting at least three words in an answer
 offers "Ask about this", and selecting text in a panel reader offers "Add to
@@ -177,19 +181,16 @@ requires the existing host read. Answer selections and Evidence or file excerpts
 without a retained Source binding remain quote chips. A newly selected quote or retained Source excerpt reaches the model as quoted prose at its position in the question. A retained excerpt also keeps its typed Source selection and offsets; its source label remains available in the named reference controls. Legacy quote chips still serialize as a blockquote before the question (or "Explain this." alone). Panel "Add to question" and "Ask about this" actions only
 attach context and focus the composer; they never send. At narrow widths this
 closes the panel overlay so the composer can take focus.
-The composer's run-profile control shows "Auto" while nothing is chosen for the
-Loupist (Chat defaults apply) and the chosen model's name otherwise, followed by the
-reasoning level after a middle dot ("Auto · Medium"), as a quiet
-12 px label with a small chevron, and "Connect an AI account" as the filled accent
-button in the send slot when no account is connected. An explicit selection shows its model and reasoning level in the tooltip. Auto says "Uses your default model settings"; it does not explain selection timing or show the last answer’s model as a prediction. Per-Loupist message overrides last for the current app session and return to Auto after reload. With nothing chosen and no Chat default, a send names no model and Rust
-resolves [Auto](../runtime/providers.md#shared-providers-and-world-processing) at admission. The menu
-starts with Auto (or Reset to Auto); for a ChatGPT sign-in its plan line
-("Using your ChatGPT plan · Manage usage") follows the account that answers. Reasoning options are inside the model menu's
-Advanced section. Picking a model never changes the level silently: the level in use stays
-when the new model lists it, otherwise that model's default applies, in Bot and in a
-research session alike. The label beside the model name is always the level that send
-carries. The one-time Auto notice ("Now using …" with Change, or "… is no
-longer offered. Chat uses Auto now.") sits above the composer until a send or ×. A
+The composer names the model that will answer and its reasoning level, for example
+“GPT-6.2 Sol · Medium”. Chat defaults and each Loupist’s settings use the same
+account-grouped picker. The checked model carries a Default tag while Rust selects
+it. Choosing that tagged row keeps the model preference unset. Choosing another
+model sets an explicit choice. Composer overrides last for the current app session.
+The picker shows the answering account’s plan and exposes reasoning and performance
+under Advanced. A model switch keeps the current reasoning level when supported.
+With no connected account the control reads “No AI account” and opens account setup.
+When a Loupist’s default changes, its notice names the previous and current models.
+Changing the model, dismissing the notice or sending acknowledges it on the host. A
 persistent information/not-advice disclosure appears below the composer.
 
 File selection uses typed `pickFile { title, filters }` intent mapped to Rust
@@ -218,8 +219,7 @@ rest of the conversation, and both stop above the composer so send, stop and the
 menu stay in reach. Its header is one row: the tabs, "Working" only while a reply runs,
 and close. It repeats neither the Loupist's face and name, which the page already shows,
 nor the answer's time, which What it did gives once ("This answer · 9:00 AM · 11s"); once
-the reply ends, the header's status ("Answered at 9:00 AM") is spoken, not shown, and a
-source review still running shows only on the Learned tab. Earlier answers list replies only, never a
+a reply succeeds, the header announces "Answered at 9:00 AM". For a failed reply, What it did shows "Failed at" with the reply time and adds "Your AI account was busy." for a rate limit. The header announces the same outcome for the latest reply. A source review still running shows only on the Learned tab. Earlier answers list replies only, never a
 message the host posted on its own (a result, an alert, a "now also tracks" line).
 
 Three tabs:
@@ -235,13 +235,21 @@ Three tabs:
   reasons first. Labels come from the locale catalogs: the catalog's step label, a read's
   noun ("Read current quote"), the connection's name in the interface language ("Used Web Research", "웹 리서치 사용"), or a
   generic label for the step's kind; a tool's raw name and the host's English
-  never show. A duration shows only when the host stamped both ends of a step
-  (a group sums its steps only when all have one). Then the cited sources (each opens
-  in Evidence), the figures Rust checked with their status and source, and earlier
-  answers in the chat.
+  never show. When a tool result has no own title, its link also uses the locale
+  catalogs. A duration shows only when the host stamped both ends of a step
+  (a group sums its steps only when all have one). What it read lists the cited sources.
+  File steps use the original attachment name, a workspace-relative path such as
+  `outputs/report.csv`, or a scratch-relative label. A same-named attachment from
+  another message adds its attachment time in UTC. Workspace links are available
+  for workspace files.
+  A citation to a saved Source counts here and in the answer footer. Multiple citations
+  to the same Source share one row with its title, citation count and user-provided
+  provenance when present. The row opens the first cited passage in its saved revision.
+  The sheet also lists the figures Rust checked with their status and source, and
+  earlier answers in the chat.
 - **Learned**: the quiet "Reviewing sources" line, what the selected answer saved
   (with the source review status and the Lens filing card), and the names this chat
-  added to the map, which select on the map.
+  added to World, which select in World.
 - **In use**: requests waiting for the user (Show scrolls to the card in the answer),
   the principles, methods, pins and connections the chat used, the chat's files and
   images, and "Open chat materials", which opens the materials panel.

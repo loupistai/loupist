@@ -22,6 +22,7 @@
     "responseFailedQueuedMessagesWereKept": "Response failed. Queued messages were kept.",
     "chartRange": "Selected chart range: {{start}} to {{end}}.",
     "withChartRange": "{{text}}\n\nSelected chart range: {{start}} to {{end}}.",
+    "waitingForMemory": "Waiting for another task in this Loupist to finish saving",
     "retainedRequestError": "{{error}} The request was kept. Check the conversation before sending it again.",
     "appendWorkingNoteRequest": "{{prompt}}\n\nI'd like to change the research note: "
   },
@@ -75,7 +76,7 @@
     "enabledForThisLoupist": "Enabled for this Loupist",
     "commandsAndSkills": "Commands and skills",
     "noMatchingContext": "No matching context",
-    "noEnabledItems": "No enabled items. Choose skills and connections in Loupist settings.",
+    "noEnabledItems": "No skills or data connections are enabled for this Loupist.",
     "noMatchingItem": "No matching item",
     "results": "Results",
     "promptShortcuts": "Prompt shortcuts",
@@ -84,7 +85,6 @@
     "clipboardAccessWasNotAllowed": "Clipboard access was not allowed.",
     "couldNotAttachClipboardContents": "Could not attach clipboard contents.",
     "addToThisMessage": "Add to this message",
-    "addFilesOrImages": "Add files or images",
     "manageSkillsTools": "Manage skills & tools",
     "memory": "Memory",
     "sendNext": "Send next",
@@ -94,9 +94,6 @@
     "messageLoupist": "Message Loupist",
     "askLoupistToAddContextForCommands": "Message {{loupistName}}",
     "askYourLoupist": "Message your Loupist",
-    "newChat": "New research",
-    "model": "Model",
-    "attachFiles": "Attach files",
     "manageSkillsAndConnections": "Manage skills and connections",
     "useSendNextToIncludeAttachedFilesOrReferences": "Use Send next to include attached files or references after this response.",
     "theSelectedModelDoesNotAcceptImages": "The selected model does not accept images.",
@@ -118,8 +115,6 @@
     "shortcutClose": "close",
     "escapeKey": "esc",
     "versionLabel": "Version {{version}}",
-    "startAFreshConversation": "Start a research session",
-    "chooseTheModel": "Choose the model",
     "chooseWhatThisLoupistCanUse": "Choose what this Loupist can use",
     "attachmentName": "attachment",
     "removeAttachment": "Remove {{value1}}",
@@ -144,22 +139,15 @@
     "attach": {
       "files": "Files…",
       "pasteImage": "Paste image",
-      "mapScreenshot": "Screenshot of the map",
-      "mapEmpty": "The map is empty",
-      "mapClosed": "Open the map in the panel first",
-      "mapFailed": "Couldn't capture the map. Try again.",
+      "mapScreenshot": "Screenshot of World",
+      "mapEmpty": "World is empty",
+      "mapClosed": "Open World in the panel first",
+      "mapFailed": "Couldn't capture World. Try again.",
       "fromEvidence": "Add from Evidence",
-      "mapStats_one": "{{formattedCount}} on the map",
-      "mapStats_other": "{{formattedCount}} on the map"
+      "mapStats_one": "{{formattedCount}} in World",
+      "mapStats_other": "{{formattedCount}} in World"
     },
-    "briefDetail": "A quick briefing on something you follow.",
     "asofDetail": "Answer with only what was known on a date.",
-    "compareDetail": "Compare two assets on what your Loupist knows.",
-    "checkDetail": "Check a claim against your principles.",
-    "briefPrompt": "Give me a quick briefing on ",
-    "comparePrompt": "Compare ",
-    "checkPrompt": "Check this against my principles: ",
-    "actions": "Actions",
     "attachmentTooLarge": "Each file must be 25 MB or smaller. Remove the larger file and send again."
   },
   "chatConversation": {
@@ -189,6 +177,7 @@
     "answerCopied": "Answer copied",
     "copyAnswer": "Copy answer",
     "copied": "Copied",
+    "afterCurrentReply": "Available when the current reply finishes.",
     "editMessage": "Edit message",
     "edit": "Edit",
     "couldNotCopySelectTheAnswerToCopyIt": "Could not copy. Select the answer to copy it.",
@@ -238,14 +227,10 @@
   },
   "chatModelMenu": {
     "modelSettingsForThisMessage": "Model settings for this message",
-    "chooseModel": "Choose a model",
     "modelForThisMessage": "Model for this message",
     "advanced": "Advanced",
-    "auto": "Auto",
-    "autoDescription": "Uses your default model settings.",
-    "autoRecommended": "Auto (recommended)",
-    "resetToAuto": "Reset to Auto",
-    "connectAccount": "Connect an AI account"
+    "default": "Default",
+    "noAccount": "No AI account"
   },
   "chatPendingQueue": {
     "pendingChatInstructions": "Pending chat instructions",
@@ -281,10 +266,11 @@
     "inspectAction": "Inspect {{action}}",
     "paused": {
       "status": "Paused",
-      "instructions": "Paused: this answer read text from other sites, so changing instruction and Skill files is turned off for this answer.",
+      "instructions": "Paused: this answer read text from other sites, so changing instruction files is turned off for this answer.",
+      "instructionsWithSkills": "Paused: this answer read text from other sites, so changing instruction and Skill files is turned off for this answer.",
       "site": "Paused: this answer read text from other sites, so opening this page is turned off for this answer.",
       "schedule": "Paused: this answer read text from other sites, so creating or changing schedules is turned off for this answer.",
-      "connection": "Paused: this answer read text from other sites, so connections you added are turned off for this answer.",
+      "connection": "Paused: this connection was paused after this answer read text from other sites.",
       "other": "Paused: this answer read text from other sites, so this step is turned off for this answer.",
       "why": "Text from other sites can carry hidden instructions. This safety rule keeps them from acting for you, and a new message starts without the pause."
     },
@@ -292,10 +278,10 @@
       "protectedPath": "Not allowed: this path is inside the app's private data (credentials, the database, runtime files), which the Loupist never reads or writes.",
       "outsideWorkspace": "Not allowed: this file is outside the Loupist folder. Attach it to the chat or copy it into the folder, and the Loupist can work with it."
     },
-    "namesTouched_one": "{{formattedCount}} on the map",
-    "namesTouched_other": "{{formattedCount}} on the map",
-    "namesTouchedOnMap_one": "Show {{formattedCount}} on the map",
-    "namesTouchedOnMap_other": "Show {{formattedCount}} on the map",
+    "namesTouched_one": "{{formattedCount}} in World",
+    "namesTouched_other": "{{formattedCount}} in World",
+    "namesTouchedOnMap_one": "Show {{formattedCount}} in World",
+    "namesTouchedOnMap_other": "Show {{formattedCount}} in World",
     "plan": "Plan",
     "notDone": "Not done",
     "planDone": "Done",
@@ -312,6 +298,7 @@
     "thisSampleAlsoHasADisplayLimit": "This sample also has a display limit.",
     "resultDetails": "Result details",
     "recorded": "Recorded",
+    "updated": "Updated",
     "provider": "Provider",
     "dataAsOf": "Data as of",
     "published": "Published",
@@ -345,28 +332,66 @@
     "updatedDate": "Updated {{date}}",
     "attributedSource": "Source: {{attribution}}",
     "numberedSource": "Source {{value1}}",
-    "numberedWorld": "Map {{value1}}",
+    "numberedWorld": "World {{value1}}",
     "numberedLens": "Lens {{value1}} · {{value2}}"
   },
   "messageMemoryRow": {
     "savedInThisAnswer": "Saved in this answer",
     "userProvided": "User-provided",
-    "showRelation": "Show on the map: {{source}} {{relation}} {{target}}",
+    "showRelation": "Show in World: {{source}} {{relation}} {{target}}",
     "basis": "Basis: {{value}}",
     "nextUse": "Next use: {{value}}",
     "openIn": "Open in {{value}}"
   },
+  "memorySaving": {
+    "label": "Saving to Memory",
+    "inProgress": "Saving to Memory…",
+    "waitingForChat": "Saving to Memory · waiting for “{{title}}” to finish",
+    "waitingForOthers": "Saving to Memory · waiting for other conversations in this Loupist",
+    "skip": "Skip saving",
+    "skipDetail": "Keep the answer and skip saving it to Memory.",
+    "skipFailed": "Could not skip saving. Try again.",
+    "queueHelp": "{{send}} queues this until saving finishes. {{newline}} starts a new line.",
+    "unfinished": "Saving did not finish",
+    "waitedForChat": "Waited {{duration}} for “{{title}}”",
+    "waitedForOthers": "Waited {{duration}} for other conversations in this Loupist",
+    "claimNotKept": "What this answer says it saved was not kept.",
+    "notKept": "Not kept",
+    "discardedKind": {
+      "note": "Note",
+      "journal_entry": "Journal entry",
+      "source": "Source",
+      "lens_section": "Lens section",
+      "lens_page": "Lens page",
+      "principle": "Principle",
+      "method": "Method",
+      "world_vocabulary": "World vocabulary",
+      "thesis": "Investment thesis",
+      "price_read": "Price read",
+      "bot_memory": "Bot memory",
+      "watchlist": "Following",
+      "research_focus": "Research focus",
+      "research_handoff": "Research hand-off"
+    },
+    "skipped": {
+      "user": "Not saved to Memory: you skipped saving.",
+      "deadline": "Not saved to Memory: another conversation was still running after 10 minutes.",
+      "interrupted": "Not saved to Memory: Loupist quit before saving finished.",
+      "failed": "Not saved to Memory: saving failed.",
+      "policy_changed": "Not saved to Memory: Memory was reset while this answer was being written."
+    }
+  },
   "chatReceipt": {
     "label": "What this answer used and saved",
     "sourcesRead": "Sources read in this answer",
-    "names_one": "{{formattedCount}} name added to the map",
-    "names_other": "{{formattedCount}} names added to the map",
-    "namesOnMap_one": "Show {{formattedCount}} new on the map",
-    "namesOnMap_other": "Show {{formattedCount}} new on the map",
+    "names_one": "{{formattedCount}} name added to World",
+    "names_other": "{{formattedCount}} names added to World",
+    "namesOnMap_one": "Show {{formattedCount}} new in World",
+    "namesOnMap_other": "Show {{formattedCount}} new in World",
     "relationships_one": "{{formattedCount}} relationship updated",
     "relationships_other": "{{formattedCount}} relationships updated",
-    "relationshipsOnMap_one": "{{formattedCount}} relationship updated on the map",
-    "relationshipsOnMap_other": "{{formattedCount}} relationships updated on the map",
+    "relationshipsOnMap_one": "{{formattedCount}} relationship updated in World",
+    "relationshipsOnMap_other": "{{formattedCount}} relationships updated in World",
     "savedSources_one": "Saved {{formattedCount}} source",
     "savedSources_other": "Saved {{formattedCount}} sources",
     "savedPrinciples_one": "Saved {{formattedCount}} new principle",
@@ -375,8 +400,8 @@
     "savedJournal_other": "Saved {{formattedCount}} journal entries",
     "savedNotes_one": "Saved {{formattedCount}} research note",
     "savedNotes_other": "Saved {{formattedCount}} research notes",
-    "savedWorld_one": "{{formattedCount}} added to the map",
-    "savedWorld_other": "{{formattedCount}} added to the map",
+    "savedWorld_one": "{{formattedCount}} added to World",
+    "savedWorld_other": "{{formattedCount}} added to World",
     "nothingNew": "Nothing new saved",
     "thesisMoved": "{{name}}: {{verdict}}",
     "thesisMovedFrom": "{{name}}: {{from}} → {{verdict}}",
@@ -384,9 +409,9 @@
     "following": "Following {{name}}",
     "unfollowed": "Stopped following {{name}}",
     "focusUpdated": "Focus updated",
-    "mapTracks": "Map now also tracks {{list}}",
+    "mapTracks": "The World now also tracks {{list}}",
     "journalNotSaved": "Journal entry not saved",
-    "kindNotAdded": "{{name}}: not added to the map",
+    "kindNotAdded": "{{name}}: not added to World",
     "numbersToCheck_one": "{{formattedCount}} number to check",
     "numbersToCheck_other": "{{formattedCount}} numbers to check",
     "learned_one": "Learned {{formattedCount}} thing",
@@ -421,21 +446,21 @@
     "spending": "Scheduled tasks use your AI account each run."
   },
   "worldProcessingStatus": {
-    "sourceSavedCouldNotRefreshWorldStatus": "Source saved · Could not refresh the Map status",
-    "sourceSavedCheckWorldForProcessingDetails": "Source saved · Check the Map for details",
+    "sourceSavedCouldNotRefreshWorldStatus": "Source saved · Could not refresh World status",
+    "sourceSavedCheckWorldForProcessingDetails": "Source saved · Check World for details",
     "refreshStatus": "Refresh status",
-    "queued": "Map: queued",
-    "running": "Map: connecting relationships",
-    "completed": "Map: relationships updated",
-    "paused": "Map: building paused",
-    "paused_budget": "Map: building stopped for this source",
-    "failed_before_mutation": "Map: building failed",
-    "reconcile_required": "Map: outcome uncertain — review it in the Map",
-    "reconciled_without_retry": "Source retained · Interrupted Map building was not retried",
-    "cancelled_before_start": "Map: building cancelled",
-    "no_text": "Source saved · No readable text for the Map",
-    "disabled": "Source saved · Map building is off",
-    "not_configured": "Source saved · Set up Map building in Loupist settings",
+    "queued": "World: queued",
+    "running": "World: connecting relationships",
+    "completed": "World: relationships updated",
+    "paused": "World: building paused",
+    "paused_budget": "World: building stopped for this source",
+    "failed_before_mutation": "World: building failed",
+    "reconcile_required": "World: outcome uncertain — review it in World",
+    "reconciled_without_retry": "Source retained · Interrupted World building was not retried",
+    "cancelled_before_start": "World: building cancelled",
+    "no_text": "Source saved · No readable text for World",
+    "disabled": "Source saved · World building is off",
+    "not_configured": "Source saved · Set up World building in Loupist settings",
     "saved": "Source saved"
   },
   "chatStatusPill": {
@@ -515,7 +540,7 @@
       "source": "Source",
       "savedSource": "Saved source",
       "lens": "Lens",
-      "world": "Map",
+      "world": "World",
       "journal": "Journal",
       "note": "Research note",
       "file": "File"
@@ -524,6 +549,7 @@
     "createdIn": "Created in",
     "provider": "Provider",
     "retrieved": "Retrieved",
+    "updated": "Updated",
     "published": "Published",
     "dataAsOf": "Data as of",
     "coverage": "Coverage",
@@ -573,7 +599,38 @@
     "preview": "Preview",
     "source": "Source",
     "showFile": "Show file",
-    "noTextPreviewForThisFileUseShowIn": "No text preview for this file. Use Show in file manager to open it.",
+    "noPreviewForThisKindOfFile": "No preview for this kind of file.",
+    "documentOpen": {
+      "open": "Open",
+      "openIn": "Open in {{application}}",
+      "outsideWorkspace": "This file is outside the workspace.",
+      "unsupportedType": "This file type cannot be opened from Files.",
+      "inaccessibleFile": "This file is unavailable.",
+      "unsafeDocument": "This file cannot be opened safely.",
+      "failedIn": "Couldn’t open this file in {{application}}.",
+      "handlerUnavailable": "The system could not open this file in a default app.",
+      "couldNotOpen": "Could not open this file."
+    },
+    "workbook": {
+      "sheets": "Sheets",
+      "hidden": "hidden",
+      "reading": "Reading the workbook…",
+      "valuesOnly": "Values only. Charts, images and formatting are not shown.",
+      "truncated": "Showing the first {{rows}} of {{total}} rows.",
+      "emptySheet": "This sheet has no data.",
+      "noVisibleSheets": "This workbook has no visible worksheets.",
+      "unsupportedFormat": "{{format}} workbooks cannot be previewed.",
+      "encrypted": "This workbook is password-protected.",
+      "invalidWorkbook": "This workbook is damaged or invalid.",
+      "unknownSheet": "This sheet is no longer available.",
+      "unsupportedSheet": "This sheet cannot be previewed.",
+      "limitExceeded": "This workbook exceeds the preview limits.",
+      "unavailable": "Workbook preview is unavailable.",
+      "timedOut": "Reading the workbook timed out.",
+      "couldNotRead": "Could not read the workbook.",
+      "cachedFormula": "Calculated by a formula. The saved result is shown.",
+      "uncachedFormula": "This formula has no saved result yet. Open the file in a spreadsheet application to calculate it."
+    },
     "openInFileManager": "Open in file manager",
     "couldNotDisplayThisImage": "Could not display this image.",
     "fitToPanel": "Fit to panel",
@@ -607,8 +664,8 @@
   },
   "workspaceKnowledgeReader": {
     "couldNotOpenThisSavedReference": "Could not open this saved reference.",
-    "exploreThisSavedWorldAndItsEvidence": "Explore this saved Map and its evidence.",
-    "openWorld": "Open Map",
+    "exploreThisSavedWorldAndItsEvidence": "Explore this saved World and its evidence.",
+    "openWorld": "Open World",
     "openInLens": "Open in Lens",
     "retryReference": "Retry reference",
     "openingSavedReference": "Opening saved reference…",
@@ -625,7 +682,7 @@
     "chart": "Chart",
     "document": "Document",
     "closeTab": "Close {{title}} tab",
-    "map": "Chat map",
+    "map": "World for this chat",
     "evidence": "Evidence",
     "newContent": "New in {{tab}}",
     "work": "Work",
@@ -721,7 +778,15 @@
     "titleWithUnit": "{{label}} ({{unit}})",
     "unitOnly": "In {{unit}}",
     "series": "Series",
-    "value": "Value"
+    "value": "Value",
+    "chart": "Chart",
+    "namedAxis": "{{title}} axis",
+    "range": "{{title}} axis, from {{min}} to {{max}}",
+    "legend": "{{title}} legend",
+    "barMark": "Bar",
+    "lineMark": "Line",
+    "areaMark": "Area",
+    "pointMark": "Data point"
   },
   "financialChart": {
     "chartControls": "Chart controls",
@@ -783,6 +848,16 @@
     "explainQuote": "Explain this."
   },
   "evidence": {
+    "provenance": {
+      "updated": "updated {{date}}",
+      "fetched": "fetched {{date}}",
+      "saved": "saved {{date}}",
+      "route": {
+        "world": "from your World",
+        "lens": "from your Lens",
+        "source": "from your Sources"
+      }
+    },
     "selectedPassageFromTheRetrievedDocument": "Selected passage from the retrieved document",
     "retrievedSource": "Retrieved source",
     "contentReturnedByTheSourceWhenThisAnswerWas": "Content returned by the source when this answer was researched.",
@@ -810,14 +885,25 @@
     "datasetResult": "Dataset result",
     "toolResult": "Tool result",
     "aSavedAnalysisResultThisIsNotAnOriginal": "A saved analysis result. This is not an original source or an independently verified fact.",
-    "worldSearch": "Map search",
+    "worldSearch": "World search",
     "lensSearch": "Lens search",
     "numberedSource": "Source {{number}}: {{title}}",
     "memoryLabel": "Memory: {{memoryTitle}}",
     "resultLabel": "Result: {{title}}",
-    "map": "Map",
+    "map": "World",
     "lens": "Lens",
-    "marketData": "Market data"
+    "marketData": "Market data",
+    "warnings": {
+      "navigation_heavy": "The saved text includes menus and navigation from the page. Unrelated text may surround the passage.",
+      "decoding_replaced": "Some characters could not be read and were replaced in the saved text.",
+      "javascript_required": "This page uses JavaScript to show content. Some of it may be missing from the saved passage.",
+      "very_short": "Very little text was saved from this page. The passage may lack context.",
+      "official_fallback": "The official document service was unavailable. This passage was saved from the web page.",
+      "undated_result": "Some search results have no publication date.",
+      "usage_metadata_unavailable": "The search provider did not report usage details for this search.",
+      "provider_fallback": "Another search provider supplied these results.",
+      "unknown": "The source reported a limitation. Check the original page for context."
+    }
   },
   "memoryActivity": {
     "reviseNote": "Revised note",
@@ -833,11 +919,11 @@
       "principle": "principle",
       "thesis": "thesis",
       "record": "record",
-      "world": "map entry"
+      "world": "World entry"
     }
   },
   "memoryPreview": {
-    "thisSavedPreviewIsIncompleteOpenTheRelatedRecord": "This saved preview is incomplete. Open the related record in the Map or Lens to read its content.",
+    "thisSavedPreviewIsIncompleteOpenTheRelatedRecord": "This saved preview is incomplete. Open the related record in World or Lens to read its content.",
     "noMatchingSavedRecords": "No matching saved records.",
     "moreMatchesAreAvailableInMemory": "More matches are available in Memory.",
     "noEntitiesOrRelationshipsInThisSavedView": "No entities or relationships in this saved view.",
@@ -890,7 +976,7 @@
     "couldNotOpenThisLinkAlert": "Could not open this link.",
     "openLinkedLens": "Open linked Lens",
     "openFile": "Open {{localPath}}",
-    "openExternalLink": "Open {{externalUrl}}",
+    "opensBesideChat": "Opens beside the chat. {{modifier}}-click to open in your browser.",
     "streamdown": {
       "close": "Close",
       "copied": "Copied",
@@ -1038,7 +1124,7 @@
     "youCouldAsk": "You could ask",
     "askGreeting": "What would you like to research?",
     "reason": {
-      "new": "new on the map",
+      "new": "new in World",
       "relation": "new relationship",
       "source": "from {{title}}",
       "check": "to check by {{date}}",
@@ -1168,8 +1254,8 @@
       "done": "Saved your principle"
     },
     "world_schema_update": {
-      "running": "Updating what the map tracks",
-      "done": "Updated what the map tracks"
+      "running": "Updating what World tracks",
+      "done": "Updated what World tracks"
     },
     "loupist_setup": {
       "running": "Setting up this Loupist",
@@ -1385,12 +1471,13 @@
     "declined": "Skipped saving one item: it looked like a password, key or other secret."
   },
   "thread": {
+    "scheduleOrigin": "Schedule · {{title}} · {{time}}",
     "open": "Open",
     "couldNotFinish": "This run couldn't finish.",
     "runRemoved": "This run's record was removed.",
     "deliveryLabel": "Result from {{title}}",
     "handoffLabel": "Research: {{title}}",
-    "researched": "Researched: {{title}}",
+    "sessionEnded": "Session ended: {{title}}",
     "handoffFailed": "Couldn't finish",
     "handoffStopped": "Stopped",
     "handoffInterrupted": "Interrupted",
@@ -1453,8 +1540,8 @@
     "learned": {
       "title": "Learned",
       "processing": "Reviewing sources…",
-      "names_one": "+{{formattedCount}} on the map",
-      "names_other": "+{{formattedCount}} on the map",
+      "names_one": "+{{formattedCount}} in World",
+      "names_other": "+{{formattedCount}} in World",
       "relationships_one": "{{formattedCount}} relationship",
       "relationships_other": "{{formattedCount}} relationships",
       "methods_one": "{{formattedCount}} method",
@@ -1471,14 +1558,14 @@
     "pill": {
       "files_one": "{{formattedCount}} file",
       "files_other": "{{formattedCount}} files",
-      "names_one": "+{{formattedCount}} on the map",
-      "names_other": "+{{formattedCount}} on the map"
+      "names_one": "+{{formattedCount}} in World",
+      "names_other": "+{{formattedCount}} in World"
     }
   },
   "workList": {
-    "label": "Charts, tables and documents",
+    "label": "Work from this conversation",
     "loading": "Loading your Loupist's work…",
-    "empty": "Charts, tables and documents your Loupist makes appear here.",
+    "empty": "Charts, tables, documents and files your Loupist makes in this conversation appear here.",
     "showOlder": "Show older",
     "allWork": "All work",
     "charts_one": "{{formattedCount}} chart",
@@ -1486,7 +1573,9 @@
     "documents_one": "{{formattedCount}} document",
     "documents_other": "{{formattedCount}} documents",
     "tables_one": "{{formattedCount}} table",
-    "tables_other": "{{formattedCount}} tables"
+    "tables_other": "{{formattedCount}} tables",
+    "files_one": "{{formattedCount}} file",
+    "files_other": "{{formattedCount}} files"
   },
   "chatDivider": {
     "today": "Today",
@@ -1540,19 +1629,19 @@
     "valuation": "Estimate what a company is worth",
     "visualize": "Draw a chart from data",
     "why-it-moved": "Find out why a price moved",
-    "world": "Look up what your Loupist already knows"
+    "world": "Look up recorded facts and relationships"
   },
   "modelNotice": {
-    "nowUsing": "Now using {{model}}.",
     "change": "Change",
-    "removed": "{{model}} is no longer offered. Chat uses Auto now.",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "changed": "Now answering with {{current}} (was {{previous}})",
+    "available": "Now answering with {{current}}"
   },
   "vocabulary": {
-    "message": "Your map now also tracks {{list}}.",
-    "label": "New on the map: {{list}}",
+    "message": "Your World now also tracks {{list}}.",
+    "label": "New in World: {{list}}",
     "undo": "Undo",
-    "undone": "Undone. The map tracks the basics again for these.",
+    "undone": "Undone. World tracks the basics again for these.",
     "error": "Couldn't undo this. Try again."
   },
   "link": {
@@ -1570,7 +1659,7 @@
     "gone": "This link is no longer available. Ask about it in a message instead.",
     "startError": "Couldn't start the research. Check the model in the composer, then try again.",
     "conflict": "This link is already being researched with other settings. The result will arrive here.",
-    "showPath": "Show on the map"
+    "showPath": "Show in World"
   },
   "handoff": {
     "linkStart": "Start: {{name}}",
@@ -1578,6 +1667,9 @@
     "linkEnd": "End: {{name}}",
     "linkUnavailable": "Link details are unavailable.",
     "fromBot": "From Bot",
+    "brief": "Bot’s brief",
+    "details": "Hand-off details",
+    "youSaid": "You said in Bot",
     "linkDetails": "Link details",
     "choseLink": "You chose “Look into it” on a link in Bot."
   },
@@ -1610,7 +1702,62 @@
     "more": "{{count}} more saved quotes",
     "technicalOriginal": "Technical original"
   },
+  "figureWarning": {
+    "explanation": "Loupist compared each cited figure with its source. These could not be confirmed.",
+    "calculation": "Calculation result",
+    "answer": "In the answer",
+    "source": "In the source",
+    "result": "In the result",
+    "openSource": "Open the source",
+    "openStep": "Open the step",
+    "legacyStep": "This value could not be confirmed in the calculation result.",
+    "missingStep": "The calculation did not print this value.",
+    "replay": {
+      "retainedPassage": "This value is not in the saved passage of this Source.",
+      "evidenceUnavailable": "The evidence for this figure is no longer stored."
+    },
+    "reasons": {
+      "digits_differ": "The numbers differ.",
+      "scale_conflict": "The digits agree but the scale does not.",
+      "sign_conflict": "The sign differs.",
+      "incompatible_unit": "The source's number is a different kind of quantity.",
+      "no_candidate": "This value was not found in the source."
+    },
+    "short": {
+      "digits_differ": "Different numbers",
+      "scale_conflict": "Different scale",
+      "sign_conflict": "Different sign",
+      "incompatible_unit": "Different quantity",
+      "no_candidate": "Value not found",
+      "legacy": "Unconfirmed"
+    },
+    "scales": {
+      "0": "in units",
+      "3": "in thousands",
+      "4": "in ten thousands",
+      "6": "in millions",
+      "8": "in hundreds of millions",
+      "9": "in billions",
+      "12": "in trillions",
+      "other": "in units of {{factor}}"
+    },
+    "units": {
+      "dollars": "dollars",
+      "pounds": "pounds",
+      "won": "won",
+      "euros": "euros",
+      "yenOrYuan": "yen or yuan",
+      "perShare": "per share",
+      "index": "index points",
+      "shares": "shares",
+      "percent": "percent",
+      "points": "percentage points",
+      "bp": "basis points",
+      "multiple": "times"
+    }
+  },
   "numberChip": {
+    "incompatibleCurrency": "The source states this amount in {{sourceCurrency}}, the answer in {{answerCurrency}}.",
     "labelCalculated": "{{value}}, calculated. Show the math",
     "labelSourced": "{{value}}, from {{source}}",
     "labelUnmatched": "{{value}}, not found in {{source}}",
@@ -1625,10 +1772,13 @@
     "copyFormula": "Copy formula",
     "copied": "Copied",
     "openEvidence": "Open in Evidence",
-    "published": "{{source}} · published {{date}}",
+    "published": "published {{date}}",
     "filedFetched": "{{provider}} · filed {{filed}} · fetched {{fetched}}",
     "notFound": "This number isn't in the cited source as written. Check the source.",
     "differs": "The calculation gave {{nearest}}. The answer says {{shown}}.",
+    "matchedScaleConversion": "Matches the source: {{sourceValue}}{{currency}}, shown {{scale}}.",
+    "unstatedSourceScale": "Matches the source’s number; the source’s unit is not stated in this passage.",
+    "unstatedAnswerScale": "Matches the source’s number; the answer does not state a unit.",
     "rounded": "Rounded from {{exact}}",
     "knownAsOf": "Known as of {{date}}",
     "exportCalculated": "calculated in Loupist; inputs: {{inputs}}",
@@ -1689,6 +1839,8 @@
     "field": {
       "item": "Item",
       "period": "Period",
+      "date": "Date",
+      "value": "Value",
       "amount": "Amount",
       "unit": "Unit",
       "basis": "Basis"
@@ -1774,7 +1926,7 @@
     "used": "Used",
     "why": "Why they differ:",
     "undated": "Undated",
-    "seeMap": "See on the Map",
+    "seeMap": "Show in World",
     "reason": {
       "basis": "different bases",
       "period": "different periods",
@@ -1872,6 +2024,8 @@
       "dataset_query": "analysis data",
       "dataset_describe": "analysis data",
       "chart_query": "chart data",
+      "artifact_read": "conversation document",
+      "artifact_list": "conversation documents",
       "calculate": "calculations",
       "equity_search": "company search",
       "equity_profile": "company profile",
@@ -1935,6 +2089,7 @@
     },
     "status": {
       "working": "Working",
+      "failedAt": "Failed at {{time}}",
       "answeredAt": "Answered at {{time}}",
       "noAnswer": "No answer yet"
     },
@@ -1954,6 +2109,8 @@
     },
     "read": {
       "title": "What it read",
+      "citations_one": "{{formattedCount}} citation",
+      "citations_other": "{{formattedCount}} citations",
       "empty": "This answer cited no sources."
     },
     "checked": {
@@ -1970,9 +2127,9 @@
     },
     "learned": {
       "saved": "Saved from this answer",
-      "map": "Added to the map in this chat",
+      "map": "Added to World in this chat",
       "none": "Nothing has been saved from this chat yet.",
-      "openMap": "Show on the map"
+      "openMap": "Show in World"
     },
     "using": {
       "title": "Connections and memory in use",

@@ -175,7 +175,7 @@ async fn every_value_cell_is_checked_against_the_evidence_it_cites() {
     assert_eq!(
         statuses,
         [
-            ("cells[0][0]".to_owned(), "rounded".to_owned()),
+            ("cells[0][0]".to_owned(), "matched".to_owned()),
             ("cells[0][1]".to_owned(), "matched".to_owned()),
             ("cells[1][0]".to_owned(), "not_found".to_owned()),
         ]
@@ -349,7 +349,9 @@ async fn a_delivered_grid_is_shown_before_the_reply_saves_it_and_a_discarded_one
     let ChatArtifactPayload::Grid { grid, .. } = &commit.revision.payload else {
         panic!("a grid was published");
     };
-    assert!(grid.evidence_ids().contains(&views[0].evidence_refs[0].id));
+    assert!(grid
+        .evidence_ids()
+        .contains(&views[0].evidence_refs[0].snapshot.id));
     // Shown is not saved: the store has no such artifact until the reply commits.
     assert!(executor
         .state
@@ -514,7 +516,7 @@ async fn a_conflict_card_needs_disagreeing_sources_and_a_world_entity_it_read() 
             .iter()
             .map(|check| check["status"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        ["rounded", "matched"]
+        ["matched", "matched"]
     );
     let commit = executor.capture.artifacts.lock().await[0].clone();
     let ChatArtifactPayload::Grid { grid, .. } = &commit.revision.payload else {
@@ -572,6 +574,7 @@ async fn a_conflict_card_needs_disagreeing_sources_and_a_world_entity_it_read() 
         revision_id: "rev_world".into(),
         object_id: "rec_world".into(),
         title: "World".into(),
+        evidence_origin: None,
         payload: AckedPayload::World {
             revision_digest: "digest".into(),
             view_json: json!({"nodes": [{"id": "ent:solsup"}, {"id": "ent:metric"}], "edges": [

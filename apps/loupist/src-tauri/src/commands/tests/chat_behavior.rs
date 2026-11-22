@@ -68,7 +68,7 @@ fn pi_artifacts(
     }
 }
 
-fn execution_model() -> ExecutionModelLock {
+pub(super) fn execution_model() -> ExecutionModelLock {
     ExecutionModelLock {
         profile_id: "openai-codex/gpt-5.6-luna".into(),
         name: "GPT-5.6 Luna".into(),
@@ -738,6 +738,88 @@ async fn native_chat_skill_mentions_preserve_requested_memory_permissions() {
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
 #[tokio::test]
+async fn exhausted_busy_retries_record_the_failed_reply_event_and_run() {
+    use crate::{
+        commands::chat_runtime::{chat_retry_last, send_chat, ChatEventSink},
+        domain::ChatFailureKind,
+        runs::log::{run_logs_last_error, DiagnosticsRequest},
+    };
+
+    let root = tempfile::tempdir().unwrap();
+    let workspace = root.path().join("workspace");
+    initialized_workspace(&workspace, "busy-retry");
+    let mut state = AppState::for_test(root.path().join("app"));
+    install_chat_rpc_fixture(
+        &mut state,
+        root.path(),
+        include_str!("fixtures/model_gone_pi.py"),
+    );
+    fs::write(root.path().join("rate-limited"), "").unwrap();
+    let profile = profile("busy", &workspace, 1);
+    seed_profile(&state.store, &profile);
+    let chat = chat("chat-busy", &profile.id, 1);
+    state.store.create_chat(&chat).unwrap();
+    let app = mock_app(state);
+    let state = app.state::<AppState>();
+    let prompt = "Compare the margins.";
+    for attempt in 0..3 {
+        if attempt > 0 {
+            let replay = chat_retry_last(
+                serde_json::from_value(
+                    serde_json::json!({"loupist_id": profile.id, "thread_id": chat.id}),
+                )
+                .unwrap(),
+                app.state(),
+            )
+            .unwrap();
+            assert_eq!(serde_json::to_value(replay).unwrap()["prompt"], prompt);
+        }
+        let run = format!("busy-{attempt}");
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured = events.clone();
+        let sink = ChatEventSink::new(move |event| {
+            captured.lock().unwrap().push(event);
+            Ok(())
+        });
+        send_chat(
+            send_request(&run, &profile.id, &chat.id, prompt),
+            sink,
+            &state,
+            None,
+        )
+        .await
+        .unwrap();
+        drain(&state).await;
+        assert!(matches!(
+            events.lock().unwrap().last(),
+            Some(ChatStreamEvent::Error {
+                failure_kind: ChatFailureKind::RateLimited,
+                ..
+            })
+        ));
+        let stored = state.store.get_chat(&chat.id).unwrap().unwrap();
+        let thread = crate::commands::types::chat_dto(&stored).unwrap();
+        assert_eq!(thread.messages.len(), 2);
+        let reply = &thread.messages[1];
+        assert_eq!(reply.status, ChatMessageStatus::Error);
+        assert_eq!(reply.failure_kind, Some(ChatFailureKind::RateLimited));
+        let last_error = run_logs_last_error(
+            DiagnosticsRequest {
+                loupist_id: Some(profile.id.clone()),
+            },
+            app.state(),
+        )
+        .unwrap()
+        .unwrap();
+        let record: serde_json::Value = serde_json::from_str(&last_error).unwrap();
+        assert_eq!(record["runId"], run);
+        assert_eq!(record["status"], "failed");
+        assert_eq!(record["failureKind"], "rate_limited");
+    }
+}
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+#[tokio::test]
 async fn a_gone_model_is_retried_once_on_auto_within_the_same_turn() {
     use crate::commands::chat_runtime::{send_chat, ChatEventSink};
     use crate::providers::catalog::ConfiguredModel;
@@ -1322,6 +1404,7 @@ fn cold_bootstrap_restores_history_saved_work_and_attachments() {
             }],
             evidence_refs: vec![evidence(1, "Revenue rose."), evidence(2, "Same filing.")],
             progress: Some(ChatProgress {
+                save_activity: None,
                 started_at_ms: 1,
                 finished_at_ms: Some(2),
                 items: vec![ChatProgressItem::Tool {
@@ -1336,6 +1419,7 @@ fn cold_bootstrap_restores_history_saved_work_and_attachments() {
                     source: None,
                     summary: None,
                     result_ids: Vec::new(),
+                    written_paths: Vec::new(),
                     entity_ids: Vec::new(),
                     output_revision: None,
                     detail_id: None,

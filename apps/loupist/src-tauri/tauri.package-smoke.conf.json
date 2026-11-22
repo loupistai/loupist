@@ -22,6 +22,7 @@
       "../agent/prompts/briefing.md": "loupist-agent/prompts/briefing.md",
       "../agent/prompts/method-learning.md": "loupist-agent/prompts/method-learning.md",
       "../agent/prompts/price-setup.md": "loupist-agent/prompts/price-setup.md",
+      "../agent/provider-signin-page.mjs": "loupist-agent/provider-signin-page.mjs",
       "../agent/provider-inference.mjs": "loupist-agent/provider-inference.mjs",
       "../agent/session-continuity.mjs": "loupist-agent/session-continuity.mjs",
       "../agent/skills/NOTICE.md": "loupist-agent/skills/NOTICE.md",

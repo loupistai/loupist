@@ -8,6 +8,7 @@ enableSharingPreviewHarness();
 import { BROWSER_ARTICLE_URL, BROWSER_RAW_ENGINE_MESSAGE } from "./browserScenarios";
 import { configureTheme, PreviewBridge } from "./fixtures";
 import { scenarios } from "./scenarios";
+import { selectPanel } from "./scenarios/kit";
 
 // The offline scenario shadows `navigator.onLine`; drop it so later scenarios run online.
 afterEach(() => { cleanup(); localStorage.clear(); setPreviewLanguage("en"); Reflect.deleteProperty(window.navigator, "onLine"); });
@@ -28,6 +29,32 @@ describe("design preview scenarios", () => {
         const profiles = await bridge.loupistList();
         expect(profiles).toHaveLength(6);
         for (const profile of profiles) expect((await bridge.loupistSelect(profile.id)).loupist).toMatchObject({ id: profile.id, name: profile.name });
+      }
+      if (scenario.id === "answer-reading-column") {
+        const answer = document.querySelector('article.message.assistant[data-message-id="preview-answer"]');
+        for (const selector of ["h2", ".message-content p", ".message-content ul", ".chat-artifact-block", ".message-sources", ".memory-row", ".answer-feedback", ".message-action-bar > .message-actions"]) {
+          expect(answer?.querySelector(selector)?.closest("article.message")).toBe(answer);
+        }
+        expect(answer?.querySelectorAll("table")).toHaveLength(2);
+        expect(answer?.querySelector(".citation-keep")).toHaveTextContent("direction. 13");
+      }
+      if (scenario.id === "map-from-chat") {
+        expect(document.querySelector("[data-map-around]")).toHaveAttribute("title", "Around TSMC");
+        expect(document.querySelector('[data-scope="1"]')).toHaveAttribute("aria-pressed", "true");
+        await selectPanel("lens");
+        await selectPanel("world");
+        await waitFor(() => expect(document.querySelector("[data-map-around]")).toHaveAttribute("title", "Whole World"));
+        expect(document.querySelector('[data-scope="all"]')).toHaveAttribute("aria-pressed", "true");
+        expect(document.querySelector("#map-inspector-title")).toHaveTextContent("TSMC");
+      }
+      if (scenario.id === "settings-application") {
+        expect(document.querySelector("#settings-section-skills")).toBeNull();
+      }
+      if (scenario.id === "connections") {
+        expect(document.querySelector("[data-custom-connections]")).toBeNull();
+      }
+      if (scenario.id === "composer-slash-retail-skills") {
+        expect(document.querySelector('.composer-assist [role="option"][aria-label="Personal fund comparison"]')).toBeNull();
       }
       if (scenario.id === "chat-empty") expect(scenario.landmark()!.querySelectorAll("button").length).toBeGreaterThanOrEqual(3);
       // Six values one Source reported about NVIDIA are one row, and no row relates a name to itself.
@@ -61,18 +88,21 @@ describe("design preview scenarios", () => {
       }
       // The note stays closed and is never a second bubble; a session from before notes has none.
       if (scenario.id === "session-handoff-note") {
-        expect(document.querySelectorAll(".message.user")).toHaveLength(1);
+        expect(document.querySelectorAll(".message.user")).toHaveLength(0);
+        expect(document.querySelector(".handoff-opening")).toBeVisible();
         expect(document.querySelector(".message-handoff-note")).not.toHaveAttribute("open");
       }
       if (scenario.id === "session-handoff-legacy") expect(document.querySelector(".message-handoff-note")).toBeNull();
       if (scenario.id === "browser-ready") {
         expect(document.querySelector(".browser-error")).toBeNull();
-        expect(document.querySelector(".browser-history-actions button")).toBeEnabled();
+        expect(document.querySelector(".browser-history-actions button")).toBeDisabled();
+        expect(document.querySelector(".browser-history-actions button:last-child")).toBeEnabled();
       }
       if (scenario.id === "browser-blocked") {
         expect(scenario.landmark()).toHaveTextContent(i18n.t("chat:useNativeBrowserTabs.onlyWebAddresses"));
         expect(document.querySelector(".browser-viewport")).toBeVisible();
-        expect(document.querySelector(".browser-history-actions button")).toBeEnabled();
+        expect(document.querySelector(".browser-history-actions button")).toBeDisabled();
+        expect(document.querySelector(".browser-history-actions button:last-child")).toBeEnabled();
       }
       if (scenario.id === "browser-failure") {
         expect(scenario.landmark()).toHaveTextContent(i18n.t("chat:useNativeBrowserTabs.couldNotOpenThisWebPage"));

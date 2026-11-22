@@ -803,3 +803,58 @@ fn cache_rejects_same_size_same_mtime_replacement() {
         Some("off")
     );
 }
+
+#[test]
+fn dormant_skill_preferences_are_hidden_from_resolved_config_and_retained_on_disk() {
+    let global = directory();
+    let original = "[skills.personal]\nenabled = true\n[skills.skill-creator]\nenabled = true\n[skills.valuation]\nenabled = true\n";
+    write(global.path(), original);
+    crate::extension_availability::with_test_flags(false, true, || {
+        let snapshot = read_scope(global.path(), None, ConfigScope::Global).unwrap();
+        let wire = serde_json::to_value(&snapshot).unwrap();
+        assert_eq!(wire["userSkillsAvailable"], false);
+        assert_eq!(wire["customConnectionsAvailable"], true);
+        let err = update_scope(
+            global.path(),
+            None,
+            &ConfigUpdateRequest {
+                scope: ConfigScope::Global,
+                expected_revision: snapshot.revision.clone(),
+                set: patch("[skills.personal]\nenabled = false\n"),
+                unset: Vec::new(),
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err.code, crate::app::CommandErrorCode::SkillUnavailable);
+        let err = update_scope(
+            global.path(),
+            None,
+            &ConfigUpdateRequest {
+                scope: ConfigScope::Global,
+                expected_revision: snapshot.revision.clone(),
+                set: ConfigDocument::default(),
+                unset: vec![vec!["skills".into()]],
+            },
+        )
+        .unwrap_err();
+        assert_eq!(err.code, crate::app::CommandErrorCode::SkillUnavailable);
+        assert!(!snapshot.effective.skills.contains_key("personal"));
+        assert!(!snapshot.effective.skills.contains_key("skill-creator"));
+        assert!(snapshot
+            .effective
+            .enabled_skill_ids()
+            .contains(&"valuation".into()));
+        let explicit = snapshot.explicit.unwrap().skills.unwrap();
+        assert_eq!(
+            explicit.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["valuation"]
+        );
+        assert_eq!(
+            std::fs::read_to_string(global.path().join(FILE_NAME)).unwrap(),
+            original
+        );
+    });
+    let effective = resolve(global.path(), None).unwrap();
+    assert!(effective.skills["personal"].enabled);
+    assert!(effective.skills["skill-creator"].enabled);
+}

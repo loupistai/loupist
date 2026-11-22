@@ -27,11 +27,48 @@ pub fn config_read(
     state: State<'_, AppState>,
 ) -> Result<ConfigSnapshot, CommandError> {
     let project = project_directory(&state, &request.scope)?;
-    scoped_config::read_scope(
+    let snapshot = scoped_config::read_scope(
         &state.artifacts.app_data_dir,
         project.as_deref(),
         request.scope,
-    )
+    )?;
+    present(&state, snapshot)
+}
+
+pub(crate) fn present(
+    state: &AppState,
+    mut snapshot: ConfigSnapshot,
+) -> Result<ConfigSnapshot, CommandError> {
+    let chat = &snapshot.effective.chat;
+    let requested = chat.model_profile_id.as_deref().unwrap_or_default();
+    if !snapshot.diagnostics.is_empty() {
+        snapshot.model_selection = Some(
+            crate::providers::selection::ResolvedModelSelection::unavailable(
+                crate::providers::selection::ModelUnavailableReason::InvalidConfiguration,
+                crate::providers::auto::uses_default(requested),
+            ),
+        );
+        return Ok(snapshot);
+    }
+    let Ok(catalog) = state.selection_catalog() else {
+        snapshot.model_selection = Some(
+            crate::providers::selection::ResolvedModelSelection::catalog_unavailable(requested),
+        );
+        return Ok(snapshot);
+    };
+    let selection = catalog.selection(
+        requested,
+        chat.thinking_level.as_deref().unwrap_or_default(),
+        &chat.run_options,
+    );
+    if let ConfigScope::Project { loupist_id } = &snapshot.scope {
+        snapshot.default_model_change = state
+            .store
+            .observe_default_model(loupist_id, &selection)
+            .map_err(super::map_store)?;
+    }
+    snapshot.model_selection = Some(selection);
+    Ok(snapshot)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -39,7 +76,7 @@ pub async fn config_update(
     request: ConfigUpdateRequest,
     state: State<'_, AppState>,
 ) -> Result<ConfigSnapshot, CommandError> {
-    // Reconciliation may delete a saved key that a new setting invalidates.
+    // Scope changes leave their saved item pending for its own connection action.
     crate::app::off_main_thread(&state, move |state| update_config(request, state)).await
 }
 
@@ -71,7 +108,7 @@ fn update_config(
             },
         )?;
     }
-    Ok(snapshot)
+    present(state, snapshot)
 }
 
 #[tauri::command(rename_all = "snake_case")]

@@ -1019,6 +1019,7 @@ fn inbox_includes_custom_and_briefing_results_and_marks_only_owned_items() {
                 &run.run_id,
                 "# Heading\n\n| Quarter | Sales |\n| --- | --- |\n| Q3 | 42 |\n\n**Revenue** changed.\n\nLater details.",
                 "message-a",
+                None,
             )
             .unwrap();
         store
@@ -1116,9 +1117,15 @@ fn a_run_is_given_how_its_tasks_last_run_ended_and_what_last_reached_the_user() 
             .unwrap()
             .run
     };
-    let answered = |run: &Run, text: &str, finished: &str| {
+    let answered = |run: &Run, text: &str, finished: &str, skip| {
         store
-            .scheduled_run_result(loupist, &run.run_id, text, &format!("answer-{}", run.id))
+            .scheduled_run_result(
+                loupist,
+                &run.run_id,
+                text,
+                &format!("answer-{}", run.id),
+                skip,
+            )
             .unwrap();
         store
             .scheduled_task_finish(
@@ -1147,11 +1154,13 @@ fn a_run_is_given_how_its_tasks_last_run_ended_and_what_last_reached_the_user() 
         &first,
         "SK hynix crossed its 52-week low.",
         "2026-11-18T08:01:00+09:00",
+        Some(crate::domain::MemorySaveSkipReason::User),
     );
     let second = claim(at("2026-11-19T08:00:00+09:00"));
     assert_eq!(
         previous(&second),
         Some(PreviousRun {
+            memory_save_skip: Some(crate::domain::MemorySaveSkipReason::User),
             finished_at: "2026-11-17T23:01:00Z".into(),
             status: RunStatus::Succeeded,
             quiet: false,
@@ -1164,7 +1173,12 @@ fn a_run_is_given_how_its_tasks_last_run_ended_and_what_last_reached_the_user() 
     // A quiet check that wrote nothing passes on no summary, not the host's placeholder,
     // and names the run that last reached the user.
     mark_quiet(&store, loupist, &second.run_id);
-    answered(&second, super::QUIET_NO_REPORT, "2026-11-19T08:01:30+09:00");
+    answered(
+        &second,
+        super::QUIET_NO_REPORT,
+        "2026-11-19T08:01:30+09:00",
+        Some(crate::domain::MemorySaveSkipReason::Deadline),
+    );
     assert_eq!(
         store
             .scheduled_task_run_get(loupist, &second.run_id)
@@ -1176,10 +1190,15 @@ fn a_run_is_given_how_its_tasks_last_run_ended_and_what_last_reached_the_user() 
     let third = claim(at("2026-11-20T08:00:00+09:00"));
     let quiet = previous(&third).unwrap();
     assert!(quiet.quiet);
+    assert_eq!(
+        quiet.memory_save_skip,
+        Some(crate::domain::MemorySaveSkipReason::Deadline)
+    );
     assert_eq!(quiet.summary, "");
     assert_eq!(
         quiet.last_delivered,
         Some(DeliveredRun {
+            memory_save_skip: Some(crate::domain::MemorySaveSkipReason::User),
             finished_at: "2026-11-17T23:01:00Z".into(),
             summary: "SK hynix crossed its 52-week low.".into(),
         })
@@ -1200,7 +1219,11 @@ fn a_run_is_given_how_its_tasks_last_run_ended_and_what_last_reached_the_user() 
         serde_json::to_value(previous(&fourth).unwrap()).unwrap(),
         serde_json::json!({
             "finished_at": "2026-11-19T23:00:05Z", "status": "failed", "quiet": false,
-            "last_delivered": {"finished_at": "2026-11-17T23:01:00Z", "summary": "SK hynix crossed its 52-week low."},
+            "last_delivered": {
+                "finished_at": "2026-11-17T23:01:00Z",
+                "summary": "SK hynix crossed its 52-week low.",
+                "memory_save_skip": "user"
+            },
         })
     );
 
@@ -1272,6 +1295,8 @@ fn a_run_is_given_how_its_tasks_last_run_ended_and_what_last_reached_the_user() 
 fn a_previous_summary_is_bounded_and_one_that_read_third_party_text_is_delimited() {
     use crate::custom_connections::taint::delimited_body;
     let run = |id: &str, finished: i64, summary: &str, quiet: bool| Run {
+        discarded_memory_items: None,
+        memory_save_skip: None,
         briefing_context: None,
         kind: TaskKind::Custom,
         read_at_ms: None,
@@ -1333,6 +1358,8 @@ fn a_previous_summary_is_bounded_and_one_that_read_third_party_text_is_delimited
     let interrupted = PreviousRun::from_runs(
         &[
             Run {
+                discarded_memory_items: None,
+                memory_save_skip: None,
                 status: RunStatus::Interrupted,
                 ..quiet
             },
@@ -1383,6 +1410,79 @@ fn recovered_inbox_retains_tool_refusals_and_is_unread_once() {
             .collect::<Vec<_>>(),
         ["read", "browser"]
     );
+    assert_eq!(store.inbox_unread_count("loupist-a").unwrap(), 1);
+}
+
+#[test]
+fn recovery_completes_scheduled_answers_with_interrupted_memory() {
+    use crate::domain::{
+        ChatRole, DiscardedMemoryItem, DiscardedMemoryKind, MemorySaveSkipReason,
+        MemoryUpdateResult, MemoryUpdateStatus, ScheduledTurn,
+    };
+    let store = fixture();
+    for quiet in [false, true] {
+        let task = store
+            .scheduled_task_create("loupist-a", draft(), 100)
+            .unwrap();
+        let run = claim_task(&store, "loupist-a", &task.id, 200, true)
+            .unwrap()
+            .unwrap()
+            .run;
+        let thread_id = run.thread_id.as_deref().unwrap();
+        let expected = store.get_chat(thread_id).unwrap().unwrap();
+        let mut chat = expected.clone();
+        let mut opening =
+            crate::test_fixtures::chat_message("opening", ChatRole::User, &task.prompt);
+        opening.scheduled = Some(ScheduledTurn {
+            task_id: task.id,
+            run_id: run.run_id.clone(),
+            task_title: task.title,
+            task_kind: TaskKind::Custom,
+        });
+        let text = if quiet {
+            super::QUIET_NO_REPORT
+        } else {
+            "Sales increased."
+        };
+        let mut answer = crate::test_fixtures::chat_message("answer", ChatRole::Assistant, text);
+        let items = Some(vec![DiscardedMemoryItem {
+            kind: DiscardedMemoryKind::Source,
+            title: "Annual report".into(),
+        }]);
+        answer.memory_update = Some(MemoryUpdateResult {
+            discarded_memory_items: items.clone(),
+            status: MemoryUpdateStatus::NoChange,
+            skip_reason: Some(MemorySaveSkipReason::Interrupted),
+            commit_id: None,
+            changes: vec![],
+            skipped_kinds: vec![],
+            setup: vec![],
+        });
+        chat.messages.extend([opening, answer]);
+        store
+            .replace_chat_with(&expected, &chat, |tx| {
+                if quiet {
+                    super::store::mark_quiet(tx, "loupist-a", &run.run_id)?;
+                }
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(store.scheduled_tasks_recover_running(300).unwrap(), 1);
+        assert_eq!(store.scheduled_tasks_recover_running(400).unwrap(), 0);
+        let completed = store
+            .scheduled_task_run_get("loupist-a", &run.run_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(completed.status, RunStatus::Succeeded);
+        assert_eq!(
+            completed.memory_save_skip,
+            Some(MemorySaveSkipReason::Interrupted)
+        );
+        assert_eq!(completed.quiet, quiet);
+        assert_eq!(completed.discarded_memory_items, items);
+        assert_eq!(completed.message_id.as_deref(), Some("answer"));
+        assert_eq!(completed.summary, if quiet { "" } else { text });
+    }
     assert_eq!(store.inbox_unread_count("loupist-a").unwrap(), 1);
 }
 
@@ -1619,6 +1719,8 @@ fn sql_json_paths_name_fields_tasks_and_runs_serialize() {
     assert!(extract(&json, "$.next_run_at_ms").is_some());
 
     let run = Run {
+        discarded_memory_items: None,
+        memory_save_skip: None,
         read_at_ms: None,
         briefing_context: Some(crate::briefings::BriefingContext {
             symbols: Vec::new(),
@@ -1647,6 +1749,8 @@ fn sql_json_paths_name_fields_tasks_and_runs_serialize() {
         RunStatus::Interrupted,
     ] {
         let json = serde_json::to_string(&Run {
+            discarded_memory_items: None,
+            memory_save_skip: None,
             status,
             ..run.clone()
         })

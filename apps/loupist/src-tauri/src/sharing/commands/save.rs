@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use tauri::State;
 
-use super::share::{build_pack, record_identity, ScopeRequest, ShareRequest};
+use super::share::{build_pack_off_thread, record_identity, ScopeRequest, ShareRequest};
 use super::{admit, internal, LoupistRequest};
 use crate::app::{AppState, CommandError};
 use crate::sharing::export::Sections;
@@ -154,7 +154,7 @@ pub async fn share_export(
 ) -> Result<Option<Value>, CommandError> {
     let state = state.inner();
     let share = request.share();
-    let built = build_pack(state, &share, None)?;
+    let built = build_pack_off_thread(state, &share, None).await?;
     let slug = pack::slug(&built.name, "loupist");
     let path = match request.destination {
         Destination::Folder => {

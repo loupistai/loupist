@@ -1,3 +1,4 @@
+import { executionModelLock } from "../bridge/mock/models";
 import type { ChatEvidenceRef, ChatProgress, ChatQuestion, ChatStreamEvent } from "../contracts/chat";
 import type { AgentHarnessSnapshot } from "../contracts/model";
 import { previewKo, type PreviewBridge } from "./fixtures";
@@ -231,7 +232,7 @@ export function liveResearchRun(bridge: PreviewBridge, ending: LiveEnding = "com
       offset = 300 - (rest[0]?.at ?? 0);
       schedule(rest);
     };
-    const model = { profile_id: "preview-auto", name: "Auto", provider: "openai", model: "preview-model", thinking_level: "medium", run_options: {} };
+    const model = executionModelLock(await bridge.modelCatalogGet(), request.model_profile_id, request.thinking_level, request.run_options);
     const harness: AgentHarnessSnapshot = { schema: "loupist-harness/1", mode: "chat", skill_ids: [], capability_ids: [], digest: "e".repeat(64) };
     // Rust keeps a published table in the turn until it commits: it cannot be read before then.
     let staged = false;

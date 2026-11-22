@@ -18,7 +18,7 @@ export const chatScenarios: PreviewScenario[] = [
     prompt.focus({ focusVisible: true });
   }),
   // The empty composer is one row: +, the message, the model label and Send share a line in a pill under 50 px.
-  base("composer-compact", "Empty composer: one row with +, the message, Auto and an accent Send", () => {
+  base("composer-compact", "Empty composer: one row with +, the message, model and Send", () => {
     const field = select('.composer [data-slot="input-group"]');
     const row = field?.querySelector<HTMLElement>(".composer-footer");
     if (!field || !row?.querySelector("textarea[data-chat-composer]") || !row.querySelector(".composer-add-trigger") || !row.querySelector(".composer-model-menu") || !row.querySelector(".composer-tile")) return null;
@@ -111,7 +111,7 @@ export const chatScenarios: PreviewScenario[] = [
       };
     },
   })),
-  // W17.5: Rust retried a retired model once on Auto within the turn; the answer says which model replaced it.
+  // W17.5: Rust retried a retired model once with the default model within the turn; the answer says which model replaced it.
   { ...base("chat-model-gone", "A retired model is replaced once and the answer says so", () => select(".message-model-note")), setup: async (bridge) => {
     await prepareFixture(bridge, "answer");
     const original = bridge.loupistSelect.bind(bridge);
@@ -125,10 +125,10 @@ export const chatScenarios: PreviewScenario[] = [
       return workspace;
     };
   } },
-  // W17.5: Auto resolved to a different model because the old one left the list.
+  // W17.5: The host selected a new default model because the old one left the list.
   { ...base("chat-default-changed", "Chat names the model it now uses, once", () => select(".model-notice-line")), setup: async (bridge) => {
     await prepareFixture(bridge, "answer");
-    bridge.setModelNotice({ id: "preview-notice", kind: "now_using", model: "GPT-6.1 Sol" });
+    bridge.setDefaultModelChange("loupist-quality", { id: "preview-notice", previous: { id: "old", name: "GPT-5.4", provider: "openai", model: "old" }, current: { id: "model-test", name: "GPT-5.6 Luna", provider: "openai", model: "gpt-5.6-luna" } });
   } },
   { ...base("chat-offline", "Offline: the thread says so and a sent message waits", () => select(".chat-offline-banner") && select(".chat-pending-card"), async (root) => {
     await submitPrompt(root, previewKo() ? "다시 연결되면 마진을 비교해 줘." : "Compare the margins once I'm back online.");

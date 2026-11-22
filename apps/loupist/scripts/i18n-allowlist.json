@@ -66,6 +66,11 @@
   },
   {
     "file": "src/components/charts/analyticAdapter.ts",
+    "text": "Grouped Bar Chart",
+    "reason": "flint-chart's chart type identifier; the library selects its renderer by this exact name."
+  },
+  {
+    "file": "src/components/charts/analyticAdapter.ts",
     "text": "Scatter Plot",
     "reason": "flint-chart's chart type identifier; the library selects its renderer by this exact name."
   },

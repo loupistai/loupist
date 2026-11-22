@@ -626,6 +626,8 @@ async fn a_handoff_card_and_a_scheduled_delivery_carry_what_the_run_learned() {
     assert_eq!(serde_json::to_value(&card).unwrap()["learned"], wire);
 
     let run = crate::scheduled_tasks::types::Run {
+        discarded_memory_items: None,
+        memory_save_skip: None,
         briefing_context: None,
         kind: crate::scheduled_tasks::types::TaskKind::Briefing,
         read_at_ms: None,

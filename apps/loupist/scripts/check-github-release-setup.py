@@ -791,7 +791,8 @@ def audit_release_setup(
         add(
             "pass",
             "release environment secrets",
-            "all release workflow secret names are present",
+            "required signing and updater secret names are present: "
+            + ", ".join(sorted(required_secrets)),
         )
 
     if not isinstance(organization_secrets, set) or not all(
@@ -899,7 +900,11 @@ def load_ruleset_details(gh: str, repository: str, summaries: object) -> list[ob
 def remote_audit(repository: str, workflow: Path, gh: str) -> list[Finding]:
     if REPOSITORY_PATTERN.fullmatch(repository) is None:
         raise AuditError("--repository must be an owner/name pair")
-    required_secrets = mode_release_secret_names(workflow, load_profile())
+    try:
+        profile = load_profile()
+    except ValueError as error:
+        raise AuditError(str(error)) from error
+    required_secrets = mode_release_secret_names(workflow, profile)
     collaborators = []
     page = 1
     while True:

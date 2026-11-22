@@ -4,6 +4,7 @@ pub mod eval_harness;
 compile_error!("eval-harness is forbidden in release builds");
 mod agent_harness;
 mod app;
+mod app_menu;
 #[cfg(test)]
 mod bridge_contract;
 mod briefings;
@@ -17,9 +18,11 @@ mod custom_connections;
 mod datasets;
 mod domain;
 mod events;
+mod extension_availability;
 pub mod finance_credentials;
 mod finance_data;
 mod fs;
+mod keychain_operation;
 mod knowledge;
 mod market_calendar;
 mod marketplace;
@@ -49,83 +52,10 @@ mod webdriver_attach;
 #[cfg(all(feature = "webdriver", not(debug_assertions)))]
 compile_error!("WebDriver is forbidden in release builds");
 
-#[cfg(any(not(feature = "e2e"), test))]
+#[cfg(any(target_os = "macos", not(feature = "e2e"), test))]
 pub(crate) const PRODUCTION_APP_IDENTIFIER: &str = "com.monarchjuno.loupist";
 #[cfg(feature = "e2e")]
 pub(crate) const E2E_APP_IDENTIFIER: &str = "com.monarchjuno.loupist.e2e";
-
-fn install_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
-    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-    use tauri::Emitter;
-
-    let new_chat = MenuItem::with_id(app, "new-chat", "New Chat", true, Some("CmdOrCtrl+N"))?;
-    let new_loupist = MenuItem::with_id(app, "new-loupist", "Open folder…", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
-    let updates = MenuItem::with_id(
-        app,
-        "check-updates",
-        "Check for Updates…",
-        true,
-        None::<&str>,
-    )?;
-    let sidebar = MenuItem::with_id(
-        app,
-        "toggle-sidebar",
-        "Toggle Sidebar",
-        true,
-        Some("CmdOrCtrl+B"),
-    )?;
-    let chat = MenuItem::with_id(app, "chat", "Chat", true, Some("CmdOrCtrl+1"))?;
-    let map = MenuItem::with_id(app, "map", "Map", true, Some("CmdOrCtrl+2"))?;
-    let lens = MenuItem::with_id(app, "lens", "Lens", true, Some("CmdOrCtrl+3"))?;
-    let schedule = MenuItem::with_id(app, "schedule", "Schedule", true, Some("CmdOrCtrl+4"))?;
-    let edit = Submenu::with_items(
-        app,
-        "Edit",
-        true,
-        &[
-            &PredefinedMenuItem::undo(app, None)?,
-            &PredefinedMenuItem::redo(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::cut(app, None)?,
-            &PredefinedMenuItem::copy(app, None)?,
-            &PredefinedMenuItem::paste(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::select_all(app, None)?,
-        ],
-    )?;
-    let file = Submenu::with_items(app, "File", true, &[&new_chat, &new_loupist])?;
-    let view = Submenu::with_items(
-        app,
-        "View",
-        true,
-        &[
-            &sidebar,
-            &PredefinedMenuItem::separator(app)?,
-            &chat,
-            &map,
-            &lens,
-            &schedule,
-        ],
-    )?;
-    let app_menu = Submenu::with_items(
-        app,
-        "Loupist",
-        true,
-        &[
-            &PredefinedMenuItem::about(app, Some("Loupist"), None)?,
-            &settings,
-            &updates,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::quit(app, None)?,
-        ],
-    )?;
-    app.set_menu(Menu::with_items(app, &[&app_menu, &file, &edit, &view])?)?;
-    app.on_menu_event(|app, event| {
-        let _ = app.emit(events::MENU_ACTION, event.id().as_ref());
-    });
-    Ok(())
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -139,6 +69,28 @@ pub fn run() {
         std::process::exit(if result.is_ok() { 0 } else { 1 });
     }
     let context = tauri::generate_context!();
+    // Configured windows are created before Tauri calls setup. Defer presentation
+    // only for the installed Mac app so a login launch never flashes the window.
+    #[cfg(target_os = "macos")]
+    let (context, deferred_window) = {
+        let mut context = context;
+        let main = context
+            .config_mut()
+            .app
+            .windows
+            .iter_mut()
+            .find(|w| w.label == "main");
+        let deferred = main.is_some_and(|window| {
+            let defer = window.visible && briefings::login_item::macos::available();
+            if defer {
+                window.visible = false;
+            }
+            defer
+        });
+        (context, deferred)
+    };
+    #[cfg(target_os = "macos")]
+    app_menu::macos::disable_automatic_fullscreen_item();
     let builder = tauri::Builder::default();
     // `main` starts the Windows UI on an explicitly sized worker thread so
     // debug startup has enough stack. Opt Tauri's event loop into that
@@ -188,17 +140,30 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     let builder = builder.on_web_content_process_terminate(|webview| {
         // Registering this hook replaces Tauri's default macOS reload.
+        app_menu::renderer_reset(webview);
         let _ = webview.reload();
     });
     builder
         .plugin(tauri_plugin_notification::init())
+        .on_page_load(|webview, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                app_menu::renderer_reset(webview);
+            }
+        })
         .on_window_event(|window, event| {
             briefings::desktop::close_requested(window, event);
             commands::attention::window_event(window, event);
+            app_menu::window_event(window, event);
         })
-        .setup(|app| {
+        .setup(move |app| {
             use tauri::Manager;
 
+            #[cfg(target_os = "macos")]
+            let login_launch = deferred_window && briefings::login_item::macos::login_launch();
+            #[cfg(target_os = "macos")]
+            if deferred_window && !login_launch {
+                briefings::desktop::open(app.handle(), None);
+            }
             let state = match app::AppState::initialize(app.handle()) {
                 Ok(state) => state,
                 Err(error) if app::is_app_instance_conflict(&error) => {
@@ -292,10 +257,15 @@ pub fn run() {
                 commands::prewarm_market_data(&state).await;
             });
             providers::status::install(app.handle());
-            if let Err(error) = briefings::desktop::install(app.handle()) {
+            let tray = briefings::desktop::install(app.handle());
+            #[cfg(target_os = "macos")]
+            if login_launch && tray.is_err() {
+                briefings::desktop::open(app.handle(), None);
+            }
+            if let Err(error) = tray {
                 eprintln!("Briefing tray could not be installed: {error}");
             }
-            if let Err(error) = install_app_menu(app.handle()) {
+            if let Err(error) = app_menu::install(app.handle()) {
                 eprintln!("Loupist menu was not installed: {error}");
             }
             updater::start_auto_update_loop(app.handle().clone(), update_coordinator);
@@ -323,6 +293,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            app_menu::app_menu_update,
+            #[cfg(all(target_os = "macos", feature = "e2e"))]
+            app_menu::macos::e2e_native_menu_snapshot,
             briefings::commands::briefing_settings_get,
             briefings::commands::briefing_settings_set,
             briefings::commands::inbox_list,
@@ -330,6 +303,9 @@ pub fn run() {
             briefings::commands::inbox_unread_counts,
             briefings::desktop::briefing_resident_settings_get,
             briefings::desktop::briefing_resident_settings_set,
+            briefings::login_item::login_item_set,
+            briefings::login_item::login_item_hint_dismiss,
+            briefings::login_item::login_item_open_settings,
             commands::loupist::loupist_list,
             commands::loupist::loupist_select,
             commands::loupist::loupist_create,
@@ -394,6 +370,9 @@ pub fn run() {
             commands::records::artifact_restore,
             commands::workspace::workspace_list,
             commands::workspace::workspace_read,
+            commands::workspace::workspace_workbook_read,
+            commands::workspace::workspace_document_handler,
+            commands::workspace::workspace_document_open,
             commands::workspace::workspace_reveal,
             commands::workspace::chat_activity_read,
             commands::workspace_ui::chat_draft_files_read,
@@ -506,6 +485,8 @@ pub fn run() {
             marketplace::credentials::marketplace_credential_verify,
             marketplace::credentials::marketplace_credential_delete,
             marketplace::credentials::marketplace_credential_unlock,
+            marketplace::key_permission::marketplace_credentials_allow_access,
+            marketplace::key_permission::marketplace_credentials_cancel_access,
             commands::open_external_url,
             web::favicon::site_favicon,
             web::browser::browser_tab_open,

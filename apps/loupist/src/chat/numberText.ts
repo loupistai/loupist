@@ -87,14 +87,41 @@ const parse = (text: string) => {
 };
 const decimals = (text: string) => text.match(/\.(\d+)/u)?.[1]?.length ?? 0;
 
-/** The currency a printed number names: ₩, 원, KRW… */
-export function currencyOfText(text: string): string | undefined {
-  if (/[₩￦]|원|\bKRW\b/iu.test(text)) return "KRW";
-  if (/\$|\bUSD\b|달러/iu.test(text)) return "USD";
-  if (/€|\bEUR\b|유로/iu.test(text)) return "EUR";
-  if (/£|\bGBP\b/iu.test(text)) return "GBP";
-  if (/¥|\bJPY\b|엔/iu.test(text)) return "JPY";
-  return undefined;
+const currencyAliases: Record<string, string> = {
+  "₩": "KRW", "￦": "KRW", 원: "KRW", WON: "KRW",
+  "$": "USD", "US$": "USD", "미국 달러": "USD", 달러: "USD", DOLLAR: "USD", DOLLARS: "USD",
+  "¥": "JPY", "￥": "JPY", 円: "JPY", 엔: "JPY", YEN: "JPY",
+  "€": "EUR", 유로: "EUR", EURO: "EUR", EUROS: "EUR",
+  "£": "GBP", 파운드: "GBP", POUND: "GBP", POUNDS: "GBP",
+  RMB: "CNY", 人民币: "CNY", 人民幣: "CNY", 元: "CNY", 위안: "CNY", YUAN: "CNY",
+  "NT$": "TWD", "대만 달러": "TWD", 新台幣: "TWD", 新台币: "TWD",
+  "HK$": "HKD", "홍콩 달러": "HKD", "A$": "AUD", "C$": "CAD", "NZ$": "NZD", "S$": "SGD",
+};
+const symbolAliases = Object.keys(currencyAliases)
+  .filter(token => /[^A-Z]/u.test(token))
+  .sort((a, b) => b.length - a.length)
+  .map(token => token.replace(/[.*+?^$\{\}()|[\]\\]/gu, "\\$&").replace(" ", "\\s+"));
+const currencyTokens = new RegExp([...symbolAliases, "[a-z]+"].join("|"), "giu");
+const isoCurrencyNames = new Intl.DisplayNames(["en"], { type: "currency", fallback: "none" });
+
+function currencyToken(text: string) {
+  const token = text.toUpperCase().replace(/\s+/gu, " ");
+  if (Object.hasOwn(currencyAliases, token)) return currencyAliases[token];
+  return /^[A-Z]{3}$/u.test(token) && isoCurrencyNames.of(token) ? token : undefined;
+}
+
+/** The currency a printed amount names, provided it names only one. */
+export function currencyOfText(text: string, explicitOnly = false): string | undefined {
+  const currencies = new Set([...text.matchAll(currencyTokens)].flatMap(([token]) => {
+    if (explicitOnly && /^(?:[$¥￥元])$/iu.test(token)) return [];
+    return currencyToken(token) ?? [];
+  }));
+  return currencies.size === 1 ? [...currencies][0] : undefined;
+}
+
+/** Use a single currency marker for recognizing the shape of a streaming number link. */
+export function normalizeCurrencyMarkers(text: string): string {
+  return text.replace(currencyTokens, token => currencyToken(token) ? "$" : token);
 }
 
 /** The currency of an evidence's amounts: from the answer's own number links, else one the retained data names. */
@@ -215,8 +242,8 @@ function gridRange(check: NumberCheck, checks: readonly NumberCheck[]) {
 
 const FIELD_LABELS: Record<string, string> = {
   canonical_concept: "item", concept: "item", account_nm: "item", account: "item", item: "item", metric: "item", line_item: "item",
-  period: "period", fiscal_year: "period", bsns_year: "period",
-  value: "amount", amount: "amount", thstrm_amount: "amount",
+  period: "period", fiscal_year: "period", bsns_year: "period", date: "date",
+  value: "value", amount: "value", thstrm_amount: "value",
   unit: "unit", currency: "unit", fs_div: "basis", basis: "basis",
 };
 /**
@@ -254,12 +281,17 @@ const percentText = (value: number) => `${formatNumber(value === 0 ? 0 : value, 
  * The company row is left out when the title already names it.
  */
 export function dataRows(check: NumberCheck, evidence: ChatEvidenceRef, checks: readonly NumberCheck[], title: string): DataRowView[] {
-  const currency = evidenceCurrency(evidence, checks) ?? currencyOfText(check.fields?.find((field) => FIELD_LABELS[field.key] === "unit")?.value ?? "");
-  return (check.fields ?? []).flatMap((field) => {
+  const fields = check.fields ?? [];
+  const unit = fields.find(field => field.key === "unit")?.value.trim() || undefined;
+  const statedCurrency = fields.find(field => field.key === "currency")?.value.trim() || undefined;
+  const currency = currencyOfText(statedCurrency ?? unit ?? evidenceCurrency(evidence, checks) ?? "");
+  const valueUnit = unit && !currency && fields.some(field => FIELD_LABELS[field.key] === "value" && parse(field.value) !== undefined) ? unit : undefined;
+  return fields.flatMap((field) => {
+    if (valueUnit && field.key === "unit") return [];
     if (ENTITY_FIELDS.includes(field.key) && title.includes(field.value)) return [];
     const kind = FIELD_LABELS[field.key];
     const quote = kind ? undefined : QUOTE_FIELDS[field.key];
-    const label = kind ? tDynamic(`numberChip.field.${kind}`) : quote ? tDynamic(`numberChip.quoteField.${quote.label}`) : humanize(field.key);
+    const label = kind ? tDynamic(`numberChip.field.${kind === "value" && currency ? "amount" : kind}`) : quote ? tDynamic(`numberChip.quoteField.${quote.label}`) : humanize(field.key);
     const number = parse(field.value);
     let value = field.value;
     if (quote && number !== undefined) {
@@ -267,8 +299,10 @@ export function dataRows(check: NumberCheck, evidence: ChatEvidenceRef, checks: 
         : quote.price && currency ? formatAmount(number, currency, { exact: true }) : formatNumber(number, { maximumFractionDigits: 6 });
     } else if (kind === "item") value = termOf(field.value) ? term(termOf(field.value)!) : humanize(field.value);
     else if (kind === "basis" && BASIS[field.value]) value = tDynamic(`numberChip.basis.${BASIS[field.value]}`);
-    else if (kind !== "period" && kind !== "unit" && number !== undefined) {
-      value = (kind === "amount" || field.matched) && currency ? formatAmount(number, currency, { exact: true }) : formatNumber(number, { maximumFractionDigits: 6 });
+    else if ((kind === "value" || field.matched) && kind !== "period" && kind !== "unit" &&
+      !/(?:^|_)(?:date|day|year|period|code|id)(?:_|$)/i.test(field.key) && number !== undefined) {
+      value = currency ? formatAmount(number, currency, { exact: true }) : formatNumber(number, { maximumFractionDigits: 6 });
+      if (valueUnit && kind === "value") value = `${value} ${valueUnit}`;
     }
     return [{ key: field.key, label, value, matched: Boolean(field.matched) }];
   });
@@ -321,4 +355,21 @@ export function exactAmount(check: NumberCheck, evidence: ChatEvidenceRef, check
   if (/%/u.test(check.text)) return exact;
   const currency = evidenceCurrency(evidence, checks);
   return currency ? formatAmount(number, currency, { exact: true }) : formatNumber(number, { maximumFractionDigits: 6 });
+}
+
+export function scaleLabel(scale: number) {
+  const known = ([0, 3, 4, 6, 8, 9, 12] as const).find(value => value === scale);
+  return known === undefined ? t("figureWarning.scales.other", { factor: formatNumber(10 ** scale) })
+    : t(`figureWarning.scales.${known}`);
+}
+
+/** Explain an exact rescaling with the original amount in its currency's base unit. */
+export function matchedConversion(check: NumberCheck) {
+  const conversion = check.scale_conversion;
+  if (check.status !== "matched" || !conversion || !check.exact) return undefined;
+  const amount = parse(check.exact);
+  const sourceValue = amount === undefined ? check.exact
+    : formatNumber(amount * 10 ** conversion.source_scale, { maximumFractionDigits: 12 });
+  const currency = conversion.currency && amount !== undefined ? ` ${conversion.currency}` : "";
+  return t("numberChip.matchedScaleConversion", { sourceValue, currency, scale: scaleLabel(conversion.answer_scale) });
 }

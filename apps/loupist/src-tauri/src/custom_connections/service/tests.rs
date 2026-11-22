@@ -37,6 +37,94 @@ fn protected_values_fail_closed_on_a_credential_load_error() {
     assert_eq!(loads, 2, "a partial list must never reach the scan");
 }
 
+#[test]
+fn shipped_mode_leaves_saved_custom_credentials_untouched() {
+    use crate::extension_availability::with_test_flags;
+
+    let root = tempfile::tempdir().unwrap();
+    let app = root.path().join("app");
+    let (environment, path, original, record) = with_test_flags(false, true, || {
+        let state = AppState::for_persistent_test(app.clone());
+        let service = for_state(&state).unwrap();
+        let record = service
+            .add(ParsedConnection {
+                name: "Fixture".into(),
+                transport: TransportConfig::Http {
+                    url: "https://fixture.example/mcp".into(),
+                },
+                secrets: Secrets {
+                    headers: BTreeMap::from([("Authorization".into(), "fixture-key".into())]),
+                    ..Secrets::default()
+                },
+            })
+            .unwrap();
+        assert_eq!(protected_values_for_state(&state).unwrap().len(), 1);
+        let path = state
+            .artifacts
+            .app_data_dir
+            .join("custom-connections/connections.json");
+        let original = std::fs::read(&path).unwrap();
+        let environment = state.credential_environment.clone();
+        state.close_for_restart_test();
+        (environment, path, original, record)
+    });
+    let before = credentials::backend_calls(&environment);
+    assert_eq!(before, 2, "fixture wrote and read one saved item");
+    with_test_flags(false, false, || {
+        let state = AppState::for_persistent_test(app.clone());
+        assert_eq!(state.credential_environment, environment);
+        state
+            .store
+            .lock()
+            .unwrap()
+            .execute("DELETE FROM credential_namespace_created", [])
+            .unwrap();
+        crate::marketplace::reconcile_credential_presence(&state).unwrap();
+        assert_eq!(
+            crate::finance_credentials::test_store::presence_calls(&environment),
+            19
+        );
+        assert!(matches!(
+            for_state(&state),
+            Err(ConnectionError::Unavailable)
+        ));
+        assert!(records_for_state(&state).unwrap().is_empty());
+        assert!(views_for_state(&state, None).unwrap().is_empty());
+        assert!(!approval_pending_for_state(&state, "fixture", &record.id, "read_prices").unwrap());
+        assert!(protected_values_for_state(&state).unwrap().is_empty());
+        assert!(matches!(
+            credentials::load(&environment, &record.id),
+            Err(ConnectionError::Unavailable)
+        ));
+        assert!(matches!(
+            credentials::save(
+                &environment,
+                &record.id,
+                &Secrets::default(),
+                &state.maintenance,
+                |_| unreachable!()
+            ),
+            Err(ConnectionError::Unavailable),
+        ));
+        assert!(matches!(
+            credentials::remove(
+                &environment,
+                &record.id,
+                &state.maintenance,
+                |_| unreachable!()
+            ),
+            Err(ConnectionError::Unavailable),
+        ));
+        assert_eq!(credentials::backend_calls(&environment), before);
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        state.close_for_restart_test();
+    });
+    with_test_flags(false, true, || {
+        let state = AppState::for_persistent_test(app);
+        assert_eq!(records_for_state(&state).unwrap()[0].id, record.id);
+    });
+}
+
 fn read_tool(description: &str) -> Value {
     json!({"name":"read_prices", "description":description, "inputSchema":{"type":"object"}, "annotations":{"readOnlyHint":true}})
 }
@@ -67,6 +155,56 @@ async fn setup(server: &Server) -> (tempfile::TempDir, Service, String) {
         .set_enabled(&connection.id, "loupist-a", true)
         .unwrap();
     (root, service, connection.id)
+}
+
+#[test]
+fn settings_can_recheck_a_key_after_denial_without_changing_grants() {
+    crate::extension_availability::with_test_flags(false, true, || {
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+    let server = Server::start(|_, request| {
+        let body = request.json();
+        match body["method"].as_str().unwrap() {
+            "initialize" => initialized(&body),
+            "notifications/initialized" => Response::status(202),
+            "tools/list" => Response::json(json!({"jsonrpc":"2.0","id":body["id"],"result":{"tools":[read_tool("Read prices")]}})),
+            _ => Response::status(400),
+        }
+    })
+    .await;
+    let (_root, mut service, id) = setup(&server).await;
+    let account = format!("{}:{id}", service.credential_environment);
+    let set_denied = |denied| {
+        let mut reads = credentials::test_reads().lock().unwrap();
+        let entry = reads.get_mut(&account).unwrap();
+        entry.1 = denied;
+        entry.0
+    };
+    let before = set_denied(true);
+    assert!(matches!(
+        service.load_credentials(&id, false).await,
+        Err(ConnectionError::KeychainUnavailable)
+    ));
+    assert_eq!(
+        service
+            .get(&id, Some("loupist-a"))
+            .unwrap()
+            .last_error
+            .as_deref(),
+        Some("credential_access_unavailable")
+    );
+    set_denied(false);
+    assert!(matches!(
+        service.load_credentials(&id, false).await,
+        Err(ConnectionError::KeychainUnavailable)
+    ));
+    assert_eq!(set_denied(false), before + 1);
+    let checked = service.confirm_for_loupist(&id, None).await.unwrap();
+    assert!(checked.last_error.is_none());
+    assert_eq!(set_denied(false), before + 2);
+    let view = service.get(&id, Some("loupist-a")).unwrap();
+    assert!(view.enabled && !view.pending);
+        });
+    });
 }
 
 #[tokio::test]
@@ -356,7 +494,14 @@ async fn ordinary_short_settings_can_appear_in_results_while_short_secrets_canno
             )]),
             ..Default::default()
         };
-        credentials::save(&service.credential_environment, &id, &secrets).unwrap();
+        credentials::save(
+            &service.credential_environment,
+            &id,
+            &secrets,
+            &service.maintenance,
+            |_| Ok(()),
+        )
+        .unwrap();
         let result = service
             .call(
                 "loupist-a",
@@ -642,17 +787,24 @@ async fn live_http_errors_and_post_exchange_checks_keep_the_session() {
             headers: BTreeMap::from([("x-private".into(), "private-fixture-value".into())]),
             ..Default::default()
         };
-        credentials::save(&service.credential_environment, &id, &secrets).unwrap();
+        credentials::save(
+            &service.credential_environment,
+            &id,
+            &secrets,
+            &service.maintenance,
+            |_| Ok(()),
+        )
+        .unwrap();
         failed.store(true, Ordering::SeqCst);
-        assert!(
-            matches!(
-                service
-                    .call("loupist-a", &id, "read_prices", json!({}), true)
-                    .await,
-                Err(ConnectionError::Protocol)
-            ),
-            "{fault}"
-        );
+        let error = service
+            .call("loupist-a", &id, "read_prices", json!({}), true)
+            .await
+            .unwrap_err();
+        if fault == "call_rpc" {
+            assert!(matches!(error, ConnectionError::InvalidArguments));
+        } else {
+            assert!(matches!(error, ConnectionError::Protocol), "{fault}");
+        }
         assert!(service.sessions.contains_key(&id), "{fault}");
         failed.store(false, Ordering::SeqCst);
         service
@@ -734,15 +886,20 @@ done
         .stored
         .approvals
         .approve("loupist-a", &connection.id, &tool, ApprovalChoice::Always);
-    for _ in 0..2 {
-        assert!(matches!(
-            service
-                .call("loupist-a", &connection.id, "read_prices", json!({}), true)
-                .await,
-            Err(ConnectionError::Protocol)
-        ));
-        assert!(service.sessions.contains_key(&connection.id));
-    }
+    assert!(matches!(
+        service
+            .call("loupist-a", &connection.id, "read_prices", json!({}), true)
+            .await,
+        Err(ConnectionError::InvalidArguments)
+    ));
+    assert!(service.sessions.contains_key(&connection.id));
+    assert!(matches!(
+        service
+            .call("loupist-a", &connection.id, "read_prices", json!({}), true)
+            .await,
+        Err(ConnectionError::Protocol)
+    ));
+    assert!(service.sessions.contains_key(&connection.id));
     service
         .call("loupist-a", &connection.id, "read_prices", json!({}), true)
         .await

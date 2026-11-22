@@ -19,7 +19,7 @@
     "method": "interface.labels",
     "args": {
       "keys": [
-        "map"
+        "world"
       ]
     }
   },

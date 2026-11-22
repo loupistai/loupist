@@ -2,7 +2,7 @@
  * Research hand-offs (Agents A5): a retained link's "Look into it" in Bot while it starts,
  * fails, finds the link gone or opens once however often it is pressed; what Bot posts when a
  * session ends, a pre-update one the host stopped among them (a session at work posts
- * nothing); and a session's first message with the Bot's note closed under the request, a
+ * nothing); and a session's first message with Bot's brief above the closed hand-off context, a
  * chosen link action, or no note at all. Discovery posts no new links (world_followups), so
  * these draw stored rows.
  */
@@ -87,7 +87,7 @@ function finishedCards(): ChatMessage[] {
     ? "2027년에 HBM4를 대량으로 공급할 수 있는 다른 회사와 그 회사의 고객별 공급 조건"
     : "Who else can supply HBM4 at volume in 2027, and on what terms with which customers";
   return [
-    card("empty", { title: ko ? "가동률 비교" : "Utilization comparison", status: "done" }, `Researched: ${ko ? "가동률 비교" : "Utilization comparison"}.`, 20),
+    card("empty", { title: ko ? "가동률 비교" : "Utilization comparison", status: "done" }, `Session ended: ${ko ? "가동률 비교" : "Utilization comparison"}.`, 20),
     card("long", { title: long, status: "done", learned }, ko
       ? "SK하이닉스가 2027년까지 HBM4 물량의 절반 이상을 공급하고, 삼성전자는 하반기에 인증을 마칠 것으로 보입니다."
       : "SK hynix supplies more than half of HBM4 volume through 2027, and Samsung Electronics looks set to qualify in the second half.", 10),
@@ -115,9 +115,9 @@ function sessionFirst(kind: "note" | "link" | "legacy"): ChatMessage[] {
     brief: ko ? "최근 공시와 저장된 출처를 먼저 확인하십시오. 수치에는 출처를 붙이십시오." : "Check the latest filings and saved sources first. Cite every figure.",
   };
   const first: ChatMessage = kind === "note"
-    ? { id: "preview-first", role: "user", status: "complete", created_at: at(5), content: longRequest(), handoff_note: note }
+    ? { id: "preview-first", role: "bot_handoff", status: "complete", created_at: at(5), content: note.brief, handoff_note: { ...note, userMessageInBot: longRequest() } }
     : kind === "link"
-      ? { id: "preview-first", role: "user", status: "complete", created_at: at(5), content: "The user chose “Look into it” on this Map link.",
+      ? { id: "preview-first", role: "user", status: "complete", created_at: at(5), content: "The user chose “Look into it” on this World link.",
         handoff_action: { kind: "link", connectionId },
         handoff_note: {
           title: ko ? `연결: ${seedName} ↔ ${farName}` : `Link: ${seedName} and ${farName}`,
@@ -136,7 +136,7 @@ const session = (kind: "note" | "link" | "legacy"): PreviewScenario["setup"] => 
 };
 
 export const handoffScenarios: PreviewScenario[] = [
-  { ...base("bot-link", "Bot: a retained link with Show on the map, Look into it and Not useful", () => select(".thread-link .bot-quiet-action:nth-of-type(2)"), showLink),
+  { ...base("bot-link", "Bot: a retained link with Show in World, Look into it and Not useful", () => select(".thread-link .bot-quiet-action:nth-of-type(2)"), showLink),
     setup: (bridge) => withMessages(bridge, () => [linkPost()]) },
   { ...base("bot-link-busy", "Bot: Look into it while the host starts the session; both actions wait", () => select('.thread-link .bot-quiet-action[aria-busy="true"]'), lookInto),
     setup: async (bridge) => {
@@ -164,10 +164,10 @@ export const handoffScenarios: PreviewScenario[] = [
   } },
   { ...base("bot-handoff-cards", "Bot: what a session posts when it ends: finished, failed and a pre-update hand-off the host stopped, each with Open", () => select('.thread-delivery [data-stop-reason="before_update"]'), () => showCards()),
     setup: (bridge) => withMessages(bridge, handoffCards) },
-  { ...base("session-handoff-note", "Research session: the whole request, with the Bot's note closed under it", () => select(".message.user .message-handoff-note > summary")),
+  { ...base("session-handoff-note", "Research session: Bot’s brief with its hand-off details closed", () => select(".handoff-opening .message-handoff-note > summary")),
     setup: session("note") },
-  { ...base("session-handoff-note-open", "Research session: the Bot's note opened", () => select(".message.user .message-handoff-note[open] .message-handoff-note-title"),
-    () => click(".message.user .message-handoff-note > summary")), setup: session("note") },
+  { ...base("session-handoff-note-open", "Research session: the Bot's note opened", () => select(".handoff-opening .message-handoff-note[open] .message-handoff-note-title"),
+    () => click(".handoff-opening .message-handoff-note > summary")), setup: session("note") },
   { ...base("session-handoff-link", "Research session: the user chose Look into it on a link; the link's details closed", () => select(".message.user [data-handoff-action=\"link\"]")),
     setup: session("link") },
   { ...base("session-handoff-legacy", "Research session from before notes: the request alone, as before", () => select(".message.user .message-user-text")),

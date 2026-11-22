@@ -37,9 +37,18 @@ it("shows the answer of a run left open while it runs once the run finishes", as
   await user.click(within(runningSection).getByRole("button", { name: "Open" }));
   expect(await screen.findByText("Running this research…", { selector: "p" })).toBeVisible();
 
-  run = { ...running, status: "succeeded", message_id: answer.id, finished_at_ms: Date.now(), summary: "Chip demand held up this week." };
+  run = { ...running, status: "succeeded", memory_save_skip: "deadline", message_id: answer.id, finished_at_ms: Date.now(), summary: "Chip demand held up this week.",
+    discarded_memory_items: [{ kind: "note", title: "Weekly chip demand" }],
+  };
   await act(async () => { changed?.({ loupistId: loupist.id }); });
   expect(await screen.findByText("Chip demand held up this week.", { selector: ".message-content p" })).toBeVisible();
+  expect(screen.getByText("Not saved to Memory: another conversation was still running after 10 minutes.")).toBeVisible();
+  expect(screen.getByText("What this answer says it saved was not kept.")).toBeVisible();
+  expect(screen.getByRole("list", { name: "Not kept" })).toHaveTextContent("Weekly chip demand");
+  const reader = document.querySelector(".briefings-reader")!;
+  expect(reader.querySelector("header")).toHaveTextContent(loupist.name);
+  expect(reader.querySelector(".message-meta time")).toBeNull();
+  expect(reader.querySelector(".message-meta")?.textContent ?? "").not.toContain(loupist.name);
   // Read once it has been on screen for a second.
   await vi.waitFor(() => expect(markRead).toHaveBeenCalledWith({ loupistId: loupist.id, runIds: ["run-1"] }), { timeout: 2_000 });
 });
@@ -49,13 +58,15 @@ it("labels a task's prompt in its detail, and hides one that only repeats the ti
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const finished: ScheduledRun = { ...running, status: "succeeded", finished_at_ms: Date.now() };
   const same = { ...task(finished), prompt: "Chip news" } as ScheduledTaskListItem;
-  const asked = { ...task(finished), id: "task-2", title: "Morning review", prompt: "Summarize new Hanul Precision filings." } as ScheduledTaskListItem;
+  const asked = { ...task(finished), id: "task-2", title: "Morning review", model_profile_id: "", model_selection: (await bridge.modelCatalogGet()).default_selection, prompt: "Summarize new Hanul Precision filings." } as ScheduledTaskListItem;
   vi.spyOn(bridge, "scheduledTasksList").mockResolvedValue([same, asked]);
   vi.spyOn(bridge, "scheduledTaskRuns").mockResolvedValue([]);
   render(<ScheduleView bridge={bridge} loupist={loupist} theme="light" open={vi.fn()} onOpenChat={vi.fn()} />);
 
   await user.click(await screen.findByRole("button", { name: /Morning review/ }));
   const detail = await screen.findByRole("article", { name: "Morning review" });
+  expect(within(detail).getByText("Model: GPT-5.6 Luna")).toBeVisible();
+  expect(screen.queryByText("Built in")).toBeNull();
   expect(within(detail).getByRole("heading", { level: 3, name: "Prompt" })).toBeVisible();
   expect(within(detail).getByText("Summarize new Hanul Precision filings.")).toBeVisible();
 
@@ -71,6 +82,7 @@ it("lists no Watching item and names a briefing's followed tickers by their save
   bridge.assets.installAsset({ name: "NVIDIA", ticker: "NVDA", exchange: "US", figi: "BBG000BBJQV0" });
   const briefing: ScheduledRun = {
     ...running, kind: "briefing", task_id: "briefing", task_title: "Briefings", status: "succeeded", finished_at_ms: Date.now(), thread_id: null, summary: "A quiet day.",
+    skipped_tools: [{ name: "FRED", reason: "keychain_permission_required" }],
     briefing_context: { symbols: ["NVDA", "TSM"], principlesChecked: 0, newFacts: 0, disputedEntityIds: [], changed: { names: 0, relations: 0, conflicts: 0, rows: [] }, ahead: [] },
   };
   vi.spyOn(bridge, "scheduledTasksList").mockResolvedValue([{ ...task(briefing), id: "briefing", kind: "briefing", title: "Briefings" } as ScheduledTaskListItem]);
@@ -79,6 +91,7 @@ it("lists no Watching item and names a briefing's followed tickers by their save
 
   expect(await screen.findByText("NVIDIA · TSM")).toBeVisible();
   expect(screen.getByText("A quiet day.")).toBeVisible();
+  expect(screen.getByText("Not used: FRED (macOS permission needed for the saved key)")).toBeVisible();
   expect(screen.queryByRole("list", { name: "Watching" })).toBeNull();
   expect(screen.queryByRole("button", { name: /^Watching/ })).toBeNull();
 });
@@ -191,4 +204,40 @@ it("says a run's session was removed when Continue in Chat finds it gone with it
   expect(screen.queryByRole("button", { name: "Continue in Chat →" })).toBeNull();
   // The history is read again, so a run that left it leaves the list too.
   await vi.waitFor(() => expect(runs.mock.calls.length).toBeGreaterThan(reads));
+});
+
+describe("Schedule's login hint", () => {
+  const visit = (bridge: MockLoupistBridge) => render(<ScheduleView bridge={bridge} loupist={loupist} theme="light" open={vi.fn()} onOpenChat={vi.fn()} />);
+  const hint = "Scheduled tasks run only while Loupist is open.";
+  it.each(["dismiss", "enable"])("remembers %s across visits and only confirms for the enabling visit", async action => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    bridge.resident = { ...bridge.resident, keepRunning: false, loginItem: "off" };
+    vi.spyOn(bridge, "scheduledTasksList").mockResolvedValue([task(running)]);
+    const view = visit(bridge);
+    expect(await screen.findByText(hint)).toBeVisible();
+    await userEvent.setup().click(screen.getByRole("button", { name: action === "enable" ? "Open at login" : "Dismiss" }));
+    expect(screen.queryByText(hint)).toBeNull();
+    if (action === "enable") {
+      expect(screen.getByText("Loupist will open at login")).toBeVisible();
+      expect(bridge.resident.keepRunning).toBe(true);
+      await bridge.loginItemSet({ enabled: false });
+    } else expect(bridge.resident.keepRunning).toBe(false);
+    view.unmount();
+    visit(bridge);
+    await screen.findByRole("heading", { name: "Scheduled work" });
+    await act(async () => {});
+    expect(screen.queryByText(hint)).toBeNull();
+    expect(screen.queryByText("Loupist will open at login")).toBeNull();
+  });
+
+  it.each([["paused", "off"], ["active", "on"], ["active", "unavailable"], ["active", "requiresApproval"], ["active", "error"]] as const)(
+    "has no hint with task %s and registration %s", async (status, loginItem) => {
+      const bridge = new MockLoupistBridge({ delay_ms: 0 });
+      bridge.resident.loginItem = loginItem;
+      vi.spyOn(bridge, "scheduledTasksList").mockResolvedValue([{ ...task(running), status }]);
+      visit(bridge);
+      await screen.findByRole("heading", { name: "Scheduled work" });
+      await act(async () => {});
+      expect(screen.queryByText(hint)).toBeNull();
+    });
 });

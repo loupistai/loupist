@@ -251,11 +251,43 @@ pub(super) fn truncate_chars(text: String, maximum: usize) -> (String, bool) {
 pub(super) fn detect_krx_error(bytes: &[u8]) -> Result<Value, FinanceDataError> {
     let root: Value =
         serde_json::from_slice(bytes).map_err(|_| FinanceDataError::InvalidResponse)?;
-    match root.pointer("/result/code").and_then(Value::as_str) {
+    let code = root.pointer("/result/code").and_then(Value::as_str);
+    match code {
         Some("000") => Ok(root),
-        Some(_) => Err(FinanceDataError::CredentialRejected(KRX_SOURCE_ID)),
+        Some("401" | "403") => Err(FinanceDataError::CredentialRejected(KRX_SOURCE_ID)),
+        Some("429") => Err(FinanceDataError::RateLimited(KRX_SOURCE_ID)),
+        Some(code @ ("400" | "422")) => {
+            let field = root
+                .pointer("/result/message")
+                .and_then(Value::as_str)
+                .filter(|message| {
+                    message
+                        .split(|c: char| !c.is_ascii_alphanumeric())
+                        .any(|word| word.eq_ignore_ascii_case("basDd"))
+                })
+                .map(|_| "date");
+            Err(rejected_provider_arguments("KRX", code, field))
+        }
+        Some(_) => Err(FinanceDataError::Provider(
+            "KRX returned a provider status error".into(),
+        )),
         None if root.get("OutBlock_1").is_some_and(Value::is_array) => Ok(root),
         None => Err(FinanceDataError::InvalidResponse),
+    }
+}
+
+fn rejected_provider_arguments(
+    provider: &str,
+    code: &str,
+    field: Option<&str>,
+) -> FinanceDataError {
+    let diagnostic = match field {
+        Some(field) => format!("{provider} rejected the {field} in this request (code {code})."),
+        None => format!("{provider} rejected a value in this request (code {code})."),
+    };
+    FinanceDataError::RejectedArguments {
+        diagnostic,
+        next: "Check the identifiers and dates sent against this tool's parameter descriptions and read again with corrected values; the same call fails the same way.",
     }
 }
 
@@ -264,10 +296,12 @@ pub(super) fn detect_krx_error(bytes: &[u8]) -> Result<Value, FinanceDataError> 
 fn dart_status_error(status: Option<&str>) -> Result<(), FinanceDataError> {
     match status {
         Some("000" | "013") => Ok(()),
-        Some("010" | "011" | "012") => {
+        Some("014") => Err(FinanceDataError::NoData(OPENDART_SOURCE_ID)),
+        Some("010" | "011" | "012" | "901") => {
             Err(FinanceDataError::CredentialRejected(OPENDART_SOURCE_ID))
         }
         Some("020") => Err(FinanceDataError::RateLimited(OPENDART_SOURCE_ID)),
+        Some(code @ ("021" | "100")) => Err(rejected_provider_arguments("OpenDART", code, None)),
         Some(_) => Err(FinanceDataError::Provider(
             "OpenDART returned a provider status error".to_owned(),
         )),
@@ -365,6 +399,57 @@ mod tests {
         }
     }
 
+    #[test]
+    fn request_error_envelopes_stay_distinct_from_auth_and_malformed_replies() {
+        let dart = br#"{"status":"100","message":"Field value is not valid."}"#;
+        assert!(matches!(
+            validate_dart_status(dart),
+            Err(FinanceDataError::RejectedArguments { diagnostic, next })
+                if diagnostic == "OpenDART rejected a value in this request (code 100)."
+                && next == "Check the identifiers and dates sent against this tool's parameter descriptions and read again with corrected values; the same call fails the same way."
+        ));
+        let krx = br#"{"result":{"code":"400","message":"Bad Request"}}"#;
+        for (provider, body) in [
+            (OPENDART_SOURCE_ID, dart.as_slice()),
+            (KRX_SOURCE_ID, krx.as_slice()),
+        ] {
+            let raw = RawProviderResponse {
+                bytes: body.to_vec(),
+                source_url: String::new(),
+                retrieved_at: String::new(),
+                continuation: None,
+            };
+            assert!(matches!(
+                interpret_provider_status(provider, StatusCode::BAD_REQUEST, raw),
+                Err(FinanceDataError::RejectedArguments { .. })
+            ));
+        }
+
+        assert!(matches!(
+            detect_krx_error(krx),
+            Err(FinanceDataError::RejectedArguments { diagnostic, .. })
+                if diagnostic == "KRX rejected a value in this request (code 400)."
+        ));
+        let krx_named = br#"{"result":{"code":"400","message":"Invalid basDd"}}"#;
+        assert!(matches!(
+            detect_krx_error(krx_named),
+            Err(FinanceDataError::RejectedArguments { diagnostic, .. })
+                if diagnostic == "KRX rejected the date in this request (code 400)."
+        ));
+        assert!(matches!(
+            detect_krx_error(br#"{"result":{"code":"403","message":"Unauthorized API Call"}}"#),
+            Err(FinanceDataError::CredentialRejected(KRX_SOURCE_ID))
+        ));
+        assert!(matches!(
+            detect_krx_error(br#"{"result":{"code":"500","message":"error"}}"#),
+            Err(FinanceDataError::Provider(_))
+        ));
+        assert!(matches!(
+            detect_krx_error(br#"{"unexpected":true}"#),
+            Err(FinanceDataError::InvalidResponse)
+        ));
+    }
+
     /// rc1: OpenDART answered a missing document with an XML status, which
     /// the filing read reported as an invalid response.
     #[test]
@@ -388,7 +473,7 @@ mod tests {
             ("010", "finance data provider credential was rejected: opendart.disclosures"),
             ("011", "finance data provider credential was rejected: opendart.disclosures"),
             ("020", "finance data provider rate limit was reached: opendart.disclosures"),
-            ("100", "finance data provider rejected the request: OpenDART returned a provider status error"),
+            ("100", "finance data request is invalid: OpenDART rejected a value in this request (code 100)."),
         ] {
             assert_eq!(outcome(xml(status).as_bytes()), Err(expected.to_owned()), "{status}");
             let json = format!(r#"{{"status":"{status}"}}"#);

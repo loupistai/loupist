@@ -340,6 +340,7 @@ mod tests {
                     x: "date".into(),
                     y: vec!["value".into()],
                     color: None,
+                    stack: None,
                     semantic_types: Default::default(),
                     title: Some("Price".into()),
                     subtitle: None,

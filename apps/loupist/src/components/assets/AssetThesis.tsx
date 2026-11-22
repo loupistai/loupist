@@ -151,15 +151,15 @@ export function AssetThesis({ bridge, loupistId, loupistName, page, name, thread
   return <section className="asset-thesis" aria-labelledby={titleId}>
     <div className="asset-thesis-head">
       <h2 id={titleId} className="asset-section-label">{t("thesis.title")}</h2>
-      {read ? <span className="asset-read-label"><span>{t("thesis.read", { loupist: loupistName })}</span><VerdictChip verdict={read.verdict} loupist={loupistName} /></span> : null}
+      {read?.latestMove ? <span className="asset-read-label"><span>{t("thesis.read", { loupist: loupistName })}</span><VerdictChip verdict={read.verdict} loupist={loupistName} /></span> : null}
     </div>
     {archiveFailed ? <p role="alert">{t("error.archive")}</p> : null}
     {/* "Thesis" and "line" are explained once, here; without a thesis the invitation below says it. */}
     {read || page.reasons.length ? <p className="asset-thesis-hint">{t("thesis.hint")}</p> : null}
     {read ? <>
-      <p className="asset-ladder" aria-hidden="true" data-verdict={read.verdict}>
+      {read.latestMove ? <p className="asset-ladder" aria-hidden="true" data-verdict={read.verdict}>
         {VERDICT_ORDER.map(step => <span key={step} data-current={step === read.verdict || undefined}>{verdictLabel(step)}</span>)}
-      </p>
+      </p> : null}
       {sentence}
     </> : <div className="asset-no-thesis">
       <p>{t("noThesis.body", { name })}</p>

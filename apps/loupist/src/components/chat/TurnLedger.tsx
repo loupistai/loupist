@@ -1,3 +1,4 @@
+import type { RevealedResult } from "./TurnProvider";
 import { Disclosure } from "../ui/disclosure";
 import { useOpenProps } from "../navigation/Open";
 import { formatNumber } from "@/i18n/format";
@@ -13,8 +14,10 @@ import { TurnGlyph, Ticker, useArrived } from "./turnMotion";
 import { useConversationScroll } from "../ai-elements/conversation";
 import { useChatMap } from "../workspace/ChatMapContext";
 import { formatAsOf } from "../../chat/asOf";
+import type { AnswerSource } from "../../chat/answerSources";
 import { evidenceTitle } from "../../chat/evidence";
 import { readNoun } from "../../chat/progressLabels";
+import { useExtensionAvailability } from "../../app/extensionAvailability";
 import { pausedByRule, planSections, refusedByRule, stepGlyph, type LedgerChip, type TurnSegment } from "../../chat/turnView";
 import { actionLabel, isActionItem as isAction, visibleTarget, withoutIdentifiers } from "../../chat/runStatus";
 
@@ -28,7 +31,7 @@ const CHIPS_LEAVE_MS = 120;
 
 type Props = {
   segment: Extract<TurnSegment, { kind: "ledger" }>;
-  revealedResult?: { id: string; request: number } | null;
+  revealedResult?: RevealedResult | null;
   focusItemId?: string | null;
   /** The answer's as-of date (`YYYY-MM-DD`). */
   asOf?: string;
@@ -43,9 +46,10 @@ function StepLink({ href, target }: { href: string; target: string }) {
   return <button type="button" className="chat-progress-target chat-progress-link" data-testid="chat-progress-target" title={target} {...link.props}>{target}</button>;
 }
 
-function WorkSource({ source }: { source: ChatEvidenceRef }) {
-  const link = useOpenProps({ kind: "evidence", evidence: source });
-  return link.available ? <button type="button" {...link.props}>{evidenceTitle(source)}</button> : <>{evidenceTitle(source)}</>;
+function WorkSource({ source }: { source: AnswerSource }) {
+  const link = useOpenProps({ kind: "evidence", evidence: source.evidence });
+  const title = source.saved?.title ?? evidenceTitle(source.evidence);
+  return link.available ? <button type="button" {...link.props}>{title}</button> : <>{title}</>;
 }
 
 /** "2.7s" for a step that took a second or more. */
@@ -67,13 +71,14 @@ const ActionRow = memo(function ActionRow({
 }: {
   item: ActionItem;
   evidence: ChatEvidenceRef[];
-  revealedResult?: { id: string; request: number } | null;
+  revealedResult?: RevealedResult | null;
   expandedResults: Set<string>;
   onToggleResult: (id: string) => void;
   rowExpanded: boolean;
   focusItemId?: string | null;
 }) {
   useTranslation("chat");
+  const { userSkills } = useExtensionAvailability();
   const execution = useChatExecution();
   const conversation = useConversationScroll();
   const asOf = useContext(RowAsOf);
@@ -159,7 +164,7 @@ const ActionRow = memo(function ActionRow({
       </div>
       {/* A security rule, not a failure: said calmly in the step, with no way around it. */}
       {paused ? <div className="chat-step-paused" role="note">
-        <p>{t(`chatProgressTimeline.paused.${pausedWhat(item)}`)}</p>
+        <p>{t(`chatProgressTimeline.paused.${pausedWhat(item, userSkills)}`)}</p>
         <p className="chat-step-paused-why">{t("chatProgressTimeline.paused.why")}</p>
       </div> : refusedByRule(item) === "protected_path" ? <div className="chat-step-paused" role="note">
         <p>{t("chatProgressTimeline.refused.protectedPath")}</p>
@@ -168,7 +173,7 @@ const ActionRow = memo(function ActionRow({
       </div> : null}
       {open && skipped && asOf ? <p id={detailsId} className="chat-progress-skipped-detail">{t("asOf.stepRefusedDetail", { date: formatAsOf(asOf) })}</p> : null}
       {open && item.detailId && execution ? <div id={detailsId} className="chat-execution-detail"><ChatActivityDetailView {...execution} detailId={item.detailId} outputRevision={item.kind === "tool" ? item.outputRevision : undefined} /></div> : null}
-      {open ? evidence.map((result) => <ChatToolResult key={result.id} evidence={result} expanded={expandedResults.has(result.id)} focusRequest={rowExpanded && revealedResult?.id === result.id ? revealedResult.request : undefined} onToggle={() => onToggleResult(result.id)} />) : null}
+      {open ? evidence.map((result) => <ChatToolResult key={result.id} evidence={result} expanded={expandedResults.has(result.id)} comparison={revealedResult?.id === result.id ? revealedResult.comparison : undefined} focusRequest={rowExpanded && revealedResult?.id === result.id ? revealedResult.request : undefined} onToggle={() => onToggleResult(result.id)} />) : null}
     </div>
   );
 });
@@ -225,9 +230,9 @@ function PlanList({ plan, nested, renderSteps }: {
 }
 
 /** What the pause turned off for this step, in the user's words. */
-const pausedWhat = (item: ActionItem): "instructions" | "site" | "schedule" | "connection" | "other" => {
+const pausedWhat = (item: ActionItem, userSkills: boolean): "instructions" | "instructionsWithSkills" | "site" | "schedule" | "connection" | "other" => {
   const tool = item.kind === "tool" ? item.toolName ?? "" : "";
-  if (tool === "write" || tool === "edit") return "instructions";
+  if (tool === "write" || tool === "edit") return userSkills ? "instructionsWithSkills" : "instructions";
   if (tool === "web_fetch") return "site";
   if (tool.startsWith("schedule_")) return "schedule";
   if (item.kind === "tool" && (item.source?.kind === "connector" || tool.startsWith("mcp__"))) return "connection";
@@ -350,14 +355,14 @@ export function TurnLedger({ segment, revealedResult, focusItemId, asOf }: Props
         <ChatExecutionProvider value={detailScope}><RowAsOf.Provider value={asOf}>
           <div id={detailsId} className="chat-progress-items" data-opening={opening || undefined}>
             {sources.length ? <ul className="chat-work-sources" aria-label={t("chatReceipt.sourcesRead")}>
-              {sources.map((source) => <li key={source.id}><WorkSource source={source} /></li>)}
+              {sources.map((source) => <li key={source.evidence.id}><WorkSource source={source} /></li>)}
             </ul> : null}
             {memoryReads.length ? <Disclosure className="chat-progress-memory" title={<>{t("chatProgressTimeline.consultedNotes", { count: memoryReads.length, formattedCount: formatNumber(memoryReads.length) })}</>}>
               <ul tabIndex={0} aria-label={t("chatProgressTimeline.usedInThisAnswer")}>{memoryReads.map((ref, index) => <li key={index}><strong>{ref.title}</strong>{ref.excerpt ? <p>{ref.excerpt}</p> : null}</li>)}</ul>
             </Disclosure> : null}
             {progress.plan ? <PlanList plan={progress.plan} nested={sections.nested} renderSteps={(items) => items.map(renderEntry)} /> : null}
             {sections.rest.map(renderEntry)}
-            {unlinked.map((result) => <ChatToolResult key={result.id} evidence={result} expanded={expandedResults.has(result.id)} focusRequest={revealedResult?.id === result.id ? revealedResult.request : undefined} onToggle={() => onToggleResult(result.id)} />)}
+            {unlinked.map((result) => <ChatToolResult key={result.id} evidence={result} expanded={expandedResults.has(result.id)} comparison={revealedResult?.id === result.id ? revealedResult.comparison : undefined} focusRequest={revealedResult?.id === result.id ? revealedResult.request : undefined} onToggle={() => onToggleResult(result.id)} />)}
           </div>
         </RowAsOf.Provider></ChatExecutionProvider>
       ) : null}

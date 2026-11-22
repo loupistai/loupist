@@ -6,13 +6,15 @@ const typingTarget = (target: EventTarget | null) => target instanceof HTMLEleme
   && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
     || target.closest('[role="dialog"], [role="menu"], [role="listbox"]') !== null);
 
-export function useAppShortcuts({ onSettings, onNewChat, onPalette, canCreateChat }: {
+export function useAppShortcuts({ onSettings, onNewChat, onPalette, canCreateChat, enabled = true }: {
   onSettings: () => void;
   onNewChat: () => void;
   onPalette?: () => void;
   canCreateChat: boolean;
+  enabled?: boolean;
 }) {
   useEffect(() => {
+    if (!enabled) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229 || event.altKey) return;
       if (event.key === GLOBAL_KEYS.focusComposer && !event.metaKey && !event.ctrlKey && !event.shiftKey && !typingTarget(event.target)) {
@@ -35,5 +37,5 @@ export function useAppShortcuts({ onSettings, onNewChat, onPalette, canCreateCha
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canCreateChat, onNewChat, onPalette, onSettings]);
+  }, [canCreateChat, enabled, onNewChat, onPalette, onSettings]);
 }

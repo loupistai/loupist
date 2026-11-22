@@ -22,6 +22,7 @@ export type AttentionKind =
   | "approval"
   | "question"
   | "lineCrossed"
+  | "savedKeyPermission"
   | "briefingConflict"
   | "unreadResults"
   | "checkDue";

@@ -833,8 +833,47 @@ pub(crate) fn valid_repo_name(name: &str) -> bool {
 
 /// An unavailable credential store is different from an absent token.
 /// Never retain native error text, which can include credential data.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TokenStoreError;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub(crate) enum TokenStoreError {
+    #[error("The credential store could not complete the operation.")]
+    Store,
+    #[error("A saved-key operation is still waiting for macOS.")]
+    Busy,
+    #[error("The Keychain did not respond in time.")]
+    Unavailable,
+    #[error("Loupist is installing an update")]
+    UpdateInstalling,
+}
+
+use crate::{
+    app::AppState,
+    keychain_operation::{check_mutation_deadline, KeychainError, KeychainOperation},
+};
+
+const TOKEN_SERVICE: &str = "com.monarchjuno.loupist.github-sharing";
+
+impl From<KeychainError> for TokenStoreError {
+    fn from(error: KeychainError) -> Self {
+        match error {
+            KeychainError::UpdateInstalling => Self::UpdateInstalling,
+            KeychainError::Busy => Self::Busy,
+            KeychainError::Unavailable | KeychainError::TimedOut => Self::Unavailable,
+        }
+    }
+}
+
+impl TokenStoreError {
+    pub(super) fn command_error(self) -> crate::app::CommandError {
+        match self {
+            Self::Store => {
+                crate::app::CommandError::new("credential_store_unavailable", self.to_string())
+            }
+            Self::UpdateInstalling => KeychainError::UpdateInstalling.command_error(),
+            Self::Busy => KeychainError::Busy.command_error(),
+            Self::Unavailable => KeychainError::Unavailable.command_error(),
+        }
+    }
+}
 
 #[cfg(all(
     any(target_os = "macos", windows),
@@ -844,7 +883,7 @@ fn token_from_password(result: keyring::Result<String>) -> Result<Option<String>
     match result {
         Ok(token) => Ok(Some(token)),
         Err(keyring::Error::NoEntry) => Ok(None),
-        Err(_) => Err(TokenStoreError),
+        Err(_) => Err(TokenStoreError::Store),
     }
 }
 
@@ -857,10 +896,10 @@ mod token_store {
 
     fn entry(environment: &str) -> Result<keyring::Entry, TokenStoreError> {
         keyring::Entry::new(
-            "com.monarchjuno.loupist.github-sharing",
+            super::TOKEN_SERVICE,
             &format!("{environment}:github-sharing"),
         )
-        .map_err(|_| TokenStoreError)
+        .map_err(|_| TokenStoreError::Store)
     }
     pub(super) fn load(environment: &str) -> Result<Option<String>, TokenStoreError> {
         super::token_from_password(entry(environment)?.get_password())
@@ -868,10 +907,8 @@ mod token_store {
     pub(super) fn save(environment: &str, token: &str) -> bool {
         entry(environment).is_ok_and(|entry| entry.set_password(token).is_ok())
     }
-    pub(super) fn delete(environment: &str) {
-        if let Ok(entry) = entry(environment) {
-            let _ = entry.delete_credential();
-        }
+    pub(super) fn delete(environment: &str) -> Result<(), TokenStoreError> {
+        crate::keychain_operation::delete_entry(entry(environment)?).map_err(Into::into)
     }
 }
 
@@ -896,16 +933,16 @@ pub(super) mod token_store {
     pub(super) fn load(environment: &str) -> Result<Option<String>, TokenStoreError> {
         #[cfg(test)]
         {
-            let mut reads = reads().lock().map_err(|_| TokenStoreError)?;
+            let mut reads = reads().lock().map_err(|_| TokenStoreError::Store)?;
             let read = reads.entry(environment.into()).or_default();
             read.0 += 1;
             if read.1 {
-                return Err(TokenStoreError);
+                return Err(TokenStoreError::Store);
             }
         }
         Ok(tokens()
             .lock()
-            .map_err(|_| TokenStoreError)?
+            .map_err(|_| TokenStoreError::Store)?
             .get(environment)
             .cloned())
     }
@@ -915,10 +952,12 @@ pub(super) mod token_store {
             .map(|mut tokens| tokens.insert(environment.into(), token.into()))
             .is_ok()
     }
-    pub(super) fn delete(environment: &str) {
-        if let Ok(mut tokens) = tokens().lock() {
-            tokens.remove(environment);
-        }
+    pub(super) fn delete(environment: &str) -> Result<(), TokenStoreError> {
+        tokens()
+            .lock()
+            .map_err(|_| TokenStoreError::Store)?
+            .remove(environment);
+        Ok(())
     }
 }
 
@@ -930,52 +969,217 @@ mod token_store {
     use super::TokenStoreError;
 
     pub(super) fn load(_: &str) -> Result<Option<String>, TokenStoreError> {
-        Err(TokenStoreError)
+        Err(TokenStoreError::Store)
     }
     pub(super) fn save(_: &str, _: &str) -> bool {
         false
     }
-    pub(super) fn delete(_: &str) {}
+    pub(super) fn delete(_: &str) -> Result<(), TokenStoreError> {
+        Err(TokenStoreError::Store)
+    }
 }
 
-pub(crate) fn load_token(environment: &str) -> Option<String> {
-    // Public reads and account display may proceed signed out. The export
-    // private-string scan must use the fallible entry point below.
-    try_load_token(environment).ok().flatten()
-}
-
-/// Environments whose token macOS refused in this session. Holding this lock
-/// is the gate: concurrent readers wait for the first answer, and a refusal
-/// is not asked again until the user signs in or out.
-fn token_gate() -> &'static std::sync::Mutex<std::collections::BTreeSet<String>> {
+fn refused() -> &'static std::sync::Mutex<std::collections::BTreeSet<String>> {
     static REFUSED: std::sync::OnceLock<std::sync::Mutex<std::collections::BTreeSet<String>>> =
         std::sync::OnceLock::new();
     REFUSED.get_or_init(Default::default)
 }
 
-pub(crate) fn try_load_token(environment: &str) -> Result<Option<String>, TokenStoreError> {
-    let mut refused = token_gate().lock().map_err(|_| TokenStoreError)?;
-    if refused.contains(environment) {
-        return Err(TokenStoreError);
-    }
-    let token = token_store::load(environment);
-    if token.is_err() {
-        refused.insert(environment.to_owned());
-    }
-    token
+fn token_operation(environment: &str) -> Result<KeychainOperation, TokenStoreError> {
+    Ok(KeychainOperation::begin(
+        TOKEN_SERVICE,
+        format!("{environment}:github-sharing"),
+    )?)
 }
-pub(crate) fn save_token(environment: &str, token: &str) -> bool {
-    let Ok(mut refused) = token_gate().lock() else {
-        return false;
+
+pub(crate) fn try_load_token(environment: &str) -> Result<Option<String>, TokenStoreError> {
+    let operation = token_operation(environment)?;
+    let environment = environment.to_owned();
+    operation.read(move || {
+        if refused()
+            .lock()
+            .map_err(|_| TokenStoreError::Store)?
+            .contains(&environment)
+        {
+            return Err(TokenStoreError::Store);
+        }
+        let token = token_store::load(&environment);
+        if token.is_err() {
+            refused()
+                .lock()
+                .map_err(|_| TokenStoreError::Store)?
+                .insert(environment);
+        }
+        token
+    })?
+}
+
+pub(crate) async fn load_token(state: &AppState) -> Option<String> {
+    // Consumers that can make unauthenticated requests only need the token
+    // when it is available. Publishing uses the fallible entry point.
+    account_token(state).await.ok().flatten()
+}
+
+pub(super) async fn account_token(state: &AppState) -> Result<Option<String>, TokenStoreError> {
+    let state = state.clone();
+    tokio::task::spawn_blocking(move || {
+        let operation = token_operation(&state.credential_environment)?;
+        let environment = state.credential_environment.to_string();
+        operation.read(move || {
+            let login = {
+                let connection = state.store.lock().map_err(|_| TokenStoreError::Store)?;
+                stored_login(&connection).map_err(|_| TokenStoreError::Store)?
+            };
+            if login.is_none() {
+                return Ok(None);
+            }
+            if refused()
+                .lock()
+                .map_err(|_| TokenStoreError::Store)?
+                .contains(&environment)
+            {
+                return Err(TokenStoreError::Store);
+            }
+            match token_store::load(&environment) {
+                Ok(Some(token)) => Ok(Some(token)),
+                Ok(None) => {
+                    set_login(&state, None, AccountChange::Missing)?;
+                    Ok(None)
+                }
+                Err(error) => {
+                    refused()
+                        .lock()
+                        .map_err(|_| TokenStoreError::Store)?
+                        .insert(environment);
+                    Err(error)
+                }
+            }
+        })?
+    })
+    .await
+    .map_err(|_| TokenStoreError::Unavailable)?
+}
+
+#[derive(Clone, Copy)]
+enum AccountChange {
+    Pending,
+    Verified,
+    Missing,
+    Removed,
+    Failed,
+}
+
+fn set_login(
+    state: &AppState,
+    login: Option<&str>,
+    change: AccountChange,
+) -> Result<(), TokenStoreError> {
+    let mut connection = state.store.lock().map_err(|_| TokenStoreError::Store)?;
+    let tx = connection
+        .transaction()
+        .map_err(|_| TokenStoreError::Store)?;
+    store_login(&tx, login).map_err(|_| TokenStoreError::Store)?;
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS github_sharing_credential_status (
+            id INTEGER PRIMARY KEY CHECK(id=1),
+            token_configured INTEGER NOT NULL CHECK(token_configured IN (0,1)),
+            verified_at_ms INTEGER,
+            state TEXT NOT NULL
+        ) STRICT;",
+    )
+    .map_err(|_| TokenStoreError::Store)?;
+    let (kind, verified_at) = match change {
+        AccountChange::Pending => ("pending", None),
+        AccountChange::Verified => ("verified", Some(chrono::Utc::now().timestamp_millis())),
+        AccountChange::Missing => ("missing", None),
+        AccountChange::Removed => ("removed", None),
+        AccountChange::Failed => ("keychain_unavailable", None),
     };
-    refused.remove(environment);
+    tx.execute(
+        "INSERT INTO github_sharing_credential_status(id,token_configured,verified_at_ms,state) VALUES(1,?1,?2,?3)
+         ON CONFLICT(id) DO UPDATE SET token_configured=excluded.token_configured,
+           verified_at_ms=CASE WHEN excluded.state IN ('removed','missing') THEN NULL
+                               ELSE COALESCE(excluded.verified_at_ms,verified_at_ms) END,
+           state=excluded.state",
+        rusqlite::params![login.is_some(), verified_at, kind],
+    ).map_err(|_| TokenStoreError::Store)?;
+    tx.commit().map_err(|_| TokenStoreError::Store)
+}
+
+pub(super) fn save_token_for_state(
+    state: &AppState,
+    token: String,
+    login: String,
+) -> Result<(), TokenStoreError> {
+    let operation = token_operation(&state.credential_environment)?;
+    let state = state.clone();
+    let maintenance = state.maintenance.clone();
+    operation.mutate(&maintenance, move || {
+        let previous = state
+            .store
+            .lock()
+            .map_err(|_| TokenStoreError::Store)
+            .and_then(|connection| stored_login(&connection).map_err(|_| TokenStoreError::Store))?;
+        set_login(&state, None, AccountChange::Pending)?;
+        let saved = check_mutation_deadline().and_then(|_| {
+            token_store::save(&state.credential_environment, &token)
+                .then_some(())
+                .ok_or(KeychainError::Unavailable)
+        });
+        if let Err(error) = saved {
+            set_login(&state, previous.as_deref(), AccountChange::Failed)?;
+            return Err(error.into());
+        }
+        set_login(&state, Some(&login), AccountChange::Verified)?;
+        refused()
+            .lock()
+            .map_err(|_| TokenStoreError::Store)?
+            .remove(state.credential_environment.as_ref());
+        Ok(())
+    })?
+}
+
+pub(super) fn delete_token_for_state(state: &AppState) -> Result<(), TokenStoreError> {
+    let operation = token_operation(&state.credential_environment)?;
+    let state = state.clone();
+    let maintenance = state.maintenance.clone();
+    operation.mutate(&maintenance, move || {
+        let previous = state
+            .store
+            .lock()
+            .map_err(|_| TokenStoreError::Store)
+            .and_then(|connection| stored_login(&connection).map_err(|_| TokenStoreError::Store))?;
+        set_login(&state, None, AccountChange::Pending)?;
+        let result = check_mutation_deadline()
+            .map_err(TokenStoreError::from)
+            .and_then(|()| token_store::delete(&state.credential_environment));
+        if let Err(error) = result {
+            set_login(&state, previous.as_deref(), AccountChange::Failed)?;
+            return Err(error);
+        }
+        set_login(&state, None, AccountChange::Removed)?;
+        refused()
+            .lock()
+            .map_err(|_| TokenStoreError::Store)?
+            .remove(state.credential_environment.as_ref());
+        Ok(())
+    })?
+}
+
+#[cfg(test)]
+pub(crate) fn save_token(environment: &str, token: &str) -> bool {
+    if let Ok(mut refused) = refused().lock() {
+        refused.remove(environment);
+    }
     token_store::save(environment, token)
 }
+
+#[cfg(test)]
 pub(crate) fn delete_token(environment: &str) {
-    if let Ok(mut refused) = token_gate().lock() {
+    if let Ok(mut refused) = refused().lock() {
         refused.remove(environment);
-        token_store::delete(environment);
     }
+    let _ = token_store::delete(environment);
 }
 
 /// The signed-in login lives in the global catalog; the token never does.
@@ -1109,7 +1313,7 @@ mod tests {
             keyring::Error::BadEncoding(b"private-token-fixture".to_vec()),
         ] {
             let result = token_from_password(Err(error));
-            assert_eq!(result, Err(TokenStoreError));
+            assert_eq!(result, Err(TokenStoreError::Store));
             assert!(!format!("{result:?}").contains("private-token-fixture"));
         }
     }
@@ -1120,7 +1324,6 @@ mod tests {
         assert_eq!(try_load_token(&environment), Ok(None));
         assert!(save_token(&environment, "pine"));
         assert_eq!(try_load_token(&environment), Ok(Some("pine".into())));
-        assert_eq!(load_token(&environment), Some("pine".into()));
         delete_token(&environment);
         assert_eq!(try_load_token(&environment), Ok(None));
     }
@@ -1135,8 +1338,7 @@ mod tests {
             .unwrap()
             .insert(environment.clone(), (0, true));
         for _ in 0..4 {
-            assert_eq!(try_load_token(&environment), Err(TokenStoreError));
-            assert_eq!(load_token(&environment), None);
+            assert_eq!(try_load_token(&environment), Err(TokenStoreError::Store));
         }
         assert_eq!(reads(&environment), 1);
         // Signing in again stores a fresh token and lifts the remembered refusal.

@@ -119,3 +119,27 @@ fn remote_discovery_cannot_target_loopback_services() {
         checked_discovered_url("http://localhost:1234/token", "http://127.0.0.1:5678/mcp").is_ok()
     );
 }
+
+#[tokio::test]
+async fn json_rpc_invalid_params_is_typed_on_success_and_client_error() {
+    for status in [200, 400, 422] {
+        let server = Server::start(move |_, request| {
+            let body = request.json();
+            let mut response = Response::json(json!({
+                "jsonrpc":"2.0", "id":body["id"],
+                "error":{"code":-32602,"message":"private-canary"}
+            }));
+            response.status = status;
+            response
+        })
+        .await;
+        let error = HttpTransport::new(&server.url)
+            .unwrap()
+            .request("tools/call", json!({"name":"fixture","arguments":{}}), None)
+            .await
+            .err()
+            .unwrap();
+        assert!(matches!(error, ConnectionError::InvalidArguments));
+        assert!(!error.to_string().contains("private-canary"));
+    }
+}

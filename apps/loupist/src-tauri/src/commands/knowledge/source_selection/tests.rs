@@ -81,6 +81,7 @@ fn resolver_returns_existing_span_and_rechecks_typed_selection_at_chat_admission
             purpose: "renderer_inspection".into(),
             world_record_id: None,
             world_revision_id: None,
+            figure: None,
         },
         selection: SourceTextSelection {
             start_utf16: 0,

@@ -139,7 +139,7 @@ export const activitySheetScenarios: PreviewScenario[] = [
       loupistId, jobId, status: "running", worldRecordId: "world", worldRevisionId: "rev", payloadDigest: "", createdAtMs: Date.now(), hostMayRedrive: false,
     });
   } },
-  { ...base("activity-sheet-learned", "Learned names on the map and what the answer saved, including a long label", () => select(".activity-chip"), () => openSheet("learned")), setup: async bridge => {
+  { ...base("activity-sheet-learned", "Learned names in World and what the answer saved, including a long label", () => select(".activity-chip"), () => openSheet("learned")), setup: async bridge => {
     await prepareFixture(bridge, "answer");
     const at = Date.now();
     chatResearchMap(bridge, () => [0, 1, 2, 3].map(index => chatGrowth(index, "preview-answer", at)),
@@ -301,7 +301,7 @@ export const activitySheetScenarios: PreviewScenario[] = [
     column.dispatchEvent(drop);
     await until(() => select(".composer-attachments .composer-file-size"), "The tray did not show sizes");
   }), setup: (bridge) => prepareFixture(bridge, "answer") },
-  { ...base("composer-attach-menu", "The + menu attaches files, a pasted image, the map or a saved source", () => select(".composer-add-menu"), async root => {
+  { ...base("composer-attach-menu", "The + menu attaches files, a pasted image, World or a saved source", () => select(".composer-add-menu"), async root => {
     await until(() => root.querySelector("textarea[data-chat-composer]"), "Chat did not initialize");
     const trigger = await until(() => select(".composer-add-trigger"), "The + control did not render");
     trigger.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));

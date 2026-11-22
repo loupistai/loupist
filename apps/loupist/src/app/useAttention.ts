@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import i18n from "@/i18n";
 import type { AttentionItem } from "../contracts/attention";
 import type { ChatThread, LoupistSummary, LoupistBridge } from "../types";
+import { CONFIG_CHANGED_EVENT } from "./useConfiguration";
 import { isEmptyChatThreadId } from "./emptyChat";
 
 export type AttentionRow = AttentionItem & { taskKind?: string };
@@ -41,11 +42,13 @@ export function useAttention(bridge: LoupistBridge, refreshKey: string, threads:
     };
     read();
     window.addEventListener("focus", read);
+    window.addEventListener(CONFIG_CHANGED_EVENT, read);
     const unsubscribe = bridge.onInboxChanged(read);
     const timer = window.setInterval(read, REFRESH_MS);
     return () => {
       generation++;
       window.removeEventListener("focus", read);
+      window.removeEventListener(CONFIG_CHANGED_EVENT, read);
       unsubscribe();
       window.clearInterval(timer);
     };

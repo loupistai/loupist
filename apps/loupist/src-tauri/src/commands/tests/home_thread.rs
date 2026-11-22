@@ -63,7 +63,7 @@ fn finish_run(state: &AppState, task_id: &str, answer: &str, status: RunStatus) 
     if status == RunStatus::Succeeded {
         state
             .store
-            .scheduled_run_result("loupist-a", &claim.run.run_id, answer, "answer-1")
+            .scheduled_run_result("loupist-a", &claim.run.run_id, answer, "answer-1", None)
             .unwrap();
     }
     state
@@ -71,6 +71,85 @@ fn finish_run(state: &AppState, task_id: &str, answer: &str, status: RunStatus) 
         .scheduled_task_finish("loupist-a", &claim.run.run_id, status, None, now + 1)
         .unwrap();
     claim.run.run_id
+}
+
+#[test]
+fn a_scheduled_answer_with_skipped_memory_is_still_delivered_to_bot() {
+    use crate::domain::{
+        DiscardedMemoryItem, DiscardedMemoryKind, MemorySaveSkipReason, MemoryUpdateResult,
+        MemoryUpdateStatus,
+    };
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary);
+    ensure_home_thread(&state, "loupist-a").unwrap();
+    let task = service::create(&state, "loupist-a", draft("Annual comparison"), None).unwrap();
+    let (claim, ()) = state
+        .store
+        .scheduled_task_claim_with("loupist-a", &task.id, now_ms(), true, |_| Ok(()))
+        .unwrap()
+        .unwrap();
+    let sink = state.scheduled.chat_event_sink(&state, &claim.run);
+    let mut answer = crate::test_fixtures::chat_message(
+        "answer-1",
+        crate::domain::ChatRole::Assistant,
+        "Sales increased.",
+    );
+    let items = Some(vec![DiscardedMemoryItem {
+        kind: DiscardedMemoryKind::Note,
+        title: "Short overlap check".into(),
+    }]);
+    answer.memory_update = Some(MemoryUpdateResult {
+        discarded_memory_items: items.clone(),
+        status: MemoryUpdateStatus::NoChange,
+        skip_reason: Some(MemorySaveSkipReason::Deadline),
+        commit_id: None,
+        changes: Vec::new(),
+        skipped_kinds: Vec::new(),
+        setup: Vec::new(),
+    });
+    crate::commands::chat_runtime::emit_completed_chat(
+        &sink,
+        &claim.run.run_id,
+        &answer,
+        None,
+        &super::chat_behavior::execution_model(),
+        &crate::agent_harness::snapshot("chat", &[], &[]).unwrap(),
+        crate::domain::ChatPerformance::default(),
+    );
+    let receipt = state
+        .store
+        .scheduled_task_run_get("loupist-a", &claim.run.run_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(receipt.status, RunStatus::Succeeded);
+    assert_eq!(
+        receipt.memory_save_skip,
+        Some(MemorySaveSkipReason::Deadline)
+    );
+    assert_eq!(receipt.summary, answer.content);
+    assert_eq!(receipt.discarded_memory_items, items);
+    deliver_finished_runs(&state, "loupist-a").unwrap();
+    let home = ensure_home_thread(&state, "loupist-a").unwrap();
+    let post = home
+        .messages
+        .iter()
+        .find(|message| {
+            message
+                .delivery
+                .as_ref()
+                .is_some_and(|delivery| delivery.run_id == receipt.run_id)
+        })
+        .unwrap();
+    assert_eq!(
+        post.delivery.as_ref().unwrap().memory_save_skip,
+        receipt.memory_save_skip
+    );
+    assert!(post.delivery.as_ref().unwrap().learned.is_none());
+    assert_eq!(
+        post.delivery.as_ref().unwrap().discarded_memory_items,
+        items
+    );
+    assert!(post.memory_update.is_none());
 }
 
 #[test]

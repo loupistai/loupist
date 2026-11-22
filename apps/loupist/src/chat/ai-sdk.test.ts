@@ -242,7 +242,7 @@ describe("native stream transport", () => {
     const refusal = { code: "attachment_too_large", message: "deck.pdf is larger than 25 MB" };
     const stream = await transport(async () => { throw refusal; }).sendMessages({ ...request, body: { ...body, onAdmission } });
     await expect(stream.getReader().read()).rejects.toThrow("Each file must be 25 MB or smaller");
-    expect(onAdmission).toHaveBeenCalledExactlyOnceWith({ accepted: false, error: "Each file must be 25 MB or smaller. Remove the larger file and send again." });
+    expect(onAdmission).toHaveBeenCalledExactlyOnceWith({ accepted: false, code: "attachment_too_large", error: "Each file must be 25 MB or smaller. Remove the larger file and send again." });
   });
 
   it("keeps an accepted run accepted when a later transport promise fails", async () => {
@@ -350,6 +350,23 @@ describe("native stream transport", () => {
 });
 
 describe("reconciling with the saved Chat", () => {
+  it("keeps unsaved live text across refreshes of the matching failure placeholder", () => {
+    const placeholder: ChatMessage = {
+      id: "failed-write", role: "assistant", status: "error", failure_kind: "store_failed",
+      content: "Response could not be completed.", placeholder: true, created_at: "2026-11-13T00:00:00Z",
+    };
+    const live = toLoupistUIMessage({ ...placeholder, placeholder: false, content: "The generated answer." });
+    live.metadata = { ...live.metadata!, final_text: "The generated answer." };
+    const refreshed = fromStoreKeepingAnswers([live], [placeholder]);
+    const stillOpen = fromStoreKeepingAnswers(refreshed, [placeholder]);
+    expect(fromLoupistUIMessage(stillOpen[0]!)).toMatchObject({
+      content: "The generated answer.", status: "error", failure_kind: "store_failed",
+    });
+    expect(fromLoupistUIMessage(stillOpen[0]!).placeholder).toBeUndefined();
+    const reopened = fromStoreKeepingAnswers([], [placeholder]);
+    expect(fromLoupistUIMessage(reopened[0]!)).toMatchObject(placeholder);
+  });
+
   it("keeps the ids of messages already on screen, so a stopped turn does not remount or move", () => {
     const asked: LoupistUIMessage = { id: "client-user-1", role: "user", parts: [{ type: "text", text: "Explain margins." }] };
     const answering: LoupistUIMessage = { id: "client-assistant-1", role: "assistant", metadata: { status: "streaming", answer_key: "answer-1" }, parts: [{ type: "text", text: "Margins" }] };

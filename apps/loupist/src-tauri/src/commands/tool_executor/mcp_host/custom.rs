@@ -35,6 +35,12 @@ fn failure(error: ConnectionError, connection_id: &str, tool_name: &str) -> Brok
             connection_id: connection_id.into(),
             tool_name: tool_name.into(),
         },
+        ConnectionError::Unavailable => BrokerError::MethodDenied,
+        ConnectionError::InvalidArguments => super::errors::invalid_mcp_arguments(),
+        ConnectionError::KeychainBusy | ConnectionError::KeychainMutationPending => {
+            BrokerError::KeychainBusy
+        }
+        ConnectionError::KeychainUnavailable => BrokerError::KeychainUnavailable,
         _ => BrokerError::Execution(error.to_string()),
     }
 }
@@ -83,14 +89,19 @@ impl AppToolExecutor {
     }
 
     pub(super) async fn custom_mcp_connect(&self, id: &str) -> Result<Value, BrokerError> {
-        if !self.capability_ids.contains(id) {
+        if !crate::extension_availability::custom_connections() || !self.capability_ids.contains(id)
+        {
             return Err(BrokerError::MethodDenied);
         }
         self.capture
             .turn_taint
             .enforce(ToolMethod::McpConnect, &json!({"server_id": id}))?;
         let manager = service::for_state(&self.state).map_err(|e| failure(e, id, ""))?;
-        let mut service = manager.lock().await;
+        let _outbound = self.capture.turn_taint.custom_outbound.lock().await;
+        self.capture
+            .turn_taint
+            .enforce(ToolMethod::McpConnect, &json!({"server_id": id}))?;
+        let mut service = manager.for_connection(id).map_err(|e| failure(e, id, ""))?;
         let tools = service
             .connect(
                 &self.loupist_id,
@@ -107,7 +118,9 @@ impl AppToolExecutor {
         request: McpToolCallRequest,
         delivery_id: &str,
     ) -> Result<Value, BrokerError> {
-        if !self.capability_ids.contains(&request.server_id) {
+        if !crate::extension_availability::custom_connections()
+            || !self.capability_ids.contains(&request.server_id)
+        {
             return Err(BrokerError::MethodDenied);
         }
         // The custom tier pauses a call only when the request names its
@@ -118,8 +131,11 @@ impl AppToolExecutor {
             .enforce(ToolMethod::McpCall, &target)?;
         let manager = service::for_state(&self.state)
             .map_err(|e| failure(e, &request.server_id, &request.tool_name))?;
-        let mut service = manager.lock().await;
-        // Recheck after acquiring the connection lock: concurrent custom calls
+        let mut outbound = self.capture.turn_taint.custom_outbound.lock().await;
+        let mut service = manager
+            .for_connection(&request.server_id)
+            .map_err(|e| failure(e, &request.server_id, &request.tool_name))?;
+        // Recheck after acquiring the turn gate: concurrent custom calls
         // must not dispatch after an earlier result has tainted this turn.
         self.capture
             .turn_taint
@@ -141,8 +157,12 @@ impl AppToolExecutor {
         if matches!(result, Err(ConnectionError::ApprovalRequired)) {
             if let Some(card) = self.approvable_tool(&connection, &request.tool_name) {
                 drop(service);
+                drop(outbound);
                 let answer = self.wait_for_approval(&connection, &request, &card).await;
-                service = manager.lock().await;
+                outbound = self.capture.turn_taint.custom_outbound.lock().await;
+                service = manager
+                    .for_connection(&request.server_id)
+                    .map_err(|e| failure(e, &request.server_id, &request.tool_name))?;
                 self.capture
                     .turn_taint
                     .enforce(ToolMethod::McpCall, &target)?;
@@ -240,6 +260,10 @@ impl AppToolExecutor {
             connection.dont_save_to_memory,
         );
         drop(service);
+        drop(outbound);
+        if let Some(error) = super::errors::rejected_custom_arguments(&result) {
+            return Err(error);
+        }
         if !result.is_object() {
             return Err(BrokerError::Malformed);
         }
@@ -307,6 +331,22 @@ mod tests {
         assert!(matches!(
             card_answer(AskOutcome::Unasked),
             CardAnswer::Unasked
+        ));
+    }
+    #[test]
+    fn custom_keychain_failures_keep_the_model_recovery_contract() {
+        for error in [
+            ConnectionError::KeychainBusy,
+            ConnectionError::KeychainMutationPending,
+        ] {
+            assert!(matches!(
+                failure(error, "fixture", ""),
+                BrokerError::KeychainBusy
+            ));
+        }
+        assert!(matches!(
+            failure(ConnectionError::KeychainUnavailable, "fixture", ""),
+            BrokerError::KeychainUnavailable
         ));
     }
 }

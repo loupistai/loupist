@@ -142,6 +142,7 @@ impl AppToolExecutor {
                 format!("one of these connections: {}", candidates_text(&candidates)),
             )
         })?;
+        self.require_saved_key_permission(&entry.id)?;
         let state = setup_state(&self.state, &self.loupist_id, entry)?;
         Ok(json!({
             "status": "card_shown",

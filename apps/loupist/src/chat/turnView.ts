@@ -13,7 +13,8 @@ import type {
   MemoryRef,
   NumberCheck,
 } from "../types";
-import { citationSources, sourceIdentityLabel } from "./evidence";
+import { answerSources, type AnswerSource } from "./answerSources";
+import { citationSources, evidenceProvenance, sourceIdentityLabel } from "./evidence";
 import { exactMemoryReads, isInlineWorkEvidence } from "./memoryActivity";
 import { readNoun } from "./progressLabels";
 import { actionLabel, isActionItem, visibleTarget, withoutIdentifiers } from "./runStatus";
@@ -33,6 +34,7 @@ type ActionItem = Extract<ChatProgressItem, { kind: "tool" | "system" }>;
 
 export type TurnInput = {
   message: ChatMessage;
+  customConnections?: boolean;
   now: number;
   /** When the host last reported a step, phase, plan or approval change; streamed text does not count. */
   lastActivityAt: number;
@@ -53,6 +55,7 @@ export type TurnState =
   /** An approval or a question waits for the user. */
   | { kind: "awaiting_approval" }
   | { kind: "stopping" }
+  | { kind: "saving" }
   | { kind: "complete" }
   | { kind: "stopped"; kept: "steps_and_text" | "steps_and_draft" | "steps" | "text" | "draft" | "nothing" }
   /** A busy answer counting down to its own retry (`retryPending`) has not failed yet. */
@@ -111,7 +114,7 @@ export type TurnSegment =
       /** Calculations and queries whose result opens inline under the step. */
       evidence: ChatEvidenceRef[];
       /** Distinct citation subjects the turn's steps read. */
-      sources: ChatEvidenceRef[];
+      sources: AnswerSource[];
       memoryReads: MemoryRef[];
       live: boolean;
     }
@@ -130,7 +133,7 @@ export type TurnFooter =
   | {
       kind: "settled";
       /** Distinct citation subjects of the whole answer, numbered in this order. */
-      sources: ChatEvidenceRef[];
+      sources: AnswerSource[];
       /**
        * What Copy copies: every note left on the page and the answer, in the
        * order the page shows them; null when the page shows no prose.
@@ -261,11 +264,16 @@ function ledgerChips(actions: ActionItem[], evidenceById: Map<string, ChatEviden
   };
   for (const item of actions) {
     if (item.status !== "succeeded" || item.kind !== "tool") continue;
-    const sources = citationSources((item.resultIds ?? []).flatMap((id) => evidenceById.get(id) ?? []));
+    const attached = (item.resultIds ?? []).flatMap(id => evidenceById.get(id) ?? []);
+    const citations = new Set(citationSources(attached).map(source => source.id));
+    const sources = attached.filter(source => source.memory_origin || citations.has(source.id));
     if (sources.length) {
       for (const source of sources) {
         // Saved notes read through a citation are the notes, never a product name.
-        if (source.tool_name.startsWith("world_")) add({ key: `memory:${item.id}`, kind: "memory", label: capitalized(readNoun("world_read")) });
+        if (source.memory_origin) {
+          const origin = evidenceProvenance(source);
+          add({ key: `source:${source.id}`, kind: "source", label: origin.attribution || origin.route || origin.name, evidence: source });
+        } else if (source.tool_name.startsWith("world_")) add({ key: `memory:${item.id}`, kind: "memory", label: capitalized(readNoun("world_read")) });
         else add({ key: `source:${source.id}`, kind: "source", label: sourceIdentityLabel(source), evidence: source });
       }
       continue;
@@ -329,16 +337,17 @@ function stoppedLabel(kept: Extract<TurnState, { kind: "stopped" }>["kept"], ite
   }
 }
 
-function deriveState({ message, stopping, retry, holding }: TurnInput, content: string): TurnState {
+function deriveState({ message, stopping, retry, holding, customConnections }: TurnInput, content: string): TurnState {
   const progress = message.progress;
   if (message.status === "error") {
     const retryPending = message.failure_kind === "rate_limited" && retry.offered && retry.attempt <= BUSY_RETRY_SECONDS.length;
     return { kind: "failed", failure: message.failure_kind ?? "other", retryPending };
   }
   if (message.status === "aborted") return { kind: "stopped", kept: keptByStop(message, content) };
+  if (message.memorySaving) return { kind: "saving" };
   if (message.status !== "streaming" && !holding) return { kind: "complete" };
   if (stopping) return { kind: "stopping" };
-  if ((progress?.approvals ?? []).some((approval) => approval.state === "waiting")
+  if ((customConnections && (progress?.approvals ?? []).some((approval) => approval.state === "waiting"))
     || (progress?.questions ?? []).some((question) => question.state === "waiting")) return { kind: "awaiting_approval" };
   return { kind: "running" };
 }
@@ -476,8 +485,10 @@ function runState(state: TurnState, { message, retry }: TurnInput, content: stri
   if (state.kind === "stopped") return { kind: "stopped", label: stoppedLabel(state.kept, message.progress?.items ?? []) };
   if (state.kind !== "failed") return null;
   const retryInSeconds = state.retryPending ? message.retry_after_seconds ?? BUSY_RETRY_SECONDS[retry.attempt - 1] ?? BUSY_RETRY_SECONDS[0] : undefined;
-  const kept = (message.progress?.items ?? []).some((item) => isCounted(item) && item.status === "succeeded")
-    || Boolean(content.trim() && !isFailurePlaceholder(message));
+  const kept = state.failure !== "store_failed" && (
+    (message.progress?.items ?? []).some((item) => isCounted(item) && item.status === "succeeded")
+    || Boolean(content.trim() && !isFailurePlaceholder(message))
+  );
   return { kind: "failed", failure: state.failure, retryInSeconds, kept };
 }
 
@@ -485,12 +496,12 @@ function status(input: TurnInput) {
   const { message } = input;
   const content = visibleMessageContent(message);
   const state = deriveState(input, content);
-  const footer: TurnFooter = state.kind === "complete" || state.kind === "stopped" || state.kind === "failed"
+  const footer: TurnFooter = state.kind === "complete" || state.kind === "saving" || state.kind === "stopped" || state.kind === "failed"
     ? {
         kind: "settled",
-        sources: citationSources(message.evidence_refs ?? []),
+        sources: answerSources(message),
         copyText: content && !isFailurePlaceholder(message) ? content : null,
-        feedback: state.kind === "complete",
+        feedback: state.kind === "complete" || state.kind === "saving",
         runState: runState(state, input, content),
       }
     : { kind: "live", line: liveLine(state, input, content), sinceMs: startedAt(message) };
@@ -524,7 +535,7 @@ export function deriveTurnView(input: TurnInput): TurnView {
   const progress = message.progress;
   const startedAtMs = startedAt(message);
   const items = progress?.items ?? [];
-  const streaming = message.status === "streaming";
+  const streaming = message.status === "streaming" && state.kind !== "saving";
   const running = footer.kind === "live";
   const evidenceRefs = message.evidence_refs ?? [];
   const lastItem = items.at(-1);
@@ -561,7 +572,7 @@ export function deriveTurnView(input: TurnInput): TurnView {
     return ledger;
   };
   const questions = progress?.questions ?? [];
-  const approvals = progress?.approvals ?? [];
+  const approvals = (progress?.approvals ?? []).filter(approval => input.customConnections || approval.state !== "waiting");
   const placed = new Set<string>();
   const placeAsks = (itemId: string) => {
     for (const question of questions) if (question.itemId === itemId && !placed.has(question.requestId)) {
@@ -609,10 +620,10 @@ export function deriveTurnView(input: TurnInput): TurnView {
   if (ledger) {
     // The turn's numbered sources, the list the footer's Sources (n) and the activity sheet show,
     // so the receipt counts the same thing; a source no step's results name is still one the answer cites.
-    ledger.sources = citationSources(evidenceRefs);
+    ledger.sources = footer.kind === "settled" ? footer.sources : answerSources(message);
     ledger.evidence = evidenceRefs.filter((result) => isInlineWorkEvidence(result, message.memory_refs));
     const durationMs = progress?.finishedAtMs != null ? progress.finishedAtMs - startedAtMs : message.performance?.totalMs;
-    ledger.ledger = ledgerView(ledger, state, running, durationMs, evidenceRefs);
+    ledger.ledger = ledgerView(ledger, state, running || state.kind === "saving", durationMs, evidenceRefs);
   }
   if (!liveDraft && content && !isFailurePlaceholder(message)) {
     pushProse({ kind: "prose", key: answerKey ?? "answer", text: content, tone: "answer", streaming, checks: message.number_checks });

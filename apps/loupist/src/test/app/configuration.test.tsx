@@ -118,7 +118,7 @@ it("keeps appearance current after connector configuration is saved with applica
 
 it("turns Skill Creator on for that Loupist and drafts without sending", async () => {
   const user = userEvent.setup();
-  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const bridge = new MockLoupistBridge({ delay_ms: 0, userSkillsAvailable: true });
   const chatSend = vi.spyOn(bridge, "chatSend");
   const update = vi.spyOn(bridge, "configUpdate");
   await openApp(bridge);
@@ -132,7 +132,7 @@ it("turns Skill Creator on for that Loupist and drafts without sending", async (
 
 it("drafts a Skill in the chosen available Loupist when the current Loupist is disconnected", async () => {
   const user = userEvent.setup();
-  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const bridge = new MockLoupistBridge({ delay_ms: 0, userSkillsAvailable: true });
   const listed = await bridge.loupistList();
   const unavailable = { status: "workspace_unavailable" as const };
   vi.spyOn(bridge, "loupistList").mockResolvedValue(listed.map((loupist) => loupist.id === "loupist-quality" ? { ...loupist, availability: unavailable } : loupist));

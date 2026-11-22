@@ -20,6 +20,16 @@ it("writes a Markdown transcript with roles, times, citations as footnotes and t
   expect(markdown.trim().split("\n").at(-1)).toBe("_AI can be wrong. Not a licensed financial adviser._");
 });
 
+it("attributes the opening brief to Bot and quotes every line of the user's original message", () => {
+  const at = "2026-11-19T08:00:00Z";
+  const thread: ChatThread = { id: "research", loupist_id: "owner", title: "Chip margins", updated_at: at, use_memory: true, update_memory: true,
+    messages: [{ id: "opening", role: "bot_handoff", content: "**Check margins.**", created_at: at, handoff_note: { title: "Chip margins", userMessageInBot: "Then go ahead.\nJust chips." } }] };
+  const markdown = chatMarkdown(thread, "Quality");
+  expect(markdown).toContain("## From Bot · ");
+  expect(markdown).toContain("**Check margins.**\n\nYou said in Bot\n\n> Then go ahead.\n> Just chips.");
+  expect(markdown).not.toContain("## You");
+});
+
 it("names a scheduled run's request by its task, and leaves the briefing's host request out", () => {
   const at = "2026-11-19T08:00:00Z";
   const thread = (kind: string, title: string, content: string): ChatThread => ({

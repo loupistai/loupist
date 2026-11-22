@@ -34,7 +34,7 @@ research. A later follow that matches the asset follows the same ID again
 from that time. The host emits `assets-changed` when a follow or stored
 price changes; each surface reads its own Loupist's list again.
 
-Each Loupist's Map receives immutable “What you follow” Sources with
+Each Loupist's World receives immutable “What you follow” Sources with
 provider `loupist:followed`, listing that Loupist's follows by name with
 reference tickers when present. Each Source gets an ordinary World job.
 Source synthesis runs when the Loupist opens and after a short burst of
@@ -46,7 +46,7 @@ appears in an earlier Source adds no duplicate Source.
 Following is a search field and the selected Loupist's followed assets (`assets_list`), in one column under
 the shell header, which is the page's only title (`src/components/briefings/FollowingPage.tsx`).
 The list is read again on its own follows and removals and on every `assets-changed`. A row is
-the asset's one name (`useAssetNames` over the saved name), its reference fields as stored
+the asset's one name (`useAssetNames` over the saved name), its listing reference
 (`TICKER · exchange · security type`, or "Name only" for an asset followed by name), and a
 visible Stop following (`asset_unfollow` by `assetId` at once, no confirmation; a failure keeps
 the row with a retry). The name opens the asset page by `assetId`. Rows sort by name. The row shows the latest stored price when available. The list reads
@@ -65,10 +65,16 @@ and debt. Regional listings with the same OpenFIGI composite identity share one 
 OpenFIGI returns the composite listing, it represents the group. Different issuers and country
 listings stay separate. Each result shows its name and `ticker · exchange · security type`; a
 readable exchange name takes precedence over the code in search results, followed rows
-and the command palette. Following preserves the host’s lookup order. A listing already
+and the command palette. When a response omits the name, the host consults the bundled
+OpenFIGI equity exchange directory. Unknown codes and codes shared by multiple venues
+keep the name unset. Following localizes known security types. Following, the command
+palette, the asset header, its price Source dialog and the followed asset's World
+inspector use the exchange directory's ISO code to display country labels in the
+interface language. Provider venue names and unknown security types display as supplied.
+Following preserves the host’s lookup order. A listing already
 shown among local results by FIGI appears there once. Picking a candidate calls
 `asset_follow_name` with the candidate's name and its FIGI, ticker, exchange code, available exchange name and security type
-as the reference; Follow as typed calls it with the trimmed text and no reference. The host starts
+as the reference; Follow as typed calls it with the trimmed text and no reference. With an AI account, the host can start
 one short delegated run per burst of follows to find each new asset's saved read. The field
 clears, the followed row comes into view and
 the follow is announced; a failure keeps the query and results with a retry. Down and Up move

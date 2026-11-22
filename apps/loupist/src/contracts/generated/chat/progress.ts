@@ -20,6 +20,7 @@ export type ChatProgress = {
   startedAtMs: number,
   finishedAtMs: number | null,
   items: Array<ChatProgressItem>,
+  saveActivity?: ChatSaveActivity,
   /** The agent's short checklist for multi-step work (`plan_update`); absent for ordinary runs. */
   plan?: ChatPlan,
   /** Approvals this reply asked for (composer spec D3), in request order. */
@@ -58,6 +59,7 @@ export type ChatProgressItem =
     source?: ChatProgressSource,
     summary?: string,
     resultIds?: Array<string>,
+    writtenPaths?: Array<string>,
     /** World names this step's acknowledged reads delivered. Host-attributed, never model input. */
     entityIds?: Array<string>,
     outputRevision?: number,
@@ -130,6 +132,13 @@ export type ChatProgressSourceKind =
   | "capability";
 
 export type ChatProgressStatus = "running" | "succeeded" | "failed" | "stopped" | "skipped";
+
+export type ChatSaveActivity = {
+  startedAtMs: number,
+  finishedAtMs: number | null,
+  waitedMs: number,
+  blockingChatId?: string,
+};
 
 /** A fixed presentation category; remote diagnostics never become UI copy. */
 export type ChatStepFailureReason =

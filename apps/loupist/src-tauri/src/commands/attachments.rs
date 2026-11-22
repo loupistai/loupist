@@ -546,7 +546,7 @@ pub(super) fn handoff_note_for_model(message: &ChatMessage) -> Option<serde_json
     let note = message.handoff_note.as_ref()?;
     Some(if message.handoff_action.is_some() {
         json!({
-            "map_link": delimited(note.brief.as_deref()?, "Map link", note.untrusted_id.as_deref()?)
+            "map_link": delimited(note.brief.as_deref()?, "World link", note.untrusted_id.as_deref()?)
         })
     } else {
         let mut body = json!({"title": note.title, "question": note.question.as_ref()?});

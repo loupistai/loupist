@@ -23,13 +23,13 @@ pub(crate) mod handoff_fixture;
 pub(crate) mod knowledge;
 pub(crate) mod legacy_holdings;
 pub(crate) mod loupist;
-mod memory_updates;
 pub(crate) mod power;
 pub(crate) mod questions;
 pub(crate) mod records;
 pub(crate) mod scheduled_tasks;
 pub(crate) mod skills;
 mod tool_executor;
+pub(crate) use tool_executor::number_checks::replay::ReplayCache;
 pub(crate) use tool_executor::prewarm_market_data;
 pub mod types;
 pub(crate) mod workspace;
@@ -199,6 +199,7 @@ pub(crate) fn loupist_configuration(
 #[derive(Clone, Debug)]
 pub(crate) struct ChatConnectorAuthority {
     pub(crate) capability_ids: Vec<String>,
+    pub(crate) saved_keys_needing_permission: std::collections::BTreeSet<String>,
     pub(crate) sha256: String,
     pub(crate) cacheable: bool,
 }
@@ -292,72 +293,90 @@ pub(crate) fn capture_chat_connector_authority(
     loupist_id: &str,
 ) -> Result<ChatConnectorAuthority, CommandError> {
     crate::marketplace::with_connector_lifecycle(state, || {
-        let bindings =
-            crate::marketplace::loupist_bindings(state, loupist_id).map_err(map_store)?;
-        let capability_ids =
-            enabled_execute_capability_ids_from_bindings(state, loupist_id, &bindings)?;
-        let binding_seals = bindings
-            .into_iter()
-            .map(|binding| {
-                let execute = binding_grants_execute(&binding);
-                ChatConnectorBindingSeal {
-                    entry_id: binding.entry_id,
-                    enabled: binding.enabled,
-                    execute,
-                    updated_at_ms: binding.updated_at_ms,
-                }
-            })
-            .collect::<Vec<_>>();
-        let catalog = crate::marketplace::bundled_catalog()?;
-        let mut cacheable = !capability_ids
+        read_chat_connector_authority(state, loupist_id)
+    })
+}
+
+fn read_chat_connector_authority(
+    state: &AppState,
+    loupist_id: &str,
+) -> Result<ChatConnectorAuthority, CommandError> {
+    let bindings = crate::marketplace::loupist_bindings(state, loupist_id).map_err(map_store)?;
+    let saved_keys_needing_permission: std::collections::BTreeSet<_> = bindings
+        .iter()
+        .filter(|binding| {
+            binding.enabled
+                && binding_grants_execute(binding)
+                && crate::finance_credentials::needs_permission(state, &binding.entry_id)
+        })
+        .map(|binding| binding.entry_id.clone())
+        .collect();
+    let mut capability_ids =
+        enabled_execute_capability_ids_from_bindings(state, loupist_id, &bindings)?;
+    capability_ids.retain(|id| !saved_keys_needing_permission.contains(id));
+    let binding_seals = bindings
+        .into_iter()
+        .map(|binding| {
+            let execute = binding_grants_execute(&binding);
+            ChatConnectorBindingSeal {
+                entry_id: binding.entry_id,
+                enabled: binding.enabled,
+                execute,
+                updated_at_ms: binding.updated_at_ms,
+            }
+        })
+        .collect::<Vec<_>>();
+    let catalog = crate::marketplace::bundled_catalog()?;
+    let mut cacheable = saved_keys_needing_permission.is_empty()
+        && !capability_ids
             .iter()
             .any(|id| crate::custom_connections::service::valid_id(id));
-        let connector_seals = catalog
-            .entries
-            .into_iter()
-            .map(|entry| {
-                let config_revision =
-                    match crate::marketplace::connector_config::connector_config_revision(
-                        state, &entry.id,
-                    ) {
-                        Ok(revision) => revision,
-                        // A malformed or unreadable dormant connector must never
-                        // keep an old Pi cache alive, but it need not prevent a
-                        // Chat that does not execute that connector.
-                        Err(_) => {
-                            cacheable = false;
-                            crate::marketplace::connector_config::ConnectorConfigRevision::Unreadable
-                        }
-                    };
-                if !config_revision.is_cacheable() {
-                    cacheable = false;
-                }
-                let active_credential_revision =
-                    match crate::finance_credentials::active_revision(&state.credential_environment, &entry.id) {
-                        Ok(revision) => revision,
-                        Err(_) => {
-                            cacheable = false;
-                            None
-                        }
-                    };
-                ChatConnectorSeal {
-                    entry_id: entry.id,
-                    config_revision,
-                    active_credential_revision,
-                }
-            })
-            .collect::<Vec<_>>();
-        let mut seal = ChatConnectorAuthoritySeal {
-            version: CHAT_CONNECTOR_AUTHORITY_SEAL_VERSION,
-            bindings: binding_seals,
-            connectors: connector_seals,
-        };
-        canonicalize_chat_connector_authority_seal(&mut seal);
-        Ok(ChatConnectorAuthority {
-            capability_ids,
-            sha256: chat_connector_authority_sha256(&seal)?,
-            cacheable,
+    let connector_seals = catalog
+        .entries
+        .into_iter()
+        .map(|entry| {
+            let config_revision =
+                match crate::marketplace::connector_config::connector_config_revision(
+                    state, &entry.id,
+                ) {
+                    Ok(revision) => revision,
+                    // A malformed or unreadable dormant connector must never
+                    // keep an old Pi cache alive, but it need not prevent a
+                    // Chat that does not execute that connector.
+                    Err(_) => {
+                        cacheable = false;
+                        crate::marketplace::connector_config::ConnectorConfigRevision::Unreadable
+                    }
+                };
+            if !config_revision.is_cacheable() {
+                cacheable = false;
+            }
+            let active_credential_revision =
+                match crate::finance_credentials::revision_for_state(state, &entry.id) {
+                    Ok(revision) => revision,
+                    Err(_) => {
+                        cacheable = false;
+                        None
+                    }
+                };
+            ChatConnectorSeal {
+                entry_id: entry.id,
+                config_revision,
+                active_credential_revision,
+            }
         })
+        .collect::<Vec<_>>();
+    let mut seal = ChatConnectorAuthoritySeal {
+        version: CHAT_CONNECTOR_AUTHORITY_SEAL_VERSION,
+        bindings: binding_seals,
+        connectors: connector_seals,
+    };
+    canonicalize_chat_connector_authority_seal(&mut seal);
+    Ok(ChatConnectorAuthority {
+        capability_ids,
+        saved_keys_needing_permission,
+        sha256: chat_connector_authority_sha256(&seal)?,
+        cacheable,
     })
 }
 

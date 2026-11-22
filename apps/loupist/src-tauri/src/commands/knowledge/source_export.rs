@@ -114,6 +114,7 @@ pub(super) fn export_bytes(
             purpose: request.purpose.clone(),
             world_record_id: request.world_record_id.clone(),
             world_revision_id: request.world_revision_id.clone(),
+            figure: None,
         },
     )?;
     let span_id = request

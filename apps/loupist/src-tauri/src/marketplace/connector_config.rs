@@ -17,7 +17,7 @@ use super::{
         MarketplaceSetupFieldDto, MarketplaceSetupFieldKind,
     },
     connector_lifecycle_lock, connector_ready, connector_status,
-    credentials::disable_bindings_and_delete_credentials_locked,
+    credentials::{credential_store_error, disable_bindings_locked},
     enable_ready_bindings_locked, ensure_installable,
 };
 
@@ -176,7 +176,12 @@ pub(super) fn read_connector_config(
         .store
         .applied_connector_config(entry_id)
         .map_err(crate::commands::map_store)?;
-    if applied.as_ref() != Some(&current) {
+    if applied.as_ref() != Some(&current)
+        || state
+            .store
+            .connector_scope_pending(entry_id)
+            .map_err(crate::commands::map_store)?
+    {
         return Err(CommandError::new(
             "config_apply_pending",
             "Connector configuration changed and must be reconciled before use",
@@ -234,7 +239,13 @@ pub(super) fn reconcile_connector_configs_locked(
             if entry.id == crate::finance_data::KIS_SOURCE_ID {
                 state.finance_data.invalidate_kis_token_cache();
             }
-            disable_bindings_and_delete_credentials_locked(state, &entry.id, guard)?;
+            // Remember revocation even if an external editor restores the old
+            // file while deletion is waiting. No startup Keychain I/O.
+            state
+                .store
+                .note_connector_scope_change(&entry.id)
+                .map_err(crate::commands::map_store)?;
+            continue;
         }
         // External editors do not hold our mutex. Never attest stale bytes.
         if digests(entry, &raw_config(state, &entry.id)?)? != next {
@@ -270,6 +281,65 @@ pub(super) fn reconcile_connector_configs_locked(
         }
     }
     Ok(())
+}
+
+pub(crate) fn apply_pending_credential_scope(
+    state: &AppState,
+    entry: &MarketplaceEntryDto,
+) -> Result<(), CommandError> {
+    let pending_scope = |state: &AppState, entry: &MarketplaceEntryDto| {
+        let next = digests(entry, &raw_config(state, &entry.id)?)?;
+        let previous = state
+            .store
+            .applied_connector_config(&entry.id)
+            .map_err(crate::commands::map_store)?
+            .unwrap_or(digests(entry, &BTreeMap::new())?);
+        let pending = state
+            .store
+            .connector_scope_pending(&entry.id)
+            .map_err(crate::commands::map_store)?;
+        Ok::<_, CommandError>(
+            (pending || previous.scope_digest != next.scope_digest).then_some(next),
+        )
+    };
+    {
+        let guard = connector_lifecycle_lock()?;
+        reconcile_connector_configs_locked(state, &guard)?;
+        if pending_scope(state, entry)?.is_none() {
+            return Ok(());
+        }
+    }
+    let item = entry.clone();
+    crate::finance_credentials::mutate(state, &entry.id, move |state, id| {
+        let preparation = (|| {
+            let guard = connector_lifecycle_lock()?;
+            let Some(next) = pending_scope(state, &item)? else {
+                return Ok(None);
+            };
+            disable_bindings_locked(state, id, &guard)?;
+            Ok(Some(next))
+        })();
+        let next = match preparation {
+            Ok(Some(next)) => next,
+            Ok(None) => return Ok(Ok(())),
+            Err(error) => return Ok(Err(error)),
+        };
+        crate::finance_credentials::delete(&state.credential_environment, id)?;
+        let published = (|| {
+            let _guard = connector_lifecycle_lock()?;
+            if digests(&item, &raw_config(state, id)?)? != next {
+                return Err(CommandError::conflict(
+                    "connector configuration changed while it was being applied",
+                ));
+            }
+            state
+                .store
+                .finish_connector_scope_change(id, &next)
+                .map_err(crate::commands::map_store)
+        })();
+        Ok(published)
+    })
+    .map_err(credential_store_error)?
 }
 
 pub(crate) fn connector_config_value(
@@ -315,19 +385,14 @@ pub async fn marketplace_connector_configure(
     request: MarketplaceConnectorConfigureRequest,
     state: State<'_, AppState>,
 ) -> Result<MarketplaceConnectorStatusDto, CommandError> {
-    configure_connector(request, &state)
+    crate::app::off_main_thread(&state, move |state| configure_connector(request, state)).await
 }
 
 pub(crate) fn configure_connector(
     request: MarketplaceConnectorConfigureRequest,
     state: &AppState,
 ) -> Result<MarketplaceConnectorStatusDto, CommandError> {
-    let _activity = state
-        .maintenance
-        .admit_kind(MaintenanceActivityKind::MarketplaceConfiguration)?;
     ensure_installable(&request.entry_id)?;
-    let guard = connector_lifecycle_lock()?;
-    reconcile_connector_configs_locked(state, &guard)?;
     let catalog = bundled_catalog()?;
     let entry = catalog
         .entries
@@ -343,13 +408,21 @@ pub(crate) fn configure_connector(
             "connector configuration does not match its setup contract",
         ));
     }
-    let was_ready = connector_ready(entry, state)?;
-    crate::scoped_config::write_global_connector_settings(
-        &state.artifacts.app_data_dir,
-        &request.entry_id,
-        &request.config,
-    )?;
-    reconcile_connector_configs_locked(state, &guard).map_err(|error| {
+    let was_ready = {
+        let _activity = state
+            .maintenance
+            .admit_kind(MaintenanceActivityKind::MarketplaceConfiguration)?;
+        let guard = connector_lifecycle_lock()?;
+        reconcile_connector_configs_locked(state, &guard)?;
+        let was_ready = connector_ready(entry, state)?;
+        crate::scoped_config::write_global_connector_settings(
+            &state.artifacts.app_data_dir,
+            &request.entry_id,
+            &request.config,
+        )?;
+        was_ready
+    };
+    apply_pending_credential_scope(state, entry).map_err(|error| {
         CommandError::new(
             "config_apply_pending",
             format!(
@@ -358,6 +431,7 @@ pub(crate) fn configure_connector(
             ),
         )
     })?;
+    let guard = connector_lifecycle_lock()?;
     let status = connector_status(entry, state)?;
     if !was_ready && status.readiness == MarketplaceConnectorReadiness::Ready {
         enable_ready_bindings_locked(state, &request.entry_id, &guard)?;
@@ -488,28 +562,47 @@ mod tests {
     }
 
     #[test]
-    fn changed_scope_is_denied_before_reconciliation_and_recovered_on_restart() {
-        let temporary = tempfile::tempdir().unwrap();
-        let root = temporary.path().join("app");
-        let state = AppState::for_persistent_test(root.clone());
-        let id = crate::finance_data::KIS_SOURCE_ID;
-        configure(&state, id, "environment", "real");
-        verify_fixture_credential(&state);
-        let environment = state.credential_environment.clone();
-        crate::scoped_config::write_global_connector_settings(&root, id, &kis_config("demo"))
-            .unwrap();
-        assert_eq!(
-            read_connector_config(&state, id).unwrap_err().code,
-            "config_apply_pending"
-        );
-        state.close_for_restart_test();
-        let restarted = AppState::for_persistent_test(root);
-        assert_eq!(restarted.credential_environment, environment);
-        assert_eq!(
-            read_connector_config(&restarted, id).unwrap(),
-            kis_config("demo")
-        );
-        assert!(!has_active_credential(&environment, id));
+    fn startup_records_scope_changes_without_accessing_the_credential_store() {
+        crate::extension_availability::with_test_flags(false, false, || {
+            let temporary = tempfile::tempdir().unwrap();
+            let root = temporary.path().join("app");
+            let state = AppState::for_persistent_test(root.clone());
+            let id = crate::finance_data::KIS_SOURCE_ID;
+            configure(&state, id, "environment", "real");
+            verify_fixture_credential(&state);
+            let environment = state.credential_environment.clone();
+            crate::scoped_config::write_global_connector_settings(&root, id, &kis_config("demo"))
+                .unwrap();
+            assert_eq!(
+                read_connector_config(&state, id).unwrap_err().code,
+                "config_apply_pending"
+            );
+            let before = crate::finance_credentials::test_store::backend_calls(&environment);
+            state.close_for_restart_test();
+            let restarted = AppState::for_persistent_test(root);
+            assert_eq!(
+                crate::finance_credentials::test_store::backend_calls(&environment),
+                before
+            );
+            assert_eq!(restarted.credential_environment, environment);
+            assert_eq!(
+                read_connector_config(&restarted, id).unwrap_err().code,
+                "config_apply_pending"
+            );
+            assert!(has_active_credential(&environment, id));
+            let entry = bundled_catalog()
+                .unwrap()
+                .entries
+                .into_iter()
+                .find(|entry| entry.id == id)
+                .unwrap();
+            apply_pending_credential_scope(&restarted, &entry).unwrap();
+            assert_eq!(
+                read_connector_config(&restarted, id).unwrap(),
+                kis_config("demo")
+            );
+            assert!(!has_active_credential(&environment, id));
+        });
     }
 
     #[test]

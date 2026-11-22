@@ -883,7 +883,7 @@ impl Inner {
             .admit_activity_when_available(MaintenanceBlocker {
                 id: format!("graph-{}", job.job_id),
                 kind: "graph".into(),
-                label: "Knowledge map processing".into(),
+                label: "World building".into(),
             })
             .await
             .map_err(|_| KnowledgeError::Invalid("graph activity gate is unavailable"))?;

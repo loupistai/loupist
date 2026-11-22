@@ -29,13 +29,14 @@ const reconnectFolder = async (user: ReturnType<typeof userEvent.setup>) => {
 it.each(["empty", "cached without credentials"])("keeps saved research readable with %s models and no connected account", async (modelState) => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const catalog = await bridge.modelCatalogGet();
+  for (const provider of catalog.providers) await bridge.providerDisconnect(provider.id);
   vi.spyOn(bridge, "modelCatalogGet").mockResolvedValue({ hidden_model_profile_ids: [], providers: [], custom_providers: [], model_notice: null,
     models: modelState === "empty" ? [] : catalog.models.map((model) => ({ ...model, credential_source: "missing" })) });
   render(<App bridge={bridge} />);
   await openChat();
   expect(await screen.findByText(/Want to determine whether this quarter's margin decline is temporary/)).toBeVisible();
   expect(screen.queryByRole("button", { name: "Get started" })).toBeNull();
-  expect(screen.getByTestId("composer-model-menu")).toHaveAccessibleName("Connect an AI account");
+  expect(screen.getByTestId("composer-model-menu")).toHaveAccessibleName("No AI account");
 });
 
 it("keeps first-run onboarding when the default Loupist has no account yet", async () => {

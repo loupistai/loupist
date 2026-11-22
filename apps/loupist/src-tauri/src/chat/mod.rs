@@ -12,6 +12,7 @@ pub(crate) mod grid;
 pub(crate) mod handoff;
 pub(crate) mod home;
 pub(crate) mod live;
+pub(crate) mod local_files;
 pub(crate) mod progress;
 pub(crate) mod questions;
 pub(crate) mod replay;

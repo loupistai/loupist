@@ -20,14 +20,15 @@ import { MapReplayBar } from "./MapReplayBar";
 import { useMapExport } from "./MapExport";
 import { replayStart, useMapReplay, useReplayVisible } from "./replay";
 import { MapLegend } from "./MapLegend";
-import { dismissMapHint, mapHintDismissed, recentFocal, rememberFocal, rememberLegendOpen, rememberScope, storedFocal, storedLegendOpen, storedScope } from "./mapVisit";
+import { dismissMapHint, mapHintDismissed, recentFocal, rememberRecentFocal, rememberLegendOpen, storedLegendOpen } from "./mapVisit";
 import { MapWhatsNew } from "./MapWhatsNew";
 import { useGrowthSince, whatsNewRows, type WhatsNewRow } from "./whatsNew";
-import { defaultFocal, followedNames, localSet, neighborOrder, LOCAL_VIEW_MIN_NODES, type MapScope } from "./localView";
+import { followedNames, localSet, neighborOrder, type MapScope } from "./localView";
 import { MapList } from "./MapList";
 import { entityCategory, isMetricNode, nodeCategory } from "../../knowledge/mapKinds";
 import { isBasePerspective, isLensNode, lensAppliedEntities, lensDisplayTitle } from "./lensReading";
-import { entityLabel, isDrawnRelation, matchesMapQuery } from "../../knowledge/mapItems";
+import { entityLabel, isDrawnRelation, matchesMapQuery, projectClaim } from "../../knowledge/mapItems";
+import { processingSourceCount } from "../../knowledge/mapProcessing";
 import { frozenLayout } from "./layout";
 import { useMapData, useMapDetail, weeklyDrawnCount } from "./useMapData";
 import type { MapCanvasControls } from "./MapCanvas";
@@ -35,7 +36,8 @@ import "../../styles/map.css";
 const MapCanvas = lazy(() => import("./MapCanvas"));
 
 export type MapViewProps = {
-  bridge: LoupistBridge; catalog: KnowledgeCatalog; location: KnowledgeLocation; active?: boolean; refreshKey?: unknown;
+  initialAnchor?: string;
+  bridge: LoupistBridge; catalog: KnowledgeCatalog; location: KnowledgeLocation; active?: boolean; refreshKey?: unknown; building?: boolean;
   onPatch: (location: KnowledgeLocation) => void; onOpen: (location: KnowledgeLocation) => void; onAsk: (pin: KnowledgePin, threadId?: string) => void;
   readerLocation?: KnowledgeLocation; onReaderPatch?: (location: KnowledgeLocation) => void; onBack?: () => void; onChanged?: () => void; onManageProcessing?: () => void; onOpenLink?: (url: string) => void | Promise<void>;
   onOpenChat?: (chatId: string) => void; onAskInChat?: () => void; onAddSource?: () => void;
@@ -57,7 +59,7 @@ function filterMapNodes(nodes: KnowledgeMapNode[], disputed: Set<string>, filter
     return kindOk && (filters.metrics || !isMetricNode(node)) && (!filters.personal || node.watched) && (!filters.disputed || disputed.has(node.id));
   });
 }
-export function MapView({ bridge, catalog, location, active = true, refreshKey, onPatch, onOpen, onAsk, onAskInChat, onAddSource, readerLocation, onReaderPatch = onPatch, onBack, onChanged = () => {}, onManageProcessing, onOpenLink, onOpenChat, onExplainDisagreement }: MapViewProps) {
+export function MapView({ initialAnchor, bridge, catalog, location, active = true, refreshKey, building, onPatch, onOpen, onAsk, onAskInChat, onAddSource, readerLocation, onReaderPatch = onPatch, onBack, onChanged = () => {}, onManageProcessing, onOpenLink, onOpenChat, onExplainDisagreement }: MapViewProps) {
   const { t, i18n } = useTranslation("knowledge");
   const data = useMapData(bridge, location.loupistId, refreshKey ?? catalog, active);
   const learning = useLearningState(bridge, location.loupistId);
@@ -77,10 +79,8 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   const [showMapHint, setShowMapHint] = useState(() => !mapHintDismissed(location.loupistId));
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const [visit, setVisit] = useState(() => ({ loupistId: location.loupistId, lastSeenAtMs: lastSeenAt(location.loupistId), nowMs: Date.now() }));
-  const [focalChoice, setFocalChoice] = useState(() => storedFocal(location.loupistId));
-  const [scopeChoice, setScopeChoice] = useState(() => storedScope(location.loupistId));
-  /** "Replay these" shows the whole Map while it plays, then puts the scope back. */
-  const [scopeOverride, setScopeOverride] = useState<MapScope>();
+  const [focalChoice, setFocalChoice] = useState(initialAnchor);
+  const [scopeChoice, setScopeChoice] = useState<MapScope>(initialAnchor ? "1" : "all");
   const [focalHistory, setFocalHistory] = useState<string[]>([]);
   const [picking, setPicking] = useState(false);
   const [cursorId, setCursorId] = useState<string>();
@@ -94,7 +94,6 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   useEffect(() => {
     setShowMapHint(!mapHintDismissed(location.loupistId));
     setVisit({ loupistId: location.loupistId, lastSeenAtMs: lastSeenAt(location.loupistId), nowMs: Date.now() });
-    setFocalChoice(storedFocal(location.loupistId)); setScopeChoice(storedScope(location.loupistId)); setScopeOverride(undefined);
     setFocalHistory([]); setPicking(false); setCursorId(undefined); setWhatsNewOpen(false); setReplayFrom(undefined);
   }, [location.loupistId]);
   useEffect(() => {
@@ -123,16 +122,32 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   const baseMap = highlights.map;
   const selectedId = reading && baseMap ? relatedNodeId(reading, baseMap.nodes) : reading ? undefined : location.selection?.kind === "node" ? location.selection.id : undefined;
   const selectedClaimId = !reading && location.selection?.kind === "claim" ? location.selection.id : undefined;
-  const missingDetail = useMapDetail(bridge, location, baseMap && selectedId && !baseMap.nodes.some((n) => n.id === selectedId) ? selectedId : undefined);
-  const missingEntity = missingDetail.graph?.nodes.find((n) => n.id === selectedId);
+  // An exact link or search can name an entity outside the bounded overview. Keep its
+  // neighbourhood for the visit even after the user closes its details or selects a neighbour.
+  const missingId = baseMap && [focalChoice, selectedId].find(id => id && !baseMap.nodes.some(node => node.id === id));
+  const missingDetail = useMapDetail(bridge, location, missingId);
   const map = useMemo(() => {
-    if (!baseMap || !selectedId || baseMap.nodes.some((n) => n.id === selectedId)) return baseMap;
-    const extra = searchNodes.nodes.find((n) => n.id === selectedId) ?? (missingEntity ? { id: missingEntity.id, kind: "entity" as const, entityKind: missingEntity.kind, label: missingEntity.name, degree: missingDetail.graph?.edges.length ?? 0, watched: false } : undefined);
-    if (!extra) return baseMap;
-    const nodes = [...baseMap.nodes.slice(0, 999), extra];
-    const ids = new Set(nodes.map((n) => n.id));
-    return { ...baseMap, nodes, edges: baseMap.edges.filter((e) => ids.has(e.source) && ids.has(e.target)) };
-  }, [baseMap, selectedId, missingEntity, searchNodes.nodes, missingDetail.graph]);
+    if (!baseMap || !missingId) return baseMap;
+    const graph = missingDetail.graph;
+    const extra = new Map<string, KnowledgeMapNode>();
+    const result = searchNodes.nodes.find(node => node.id === missingId);
+    if (result) extra.set(result.id, result);
+    if (graph) for (const node of graph.nodes) {
+      if (node.id === missingId || focalChoice === missingId) extra.set(node.id, {
+        id: node.id, label: node.name, localNames: node.aliases, kind: "entity", entityKind: node.kind,
+        degree: graph.edges.filter(edge => edge.endpoints.some(end => end.nodeId === node.id)).length, watched: false,
+      });
+    }
+    if (!extra.size) return baseMap;
+    for (const node of baseMap.nodes) if (extra.has(node.id)) extra.set(node.id, node);
+    const nodes = [...baseMap.nodes.filter(node => !extra.has(node.id)).slice(0, 1000 - extra.size), ...extra.values()];
+    const ids = new Set(nodes.map(node => node.id));
+    const edges = new Map(baseMap.edges.filter(edge => ids.has(edge.source) && ids.has(edge.target)).map(edge => [edge.id, edge]));
+    for (const { claim } of graph?.edges ?? []) {
+      for (const edge of projectClaim(claim)) if (ids.has(edge.source) && ids.has(edge.target)) edges.set(edge.id, edge);
+    }
+    return { ...baseMap, nodes, edges: [...edges.values()] };
+  }, [baseMap, missingId, focalChoice, searchNodes.nodes, missingDetail.graph]);
   // The host seeds a standing Lens before the World has any drawable names.
   const worldNodes = useMemo(() => map?.nodes.filter(node => !isLensNode(node)) ?? [], [map]);
   const worldEdges = useMemo(() => map?.edges.filter(edge => edge.kind === "claim" || edge.kind === "about") ?? [], [map]);
@@ -163,11 +178,11 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
     if (searchNodes.query === debounced) for (const node of searchNodes.nodes) unique.set(node.id, node);
     return [...unique.values()].slice(0, 8);
   }, [worldNodes, debounced, searchNodes, query]);
-  // Past sixty names the Map opens around one company; smaller Maps are already a local view.
-  const localAvailable = worldNodes.length > LOCAL_VIEW_MIN_NODES;
-  const focalId = map && localAvailable ? defaultFocal(worldNodes, focalChoice) : undefined;
-  const focal = focalId ? map?.nodes.find((node) => node.id === focalId) : undefined;
-  const scope: MapScope = focal ? scopeOverride ?? scopeChoice ?? "1" : "all";
+  const timelineStart = useMemo(() => replayFrom ?? replayStart(worldNodes, worldEdges, Date.now()), [worldNodes, worldEdges, replayFrom]);
+  const replay = useMapReplay(timelineStart, location.loupistId);
+  const focal = replay.active ? undefined : map?.nodes.find(node => node.id === focalChoice && node.kind === "entity");
+  const focalId = focal?.id;
+  const scope = focal ? scopeChoice : "all";
   const local = useMemo(() => map && focalId && scope !== "all" ? localSet(worldNodes, worldEdges, focalId, scope === "2" ? 2 : 1, undefined, highlightIds ?? []) : undefined, [map, worldNodes, worldEdges, focalId, scope, highlightIds]);
   const visible = useMemo(() => {
     const disputed = new Set(worldEdges.filter((e) => e.status === "disputed").flatMap((e) => [e.source, e.target]));
@@ -176,11 +191,9 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   const shownIds = useMemo(() => new Set(visible.map((n) => n.id)), [visible]);
   const edges = useMemo(() => worldEdges.filter((e) => shownIds.has(e.source) && shownIds.has(e.target) && (!filters.disputed || e.status === "disputed")), [worldEdges, shownIds, filters.disputed]);
   const [recording, setRecording] = useState(false);
-  const timelineStart = useMemo(() => replayFrom ?? replayStart(worldNodes, worldEdges, Date.now()), [worldNodes, worldEdges, replayFrom]);
-  const replay = useMapReplay(timelineStart, location.loupistId);
   const closeReplay = () => {
     replay.close();
-    if (replayFrom !== undefined) { setReplayFrom(undefined); setScopeOverride(undefined); }
+    setReplayFrom(undefined);
     // Replay lives in "More"; focus returns there.
     toolbar.current?.querySelector<HTMLButtonElement>("[data-map-more]")?.focus();
   };
@@ -194,15 +207,21 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   const positions = useMemo(() => map ? frozenLayout(location.loupistId, map.worldRevisionId, worldNodes, worldEdges) : [], [map, worldNodes, worldEdges, location.loupistId]);
   const positioned = useMemo(() => positions.filter((n) => shownIds.has(n.id)), [positions, shownIds]);
   const changeFocal = (id: string) => {
-    if (!focalId || id === focalId) return;
-    setFocalHistory((history) => [focalId, ...history.filter((item) => item !== focalId)].slice(0, 10));
+    if (focalId && focalId !== id) setFocalHistory(history => [focalId, ...history.filter(item => item !== focalId)].slice(0, 10));
+    if (replay.active) closeReplay();
     setFocalChoice(id);
-    rememberFocal(location.loupistId, id, { recent: true });
+    setScopeChoice("1");
+    rememberRecentFocal(location.loupistId, id);
     setCursorId(undefined);
   };
   const setScope = (next: MapScope) => {
-    if (next === "1" && scope !== next && !reading && selected?.kind === "entity") changeFocal(selected.id);
-    setScopeOverride(undefined); setScopeChoice(next); rememberScope(location.loupistId, next);
+    if (!focal && next !== "all") return;
+    if (next === "all") {
+      setFocalChoice(undefined);
+      setFocalHistory([]);
+      setCursorId(undefined);
+    }
+    setScopeChoice(next);
   };
   /** What had focus when a name was chosen, so closing its inspector goes back there. */
   const selectionOpener = useRef<HTMLElement | null>(null);
@@ -210,18 +229,18 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
     const opener = document.activeElement;
     if (opener instanceof HTMLElement && opener !== document.body && !opener.closest(".map-inspector")) selectionOpener.current = opener;
     setPicking(false); setCursorId(undefined);
-    // The Map reopens around the name the user last looked at.
     if (isLensNode(node) && node.recordId) {
       onOpen({ loupistId: location.loupistId, surface: "lens", recordId: node.recordId });
       return;
     }
-    if (node.kind === "entity" && localAvailable) rememberFocal(location.loupistId, node.id);
     if (isMetricNode(node)) setFilters(current => current.metrics ? current : { ...current, metrics: true }); if (!map?.nodes.some(item => item.id === node.id)) setSearchNodes(current => ({ ...current, nodes: [...current.nodes.filter(item => item.id !== node.id), node] })); onPatch({ ...location, selection: { kind: "node", id: node.id } }); controls.current?.focus(node.id);
   };
-  /** Selecting keeps the focal name, unless the name is outside the drawn set or the user is picking a new center. */
   const select = (node: KnowledgeMapNode, fromSearch = false) => {
-    if (node.kind === "entity" && focal && (picking || (fromSearch && scope === "1") || (local && !local.ids.has(node.id)))) changeFocal(node.id);
     selectOnly(node);
+    if (node.kind === "entity" && (picking || fromSearch || (local && !local.ids.has(node.id)))) {
+      changeFocal(node.id);
+      if (focalId === node.id && scope === "1") controls.current?.fit();
+    }
   };
   const viewKey = `${focalId ?? ""}:${scope}`;
   // The line of the relationship chip the inspector points at.
@@ -262,7 +281,6 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   };
   const replayThese = (from: number) => {
     setWhatsNewOpen(false);
-    if (focal && scope !== "all") setScopeOverride("all");
     setReplayFrom(from);
     setPendingReplay(true);
   };
@@ -285,7 +303,7 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
     } else if (event.key === "Backspace" && focalHistory.length) {
       event.preventDefault();
       const [previous, ...rest] = focalHistory;
-      setFocalHistory(rest); setFocalChoice(previous); rememberFocal(location.loupistId, previous!); setCursorId(undefined);
+      setFocalHistory(rest); setFocalChoice(previous); setScopeChoice("1"); setCursorId(undefined);
     } else if (event.key === "1" || event.key === "2" || event.key === "0") {
       event.preventDefault();
       setScope(event.key === "0" ? "all" : event.key);
@@ -303,7 +321,7 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   const weekly = weeklyDrawnCount(replayed.nodes);
   const showStats = !map || hasWorldNodes;
   const emptyLens = overlay && appliedEntities.length === 0 ? overlay : undefined;
-  const processing = catalog.sources.some((s) => s.objects.some((o) => o.processing?.status === "queued" || o.processing?.status === "running"));
+  const processing = building ?? (processingSourceCount(catalog) > 0);
   const bounded = !!map?.counts.entity.truncated;
   const total = map ? map.counts.entity.total : 0;
   const focalName = focal ? entityLabel(focal, i18n.language) : "";
@@ -327,7 +345,7 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
   return <div ref={viewRef} className={`map-view${recording ? " is-recording" : ""}`} data-testid="map-view" data-keyboard-focus={keyboardFocus} onPointerDownCapture={() => setKeyboardFocus(false)} onKeyDownCapture={() => setKeyboardFocus(true)} aria-busy={data.loading} onKeyDown={(e) => { if (e.key === "Escape") { if (picking) { e.preventDefault(); setPicking(false); } else if (cursorId) { e.preventDefault(); setCursorId(undefined); } else if (overlayId) { e.preventDefault(); setOverlayId(undefined); } else if (selected || selectedClaimId || reading) { e.preventDefault(); clear(); } else if (whatsNewOpen) { e.preventDefault(); closeWhatsNew(); } else if (libraryOpen) { e.preventDefault(); setLibraryOpen(false); } } }}>
     {mapExport.status}
     <div ref={toolbar}><MapToolbar disabled={recording} empty={!!map && !hasWorldNodes} replayActive={replay.active} onReplay={replay.active ? closeReplay : replay.open} exportActions={{ image: mapExport.image, video: mapExport.video, disabled: !!list || !hasWorldNodes || mapExport.busy }} lenses={(map?.nodes ?? []).filter(isLensNode)} appliedCounts={appliedCounts} lensTitles={lensTitles} baseLensIds={baseLensIds} overlayId={overlayId} onOverlay={setOverlayId} libraryOpen={libraryOpen} onLibrary={() => { setWhatsNewOpen(false); setLibraryOpen(!libraryOpen); }}
-      local={focal && map ? { focal, followed: followedNames(map.nodes), recent: recent.filter((id) => id !== focal.id).flatMap((id) => map.nodes.filter((node) => node.id === id)), onFocal: (node) => changeFocal(node.id), onPickOnMap: () => setPicking(true), scope, onScope: setScope } : undefined}
+      local={map && hasWorldNodes ? { focal, followed: followedNames(map.nodes), recent: recent.filter((id) => id !== focalId).flatMap((id) => map.nodes.filter((node) => node.id === id)), onFocal: (node) => changeFocal(node.id), onPickOnMap: () => setPicking(true), scope, onScope: setScope } : undefined}
       whatsNew={{ count: badgeCount, open: whatsNewOpen, onToggle: () => { if (whatsNewOpen) closeWhatsNew(); else openWhatsNew(); } }} nodes={searchResults} query={query} onQuery={setQuery} filters={filters} onFilters={setFilters} onSelect={node => select(node, true)} list={!!list} onList={() => onPatch({ ...location, view: { ...location.view, listMode: !list } })} replayDisabled={!!map && !hasWorldNodes} listDisabled={!!map && !hasWorldNodes} /></div>
     {lensBanner ? <div className="map-hint-row" data-map-caption={compactMap || undefined}>{lensBanner}</div> : null}
     <div inert={recording} className={`map-body${selected || selectedClaimId || reading ? " has-selection" : ""}`}>
@@ -348,7 +366,7 @@ export function MapView({ bridge, catalog, location, active = true, refreshKey, 
       {whatsNewOpen ? <MapWhatsNew key={`${location.loupistId}:whats-new`} bridge={bridge} loupistId={location.loupistId} map={map} lastSeenAtMs={visit.lastSeenAtMs} nowMs={visit.nowMs} refreshKey={data.map?.generatedAtMs} onOpenRow={openWhatsNewRow} onReplay={replayThese} onClose={closeWhatsNew} /> : null}
       {reading ? <MapReader key={`${location.loupistId}:${reading.surface}`} bridge={bridge} catalog={catalog} location={reading} onOpen={onOpen} onPatch={onReaderPatch} onAsk={onAsk} onChanged={onChanged} onClose={clear} onBack={onBack} onOpenLink={onOpenLink} onManageProcessing={onManageProcessing} /> : null}
       {selectedClaimId ? <MapClaimInspector bridge={bridge} location={location} claimId={selectedClaimId} onClose={clear} onOpen={onOpen} onAsk={onAsk} /> : null}
-      {!reading && selected && map ? <MapInspector key={`${location.loupistId}:inspector`} node={selected} map={map} onChanged={onChanged} onOpenChat={onOpenChat} catalog={catalog} bridge={bridge} location={location} providedGraph={missingDetail.graph} onClose={() => { setPointedEdge(undefined); clear(); }} onSelect={select} onOpen={onOpen} onAsk={onAsk} onExplainDisagreement={onExplainDisagreement} onPointRelationship={setPointedEdge} /> : null}
+      {!reading && selected && map ? <MapInspector key={`${location.loupistId}:inspector`} node={selected} onShowConnections={!focal && !replay.active && selected.kind === "entity" ? () => changeFocal(selected.id) : undefined} map={map} onChanged={onChanged} onOpenChat={onOpenChat} catalog={catalog} bridge={bridge} location={location} providedGraph={selected.id === missingId ? missingDetail.graph : undefined} onClose={() => { setPointedEdge(undefined); clear(); }} onSelect={select} onOpen={onOpen} onAsk={onAsk} onExplainDisagreement={onExplainDisagreement} onPointRelationship={setPointedEdge} /> : null}
     </div>
     {replay.active ? <MapReplayBar replay={{ ...replay, close: closeReplay }} disabled={recording} range={replayFrom !== undefined ? t("map.replayRange", { from: formatDate(replayFrom, { year: undefined, month: "short", day: "numeric" }) }) : undefined} /> : null}
   </div>;

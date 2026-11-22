@@ -21,7 +21,7 @@ vi.mock("../chat/useLoupistChat", () => ({
   useLoupistChat: ({ activeThread }: { activeThread?: ChatThread }) => ({
     messages: activeThread?.messages ?? [],
     messageKeys: activeThread?.messages.map((message) => message.id) ?? [],
-    isRunning: false, isStopping: false, announcement: "", error: null,
+    isRunning: activeThread?.messages.at(-1)?.status === "streaming", isStopping: false, announcement: "", error: null,
     ...actions,
   }),
 }));
@@ -35,7 +35,7 @@ function viewProps(messages: ChatMessage[], extra: Partial<ComponentProps<typeof
     threads: [thread], setThreads: vi.fn(), activeThreadId: thread.id, setActiveThreadId: vi.fn(),
     onCreateThread: vi.fn(), knowledgePins: [], onRemoveKnowledgePin: vi.fn(),
     modelCatalog: null, modelSelection: { model_profile_id: "", thinking_level: "off", run_options: {} },
-    onModelSelectionChange: vi.fn(), modelAuto: true, onModelResetToAuto: vi.fn(), onModelUsed: vi.fn(), onAbortRecoveredRun: vi.fn(),
+    onModelSelectionChange: vi.fn(), modelIsDefault: true, onChooseDefault: vi.fn(), onModelUsed: vi.fn(), onAbortRecoveredRun: vi.fn(),
     ...extra,
   };
 }
@@ -103,7 +103,7 @@ it("keeps a saved Chat readable without a model and opens settings instead of se
   await user.type(composer(), " more");
   expect(onDraftChange).toHaveBeenLastCalledWith("Draft more");
   expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
-  expect(screen.getByTestId("composer-model-menu")).toHaveAccessibleName("Connect an AI account");
+  expect(screen.getByTestId("composer-model-menu")).toHaveAccessibleName("No AI account");
   await user.click(screen.getByRole("button", { name: "Open Settings" }));
   expect(onOpenModelSettings).toHaveBeenCalledOnce();
   expect(actions.submit).not.toHaveBeenCalled();
@@ -119,18 +119,22 @@ it("does not rerender an unchanged earlier answer while typing or streaming anot
     { id: "streaming-answer", role: "assistant", status: "streaming", content: "Current answer", created_at: "2026-10-03T00:00:01Z" },
   ];
   const props = viewProps(messages);
-  const catalogs = [vi.spyOn(props.bridge, "agentSkillCatalog"), vi.spyOn(props.bridge, "loupistCapabilityList"), vi.spyOn(props.bridge, "marketplaceSnapshot")];
-  const view = render(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
-  await screen.findByText("Earlier saved answer");
-  await waitFor(() => { for (const read of catalogs) expect(read).toHaveBeenCalled(); });
-  await act(async () => { await Promise.all(catalogs.flatMap((read) => read.mock.results.map((result) => result.value))); });
-  const earlierRenders = () => rendered.mock.calls.filter(([input]) => input.text === "Earlier saved answer").length;
-  const before = earlierRenders();
-  await userEvent.setup().type(composer(), "follow up");
-  view.rerender(<TooltipProvider><ChatView {...props} threads={[{ ...props.threads[0]!, messages: [messages[0]!, { ...messages[1]!, content: "Current answer with another token" }] }]} /></TooltipProvider>);
-  // The reveal governor shows the new words a moment later, at an even pace.
-  expect(await screen.findByText("Current answer with another token")).toBeVisible();
-  expect(earlierRenders()).toBe(before);
+  const catalogs = [vi.spyOn(props.bridge, "skillsList"), vi.spyOn(props.bridge, "loupistCapabilityList"), vi.spyOn(props.bridge, "marketplaceSnapshot")];
+  try {
+    const view = render(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
+    await screen.findByText("Earlier saved answer");
+    await waitFor(() => { for (const read of catalogs) expect(read).toHaveBeenCalled(); });
+    await act(async () => { await Promise.all(catalogs.flatMap((read) => read.mock.results.map((result) => result.value))); });
+    const earlierRenders = () => rendered.mock.calls.filter(([input]) => input.text === "Earlier saved answer").length;
+    const before = earlierRenders();
+    await userEvent.setup().type(composer(), "follow up");
+    view.rerender(<TooltipProvider><ChatView {...props} threads={[{ ...props.threads[0]!, messages: [messages[0]!, { ...messages[1]!, content: "Current answer with another token" }] }]} /></TooltipProvider>);
+    // The reveal governor shows the new words a moment later, at an even pace.
+    expect(await screen.findByText("Current answer with another token")).toBeVisible();
+    expect(earlierRenders()).toBe(before);
+  } finally {
+    rendered.mockRestore();
+  }
 });
 
 describe("teaching from feedback", () => {
@@ -184,7 +188,7 @@ describe("a link's Look into it in Bot", () => {
   const botProps = async (extra: Partial<ComponentProps<typeof ChatView>> = {}) => {
     const props = viewProps([link("con_1"), link("con_2")], { initialPrompt: "Unsent draft", ...extra });
     props.threads = [{ ...props.threads[0]!, home: true }];
-    return { ...props, modelCatalog: await props.bridge.modelCatalogGet(), modelSelection: { model_profile_id: "model-test", thinking_level: "low", run_options: {} }, modelAuto: false, ...extra };
+    return { ...props, modelCatalog: await props.bridge.modelCatalogGet(), modelSelection: { model_profile_id: "model-test", thinking_level: "low", run_options: {} }, modelIsDefault: false, ...extra };
   };
   const lookInto = (seed: string) => within(screen.getByRole("article", { name: `New link: ${seed} and Far` })).getByRole("button", { name: "Look into it" });
 
@@ -220,8 +224,8 @@ describe("a link's Look into it in Bot", () => {
     expect(screen.queryByRole("article", { name: /^Research: / })).toBeNull();
   });
 
-  it("explicitly sends Auto when the composer leaves the choice to the host", async () => {
-    const props = await botProps({ hostAuto: true, modelAuto: true });
+  it("keeps the model unset on a default send", async () => {
+    const props = await botProps({ hostAuto: true, modelIsDefault: true });
     const start = vi.spyOn(props.bridge, "researchHandoffStart").mockResolvedValue({ chatId: "chat-9", handoffId: "handoff-9" });
     render(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
     await userEvent.setup().click(await screen.findAllByRole("button", { name: "Look into it" }).then(() => lookInto("Seed con_1")));
@@ -331,7 +335,7 @@ it("keeps Bot task cards in sync with Schedule through pauses and deletion", asy
   const active = await bridge.scheduledTaskConfirm(identity);
   const props = viewProps([{ id: "answer", role: "assistant", status: "complete", created_at: "2026-10-03T00:00:00Z", content: "Scheduled.",
     schedule_receipts: [{ ...active, task_id: task.id, action: "created" }] }], { bridge });
-  props.threads[0]!.home = true;
+  Object.assign(props.threads[0]!, { home: true, update_memory: true, use_memory: true });
   renderWithOpen(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
   const card = within(screen.getByRole("article", { name: "Scheduled task: Compare inventory days" }));
   expect(card.queryByText("Active")).toBeNull();
@@ -355,7 +359,7 @@ it("uses Schedule's localized title on Bot cards and keeps a custom task with th
   bridge.installScheduledTask({ ...task, kind: "briefing", id: "built-in" });
   const props = viewProps([{ id: "answer", role: "assistant", status: "complete", created_at: "2026-10-03T00:00:00Z", content: "Scheduled.",
     schedule_receipts: [task.id, "built-in"].map(id => ({ ...task, task_id: id, action: "viewed" })) }], { bridge });
-  props.threads[0]!.home = true;
+  Object.assign(props.threads[0]!, { home: true, update_memory: true, use_memory: true });
   await i18n.changeLanguage("ko");
   const view = renderWithOpen(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
   try {
@@ -365,4 +369,45 @@ it("uses Schedule's localized title on Bot cards and keeps a custom task with th
     view.unmount();
     await i18n.changeLanguage("en");
   }
+});
+
+it("explains the feedback lock for each reply and keeps finished answers readable during a run", async () => {
+  const created_at = "2026-10-03T00:00:00Z";
+  const source = evidenceFixture({ id: "ev_filing", title: "Annual filing", excerpt: "The closing price was $42.10." });
+  const props = viewProps([
+    { id: "question", created_at, role: "user", content: "What is a closing price?", status: "complete" },
+    { id: "finished", created_at, role: "assistant", content: "The final traded price was [$42.30](#evidence-ev_filing).", status: "complete",
+      memory_update: { status: "applied", commitId: "save", changes: [{ kind: "Source", recordId: "filing", title: "Saved filing", operation: "create",
+        lesson: "", basis: "", futureUse: "", knowledge: { kind: "source", recordId: "filing", revisionId: "rev", objectId: "filing" } }] },
+      evidence_refs: [source], number_checks: [{ text: "$42.30", evidence_id: source.id, link_index: 0, status: "not_found", kind: "passage" }] },
+    { id: "followup", created_at, role: "user", content: "And last year?", status: "complete" },
+    { id: "running", created_at, role: "assistant", content: "Looking at last year.", status: "streaming" },
+  ]);
+  Object.assign(props.threads[0]!, { home: true, update_memory: true, use_memory: true });
+  const user = userEvent.setup();
+  const { open } = renderWithOpen(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
+  const earlier = within((await screen.findByTestId("number-chip")).closest("article")!);
+  const live = within((await screen.findByText("Looking at last year.")).closest("article")!);
+  for (const name of ["Helpful", "Not helpful", "Suggest a correction"]) {
+    expect(earlier.getByRole("button", { name })).toBeDisabled();
+    expect(earlier.getByRole("button", { name })).toHaveAccessibleDescription("Available when the current reply finishes.");
+    expect(live.getByRole("button", { name })).toBeDisabled();
+    expect(live.getByRole("button", { name })).toHaveAccessibleDescription("Available when the reply finishes");
+  }
+  expect(actions.saveFeedback).not.toHaveBeenCalled();
+  await user.click(earlier.getByRole("button", { name: "Copy answer" }));
+  expect(await navigator.clipboard.readText()).toContain("$42.30");
+  const edit = screen.getAllByRole("button", { name: "Edit message" })[0]!;
+  expect(edit).toBeDisabled();
+  expect(edit).toHaveAttribute("title", "Available when the current reply finishes.");
+  await user.click(earlier.getByTestId("number-chip"));
+  expect(await screen.findByRole("dialog")).toHaveTextContent("Annual filing");
+  await user.keyboard("{Escape}");
+  await user.click(earlier.getByRole("button", { name: "Saved 1 source" }));
+  expect(earlier.getByRole("list", { name: "Saved in this answer" })).toHaveTextContent("Saved filing");
+  await user.click(earlier.getByRole("button", { name: "1 source" }));
+  const activity = await screen.findByTestId("activity-sheet");
+  const sources = within(activity).getByRole("heading", { name: /What it read/ }).closest("section")!;
+  await user.click(within(sources).getByRole("button", { name: /Annual filing/ }));
+  expect(destinations(open).at(-1)).toMatchObject({ kind: "evidence", evidence: { id: source.id } });
 });

@@ -8,7 +8,19 @@ impl AppToolExecutor {
         self.capability_ids.contains(entry_id)
     }
 
+    pub(super) fn require_saved_key_permission(&self, entry_id: &str) -> Result<(), BrokerError> {
+        if self
+            .capture
+            .saved_keys_needing_permission
+            .contains(entry_id)
+        {
+            return Err(BrokerError::KeychainPermissionRequired);
+        }
+        Ok(())
+    }
+
     pub(super) fn require_capability(&self, entry_id: &str) -> Result<(), BrokerError> {
+        self.require_saved_key_permission(entry_id)?;
         if self.capability_enabled(entry_id) {
             Ok(())
         } else {

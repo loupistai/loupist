@@ -2,36 +2,38 @@
 
 Memory reads and saves are Rust transactions. Delivery counts are not influence or correctness.
 
-## What the Loupist knows
+## The Loupist’s Lens
 
 The tabs collapse from a list/reader split based on the pane's width, at 972px; below it an open page hides the heading, tabs and search, which return with Back. A narrow tab row scrolls instead of painting past the pane. The page title wraps instead of being cut off. An open method fills the card: its title stays inside the reader, and pause and archive follow the document. Focusing a row or a reader action below the fold scrolls it into the pane. Model-provider cards fill their own 800px settings column.
 
-Lens opens as a full page from the sidebar (⌘3). "What {Loupist} knows"
+Lens opens as a full page from the sidebar (⌘4). "{Loupist}’s Lens"
 names its contents, with two tabs, Pages and History. The shared Loupists list
 sits under Pages and is hidden [in this release](sharing.md#this-release).
 The sidebar also opens the [Following page](follow.md#what-you-follow).
-`knowledge_followed_status` reports queued, running and waiting Map work for
+`knowledge_followed_status` reports queued, running and waiting World work for
 the Loupist's followed list.
-**Pages**: every active Lens page in one list grouped as Topics (`subject`), Ideas
-(`idea`), Methods (`method`), Your principles (`principle`) and Perspective (`perspective`);
-the groups are 주제, 아이디어, 분석 방법, 내 원칙 and 관점 in Korean. Search waits for a
+**Pages**: every active Lens page in one list grouped as Perspective (`perspective`), Your principles
+(`principle`), Methods (`method`), Topics (`subject`) and Ideas (`idea`).
+The groups are 관점, 내 원칙, 분석 방법, 주제 and 아이디어 in Korean. Search waits for a
 pause in typing, then runs `knowledge_lens_search` for pages and matches a principle
-on its own words. Paused pages remain in this inspection search so the user can
+on its own words. A search that filters out the open page hides its reader and actions. Clearing the search restores that page. Paused pages remain in this inspection search so the user can
 resume them; agent discovery still excludes them. With no pages yet the search field is
 left out and the list says how pages appear, beside Add principle. Opening a
-row reads it in `PageReader`: Markdown sections under their headings, each with its
-basis chip (Claim and Source open the claim on the Map or the retained Source; "You
-said"; "Loupist's view" with its uncertainty line; a page chip opens that page), a
-"Sources disagree" marker on a contested section, and Forget. Forget calls
+row reads it in `PageReader`. Each section shows its heading when present, then its
+Markdown. A section with cited passages has a collapsed Sources disclosure with a
+count. Opening it lists the full titles in reference order, one per row, with the
+origin when known. A link opens the retained Source at its cited passage.
+Claim and page chips open World claim or linked page. Sections can also show
+the dated “Written at your request” link to the originating user message (plain text if the turn is unavailable), "Loupist's view" with its uncertainty, "Sources disagree", and Forget. Forget calls
 `memory_section_forget` and offers Undo through `memory_op_undo`. `world:` links draw as
-Map chips, `lens:` links open the page, and the reader lists links, backlinks, the
+World chips, `lens:` links open the page, and the reader lists links, backlinks, the
 names the page is anchored to and its last changes. Pause in answers (Resume in answers once paused; a paused page stays but is left out of future answers) and Archive stay on the page.
-A principle keeps its statement, why and example. **History**: from the growth events
-and the Lens log, newest first. "Filed after: {chat}" for a page a chat filed, sections
-you forgot or brought back, principles taught, names added to the Map and changes to what
-the map tracks. The standing conversation reads as Bot here and in the chat list under each page. A principle labels this list "Read in".
+A principle keeps its statement, why and example. **History** shows growth events,
+Lens edits and completed method reviews, newest first. "Filed after: {chat}" for a page a chat filed, sections
+you forgot or brought back, principles taught, names added to World and changes to what
+World tracks. The standing conversation reads as Bot here and in the chat list under each page. A principle labels this list "Read in".
 
-Each item lists the chats that used it. Rust's
+Each item lists the chats counted in its usage history. Rust's
 `knowledge_memory_usage` counts distinct completed turns that received the item in
 bounded context or an acknowledged exact read, or recorded an application; repeated
 delivery in one turn counts once. This measures delivery, not influence or correctness.

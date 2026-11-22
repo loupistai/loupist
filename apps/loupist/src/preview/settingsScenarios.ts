@@ -102,6 +102,7 @@ export function settingsScenarios({ base, select, settings, until }: Helpers): P
       }),
       setup: async bridge => {
         await prepareFixture(bridge);
+        bridge.extensionFlags.userSkillsAvailable = true;
         if (kind === "loading") bridge.skillsList = () => new Promise(() => {});
         if (kind === "error") bridge.skillsList = async () => { throw new Error(i18n.t("settings:skillsSettings.couldNotLoadSkills")); };
         if (kind === "empty") {
@@ -121,6 +122,7 @@ export function settingsScenarios({ base, select, settings, until }: Helpers): P
         await until(() => kind === "edit" ? select(".skill-instructions-editor") : document.querySelector('[role="dialog"]')?.textContent?.includes(i18n.t("settings:skillsSettings.deleteTitle", { name: "Quarterly Review" })), "Skill dialog did not open");
       }), setup: async bridge => {
         await prepareFixture(bridge);
+        bridge.extensionFlags.userSkillsAvailable = true;
         await bridge.skillsCreate({ scope: { kind: "global" }, name: "Quarterly Review", description: "Compare quarterly revenue and margins against retained primary sources.", instructions: "Identify the reporting period.\nCompare consolidated figures.\nLink every reported value to its source.\n".repeat(12) });
       },
     })),

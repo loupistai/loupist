@@ -6,6 +6,7 @@ import type {
   KnowledgeLocation,
   WorkspaceUiState,
 } from "../types";
+import type { SourceFigureRequest } from "../contracts/knowledge";
 import { parseCredentialFreeHttpUrl } from "../lib/credentialFreeUrl";
 import { citationPageUrl } from "../chat/evidence";
 import type { AppTab } from "./navigation";
@@ -261,8 +262,8 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
 
   /** Saved Memory (Sources, Lens, notes) opens in the chat's one Evidence reader. */
   const openMemory = useCallback(
-    (loupistId: string, threadId: string, location: KnowledgeLocation, title: string) =>
-      openEvidenceEntry(loupistId, threadId, knowledgeEntry(location, title)),
+    (loupistId: string, threadId: string, location: KnowledgeLocation, title: string, figure?: SourceFigureRequest) =>
+      openEvidenceEntry(loupistId, threadId, knowledgeEntry(location, title, figure)),
     [openEvidenceEntry],
   );
 
@@ -289,7 +290,7 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
    * reads never reach here: `evidenceTarget` sends them elsewhere first.
    */
   const openEvidence = useCallback((loupistId: string, threadId: string, evidence: ChatEvidenceRef, step?: EvidenceStepLink) => {
-    const page = citationPageUrl(evidence);
+    const page = step?.comparison ? null : citationPageUrl(evidence);
     if (page) {
       const entry = evidenceEntry(evidence, step);
       const key = chatSessionKey(loupistId, threadId);

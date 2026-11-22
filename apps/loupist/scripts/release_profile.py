@@ -43,7 +43,19 @@ def fingerprint(value: object, length: int) -> bool:
     )
 
 
-def load_profile(path: Path = PROFILE) -> dict:
+def check_team(team: object, *, rehearsal: bool = False) -> str:
+    if not isinstance(team, str) or not re.fullmatch(r"[A-Z0-9]{10}", team):
+        raise ValueError(
+            "Developer ID requires a 10-character Apple team_id in the release profile"
+        )
+    if team == "TEAMID0000" and not rehearsal:
+        raise ValueError(
+            "Replace the TEAMID0000 placeholder in apps/loupist/release-profile.json and installation.md with the publisher's Apple Team ID before a real release"
+        )
+    return team
+
+
+def load_profile(path: Path = PROFILE, *, rehearsal: bool = False) -> dict:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict) or set(value) != {"channel", "macos_signing"}:
         raise ValueError(
@@ -52,8 +64,12 @@ def load_profile(path: Path = PROFILE) -> dict:
     if value["channel"] not in {"beta", "stable"}:
         raise ValueError("release channel must be beta or stable")
     signing = value["macos_signing"]
+    # Published self-signed tags predate the team pin. Their leaf remains pinned.
+    if isinstance(signing, dict) and signing.get("mode") == "self-signed":
+        signing.setdefault("team_id", None)
     if not isinstance(signing, dict) or set(signing) != {
         "mode",
+        "team_id",
         "certificate_common_name",
         "certificate_sha1",
         "certificate_sha256",
@@ -62,6 +78,10 @@ def load_profile(path: Path = PROFILE) -> dict:
     mode = signing["mode"]
     if mode not in MODES:
         raise ValueError("unknown macOS signing mode")
+    if mode == "developer-id":
+        check_team(signing["team_id"], rehearsal=rehearsal)
+    elif signing["team_id"] is not None:
+        raise ValueError("self-signed release profile requires a null team_id")
     fields = [
         signing[key]
         for key in ("certificate_common_name", "certificate_sha1", "certificate_sha256")
@@ -97,6 +117,8 @@ def validate_signing_record(
     mode = value["mode"]
     if mode not in MODES | ({"dry-run-ephemeral"} if allow_dry_run else set()):
         raise ValueError("macOS signing mode is invalid or dry-run is not allowed")
+    if mode == "developer-id":
+        check_team(value["team_id"])
     requirement = value["designated_requirement"]
     if not isinstance(requirement, str) or not requirement or "\n" in requirement:
         raise ValueError("macOS designated requirement must be one nonempty line")
@@ -121,9 +143,14 @@ def validate_signing_record(
         value["notarized"] is not True
         or not isinstance(value["team_id"], str)
         or re.fullmatch(r"[A-Z0-9]{10}", value["team_id"]) is None
-        or f'identifier "{IDENTIFIER}"' not in requirement
-        or "anchor apple generic" not in requirement
-        or value["team_id"] not in requirement
+        or re.fullmatch(
+            rf'identifier "{re.escape(IDENTIFIER)}" and anchor apple generic and '
+            r"certificate 1\[field\.1\.2\.840\.113635\.100\.6\.2\.6\](?: /\* exists \*/)? and "
+            r"certificate leaf\[field\.1\.2\.840\.113635\.100\.6\.1\.13\](?: /\* exists \*/)? and "
+            rf'certificate leaf\[subject\.OU\] = ("{value["team_id"]}"|{value["team_id"]})',
+            requirement,
+        )
+        is None
     ):
         raise ValueError(
             "Developer ID signing must record notarization and its Apple team requirement"
@@ -138,6 +165,10 @@ def match_profile(record: dict, profile: dict) -> None:
         record, expected_certificate=profile["macos_signing"]["certificate_sha256"]
     )
     signing = profile["macos_signing"]
+    if signing["mode"] == "developer-id" and record["team_id"] != check_team(
+        signing["team_id"]
+    ):
+        raise ValueError("metadata Apple team differs from the tagged release profile")
     if record["mode"] != signing["mode"]:
         raise ValueError(
             "metadata signing mode differs from the tagged release profile"
@@ -156,13 +187,14 @@ def match_profile(record: dict, profile: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--rehearsal", action="store_true")
     parser.add_argument("--profile", type=Path, default=PROFILE)
     parser.add_argument(
         "--field",
         choices=["channel", "signing_mode", "certificate_sha1", "certificate_sha256"],
     )
     args = parser.parse_args()
-    profile = load_profile(args.profile)
+    profile = load_profile(args.profile, rehearsal=args.rehearsal)
     fields = {
         "channel": profile["channel"],
         "signing_mode": profile["macos_signing"]["mode"],

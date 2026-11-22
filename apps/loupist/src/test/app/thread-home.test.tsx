@@ -1,8 +1,10 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import type { ChatMessage, ChatThread, InboxChangedEvent } from "../../types";
+import type { ChatMessage, ChatThread, InboxChangedEvent, ScheduledTask, TaskScheduleReceipt } from "../../types";
+import { scheduledRunFixture } from "../scheduledFixtures";
+import { formatDateTime } from "@/i18n/format";
 import { completedRun } from "../streamFixtures";
 
 const delivered: ChatMessage = {
@@ -11,7 +13,83 @@ const delivered: ChatMessage = {
   delivery: { run_id: "run-1", task_id: "task-1", task_title: "Inventory check", task_kind: "custom", schedule: { kind: "weekly", days: [1], hour: 8, minute: 0, timezone: "Asia/Seoul" }, run_thread_id: "thread-margin", status: "succeeded", finished_at_ms: Date.now() },
 };
 
-it("lists the home Thread first, lands on it, and opens a delivered result's own Chat", async () => {
+function installDelivery(bridge: MockLoupistBridge, card: ChatMessage) {
+  const delivery = card.delivery!;
+  const task: ScheduledTask = {
+    id: delivery.task_id, kind: "custom", revision: 1, created_at_ms: 0, updated_at_ms: 0,
+    last_run_at_ms: delivery.finished_at_ms, last_error: null, session_thread_id: null, next_run_at_ms: null, awaiting_confirmation: false,
+    loupist_id: "loupist-quality", title: delivery.task_title, prompt: "Check inventory days.", schedule: delivery.schedule!,
+    target: { kind: "new_chat" }, model_profile_id: "", thinking_level: "", run_options: {}, use_memory: true, update_memory: true, status: "active",
+  };
+  const run = scheduledRunFixture({ task_id: delivery.task_id, run_id: delivery.run_id, task_title: delivery.task_title,
+    started_at_ms: delivery.finished_at_ms - 1000, finished_at_ms: delivery.finished_at_ms, status: "succeeded",
+    summary: "Full run result.", thread_id: delivery.run_thread_id });
+  bridge.installScheduledTask(task, [run, { ...run, id: "quiet", run_id: "quiet", quiet: true }]);
+}
+
+it("opens the exact Schedule run from Bot and excludes quiet runs from the unread badge", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  installDelivery(bridge, delivered);
+  const select = bridge.loupistSelect.bind(bridge);
+  vi.spyOn(bridge, "loupistSelect").mockImplementation(async id => {
+    const workspace = await select(id);
+    const home = workspace.threads.find(thread => thread.home);
+    if (home && id === "loupist-quality") home.messages = [{ ...delivered, delivery: { ...delivered.delivery!, memory_save_skip: "deadline",
+      discarded_memory_items: [{ kind: "source", title: "Inventory filing" }],
+    } }];
+    return workspace;
+  });
+  const markRead = vi.spyOn(bridge, "inboxMarkRead");
+  render(<App bridge={bridge} />);
+  const result = await screen.findByRole("article", { name: "Result from Inventory check" });
+  expect(within(result).getByTitle(`Schedule · Inventory check · ${formatDateTime(delivered.delivery!.finished_at_ms)}`)).toBeVisible();
+  expect(within(result).getByText("Not saved to Memory: another conversation was still running after 10 minutes.")).toBeVisible();
+  expect(within(result).getByText("What this answer says it saved was not kept.")).toBeVisible();
+  expect(within(result).getByRole("list", { name: "Not kept" })).toHaveTextContent("Inventory filing");
+  const badge = document.querySelector<HTMLButtonElement>("[data-sidebar-schedule]")!;
+  await vi.waitFor(() => expect(badge).toHaveAccessibleDescription("1 unread scheduled result"));
+
+  await user.click(within(result).getByRole("button", { name: "Open" }));
+  expect(await screen.findByRole("heading", { name: "Schedule", level: 1 })).toBeVisible();
+  expect(await screen.findByText("Full run result.")).toBeVisible();
+  await vi.waitFor(() => expect(markRead).toHaveBeenCalledWith({ loupistId: "loupist-quality", runIds: ["run-1"] }), { timeout: 3000 });
+  await vi.waitFor(() => expect(badge).not.toHaveAccessibleDescription("1 unread scheduled result"));
+});
+
+it("marks only a Bot delivery that stayed on screen as read", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const select = bridge.loupistSelect.bind(bridge);
+  vi.spyOn(bridge, "loupistSelect").mockImplementation(async id => {
+    const workspace = await select(id);
+    workspace.threads.find(thread => thread.home)!.messages = [delivered, {
+      ...delivered, id: "distant-card", delivery: { ...delivered.delivery!, run_id: "out-of-view" },
+    }];
+    return workspace;
+  });
+  const markRead = vi.spyOn(bridge, "inboxMarkRead").mockResolvedValue();
+  const observers = new Map<Element, IntersectionObserverCallback>();
+  vi.stubGlobal("IntersectionObserver", class {
+    private notify: IntersectionObserverCallback;
+    constructor(notify: IntersectionObserverCallback) { this.notify = notify; }
+    observe(node: Element) { observers.set(node, this.notify); }
+    unobserve() {}
+    disconnect() {}
+  });
+  try {
+    render(<App bridge={bridge} />);
+    await screen.findAllByRole("article", { name: "Result from Inventory check" });
+    const node = document.querySelector<HTMLElement>('[data-delivery-run="run-1"]')!;
+    await vi.waitFor(() => expect(observers.has(node)).toBe(true));
+    const rect = node.getBoundingClientRect();
+    observers.get(node)!([{ target: node, isIntersecting: true, time: 0, rootBounds: null,
+      boundingClientRect: rect, intersectionRect: rect, intersectionRatio: 1 }], {} as IntersectionObserver);
+    await vi.waitFor(() => expect(markRead).toHaveBeenCalledWith({ loupistId: "loupist-quality", runIds: ["run-1"] }), { timeout: 3000 });
+    expect(markRead.mock.calls.flatMap(([request]) => request.runIds)).not.toContain("out-of-view");
+  } finally { vi.unstubAllGlobals(); }
+});
+
+it("keeps the posted result in Bot when its run has been removed", async () => {
   const user = userEvent.setup();
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const select = bridge.loupistSelect.bind(bridge);
@@ -21,58 +99,73 @@ it("lists the home Thread first, lands on it, and opens a delivered result's own
     if (home && id === "loupist-quality") home.messages = [delivered];
     return workspace;
   });
-  const markRead = vi.spyOn(bridge, "inboxMarkRead").mockResolvedValue();
   render(<App bridge={bridge} />);
-
-  expect(await screen.findByRole("heading", { name: "Bot" })).toBeVisible();
-  const chats = document.querySelector<HTMLElement>(".loupist-navigation")!;
-  expect(within(chats).getAllByRole("button")[0]).toHaveAccessibleName("Bot");
-  // The home Thread has no rename or delete menu.
-  expect(screen.queryByRole("button", { name: "Options for Thread" })).toBeNull();
-
-  const result = await screen.findByRole("article", { name: "Result from Inventory check" });
-  expect(within(result).getByText("Hanul Precision's inventory days rose to 61.")).toBeVisible();
-  // The tag names the task; the foot says when it runs, without naming the task again.
-  expect(within(result).getByText("Inventory check")).toBeVisible();
-  expect(within(result).getByText(/8:00/)).toBeVisible();
-  expect(within(result).queryByText(/^From:/)).toBeNull();
-  await vi.waitFor(() => expect(markRead).toHaveBeenCalledWith({ loupistId: "loupist-quality", runIds: ["run-1"] }), { timeout: 2000 });
-
-  await user.click(within(result).getByRole("button", { name: "Open" }));
-  expect(await screen.findByRole("heading", { name: "How should we read the margin decline?" })).toBeVisible();
+  const card = await screen.findByRole("article", { name: "Result from Inventory check" });
+  await user.click(within(card).getByRole("button", { name: "Open" }));
+  expect(await within(card).findByRole("status")).toHaveTextContent("This run's record was removed.");
 });
 
-it("opens a result's task once its session went with the run, and says so once the task is gone too", async () => {
+it("updates all three task cards when a tool deletes the task at the same revision it read", async () => {
   const user = userEvent.setup();
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
-  const task = await bridge.proposeScheduledTask({
-    loupist_id: "loupist-quality", title: "Inventory check", prompt: "Check inventory days.", schedule: delivered.delivery!.schedule!,
-    target: { kind: "new_chat" }, model_profile_id: "model-test", thinking_level: "medium", run_options: {}, use_memory: true, update_memory: false, status: "active",
+  const loupistId = "loupist-quality";
+  const proposal = await bridge.proposeScheduledTask({
+    loupist_id: loupistId, title: "Harbor audit pulse", prompt: "Check Harbor Loom weekly.",
+    schedule: { kind: "weekly", days: [1], hour: 9, minute: 15, timezone: "Asia/Seoul" },
+    target: { kind: "new_chat" }, model_profile_id: "", thinking_level: "", run_options: {},
+    use_memory: true, update_memory: false, status: "paused",
   });
-  // The run's session left with the run; the card in Bot still names it.
-  const card: ChatMessage = { ...delivered, delivery: { ...delivered.delivery!, task_id: task.id, run_thread_id: "scheduled-chat-gone" } };
+  const identity = { loupist_id: loupistId, task_id: proposal.id };
+  const task = await bridge.scheduledTaskConfirm(identity);
+  const viewed: TaskScheduleReceipt = {
+    task_id: task.id, title: task.title, revision: task.revision, action: "viewed",
+    status: task.status, schedule: task.schedule, target: task.target,
+    next_run_at_ms: task.next_run_at_ms, awaiting_confirmation: false,
+    use_memory: task.use_memory, update_memory: task.update_memory,
+  };
+  const history: ChatMessage[] = (["created", "started"] as const).map((action) => ({
+    id: `saved-${action}`, role: "assistant", status: "complete", content: "Harbor schedule saved.",
+    created_at: "2026-11-20T00:00:00Z", schedule_receipts: [{ ...viewed, action }],
+  }));
   const select = bridge.loupistSelect.bind(bridge);
   vi.spyOn(bridge, "loupistSelect").mockImplementation(async id => {
     const workspace = await select(id);
-    const home = workspace.threads.find(thread => thread.home);
-    if (home && id === "loupist-quality") home.messages = [card];
+    if (id === loupistId) workspace.threads.find(thread => thread.home)!.messages = history;
     return workspace;
   });
+  // The native delete tool sends its receipt without an inbox event.
+  vi.spyOn(bridge, "onInboxChanged").mockReturnValue(() => undefined);
+  let emitReceipt!: (receipt: TaskScheduleReceipt) => void;
+  vi.spyOn(bridge, "chatSend").mockImplementation(async (request, observer) => {
+    observer({ type: "started", run_id: request.run_id });
+    emitReceipt = receipt => observer({ type: "schedule", run_id: request.run_id, receipt });
+    emitReceipt(viewed);
+    return { run_id: request.run_id };
+  });
   render(<App bridge={bridge} />);
+  await user.type(await screen.findByRole("textbox", { name: "Message Loupist" }), "Delete Harbor audit pulse.");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  const cards = () => screen.getAllByRole("article", { name: "Scheduled task: Harbor audit pulse" });
+  await waitFor(() => {
+    expect(cards()).toHaveLength(3);
+    for (const card of cards()) {
+      expect(within(card).getByText("Active")).toBeVisible();
+      expect(within(card).getByText(/^Next run /)).toBeVisible();
+    }
+  });
 
-  const result = await screen.findByRole("article", { name: "Result from Inventory check" });
-  await user.click(within(result).getByRole("button", { name: "Open" }));
-  expect(await screen.findByRole("article", { name: "Inventory check" })).toBeVisible();
-  expect(screen.getByRole("heading", { name: "Schedule", level: 1 })).toBeInTheDocument();
-  expect(screen.queryByRole("article", { name: "Result from Inventory check" })).toBeNull();
-
-  await bridge.scheduledTaskDiscard({ loupist_id: "loupist-quality", task_id: task.id });
-  await user.click(screen.getByRole("button", { name: "Bot" }));
-  const again = await screen.findByRole("article", { name: "Result from Inventory check" });
-  await user.click(within(again).getByRole("button", { name: "Open" }));
-  expect(await within(again).findByRole("status")).toHaveTextContent("This run's record was removed.");
-  expect(within(again).queryByRole("button", { name: "Open" })).toBeNull();
-  expect(screen.getByRole("heading", { name: "Bot", level: 1 })).toBeInTheDocument();
+  await act(async () => {
+    await bridge.scheduledTaskDelete({ ...identity, expected_revision: task.revision });
+    emitReceipt({ ...viewed, action: "deleted" });
+  });
+  await waitFor(() => {
+    expect(cards()).toHaveLength(3);
+    for (const card of cards()) {
+      expect(within(card).getByText("Deleted")).toBeVisible();
+      expect(within(card).queryByText(/^Next run /)).toBeNull();
+      expect(within(card).queryByRole("button")).toBeNull();
+    }
+  });
 });
 
 it("leaves a run's open session for Bot once the host deletes it with its run", async () => {
@@ -84,6 +177,7 @@ it("leaves a run's open session for Bot once the host deletes it with its run", 
   };
   const answer: ChatMessage = { id: "run-answer", role: "assistant", status: "complete", created_at: "2026-11-06T08:01:00.000Z", content: "Inventory days rose to 61." };
   const card: ChatMessage = { ...delivered, delivery: { ...delivered.delivery!, run_thread_id: "scheduled-chat-run" } };
+  installDelivery(bridge, card);
   const stored = { session: true };
   const select = bridge.loupistSelect.bind(bridge);
   vi.spyOn(bridge, "loupistSelect").mockImplementation(async id => {
@@ -100,6 +194,7 @@ it("leaves a run's open session for Bot once the host deletes it with its run", 
 
   const result = await screen.findByRole("article", { name: "Result from Inventory check" });
   await user.click(within(result).getByRole("button", { name: "Open" }));
+  await user.click(await screen.findByRole("button", { name: "Continue in Chat →" }));
   expect(await screen.findByText(answer.content)).toBeVisible();
 
   stored.session = false;
@@ -188,7 +283,7 @@ it("posts nothing in Bot while a hand-off runs and its result once its session f
   await user.click(screen.getByRole("button", { name: "Bot" }));
   const finished = await screen.findByRole("article", { name: "Research: Hynix HBM supply" });
   expect(acknowledgement().getByRole("button", { name: "Hynix HBM supply" })).toBeVisible();
-  expect(within(finished).getByText("Researched: Hynix HBM supply")).toBeVisible();
+  expect(within(finished).getByText("Session ended: Hynix HBM supply")).toBeVisible();
   expect(within(finished).getByText(answer.content)).toBeVisible();
   expect(within(finished).getByRole("button", { name: "Open" })).toBeVisible();
   expect(screen.getAllByRole("article", { name: "Research: Hynix HBM supply" })).toHaveLength(1);

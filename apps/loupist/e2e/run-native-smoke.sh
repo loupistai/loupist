@@ -5,6 +5,14 @@ umask 077
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 # Keep one native GUI owner across checkouts and suite restarts.
 if [ "${LOUPIST_GUI_LEASE_ENTRY:-}" != "$$:$0" ]; then
+    # A desktop window manager draws a title bar outside the 700 by 560
+    # minimum client size, so the outer window cannot be the size this suite
+    # requests. Drop the inherited display and let the lease start a private
+    # Xvfb with no window manager. macOS has no DISPLAY to clear.
+    if [ "$(uname -s)" = Linux ]; then
+        unset DISPLAY
+        unset WAYLAND_DISPLAY
+    fi
     exec python3 "$SCRIPT_DIR/native_ui_lease.py" "$0" "$@"
 fi
 RUN_LOG=
@@ -39,6 +47,8 @@ fi
 # No secret and no network: the e2e catalog marker lets this credential-free
 # suite pass the ChatGPT step and open the shell. Live journeys do not set it.
 export LOUPIST_E2E_PROVIDER_READY=1
+# Run the custom-connection controls in debug, or test the shipped surface with 0.
+export LOUPIST_DEV_CUSTOM_CONNECTIONS="${LOUPIST_DEV_CUSTOM_CONNECTIONS:-1}"
 # macOS Apple Silicon debug builds script a slow hand-off on the knowledge fixture's
 # Map link for the smoke's Bot hand-off journey; other hosts skip that journey.
 if [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ]; then

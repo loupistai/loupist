@@ -9,8 +9,8 @@ import { entityLabel } from "../knowledge/mapItems";
 import { nodeColorKey } from "../knowledge/mapKinds";
 import { chatReceipt } from "./receipt";
 import { deliveredFiles } from "./deliveredFiles";
-import { citationSources } from "./evidence";
-import { catalogStepLabel } from "./progressLabels";
+import { answerSources, type AnswerSource } from "./answerSources";
+import { knownActivityLabel, readNounFor } from "./progressLabels";
 import { connectionText } from "@/lib/connectionCopy";
 import { actionLabel, visibleTarget } from "./runStatus";
 
@@ -77,8 +77,9 @@ const fileName = (path: string) => path.split(/[\\/]/u).filter(Boolean).at(-1) ?
  * data the chat already holds. Nothing here reads or writes beyond the chat's messages,
  * its growth events and the composer's pins.
  */
-export function railData({ messages, pins = [], map, events = [], learningPending = false, learningWaiting, chatId, language, workspacePath }: {
+export function railData({ messages, customConnections = false, pins = [], map, events = [], learningPending = false, learningWaiting, chatId, language, workspacePath }: {
   messages: readonly ChatMessage[];
+  customConnections?: boolean;
   pins?: readonly KnowledgePin[];
   map?: KnowledgeMap | null;
   events?: readonly GrowthEvent[];
@@ -149,8 +150,8 @@ export function railData({ messages, pins = [], map, events = [], learningPendin
   }
 
   const latest = [...messages].reverse().find((message) => message.role === "assistant");
-  const needs = (latest?.tool_refusals ?? []).filter((refusal) => refusal.reason === "needs_approval");
-  const waiting = (latest?.progress?.approvals ?? []).filter((approval) => approval.state === "waiting");
+  const needs = (latest?.tool_refusals ?? []).filter((refusal) => customConnections && refusal.reason === "needs_approval");
+  const waiting = (latest?.progress?.approvals ?? []).filter((approval) => customConnections && approval.state === "waiting");
   const questions = (latest?.progress?.questions ?? []).filter((question) => question.state === "waiting");
   return { files, using, learned, learningPending, learningWaiting, needs, waiting, questions, hasCards: files.length > 0 || using.length > 0 || learned !== null || learningPending || !!learningWaiting || needs.length > 0 || waiting.length > 0 || questions.length > 0 };
 }
@@ -194,7 +195,7 @@ export type ActivityTurn = {
   durationMs?: number;
   stepCount: number;
   groups: ActivityGroup[];
-  sources: ChatEvidenceRef[];
+  sources: AnswerSource[];
   checks: { check: NumberCheck; evidence?: ChatEvidenceRef }[];
 };
 
@@ -203,14 +204,6 @@ const HIDDEN_TOOLS = new Set(["plan_update", "ask_user"]);
 const toolBase = (tool: string | undefined) => tool?.split("__").at(-1);
 const isIdentifier = (value: string) => /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/u.test(value);
 
-/** A data read's noun ("current quote"): the as-of catalog first, then the sheet's own. */
-function readNounFor(name: string | undefined) {
-  if (!name) return undefined;
-  if (i18n.exists(`chat:asOf.reads.${name}`)) return tDynamic(`asOf.reads.${name}`);
-  if (i18n.exists(`chat:activitySheet.reads.${name}`)) return tDynamic(`activitySheet.reads.${name}`);
-  return undefined;
-}
-
 /**
  * A step's title in the interface language: the sheet's own label for a tool the
  * catalog lacks, the catalog's label, a read's noun, the connection's name, or a
@@ -218,12 +211,8 @@ function readNounFor(name: string | undefined) {
  */
 export function activityStepLabel(item: ActionItem, form: "running" | "done" = item.status === "running" ? "running" : "done"): string {
   if (item.kind === "system") return item.operation === "compact" ? actionLabel(item) : tDynamic(`activitySheet.step.operation.${item.operation}`);
-  const name = toolBase(item.toolName);
-  if (name && i18n.exists(`chat:activitySheet.tools.${name}`)) return tDynamic(`activitySheet.tools.${name}.${form}`);
-  const catalog = catalogStepLabel(item.toolName, form);
-  if (catalog) return catalog;
-  const noun = readNounFor(name);
-  if (noun) return tDynamic(`readStep.${form}`, { read: noun });
+  const known = knownActivityLabel(item.toolName, form);
+  if (known) return known;
   const connection = item.source?.kind === "connector" ? connectionText(item.source.name.trim()) : "";
   if (connection) return tDynamic(form === "running" ? "activitySheet.step.runningConnection" : "activitySheet.step.usedConnection", { name: connection });
   return tDynamic(`activitySheet.step.operation.${item.operation}`);
@@ -332,7 +321,7 @@ export function activityTurn(message: ChatMessage): ActivityTurn {
     running: message.status === "streaming",
     durationMs: durationMs && durationMs > 0 ? durationMs : undefined,
     stepCount, groups,
-    sources: citationSources(message.evidence_refs ?? []),
+    sources: answerSources(message),
     checks: (message.number_checks ?? []).map((check) => ({ check, evidence: evidenceById.get(check.evidence_id) })),
   };
 }

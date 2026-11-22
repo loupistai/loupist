@@ -6,15 +6,18 @@ import "@/styles/activity-sheet.css";
 import { Button } from "../ui/button";
 import { useGo, useOpenProps } from "../navigation/Open";
 import { useChatLightbox } from "./ChatLightbox";
+import { ChatToolResult } from "./ChatToolResult";
 import { ChatActivityDetailView } from "./ChatActivityDetailView";
 import type { ChatExecutionScope } from "./ChatExecutionContext";
 import { LearnedCard } from "./LearnedCard";
 
 import { humanizeToolName } from "../connections/custom/toolTitle";
 import { activityMessages, activityTurn, type ActivityGroup, type ActivityStep, type ActivityTurn, type RailData, type RailFile, type RailUsing } from "../../chat/chatRail";
-import { evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
-import { evidenceDate } from "../../chat/numberChecks";
+import { answerSourceRow, type AnswerSource } from "../../chat/answerSources";
+import { evidenceProvenance, evidenceTitle } from "../../chat/evidence";
+import { savedSourceFigure, type ChatDestination } from "../../chat/navigation";
 import { receiptDuration } from "../../chat/turnView";
+import { useNow } from "../../chat/runStatus";
 import { memoryChangeVerb } from "../../chat/memoryActivity";
 import { savesMemory } from "../../chat/receipt";
 import { useLearnedDigest } from "../../chat/useLearnedDigest";
@@ -22,7 +25,8 @@ import { fileSize } from "../../chat/fileSize";
 import { knowledgeLocationFromMemoryChange } from "../../knowledge/location";
 import { worldReadinessLabels } from "../../knowledge/worldReadiness";
 import { modalDialogOpen } from "../../app/shortcuts";
-import type { ChatEvidenceRef, ChatMessage, LoupistBridge, LoupistSummary, MemoryUpdateChange } from "../../types";
+import { chatTitle } from "../../app/chatTitle";
+import type { ChatEvidenceRef, ChatMessage, ChatThread, LoupistBridge, LoupistSummary, ChatSaveActivity, MemoryUpdateChange } from "../../types";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -32,7 +36,7 @@ const t = i18n.getFixedT(null, "chat");
  * button) closes a sheet that is already open.
  */
 export const OPEN_ACTIVITY_EVENT = "loupist:open-activity";
-type OpenActivityDetail = { messageId?: string; tab?: "steps" | "sources" | "learned" | "connections"; toggle?: boolean };
+type OpenActivityDetail = { messageId?: string; tab?: "steps" | "sources" | "learned" | "connections"; toggle?: boolean; figureIndex?: number };
 
 export type ActivityTab = "activity" | "learned" | "using";
 const TABS: ActivityTab[] = ["activity", "learned", "using"];
@@ -45,7 +49,7 @@ const CHAT_MIN_WIDTH = 420;
 const MAX_EARLIER = 6;
 const MAX_TARGETS = 3;
 
-type SheetState = { open: boolean; tab: ActivityTab; messageId: string | null; section: "sources" | null; request: number };
+type SheetState = { open: boolean; tab: ActivityTab; messageId: string | null; section: "sources" | null; request: number; figureIndex?: number };
 
 /**
  * Open state, placement and the `loupist:open-activity` listener for one chat. The
@@ -88,6 +92,7 @@ export function useActivitySheet(active: boolean) {
           messageId: detail.messageId ?? null,
           section: detail.tab === "sources" ? "sources" : null,
           request: current.request + 1,
+          figureIndex: detail.figureIndex,
         };
       });
     };
@@ -95,8 +100,8 @@ export function useActivitySheet(active: boolean) {
     return () => window.removeEventListener(OPEN_ACTIVITY_EVENT, listener);
   }, [active]);
   const close = useCallback(() => setState((current) => current.open ? { ...current, open: false } : current), []);
-  const setTab = useCallback((tab: ActivityTab) => setState((current) => ({ ...current, tab, section: null })), []);
-  const selectMessage = useCallback((messageId: string) => setState((current) => ({ ...current, tab: "activity", messageId, section: null })), []);
+  const setTab = useCallback((tab: ActivityTab) => setState((current) => ({ ...current, tab, section: null, figureIndex: undefined })), []);
+  const selectMessage = useCallback((messageId: string) => setState((current) => ({ ...current, tab: "activity", messageId, section: null, figureIndex: undefined })), []);
   const docked = width > 0 && width >= SHEET_WIDTH + CHAT_MIN_WIDTH;
   return { layoutRef: layoutRef as RefObject<HTMLElement>, opener, ...state, open: state.open && active, placement: docked ? "docked" as const : "overlay" as const, composerClearance, close, setTab, selectMessage };
 }
@@ -107,6 +112,7 @@ type Props = {
   sheet: ActivitySheetControl;
   loupist: LoupistSummary;
   messages: readonly ChatMessage[];
+  threads?: readonly ChatThread[];
   running: boolean;
   rail: RailData;
   bridge: LoupistBridge;
@@ -144,7 +150,12 @@ function useHeaderPressed(open: boolean) {
   }, []);
 }
 
-function OpenSheet({ sheet, loupist, messages, running, rail, bridge, execution, onOpenUsing, onOpenFile, onShowOnMap, onWorldChanged }: Props) {
+function failedReplyStatus(message: ChatMessage) {
+  const failedAt = t("activitySheet.status.failedAt", { time: formatTime(Date.parse(message.created_at)) });
+  return message.failure_kind === "rate_limited" ? `${failedAt} · ${t("chatMessageCard.rate_limited")}` : failedAt;
+}
+
+function OpenSheet({ sheet, loupist, messages, threads, running, rail, bridge, execution, onOpenUsing, onOpenFile, onShowOnMap, onWorldChanged }: Props) {
   useTranslation("chat");
   const root = useRef<HTMLElement>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -153,10 +164,14 @@ function OpenSheet({ sheet, loupist, messages, running, rail, bridge, execution,
   const selected = (sheet.messageId ? replies.find((message) => message.id === sheet.messageId) : undefined) ?? replies.at(-1);
   const { close, opener, placement, request, section } = sheet;
 
+  const comparison = selected?.id === sheet.messageId && sheet.figureIndex !== undefined
+    ? selected.number_checks?.find(check => check.link_index === sheet.figureIndex) : undefined;
+  const result = comparison ? selected?.evidence_refs?.find(evidence => evidence.id === comparison.evidence_id) : undefined;
+
   // Opening moves focus into the sheet; closing from inside returns it to the control that opened it.
   useEffect(() => {
-    root.current?.focus({ preventScroll: true });
-  }, [request]);
+    if (!result) root.current?.focus({ preventScroll: true });
+  }, [request, result]);
   useEffect(() => {
     const element = root.current;
     const from = opener;
@@ -196,7 +211,8 @@ function OpenSheet({ sheet, loupist, messages, running, rail, bridge, execution,
 
   const latest = replies.at(-1);
   // The header speaks for the reply; the Map's own processing shows in the Learned tab, never as "still working".
-  const status = running ? t("activitySheet.status.working")
+  const status = running ? t(latest?.memorySaving ? "memorySaving.label" : "activitySheet.status.working")
+    : latest?.status === "error" ? failedReplyStatus(latest)
     : latest ? t("activitySheet.status.answeredAt", { time: formatTime(Date.parse(latest.created_at)) })
     : t("activitySheet.status.noAnswer");
 
@@ -225,7 +241,10 @@ function OpenSheet({ sheet, loupist, messages, running, rail, bridge, execution,
       <Button variant="ghost" size="icon-sm" data-activity-close aria-label={t("activitySheet.close")} title={t("activitySheet.close")} onClick={close}><XIcon aria-hidden="true" /></Button>
     </header>
     <div ref={body} className="activity-sheet-body" role="tabpanel" id={`${tabsId}-panel`} aria-labelledby={`${tabsId}-${sheet.tab}`}>
-      {sheet.tab === "activity" ? <ActivityPanel key={selected?.id ?? "none"} message={selected} replies={replies} messages={messages} execution={execution} onSelect={sheet.selectMessage} />
+      {sheet.tab === "activity" && selected && result && comparison &&
+        <ChatToolResult evidence={result} comparison={comparison} expanded focusRequest={request}
+          onToggle={() => sheet.selectMessage(selected.id)} />}
+      {sheet.tab === "activity" ? <ActivityPanel loupistId={loupist.id} key={selected?.id ?? "none"} message={selected} replies={replies} messages={messages} threads={threads} execution={execution} onSelect={sheet.selectMessage} />
         : sheet.tab === "learned" ? <LearnedPanel message={selected} rail={rail} bridge={bridge} loupistId={loupist.id} onShowOnMap={onShowOnMap} onWorldChanged={onWorldChanged} />
         : <UsingPanel rail={rail} onOpenUsing={onOpenUsing} onOpenFile={onOpenFile} onShowOnMap={onShowOnMap} />}
     </div>
@@ -238,27 +257,28 @@ function durationLabel(milliseconds: number) {
   return receiptDuration(milliseconds);
 }
 
-function ActivityPanel({ message, replies, messages, execution, onSelect }: {
-  message: ChatMessage | undefined; replies: readonly ChatMessage[]; messages: readonly ChatMessage[];
+function ActivityPanel({ loupistId, message, replies, messages, threads, execution, onSelect }: {
+  loupistId: string; message: ChatMessage | undefined; replies: readonly ChatMessage[]; messages: readonly ChatMessage[];
+  threads?: readonly ChatThread[];
   execution: ChatExecutionScope | null; onSelect: (messageId: string) => void;
 }) {
   useTranslation("chat");
-  // Recomputed with the message: a running reply's steps arrive while the sheet is open.
-  const turn = useMemo(() => message ? activityTurn(message) : null, [message]);
+  const turn = message ? activityTurn(message) : null;
   if (!message || !turn) return <p className="activity-empty">{t("activitySheet.status.noAnswer")}</p>;
   const earlier = replies.filter((reply) => reply.id !== message.id).slice(-MAX_EARLIER).reverse();
   return <>
     <section className="activity-section" data-activity-section="steps" aria-labelledby={`activity-steps-${turn.messageId}`}>
       <h3 id={`activity-steps-${turn.messageId}`}>
         <span>{t("activitySheet.did.title")}</span>
-        <span className="activity-section-meta">{t("activitySheet.turn.this", { time: formatTime(turn.atMs) })}{turn.durationMs !== undefined ? ` · ${durationLabel(turn.durationMs)}` : ""}</span>
+        <span className="activity-section-meta">{message.status === "error" ? failedReplyStatus(message) : t("activitySheet.turn.this", { time: formatTime(turn.atMs) })}{turn.durationMs !== undefined ? ` · ${durationLabel(turn.durationMs)}` : ""}</span>
       </h3>
-      {turn.groups.length ? <ol className="activity-steps" aria-busy={turn.running || undefined}>
+      {turn.groups.length || message.progress?.saveActivity ? <ol className="activity-steps" aria-busy={turn.running || undefined}>
         {turn.groups.map((group) => <StepGroup key={group.key} group={group} execution={execution} />)}
+        {message.progress?.saveActivity ? <SavingStep activity={message.progress.saveActivity} threads={threads} live={Boolean(message.memorySaving)} skipped={Boolean(message.memory_update?.skipReason)} /> : null}
       </ol> : <p className="activity-empty">{turn.running ? t("activitySheet.did.running") : t("activitySheet.did.empty")}</p>}
     </section>
-    <SourcesSection turn={turn} />
-    <ChecksSection turn={turn} />
+    <SourcesSection turn={turn} loupistId={loupistId} />
+    <ChecksSection turn={turn} loupistId={loupistId} message={message} />
     {earlier.length ? <section className="activity-section" data-activity-section="earlier">
       <h3><span>{t("activitySheet.turn.earlier")}</span></h3>
       <ol className="activity-steps activity-earlier">
@@ -266,6 +286,24 @@ function ActivityPanel({ message, replies, messages, execution, onSelect }: {
       </ol>
     </section> : null}
   </>;
+}
+
+function SavingStep({ activity, threads, live, skipped }: { activity: ChatSaveActivity; threads?: readonly ChatThread[]; live: boolean; skipped: boolean }) {
+  const now = useNow(live);
+  const end = activity.finishedAtMs ?? (live ? now : null);
+  const chat = threads?.find(thread => thread.id === activity.blockingChatId);
+  const waited = activity.waitedMs > 0 ? durationLabel(activity.waitedMs) : null;
+  return <li className="activity-step" data-state={live ? "running" : skipped ? "bad" : "ok"}>
+    <i aria-hidden="true" />
+    <div className="activity-step-copy">
+      <span className="activity-step-label">{t("memorySaving.label")}</span>
+      {waited ? <small className="activity-step-target">{chat
+        ? t("memorySaving.waitedForChat", { duration: waited, title: chatTitle(chat) })
+        : t("memorySaving.waitedForOthers", { duration: waited })}</small> : null}
+    </div>
+    {end === null ? <span className="activity-step-time">{t("memorySaving.unfinished")}</span>
+      : <time className="activity-step-time">{durationLabel(Math.max(0, end - activity.startedAtMs))}</time>}
+  </li>;
 }
 
 /** The user's message the reply answered, as its one-line name in "Earlier answers". */
@@ -366,35 +404,40 @@ function StepTarget({ href, target }: { href: string; target: string }) {
   return <button type="button" className="activity-step-target activity-link" data-testid="activity-step-target" title={target} {...link.props}>{target}</button>;
 }
 
-function EvidenceLink({ evidence }: { evidence: ChatEvidenceRef }) {
-  const link = useOpenProps({ kind: "evidence", evidence });
+function EvidenceLink({ evidence, to }: { evidence: ChatEvidenceRef; to?: ChatDestination }) {
+  const link = useOpenProps(to ?? { kind: "evidence", evidence });
   const title = evidenceTitle(evidence);
-  return link.available ? <button type="button" className="activity-link" title={title} {...link.props}>{title}</button> : <span title={title}>{title}</span>;
+  const provenance = evidence.memory_origin ? evidenceProvenance(evidence) : null;
+  const body = link.available ? <button type="button" className="activity-link" title={title} {...link.props}>{title}</button> : <span title={title}>{title}</span>;
+  if (!provenance) return body;
+  const meta = [provenance.attribution, provenance.publication?.label].filter(Boolean).join(" · ");
+  return <>{body}{meta ? <small className="activity-evidence-meta">{meta}</small> : null}{provenance.route ? <small className="activity-evidence-meta">{provenance.route}</small> : null}</>;
 }
 
-function SourcesSection({ turn }: { turn: ActivityTurn }) {
+function SourcesSection({ turn, loupistId }: { turn: ActivityTurn; loupistId: string }) {
   useTranslation("chat");
   return <section className="activity-section" data-activity-section="sources">
     <h3><span>{t("activitySheet.read.title")}</span>{turn.sources.length ? <span className="activity-section-meta">{formatNumber(turn.sources.length)}</span> : null}</h3>
     {turn.sources.length ? <ol className="activity-sources">
-      {turn.sources.map((source, index) => <SourceRow key={source.id} source={source} number={index + 1} />)}
+      {turn.sources.map((source, index) => <SourceRow loupistId={loupistId} key={source.evidence.id} source={source} number={index + 1} />)}
     </ol> : <p className="activity-empty">{t("activitySheet.read.empty")}</p>}
   </section>;
 }
 
 /** A numbered source; the whole row opens it in Evidence. */
-function SourceRow({ source, number }: { source: ChatEvidenceRef; number: number }) {
-  const link = useOpenProps({ kind: "evidence", evidence: source });
-  const meta = [sourceIdentityLabel(source), evidenceDate(source)].filter(Boolean).join(" · ");
+function SourceRow({ source, number, loupistId }: { source: AnswerSource; number: number; loupistId: string }) {
+  const { title, to, citations, provenance } = answerSourceRow(source, loupistId);
+  const link = useOpenProps(to);
+  const meta = [provenance.attribution, provenance.dateLabel, !source.evidence.memory_origin || provenance.attribution ? citations : null].filter(Boolean).join(" · ");
   const content = <>
     <span className="activity-source-number">{formatNumber(number)}</span>
-    <span className="activity-source-copy"><b>{evidenceTitle(source)}</b>{meta ? <small>{meta}</small> : null}</span>
+    <span className="activity-source-copy"><b>{title}</b>{meta ? <small>{meta}</small> : null}{provenance.route ? <small>{provenance.route}</small> : null}</span>
     {link.available ? <ArrowUpRightIcon aria-hidden="true" /> : null}
   </>;
   return <li>{link.available ? <button type="button" className="activity-source" {...link.props}>{content}</button> : <div className="activity-source">{content}</div>}</li>;
 }
 
-function ChecksSection({ turn }: { turn: ActivityTurn }) {
+function ChecksSection({ turn, loupistId, message }: { turn: ActivityTurn; loupistId: string; message: ChatMessage }) {
   useTranslation("chat");
   const count = turn.checks.length;
   return <section className="activity-section" data-activity-section="checks">
@@ -405,7 +448,7 @@ function ChecksSection({ turn }: { turn: ActivityTurn }) {
         {turn.checks.map(({ check, evidence }) => <li key={`${check.link_index}:${check.evidence_id}`} data-status={check.status}>
           <span className="activity-check-figure">{check.text}</span>
           <span className="activity-check-status">{t(`activitySheet.checked.status.${check.status}`)}</span>
-          {evidence ? <span className="activity-check-source"><EvidenceLink evidence={evidence} /></span> : null}
+          {evidence ? <span className="activity-check-source"><EvidenceLink evidence={evidence} to={savedSourceFigure(loupistId, message, evidence, check)} /></span> : null}
         </li>)}
       </ul>
     </> : <p className="activity-empty">{t("activitySheet.checked.empty")}</p>}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { LoupistBridge, ScheduledRun } from "../types";
 import type { ChatSessions } from "./useChatSessions";
 import { isEmptyChatThreadId } from "./emptyChat";
@@ -8,6 +8,7 @@ const windowVisible = () => document.visibilityState !== "hidden";
 /** Discover native work without changing the selected Chat, draft or reader. */
 export function useScheduledRuns(bridge: LoupistBridge, loupistId: string | null, chat: ChatSessions) {
   const tracked = useRef(new Map<string, ScheduledRun>());
+  const [activity, setActivity] = useState<{ loupistId: string; titles: string[] } | null>(null);
   const { chatRegistry, runRegistry, setThreadsForLoupist, threadsByLoupistRef, activeThreadIdsRef, setActiveThreadForLoupist } = chat;
 
   /** Reads the Loupist's chats again; resolves with the ids the host has now. */
@@ -42,18 +43,26 @@ export function useScheduledRuns(bridge: LoupistBridge, loupistId: string | null
       if (!active || polling) return;
       clearTimeout(timer);
       polling = true;
+      const checkingMemory = runRegistry.hasMemoryWaiters;
+      if (checkingMemory) void runRegistry.hydrateLoupist(loupistId);
       try {
         const runs = await bridge.scheduledTasksActivity({ loupist_id: loupistId });
         if (!active) return;
+        const running = runs.filter((run) => run.status === "running");
+        const titles = running.map((run) => run.task_title);
+        setActivity(current => {
+          if (!titles.length) return null;
+          if (current?.loupistId === loupistId && current.titles.length === titles.length
+            && current.titles.every((title, index) => title === titles[index])) return current;
+          return { loupistId, titles };
+        });
         const previous = [...tracked.current.values()].filter((run) => run.loupist_id === loupistId);
         const changed = previous.length !== runs.length || runs.some((run) => {
           const saved = tracked.current.get(run.run_id);
           return !saved || saved.status !== run.status || saved.thread_id !== run.thread_id;
         });
-        for (const run of runs) {
-          if (run.status === "running") chatRegistry.resumeScheduled(run);
-        }
-        if (runs.some((run) => run.status === "running")) void runRegistry.hydrateLoupist(loupistId);
+        for (const run of running) chatRegistry.resumeScheduled(run);
+        if (!checkingMemory && running.length > 0) void runRegistry.hydrateLoupist(loupistId);
         if (changed || unread) {
           await refreshThreads(loupistId);
           unread = false;
@@ -82,5 +91,5 @@ export function useScheduledRuns(bridge: LoupistBridge, loupistId: string | null
     return () => { active = false; clearTimeout(timer); document.removeEventListener("visibilitychange", visibilityChanged); window.removeEventListener("focus", focused); unsubscribe(); };
   }, [bridge, chatRegistry, loupistId, refreshThreads, runRegistry]);
 
-  return { refreshThreads };
+  return { refreshThreads, runningTitles: activity?.loupistId === loupistId ? activity.titles : undefined };
 }

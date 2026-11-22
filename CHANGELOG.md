@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+- Open the Developer ID-signed, Apple-notarized Beta directly from Applications, without approving it in System Settings.
+- After updating from 0.1.2, open **Settings > Data connections**, choose **Allow access** and select **Always Allow** in each macOS prompt for your saved keys. Until then, Chat says which connections need permission and scheduled results name the connections they skipped.
+- Open Loupist in the menu bar when you log in to your Mac so scheduled research can resume after a restart. Enable it in General settings or from Schedule.
+- Find the page of names, facts and relationships under its new name, World (formerly Map).
+- Read the Lens as how your Loupist looks at things: its perspective, your principles, its methods and its notes.
+- Choose the model for a chat by name. The automatic choice is gone.
+- Keep working in other conversations while one waits for your answer. A finished answer is shown as finished while it saves to Memory, and you can skip that save.
+- See what a number check compared: the answer's value, the source's value and why they differ.
+- Trust fewer false warnings: amounts stated in millions, in another notation of the same currency or with a decline written in words are recognised, in new answers and in ones you already have.
+- Open a saved Source at the passage an answer cited, from any of its figures.
+- See a reused figure's original publisher and date separately from the day Loupist saved it.
+- Read SEC filings directly once your SEC contact is set in Data connections.
+- Read a workbook Loupist made beside the chat as tables, and open it in your spreadsheet application.
+- Compare series side by side in bar charts. Bars are stacked only when they are parts of one total.
+- Follow a scheduled run from its result in Bot to its run in Schedule, and see in the sidebar when a run or World building is in progress.
+- Hand research from Bot to a session that opens with the whole request.
+- Use the menu bar in your interface language, with Print, Close Window and zoom.
+- Open links outside a chat in your browser, which now comes to the front.
+- Return to Loupist from a Loupist page after approving an AI account sign-in in your browser.
+- Understand a data provider's refusal: a mistyped series or code is reported as an input to correct.
+- User-added Skills and custom connections are not available in this version. Any you added in 0.1.2 stay on your disk but are not shown or used.
+
 ## 0.1.2 - 2026-11-21
 
 - Run Loupist, a local-first financial research app, on macOS 13 or newer on Apple Silicon only.

@@ -378,6 +378,10 @@ pub(crate) struct Handoff {
     pub stop_reason: Option<HandoffStopReason>,
     pub run: HandoffRun,
     pub status: HandoffStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_save_skip: Option<crate::domain::MemorySaveSkipReason>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discarded_memory_items: Option<Vec<crate::domain::DiscardedMemoryItem>>,
     pub run_id: Option<String>,
     pub message_id: Option<String>,
     pub error: Option<String>,
@@ -431,6 +435,11 @@ fn load(connection: &Connection, loupist_id: &str, id: &str) -> StoreResult<Opti
 }
 
 fn save(connection: &Connection, handoff: &Handoff) -> StoreResult<()> {
+    crate::domain::validate_discarded_memory_items(
+        handoff.discarded_memory_items.as_deref(),
+        handoff.memory_save_skip.is_some(),
+    )
+    .map_err(|error| invalid(&error.to_string()))?;
     connection.execute(
         "UPDATE chat_handoffs SET status=?3, run_id=?4, data_json=?5 WHERE loupist_id=?1 AND id=?2",
         params![
@@ -530,7 +539,7 @@ pub(crate) fn commit_bot(
     commit(transaction, loupist_id, staged, origin, trust, None, now)
 }
 
-pub(crate) const LINK_CAPTION: &str = "The user chose “Look into it” on this Map link.";
+pub(crate) const LINK_CAPTION: &str = "The user chose “Look into it” on this World link.";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -857,6 +866,8 @@ fn commit(
         stop_reason: None,
         run,
         status: HandoffStatus::Created,
+        memory_save_skip: None,
+        discarded_memory_items: None,
         run_id: None,
         message_id: None,
         error: None,
@@ -1111,7 +1122,7 @@ pub(crate) fn finish_done_fixture(
         state,
         loupist_id,
         id,
-        Outcome::Done(Some(message_id)),
+        Outcome::Done(Some(message_id), None),
         now_ms(),
     )
 }
@@ -1145,9 +1156,11 @@ fn finish(
 
 fn record(handoff: &mut Handoff, outcome: Outcome, now: i64) {
     match outcome {
-        Outcome::Done(message_id) => {
+        Outcome::Done(message_id, skip) => {
             handoff.status = HandoffStatus::Done;
             handoff.message_id = message_id;
+            handoff.memory_save_skip = skip.as_ref().map(|(reason, _)| *reason);
+            handoff.discarded_memory_items = skip.and_then(|(_, items)| items);
         }
         Outcome::Failed(error) => {
             handoff.status = HandoffStatus::Failed;
@@ -1186,11 +1199,16 @@ fn settle_unheld(
     if handoff.status != HandoffStatus::Running {
         return Ok(());
     }
-    let answer = stored_chat(&transaction, loupist_id, &handoff.chat_id)
-        .map_err(map_store)?
-        .and_then(|session| committed_answer(&session));
-    let outcome = match answer {
-        Some(message_id) => Outcome::Done(Some(message_id)),
+    let session = stored_chat(&transaction, loupist_id, &handoff.chat_id).map_err(map_store)?;
+    let outcome = match session.as_ref().and_then(committed_answer) {
+        Some(reply) => Outcome::Done(
+            Some(reply.id.clone()),
+            reply.memory_update.as_ref().and_then(|update| {
+                update
+                    .skip_reason
+                    .map(|reason| (reason, update.discarded_memory_items.clone()))
+            }),
+        ),
         None => Outcome::Stopped(Some(HandoffStopReason::Interrupted)),
     };
     record(&mut handoff, outcome, now);
@@ -1202,7 +1220,7 @@ fn settle_unheld(
 /// The run's answer, when the session committed one: the reply that follows the
 /// session's opening request (the message carrying the hand-off note), past any
 /// guidance sent while it ran. A stopped or failed reply is no answer.
-fn committed_answer(session: &ChatSession) -> Option<String> {
+fn committed_answer(session: &ChatSession) -> Option<&ChatMessage> {
     let mut after_request = session
         .messages
         .iter()
@@ -1213,11 +1231,16 @@ fn committed_answer(session: &ChatSession) -> Option<String> {
         .filter(|reply| {
             reply.role == ChatRole::Assistant && reply.status == ChatMessageStatus::Complete
         })
-        .map(|reply| reply.id.clone())
 }
 
 enum Outcome {
-    Done(Option<String>),
+    Done(
+        Option<String>,
+        Option<(
+            crate::domain::MemorySaveSkipReason,
+            Option<Vec<crate::domain::DiscardedMemoryItem>>,
+        )>,
+    ),
     Failed(Option<String>),
     Stopped(Option<HandoffStopReason>),
 }
@@ -1260,8 +1283,8 @@ async fn launch(state: &AppState, handoff: &Handoff) -> Result<bool, CommandErro
         LaunchClaim::Started { admission, prompt } => (admission, prompt),
     };
     // The sink holds the lease, which marks the run as this app's until the sink
-    // has recorded how it ended. The run's own registration is released earlier,
-    // before its answer commits.
+    // has recorded how it ended. The Chat's Memory exclusion is already
+    // released when its terminal event arrives.
     let lease = state
         .live_handoffs
         .start(&handoff.loupist_id, &handoff.chat_id, &run_id);
@@ -1280,9 +1303,15 @@ async fn launch(state: &AppState, handoff: &Handoff) -> Result<bool, CommandErro
         ChatEventSink::new(move |event| {
             let _lease = &lease;
             let outcome = match &event {
-                ChatStreamEvent::Completed { message_id, .. } => {
-                    Some(Outcome::Done(Some(message_id.clone())))
-                }
+                ChatStreamEvent::Completed {
+                    message_id,
+                    memory_save_skip,
+                    discarded_memory_items,
+                    ..
+                } => Some(Outcome::Done(
+                    Some(message_id.clone()),
+                    memory_save_skip.map(|reason| (reason, discarded_memory_items.clone())),
+                )),
                 ChatStreamEvent::Aborted { .. } => Some(Outcome::Stopped(
                     state
                         .run_coordinator
@@ -1296,13 +1325,17 @@ async fn launch(state: &AppState, handoff: &Handoff) -> Result<bool, CommandErro
             };
             let terminal = outcome.is_some();
             if let Some(outcome) = outcome {
-                if let Err(error) = finish(&state, &loupist_id, &id, outcome, now_ms()) {
+                if let Err(error) = crate::store::bounded_chat_save(|| {
+                    finish(&state, &loupist_id, &id, outcome, now_ms())
+                }) {
                     eprintln!("Research hand-off outcome could not be recorded ({error})");
                 }
             }
             live.publish(event);
             if terminal {
-                let _ = super::home::deliver_finished_runs(&state, &loupist_id);
+                let _ = crate::store::bounded_chat_save(|| {
+                    super::home::deliver_finished_runs(&state, &loupist_id)
+                });
             }
             Ok(())
         })
@@ -1494,22 +1527,16 @@ pub(crate) fn card_learned(
     })
 }
 
-fn summary(state: &AppState, handoff: &Handoff) -> String {
-    let Some(message_id) = &handoff.message_id else {
-        return String::new();
-    };
+fn answer(state: &AppState, handoff: &Handoff) -> Option<ChatMessage> {
+    let message_id = handoff.message_id.as_ref()?;
     state
         .store
         .get_chat(&handoff.chat_id)
         .ok()
-        .flatten()
-        .and_then(|chat| {
-            chat.messages
-                .into_iter()
-                .find(|message| &message.id == message_id)
-        })
-        .map(|message| crate::briefings::summary(&message.content))
-        .unwrap_or_default()
+        .flatten()?
+        .messages
+        .into_iter()
+        .find(|message| &message.id == message_id)
 }
 
 pub(crate) fn message(
@@ -1525,11 +1552,15 @@ pub(crate) fn message(
     } else {
         &handoff.title
     };
+    let answer = answer(state, handoff);
     let content = match handoff.status {
         HandoffStatus::Done => {
-            let summary = summary(state, handoff);
+            let summary = answer
+                .as_ref()
+                .map(|answer| crate::briefings::summary(&answer.content))
+                .unwrap_or_default();
             if summary.is_empty() {
-                format!("Researched: {title}.")
+                format!("Session ended: {title}.")
             } else {
                 summary
             }
@@ -1559,14 +1590,25 @@ pub(crate) fn message(
     let learned = handoff
         .message_id
         .as_ref()
-        .filter(|_| handoff.status == HandoffStatus::Done)
+        .filter(|_| handoff.status == HandoffStatus::Done && handoff.memory_save_skip.is_none())
         .and_then(|id| card_learned(state, &handoff.loupist_id, id));
+    if let Some(answer) = answer {
+        message.tool_refusals = answer
+            .tool_refusals
+            .into_iter()
+            .filter(|refusal| {
+                refusal.reason == crate::domain::ChatToolRefusalReason::SavedKeyPermission
+            })
+            .collect();
+    }
     message.handoff = Some(HomeHandoff {
         handoff_id: handoff.id.clone(),
         chat_id: handoff.chat_id.clone(),
         title: handoff.title.clone(),
         connection_id: connection_id.map(str::to_owned),
         status: handoff.status,
+        memory_save_skip: handoff.memory_save_skip,
+        discarded_memory_items: handoff.discarded_memory_items.clone(),
         stop_reason: handoff.stop_reason,
         learned,
     });
@@ -1633,7 +1675,14 @@ mod tests {
         assert_eq!(told(), 0);
 
         let stale_running = list(&state, loupist).unwrap();
-        finish(&state, loupist, &handoff.id, Outcome::Done(None), now_ms()).unwrap();
+        finish(
+            &state,
+            loupist,
+            &handoff.id,
+            Outcome::Done(None, None),
+            now_ms(),
+        )
+        .unwrap();
         drop(admission);
         let reconciled = delivery_rows(&state, loupist, stale_running, &HashSet::new()).unwrap();
         assert_eq!(
@@ -1731,7 +1780,7 @@ mod tests {
             &state,
             loupist,
             &row.id,
-            Outcome::Done(Some("race-answer".into())),
+            Outcome::Done(Some("race-answer".into()), None),
             now_ms(),
         )
         .unwrap();
@@ -1771,17 +1820,28 @@ mod tests {
         ] {
             admissions.push(claim_fixture(&state, row, run).0);
         }
+        let mut checkpoint = crate::test_fixtures::chat_message(
+            "answered-reply",
+            ChatRole::Assistant,
+            "Sales increased.\n\nDetails.",
+        );
+        let items = Some(vec![crate::domain::DiscardedMemoryItem {
+            kind: crate::domain::DiscardedMemoryKind::JournalEntry,
+            title: "Watch the sales trend".into(),
+        }]);
+        checkpoint.memory_update = Some(crate::domain::MemoryUpdateResult {
+            discarded_memory_items: items.clone(),
+            status: crate::domain::MemoryUpdateStatus::NoChange,
+            skip_reason: Some(crate::domain::MemorySaveSkipReason::Interrupted),
+            commit_id: None,
+            changes: Vec::new(),
+            skipped_kinds: Vec::new(),
+            setup: Vec::new(),
+        });
         append_session(
             &state,
             &answered,
-            vec![
-                guidance("answered-guidance"),
-                crate::test_fixtures::chat_message(
-                    "answered-reply",
-                    ChatRole::Assistant,
-                    "Sales increased.\n\nDetails.",
-                ),
-            ],
+            vec![guidance("answered-guidance"), checkpoint],
         );
         append_session(&state, &unanswered, vec![guidance("unanswered-guidance")]);
         let mut error = crate::test_fixtures::chat_message(
@@ -1810,7 +1870,12 @@ mod tests {
         let done = get(&answered);
         assert_eq!(done.status, HandoffStatus::Done);
         assert_eq!(done.message_id.as_deref(), Some("answered-reply"));
+        assert_eq!(
+            done.memory_save_skip,
+            Some(crate::domain::MemorySaveSkipReason::Interrupted)
+        );
         assert_eq!((done.stop_reason, done.error.as_deref()), (None, None));
+        assert_eq!(done.discarded_memory_items, items);
         for row in [&unanswered, &failed] {
             let stopped = get(row);
             assert_eq!(stopped.status, HandoffStatus::Stopped);
@@ -1829,6 +1894,19 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(card(&answered).content, "Sales increased.");
+        assert_eq!(
+            card(&answered).handoff.as_ref().unwrap().memory_save_skip,
+            done.memory_save_skip
+        );
+        assert!(card(&answered).memory_update.is_none());
+        assert_eq!(
+            card(&answered)
+                .handoff
+                .as_ref()
+                .unwrap()
+                .discarded_memory_items,
+            items
+        );
         assert_eq!(
             card(&answered).handoff.as_ref().unwrap().status,
             HandoffStatus::Done
@@ -1872,7 +1950,11 @@ mod tests {
         let prose = format!("{table}\n\n**Sales** increased.\n\nDetails.");
         let mut before = state.store.get_chat(&handoff.chat_id).unwrap().unwrap();
         for (index, (answer, preview)) in [
-            (table, "Researched: Alder Rail."),
+            (table, "Session ended: Alder Rail."),
+            (
+                "Sales increased. I could not verify margins.",
+                "Sales increased. I could not verify margins.",
+            ),
             (prose.as_str(), "Sales increased."),
         ]
         .into_iter()
@@ -2080,7 +2162,7 @@ mod tests {
         let (interrupted, _) = claim_fixture(&state, &running, "interrupted-run");
         drop(interrupted);
         let (finished, _) = claim_fixture(&state, &done, "finished-run");
-        finish(&state, id, &done.id, Outcome::Done(None), 555).unwrap();
+        finish(&state, id, &done.id, Outcome::Done(None, None), 555).unwrap();
         drop(finished);
         {
             let connection = state.store.lock_loupist(id).unwrap();

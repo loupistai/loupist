@@ -235,7 +235,7 @@ pub struct ChatMessageDto {
     pub artifact_refs: Vec<ChatArtifactRef>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(test, ts(optional = nullable))]
-    pub evidence_refs: Vec<crate::domain::ChatEvidenceRef>,
+    pub evidence_refs: Vec<ChatEvidenceViewDto>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(test, ts(optional = nullable))]
     pub schedule_receipts: Vec<crate::scheduled_tasks::types::ScheduleReceipt>,
@@ -270,6 +270,10 @@ pub struct HandoffNoteDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub link_path: Option<crate::chat::handoff::LinkPath>,
+    /// The user's words in Bot, quoted in context for a Bot-authored opening.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub user_message_in_bot: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -568,6 +572,56 @@ pub struct ChatArtifactRestoreRequest {
 
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryEvidenceDateKind {
+    Published,
+    Updated,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct MemoryEvidenceDate {
+    pub kind: MemoryEvidenceDateKind,
+    pub time: crate::knowledge::TimePoint,
+}
+
+/// Read-time projection. Chat and turn snapshots keep their original wire-independent shape.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct MemoryEvidenceOrigin {
+    pub route: crate::knowledge::RecordKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub publisher: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub publication: Option<MemoryEvidenceDate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub saved_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct ChatEvidenceViewDto {
+    #[serde(flatten)]
+    pub snapshot: crate::domain::ChatEvidenceRef,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub memory_origin: Option<MemoryEvidenceOrigin>,
+}
+
+impl From<crate::domain::ChatEvidenceRef> for ChatEvidenceViewDto {
+    fn from(snapshot: crate::domain::ChatEvidenceRef) -> Self {
+        Self {
+            snapshot,
+            memory_origin: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatArtifactViewDto {
     pub artifact: ChatArtifact,
     pub revision: ChatArtifactRevision,
@@ -576,7 +630,7 @@ pub struct ChatArtifactViewDto {
     /// so its number popovers open wherever the grid is shown.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(test, ts(optional = nullable))]
-    pub evidence_refs: Vec<crate::domain::ChatEvidenceRef>,
+    pub evidence_refs: Vec<ChatEvidenceViewDto>,
 }
 
 impl From<crate::chat::artifacts::ChatArtifactSnapshot> for ChatArtifactViewDto {
@@ -585,7 +639,7 @@ impl From<crate::chat::artifacts::ChatArtifactSnapshot> for ChatArtifactViewDto 
             artifact: snapshot.artifact,
             revision: snapshot.revision,
             chart_dataset: snapshot.chart_dataset,
-            evidence_refs: snapshot.evidence_refs,
+            evidence_refs: snapshot.evidence_refs.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -635,6 +689,22 @@ pub enum ChatStreamEvent {
         run_id: String,
         phase: ChatRunPhase,
     },
+    Saving {
+        run_id: String,
+        waiting_for_other_chat: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
+        blocking_chat_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
+        final_text: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
+        number_checks: Option<Vec<crate::domain::NumberCheck>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
+        save_activity: Option<crate::chat::progress::ChatSaveActivity>,
+    },
     MemoryUpdate {
         run_id: String,
         result: Box<crate::domain::MemoryUpdateResult>,
@@ -645,7 +715,7 @@ pub enum ChatStreamEvent {
     },
     Evidence {
         run_id: String,
-        evidence: Box<crate::domain::ChatEvidenceRef>,
+        evidence: Box<ChatEvidenceViewDto>,
     },
     /// A chart or table this reply published, sent once its publish call is
     /// delivered so the card fills in place while the answer is written. It
@@ -660,6 +730,15 @@ pub enum ChatStreamEvent {
         artifact: ChatArtifactRef,
     },
     Completed {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
+        save_activity: Option<crate::chat::progress::ChatSaveActivity>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
+        memory_save_skip: Option<crate::domain::MemorySaveSkipReason>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
+        discarded_memory_items: Option<Vec<crate::domain::DiscardedMemoryItem>>,
         #[serde(skip_serializing_if = "Option::is_none")]
         #[cfg_attr(test, ts(optional))]
         research_session_id: Option<String>,
@@ -717,13 +796,14 @@ pub enum ChatStreamEvent {
     },
 }
 
-/// The roles a stored Chat message may cross the renderer boundary with.
+/// Transcript authorship for the renderer, including a request written by Bot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ChatMessageRoleDto {
     User,
     Assistant,
+    BotHandoff,
 }
 
 /// What a running reply is doing between progress steps.
@@ -788,16 +868,37 @@ fn hide_from_recent(chat: &ChatSession) -> bool {
             }))
 }
 
+pub(crate) fn chat_dto_with_memory(
+    state: &crate::app::AppState,
+    chat: &ChatSession,
+) -> Result<ChatThreadDto, CommandError> {
+    let mut dto = chat_dto(chat)?;
+    crate::commands::knowledge::project_chat_memory(state, chat, &mut dto);
+    super::tool_executor::number_checks::replay::project_chat(state, chat, &mut dto);
+    Ok(dto)
+}
+
 pub(crate) fn chat_dto(chat: &ChatSession) -> Result<ChatThreadDto, CommandError> {
     chat.validate().map_err(map_internal)?;
+    let file_labels = crate::chat::local_files::FileLabels::for_chat(chat);
     let messages = chat
         .messages
         .iter()
         .map(|message| {
-            let role = match message.role {
-                ChatRole::User => ChatMessageRoleDto::User,
-                ChatRole::Assistant => ChatMessageRoleDto::Assistant,
-                ChatRole::System | ChatRole::Tool => {
+            let (role, content) = match (message.role, &message.handoff_note) {
+                (ChatRole::User, Some(note)) if message.handoff_action.is_none() => (
+                    ChatMessageRoleDto::BotHandoff,
+                    note.brief
+                        .as_deref()
+                        .filter(|text| !text.trim().is_empty())
+                        .or(note.question.as_deref())
+                        .unwrap_or(&note.title),
+                ),
+                (ChatRole::User, _) => (ChatMessageRoleDto::User, message.content.as_str()),
+                (ChatRole::Assistant, _) => {
+                    (ChatMessageRoleDto::Assistant, message.content.as_str())
+                }
+                (ChatRole::System | ChatRole::Tool, _) => {
                     return Err(CommandError::internal(
                         "stored non-user chat role cannot cross the renderer boundary",
                     ));
@@ -828,6 +929,8 @@ pub(crate) fn chat_dto(chat: &ChatSession) -> Result<ChatThreadDto, CommandError
                 handoff: message.handoff.clone(),
                 research_session_id: message.research_session_id.clone(),
                 handoff_note: message.handoff_note.as_ref().map(|note| HandoffNoteDto {
+                    user_message_in_bot: (role == ChatMessageRoleDto::BotHandoff)
+                        .then(|| message.content.clone()),
                     title: note.title.clone(),
                     question: note.question.clone(),
                     brief: message
@@ -847,7 +950,7 @@ pub(crate) fn chat_dto(chat: &ChatSession) -> Result<ChatThreadDto, CommandError
                 as_of_report: message.as_of_report.clone(),
                 id: message.id.clone(),
                 role,
-                content: message.content.clone(),
+                content: content.to_owned(),
                 // Stored failed replies carry only the placeholder text.
                 placeholder: role == ChatMessageRoleDto::Assistant
                     && message.status == ChatMessageStatus::Error
@@ -874,9 +977,20 @@ pub(crate) fn chat_dto(chat: &ChatSession) -> Result<ChatThreadDto, CommandError
                     })
                     .collect(),
                 artifact_refs: message.artifact_refs.clone(),
-                evidence_refs: message.evidence_refs.clone(),
+                evidence_refs: message
+                    .evidence_refs
+                    .iter()
+                    .cloned()
+                    .map(|mut evidence| {
+                        file_labels.project_evidence(&mut evidence);
+                        evidence.into()
+                    })
+                    .collect(),
                 schedule_receipts: message.schedule_receipts.clone(),
-                progress: message.progress.clone(),
+                progress: message.progress.clone().map(|mut progress| {
+                    file_labels.project_progress(&mut progress);
+                    progress
+                }),
                 performance: message.performance.clone(),
             })
         })

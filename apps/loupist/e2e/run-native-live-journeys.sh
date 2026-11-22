@@ -105,7 +105,13 @@ if [ "${LOUPIST_E2E_JOURNEYS:-}" = "7" ] || [ "${LOUPIST_E2E_JOURNEYS:-}" = "com
     LOUPIST_LIVE_PI_AGENT_DATA_DIR="$STATE_ROOT/pi"
 fi
 
-LOUPIST_E2E_STATE_DIR="$STATE_ROOT" \
+# The default set includes journey 6. Every other explicit selection stays off.
+LOUPIST_DEV_CUSTOM_CONNECTIONS=$(node -e '
+const journeys = (process.env.LOUPIST_E2E_JOURNEYS ?? "").split(",").map(item => item.trim()).filter(Boolean);
+process.stdout.write(journeys.length === 0 || journeys.includes("6") ? "1" : "0");
+')
+LOUPIST_DEV_CUSTOM_CONNECTIONS="$LOUPIST_DEV_CUSTOM_CONNECTIONS" \
+    LOUPIST_E2E_STATE_DIR="$STATE_ROOT" \
     LOUPIST_E2E_SESSION_INFO="$SESSION_INFO" \
     LOUPIST_LIVE_PI_AGENT_DATA_DIR="$LOUPIST_LIVE_PI_AGENT_DATA_DIR" \
     "$SCRIPT_DIR/run-app.sh" >"$RUN_LOG" 2>&1 &

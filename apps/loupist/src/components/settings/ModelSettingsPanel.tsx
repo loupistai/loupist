@@ -32,8 +32,10 @@ type Props = ModelProviderActions & {
   catalog: ModelCatalog | null;
   loadError: string | null;
   bridge: ConnectSheetBridge & Pick<LoupistBridge, "providerOpenUsage">;
-  /** The effective Chat default; null or empty means Auto. */
+  /** The effective Chat default; null or empty means no model is available. */
   chatModelProfileId?: string | null;
+  discoverModels?: boolean;
+  searchControls?: boolean;
   /** A connect sheet another surface asked for (a Chat error's "Use an API key"). */
   connectTarget?: ConnectSheetTarget | null;
   onConnectTargetConsumed?: () => void;
@@ -73,6 +75,7 @@ type BusyOperation = "disconnect" | null;
 
 /** Settings › Models & providers (spec providers §2.3): one card per account, connecting through the shared sheet. */
 export function ModelSettingsPanel({
+  discoverModels = true, searchControls = false,
   catalog,
   loadError,
   bridge,
@@ -158,14 +161,14 @@ export function ModelSettingsPanel({
 
   useEffect(() => {
     // A sign-in or key returns the provider's models itself; loading them alongside it collides.
-    if (!catalog || busy !== null || sheet !== null || loadingProviderIds.size > 0) return;
+    if (!discoverModels || !catalog || busy !== null || sheet !== null || loadingProviderIds.size > 0) return;
     const pending = connectedProviders.find((option) => {
       const hasModels = catalog.models.some((model) => model.provider === option.id);
       return !hasModels && !discoveredProviderIds.has(option.id);
     });
     if (!pending) return;
     void refreshModelsRef.current(pending.id);
-  }, [busy, catalog, connectedProviders, discoveredProviderIds, loadingProviderIds, sheet]);
+  }, [busy, catalog, connectedProviders, discoverModels, discoveredProviderIds, loadingProviderIds, sheet]);
 
   const updateVisibility = async (request: ModelVisibilityUpdateRequest) => {
     if (visibilityBusyId) return;
@@ -277,7 +280,7 @@ export function ModelSettingsPanel({
         {cards.length ? (
           <ul className="provider-card-list" aria-label={i18n.t("settings:modelSettingsPanel.connectedProviders")}>
             {cards.map((option) => (
-              <ProviderCard
+              <ProviderCard searchControls={searchControls}
                 key={option.id}
                 option={option}
                 models={modelsForProvider(catalog, option.id)}

@@ -1,7 +1,7 @@
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import { useTranslation } from "../../i18n";
 import type { LoupistBridge } from "../../types";
-import type { BriefingResidentSettings } from "../../contracts/scheduled";
+import { useResidentSettings } from "../../app/useResidentSettings";
 import { Switch } from "../ui/switch";
 import { Disclosure } from "../ui/disclosure";
 import { NoticeSettingsRow } from "../onboarding/Notice";
@@ -19,31 +19,33 @@ const PRIVACY_LINES = ["privacyStays", "privacyProvider", "privacyDataSources", 
  */
 export function ApplicationSettings({ bridge }: { bridge: LoupistBridge }) {
   const { t } = useTranslation("settings");
-  const [resident, setResident] = useState<BriefingResidentSettings | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const labelId = useId(), descriptionId = useId();
-  useEffect(() => {
-    let live = true;
-    void bridge.briefingResidentSettingsGet().then(settings => { if (live) setResident(settings); }).catch(() => { if (live) setError(t("general.loadFailed")); });
-    return () => { live = false; };
-  }, [bridge, t]);
-  const change = async (next: boolean) => {
-    setBusy(true); setError(null);
-    try { setResident(await bridge.briefingResidentSettingsSet({ keepRunning: next })); }
-    catch { setError(t("general.saveFailed")); }
-    finally { setBusy(false); }
-  };
+  const { resident, busy, error, change } = useResidentSettings(bridge);
+  const [paneError, setPaneError] = useState(false);
+  const labelId = useId(), descriptionId = useId(), loginId = useId(), loginDescription = useId();
+  const status = resident?.loginItem;
+  const needsPane = status === "requiresApproval" || status === "error";
+  const loginHelp = status === "unavailable" ? "loginItemUnavailable" : status === "requiresApproval" ? "loginItemDisabled" : status === "error" ? "loginItemDenied" : "loginItemDescription";
   const automatic = resident?.keepRunning === true && (resident.keepRunningChoice ?? null) === null;
   return <div className="settings-general">
     <section className="settings-general-block" aria-labelledby="settings-application-title">
     <h2 id="settings-application-title" className="settings-caption-label">{t("general.applicationTitle")}</h2>
     <div className="settings-row" data-keep-running>
       <div><strong id={labelId}>{t("general.keepRunning")}</strong><p className="settings-row-description" id={descriptionId}>{t("general.keepRunningDescription")}</p>
+        {resident?.loginItemTurnedOff && <p className="settings-row-description" role="status">{t("general.loginItemTurnedOff")}</p>}
         {automatic ? <p className="settings-row-description" data-keep-running-automatic>{t("general.keepRunningAutomatic")}</p> : null}</div>
-      <Switch aria-labelledby={labelId} aria-describedby={descriptionId} checked={resident?.keepRunning ?? false} disabled={resident === null || busy} onCheckedChange={value => void change(value)} />
+      <Switch aria-labelledby={labelId} aria-describedby={descriptionId} checked={resident?.keepRunning ?? false} disabled={resident === null || busy} onCheckedChange={value => void change(() => bridge.briefingResidentSettingsSet({ keepRunning: value }))} />
     </div>
-    {error ? <p className="inline-error" role="alert">{error}</p> : null}
+    <div className="settings-row">
+      <div><strong id={loginId}>{t("general.loginItem")}</strong>
+        <p className="settings-row-description" id={loginDescription}>{t(`general.${loginHelp}`)}{needsPane && <> <Button variant="link" onClick={() => {
+          setPaneError(false);
+          void bridge.loginItemOpenSettings().catch(() => setPaneError(true));
+        }}>{t("general.openLoginItems")}</Button></>}</p>
+      </div>
+      <Switch aria-labelledby={loginId} aria-describedby={loginDescription} checked={status === "on"} disabled={busy || (status !== "on" && status !== "off")}
+        onCheckedChange={enabled => void change(() => bridge.loginItemSet({ enabled }))} />
+    </div>
+    {error || paneError ? <p className="inline-error" role="alert">{t(error === "load" ? "general.loadFailed" : "general.saveFailed")}</p> : null}
     </section>
     <section className="settings-general-block" aria-labelledby="settings-about-title">
       <h2 id="settings-about-title" className="settings-caption-label">{t("general.aboutTitle")}</h2>

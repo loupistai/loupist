@@ -10,7 +10,7 @@ export async function readVisibleMapStats(browser) {
     .filter(element => !element.closest('[hidden], [inert], [aria-hidden="true"]')
       && element.getClientRects().length > 0 && getComputedStyle(element).visibility === "visible")
     .map(element => element.textContent?.trim() ?? "")
-    .find(text => /^[\d,]+ on the map · [\d,]+ relationships$/.test(text)) ?? "");
+    .find(text => /^[\d,]+ in World · [\d,]+ relationships$/.test(text)) ?? "");
 }
 
 export async function onboardingStep(browser) {
@@ -102,7 +102,7 @@ export async function openMapLibrary(browser, timeout = 15_000) {
   const button = await browser.$("[data-testid=map-view] button[data-map-library]");
   await button.waitForDisplayed({ timeout });
   await button.click();
-  await library.waitForDisplayed({ timeout, timeoutMsg: "Map Library did not open" });
+  await library.waitForDisplayed({ timeout, timeoutMsg: "World Library did not open" });
   return library;
 }
 
@@ -190,11 +190,25 @@ export async function selectedLoupistTitle(browser) {
   });
 }
 
+const loupistSwitcherTrigger = "[data-testid=loupist-header-identity]";
+const loupistSwitcherMenu = ".loupist-switcher-menu";
+
 /** Opens the Loupist switcher at the top of the sidebar: every Loupist, its settings and New Loupist. */
 export async function openLoupistSwitcher(browser, timeout = 5_000) {
-  if (await browser.$(".loupist-switcher-menu").isDisplayed().catch(() => false)) return;
-  await clickControl(browser, "[data-testid=loupist-header-identity]");
-  await browser.$(".loupist-switcher-menu").waitForDisplayed({ timeout, timeoutMsg: "The Loupist switcher did not open" });
+  const trigger = await browser.$(loupistSwitcherTrigger);
+  if (await trigger.getAttribute("aria-expanded") !== "true") {
+    await clickControl(browser, loupistSwitcherTrigger);
+  }
+  await browser.$(`${loupistSwitcherMenu}[data-state="open"]`).waitForDisplayed({
+    timeout, timeoutMsg: "The Loupist switcher did not open",
+  });
+}
+
+/** Wait out Radix's exit animation and focus restoration before the next action. */
+export async function waitForLoupistSwitcherClosed(browser, timeout = 5_000) {
+  await browser.$(loupistSwitcherMenu).waitForExist({
+    reverse: true, timeout, timeoutMsg: "The Loupist switcher did not close",
+  });
 }
 
 /** Every Loupist's id and name, read from the switcher, which is closed again. */
@@ -205,8 +219,7 @@ export async function switcherLoupists(browser) {
     name: item.querySelector(".loupist-switcher-name")?.textContent?.trim() ?? "",
   })));
   await browser.keys("Escape");
-  // The menu is still displayed while it closes; a caller that reopens the switcher at once would take it for open.
-  await browser.$(".loupist-switcher-menu").waitForDisplayed({ reverse: true, timeout: 5_000, timeoutMsg: "The Loupist switcher did not close" });
+  await waitForLoupistSwitcherClosed(browser);
   return loupists;
 }
 
@@ -278,7 +291,7 @@ export async function waitForShell(browser, timeout = 30_000) {
       const tab = await browser.$("[data-testid=loupist-header-selector]");
       return (await tab.isExisting()) && (await tab.isDisplayed());
     },
-    { timeout, interval: 150, timeoutMsg: "The Chat/Map/Briefings shell did not open" },
+    { timeout, interval: 150, timeoutMsg: "The Chat/World/Briefings shell did not open" },
   );
 }
 
@@ -370,6 +383,7 @@ export async function measureLoupistSwitch(browser, title) {
     },
     { timeout: 6_000, interval: 50, timeoutMsg: `Loupist switch did not settle: ${title}` },
   );
+  await waitForLoupistSwitcherClosed(browser);
   return browser.execute(() => window.__loupistSwitchMeasure);
 }
 
@@ -378,7 +392,7 @@ export async function mapNameCount(browser) {
   if (!(await stats.isExisting())) return null;
   const text = (await stats.getText()).replace(/\s+/g, " ");
   // "37 on the map · …" on the whole Map; "12 of 37 on the map around …" around one company.
-  const match = text.match(/([\d,]+)\s+(?:on the map|names)/);
+  const match = text.match(/([\d,]+)\s+(?:in World|names)/);
   return {
     text,
     names: match ? Number(match[1].replaceAll(",", "")) : null,

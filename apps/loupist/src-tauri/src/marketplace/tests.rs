@@ -994,11 +994,16 @@ fn a_locked_key_shows_on_its_own_connection_and_the_rest_keep_loading() {
             None,
         )
         .unwrap();
-        // The update: a new build, and this session has read nothing yet.
+        // Persist the projection, then forget the previous process's cache.
+        crate::finance_credentials::get_for_state(&state, entry_id).unwrap();
         crate::finance_credentials::test_store::restart(&environment, entry_id);
     }
     crate::finance_credentials::test_store::deny(&environment, locked, true);
     let reads_before = crate::finance_credentials::test_store::secret_reads(&environment, locked);
+    assert!(matches!(
+        crate::finance_credentials::get_for_state(&state, locked),
+        Err(crate::finance_credentials::FinanceCredentialError::Locked)
+    ));
 
     let connector = |snapshot: &MarketplaceSnapshotDto, id: &str| {
         snapshot
@@ -1036,15 +1041,427 @@ fn a_locked_key_shows_on_its_own_connection_and_the_rest_keep_loading() {
     let request = || MarketplaceCredentialRequest {
         entry_id: locked.to_owned(),
     };
-    let still_locked = super::credentials::unlock_credential_for_state(request(), &state).unwrap();
+    let still_locked =
+        super::credentials::unlock_credential_for_state(request(), &state, false).unwrap();
     assert!(still_locked.iter().all(|credential| credential.locked));
     crate::finance_credentials::test_store::deny(&environment, locked, false);
-    let unlocked = super::credentials::unlock_credential_for_state(request(), &state).unwrap();
+    let unlocked =
+        super::credentials::unlock_credential_for_state(request(), &state, false).unwrap();
     assert!(unlocked
         .iter()
         .all(|credential| !credential.locked && credential.active));
     for entry_id in [locked, other] {
         crate::finance_credentials::delete(&environment, entry_id).unwrap();
+    }
+}
+
+#[test]
+fn settings_shows_a_timed_out_read_until_keychain_finishes() {
+    crate::extension_availability::with_test_flags(false, false, || {
+        use crate::finance_credentials::{self, test_store, FinanceCredentialError};
+        use std::time::{Duration, Instant};
+
+        for accepted in [true, false] {
+            let temporary = tempfile::tempdir().unwrap();
+            let state = AppState::for_persistent_test(temporary.path().join("app"));
+            let id = ASSET_LOOKUP_SOURCE_ID;
+            let environment = &state.credential_environment;
+            // Earlier builds saved the item without a non-secret catalog record.
+            finance_credentials::save_lookup_key(environment, "fixture-saved-key").unwrap();
+            test_store::restart(environment, id);
+            assert!(state
+                .store
+                .connector_credential_status(id)
+                .unwrap()
+                .is_none());
+            let snapshot = || {
+                marketplace_snapshot_for_state(&state)
+                    .unwrap()
+                    .connectors
+                    .into_iter()
+                    .find(|entry| entry.entry_id == id)
+                    .unwrap()
+                    .credentials
+                    .remove(0)
+            };
+            let prior = snapshot();
+            assert!(!prior.active && !prior.locked);
+            let release = test_store::block_next_read(environment, id);
+            let reads = test_store::secret_reads(environment, id);
+            let result = finance_credentials::read_with_timeout(
+                &state,
+                id,
+                Duration::from_millis(100),
+                |state, id| finance_credentials::get(&state.credential_environment, id),
+            );
+            assert!(matches!(result, Err(FinanceCredentialError::Unavailable)));
+            assert!(snapshot().locked);
+            assert_eq!(test_store::secret_reads(environment, id), reads + 1);
+            assert!(matches!(
+                finance_credentials::get_for_state(&state, id),
+                Err(FinanceCredentialError::Busy)
+            ));
+            release.send(accepted).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while finance_credentials::read_timed_out(&state, id) {
+                assert!(Instant::now() < deadline);
+                std::thread::yield_now();
+            }
+            assert_eq!(snapshot().locked, !accepted);
+            assert_eq!(snapshot().active, accepted);
+            if accepted {
+                test_store::restart(environment, id);
+                assert!(snapshot().active);
+                assert!(finance_credentials::get_for_state(&state, id)
+                    .unwrap()
+                    .is_some());
+            } else {
+                for _ in 0..2 {
+                    assert!(matches!(
+                        finance_credentials::get_for_state(&state, id),
+                        Err(FinanceCredentialError::Locked)
+                    ));
+                }
+                assert_eq!(test_store::secret_reads(environment, id), reads + 1);
+                let unlocked = super::credentials::unlock_credential_for_state(
+                    MarketplaceCredentialRequest {
+                        entry_id: id.into(),
+                    },
+                    &state,
+                    false,
+                )
+                .unwrap();
+                assert!(unlocked[0].active && !unlocked[0].locked);
+            }
+            assert_eq!(test_store::secret_reads(environment, id), reads + 2);
+        }
+    });
+}
+
+fn clear_fresh_namespace_marker(state: &AppState) {
+    state
+        .store
+        .lock()
+        .unwrap()
+        .execute("DELETE FROM credential_namespace_created", [])
+        .unwrap();
+}
+
+#[tokio::test]
+async fn legacy_connection_snapshot_checks_presence_once_without_reading_secrets() {
+    use crate::{
+        commands::attention::{collect, AttentionKind},
+        finance_credentials::{self, test_store},
+    };
+    use std::{
+        sync::mpsc,
+        time::{Duration, Instant},
+    };
+
+    let temporary = tempfile::tempdir().unwrap();
+    let app = temporary.path().join("app");
+    let state = AppState::for_persistent_test(app.clone());
+    clear_fresh_namespace_marker(&state);
+    let environment = state.credential_environment.clone();
+    let keyed_entries = bundled_catalog()
+        .unwrap()
+        .entries
+        .into_iter()
+        .filter(|entry| {
+            entry
+                .setup
+                .as_ref()
+                .is_some_and(|setup| !setup.credential_fields.is_empty())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(keyed_entries.len(), 19);
+    let saved = keyed_entries
+        .iter()
+        .filter(|entry| entry.id != ASSET_LOOKUP_SOURCE_ID)
+        .take(4)
+        .map(|entry| entry.id.as_str())
+        .chain([ASSET_LOOKUP_SOURCE_ID])
+        .collect::<std::collections::BTreeSet<_>>();
+    for entry in keyed_entries
+        .iter()
+        .filter(|entry| saved.contains(entry.id.as_str()))
+    {
+        if entry.id == ASSET_LOOKUP_SOURCE_ID {
+            finance_credentials::save_lookup_key(&environment, "presence-fixture").unwrap();
+        } else {
+            let fields = entry
+                .setup
+                .as_ref()
+                .unwrap()
+                .credential_fields
+                .iter()
+                .map(|field| (field.id.clone(), "presence-fixture".to_owned()))
+                .collect();
+            finance_credentials::stage(&environment, &entry.id, &fields).unwrap();
+            let candidate = finance_credentials::candidate(&environment, &entry.id)
+                .unwrap()
+                .unwrap();
+            finance_credentials::finish_verification(
+                &environment,
+                &entry.id,
+                candidate.revision(),
+                finance_credentials::VerificationOutcome::Verified,
+                1,
+                None,
+            )
+            .unwrap();
+        }
+        test_store::restart(&environment, &entry.id);
+    }
+    let before = test_store::backend_calls(&environment);
+    state.close_for_restart_test();
+    let state = AppState::for_persistent_test(app.clone());
+    assert_eq!(test_store::backend_calls(&environment), before);
+    assert_eq!(test_store::presence_calls(&environment), 0);
+    let snapshot = |state: &AppState| {
+        reconcile_credential_presence(state).unwrap();
+        with_connector_lifecycle(state, || marketplace_snapshot_for_state(state)).unwrap()
+    };
+    let attention = collect(&state).await.unwrap();
+    let permission = attention
+        .iter()
+        .find(|item| item.kind == AttentionKind::SavedKeyPermission)
+        .unwrap();
+    assert_eq!(permission.count, Some(5));
+    let first = std::thread::scope(|threads| {
+        let concurrent = threads.spawn(|| reconcile_credential_presence(&state));
+        let first = snapshot(&state);
+        concurrent.join().unwrap().unwrap();
+        first
+    });
+    let checks = |snapshot: &MarketplaceSnapshotDto, id: &str| {
+        snapshot
+            .connectors
+            .iter()
+            .find(|connector| connector.entry_id == id)
+            .unwrap()
+            .credentials
+            .clone()
+    };
+    for entry in &keyed_entries {
+        let expected = saved
+            .contains(entry.id.as_str())
+            .then_some("credential_saved_unread");
+        assert!(checks(&first, &entry.id).iter().all(|credential| credential
+            .last_error
+            .as_deref()
+            == expected
+            && !credential.active
+            && !credential.locked));
+    }
+    assert_eq!(test_store::presence_calls(&environment), 19);
+    assert_eq!(test_store::backend_calls(&environment), before + 19);
+
+    let entries = super::key_permission::entries_needing_permission(&state).unwrap();
+    let denied = &entries[0].id;
+    let slow = &entries[1].id;
+    let present = ASSET_LOOKUP_SOURCE_ID;
+    let request = |id: &str| MarketplaceCredentialRequest {
+        entry_id: id.to_owned(),
+    };
+    super::credentials::unlock_credential_for_state(request(present), &state, true).unwrap();
+    assert_eq!(test_store::backend_calls(&environment), before + 19);
+    assert!(matches!(
+        finance_credentials::get_for_state(&state, present),
+        Err(finance_credentials::FinanceCredentialError::PermissionRequired)
+    ));
+    assert_eq!(test_store::backend_calls(&environment), before + 19);
+
+    let batch = state
+        .key_permission_batch
+        .start("cancel-batch".into())
+        .unwrap();
+    let release = test_store::block_next_read(&environment, denied);
+    std::thread::scope(|threads| {
+        let release = release;
+        let worker = threads.spawn(|| super::key_permission::run_batch(&state, &batch, |_| true));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while test_store::backend_calls(&environment) < before + 20 {
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        state.key_permission_batch.cancel("cancel-batch");
+        release.send(true).unwrap();
+        worker.join().unwrap().unwrap();
+    });
+    drop(batch);
+    assert_eq!(
+        super::key_permission::entries_needing_permission(&state)
+            .unwrap()
+            .len(),
+        5
+    );
+    assert_eq!(test_store::backend_calls(&environment), before + 20);
+
+    let batch = state
+        .key_permission_batch
+        .start("test-batch".into())
+        .unwrap();
+    test_store::deny(&environment, denied, true);
+    let release = test_store::block_next_read(&environment, slow);
+    let (sent, updates) = mpsc::channel();
+    std::thread::scope(|threads| {
+        let release = release;
+        let worker = threads.spawn(|| {
+            super::key_permission::run_batch(&state, &batch, |update| sent.send(update).is_ok())
+        });
+        let next = || updates.recv_timeout(Duration::from_secs(5)).unwrap();
+        let started = next();
+        assert_eq!((started.settled, started.total), (0, 5));
+        assert_eq!(next().settled, 1);
+        assert_eq!(
+            checks(&snapshot(&state), denied)[0].last_error.as_deref(),
+            Some("credential_saved_denied")
+        );
+        assert!(matches!(
+            updates.recv_timeout(crate::keychain_operation::TIMEOUT + Duration::from_secs(1)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        assert_eq!(test_store::backend_calls(&environment), before + 22);
+        assert_eq!(
+            checks(&snapshot(&state), slow)[0].last_error.as_deref(),
+            Some("credential_saved_unread")
+        );
+        release.send(true).unwrap();
+        for expected in 2..=5 {
+            assert_eq!(next().settled, expected);
+        }
+        worker.join().unwrap().unwrap();
+    });
+    drop(batch);
+    assert_eq!(test_store::backend_calls(&environment), before + 25);
+    assert_eq!(
+        collect(&state)
+            .await
+            .unwrap()
+            .iter()
+            .find(|item| item.kind == AttentionKind::SavedKeyPermission)
+            .unwrap()
+            .count,
+        Some(1)
+    );
+
+    test_store::deny(&environment, denied, false);
+    let used =
+        super::credentials::unlock_credential_for_state(request(denied), &state, false).unwrap();
+    assert!(used
+        .iter()
+        .all(|credential| credential.active && credential.last_error.is_none()));
+    assert!(!collect(&state)
+        .await
+        .unwrap()
+        .iter()
+        .any(|item| item.kind == AttentionKind::SavedKeyPermission));
+    assert_eq!(test_store::backend_calls(&environment), before + 26);
+    let after_read = snapshot(&state);
+    assert!(checks(&after_read, present)
+        .iter()
+        .all(|credential| credential.active));
+    assert_eq!(
+        after_read
+            .connectors
+            .iter()
+            .find(|connector| connector.entry_id == present)
+            .unwrap()
+            .readiness,
+        MarketplaceConnectorReadiness::Ready
+    );
+    test_store::restart(&environment, present);
+    state.close_for_restart_test();
+    let restarted = AppState::for_persistent_test(app);
+    assert!(checks(&snapshot(&restarted), present)
+        .iter()
+        .all(|credential| credential.active));
+    assert_eq!(test_store::backend_calls(&environment), before + 26);
+}
+
+#[test]
+fn presence_failure_and_timeout_offer_a_metadata_only_retry() {
+    use crate::finance_credentials::{self, test_store};
+    use std::time::{Duration, Instant};
+
+    for slow in [false, true] {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_persistent_test(temporary.path().join("app"));
+        clear_fresh_namespace_marker(&state);
+        let environment = &state.credential_environment;
+        let mut catalog = bundled_catalog().unwrap();
+        let id = ASSET_LOOKUP_SOURCE_ID;
+        catalog.entries.retain(|entry| entry.id == id);
+        finance_credentials::save_lookup_key(environment, "legacy-lookup-key").unwrap();
+        test_store::restart(environment, id);
+        let reads = test_store::secret_reads(environment, id);
+        let release = test_store::block_next_presence(environment, id);
+        let mut blocked = Some(release);
+        if !slow {
+            blocked.take().unwrap().send(false).unwrap();
+        }
+        finance_credentials::reconcile_with_timeout(&state, &catalog, Duration::from_millis(100));
+        let status = || {
+            super::credentials::credential_statuses(&state, &catalog.entries[0])
+                .unwrap()
+                .remove(0)
+        };
+        assert_eq!(
+            status().last_error.as_deref(),
+            Some("credential_presence_unavailable")
+        );
+        assert!(!status().locked);
+        reconcile_credential_presence(&state).unwrap();
+        assert_eq!(test_store::presence_calls(environment), 1);
+        if let Some(release) = blocked {
+            let retry = || {
+                super::credentials::unlock_credential_for_state(
+                    MarketplaceCredentialRequest {
+                        entry_id: id.into(),
+                    },
+                    &state,
+                    true,
+                )
+                .unwrap()
+            };
+            assert_eq!(
+                retry()[0].last_error.as_deref(),
+                Some("credential_presence_unavailable")
+            );
+            release.send(true).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while matches!(
+                finance_credentials::reserve(&state, id),
+                Err(finance_credentials::FinanceCredentialError::Busy)
+            ) {
+                assert!(Instant::now() < deadline);
+                std::thread::yield_now();
+            }
+        }
+        assert_eq!(
+            status().last_error.as_deref(),
+            Some("credential_presence_unavailable")
+        );
+        // An optional key whose presence is still unknown cannot be read by a run.
+        assert_ne!(
+            connector_readiness(&catalog.entries[0], &state).unwrap(),
+            MarketplaceConnectorReadiness::Ready
+        );
+        let retried = super::credentials::unlock_credential_for_state(
+            MarketplaceCredentialRequest {
+                entry_id: id.into(),
+            },
+            &state,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            retried[0].last_error.as_deref(),
+            Some("credential_saved_unread")
+        );
+        assert_eq!(test_store::presence_calls(environment), 2);
+        assert_eq!(test_store::secret_reads(environment, id), reads);
     }
 }
 
@@ -1124,7 +1541,7 @@ fn optional_lookup_key_is_active_on_save_and_deletion_preserves_grants() {
     );
     assert_eq!(status[0].verified_at, None);
     assert!(!serde_json::to_string(&status).unwrap().contains(key));
-    let saved = crate::finance_credentials::lookup_key(&state.credential_environment)
+    let saved = crate::finance_credentials::get_for_state(&state, ASSET_LOOKUP_SOURCE_ID)
         .unwrap()
         .unwrap();
     assert_eq!(saved.get("api_key"), Some(key));
@@ -1142,7 +1559,7 @@ fn optional_lookup_key_is_active_on_save_and_deletion_preserves_grants() {
     .unwrap();
     assert!(!status[0].stored);
     assert!(
-        crate::finance_credentials::lookup_key(&state.credential_environment)
+        crate::finance_credentials::get_for_state(&state, ASSET_LOOKUP_SOURCE_ID)
             .unwrap()
             .is_none()
     );

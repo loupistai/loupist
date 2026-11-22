@@ -341,7 +341,7 @@ describe("ConflictCard", () => {
     used_reason: "The filed figure is final.",
   };
 
-  it("shows each report with its date, why they differ and which one is used, and links the Map only for a disputed entity", async () => {
+  it("shows each report with its date, why they differ and which one is used, and links World only for a disputed entity", async () => {
     const user = userEvent.setup();
     const scope = { bridge: {} as LoupistBridge, loupistId: "loupist-a", threadId: "chat", surface: "session" as const, theme: "light" as const, active: true };
     const card = (value: ConflictGrid) => <ChatExecutionProvider value={scope}><ConflictCard title="Solsup revenue" conflict={value} evidenceRefs={[DART, NEWS]} /></ChatExecutionProvider>;
@@ -353,10 +353,10 @@ describe("ConflictCard", () => {
     expect(within(rows[2]!).getByText("Undated")).toBeVisible();
     expect(within(rows[2]!).queryByText("Used")).toBeNull();
     expect(screen.getByText(/Why they differ: preliminary versus final\. The news report/u)).toBeVisible();
-    expect(screen.queryByRole("button", { name: "See on the Map" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show in World" })).toBeNull();
 
     rerender(card({ ...conflict, world_entity_id: "ent:solsup", map_link: true }));
-    await user.click(screen.getByRole("button", { name: "See on the Map" }));
+    await user.click(screen.getByRole("button", { name: "Show in World" }));
     expect(open).toHaveBeenLastCalledWith({ kind: "page", location: { loupistId: "loupist-a", surface: "world", view: { onlyDisputed: true, highlightEntityIds: ["ent:solsup"] } } });
   });
 

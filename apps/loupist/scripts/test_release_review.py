@@ -179,6 +179,130 @@ class ReviewTests(unittest.TestCase):
                         credentials.build(root, dry_run=True)
                 self.assertFalse(handoff.exists())
 
+    def test_notary_password_only_reaches_standard_input(self):
+        with (
+            patch.dict(
+                os.environ,
+                dict(
+                    RUNNER_TEMP="/tmp",
+                    LOUPIST_SIGNING_KEYCHAIN="keychain",
+                    APPLE_PASSWORD="private-password-fixture",
+                    APPLE_ID="account",
+                ),
+                clear=True,
+            ),
+            patch("sys.argv", ["credentials", "store-notary"]),
+            patch.object(
+                credentials,
+                "load_profile",
+                return_value={"macos_signing": {"team_id": "ABCDE12345"}},
+            ),
+            patch.object(credentials, "run") as run,
+        ):
+            credentials.main()
+            self.assertEqual(
+                run.call_args.kwargs["input"], "private-password-fixture\n"
+            )
+            self.assertNotIn("private-password-fixture", run.call_args.args)
+            self.assertNotIn("APPLE_PASSWORD", os.environ)
+            self.assertIn("store-credentials", run.call_args.args)
+            self.assertTrue(run.call_args.kwargs["start_new_session"])
+            self.assertNotIn("--no-validate", run.call_args.args)
+
+    def test_notary_rehearsal_stores_and_finds_its_own_profile(self):
+        with (
+            patch.dict(
+                os.environ,
+                {"RUNNER_TEMP": "/tmp", "LOUPIST_SIGNING_KEYCHAIN": "fixture-keychain"},
+                clear=True,
+            ),
+            patch("sys.argv", ["credentials", "store-notary", "--dry-run"]),
+            patch.object(credentials, "run") as run,
+        ):
+            credentials.main()
+            store, lookup = run.call_args_list
+            self.assertIn("--no-validate", store.args)
+            self.assertTrue(store.kwargs["start_new_session"])
+            self.assertEqual(store.kwargs["input"], "dummy-notary-password\n")
+            self.assertNotIn("dummy-notary-password", store.args)
+            profile = store.args[3]
+            self.assertEqual(
+                lookup.args,
+                (
+                    "security",
+                    "find-generic-password",
+                    "-a",
+                    f"com.apple.gke.notary.tool.saved-creds.{profile}",
+                    "-s",
+                    "appSpecificPassword",
+                    "fixture-keychain",
+                ),
+            )
+
+    def test_package_staples_app_before_both_copies_and_dmg_last(self):
+        package = runpy.run_path(str(SCRIPTS / "package-macos-release.py"))["package"]
+        for rehearsal in (False, True):
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                app = root / "macos/Loupist.app"
+                app.mkdir(parents=True)
+                events = []
+
+                def command(name, *args):
+                    events.append(name)
+                    if name == "ditto" and "-k" in args:
+                        Path(args[-1]).touch()
+
+                def submit(upload, target):
+                    events.append("staple " + target.suffix)
+
+                with (
+                    patch.dict(
+                        os.environ,
+                        {
+                            "APPLE_SIGNING_IDENTITY": "identity",
+                            "LOUPIST_EPHEMERAL_CERTIFICATE_SHA1": "identity"
+                            if rehearsal
+                            else "",
+                        },
+                        clear=True,
+                    ),
+                    patch.dict(
+                        package.__globals__,
+                        {
+                            "run": command,
+                            "notarize": submit,
+                            "verify_binary": lambda *args: None,
+                            "sign_code": lambda args: events.append(
+                                "sign " + Path(args[-1]).suffix
+                            ),
+                            "verify_updater": lambda *args: events.append(
+                                "verify updater"
+                            ),
+                            "load_profile": lambda **kw: {
+                                "macos_signing": {
+                                    "mode": "developer-id",
+                                    "team_id": "ABCDE12345",
+                                }
+                            },
+                        },
+                    ),
+                ):
+                    package(root, dry_run=rehearsal)
+                expected = ["sign .app", "codesign"]
+                if not rehearsal:
+                    expected += ["ditto", "staple .app"]
+                expected += [
+                    "/usr/bin/tar",
+                    "verify updater",
+                    "ditto",
+                    "hdiutil",
+                    "sign .dmg",
+                ]
+                if not rehearsal:
+                    expected.append("staple .dmg")
+                self.assertEqual(events, expected)
+
     def test_rc_failed_job_rerun_rechecks_sequence_before_publication(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
         publication = workflow.split(
@@ -295,7 +419,7 @@ class ReviewTests(unittest.TestCase):
         )
         for name in (
             "Build and sign unnotarized Loupist",
-            "Build, sign, and notarize Loupist with Developer ID",
+            "Sign the packaged Developer ID updater",
         ):
             step = workflow.split("      - name: " + name + "\n", 1)[1].split(
                 "\n      - ", 1
@@ -307,6 +431,8 @@ class ReviewTests(unittest.TestCase):
         for name in (
             "Stage and sign sidecars and OpenBB runtime",
             "Configure embedded updater",
+            "Build the Developer ID app bundle",
+            "Sign and package the app and disk image",
             "Verify signatures, notarization, and updater artifacts",
         ):
             step = workflow.split("      - name: " + name + "\n", 1)[1].split(
@@ -314,6 +440,7 @@ class ReviewTests(unittest.TestCase):
             )[0]
             self.assertNotIn("TAURI_SIGNING_PRIVATE_KEY:", step)
             self.assertNotIn("LOUPIST_CERTIFICATE:", step)
+            self.assertNotIn("APPLE_PASSWORD:", step)
 
 
 if __name__ == "__main__":

@@ -1614,7 +1614,7 @@ pub fn retry_source_processing(
         || settings.max_embedding_calls == 0
     {
         return Err(KnowledgeError::Invalid(
-            "enable Map building with a sufficient allowance before retrying",
+            "enable World building with a sufficient allowance before retrying",
         ));
     }
     if head.document.extraction.max_llm_calls >= 2

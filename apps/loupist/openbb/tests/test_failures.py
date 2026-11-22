@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 import socket
@@ -23,6 +24,10 @@ from openbb_mcp_server.models.settings import MCPSettings
 from loupist_openbb.failures import (
     OFFLINE,
     PAID_ALPHA_PLAN,
+    INVALID_ARGUMENTS,
+    FRED_INVALID_ARGUMENTS,
+    FRED_INVALID_SYMBOL,
+    InvalidProviderArguments,
     AlphaVantagePaidPlanRequired,
     CredentialRejectedError,
     credential_rejected,
@@ -91,6 +96,7 @@ def test_network_failure_crosses_openbb_rest_and_mcp_without_private_text() -> N
             "connect": ConnectionRefusedError("private-canary"),
             "timeout": TimeoutError("private-canary"),
             "argument": ValueError("private-canary"),
+            "rejected": InvalidProviderArguments(FRED_INVALID_SYMBOL),
         }
         raise OpenBBError(errors[failure]) from errors[failure]
 
@@ -113,6 +119,14 @@ def test_network_failure_crosses_openbb_rest_and_mcp_without_private_text() -> N
     mark_registered_tools_read_only(server, {})
 
     async def exercise() -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=isolated), base_url="http://fixture"
+        ) as rest:
+            invalid = await rest.get(
+                "/api/v1/equity/price/quote", params={"provider": "fixture"}
+            )
+            assert invalid.status_code == 422
+            assert invalid.json() == INVALID_ARGUMENTS
         async with Client(server) as client:
             await client.call_tool(
                 "activate_tools", {"tool_names": ["equity_price_quote"]}
@@ -134,6 +148,13 @@ def test_network_failure_crosses_openbb_rest_and_mcp_without_private_text() -> N
                 raise_on_error=False,
             )
             assert error.is_error and error.structured_content != OFFLINE
+            rejected = await client.call_tool(
+                "equity_price_quote",
+                {"provider": "fixture", "failure": "rejected"},
+                raise_on_error=False,
+            )
+            assert rejected.is_error
+            assert rejected.structured_content == FRED_INVALID_SYMBOL
             result = await client.call_tool(
                 "equity_price_quote",
                 {"provider": "fixture", "failure": "ok"},
@@ -219,17 +240,71 @@ def test_fred_key_errors_fail_with_a_fixed_reason_instead_of_an_empty_series(
     assert "32 character" not in str(raised.value)
 
 
-def test_fred_other_errors_fail_without_provider_text(
+@pytest.mark.parametrize(
+    ("status", "message", "expected"),
+    [
+        (400, "Bad Request.  The series does not exist.", FRED_INVALID_SYMBOL),
+        (400, "Bad Request. private-canary", FRED_INVALID_ARGUMENTS),
+        (500, "Server Error. private-canary", None),
+    ],
+)
+def test_fred_request_errors_keep_their_category_without_provider_text(
     monkeypatch: pytest.MonkeyPatch,
+    status: int,
+    message: str,
+    expected: dict | None,
 ) -> None:
-    with pytest.raises(OpenBBError) as raised:
+    with pytest.raises((OpenBBError, InvalidProviderArguments)) as raised:
         _fred_series_with(
             monkeypatch,
-            400,
-            {"error_code": 400, "error_message": "Bad Request. private-canary"},
+            status,
+            {"error_code": status, "error_message": message},
         )
-    assert provider_refusal(raised.value) is None
+    assert provider_refusal(raised.value) == expected
     assert "private-canary" not in str(raised.value)
+
+
+@pytest.mark.parametrize("status", [200, 400])
+def test_sec_error_is_classified_before_the_fetcher_reads_rows(monkeypatch, status):
+    from openbb_core.provider.utils import helpers as provider_helpers
+    from openbb_sec.utils import definitions, form4
+    from loupist_openbb.server import apply_sec_contact_email
+
+    response = _ProviderResponse(
+        status,
+        {
+            "status": 400,
+            "error": {"type": "parsing_exception", "reason": "private-canary"},
+        },
+    )
+
+    async def scripted(_url, *, response_callback, **_kwargs):
+        return await response_callback(response, None)
+
+    monkeypatch.setattr(provider_helpers, "amake_request", scripted)
+    # Restore all patched module attributes after using the real wrapper.
+    with monkeypatch.context() as patches:
+        for name, module in tuple(sys.modules.items()):
+            for attr in ("amake_request", "make_request"):
+                if (
+                    name.startswith("openbb_sec.") or module is provider_helpers
+                ) and hasattr(module, attr):
+                    patches.setattr(module, attr, getattr(module, attr))
+        for headers in (
+            definitions.HEADERS,
+            definitions.SEC_HEADERS,
+            form4.SEC_HEADERS,
+        ):
+            patches.setitem(headers, "User-Agent", headers.get("User-Agent"))
+        apply_sec_contact_email("fixture@example.test")
+        with pytest.raises(InvalidProviderArguments) as raised:
+            asyncio.run(
+                provider_helpers.amake_request(
+                    "https://efts.sec.gov/LATEST/search-index"
+                )
+            )
+        assert provider_refusal(raised.value) == INVALID_ARGUMENTS
+        assert "private-canary" not in str(raised.value)
 
 
 def test_fred_bundled_probe_skips_the_missing_first_gdp_observation(monkeypatch):

@@ -10,11 +10,20 @@ use crate::{agent_harness::interface::InterfaceLocale, broker::BrokerError};
 enum LabelKey {
     Bot,
     ResearchSession,
-    Map,
+    World,
     Schedule,
     MarketDataPlatform,
     ResearchSessionsHeading,
     MarketDataGroup,
+    Lens,
+    Following,
+    Journal,
+    SourcesLibrary,
+    Perspective,
+    YourPrinciples,
+    Methods,
+    Topics,
+    Ideas,
 }
 
 #[derive(Deserialize)]
@@ -76,38 +85,57 @@ mod tests {
             .find(|tool| tool["name"] == "interface_labels")
             .unwrap();
         let keys = &declaration["parameters"]["properties"]["keys"]["items"]["enum"];
-        let request = json!({"keys": keys});
+        let keys = keys.as_array().unwrap();
+        assert_eq!(keys.len(), 16);
         for (locale, expected) in [
             (
                 InterfaceLocale::English,
                 json!({
-                    "bot": "Bot", "research_session": "research session", "map": "Map",
+                    "bot": "Bot", "research_session": "research session", "world": "World",
                     "schedule": "Schedule", "market_data_platform": "Market data platform",
-                    "research_sessions_heading": "Research sessions", "market_data_group": "Market data"
+                    "research_sessions_heading": "Research sessions", "market_data_group": "Market data",
+                    "lens": "Lens", "following": "Following", "journal": "Journal",
+                    "sources_library": "Sources", "perspective": "Perspective",
+                    "your_principles": "Your principles", "methods": "Methods",
+                    "topics": "Topics", "ideas": "Ideas"
                 }),
             ),
             (
                 InterfaceLocale::Korean,
                 json!({
-                    "bot": "봇", "research_session": "리서치 세션", "map": "지도",
+                    "bot": "봇", "research_session": "리서치 세션", "world": "월드",
                     "schedule": "예약", "market_data_platform": "시장 데이터 플랫폼",
-                    "research_sessions_heading": "리서치 세션", "market_data_group": "시장 데이터"
+                    "research_sessions_heading": "리서치 세션", "market_data_group": "시장 데이터",
+                    "lens": "렌즈", "following": "관심 자산", "journal": "저널",
+                    "sources_library": "자료", "perspective": "관점",
+                    "your_principles": "내 원칙", "methods": "분석 방법",
+                    "topics": "주제", "ideas": "아이디어"
                 }),
             ),
         ] {
-            assert_eq!(read(Some(locale), request.clone()).unwrap(), expected);
+            let resolved: serde_json::Map<String, Value> = keys
+                .chunks(7)
+                .flat_map(|keys| {
+                    read(Some(locale), json!({"keys": keys}))
+                        .unwrap()
+                        .as_object()
+                        .unwrap()
+                        .clone()
+                })
+                .collect();
+            assert_eq!(Value::Object(resolved), expected);
         }
         assert_eq!(
-            read(Some(InterfaceLocale::Korean), json!({"keys": ["map"]})).unwrap(),
-            json!({"map": "지도"}),
+            read(Some(InterfaceLocale::Korean), json!({"keys": ["world"]})).unwrap(),
+            json!({"world": "월드"}),
         );
         assert_eq!(
             read(
                 Some(InterfaceLocale::from_language("fr")),
-                json!({"keys": ["map"]})
+                json!({"keys": ["world", "your_principles"]})
             )
             .unwrap(),
-            json!({"map": "Map"}),
+            json!({"world": "World", "your_principles": "Your principles"}),
         );
     }
 
@@ -121,20 +149,21 @@ mod tests {
         });
         for invalid in [
             json!(null),
-            json!([["map"]]),
+            json!([["world"]]),
             json!({}),
-            json!({"keys": "map"}),
+            json!({"keys": "world"}),
             json!({"keys": []}),
-            json!({"keys": ["map", "map"]}),
-            json!({"keys": ["map", "language"]}),
-            json!({"keys": vec!["map"; 8]}),
-            json!({"keys": ["map"], "language": "ko"}),
+            json!({"keys": ["world", "world"]}),
+            json!({"keys": ["world", "language"]}),
+            json!({"keys": ["map"]}),
+            json!({"keys": vec!["world"; 8]}),
+            json!({"keys": ["world"], "language": "ko"}),
         ] {
             let error = read(Some(InterfaceLocale::Korean), invalid).unwrap_err();
             assert_eq!(crate::broker::error_body(&error), expected);
         }
         assert!(matches!(
-            read(None, json!({"keys": ["map"]})),
+            read(None, json!({"keys": ["world"]})),
             Err(BrokerError::MethodDenied)
         ));
     }

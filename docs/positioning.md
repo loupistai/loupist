@@ -15,7 +15,7 @@ Loupist"; ko 루피스트). It claims care, not authority: an examiner, not an a
 Loupist is for individual investors investigating companies, industries and
 markets. It combines provider-backed Chat, read-only data connections, local
 calculation and retained Memory. Each Loupist is a local folder with multiple research sessions.
-Source retains material, Map connects claims, Lens holds principles and editable research pages,
+Source retains material, World connects claims, Lens holds principles and editable research pages,
 and the Journal holds the user's own judgments.
 
 [Loupist creation and import](runtime/storage-authority.md#where-data-lives) keep research in local
@@ -33,19 +33,19 @@ or saved method proof of better analysis; evaluation must test subsequent work.
 Korean copy is formal (…습니다, …하십시오, never 해요체); the rules are in
 [Interface localization](../apps/loupist/src/i18n/README.md#interface-localization).
 Call the agent "your Loupist" or its name, a research companion (ko 리서치 동료).
-Bot is a place. The sidebar shows Bot · Following · Map · Lens · Schedule.
-Map and Lens open as full pages from the sidebar. In a conversation, Activity
-opens the activity sheet and the split buttons open Chat materials. Map contains
-the [Library](ui/map-lens.md#map-and-library), with Sources · Journal · Notes tabs.
-Lens holds principles, perspectives, methods, topics and ideas. Use World only in
-developer descriptions of the model, storage or code; identifiers stay unchanged.
+Bot is a place. The sidebar shows Bot · Following · World · Lens · Schedule.
+World and Lens open as full pages from the sidebar. In a conversation, Activity
+opens the activity sheet and the split buttons open Chat materials. World contains
+the [Library](ui/map-lens.md#world-and-library), with Sources · Journal · Notes tabs.
+Lens holds principles, perspectives, methods, topics and ideas. Use World and 월드
+for the feature in interface copy. Keep the existing identifiers in code and storage.
 Do not expose storage IDs, hashes, worker names, raw envelopes
 or byte offsets as product concepts. Put source limitations, model usage, commands,
 file access and actionable diagnostics in the appropriate details.
 
 ## First-run terms
 
-Onboarding, the Map and Briefings explain the product words in place. New copy
+Onboarding, World and Briefings explain the product words in place. New copy
 uses the same meanings.
 
 | Term | What the interface says |
@@ -53,7 +53,7 @@ uses the same meanings.
 | Loupist | A research companion for one topic. It remembers what you read together and learns how you like to research. |
 | Bot / 봇; research session / 리서치 세션 | The standing conversation; a separate conversation for one question. |
 | Following / 관심 자산 | What you follow with this Loupist; each Loupist keeps its own list. Following is not a holding or a trade; the app keeps no record of what you own. |
-| Map / 지도 | Connections from Sources; background reading is Map building (지도 구성). |
+| World / 월드 | Connections from Sources; background reading is World building (월드 구성). |
 | Library / 자료함; Source / 자료 | Saved material and its retained evidence. |
 | Lens / 렌즈 | Your principles and research pages, with evidence and history; Perspective / 관점 is a starting view. |
 | Principle / 원칙 | A criterion taught by the user; it outranks methods. |

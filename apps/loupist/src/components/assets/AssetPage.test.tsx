@@ -9,6 +9,7 @@ import type { ChatThread, LoupistSummary } from "../../types";
 import type { AssetPageTarget } from "../../contracts/assets";
 import { failedFixture, hanulFixture, nameOnlyFixture, needsConnectionFixture, noCurrencyFixture, noThesisFixture, nvidiaFixture, type AssetFixture } from "../../preview/assets";
 import { AssetPage } from "./AssetPage";
+import { InspectorThesis } from "./InspectorThesis";
 
 /** Installs the fixture for the first Loupist and opens its page by id (or by `target`). */
 async function fixture(asset: AssetFixture, { target, configure }: { target?: Partial<AssetPageTarget>; configure?: (bridge: MockLoupistBridge) => void } = {}) {
@@ -52,7 +53,11 @@ it("shows the stored price as the replayed result states it: value, currency, st
   expect(spies.check).not.toHaveBeenCalled();
   await user.click(within(price).getByRole("button", { name: /^Source 1/u }));
   const dialog = await screen.findByRole("dialog", { name: "KRX" });
-  expect(dialog).toHaveTextContent(asset.price!.price!.dataset.dataset_id);
+  expect(within(dialog).getByText(/Hanul Precision \(HNP\) · KRX · daily prices/)).toBeVisible();
+  const details = within(dialog).getByText("Details").closest("details")!;
+  expect(details.open).toBe(false);
+  await user.click(within(dialog).getByText("Details"));
+  expect(within(details).getByText(asset.price!.price!.dataset.dataset_id)).toBeVisible();
   expect(within(dialog).queryByText("Stored value")).toBeNull();
 });
 
@@ -88,6 +93,24 @@ it("opens the stored provider URL from the price source", async () => {
   const { handlers, user } = await fixture(asset);
   await user.click(within(quote(await opened("Hanul Precision"))).getByRole("button", { name: /^Source 1/u }));
   expect(handlers.onOpenLink).toHaveBeenCalledWith(sourceUrl);
+});
+
+it("uses the localized listing country in the asset header, source and World inspector", async () => {
+  const asset = hanulFixture();
+  asset.asset.exchangeName = "South Korea";
+  const { bridge, loupist, user } = await fixture(asset);
+  const page = await opened("Hanul Precision");
+  const meta = page.querySelector(".asset-page-meta");
+  expect(meta).toHaveTextContent("South Korea");
+  await user.click(within(quote(page)).getByRole("button", { name: /^Source 1/u }));
+  const dialog = await screen.findByRole("dialog", { name: "KRX" });
+  render(<InspectorThesis bridge={bridge} loupistId={loupist.id} entityId={asset.page!.entityId!} />);
+  try {
+    await act(() => i18n.changeLanguage("ko"));
+    expect(meta).toHaveTextContent("대한민국");
+    expect(dialog).toHaveTextContent("대한민국");
+    await waitFor(() => expect(document.querySelector(".asset-thesis-summary")).toHaveTextContent("대한민국"));
+  } finally { await act(() => i18n.changeLanguage("en")); }
 });
 
 it("words a provider's stated time and draws a year of history points", async () => {
@@ -319,7 +342,7 @@ it("follows an unfollowed asset by its id", async () => {
   await waitFor(() => expect(page.querySelector(".asset-page-meta")).toHaveTextContent("Following"));
 });
 
-it("undoes the Loupist's latest move by its id, and unlinks the page from its Map entity", async () => {
+it("undoes the Loupist's latest move by its id, and unlinks the page from its World entity", async () => {
   const asset = hanulFixture();
   const { bridge, loupist, user, handlers } = await fixture(asset);
   const undo = vi.spyOn(bridge, "assetVerdictUndo");
@@ -330,7 +353,7 @@ it("undoes the Loupist's latest move by its id, and unlinks the page from its Ma
   await waitFor(() => expect(undo).toHaveBeenCalledWith({ loupistId: loupist.id, assetId: asset.asset.assetId, moveId: "preview-move-1" }));
   await waitFor(() => expect(within(page).queryByRole("button", { name: "Undo" })).toBeNull());
 
-  expect(page.querySelector(".asset-lines-card")).toHaveTextContent("Map · 2 suppliers, 3 customers");
+  expect(page.querySelector(".asset-lines-card")).toHaveTextContent("World · 2 suppliers, 3 customers");
   await user.click(within(page).getByRole("button", { name: "Open" }));
   expect(handlers.onOpenMap).toHaveBeenCalledWith("map-entity-00");
   await user.click(within(page).getByRole("button", { name: "Not this company" }));
@@ -355,4 +378,12 @@ it("puts a question into Bot's composer naming the listing, or the name alone wi
   const longName = nameOnlyFixture().asset.name;
   expect(within(named).getByRole("heading", { level: 1 })).toHaveAttribute("title", longName);
   expect(within(named).getByRole("textbox", { name: `Ask about ${longName}` })).toHaveAttribute("placeholder", "Ask a question about it");
+});
+
+it("withholds the verdict until a thesis has a recorded review", async () => {
+  const asset = nameOnlyFixture();
+  await fixture(asset);
+  const page = await opened(asset.asset.name);
+  expect(within(page).getByText("Not reviewed yet")).toBeVisible();
+  expect(within(page).queryByText("Holding up")).toBeNull();
 });

@@ -12,11 +12,11 @@ function MenuComposer({ status, onAddKnowledgePin }: { status: "ready" | "empty"
   return <TooltipProvider><ChatComposer
     prompt={prompt} onPromptChange={setPrompt}
     privateChat={false} isRunning={false} error={null} streamAnnouncement=""
-    models={[{ id: "model", provider: "test", model: "model", name: "Model", input: ["text", "image"], reasoning: true, context_window: 10000, max_tokens: 1000, thinking_levels: ["medium"], thinking_level_map: {}, run_controls: [], credential_source: "saved" }]} providers={[]} modelSelection={{ model_profile_id: "model", thinking_level: "medium", run_options: {} }} modelAuto onModelResetToAuto={() => {}}
+    models={[{ id: "model", provider: "test", model: "model", name: "Model", input: ["text", "image"], reasoning: true, context_window: 10000, max_tokens: 1000, thinking_levels: ["medium"], thinking_level_map: {}, run_controls: [], credential_source: "saved" }]} providers={[]} modelSelection={{ model_profile_id: "model", thinking_level: "medium", run_options: {} }} modelIsDefault onChooseDefault={() => {}}
     skills={[]} plugins={[]}
     onPrivateChatChange={vi.fn()} onModelSelectionChange={vi.fn()}
     onSend={vi.fn()} onFollowUp={vi.fn()} onAbort={vi.fn()}
-    mapScreenshot={{ status: () => status, take: async () => new File([new Uint8Array([1])], "map.png", { type: "image/png" }) }}
+    mapScreenshot={{ status: () => status, take: async () => new File([new Uint8Array([1])], "world.png", { type: "image/png" }) }}
     evidenceSources={[{ key: "sources", label: pin.label, pin }]}
     onAddKnowledgePin={onAddKnowledgePin}
   /></TooltipProvider>;
@@ -30,19 +30,19 @@ it("offers files, a pasted image, a map screenshot and saved sources from one + 
   expect(screen.getByRole("menuitem", { name: "Files…" })).toBeInTheDocument();
   expect(screen.getByRole("menuitem", { name: "Paste image" })).toBeInTheDocument();
   // An empty map cannot be captured, and the item says why.
-  expect(screen.getByRole("menuitem", { name: /Screenshot of the map/ })).toHaveAttribute("aria-disabled", "true");
-  expect(screen.getByRole("menuitem", { name: /Screenshot of the map/ })).toHaveAttribute("title", "The map is empty");
+  expect(screen.getByRole("menuitem", { name: /Screenshot of World/ })).toHaveAttribute("aria-disabled", "true");
+  expect(screen.getByRole("menuitem", { name: /Screenshot of World/ })).toHaveAttribute("title", "World is empty");
   await user.click(screen.getByRole("menuitem", { name: "Q3 operating review" }));
   expect(onAddKnowledgePin).toHaveBeenCalledWith(pin);
 });
 
-it("attaches a screenshot of the map when one is drawn and counts it in the tray", async () => {
+it("attaches a screenshot of World when one is drawn and counts it in the tray", async () => {
   const user = userEvent.setup();
   render(<MenuComposer status="ready" onAddKnowledgePin={vi.fn()} />);
   await user.click(screen.getByRole("button", { name: "Add to this message" }));
-  await user.click(screen.getByRole("menuitem", { name: "Screenshot of the map" }));
+  await user.click(screen.getByRole("menuitem", { name: "Screenshot of World" }));
   await user.keyboard("{Escape}");
-  expect(await screen.findByRole("img", { name: "map.png" })).toBeInTheDocument();
+  expect(await screen.findByRole("img", { name: "world.png" })).toBeInTheDocument();
   expect(screen.getByText("1 attachment")).toBeInTheDocument();
 });
 

@@ -45,3 +45,21 @@ export function readNoun(tool: string, options: { target?: string; connection?: 
   const read = known ? tDynamic(`asOf.reads.${name}`) : options.connection?.trim() || name.replaceAll("_", " ");
   return options.target ? tDynamic("asOf.readFor", { read, target: options.target }) : read;
 }
+
+/** A data read's noun ("current quote"): the as-of catalog first, then the sheet's own. */
+export function readNounFor(name: string | undefined) {
+  if (!name) return undefined;
+  if (i18n.exists(`chat:asOf.reads.${name}`)) return tDynamic(`asOf.reads.${name}`);
+  if (i18n.exists(`chat:activitySheet.reads.${name}`)) return tDynamic(`activitySheet.reads.${name}`);
+  return undefined;
+}
+
+/** A known research activity shared by progress and retained Source metadata. */
+export function knownActivityLabel(tool: string | undefined, form: "running" | "done") {
+  const name = tool?.split("__").at(-1);
+  if (name && i18n.exists(`chat:activitySheet.tools.${name}`)) return tDynamic(`activitySheet.tools.${name}.${form}`);
+  const catalog = catalogStepLabel(tool, form);
+  if (catalog) return catalog;
+  const noun = readNounFor(name);
+  if (noun) return tDynamic(`readStep.${form}`, { read: noun });
+}

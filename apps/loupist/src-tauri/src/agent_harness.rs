@@ -81,6 +81,10 @@ const PROVIDER_EXTENSION_FILES: &[(&str, &[u8])] = &[
         include_bytes!("../../agent/loupist-provider-extension.mjs"),
     ),
     (
+        "provider-signin-page.mjs",
+        include_bytes!("../../agent/provider-signin-page.mjs"),
+    ),
+    (
         "provider-inference.mjs",
         include_bytes!("../../agent/provider-inference.mjs"),
     ),
@@ -404,6 +408,14 @@ pub struct UnavailableConnection {
     pub name: String,
     pub description: String,
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<UnavailableConnectionReason>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+pub enum UnavailableConnectionReason {
+    #[serde(rename = "its saved key needs the user's permission in macOS")]
+    SavedKeyPermission,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -567,6 +579,7 @@ impl AgentRuntimeProfile {
                 id: plugin.name.clone(),
                 name: plugin.display_name.clone(),
                 description: connection_purpose(&plugin.short_description),
+                reason: None,
             })
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
@@ -581,6 +594,32 @@ impl AgentRuntimeProfile {
             components,
             unavailable_connections,
         })
+    }
+
+    pub(crate) fn mark_saved_keys_needing_permission(
+        &mut self,
+        ids: &std::collections::BTreeSet<String>,
+    ) -> Result<(), AgentHarnessError> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let catalog =
+            crate::marketplace::bundled_catalog().map_err(|_| AgentHarnessError::Context)?;
+        for entry in catalog
+            .entries
+            .into_iter()
+            .filter(|entry| ids.contains(&entry.id))
+        {
+            self.unavailable_connections
+                .retain(|item| item.id != entry.plugin || item.name != entry.name);
+            self.unavailable_connections.push(UnavailableConnection {
+                id: entry.id,
+                name: entry.name,
+                description: connection_purpose(&entry.summary),
+                reason: Some(UnavailableConnectionReason::SavedKeyPermission),
+            });
+        }
+        Ok(())
     }
 
     /// Unattended (scheduled) runs see only the briefing allowlist: no native
@@ -795,6 +834,7 @@ fn validate_agent_files(root: &Path, files: &[(&str, &[u8])]) -> Result<(), Agen
 pub fn default_skill_ids() -> Vec<String> {
     SELECTABLE_SKILLS
         .iter()
+        .filter(|skill| available_skill(skill))
         .map(|skill| skill.id.to_owned())
         .collect()
 }
@@ -837,7 +877,10 @@ pub fn normalize_selectable_skill_ids(
     requested: &[String],
 ) -> Result<Vec<String>, AgentHarnessError> {
     let mut normalized = Vec::new();
-    for skill in SELECTABLE_SKILLS {
+    for skill in SELECTABLE_SKILLS
+        .iter()
+        .filter(|skill| available_skill(skill))
+    {
         if requested.iter().any(|id| id == skill.id) {
             normalized.push(skill.id.to_owned());
         }
@@ -849,8 +892,8 @@ pub fn normalize_selectable_skill_ids(
 }
 
 pub(crate) fn bundled_skill_file_names(id: &str) -> Vec<String> {
-    all_skills()
-        .find(|skill| skill.id == id)
+    bundled_skill(id)
+        .ok()
         .map(|skill| {
             let prefix = format!("skills/{id}/");
             skill_files(skill)
@@ -861,13 +904,12 @@ pub(crate) fn bundled_skill_file_names(id: &str) -> Vec<String> {
 }
 
 pub(crate) fn bundled_skill_content(id: &str) -> Option<&'static [u8]> {
-    all_skills()
-        .find(|skill| skill.id == id)
-        .map(|skill| skill.content)
+    bundled_skill(id).ok().map(|skill| skill.content)
 }
 
 pub fn skill_catalog(enabled_skill_ids: &[String]) -> Vec<AgentSkillSummary> {
     all_skills()
+        .filter(|skill| available_skill(skill))
         .map(|skill| {
             let fixed = skill_is_fixed(skill.id);
             let (_, description) = bundled_skill_frontmatter(skill);
@@ -904,6 +946,7 @@ pub fn resolve_skill_paths(
 
 pub fn validate_skill_path(agent_root: &Path, path: &Path) -> Result<(), AgentHarnessError> {
     let skill = all_skills()
+        .filter(|skill| available_skill(skill))
         .find(|skill| agent_root.join(skill.relative_path) == path)
         .ok_or(AgentHarnessError::SkillFile(path.to_path_buf()))?;
     let files = skill_files(skill).collect::<Vec<_>>();
@@ -957,6 +1000,9 @@ pub fn snapshot(
 
 fn normalize_capability_ids(capability_ids: &[String]) -> Result<Vec<String>, AgentHarnessError> {
     let mut normalized = capability_ids.to_vec();
+    if !crate::extension_availability::custom_connections() {
+        normalized.retain(|id| !crate::custom_connections::service::valid_id(id));
+    }
     normalized.sort();
     if normalized.windows(2).any(|pair| pair[0] == pair[1])
         || normalized.iter().any(|id| {
@@ -1628,16 +1674,24 @@ fn bundled_skill_frontmatter(skill: &BundledSkill) -> (String, String) {
     (name, description)
 }
 
+fn available_skill(skill: &BundledSkill) -> bool {
+    skill.id != "skill-creator" || crate::extension_availability::user_skills()
+}
+
+pub(crate) fn bundled_skill_available(id: &str) -> bool {
+    bundled_skill(id).is_ok()
+}
+
 fn selectable_skill(id: &str) -> Result<&'static BundledSkill, AgentHarnessError> {
     SELECTABLE_SKILLS
         .iter()
-        .find(|skill| skill.id == id)
+        .find(|skill| skill.id == id && available_skill(skill))
         .ok_or(AgentHarnessError::Skill)
 }
 
 fn bundled_skill(id: &str) -> Result<&'static BundledSkill, AgentHarnessError> {
     all_skills()
-        .find(|skill| skill.id == id)
+        .find(|skill| skill.id == id && available_skill(skill))
         .ok_or(AgentHarnessError::Skill)
 }
 

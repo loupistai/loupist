@@ -8,7 +8,7 @@ export function sharingScenarios(): PreviewScenario[] {
   const openMemoryPage = async (root: HTMLElement) => {
     await until(() => root.querySelector("textarea[data-chat-composer]"), "Chat did not initialize");
     await selectPanel("lens");
-    await until(() => select(".memory-page-tabs"), "What the Loupist knows did not load");
+    await until(() => select(".memory-page-tabs"), "The Loupist’s Lens did not load");
   };
   const openShare = async (root: HTMLElement) => { await openMemoryPage(root); await click("[data-share-loupist]"); };
   const publishFromSheet = async () => {
@@ -28,7 +28,7 @@ export function sharingScenarios(): PreviewScenario[] {
     await click("[data-loupist-shared-entry] [data-browse-gallery]");
     await until(() => select("[data-gallery]"), "The Gallery did not open");
   };
-  /** W19.5: the shared Loupists section on "What {Loupist} knows". */
+  /** W19.5: the shared Loupists section on "{Loupist}’s Lens". */
   const openSharedSection = async (root: HTMLElement) => {
     await openMemoryPage(root);
     await click('.memory-page-tabs [role="tab"]:nth-child(1)');
@@ -108,10 +108,10 @@ export function sharingScenarios(): PreviewScenario[] {
       bridge => { bridge.sharing.openResult = { kind: "preview", preview: { ...MOCK_PACK_PREVIEW, blocked: "reported" } }; }),
     sharing("Suggestions from a shared Loupist", "pack-suggestions", () => select("[data-pack-suggestions] .pack-suggestion"), openMemoryPage,
       bridge => { bridge.sharing.seedImport("loupist-quality"); }),
-    sharing("A shared name in the Map inspector", "map-inspector-shared", () => select(".map-inspector [data-shared-origin]"), async root => {
+    sharing("A shared name in World inspector", "map-inspector-shared", () => select(".map-inspector [data-shared-origin]"), async root => {
       await navigate(root, "map");
-      const map = await until(() => select(".map-view"), "Map did not load");
-      const input = await until(() => map.querySelector<HTMLInputElement>('[role="combobox"]'), "Map search did not load");
+      const map = await until(() => select(".map-view"), "World did not load");
+      const input = await until(() => map.querySelector<HTMLInputElement>('[role="combobox"]'), "World search did not load");
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Apple");
       input.dispatchEvent(new Event("input", { bubbles: true }));
       await click('[role="option"]', map);

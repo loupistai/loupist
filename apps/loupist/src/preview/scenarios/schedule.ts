@@ -1,10 +1,46 @@
 /** Preview scenarios, in the capture order `src/preview/scenarios.ts` assembles. */
 import { prepareFixture, previewDelivery, previewKo } from "../fixtures";
 import { prepareMorningFixture, writtenEarlier } from "../fixtures/morning";
-import { base, click, hasLayout, navigate, openNavigation, openScheduleRun, select, until, type PreviewScenario } from "./kit";
+import { scheduledRunFixture } from "../../test/scheduledFixtures";
+import { base, click, contextTitleLandmark, hasLayout, navigate, openNavigation, openScheduleRun, select, until, type PreviewScenario } from "./kit";
 
 /** The Schedule tab and the home Thread. */
 export const scheduleScenarios: PreviewScenario[] = [
+  ...(["continued-schedule-origin", "bot-schedule-origin"] as const).map((id): PreviewScenario => {
+    const session = id === "continued-schedule-origin";
+    return { ...base(id, "A long scheduled task name gives space to its date", () => contextTitleLandmark(session ? ".scheduled-session-origin" : ".thread-delivery .bot-card-tag"), async () => {
+      if (!session) return;
+      await openNavigation('[data-thread-id="preview-continued-run"]');
+      await click('[data-thread-id="preview-continued-run"]');
+    }), setup: async bridge => {
+      await prepareFixture(bridge, "answer");
+      const loupist_id = "loupist-quality";
+      const title = previewKo() ? "반도체 공급업체의 설비 투자와 연간 수요 전망 분석"
+        : "Review semiconductor suppliers' capital spending and annual demand outlook";
+      const task = await bridge.proposeScheduledTask({ loupist_id, title, prompt: title, schedule: { kind: "once", at_ms: 1000 },
+        target: { kind: "new_chat" }, model_profile_id: "", thinking_level: "", run_options: {}, use_memory: true, update_memory: true, status: "active" });
+      const run = scheduledRunFixture({ loupist_id, task_id: task.id, task_title: title, thread_id: "preview-continued-run" });
+      const get = bridge.scheduledTaskGet.bind(bridge);
+      const runs = bridge.scheduledTaskRuns.bind(bridge);
+      bridge.scheduledTaskGet = request => request.task_id === task.id ? Promise.resolve(task) : get(request);
+      bridge.scheduledTaskRuns = request => request.task_id === task.id ? Promise.resolve([run]) : runs(request);
+      const select = bridge.loupistSelect.bind(bridge);
+      bridge.loupistSelect = async id => {
+        const workspace = await select(id);
+        const home = workspace.threads.find(thread => thread.home);
+        if (!home) return workspace;
+        if (session) {
+          const [question, answer] = home.messages;
+          if (question && answer) workspace.threads.push({ ...home, id: run.thread_id!, title, home: false,
+            messages: [{ ...question, id: "scheduled-request", scheduled: { run_id: run.run_id, task_id: task.id, task_title: title, task_kind: "custom" } }, answer, question] });
+        } else {
+          const post = previewDelivery();
+          home.messages.push({ ...post, delivery: { ...post.delivery!, task_title: title, task_kind: "custom" } });
+        }
+        return workspace;
+      };
+    } };
+  }),
   // W15.23 and W15.6c: the Schedule tab manages scheduled work; results arrive in the home Thread.
   ...([
     ["schedule-list", "Scheduled tasks with saved names, cadence and a task menu", ".schedule-list"],

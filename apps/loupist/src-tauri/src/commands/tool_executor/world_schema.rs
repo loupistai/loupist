@@ -120,7 +120,7 @@ impl AppToolExecutor {
                 .any(|item| crate::knowledge::relation_already_known(&item.name, &preview))
         {
             return Err(BrokerError::Execution(
-                "The map already tracks that name. Pick a different one.".into(),
+                "World already tracks that name. Pick a different one.".into(),
             ));
         }
         preview.types.extend(types.iter().cloned());

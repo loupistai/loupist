@@ -216,6 +216,8 @@ fn chat_messages_round_trip_memory_provenance_status_and_progress_without_loss()
     let store = SqliteStore::open_in_memory().unwrap();
     seed_loupist(&store, &loupist());
     let update = MemoryUpdateResult {
+        discarded_memory_items: None,
+        skip_reason: None,
         status: MemoryUpdateStatus::Applied,
         commit_id: Some("commit-1".into()),
         changes: vec![MemoryUpdateChange {
@@ -251,6 +253,7 @@ fn chat_messages_round_trip_memory_provenance_status_and_progress_without_loss()
         receipt_id: Some("rdg_test".into()),
     };
     let progress = crate::chat::progress::ChatProgress {
+        save_activity: None,
         started_at_ms: 10,
         finished_at_ms: Some(20),
         items: vec![crate::chat::progress::ChatProgressItem::Commentary {

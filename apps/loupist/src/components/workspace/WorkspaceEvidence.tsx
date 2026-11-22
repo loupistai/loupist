@@ -1,10 +1,13 @@
+import type { EvidenceStepLink } from "../../chat/workspace";
+import { comparisonPassage } from "../../chat/numberChecks";
+import { SavedPassage } from "../knowledge/SavedPassage";
 import { formatNumber } from "@/i18n/format";
 import { formatDateTime } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import { FileTextIcon } from "lucide-react";
 import type { ChatEvidenceRef } from "../../types";
-import { evidenceCoverage, evidenceExcerptParts, evidencePresentation, evidenceTitle } from "../../chat/evidence";
+import { evidenceWarning, evidenceCoverage, evidenceExcerptParts, evidencePresentation, evidenceProvenance, evidenceTitle } from "../../chat/evidence";
 import { useMemoryPreview } from "../../chat/memoryPreview";
 import { parseCredentialFreeHttpUrl } from "../../lib/credentialFreeUrl";
 import { Button } from "../ui/button";
@@ -40,7 +43,7 @@ const readableTime = (value: string) => {
  */
 export function WorkspaceEvidence({ evidence, step, onRevealStep }: {
   evidence: ChatEvidenceRef;
-  step?: { label: string; itemId?: string; cell?: { pointer: string; key: string; value: string } };
+  step?: EvidenceStepLink;
   onRevealStep?: (itemId: string) => void;
 }) {
   useTranslation("chat");
@@ -50,13 +53,16 @@ export function WorkspaceEvidence({ evidence, step, onRevealStep }: {
   const memoryText = useMemoryPreview(evidence);
   const sampleText = useMemoryPreview(evidence, evidence.model_delivery?.excerpt ?? "");
   // A number's "Open in Evidence" marks its data cell; a passage keeps its host-selected match.
-  const excerptParts = memoryText === null ? evidenceExcerptParts(evidence) ?? evidenceCellParts(evidence.excerpt, step?.cell) : null;
+  const selected = comparisonPassage(evidence.excerpt, step?.comparison);
+  const excerptParts = step?.comparison ? (step.comparison.span ? selected : null)
+    : memoryText === null ? evidenceExcerptParts(evidence) ?? evidenceCellParts(evidence.excerpt, step?.cell) : null;
+  const marks = excerptParts ? [{ start: excerptParts.before.length, end: excerptParts.before.length + excerptParts.match.length }] : undefined;
   useEffect(() => {
     setAwayFromPassage(false);
     reader.current?.focus({ preventScroll: true });
     if (match.current) match.current.scrollIntoView({ block: "center" });
     else if (reader.current) reader.current.scrollTop = 0;
-  }, [evidence.id, step?.cell?.pointer]);
+  }, [evidence.id, step?.cell?.pointer, step?.comparison]);
   // "Jump to cited passage" is only useful once the reader has scrolled the passage away.
   const trackPassage = () => {
     const frame = reader.current?.getBoundingClientRect();
@@ -66,31 +72,36 @@ export function WorkspaceEvidence({ evidence, step, onRevealStep }: {
   };
   const view = evidencePresentation(evidence);
   const title = evidenceTitle(evidence);
+  const origin = evidenceProvenance(evidence, providerName(evidence.provider) ?? "");
   const sourceUrl = evidence.url ? parseCredentialFreeHttpUrl(evidence.url) : null;
-  const notRetained = !excerptParts && memoryText === null && !evidence.excerpt && (evidence.kind === "original" || evidence.kind === "local_file");
-  return <article ref={reader} tabIndex={-1} className="workspace-evidence" aria-label={t("workspaceEvidence.sourceLabel", { title: title })} onScroll={excerptParts ? trackPassage : undefined}>
+  const notRetained = !selected && !excerptParts && memoryText === null && !evidence.excerpt && (evidence.kind === "original" || evidence.kind === "local_file");
+  return <article ref={reader} tabIndex={-1} className="workspace-evidence" aria-label={t("workspaceEvidence.sourceLabel", { title: title })} onScroll={selected || excerptParts ? trackPassage : undefined}>
     <header>
       <div className="evidence-kind"><FileTextIcon aria-hidden="true" />{view.label}</div>
       <h2 title={evidence.title}>{title}</h2>
       <p>{view.description}</p>
     </header>
     {/* Sticky, so the way back to the passage stays one click away while reading. The live page sits in the panel's status row. */}
-    {excerptParts && awayFromPassage ? <div className="evidence-actions">
+    {(selected || excerptParts) && awayFromPassage ? <div className="evidence-actions">
       <Button type="button" variant="ghost" size="sm" onClick={() => match.current?.scrollIntoView({ block: "center" })}>{t("workspaceEvidence.jumpToCitedPassage")}</Button>
     </div> : null}
     {notRetained ? <div className="evidence-notices" role="alert"><p>{t("chatWorkspacePanel.sourceNotRetained")}</p></div> : null}
     <dl className="evidence-metadata">
       {step?.label ? <><dt>{t("workspaceEvidence.createdIn")}</dt><dd>{step.itemId && onRevealStep ? <Button type="button" variant="ghost" size="sm" onClick={() => onRevealStep(step.itemId!)}>{step.label}</Button> : step.label}</dd></> : null}
-      {providerName(evidence.provider) ? <><dt>{t("workspaceEvidence.provider")}</dt><dd>{providerName(evidence.provider)}</dd></> : null}
-      <dt>{t("workspaceEvidence.retrieved")}</dt><dd><time dateTime={evidence.retrieved_at}>{readableTime(evidence.retrieved_at)}</time></dd>
-      {evidence.published_at ? <><dt>{t("workspaceEvidence.published")}</dt><dd>{readableTime(evidence.published_at)}</dd></> : null}
+      {origin.attribution ? <><dt>{t("workspaceEvidence.provider")}</dt><dd>{origin.attribution}</dd></> : null}
+      {!evidence.memory_origin ? <><dt>{t("workspaceEvidence.retrieved")}</dt><dd><time dateTime={evidence.retrieved_at}>{readableTime(evidence.retrieved_at)}</time></dd></> : null}
+      {origin.publication ? <><dt>{t(origin.publication.kind === "updated" ? "workspaceEvidence.updated" : "workspaceEvidence.published")}</dt>
+        <dd>{!evidence.memory_origin && evidence.published_at ? readableTime(evidence.published_at) : origin.publication.date}</dd></> : null}
       {evidence.as_of ? <><dt>{t("workspaceEvidence.dataAsOf")}</dt><dd>{evidence.as_of}</dd></> : null}
       {evidence.coverage ? <><dt>{t("workspaceEvidence.coverage")}</dt><dd>{excerptParts ? t("workspaceEvidence.selectedPassageFromTheRetrievedDocument") : evidenceCoverage(evidence.coverage)}</dd></> : null}
     </dl>
-    {evidence.warnings.length > 0 ? <div className="evidence-notices" role="note">{evidence.warnings.map((warning, index) => <p key={index}>{warning}</p>)}</div> : null}
+    {origin.route ? <p className="reader-notice">{origin.route}</p> : null}
+    {evidence.warnings.length > 0 ? <div className="evidence-notices" role="note">{evidence.warnings.map((warning, index) => <p key={index}>{evidenceWarning(evidence.tool_name, warning)}</p>)}</div> : null}
     {evidence.model_delivery ? <p className="evidence-notices">{t("workspaceEvidence.theFullResultWasSavedLoupistReceivedASmaller")}</p> : null}
+    {selected && !excerptParts && <section className="evidence-excerpt"><h3>{t("figureWarning.source")}</h3>
+      <pre>{selected.before}<mark ref={match} className="evidence-match">{selected.match}</mark>{selected.after}</pre></section>}
     {notRetained ? null : <section className="evidence-excerpt" data-quote-source={`evidence:${evidence.id}`}><h3>{evidence.kind === "discovery" ? t("workspaceEvidence.searchPreview") : t("workspaceEvidence.savedExcerpt")}</h3>
-      <pre>{excerptParts ? <>{excerptParts.before}<mark ref={match} key={evidence.id} className="evidence-match">{excerptParts.match}</mark>{excerptParts.after}</> : (memoryText ?? evidence.excerpt) || t("workspaceEvidence.noTextExcerptWasReturnedForThisResult")}</pre>
+      <SavedPassage preformatted text={(memoryText ?? evidence.excerpt) || t("workspaceEvidence.noTextExcerptWasReturnedForThisResult")} marks={marks} markRef={match} />
       {evidence.excerpt_truncated ? <p className="evidence-truncation">{t(sourceUrl ? "workspaceEvidence.partialOriginal" : evidence.dataset_ref ? "workspaceEvidence.partialDataset" : "workspaceEvidence.partialRetained")}</p> : null}
     </section>}
     {evidence.model_delivery ? <details className="evidence-receipt"><summary>{t("workspaceEvidence.sampleReceivedByLoupist")}</summary>

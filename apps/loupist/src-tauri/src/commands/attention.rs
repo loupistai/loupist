@@ -36,6 +36,7 @@ pub(crate) enum AttentionKind {
     Question,
     /// A line the user set on an asset page was crossed; shown until the page opens.
     LineCrossed,
+    SavedKeyPermission,
     BriefingConflict,
     UnreadResults,
     /// Watcher alerts delivered but not on screen yet.
@@ -71,16 +72,17 @@ pub(crate) struct AttentionItem {
 fn rank(kind: AttentionKind) -> u8 {
     match kind {
         // Approvals and questions both wait on the user's reply; newest first between them.
-        AttentionKind::Approval | AttentionKind::Question => 0,
-        AttentionKind::LineCrossed => 1,
-        AttentionKind::BriefingConflict => 2,
-        AttentionKind::UnreadResults => 3,
+        AttentionKind::Approval | AttentionKind::Question => 1,
+        AttentionKind::SavedKeyPermission => 0,
+        AttentionKind::LineCrossed => 2,
+        AttentionKind::BriefingConflict => 3,
+        AttentionKind::UnreadResults => 4,
         AttentionKind::CheckDue => 5,
     }
 }
 
-/// Approvals and questions first, then conflicting briefings, unread results and checks;
-/// newest first within a kind, checks by due date.
+/// Saved-key permission first, then waiting questions, approvals, and results.
+/// Within a kind, newest first except for checks, which sort by due date.
 pub(crate) fn sort_items(items: &mut [AttentionItem]) {
     items.sort_by(|a, b| {
         rank(a.kind).cmp(&rank(b.kind)).then_with(|| {
@@ -222,6 +224,24 @@ pub(crate) async fn collect(state: &AppState) -> Result<Vec<AttentionItem>, Comm
     let today = chrono::Local::now().date_naive();
     let loupists = state.store.list_loupists().map_err(super::map_store)?;
     let mut items = Vec::new();
+    let permission_count = crate::app::off_main_thread(state, |state| {
+        crate::marketplace::reconcile_credential_presence(state)?;
+        Ok(crate::marketplace::key_permission::entries_needing_permission(state)?.len())
+    })
+    .await?;
+    if permission_count > 0 {
+        items.push(AttentionItem {
+            kind: AttentionKind::SavedKeyPermission,
+            loupist_id: String::new(),
+            loupist_name: String::new(),
+            chat_id: None,
+            record_id: None,
+            title: String::new(),
+            count: Some(permission_count as u64),
+            due_date: None,
+            at_ms: 0,
+        });
+    }
     let mut refused: Vec<(String, String, String, i64, Vec<ChatToolRefusal>)> = Vec::new();
     for loupist in &loupists {
         if state.ensure_loupist_available(&loupist.id).is_err() {
@@ -348,11 +368,16 @@ pub(crate) async fn collect(state: &AppState) -> Result<Vec<AttentionItem>, Comm
     }
     if !refused.is_empty() {
         // Only refusals the user has not approved since still need them.
-        if let Ok(manager) = service::for_state(state) {
-            let connections = manager.lock().await;
+        {
             for (loupist_id, loupist_name, chat_id, at_ms, needs) in refused {
                 let Some(pending) = needs.iter().find(|item| {
-                    connections.approval_pending(&loupist_id, &item.connection_id, &item.tool_name)
+                    service::approval_pending_for_state(
+                        state,
+                        &loupist_id,
+                        &item.connection_id,
+                        &item.tool_name,
+                    )
+                    .unwrap_or(false)
                 }) else {
                     continue;
                 };

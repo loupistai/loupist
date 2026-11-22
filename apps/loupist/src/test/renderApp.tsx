@@ -57,9 +57,9 @@ export const mainTab = async (name: RegExp) => {
     return await screen.findByRole("button", { name: "Data connections" });
   }
   if (!document.querySelector("[data-testid=loupist-navigation]")) fireEvent.click(screen.getByRole("button", { name: "Back" }));
-  if (label === "Map" || label === "Lens") {
+  if (label === "World" || label === "Lens") {
     // Map and Lens are sidebar destinations; each opens beside the conversation.
-    return within(document.querySelector<HTMLElement>(`[data-sidebar-place="${label === "Map" ? "map" : "lens"}"]`)!).getByRole("button");
+    return within(document.querySelector<HTMLElement>(`[data-sidebar-place="${label === "World" ? "map" : "lens"}"]`)!).getByRole("button");
   }
   if (label === APP_DESTINATIONS[0]!.label) {
     const close = document.querySelector<HTMLButtonElement>("[data-workspace-close]");
@@ -136,5 +136,5 @@ export function headerAction(name: string) {
   // The page header's one conversation action opens the activity sheet.
   if (name === "Activity") return screen.getByRole("button", { name: "Activity" });
   // Map and Lens are sidebar destinations.
-  return within(document.querySelector<HTMLElement>(`[data-sidebar-place="${name === "Map" ? "map" : "lens"}"]`)!).getByRole("button");
+  return within(document.querySelector<HTMLElement>(`[data-sidebar-place="${name === "World" ? "map" : "lens"}"]`)!).getByRole("button");
 }

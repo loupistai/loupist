@@ -4,12 +4,18 @@ Skills are procedures the model can load. They do not grant Memory permission or
 
 ## Skills management
 
-Fixed app procedures are Map (Skill id `world`), Lens (`lens`), Journal (`journal`)
+User-added Skills and Skill Creator remain in the code and are off in shipped builds.
+Settings hides the Skills page, and a Loupist's settings and Chat offer the bundled
+workflow list. When updating from 0.1.2, existing Skill files and preferences stay on
+disk. The app neither lists nor loads them while the feature is off. Launch a local
+debug build with `LOUPIST_DEV_USER_SKILLS=1` to restore management, workspace Skill
+discovery and the original Skill write wording in the agent prompt.
+
+Fixed app procedures are World (Skill id `world`), Lens (`lens`), Journal (`journal`)
 and visualization (`visualize`). Built-in tools allowed for the turn are ready
 without `capability_load`; data connections still load their tool inventories and
 keep their grants and Memory permissions. Optional
-workflows include research, financial analysis, file authoring and Skill
-creation/installation. Four retail workflows, on by default, answer everyday questions
+workflows include research, financial analysis and file authoring. Four retail workflows, on by default, answer everyday questions
 with every figure from `calculate`: `dividend-income` (history, payout, cuts, growth,
 dated yield and record dates; Korea through `dart_dividends`), `fund-compare` (cost,
 size, age, `holdings_overlap` and returns over one shared window; KRX ETFs by price
@@ -19,9 +25,8 @@ or when the user picks it, while the Bot answers a question about a move as a
 [quick ask](../agent/prompt.md#quick-asks-in-the-bot)) and `goal-math` (`goal_grid` over
 several rates or `dca_history`, using only the numbers the user gives). The `filings`
 Skill's `references/korea-statements.md` sets statement basis, periods and the Korean
-disclosure and flow reads for KRX companies. Skill Creator starts off in every
-scope until the user turns it on. Skill Installer is not bundled: Settings imports
-Skills without a model. The included catalog in
+disclosure and flow reads for KRX companies. In debug builds with user Skills available, Skill Creator starts off in each
+scope until the user turns it on. Settings imports Skills directly. The included catalog in
 `src-tauri/src/agent_harness.rs` is authoritative. Optional/custom Skills use scoped TOML enablement; see
 [Scoped configuration](../runtime/storage-authority.md#scoped-configuration).
 
@@ -40,7 +45,7 @@ Office originals need Add source and an exact saved Source read. The Word Skill 
 publishing capability. Settings owns imports; no model Skill downloads or installs
 instructions.
 
-Settings → Skills lists research Skills first and keeps Skill Creator, Add skill and Create skill under an Advanced disclosure (open while searching); a Loupist's Skills & connections list likewise puts Skill Creator last, under an Advanced heading. It offers search/filter, instruction/file details, toggles, reset,
+When user Skills are available, Settings → Skills lists research Skills first and keeps Skill Creator, Add skill and Create skill under an Advanced disclosure (open while searching); a Loupist's Skills & connections list likewise puts Skill Creator last, under an Advanced heading. It offers search/filter, instruction/file details, toggles, reset,
 owned-skill create/edit/delete and import. Personal Skills live at global
 `skills/<id>/`; Loupist Skills at `<workspace>/.loupist/skills/<id>/`. Each has `SKILL.md`
 with frontmatter and optional supporting files. Included and other-scope Skills
@@ -67,5 +72,7 @@ adaptations. [Prompt and judgment](../agent/prompt.md) owns prompt/cache behavio
 Bundled Skill files and references are readable through the native file tools
 under the sealed agent `skills/` root, including search/listing. They are always
 read-only; the adjacent system prompt, extension and catalog remain private,
-and a symlink or `..` cannot escape that root. User-owned instruction and Skill
-writes are allowed only before third-party text in the current reply.
+and a symlink or `..` cannot escape that root. The dormant Skill Creator
+and user Skill paths are private to the host when user Skills are off.
+The host allows writes to user-owned instructions and available user Skills
+only before third-party text in the current reply.

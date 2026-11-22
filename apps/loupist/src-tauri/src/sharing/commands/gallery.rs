@@ -189,8 +189,9 @@ pub async fn gallery_listing_request(
     let (index_owner, index_repo) = github::index_url()
         .and_then(gallery::index_repo)
         .ok_or_else(not_configured)?;
-    let environment = state.credential_environment.to_string();
-    let token = github::load_token(&environment)
+    let token = github::account_token(state)
+        .await
+        .map_err(|error| error.command_error())?
         .ok_or_else(|| CommandError::new("signed_out", "Sign in to GitHub first."))?;
     let login = state
         .store
@@ -212,9 +213,7 @@ pub async fn gallery_listing_request(
     let (path, bytes) = gallery::listing_entry(&repo, "", &commit)
         .ok_or_else(|| CommandError::invalid("Publish to GitHub first."))?;
     let failed = |error: ApiError| match error {
-        ApiError::Offline | ApiError::RateLimited | ApiError::Denied => {
-            api_error(error, &environment, state)
-        }
+        ApiError::Offline | ApiError::RateLimited | ApiError::Denied => api_error(error, state),
         _ => CommandError::new("list_failed", "The Gallery request didn't go through."),
     };
     let api = Github::production();

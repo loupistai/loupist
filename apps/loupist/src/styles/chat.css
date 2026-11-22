@@ -83,8 +83,6 @@
 .message-meta time { margin-left: 2px; }
 .message-content { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); overflow-wrap: anywhere; white-space: pre-wrap; }
 .message.assistant .message-content { width: 100%; max-width: 100%; min-width: 0; white-space: normal; font-size: var(--gg-text-reading); line-height: var(--gg-leading-reading); }
-/* Reading measure: prose stops near 72 characters while tables, code and charts keep the full column. */
-.message.assistant .message-content :is(p, ul, ol, blockquote, [data-streamdown^="heading-"]) { max-width: var(--gg-size-prose-measure); }
 /* A selection in an answer paints its text only. WebKit fills a selection out to the edge of the block that draws it
    (each body part here): line ends, the space between paragraphs and, once the selection passes the block, all of it.
    It leaves a translated block's gaps unpainted. */
@@ -150,6 +148,10 @@ svg foreignObject .katex:has(> math) {
 .message-handoff-note > .ui-disclosure-body { gap: var(--gg-space-2); padding: var(--gg-space-2) var(--gg-space-3); border-left: 2px solid var(--gg-color-border-subtle); color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
 .message-handoff-note > .ui-disclosure-body > p { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .message-handoff-note > .ui-disclosure-body > ol { margin: 0; padding-inline-start: 1.5em; overflow-wrap: anywhere; }
+.handoff-opening .message-meta { justify-content: flex-start; }
+.handoff-opening .message-handoff-note > summary { justify-content: flex-start; }
+.handoff-quote { margin: 0; }
+.handoff-quote blockquote { margin: var(--gg-space-1) 0 0; padding-inline-start: var(--gg-space-3); border-inline-start: 2px solid var(--gg-color-border-subtle); white-space: pre-wrap; overflow-wrap: anywhere; }
 .message-handoff-note-title { color: var(--gg-color-text-primary); font-weight: var(--gg-weight-medium); }
 
 .message-user-context { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
@@ -331,21 +333,21 @@ svg foreignObject .katex:has(> math) {
   color: var(--gg-color-text-primary);
 }
 
-.message.assistant .message-content [data-streamdown="unordered-list"],
-.message.assistant .message-content [data-streamdown="ordered-list"] {
+:is(.message.assistant .message-content, .page-section) [data-streamdown="unordered-list"],
+:is(.message.assistant .message-content, .page-section) [data-streamdown="ordered-list"] {
   margin: 0.8em 0;
   padding-left: 1.4em;
 }
 
-.message.assistant .message-content [data-streamdown="unordered-list"] {
+:is(.message.assistant .message-content, .page-section) [data-streamdown="unordered-list"] {
   list-style: disc outside;
 }
 
-.message.assistant .message-content [data-streamdown="ordered-list"] {
+:is(.message.assistant .message-content, .page-section) [data-streamdown="ordered-list"] {
   list-style: decimal outside;
 }
 
-.message.assistant .message-content [data-streamdown="list-item"] {
+:is(.message.assistant .message-content, .page-section) [data-streamdown="list-item"] {
   padding: 0.18em 0;
 }
 
@@ -381,22 +383,22 @@ svg foreignObject .katex:has(> math) {
 }
 
 /* A table that scrolls sideways fades at its right edge (chat design change 10). */
-.message.assistant .message-content [data-streamdown="table-wrapper"][data-overflows] > div:has(> [data-streamdown="table"]) {
+:is(.message.assistant .message-content, .page-section) [data-streamdown="table-wrapper"][data-overflows] > div:has(> [data-streamdown="table"]) {
   mask-image: linear-gradient(to right, var(--gg-color-text-primary) calc(100% - 24px), transparent);
 }
 
 /* Streamdown frames the table in its own rounded, filled box; ruled rows need none of it. */
-.message.assistant .message-content [data-streamdown="table-wrapper"] > div:has(> [data-streamdown="table"]) {
+:is(.message.assistant .message-content, .page-section) [data-streamdown="table-wrapper"] > div:has(> [data-streamdown="table"]) {
   border: 0;
   border-radius: 0;
   background: transparent;
 }
 
-.message.assistant .message-content [data-streamdown="table-header"] {
+:is(.message.assistant .message-content, .page-section) [data-streamdown="table-header"] {
   background: transparent;
 }
 
-.message.assistant .message-content [data-streamdown="table-wrapper"] {
+:is(.message.assistant .message-content, .page-section) [data-streamdown="table-wrapper"] {
   max-width: 100%;
   margin: 1em 0;
   overflow-x: auto;
@@ -407,7 +409,7 @@ svg foreignObject .katex:has(> math) {
 }
 
 /* A wide table scrolls inside its frame instead of squeezing columns; figures never split. */
-.message.assistant .message-content [data-streamdown="table"] {
+:is(.message.assistant .message-content, .page-section) [data-streamdown="table"] {
   width: max-content;
   min-width: 100%;
   border-collapse: collapse;
@@ -419,8 +421,8 @@ svg foreignObject .katex:has(> math) {
 }
 
 /* Markdown column alignment arrives as an inline text-align style, which beats this default. */
-.message.assistant .message-content [data-streamdown="table-header-cell"],
-.message.assistant .message-content [data-streamdown="table-cell"] {
+:is(.message.assistant .message-content, .page-section) [data-streamdown="table-header-cell"],
+:is(.message.assistant .message-content, .page-section) [data-streamdown="table-cell"] {
   max-width: 36ch;
   padding: var(--gg-space-2) var(--gg-space-3);
   border: 0;
@@ -430,7 +432,7 @@ svg foreignObject .katex:has(> math) {
 }
 
 /* Ruled rows like the grid card: no cell boxes, no filled header (chat design change 10). */
-.message.assistant .message-content [data-streamdown="table-header-cell"] {
+:is(.message.assistant .message-content, .page-section) [data-streamdown="table-header-cell"] {
   background: transparent;
   border-bottom-color: var(--gg-color-border-default);
   color: var(--gg-color-text-secondary);
@@ -756,6 +758,27 @@ button.chat-progress-names:hover { text-decoration: underline; }
   font-size: var(--gg-text-control);
 }
 
+.external-link-error {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.external-link-url {
+  display: block;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.external-link-toast {
+  position: fixed;
+  z-index: var(--gg-z-toast);
+  bottom: var(--gg-space-5);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - var(--gg-space-8));
+  box-shadow: var(--gg-shadow-md);
+}
+
 :root[data-theme="dark"] .inline-error {
   color: var(--gg-color-negative);
   background: var(--gg-color-negative-soft);
@@ -774,6 +797,9 @@ button.chat-progress-names:hover { text-decoration: underline; }
 /* Receipt: what this answer used and saved, one line of links. */
 /* The padding keeps focus rings visible; overflow clips the separator that leads each wrapped row. */
 .chat-receipt { min-width: 0; margin: calc(-1 * var(--gg-space-1)); padding: var(--gg-space-1); overflow: hidden; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.memory-save-warning { margin: 0; font-size: var(--gg-text-meta); color: var(--gg-color-warning); }
+.memory-save-warning p { margin: 0; }
+.memory-save-warning ul { margin: 0; padding-inline-start: var(--gg-space-4); list-style: disc; overflow-wrap: anywhere; }
 .chat-receipt-line { display: flex; flex-wrap: wrap; align-items: center; margin-inline-start: calc(-1 * var(--gg-space-5)); }
 .chat-receipt-item { display: inline-flex; flex: 0 1 auto; align-items: center; min-width: 0; max-width: 100%; }
 .chat-receipt-separator { display: inline-flex; justify-content: center; flex: none; width: var(--gg-space-5); color: var(--gg-color-text-tertiary); }
@@ -1264,6 +1290,10 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 .turn-footer > :is(.turn-live, div.message-action-bar) { grid-area: 1 / 1; min-width: 0; }
 .turn-footer > .chat-guiding { grid-area: 2 / 1; }
 .turn-footer > div.message-action-bar { margin-top: 0; }
+.turn-footer[data-state="saving"] { row-gap: var(--gg-space-2); }
+.turn-footer[data-state="saving"] > div.message-action-bar { grid-area: 2 / 1; }
+.turn-live[data-kind="saving"] { white-space: normal; }
+.turn-live[data-kind="saving"] a { text-decoration: underline; }
 .turn-footer[data-state="settled"] > .turn-live { pointer-events: none; animation: turn-fade-out var(--gg-motion-fast) var(--gg-ease-in) both; }
 /* At commit the actions arrive one after another, after the live line has left. */
 .message-action-bar[data-arriving] > * { animation: turn-fade-in var(--gg-motion-normal) var(--gg-ease-out) both; animation-delay: calc(var(--gg-motion-instant) + var(--gg-motion-stagger) * var(--turn-stagger, 0)); }
@@ -1370,6 +1400,9 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 .message-action-bar > .memory-row[data-expanded="true"] { flex-basis: 100%; }
 .message-action-bar > .message-sources { border: 0; background: transparent; border-radius: 0; overflow: visible; }
 .message-action-bar > .message-sources { margin-top: 0; }
+/* Sources and feedback each start at the reading edge; the receipt shares its row with Copy. */
+article[data-turn-message] > .turn-footer .message-action-bar > :is(.message-sources, .answer-feedback) { flex-basis: 100%; }
+article[data-turn-message] > .turn-footer .message-action-bar > .message-actions { margin-inline-start: auto; }
 .message-action-bar > details > summary { width: auto; padding: 0 2px; }
 .message-outputs { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); margin-top: var(--gg-space-3); }
 .message-output-card { display: flex; align-items: center; gap: var(--gg-space-2); min-width: 140px; max-width: 100%; padding: var(--gg-space-2) 10px; border: 1px solid var(--gg-color-border-subtle); border-radius: 10px; background: transparent; text-align: left; }

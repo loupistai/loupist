@@ -19,8 +19,9 @@ use super::{
     map_internal, map_store, new_id, now_ms, profile_summary, profile_summary_at,
     profile_summary_with_availability,
     types::{
-        chat_dto, ChatThreadDto, LoupistCreateRequest, LoupistDeleteRequest, LoupistImportRequest,
-        LoupistProfileUpdateRequest, LoupistReconnectRequest, LoupistSummary, LoupistWorkspace,
+        chat_dto_with_memory, ChatThreadDto, LoupistCreateRequest, LoupistDeleteRequest,
+        LoupistImportRequest, LoupistProfileUpdateRequest, LoupistReconnectRequest, LoupistSummary,
+        LoupistWorkspace,
     },
 };
 
@@ -134,7 +135,7 @@ pub(crate) fn thread_dtos(
     };
     chats
         .iter()
-        .filter_map(|chat| match chat_dto(chat) {
+        .filter_map(|chat| match chat_dto_with_memory(state, chat) {
             Ok(mut thread) => {
                 thread.handoff_run = running.remove(&thread.id);
                 Some(thread)

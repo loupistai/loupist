@@ -172,6 +172,30 @@ async fn research_open_reserves_one_delivery_and_only_an_ack_commits_it() {
     );
 }
 
+#[test]
+fn a_012_opening_without_a_brief_shows_bots_question() {
+    let mut session = crate::test_fixtures::chat_session("child", "loupist-a");
+    let mut stored = serde_json::to_value(crate::test_fixtures::chat_message(
+        "opening",
+        ChatRole::User,
+        "Then go ahead.",
+    ))
+    .unwrap();
+    stored["handoffNote"] = json!({"title":"Supplier check","question":"Which suppliers have announced 2027 HBM4 shipments?"});
+    session.messages = vec![serde_json::from_value(stored).unwrap()];
+    let dto = serde_json::to_value(chat_dto(&session).unwrap()).unwrap();
+    let opening = &dto["messages"][0];
+    assert_eq!(
+        opening["content"],
+        "Which suppliers have announced 2027 HBM4 shipments?"
+    );
+    assert_eq!(opening["role"], "bot_handoff");
+    assert_eq!(
+        opening["handoff_note"]["userMessageInBot"],
+        "Then go ahead."
+    );
+}
+
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
 mod turns {
     use super::*;
@@ -318,6 +342,75 @@ mod turns {
             .await
             .expect("the hand-off run did not settle")
         }
+    }
+
+    #[tokio::test]
+    async fn the_child_opens_with_bots_brief_after_a_short_confirmation() {
+        let fixture = fixture();
+        let home = ensure_home_thread(&fixture.state, &fixture.loupist_id).unwrap();
+        let mut before = home.clone();
+        before.messages.extend([
+            crate::test_fixtures::chat_message(
+                "topic",
+                ChatRole::User,
+                "Who could supply HBM4 in 2027?",
+            ),
+            crate::test_fixtures::chat_message(
+                "proposal",
+                ChatRole::Assistant,
+                "I can check the suppliers' capacity announcements.",
+            ),
+        ]);
+        fixture.state.store.replace_chat(&home, &before).unwrap();
+        let confirmation = "그럼 진행해봐";
+        let brief =
+            "Compare the announced HBM4 capacity and 2027 delivery dates for each supplier.";
+        fixture.options(json!({"brief": brief}));
+        fixture.bot_turn_with("bot-ok", confirmation, false).await;
+        let source_turn = fixture.completions.lock().unwrap().clone();
+        assert!(
+            source_turn
+                .iter()
+                .any(|event| event["research_session_id"].is_string()),
+            "{source_turn:?}"
+        );
+        let rows = fixture.settled_handoffs().await;
+        let row = &rows[0];
+        let session = fixture.state.store.get_chat(&row.chat_id).unwrap().unwrap();
+        let dto = serde_json::to_value(chat_dto(&session).unwrap()).unwrap();
+        let opening = &dto["messages"][0];
+        assert_eq!(opening["content"], brief);
+        assert_eq!(opening["role"], "bot_handoff");
+        assert_eq!(opening["handoff_note"]["userMessageInBot"], confirmation);
+        assert_eq!(dto["title"], "Hynix HBM supply");
+        assert_eq!(session.messages[0].content, confirmation);
+
+        let calls = fixture.calls();
+        assert_eq!(current_body(&calls[1]), confirmation);
+        let note = &envelope(&calls[1])["handoff"]["bot_note"];
+        assert_eq!(note["brief"], brief);
+        assert_eq!(note["question"], "Who else can supply HBM4 in 2027?");
+        let origin = serde_json::to_value(row).unwrap()["origin"].clone();
+        let home = ensure_home_thread(&fixture.state, &fixture.loupist_id).unwrap();
+        assert_eq!(origin["chat_id"], home.id);
+        assert!(home
+            .messages
+            .iter()
+            .any(|message| message.content == confirmation && origin["message_id"] == message.id));
+
+        let request = crate::commands::types::ChatBranchRequest {
+            loupist_id: fixture.loupist_id.clone(),
+            thread_id: session.id.clone(),
+            message_id: session.messages[0].id.clone(),
+            position: Some(0),
+            content: Some(brief.into()),
+        };
+        let error = crate::commands::records::branch_chat(&fixture.state, request).unwrap_err();
+        assert_eq!(error.message, "only a message you sent can be edited");
+        assert_eq!(
+            fixture.state.store.get_chat(&session.id).unwrap().unwrap(),
+            session
+        );
     }
 
     #[tokio::test]
@@ -623,7 +716,7 @@ mod turns {
             let fixture = fixture();
             let manager = service::for_state(&fixture.state).unwrap();
             let connection = {
-                let mut service = manager.lock().await;
+                let mut service = manager.for_new_connection().unwrap();
                 let pending = service
                     .add_pending(ParsedConnection {
                         name: "Company research".into(),
@@ -832,7 +925,7 @@ mod turns {
                 let record = write.create_record(CreateRecord {
                     loupist_id: id.clone(),
                     kind: RecordKind::World,
-                    title: "Fixture Map".into(),
+                    title: "Fixture World".into(),
                     at_ms: 1,
                 })?;
                 write.seal_world(SealWorld {
@@ -934,7 +1027,7 @@ mod turns {
         assert_eq!(calls[0]["thinking"], "low");
         assert_eq!(
             current_body(&calls[0]),
-            "The user chose “Look into it” on this Map link."
+            "The user chose “Look into it” on this World link."
         );
         let envelope = envelope(&calls[0]);
         assert_eq!(envelope["interface"]["language"], "ko");

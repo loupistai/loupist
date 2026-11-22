@@ -1,3 +1,4 @@
+import type { AppMenuContext, PermissionProgress } from "./generated";
 import type { LegacyHoldingsStatus } from "./legacyHoldings";
 import type { NoticeSettings } from "../bridge/notice";
 import type { AttentionItem, AttentionNotifyRequest } from "./attention";
@@ -8,7 +9,7 @@ import type { Principle, PrincipleListRequest, PrincipleCreateRequest, Principle
 import type { CustomConnectionsBridge } from "./customConnections";
 import type { SharingBridge } from "./sharing";
 import type { SkillCatalog, SkillDocument, SkillReadRequest, SkillCreateRequest, SkillSaveRequest, SkillDeleteRequest, SkillImportRequest } from "./skills";
-import type { DraftAttachment, StoredChatDraft, WorkspacePathRequest, WorkspaceDirectory, WorkspaceFile, ChatActivityRequest, ChatActivityDetail, WorkspaceUiState } from "./workspace";
+import type { DraftAttachment, StoredChatDraft, WorkspacePathRequest, WorkspaceDirectory, WorkspaceFile, WorkspaceDocumentRequest, WorkspaceDocumentHandler, WorkspaceDocumentOpen, WorkbookRequest, WorkbookProgress, WorkbookRead, ChatActivityRequest, ChatActivityDetail, WorkspaceUiState } from "./workspace";
 import type { ScheduledRun, ScheduledTask, ScheduledTaskIdentity, ScheduledTaskListItem, ScheduledRunIdentity, ScheduledTaskWatch } from "./scheduled";
 import type {
   LoupistCapabilityBinding,
@@ -131,6 +132,7 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
   /** `title` is the Save dialog's title in the interface language (`exportTitle`). */
   exportSave(request: { suggestedName: string; bytes: number[]; kind: "png" | "mp4" | "webm" | "md" | "csv"; title: string }): Promise<string | null>;
   pickFile(request: { title: string; filters: { name: string; extensions: string[] }[] }): Promise<string | null>;
+  appMenuUpdate(request: AppMenuContext): Promise<void>;
   onMenuAction(handler: (action: string) => void): () => void;
 
   skillsList(request: { scope: ConfigScope }): Promise<SkillCatalog>;
@@ -150,6 +152,9 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
   runLogsLastError(request: { loupist_id: string | null }): Promise<string | null>;
   briefingSettingsGet(request: { loupistId: string }): Promise<BriefingSettings>;
   briefingSettingsSet(request: BriefingSettingsRequest): Promise<BriefingSettings>;
+  loginItemSet(request: { enabled: boolean }): Promise<BriefingResidentSettings>;
+  loginItemHintDismiss(): Promise<BriefingResidentSettings>;
+  loginItemOpenSettings(): Promise<void>;
   briefingResidentSettingsGet(): Promise<BriefingResidentSettings>;
   briefingResidentSettingsSet(request: { keepRunning: boolean }): Promise<BriefingResidentSettings>;
   inboxList(request: InboxRequest): Promise<InboxPage>;
@@ -238,10 +243,13 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
   marketplaceCredentialDelete(
     request: MarketplaceCredentialRequest,
   ): Promise<MarketplaceCredentialStatus[]>;
-  /** Try again on a connection whose saved key macOS refused (macOS may ask once more). */
+  /** Retry the presence check, or explicitly check a saved key. */
   marketplaceCredentialUnlock(
     request: MarketplaceCredentialRequest,
+    presenceOnly?: boolean,
   ): Promise<MarketplaceCredentialStatus[]>;
+  marketplaceCredentialsAllowAccess(request: string, observer: StreamObserver<PermissionProgress>): Promise<void>;
+  marketplaceCredentialsCancelAccess(request: string): Promise<void>;
   openExternalUrl(url: string): Promise<void>;
   siteFavicon(url: string): Promise<string | null>;
   browserTabOpen(
@@ -264,6 +272,9 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
   loupistReconnect(request: LoupistReconnectRequest): Promise<LoupistSummary>;
   workspaceList(request: WorkspacePathRequest): Promise<WorkspaceDirectory>;
   workspaceRead(request: WorkspacePathRequest & { path: string }): Promise<WorkspaceFile>;
+  workspaceWorkbookRead(request: WorkbookRequest, observer: StreamObserver<WorkbookProgress>): Promise<WorkbookRead>;
+  workspaceDocumentHandler(request: WorkspaceDocumentRequest): Promise<WorkspaceDocumentHandler>;
+  workspaceDocumentOpen(request: WorkspaceDocumentRequest): Promise<WorkspaceDocumentOpen>;
   workspaceReveal(request: WorkspacePathRequest): Promise<void>;
   chatActivityRead(request: ChatActivityRequest): Promise<ChatActivityDetail>;
   chatDraftFilesRead(request: { loupist_id: string; thread_id: string }): Promise<DraftAttachment[]>;

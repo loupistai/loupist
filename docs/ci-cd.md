@@ -74,7 +74,7 @@ It verifies the public repository identity, immutable releases, `main`
 pull-request protection, an active `v*` tag rule that restricts creation,
 updates, and deletion, each required protected environment, and the **names** of every
 secret required by the checked-in release profile. The updater secrets and the
-selected mode's credentials must be present in the `release` environment.
+six Developer ID secret names must be present in the `release` environment for the current Beta. The two self-signed secret names are required only for self-signed tags.
 Repository-level secrets and all secrets in non-signing environments are refused,
 including names unrelated to this signing mode. The other signing mode's names may be absent. The union of updater
 and per-mode secret sets must match every secret reference in `release.yml`.
@@ -231,18 +231,26 @@ Dry runs skip the tag-only source gates and repeat full CI only on request;
 [rehearsal and signing modes](release.md#signing-modes-and-rehearsal) owns that path.
 Assembly has a read-only token and no environment: it verifies updater signatures
 against the embedded public key in the separate signing report. Private signing
-material is never exported to `GITHUB_ENV`: real keys are scoped to certificate
-import or Tauri build steps, and disposable keys cross steps only in a private
-0600 file. Import removes its certificate fields, and the build consumes and
-removes the remaining updater handoff before invoking Tauri. The p12 import file
+material is never exported to `GITHUB_ENV`: the app-specific password reaches only credential presence validation and the
+post-build credential store. The latter sends it to notarytool through standard input.
+App and disk image submissions use the saved profile in the temporary signing keychain,
+which cleanup removes after deleting the temporary files. If keychain deletion fails,
+the workflow emits a warning and the hosted runner is discarded. Disposable credentials cross steps in a private
+0600 file. Import removes the certificate fields. The Developer ID updater signer
+consumes the remaining handoff immediately before signing the final archive. The p12 import file
 is deleted immediately after import. Imported private keys are non-extractable
 (`security import -x`); their import ACL names only `/usr/bin/codesign`, and the
-signing partition list is set explicitly. Publication is
+signing partition list is set explicitly. The Developer ID import validates the
+configured common name, team and certificate chain before staging. The signed
+build verifies the runtime, timestamps and entitlements throughout the bundle.
+It validates notarization tickets on the DMG and on both the mounted and
+updater-extracted app. Qualification repeats the package and ticket checks
+against the attested draft. The first real Developer ID runner build is pending. Publication is
 skipped in dry runs; otherwise a second `release` approval gates the write token,
 verification against the configured updater public key, attestations and release
 creation. The signing report is an artifact because GitHub can suppress secret-like
 job outputs (including the Developer ID team).
-Release validation, assembly/promotion and signing jobs have 15, 30 and 90 minute limits
+Release validation, assembly/promotion and signing jobs have 15, 30 and 240 minute limits
 respectively; signed package preflight has a 60 minute limit.
 
 Official installers and automatic-update manifests include only macOS Apple

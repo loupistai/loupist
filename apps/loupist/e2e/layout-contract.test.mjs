@@ -83,7 +83,7 @@ test("a resized sidebar keeps its handle on its right edge", () => {
   assert.throws(() => assertShellLayout(measure(measureShellLayout, html(180))), /resize handle is not on the sidebar's right edge/);
 });
 
-test("Map controls sit beside What's new, the Library or a sheet, never under them", () => {
+test("World controls sit beside What's new, the Library or a sheet, never under them", () => {
   const map = ({ panel = "", stats = "8,8,300,30", legend = "8,660,800,32" } = {}) => `<div data-testid="map-view" data-rect="0,0,900,700">
     <div class="map-body" data-rect="0,0,900,700"><div class="map-stage" data-rect="0,0,900,700">
       <div class="map-stats" data-rect="${stats}"></div><details class="map-legend" open data-rect="${legend}"></details><button class="map-fit" data-rect="860,660,28,28"></button>

@@ -9,6 +9,7 @@ import { TooltipProvider } from "../ui/tooltip";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { ChatMessageCard } from "./ChatMessageCard";
 import { ChatSurfaceProvider } from "./turnMotion";
+import { ExtensionAvailabilityProvider } from "../../app/extensionAvailability";
 import { renderWithOpen, destinations } from "../../test/open";
 import type { ChatDestination, Open } from "../../chat/navigation";
 import { onTestFinished, type Mock } from "vitest";
@@ -339,7 +340,7 @@ it("says when nothing new was saved, and adds no receipt to a private chat or a 
   expect(screen.queryByLabelText("Research sources")).toBeNull();
 });
 
-it("cites external grounding once, opens it, and routes saved reads to Memory", async () => {
+it("lists external sources and a cited saved Source, and opens the saved reader", async () => {
   const web = evidenceFixture({ id: `ev_${"1".repeat(32)}`, title: "Rates outlook", tool_name: "web_fetch", kind: "original" });
   const connection = evidenceFixture({ id: `ev_${"2".repeat(32)}`, title: "Market quote", tool_name: "krx_daily_quote", kind: "original", url: undefined, provider: "KRX" });
   const sourceRead = evidenceFixture({ id: `ev_${"3".repeat(32)}`, title: "world read", tool_name: "world_read", kind: "saved_context", url: undefined, read_ref: "source-read" });
@@ -352,8 +353,13 @@ it("cites external grounding once, opens it, and routes saved reads to Memory", 
   }));
 
   const sources = screen.getByLabelText("Research sources");
-  await user().click(within(sources).getByText("Sources (2)"));
-  expect(within(sources).getAllByRole("listitem")).toHaveLength(2);
+  await user().click(within(sources).getByText("Sources (3)"));
+  expect(within(sources).getAllByRole("listitem")).toHaveLength(3);
+  const saved = within(sources).getByRole("button", { name: /Annual report/ });
+  expect(saved).toHaveTextContent("Saved source");
+  expect(saved).toHaveTextContent("1 citation");
+  await user().click(saved);
+  expect(destinations(props.open).at(-1)).toMatchObject({ kind: "memory", location: { surface: "source", recordId: "source-record" } });
   // Source rows open in the side panel, and say so with the panel icon.
   for (const row of within(sources).getAllByRole("button")) expect(row.querySelector("[data-open-icon]")).toHaveAttribute("data-open-icon", "panel");
   expect(screen.queryByRole("button", { name: /^Source 3:/ })).toBeNull();
@@ -361,7 +367,7 @@ it("cites external grounding once, opens it, and routes saved reads to Memory", 
   expect(opened(props.open, "evidence")).toEqual([expect.objectContaining({ evidence: expect.objectContaining({ id: connection.id }) })]);
   await user().click(screen.getByRole("button", { name: "world read · Memory: Annual report" }));
   expect(destinations(props.open).at(-1)).toEqual({ kind: "memory", location: expect.objectContaining({ surface: "source", recordId: "source-record" }), title: "Annual report" });
-  await user().click(screen.getByRole("button", { name: "world search · Result: Map search" }));
+  await user().click(await screen.findByRole("button", { name: "Result: World search" }));
   expect(opened(props.open, "evidence")).toHaveLength(1);
   expect(within(screen.getByLabelText("Work progress")).getByLabelText("Tool result")).toHaveTextContent(search.excerpt);
 });
@@ -385,8 +391,9 @@ it("keeps a numbered citation on the line of the word before it, but leaves code
     content: `Margins rose ${cite}.\n\nRun \`total   ${cite}\` here.\n\n\`\`\`text\nrow  ${cite}\n\`\`\`\n\n    indented   ${cite}\n`,
     evidence_refs: [filing],
   }));
-  const paragraph = (await screen.findByText(/^Margins rose/u)).closest("p")!;
-  expect(paragraph.textContent).toMatch(/^Margins rose /u);
+  const citation = await screen.findByRole("button", { name: /Source 1: Annual filing/u });
+  expect(citation.closest(".citation-keep")?.textContent).toBe("rose 1.");
+  expect(citation.closest("p")?.textContent).toBe("Margins rose 1.");
   const code = [...document.querySelectorAll(".message-content code")].map((node) => node.textContent);
   expect(code).toEqual(expect.arrayContaining([`total   ${cite}`]));
   const blocks = [...document.querySelectorAll(".message-content pre")].map((node) => node.textContent ?? "");
@@ -485,6 +492,23 @@ it("counts a busy answer down from the wait its provider asked for", () => {
   expect(screen.getByText(/Retrying in 12 s/)).toBeInTheDocument();
 });
 
+it.each([false, true])("shows a save failure without promising retention (placeholder=%s)", (placeholder) => {
+  const content = placeholder ? "Response could not be completed." : "The generated answer.";
+  renderAnswer(answer({ status: "error", failure_kind: "store_failed", content, placeholder,
+    progress: { startedAtMs: 0, finishedAtMs: 2, items: [
+      { id: "s1", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", status: "succeeded", target: null, href: null, startedAtMs: 0, finishedAtMs: 1 },
+    ] },
+  }));
+  expect(screen.getByRole("alert")).toHaveTextContent("The response could not be saved.");
+  expect(screen.queryByText("The steps and the text so far were kept.")).toBeNull();
+  if (placeholder) {
+    expect(screen.queryByText(content)).toBeNull();
+  } else {
+    expect(screen.getByText(content)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Copy answer" })).toBeVisible();
+  }
+});
+
 it("shows guidance a finished reply accepted as a Guided row, not a question bubble", async () => {
   const steer: ChatMessage = { id: "steer", role: "user", status: "complete", content: "Focus on margins", created_at: "2026-10-10T00:00:00Z", steer: true };
   const { view } = renderAnswer(steer);
@@ -537,7 +561,10 @@ it("places a waiting approval in the turn after the step that asked, and keeps i
     { id: "step-filings", kind: "tool" as const, toolName: "mcp__custom-morrow__read_company_filings", category: "finance" as const, operation: "read" as const, action: "Read Read company filings", running: "Reading company filings", status, startedAtMs: 3, finishedAtMs: status === "succeeded" ? 4 : null, target: null, href: null },
   ];
   const running = answer({ status: "streaming", content: "", progress: { startedAtMs: 0, items: items("running"), approvals: [approval("waiting")], finishedAtMs: null } });
-  const { view } = renderAnswer(running, { bridge });
+  const turn = (message: ChatMessage) => <ExtensionAvailabilityProvider value={{ userSkills: false, customConnections: true }}>
+    <TooltipProvider><ChatMessageCard message={message} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist" bridge={bridge} onReadAttachment={vi.fn()} /></TooltipProvider>
+  </ExtensionAvailabilityProvider>;
+  const view = renderWithOpen(turn(running));
   const card = screen.getByRole("region", { name: "Approval for Read company filings" });
   // The card is a block of the turn, not inside the folded ledger; amber waits in the live line.
   expect(card.closest(".chat-progress")).toBeNull();
@@ -548,7 +575,7 @@ it("places a waiting approval in the turn after the step that asked, and keeps i
 
   // A decision settles into one line at the same place.
   const done = answer({ progress: { startedAtMs: 0, finishedAtMs: 5_000, items: items("succeeded"), approvals: [approval("allowed_once")] } });
-  view.rerender(<TooltipProvider><ChatMessageCard message={done} loupistId="loupist-a" chatId="chat-a" loupistName="Loupist" bridge={bridge} onReadAttachment={vi.fn()} /></TooltipProvider>);
+  view.rerender(turn(done));
   const line = screen.getByText("Allowed once · Read company filings");
   expect(screen.getAllByText("Allowed once · Read company filings")).toHaveLength(1);
   expect(screen.getByLabelText("Work progress").compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

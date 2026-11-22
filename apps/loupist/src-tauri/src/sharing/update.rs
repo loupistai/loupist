@@ -29,7 +29,7 @@ fn knowledge_error(error: KnowledgeError) -> CommandError {
     match error {
         KnowledgeError::Invalid("world processing is busy") => CommandError::new(
             "world_busy",
-            "The map is being updated. Try again in a minute.",
+            "World is being updated. Try again in a minute.",
         ),
         other => CommandError::invalid(other.to_string()),
     }

@@ -2,7 +2,8 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import { MemoryWorkspace } from "../../components/knowledge/MemoryWorkspace";
+import { MemoryWorkspace as MapWorkspace, type MemoryWorkspaceProps } from "../../components/knowledge/MemoryWorkspace";
+import { useMapCatalog } from "../../app/useMapCatalog";
 import { PageReader } from "../../components/memory/PageReader";
 import { ResearchReader } from "../../components/knowledge/ResearchReader";
 import { initialKnowledgeNavigation, openKnowledgeLocation, patchKnowledgeLocation } from "../../knowledge/location";
@@ -10,6 +11,11 @@ import type { LoupistSummary, LoupistBridge, KnowledgeLocation, KnowledgePin } f
 
 const firstLoupist = async (bridge: MockLoupistBridge) => ({ ...(await bridge.loupistList())[0]!, record_count: 0 });
 const journal = (journalId: string) => ({ loupistId: "loupist-quality", surface: "note" as const, selection: { kind: "journal" as const, journalId } });
+
+function MemoryWorkspace({ refreshKey, ...props }: Omit<MemoryWorkspaceProps, "catalogState"> & { refreshKey?: number }) {
+  const catalogState = useMapCatalog(props.bridge, props.loupist.id, refreshKey);
+  return <MapWorkspace {...props} catalogState={catalogState} />;
+}
 
 function SourceHarness({ bridge, loupist, onAsk }: { bridge: LoupistBridge; loupist: LoupistSummary; onAsk: (pin: KnowledgePin) => void }) {
   const [navigation, setNavigation] = useState(() => patchKnowledgeLocation(initialKnowledgeNavigation(loupist.id), { loupistId: loupist.id, surface: "source" }));

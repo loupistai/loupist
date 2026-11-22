@@ -1,3 +1,5 @@
+import { SettingsSearchPanel } from "./settings/SettingsSearchPanel";
+import type { SettingResult } from "./settings/settingSearch";
 import { ApplicationSettings } from "./settings/ApplicationSettings";
 import { MoreHorizontalIcon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
@@ -9,7 +11,8 @@ import { Button } from "./ui/button";
 import { PageHeader } from "./ui/page-header";
 import type { LanguagePreference } from "../i18n/useLanguage";
 import type { ThemePreference } from "../app/useTheme";
-import { SETTINGS_SECTIONS, type SettingsSection } from "../app/navigation";
+import { availableSettingsSection, settingsSections, type SettingsSection } from "../app/navigation";
+import { useExtensionAvailability } from "../app/extensionAvailability";
 import { KeyboardSettings } from "./settings/KeyboardSettings";
 import type { ModelCatalog } from "../types";
 import { AppearanceSettings } from "./settings/AppearanceSettings";
@@ -22,6 +25,7 @@ import { AgentSettings, ConfigurationDiagnostics } from "./settings/AgentSetting
 import type { useConfiguration } from "../app/useConfiguration";
 import { useSharedDisplayFx } from "../app/useDisplayFx";
 import { useState } from "react";
+import { loupistIdentity } from "../lib/loupistFolder";
 import { revealFocused } from "../lib/revealFocused";
 import { sharingReleaseVisible } from "../sharing/releaseVisibility";
 import { ShareSheet } from "./sharing/ShareSheet";
@@ -29,6 +33,7 @@ import { ShareSheet } from "./sharing/ShareSheet";
 type Props = {
   bridge: LoupistBridge;
   loupists: LoupistSummary[];
+  permissionNoticeRequest?: number;
   connectionsEntryId?: string | null;
   onOpenLoupistSettings?: (id: string) => void;
   onCreateLoupist?: () => void;
@@ -39,6 +44,7 @@ type Props = {
   onOpenLoupistConnections?: (id: string) => void;
   currentLoupistId: string | null;
   onManageProviders: () => void;
+  onConnectAccount?: () => void;
   onDraftSkill?: (scope: ConfigScope, brief: string) => void | Promise<void>;
   appearanceConfiguration: ReturnType<typeof useConfiguration>;
   section: SettingsSection;
@@ -55,11 +61,27 @@ type Props = {
   update: ReturnType<typeof useAppUpdate>;
 };
 
-export function SettingsView({
+export function SettingsView({ searching = false, target, onIndexed, ...props }: Props & {
+  searching?: boolean; target?: SettingResult; onIndexed?: (section: SettingsSection, entries: SettingResult[]) => void;
+}) {
+  const { userSkills } = useExtensionAvailability();
+  const section = availableSettingsSection(props.section, userSkills);
+  return settingsSections(userSkills).filter(item => searching || item.id === section).map(item => {
+    const active = item.id === section;
+    return <SettingsSearchPanel key={item.id} section={item.id} active={active} searching={searching}
+      target={active && target?.section === item.id ? target : undefined} onIndexed={onIndexed}>
+      <SettingsPage {...props} section={item.id} indexing={!active} searchControls={searching || target?.section === item.id} connectionsEntryId={active ? props.connectionsEntryId : undefined} permissionNoticeRequest={active ? props.permissionNoticeRequest : undefined}
+        connectTarget={active ? props.connectTarget : null} />
+    </SettingsSearchPanel>;
+  });
+}
+
+function SettingsPage({
+  indexing, searchControls,
   bridge,
-  loupists, connectionsEntryId, onOpenLoupistSettings, onCreateLoupist, onImportLoupist, onRemoveLoupist, onOpenLoupists, onOpenLoupistConnections,
+  loupists, connectionsEntryId, permissionNoticeRequest, onOpenLoupistSettings, onCreateLoupist, onImportLoupist, onRemoveLoupist, onOpenLoupists, onOpenLoupistConnections,
   currentLoupistId,
-  onManageProviders,
+  onManageProviders, onConnectAccount,
   onDraftSkill,
   appearanceConfiguration,
   section,
@@ -73,10 +95,11 @@ export function SettingsView({
   connectTarget,
   onConnectTargetConsumed,
   update,
-}: Props) {
+}: Props & { indexing: boolean; searchControls: boolean }) {
   useTranslation("settings");
   const displayFx = useSharedDisplayFx();
-  const page = SETTINGS_SECTIONS.find((item) => item.id === section)!;
+  const { userSkills } = useExtensionAvailability();
+  const page = settingsSections(userSkills).find((item) => item.id === section)!;
   const [shareTarget, setShareTarget] = useState<LoupistSummary | null>(null);
   const showSharing = sharingReleaseVisible();
   return (
@@ -87,16 +110,19 @@ export function SettingsView({
         description={page.description} /> : null}
 
       <div className="settings-stack">
-        {section === "connections" ? <MarketplaceView bridge={bridge} loupists={loupists} currentLoupistId={currentLoupistId} initialEntryId={connectionsEntryId} onManageLoupists={() => currentLoupistId && onOpenLoupistConnections ? onOpenLoupistConnections(currentLoupistId) : onOpenLoupists?.()} onOpenModelSettings={onManageProviders} /> : null}
-        {section === "loupists" ? <div className="settings-loupists"><div className="settings-loupist-actions"><Button onClick={onCreateLoupist}>{i18n.t("app:shell.newLoupist")}</Button><Button variant="outline" data-loupist-import onClick={onImportLoupist}>{i18n.t("settings:loupists.import")}</Button></div><ul>{loupists.map(loupist => <li key={loupist.id}><LoupistAvatar loupist={loupist} /><div><strong>{loupist.name}</strong><p>{loupist.philosophy}</p></div><Button variant="outline" size="sm" aria-label={i18n.t("settings:loupists.settingsFor", { name: loupist.name })} onClick={() => onOpenLoupistSettings?.(loupist.id)}>{i18n.t("settings:loupists.settings")}</Button>
-            <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={i18n.t("settings:loupists.moreFor", { name: loupist.name })}><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
+        {section === "connections" ? <MarketplaceView bridge={bridge} loupists={loupists} currentLoupistId={currentLoupistId} initialEntryId={connectionsEntryId} permissionNoticeRequest={permissionNoticeRequest} onManageLoupists={() => currentLoupistId && onOpenLoupistConnections ? onOpenLoupistConnections(currentLoupistId) : onOpenLoupists?.()} onOpenModelSettings={onManageProviders} /> : null}
+        {section === "loupists" ? <div className="settings-loupists"><div className="settings-loupist-actions"><Button onClick={onCreateLoupist}>{i18n.t("app:shell.newLoupist")}</Button><Button variant="outline" data-loupist-import onClick={onImportLoupist}>{i18n.t("settings:loupists.import")}</Button></div><ul>{loupists.map(loupist => {
+            const { label, distinction } = loupistIdentity(loupist, loupists);
+            return <li key={loupist.id}><LoupistAvatar loupist={loupist} /><div><strong>{label}</strong>{loupist.philosophy && distinction !== loupist.philosophy.trim() ? <p>{loupist.philosophy}</p> : null}</div><Button variant="outline" size="sm" aria-label={i18n.t("settings:loupists.settingsFor", { name: label })} onClick={() => onOpenLoupistSettings?.(loupist.id)}>{i18n.t("settings:loupists.settings")}</Button>
+            <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={i18n.t("settings:loupists.moreFor", { name: label })}><MoreHorizontalIcon /></Button></DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 {showSharing ? <DropdownMenuItem data-share-loupist={loupist.id} onSelect={() => setShareTarget(loupist)}>{i18n.t("sharing:share")}</DropdownMenuItem> : null}
                 <DropdownMenuItem onSelect={() => onRemoveLoupist?.(loupist.id)}>{i18n.t("settings:loupists.removeEllipsis")}</DropdownMenuItem>
-              </DropdownMenuContent></DropdownMenu></li>)}</ul>
+              </DropdownMenuContent></DropdownMenu></li>;
+          })}</ul>
           {showSharing && shareTarget ? <ShareSheet bridge={bridge} loupistId={shareTarget.id} loupistName={shareTarget.name} scope={{ kind: "loupist" }} open onOpenChange={open => { if (!open) setShareTarget(null); }} /> : null}</div> : null}
         {section === "model" ? (
-          <ModelSettingsPanel catalog={catalog} loadError={loadError} bridge={bridge} chatModelProfileId={appearanceConfiguration.snapshot?.effective.chat.model_profile_id}
+          <ModelSettingsPanel searchControls={searchControls} discoverModels={!indexing} catalog={catalog} loadError={loadError} bridge={bridge} chatModelProfileId={appearanceConfiguration.snapshot?.modelSelection?.model?.id}
             connectTarget={connectTarget} onConnectTargetConsumed={onConnectTargetConsumed} {...providerActions} />
         ) : null}
 
@@ -112,7 +138,7 @@ export function SettingsView({
         {section === "keyboard" ? <KeyboardSettings /> : null}
         {section === "skills" ? <SkillsSettings bridge={bridge} loupists={loupists} scope={{ kind: "global" }} onDraftSkill={onDraftSkill} /> : null}
 
-        {section === "agent" ? <AgentSettings bridge={bridge} loupists={loupists} catalog={catalog} scope={{ kind: "global" }} /> : null}
+        {section === "agent" ? <AgentSettings onConnectAccount={onConnectAccount} bridge={bridge} loupists={loupists} catalog={catalog} scope={{ kind: "global" }} /> : null}
         {section === "general" ? <ApplicationSettings bridge={bridge} /> : null}
 
         {section === "updates" ? (

@@ -3,10 +3,16 @@
 //! number is compared with the evidence it links, using this turn's retained
 //! results. The model's text never sets a status; Rust reads the number it
 //! printed and looks for it in the source.
+mod answer_units;
+mod diagnostics;
+mod observation;
+pub(in crate::commands) use observation::SavedFigureChecks;
+pub(crate) mod replay;
 use super::*;
 use crate::domain::{
     answer_checks::{
-        bounded_calc, bounded_fields, clip, NumberCheckContext, MAX_NUMBER_CHECK_CONTEXT_CHARS,
+        bounded_calc, bounded_fields, clip, NumberCheckContext, NumberCheckScaleConversion,
+        MAX_NUMBER_CHECK_CONTEXT_CHARS,
     },
     ChatEvidenceMatch, ChatEvidenceRef, NumberCheck, NumberCheckCalc, NumberCheckField,
     NumberCheckInput, NumberCheckKind, NumberCheckStatus, MAX_NUMBER_CHECKS,
@@ -86,28 +92,30 @@ fn evidence_id(target: &str) -> Option<&str> {
     })
 }
 
-/// Evidence links outside code, in reading order.
-pub(in crate::commands) fn evidence_links(content: &str) -> Vec<EvidenceLink> {
+fn located_links(content: &str) -> Vec<(usize, EvidenceLink)> {
     use pulldown_cmark::{Event, Parser, Tag, TagEnd};
     let mut links = Vec::new();
-    let mut open: Option<(String, String)> = None;
-    for event in Parser::new(content) {
+    let mut open: Option<(usize, String, String)> = None;
+    for (event, pos) in Parser::new(content).into_offset_iter() {
         match event {
             Event::Start(Tag::Link { dest_url, .. }) => {
-                open = evidence_id(&dest_url).map(|id| (id.to_owned(), String::new()));
+                open = evidence_id(&dest_url).map(|id| (pos.start, id.to_owned(), String::new()));
             }
             Event::Text(text) | Event::Code(text) => {
-                if let Some((_, label)) = &mut open {
+                if let Some((_, _, label)) = &mut open {
                     label.push_str(&text);
                 }
             }
             Event::End(TagEnd::Link) => {
-                if let Some((evidence_id, text)) = open.take() {
-                    links.push(EvidenceLink {
-                        index: links.len() as u32,
-                        text,
-                        evidence_id,
-                    });
+                if let Some((at, evidence_id, text)) = open.take() {
+                    links.push((
+                        at,
+                        EvidenceLink {
+                            index: links.len() as u32,
+                            text,
+                            evidence_id,
+                        },
+                    ));
                 }
             }
             _ => {}
@@ -171,11 +179,16 @@ fn calc_candidates(payload: &Value) -> Vec<Candidate> {
             } else {
                 Unit::Plain
             };
+            let currency = (!conversion && matches!(unit, Unit::Amount(_)))
+                .then(|| item["unit"].as_str().and_then(numbers::stated_currency))
+                .flatten();
             out.push(Candidate {
                 value,
                 unit,
+                currency,
                 place: Place::Pointer(format!("/{list}/{index}/value")),
-                stated_fall: false,
+                inferred_scale: false,
+                direction: None,
             });
         }
     }
@@ -191,14 +204,17 @@ fn calc_candidates(payload: &Value) -> Vec<Candidate> {
 fn extend_dcf_candidates(payload: &Value, out: &mut Vec<Candidate>) {
     let grid = &payload["grid"];
     let unit = calc_unit(grid["unit"].as_str());
+    let currency = grid["unit"].as_str().and_then(numbers::stated_currency);
     for (row, cells) in grid["values"].as_array().into_iter().flatten().enumerate() {
         for (column, cell) in cells.as_array().into_iter().flatten().enumerate() {
             if let Some(value) = cell.as_f64() {
                 out.push(Candidate {
                     value,
                     unit,
+                    currency,
                     place: Place::Pointer(format!("/grid/values/{row}/{column}")),
-                    stated_fall: false,
+                    inferred_scale: false,
+                    direction: None,
                 });
             }
         }
@@ -209,8 +225,10 @@ fn extend_dcf_candidates(payload: &Value, out: &mut Vec<Candidate>) {
                 out.push(Candidate {
                     value,
                     unit: Unit::Percent,
+                    currency: None,
                     place: Place::Pointer(format!("/grid/{axis}/{index}")),
-                    stated_fall: false,
+                    inferred_scale: false,
+                    direction: None,
                 });
             }
         }
@@ -234,8 +252,12 @@ fn extend_dcf_candidates(payload: &Value, out: &mut Vec<Candidate>) {
                     input("net_debt").unwrap_or_default(),
                 ),
                 unit: calc_unit(grid["amount_unit"].as_str()),
+                currency: grid["amount_unit"]
+                    .as_str()
+                    .and_then(numbers::stated_currency),
                 place: Place::Pointer("/formulas/0".into()),
-                stated_fall: false,
+                inferred_scale: false,
+                direction: None,
             });
         }
     }
@@ -419,8 +441,12 @@ fn status_of(verdict: Verdict) -> NumberCheckStatus {
 
 /// Where a candidate read from a text field sits in that text, as UTF-8 byte
 /// offsets: the number with the same value and unit, or the field's only one.
-fn locate(text: &str, candidate: &Candidate) -> Option<(usize, usize)> {
-    let candidates = numbers::passage_candidates(text);
+fn locate(
+    text: &str,
+    candidate: &Candidate,
+    amount: Option<&numbers::Printed>,
+) -> Option<(usize, usize)> {
+    let candidates = numbers::checked_passage_candidates(text, amount);
     let found = candidates.iter().find(|found| {
         found.value == candidate.value && (found.unit == candidate.unit || candidates.len() == 1)
     })?;
@@ -432,10 +458,15 @@ fn locate(text: &str, candidate: &Candidate) -> Option<(usize, usize)> {
 
 /// How a data cell prints the candidate read from it: a text field's number
 /// as printed in that text, never the whole text.
-fn printed_at(payload: &Value, pointer: &str, candidate: &Candidate) -> Option<String> {
+fn printed_at(
+    payload: &Value,
+    pointer: &str,
+    candidate: &Candidate,
+    amount: Option<&numbers::Printed>,
+) -> Option<String> {
     match payload.pointer(pointer)? {
         Value::String(text) => Some(
-            locate(text, candidate)
+            locate(text, candidate, amount)
                 .map_or_else(|| text.clone(), |(start, end)| text[start..end].to_owned()),
         ),
         other => printed(other),
@@ -444,12 +475,16 @@ fn printed_at(payload: &Value, pointer: &str, candidate: &Candidate) -> Option<S
 
 /// Locate the selected fallback candidate again in its content field. The
 /// candidate's pointer came from `content_candidates`, never from metadata.
-fn retained_context(payload: &Value, candidate: &Candidate) -> Option<NumberCheckContext> {
+fn retained_context(
+    payload: &Value,
+    candidate: &Candidate,
+    amount: Option<&numbers::Printed>,
+) -> Option<NumberCheckContext> {
     let Place::Pointer(pointer) = &candidate.place else {
         return None;
     };
     let text = printed(payload.pointer(pointer)?)?;
-    let (start, end) = if let Some(found) = locate(&text, candidate) {
+    let (start, end) = if let Some(found) = locate(&text, candidate, amount) {
         found
     } else if numbers::passage_candidates(&text).is_empty() {
         // Scalar content values can be numbers that passage parsing excludes,
@@ -460,6 +495,10 @@ fn retained_context(payload: &Value, candidate: &Candidate) -> Option<NumberChec
     } else {
         return None;
     };
+    context_at(&text, start, end)
+}
+
+fn context_at(text: &str, start: usize, end: usize) -> Option<NumberCheckContext> {
     let matched_chars = text.get(start..end)?.chars().count();
     let remaining = MAX_NUMBER_CHECK_CONTEXT_CHARS.checked_sub(matched_chars)?;
     let before = text[..start].chars().rev().take(remaining).count();
@@ -482,7 +521,108 @@ fn retained_context(payload: &Value, candidate: &Candidate) -> Option<NumberChec
     })
 }
 
+/// A host-verified literal can be just an accession or period inside an
+/// SEC observation. In that case the selection covers its record.
+fn citation_range(evidence: &ChatEvidenceRef) -> Option<ChatEvidenceMatch> {
+    let anchor = evidence
+        .excerpt_match
+        .as_ref()
+        .filter(|anchor| anchor.is_valid_for(&evidence.excerpt))?;
+    let text = &evidence.excerpt;
+    let left = text.ceil_char_boundary(anchor.start.saturating_sub(512));
+    let right = text.floor_char_boundary((anchor.end + 512).min(text.len()));
+    let record = text[left..anchor.start]
+        .rfind('{')
+        .zip(text[anchor.end..right].find('}'))
+        .map(|(start, end)| ChatEvidenceMatch {
+            start: left + start,
+            end: anchor.end + end + 1,
+        })
+        .filter(|record| {
+            serde_json::from_str::<Value>(&text[record.start..record.end]).is_ok_and(|row| {
+                row["val"].is_number() && row["end"].is_string() && row["accn"].is_string()
+            })
+        });
+    Some(record.unwrap_or_else(|| anchor.clone()))
+}
+
+/// Earlier adjacent bytes in the same retained web capture may contain the
+/// table heading. Only candidates inside the cited excerpt can then verify.
+fn passage_window<'a>(
+    excerpt: &'a str,
+    result: &'a RunResult,
+    registry: &'a RunResultRegistry,
+) -> Option<(std::borrow::Cow<'a, str>, usize)> {
+    let content = result.payload["content"].as_str()?;
+    if excerpt.is_empty() {
+        return None;
+    }
+    let offset = content.find(excerpt)?;
+    if content.rfind(excerpt) != Some(offset) {
+        return None;
+    }
+    if offset > 0 {
+        return Some((content.into(), offset));
+    }
+    if result.producer.runtime_id != "native-web" || result.producer.tool_name != "web_fetch" {
+        return None;
+    }
+    let start = usize::try_from(result.payload["content_offset"].as_u64()?).ok()?;
+    let digest = result.payload["content_sha256"].as_str()?;
+    let source_id = result.payload["source_id"].as_str()?;
+    result.upstream_result_refs.iter().find_map(|parent| {
+        let parent = registry.get(parent)?;
+        let payload = &parent.payload;
+        if parent.producer.runtime_id != "native-web"
+            || payload["content_sha256"] != digest
+            || payload["source_id"] != source_id
+        {
+            return None;
+        }
+        let earlier = payload["content"].as_str()?;
+        let earlier_start = usize::try_from(payload["content_offset"].as_u64()?).ok()?;
+        let offset = start.checked_sub(earlier_start)?;
+        let prefix = earlier.get(..offset).filter(|prefix| !prefix.is_empty())?;
+        let tail = earlier.get(offset..)?;
+        if !content.starts_with(tail) && !tail.starts_with(content) {
+            return None;
+        }
+        Some((format!("{prefix}{content}").into(), offset))
+    })
+}
+
+fn passage_candidates(
+    excerpt: &str,
+    amount: Option<&numbers::Printed>,
+    result: &RunResult,
+    registry: &RunResultRegistry,
+    captured: Option<&str>,
+) -> Vec<Candidate> {
+    let window = captured
+        .and_then(|window| {
+            let prefix = window.strip_suffix(excerpt)?;
+            Some((std::borrow::Cow::Borrowed(window), prefix.len()))
+        })
+        .or_else(|| passage_window(excerpt, result, registry));
+    let Some((window, offset)) = window else {
+        return numbers::checked_passage_candidates(excerpt, amount);
+    };
+    numbers::checked_passage_candidates(&window, amount)
+        .into_iter()
+        .filter_map(|mut candidate| {
+            let Place::Span { start, end } = candidate.place else {
+                return None;
+            };
+            let (start, end) = (start.checked_sub(offset)?, end.checked_sub(offset)?);
+            excerpt.get(start..end)?;
+            candidate.place = Place::Span { start, end };
+            Some(candidate)
+        })
+        .collect()
+}
+
 /// Checks one printed number against one retained result.
+#[cfg(test)]
 pub(in crate::commands) fn check_link(
     link: &EvidenceLink,
     result: &RunResult,
@@ -503,18 +643,82 @@ pub(in crate::commands) fn check_link(
 /// column's unit into a bare value) against one retained result.
 pub(in crate::commands) fn check_printed(
     link: &EvidenceLink,
-    mut printed_number: numbers::Printed,
+    printed_number: numbers::Printed,
     result: &RunResult,
     evidence: Option<&ChatEvidenceRef>,
     registry: &RunResultRegistry,
 ) -> NumberCheck {
+    check_with_window(link, printed_number, result, evidence, registry, None)
+}
+
+fn check_with_window(
+    link: &EvidenceLink,
+    mut printed_number: numbers::Printed,
+    result: &RunResult,
+    evidence: Option<&ChatEvidenceRef>,
+    registry: &RunResultRegistry,
+    captured: Option<&str>,
+) -> NumberCheck {
     let kind = kind_of(result);
     let payload = &result.payload;
     let excerpt = evidence.map(|evidence| evidence.excerpt.as_str());
-    let candidates = match kind {
+    let fred_series = result.producer.runtime_id == "openbb"
+        && result.producer.tool_name == "economy_fred_series";
+    let python = kind == NumberCheckKind::Step && result.producer.tool_name == "run_python";
+    let amount = (matches!(printed_number.unit, Unit::Amount(_))
+        && (kind == NumberCheckKind::Passage || python))
+        .then_some(printed_number);
+    // Saved Sources can embed either a web capture or a dataset. Preserve
+    // decoded passage bytes for web results and select the row for datasets.
+    let saved = (result.producer.tool_name == "world_read")
+        .then(|| payload["text"].as_str())
+        .flatten()
+        .filter(|text| text.trim_start().starts_with('{'))
+        .and_then(|text| serde_json::from_str::<Value>(text).ok());
+    let saved_page = saved.as_ref().filter(|page| page["content"].is_string());
+    let saved_data = saved.as_ref().filter(|data| {
+        result.producer.origin == RunResultOrigin::SavedContext
+            && payload["scope"] == "source"
+            && data["dataset_ref"].is_object()
+            && (data["data"].is_object()
+                || data["data"].is_array()
+                || data["structuredContent"].is_object())
+    });
+    let mut candidates = match kind {
+        NumberCheckKind::Data if fred_series => {
+            numbers::series_observations(payload, &printed_number)
+        }
         NumberCheckKind::Calculated => calc_candidates(payload),
+        NumberCheckKind::Step if python => {
+            let mut out = numbers::checked_passage_candidates(
+                payload["stdout"].as_str().unwrap_or_default(),
+                amount.as_ref(),
+            );
+            for candidate in &mut out {
+                candidate.place = Place::Pointer("/stdout".into());
+            }
+            out
+        }
+        NumberCheckKind::Step
+            if matches!(
+                result.producer.tool_name.as_str(),
+                "dataset_query" | "chart_query"
+            ) =>
+        {
+            numbers::query_candidates(payload)
+        }
         NumberCheckKind::Data | NumberCheckKind::Step => numbers::data_candidates(payload),
-        NumberCheckKind::Passage => numbers::passage_candidates(excerpt.unwrap_or_default()),
+        NumberCheckKind::Passage => match (saved_data, saved_page) {
+            (Some(data), _) => numbers::data_candidates(data),
+            (_, Some(_)) => Vec::new(),
+            _ => passage_candidates(
+                excerpt.unwrap_or_default(),
+                amount.as_ref(),
+                result,
+                registry,
+                captured,
+            ),
+        },
     };
     let calculated = kind == NumberCheckKind::Calculated;
     let target_currency = (calculated && payload["operation"] == "convert")
@@ -523,14 +727,31 @@ pub(in crate::commands) fn check_printed(
     if target_currency.is_some() && printed_number.unit == Unit::Plain {
         printed_number.unit = Unit::Amount(1.0);
     }
-    let (mut verdict, mut index) = numbers::check(&printed_number, &candidates, calculated);
+    // A literal passage selection identifies the occurrence the citation
+    // targeted. Other figures in the surrounding window remain citable.
+    let preferred = evidence.and_then(citation_range).map_or(0, |anchor| {
+        let inside = |candidate: &Candidate| {
+            matches!(candidate.place,
+                Place::Span { start, end } if start < anchor.end && end > anchor.start)
+        };
+        candidates.sort_by_key(|candidate| !inside(candidate));
+        candidates
+            .iter()
+            .take_while(|candidate| inside(candidate))
+            .count()
+    });
+    let selected = numbers::check_citation(&printed_number, &candidates[..preferred], false);
+    let (mut verdict, mut index) = if selected.0 == Verdict::NotFound {
+        numbers::check_citation(&printed_number, &candidates, calculated)
+    } else {
+        selected
+    };
     // The agent's own code prints a percent or point change as a bare number,
     // in the figure's unit (`'qoq_pp': -1.374…`) or as a fraction (`0.0770…`
     // for 7.70%). Read a bare number in its output both ways: as printed in
     // the figure's unit (matched), else as a fraction ×100 (rounded). The
     // step's other fields, such as its exit code, are not output.
-    if kind == NumberCheckKind::Step
-        && result.producer.tool_name == "run_python"
+    if python
         && matches!(printed_number.unit, Unit::Percent | Unit::Points)
         && verdict != Verdict::Matched
     {
@@ -565,59 +786,61 @@ pub(in crate::commands) fn check_printed(
     if target_currency.is_some_and(|target| {
         numbers::unambiguous_currency_markers(&link.text)
             .iter()
-            .any(|currency| currency != target)
+            .any(|currency| *currency != target)
     }) {
         verdict = Verdict::Differs;
     }
     // Unsigned data magnitudes may describe a fall in words. Explicit signs
     // (including accounting marks) always retain their ordinary meaning.
-    let explicit_sign = link
-        .text
-        .chars()
-        .any(|c| matches!(c, '+' | '-' | '−' | '△' | '▽' | '▼' | '▲' | '('));
     if kind == NumberCheckKind::Data
+        && !fred_series
         && verdict == Verdict::NotFound
-        && !explicit_sign
+        && !printed_number.signed
         && printed_number.value > 0.0
     {
         let negative = numbers::Printed {
             value: -printed_number.value,
             ..printed_number
         };
-        (verdict, index) = numbers::check(&negative, &candidates, false);
+        (verdict, index) = numbers::check_citation(&negative, &candidates, false);
+        if verdict != Verdict::NotFound {
+            printed_number = negative;
+        }
     }
     let mut found = index.and_then(|index| candidates.get(index));
     let mut context = None;
+    let full_payload = saved_page.unwrap_or(payload);
+    let full_candidates;
+    let mut matched_payload = saved_data.unwrap_or(payload);
+    let mut matched_saved_data = saved_data.is_some();
     if kind == NumberCheckKind::Passage && verdict == Verdict::NotFound {
-        // The retained excerpt is bounded; the full retained result still
-        // decides the status. Keep context when it locates the fallback match.
-        // Only content fields count, never the result's metadata.
-        let content = numbers::content_candidates(payload);
-        let (whole, index) = numbers::check(&printed_number, &content, false);
+        // The retained excerpt is bounded. Only content fields count, never
+        // the result's metadata.
+        full_candidates = numbers::content_candidates(full_payload, amount.as_ref());
+        let (whole, index) = numbers::check_citation(&printed_number, &full_candidates, false);
         if matches!(whole, Verdict::Matched | Verdict::Rounded) {
-            context = index
-                .and_then(|index| content.get(index))
-                .and_then(|candidate| retained_context(payload, candidate));
-        }
-        if whole != Verdict::NotFound {
+            found = index.and_then(|index| full_candidates.get(index));
+            context = found
+                .and_then(|candidate| retained_context(full_payload, candidate, amount.as_ref()));
+            matched_payload = full_payload;
+            matched_saved_data = false;
             verdict = whole;
-            found = None;
         }
     }
-    let mut check = NumberCheck {
-        link_index: link.index,
-        text: clip(&link.text, 256),
-        evidence_id: link.evidence_id.clone(),
-        kind,
-        status: status_of(verdict),
-        nearest: None,
-        exact: None,
-        pointer: None,
-        span: None,
-        context,
-        fields: Vec::new(),
-        calc: calculated.then(|| calc_detail(payload, registry)),
-    };
+    let mut check = new_check(link, kind, status_of(verdict));
+    check.context = context;
+    check.calc = calculated.then(|| calc_detail(payload, registry));
+    if verdict == Verdict::NotFound {
+        diagnostics::explain(
+            &mut check,
+            &printed_number,
+            result,
+            evidence,
+            saved_page,
+            &candidates,
+        );
+        return check;
+    }
     let Some(found) = found else {
         return check;
     };
@@ -642,12 +865,32 @@ pub(in crate::commands) fn check_printed(
                     .map(str::to_owned)
             }
         }
-        Place::Pointer(pointer) => printed_at(payload, pointer, found),
+        Place::Pointer(pointer) => printed_at(matched_payload, pointer, found, amount.as_ref()),
     }
     .map(|text| clip(text.trim(), 256));
     match verdict {
+        Verdict::Matched => {
+            check.unstated_scale = numbers::unstated_scale(&printed_number, found);
+        }
         Verdict::Differs => check.nearest = as_printed,
-        Verdict::Rounded => check.exact = as_printed,
+        Verdict::Rounded => {
+            check.scale_conversion = as_printed.as_ref().and_then(|_| {
+                let (source_scale, answer_scale) =
+                    numbers::exact_scale_conversion(&printed_number, found)?;
+                Some(NumberCheckScaleConversion {
+                    source_scale,
+                    answer_scale,
+                    currency: found
+                        .currency
+                        .or(printed_number.currency)
+                        .map(str::to_owned),
+                })
+            });
+            if check.scale_conversion.is_some() {
+                check.status = NumberCheckStatus::Matched;
+            }
+            check.exact = as_printed;
+        }
         _ => {}
     }
     if verdict != Verdict::Differs {
@@ -659,14 +902,46 @@ pub(in crate::commands) fn check_printed(
                 })
             }
             Place::Pointer(pointer) => {
-                check.pointer = Some(clip(pointer, 2048));
+                if kind != NumberCheckKind::Passage {
+                    check.pointer = Some(clip(pointer, 2048));
+                }
                 if kind == NumberCheckKind::Data {
                     check.fields = row_fields(payload, pointer);
+                }
+                if matched_saved_data
+                    || kind == NumberCheckKind::Data
+                    || result.producer.tool_name == "dataset_query"
+                {
+                    check.context = observation::row_context(matched_payload, pointer);
                 }
             }
         }
     }
     check
+}
+
+fn new_check(link: &EvidenceLink, kind: NumberCheckKind, status: NumberCheckStatus) -> NumberCheck {
+    NumberCheck {
+        link_index: link.index,
+        text: clip(&link.text, 256),
+        evidence_id: link.evidence_id.clone(),
+        kind,
+        status,
+        compared_value: None,
+        nearest_source_unit: None,
+        nearest_source_scale: None,
+        comparison_reason: None,
+        comparison_replay: None,
+        nearest: None,
+        exact: None,
+        scale_conversion: None,
+        unstated_scale: None,
+        pointer: None,
+        span: None,
+        context: None,
+        fields: Vec::new(),
+        calc: None,
+    }
 }
 
 impl ToolCapture {
@@ -678,17 +953,18 @@ impl ToolCapture {
         content: &str,
         evidence: &[ChatEvidenceRef],
     ) -> Vec<NumberCheck> {
-        let links = evidence_links(content);
+        let links = located_links(content);
         if links.is_empty() {
             return Vec::new();
         }
+        let governing = answer_units::governing_units(content);
         let registry = self.run_results.lock().await;
         let by_id: BTreeMap<String, &RunResult> = registry
             .values()
             .map(|result| (evidence::evidence_id(&result.result_ref), result))
             .collect();
         let mut checks = Vec::new();
-        for link in &links {
+        for (at, link) in &links {
             if checks.len() >= MAX_NUMBER_CHECKS {
                 break;
             }
@@ -696,7 +972,46 @@ impl ToolCapture {
                 continue;
             };
             let evidence = evidence.iter().find(|item| item.id == link.evidence_id);
-            if let Some(check) = check_link(link, result, evidence, &registry) {
+            if let Some(printed) = numbers::parse_with_unit(&link.text, governing.get(at).copied())
+            {
+                let mut check = check_printed(link, printed, result, evidence, &registry);
+                if result.producer.runtime_id == "native-web"
+                    && check.kind == NumberCheckKind::Passage
+                    && (check.unstated_scale
+                        == Some(crate::domain::answer_checks::UnstatedScale::Source)
+                        || (matches!(printed.unit, Unit::Amount(_))
+                            && check.status == NumberCheckStatus::NotFound))
+                {
+                    // A literal selection can start below a caption even while the
+                    // original acquired representation is still retained this turn.
+                    let wider = || {
+                        let evidence = evidence?;
+                        let offset =
+                            usize::try_from(result.payload["content_offset"].as_u64()?).ok()?;
+                        let source_id = result.payload["source_id"].as_str()?;
+                        let digest = result.payload["content_sha256"].as_str()?;
+                        let snapshots = self.web_fetch_snapshots.try_lock().ok()?;
+                        let original = &snapshots.get(source_id)?.fetched;
+                        if !original.matches_source(source_id, digest) {
+                            return None;
+                        }
+                        let window = original.number_check_window(offset, &evidence.excerpt)?;
+                        if window.len() == evidence.excerpt.len() {
+                            return None;
+                        }
+                        Some(check_with_window(
+                            link,
+                            printed,
+                            result,
+                            Some(evidence),
+                            &registry,
+                            Some(window),
+                        ))
+                    };
+                    if let Some(verified) = wider() {
+                        check = verified;
+                    }
+                }
                 checks.push(check);
             }
         }
@@ -707,6 +1022,13 @@ impl ToolCapture {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn evidence_links(content: &str) -> Vec<EvidenceLink> {
+        located_links(content)
+            .into_iter()
+            .map(|(_, link)| link)
+            .collect()
+    }
 
     struct NoDatasets;
     impl crate::calculations::DatasetSource for NoDatasets {
@@ -736,6 +1058,114 @@ mod tests {
             model_delivery: None,
             warnings: vec![],
             upstream_result_refs: vec![],
+        }
+    }
+
+    #[test]
+    fn v007_world_bank_observation_reads_the_row_in_a_saved_source() {
+        let data = json!({
+            "data": {
+                "series": {
+                    "indicator_id": "SP.POP.TOTL", "indicator_name": "Population, total",
+                    "economy_id": "JPN", "economy_name": "Japan", "unit": ""
+                },
+                "observations": [
+                    {"date":"2023","period":"2023","value":"124516650","decimal":0},
+                    {"date":"2024","period":"2024","value":"123975371","decimal":0}
+                ]
+            },
+            "dataset_ref": {"dataset_id":"internal-dataset-id","revision":1}
+        });
+        let direct = result(
+            "worldbank_series",
+            RunResultOrigin::AcquiredOriginal,
+            data.clone(),
+        );
+        let saved = result(
+            "world_read",
+            RunResultOrigin::SavedContext,
+            json!({
+                "scope":"source", "text":data.to_string()
+            }),
+        );
+        for source in [&direct, &saved] {
+            let evidence = evidence::project(source);
+            let check = check_link(
+                &link("123,975,371"),
+                source,
+                Some(&evidence),
+                &RunResultRegistry::default(),
+            )
+            .unwrap();
+            assert_eq!(check.status, NumberCheckStatus::Matched);
+            assert!(check.span.is_none());
+            let context = check.context.unwrap();
+            assert_eq!(
+                context.text,
+                "Population, total · Japan · 2024 · 123,975,371"
+            );
+            assert_eq!(&context.text[context.start..context.end], "123,975,371");
+            assert!(evidence.excerpt.contains("internal-dataset-id"));
+        }
+    }
+
+    #[test]
+    fn v007_market_data_excerpt_uses_the_matched_cell_and_unit() {
+        let source = result(
+            "equity_price_historical",
+            RunResultOrigin::AcquiredOriginal,
+            json!({
+                "structuredContent":{"results":[
+                    {"symbol":"ACME","date":"2026-01-12","close":"1220.58","currency":"USD"},
+                    {"symbol":"ACME","date":"2026-01-13","close":"1234.567","currency":"USD","request_id":"internal-row"}
+                ]},
+                "dataset_ref":{"dataset_id":"internal-dataset-id","revision":1}
+            }),
+        );
+        let evidence = evidence::project(&source);
+        let check = check_link(
+            &link("USD 1,234.567"),
+            &source,
+            Some(&evidence),
+            &RunResultRegistry::default(),
+        )
+        .unwrap();
+        assert_eq!(check.status, NumberCheckStatus::Matched);
+        assert_eq!(
+            check.pointer.as_deref(),
+            Some("/structuredContent/results/1/close")
+        );
+        let context = check.context.unwrap();
+        assert_eq!(context.text, "close · ACME · 2026-01-13 · 1,234.567 USD");
+        assert_eq!(&context.text[context.start..context.end], "1,234.567");
+    }
+
+    #[test]
+    fn v008_pasted_revenue_binds_the_scale_to_each_amount() {
+        let text = concat!(
+            "The 2024 training dataset records equipment revenue of 30 and services revenue of 20 USD million. ",
+            "The 2025 dataset records equipment revenue of 40 and services revenue of 25 USD million."
+        );
+        let source = result(
+            "pasted_capture",
+            RunResultOrigin::UserProvided,
+            json!({"content": text}),
+        );
+        let evidence = evidence::project(&source);
+        for (answer, original) in [
+            ("$20 million", "20 USD million"),
+            ("$25 million", "25 USD million"),
+        ] {
+            let check = check_link(
+                &link(answer),
+                &source,
+                Some(&evidence),
+                &RunResultRegistry::default(),
+            )
+            .unwrap();
+            assert_eq!(check.status, NumberCheckStatus::Matched, "{check:?}");
+            let span = check.span.unwrap();
+            assert_eq!(&text[span.start..span.end], original);
         }
     }
 
@@ -803,14 +1233,19 @@ mod tests {
         let registry = RunResultRegistry::default();
         let check = |text| check_link(&link(text), &kis, None, &registry).unwrap();
         let buys = check("+21.4억 원");
-        assert_eq!(buys.status, NumberCheckStatus::Rounded);
+        assert_eq!(buys.status, NumberCheckStatus::Matched);
         assert_eq!(
             buys.pointer.as_deref(),
             Some("/data/response/output2/0/frgn_ntby_tr_pbmn")
         );
-        assert_eq!(check("-6.1억 원").status, NumberCheckStatus::Rounded);
+        assert_eq!(check("-6.1억 원").status, NumberCheckStatus::Matched);
         assert_eq!(check("+214억 원").status, NumberCheckStatus::NotFound);
-        assert_eq!(check("+2140원").status, NumberCheckStatus::NotFound);
+        let unstated = check("+2140원");
+        assert_eq!(unstated.status, NumberCheckStatus::Matched);
+        assert_eq!(
+            unstated.unstated_scale,
+            Some(crate::domain::answer_checks::UnstatedScale::Answer)
+        );
     }
 
     #[test]
@@ -821,7 +1256,7 @@ mod tests {
                 "domestic_stock.investor_trade_by_stock_daily",
                 "output2",
                 "etc_corp_ntby_tr_pbmn",
-                NumberCheckStatus::Rounded,
+                NumberCheckStatus::Matched,
             ),
             (
                 "domestic_stock.investor_trade_by_stock_daily",
@@ -1091,13 +1526,13 @@ mod tests {
                 "(in millions)\nNet revenue................ $ 35,926",
                 "$35.926bn",
                 "$ 35,926",
-                NumberCheckStatus::Rounded,
+                NumberCheckStatus::Matched,
             ),
             (
                 "Revenue was $12 thousand then $12 million.",
                 "$12,000,000",
                 "$12 million",
-                NumberCheckStatus::Rounded,
+                NumberCheckStatus::Matched,
             ),
         ] {
             let page = result(
@@ -1178,7 +1613,7 @@ mod tests {
     }
 
     #[test]
-    fn excerpt_matches_missing_numbers_and_data_never_carry_fallback_context() {
+    fn excerpt_matches_missing_numbers_and_non_row_data_keep_their_locations() {
         let page = result(
             "web_fetch",
             RunResultOrigin::AcquiredOriginal,
@@ -1249,21 +1684,44 @@ mod tests {
         let mut message = crate::test_fixtures::chat_message(
             "answer",
             crate::domain::ChatRole::Assistant,
-            "매출 [4,523억원](#evidence-ev_page)",
+            "매출 [4,523억원](#evidence-ev_page), [4,532억원](#evidence-ev_page)",
         );
-        message.number_checks.push(check.clone());
+        let missing = check_link(
+            &EvidenceLink {
+                index: 1,
+                text: "4,532억원".into(),
+                evidence_id: "ev_page".into(),
+            },
+            &page,
+            None,
+            &RunResultRegistry::default(),
+        )
+        .unwrap();
+        assert_eq!(missing.status, NumberCheckStatus::NotFound);
+        assert!(missing.compared_value.is_some());
+        message
+            .number_checks
+            .extend([check.clone(), missing.clone()]);
         chat.messages.push(message);
         state.store.create_chat(&chat).unwrap();
         let loaded = state.store.get_chat("chat-a").unwrap().unwrap();
-        assert_eq!(loaded.messages[0].number_checks, [check]);
+        assert_eq!(loaded.messages[0].number_checks, [check, missing]);
         let mut older = serde_json::to_value(&loaded.messages[0]).unwrap();
         older["numberChecks"][0]
             .as_object_mut()
             .unwrap()
             .remove("context");
+        older["numberChecks"][1] = json!({"link_index":1,"text":"4,532억원","evidence_id":"ev_page","kind":"passage","status":"not_found"});
         let older: crate::domain::ChatMessage = serde_json::from_value(older).unwrap();
         older.validate().unwrap();
         assert!(older.number_checks[0].context.is_none());
+        let legacy = &older.number_checks[1];
+        assert!(
+            legacy.comparison_reason.is_none()
+                && legacy.compared_value.is_none()
+                && legacy.nearest_source_scale.is_none()
+                && legacy.nearest_source_unit.is_none()
+        );
     }
 
     #[test]
@@ -1396,6 +1854,311 @@ mod tests {
         }
     }
 
+    // The 16 chips in the owner's saved replies, including repeated citations.
+    // Keep the actual selected windows and serialized tool-result text intact.
+    #[test]
+    fn owner_apple_figures_match_their_recorded_evidence() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/owner-number-checks.json"))
+                .unwrap();
+        let mut missing = Vec::new();
+        let cases = fixture["cases"].as_array().unwrap();
+        for case in cases {
+            let id = case["evidence"].as_str().unwrap();
+            let entry = &fixture["evidence"][id];
+            let excerpt = entry["excerpt"].as_str().unwrap();
+            let tool = entry["tool"].as_str().unwrap();
+            let (origin, payload) = match tool {
+                "run_python" => (
+                    RunResultOrigin::Derived,
+                    serde_json::from_str(excerpt).unwrap(),
+                ),
+                "world_read" => (
+                    RunResultOrigin::SavedContext,
+                    json!({"scope":"source","text":excerpt}),
+                ),
+                "web_fetch" => (
+                    RunResultOrigin::AcquiredOriginal,
+                    json!({"content":excerpt}),
+                ),
+                _ => panic!("unexpected tool {tool}"),
+            };
+            let read = result(tool, origin, payload);
+            let evidence: ChatEvidenceRef = serde_json::from_value(json!({
+                "id":id,"title":"Apple","kind":entry["kind"],"tool_name":tool,
+                "retrieved_at":"2026-11-20T21:00:00Z","excerpt":excerpt,
+                "excerpt_truncated":entry["excerpt_truncated"],"excerpt_match":entry["excerpt_match"],
+                "content_sha256":"a".repeat(64),"warnings":[]
+            }))
+            .unwrap();
+            let figure = case["figure"].as_str().unwrap();
+            let check = check_link(
+                &link(figure),
+                &read,
+                Some(&evidence),
+                &RunResultRegistry::default(),
+            )
+            .unwrap();
+            if !matches!(
+                check.status,
+                NumberCheckStatus::Matched | NumberCheckStatus::Rounded
+            ) {
+                missing.push((id, figure));
+            } else if tool == "run_python" {
+                assert_eq!(check.pointer.as_deref(), Some("/stdout"), "{figure}");
+                if let Some(exact) = check.exact {
+                    assert_eq!(exact, case["sourceNumber"].as_str().unwrap(), "{figure}");
+                }
+            } else {
+                let located = match (check.span, check.context.as_ref()) {
+                    (Some(span), _) => &excerpt[span.start..span.end],
+                    (_, Some(ctx)) => &ctx.text[ctx.start..ctx.end],
+                    _ => panic!("missing source location for {figure}"),
+                };
+                assert_eq!(
+                    located.trim_start_matches(['$', ' ']),
+                    case["sourceNumber"].as_str().unwrap(),
+                    "{figure}"
+                );
+            }
+        }
+        assert_eq!(cases.len(), 16);
+        assert!(
+            missing.is_empty(),
+            "{} of 16 missing: {missing:?}",
+            missing.len()
+        );
+    }
+
+    #[test]
+    fn owner_unverified_figures_explain_the_compared_candidate() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/owner-number-checks.json"))
+                .unwrap();
+        let stored = |case: usize| {
+            fixture["evidence"][fixture["cases"][case]["evidence"].as_str().unwrap()]["excerpt"]
+                .as_str()
+                .unwrap()
+        };
+        let source = result(
+            "world_read",
+            RunResultOrigin::SavedContext,
+            json!({"text":stored(2)}),
+        );
+        let step = result(
+            "run_python",
+            RunResultOrigin::Derived,
+            serde_json::from_str(stored(11)).unwrap(),
+        );
+        let quote = stored(1).split("At close:").next().unwrap();
+        let price = page(quote);
+        let excerpt: ChatEvidenceRef = serde_json::from_value(json!({
+            "id":"ev","title":"Closing price","kind":"original","tool_name":"web_fetch",
+            "retrieved_at":"2026-11-20T21:00:00Z","excerpt":quote,
+            "excerpt_truncated":true,"content_sha256":"a".repeat(64),"warnings":[]
+        }))
+        .unwrap();
+        for (figure, read, evidence, reason, printed) in [
+            (
+                "575.38억 달러",
+                &source,
+                None,
+                "digits_differ",
+                Some("$ 57,583"),
+            ),
+            (
+                "50.4억 달러",
+                &step,
+                None,
+                "scale_conflict",
+                Some("50368.7433"),
+            ),
+            (
+                "-342.56달러",
+                &price,
+                Some(&excerpt),
+                "sign_conflict",
+                Some("342.56"),
+            ),
+            (
+                "14,570,195달러",
+                &source,
+                None,
+                "incompatible_unit",
+                Some("14,570,195"),
+            ),
+            ("8,761.43달러", &source, None, "no_candidate", None),
+        ] {
+            let check =
+                check_link(&link(figure), read, evidence, &RunResultRegistry::default()).unwrap();
+            let record = serde_json::to_value(&check).unwrap();
+            assert_eq!(record["status"], "not_found", "{figure}");
+            // --show-output exposes these five bridge records for renderer fixtures.
+            println!("{record}");
+            assert_eq!(record["comparisonReason"], reason, "{figure}");
+            assert_eq!(record["comparedValue"].as_str(), printed, "{figure}");
+            assert_eq!(check.nearest.as_deref(), printed);
+            match reason {
+                "digits_differ" | "incompatible_unit" => {
+                    let ctx = check.context.unwrap();
+                    assert_eq!(Some(&ctx.text[ctx.start..ctx.end]), printed);
+                }
+                "scale_conflict" => {
+                    assert_eq!(check.pointer.as_deref(), Some("/stdout"));
+                    assert_eq!(record["nearestSourceScale"], 6);
+                    assert_eq!(record["nearestSourceUnit"], "USD");
+                }
+                "sign_conflict" => {
+                    let span = check.span.unwrap();
+                    assert_eq!(Some(&quote[span.start..span.end]), printed);
+                }
+                _ => assert!(
+                    check.span.is_none() && check.pointer.is_none() && check.context.is_none()
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn an_unlabelled_cash_flow_comparison_keeps_the_source_scale_unknown() {
+        let read = page("145,097 111,482 118,254\nCash generated by operating activities");
+        let check = check_link(
+            &link("1,450.79억 달러"),
+            &read,
+            None,
+            &RunResultRegistry::default(),
+        )
+        .unwrap();
+        assert_eq!(check.status, NumberCheckStatus::NotFound);
+        assert_eq!(check.compared_value.as_deref(), Some("145,097"));
+        assert_eq!(
+            serde_json::to_value(&check).unwrap()["comparisonReason"],
+            "digits_differ"
+        );
+        assert!(check.nearest_source_unit.is_none() && check.nearest_source_scale.is_none());
+    }
+
+    #[test]
+    fn diagnostics_abstain_on_tied_readings_and_unrelated_metadata() {
+        let registry = RunResultRegistry::default();
+        for (figure, read) in [
+            ("$342.55", page("Prices: 342.54 and 342.56")),
+            (
+                "$342.55",
+                result(
+                    "web_fetch",
+                    RunResultOrigin::AcquiredOriginal,
+                    json!({"content":"No quote available.","content_bytes":342.56}),
+                ),
+            ),
+        ] {
+            let check = check_link(&link(figure), &read, None, &registry).unwrap();
+            assert_eq!(check.status, NumberCheckStatus::NotFound);
+            assert_eq!(
+                serde_json::to_value(&check).unwrap()["comparisonReason"],
+                "no_candidate"
+            );
+            assert!(check.nearest.is_none() && check.context.is_none());
+        }
+        let check = check_link(&link("$342.56"), &page("Price: 342.56"), None, &registry).unwrap();
+        assert_eq!(check.status, NumberCheckStatus::Matched);
+        let record = serde_json::to_value(check).unwrap();
+        for key in [
+            "comparisonReason",
+            "comparedValue",
+            "nearestSourceScale",
+            "nearestSourceUnit",
+            "nearest",
+        ] {
+            assert!(record.get(key).is_none(), "{key}");
+        }
+    }
+
+    #[test]
+    fn owner_amounts_reject_changed_digits_signs_and_incompatible_cells() {
+        let caption = "(In millions, except number of shares, which are reflected in thousands, and per-share amounts)";
+        let saved = json!({"content": format!("{caption}\n\n(1) Net sales by category:\niPhone $ 57,583\nServices 31,573\nShares used in computing earnings per share:\nBasic 14,570,195\nEarnings per share:\nDiluted $ 2.10"), "content_bytes": 98654321});
+        let wrapped = saved.to_string();
+        let source = result(
+            "world_read",
+            RunResultOrigin::SavedContext,
+            json!({"text":wrapped}),
+        );
+        let quote = page("NasdaqGS - Nasdaq Real Time Price USD\n\n342.56 -6.65 (-1.90%)");
+        let cash = page("145,097 111,482 118,254\nCash generated by operating activities");
+        let scaled = page("(in millions)\nOperating income 5,040");
+        let program = result(
+            "run_python",
+            RunResultOrigin::Derived,
+            json!({"stdout":"EPS 2.0500000000000003\nmultiple 35 9.787428571428572\nop USDm 50368.7433","exit_code":42,"stderr":"77.77"}),
+        );
+        for (source, wrong) in [
+            (
+                &source,
+                &[
+                    "575.38억 달러",
+                    "-575.83억 달러",
+                    "57.583억 달러",
+                    "145,701.95억 달러",
+                    "2.10억 달러",
+                    "98,654,321달러",
+                ][..],
+            ),
+            (
+                &quote,
+                &["342.65달러", "-342.56달러", "34.256달러", "1.90달러"][..],
+            ),
+            (&cash, &["1,450.79억 달러", "-1,450.97억 달러"][..]),
+            (&scaled, &["504억 달러", "-50.4억 달러"][..]),
+            (
+                &program,
+                &[
+                    "9.78달러",
+                    "-2.05달러",
+                    "50.4억 달러",
+                    "2.05억 달러",
+                    "35달러",
+                    "42달러",
+                    "77.77달러",
+                ][..],
+            ),
+        ] {
+            for figure in wrong {
+                let check =
+                    check_link(&link(figure), source, None, &RunResultRegistry::default()).unwrap();
+                assert_eq!(check.status, NumberCheckStatus::NotFound, "{figure}");
+            }
+        }
+    }
+
+    #[test]
+    fn monetary_rounding_has_one_midpoint_and_applies_to_scalar_passage_content() {
+        for (read, accepted, rejected) in [
+            (page("Closing price $2.345"), "$2.35", "$2.34"),
+            (page("Closing price -2.345"), "-$2.35", "-$2.34"),
+            (
+                page("Revenue $999,999,999,999"),
+                "$999,999,999,999",
+                "$999,999,999,998",
+            ),
+            (page("145097"), "1,450.97억 달러", "1,450.79억 달러"),
+        ] {
+            let check = |figure| {
+                check_link(&link(figure), &read, None, &RunResultRegistry::default())
+                    .unwrap()
+                    .status
+            };
+            assert!(
+                matches!(
+                    check(accepted),
+                    NumberCheckStatus::Rounded | NumberCheckStatus::Matched
+                ),
+                "{accepted}"
+            );
+            assert_eq!(check(rejected), NumberCheckStatus::NotFound, "{rejected}");
+        }
+    }
+
     /// rc1 T-045 rerun: flows summed in 억 with `"unit": "KRW 100 million"`
     /// were read as millions, so all three correct links differed.
     #[test]
@@ -1464,9 +2227,9 @@ mod tests {
         let check = |text: &str| check_link(&link(text), &notice, None, &registry).unwrap();
         let billion = check("₩6 billion");
         assert_eq!(billion.kind, NumberCheckKind::Data);
-        assert_eq!(billion.status, NumberCheckStatus::Rounded);
+        assert_eq!(billion.status, NumberCheckStatus::Matched);
         assert_eq!(billion.pointer.as_deref(), Some("/data/document/text"));
-        // The popover's "rounded from" names the number, not the whole text.
+        // The scale comparison keeps the exact printed number.
         assert_eq!(billion.exact.as_deref(), Some("6,000,000,000"));
         for (text, status) in [
             ("1.4%", NumberCheckStatus::Matched),
@@ -1480,6 +2243,204 @@ mod tests {
             ("5%", NumberCheckStatus::NotFound),
         ] {
             assert_eq!(check(text).status, status, "{text}");
+        }
+    }
+
+    #[test]
+    fn rc1_year_amount_pairs_keep_the_revenue_unit_in_the_retained_passage() {
+        let text = "Microsoft 2024 Annual Report, fiscal year ended June 30, 2024. Consolidated revenue (USD millions): 2024 245,122; 2023 211,915.";
+        let read = result(
+            "world_read",
+            RunResultOrigin::AcquiredOriginal,
+            json!({"text": text}),
+        );
+        let evidence: ChatEvidenceRef = serde_json::from_value(json!({
+            "id":"ev", "title":"User-provided", "kind":"original", "tool_name":"world_read",
+            "retrieved_at":"2026-11-19T00:00:00Z", "excerpt": text,
+            "excerpt_truncated":false, "content_sha256":"a".repeat(64), "warnings":[]
+        }))
+        .unwrap();
+        let registry = RunResultRegistry::default();
+        for excerpt in [Some(&evidence), None] {
+            let check = |figure| {
+                check_link(&link(figure), &read, excerpt, &registry)
+                    .unwrap()
+                    .status
+            };
+            for figure in ["$245,122 million", "$211,915 million"] {
+                assert_eq!(check(figure), NumberCheckStatus::Matched, "{figure}");
+            }
+            for figure in [
+                "$211,915 billion",
+                "-$211,915 million",
+                "$211,916 million",
+                "$2,023 million",
+                "$2,024 million",
+            ] {
+                assert_eq!(check(figure), NumberCheckStatus::NotFound, "{figure}");
+            }
+        }
+    }
+
+    #[test]
+    fn v012_apple_pdf_net_sales_use_the_table_caption() {
+        // pdf_oxide page 1 of Apple's FY24 Q4 consolidated statements.
+        let extracted = concat!(
+            "Apple Inc. \n",
+            "\n",
+            "CONDENSED CONSOLIDATED STATEMENTS OF OPERATIONS (Unaudited) \n",
+            "(In millions, except number of shares, which are reflected in thousands, and per-share amounts) \n",
+            "  Three Months Ended Twelve Months Ended \n",
+            "September 28, September 30, September 28, September 30, \n",
+            "  2024 2023 2024 2023 \n",
+            "Net sales: \n",
+            "\n",
+            "(1) Net sales by category:\n",
+            "iPhone $ 46,222 $ 43,805 $ 201,183 $ 200,583\n",
+            "Mac 7,744 7,614 29,984 29,357\n",
+            "iPad 6,950 6,443 26,694 28,300\n",
+            "Wearables, Home and Accessories 9,042 9,322 37,005 39,845\n",
+            "Services 24,972 22,314 96,169 85,200\n",
+            "Total net sales $ 94,930 $ 89,498 $ 391,035 $ 383,285\n",
+        );
+        // The same page captured with the detected grid retained. Old excerpts
+        // keep their original bytes, so exercise both through the chip check.
+        let (caption, _) = extracted.split_once("(1) Net sales by category:").unwrap();
+        let with_rows = format!("{caption}| (1) Net sales by category: |  |  |  |  |  |  |  |\n| iPhone | $46,222 |  | $43,805 |  | $201,183 |  | $200,583 |\n| Total net sales | $94,930 |  | $89,498 |  | $391,035 |  | $383,285 |\n");
+        for extracted in [extracted, with_rows.as_str()] {
+            let registry = RunResultRegistry::default();
+            let read = page(extracted);
+            for (figure, expected) in [
+                ("$391,035 million", NumberCheckStatus::Matched),
+                ("$391,035 billion", NumberCheckStatus::NotFound),
+                ("$391,036 million", NumberCheckStatus::NotFound),
+                ("-$391,035 million", NumberCheckStatus::NotFound),
+            ] {
+                assert_eq!(
+                    check_link(&link(figure), &read, None, &registry)
+                        .unwrap()
+                        .status,
+                    expected,
+                    "{figure}"
+                );
+            }
+            let no_answer_scale = check_link(&link("$391,035"), &read, None, &registry).unwrap();
+            assert_eq!(no_answer_scale.status, NumberCheckStatus::Matched);
+            assert_eq!(
+                no_answer_scale.unstated_scale,
+                Some(crate::domain::answer_checks::UnstatedScale::Answer)
+            );
+            let unrelated = page(&format!(
+                "{extracted}\nOther amounts\nTotal net sales $ 48,765"
+            ));
+            let match_without_a_caption =
+                check_link(&link("$48,765 million"), &unrelated, None, &registry).unwrap();
+            assert_eq!(match_without_a_caption.status, NumberCheckStatus::Matched);
+            assert_eq!(
+                match_without_a_caption.unstated_scale,
+                Some(crate::domain::answer_checks::UnstatedScale::Source)
+            );
+        }
+    }
+
+    #[test]
+    fn v012_fred_series_checks_the_exact_observation_and_its_metadata() {
+        let registry = RunResultRegistry::default();
+        for units in [
+            None,
+            Some("Billions of Dollars"),
+            Some("Millions of Dollars"),
+            Some("Index"),
+        ] {
+            let mut body =
+                json!({"provider":"fred","results":[{"date":"2024-10-01","GDP":29929.552}]});
+            if let Some(unit) = units {
+                body["extra"] = json!({"results_metadata":{"GDP":{"units":unit,"title":"Gross Domestic Product"}}});
+            }
+            let mut read = result(
+                "economy_fred_series",
+                RunResultOrigin::AcquiredOriginal,
+                json!({
+                    "dataset_ref":{"dataset_id":"ds_gdp","revision":1},
+                    "content":[{"type":"text","text":body.to_string()}],
+                    "structuredContent":body
+                }),
+            );
+            read.producer.runtime_id = "openbb".into();
+            read.producer.provider = Some("fred".into());
+            let check = |figure| check_link(&link(figure), &read, None, &registry).unwrap();
+            let matched = check("29,929.552 billion dollars");
+            if matches!(units, None | Some("Billions of Dollars")) {
+                assert_eq!(matched.status, NumberCheckStatus::Matched, "{units:?}");
+                assert_eq!(
+                    matched.pointer.as_deref(),
+                    Some("/structuredContent/results/0/GDP")
+                );
+            } else {
+                assert_eq!(matched.status, NumberCheckStatus::NotFound, "{units:?}");
+            }
+            for wrong in ["29,929.553 billion dollars", "-29,929.552 billion dollars"] {
+                assert_eq!(check(wrong).status, NumberCheckStatus::NotFound);
+            }
+            if units == Some("Index") {
+                assert_eq!(check("2,992,955.2%").status, NumberCheckStatus::NotFound);
+            }
+            if units == Some("Millions of Dollars") {
+                assert_eq!(
+                    check("29.929552 billion dollars").status,
+                    NumberCheckStatus::Matched
+                );
+            }
+            if units.is_none() {
+                assert_eq!(
+                    check("29,929.55 billion dollars").status,
+                    NumberCheckStatus::NotFound
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rc1_comparison_checks_rounded_billions_only_against_the_attached_issuer_table() {
+        let registry = RunResultRegistry::default();
+        let apple = concat!(
+            "(In millions, except number of shares, which are reflected in thousands, and per-share amounts)\n\n",
+            "| Years Ended | 2026 | 2025 |\n| --- | --- | --- |\n",
+            "| Total net sales | 478,834 | 416,161 |\n",
+            "| Shares used in computing earnings per share | 14,992,000 |"
+        );
+        let microsoft = concat!(
+            "(In millions, except per share amounts)\nYear Ended June 30, | 2026 | 2025\n",
+            "Total revenue | 331,839 | 281,724\nDiluted earnings per share | 17.95 | 13.64"
+        );
+        for (text, figures, wrong) in [
+            (
+                apple,
+                ["$478.83bn", "$416.16bn"],
+                ["$478.84bn", "-$416.16bn", "$478.83m", "$14,992bn"],
+            ),
+            (
+                microsoft,
+                ["$331.84bn", "$281.72bn"],
+                ["$331.83bn", "-$281.72bn", "$331.84m", "$17.95m"],
+            ),
+        ] {
+            let read = result(
+                "web_fetch",
+                RunResultOrigin::AcquiredOriginal,
+                json!({"content":text}),
+            );
+            let check = |figure| {
+                check_link(&link(figure), &read, None, &registry)
+                    .unwrap()
+                    .status
+            };
+            for figure in figures {
+                assert_eq!(check(figure), NumberCheckStatus::Rounded, "{figure}");
+            }
+            for figure in wrong {
+                assert_eq!(check(figure), NumberCheckStatus::NotFound, "{figure}");
+            }
         }
     }
 
@@ -1629,6 +2590,691 @@ mod tests {
             json!({"content": content, "content_bytes": content.len(), "status": 200,
                 "url": "https://fictional.example/news/hanbit-chem-q3-2026"}),
         )
+    }
+
+    #[test]
+    fn c010_samsung_dividends_in_a_share_class_row_match_across_scripts() {
+        for (label, source) in [
+            ("372원", "Common shares: KRW 372 (0.2%)"),
+            ("374원", "Common shares: KRW 374 (0.1%)"),
+            ("4,601원", "보통주 4,601원"),
+        ] {
+            let check = check_link(
+                &link(label),
+                &page(source),
+                None,
+                &RunResultRegistry::default(),
+            )
+            .unwrap();
+            assert_eq!(check.status, NumberCheckStatus::Matched, "{check:?}");
+        }
+        let conflict = check_link(
+            &link("372원"),
+            &page("Dividend: USD 372"),
+            None,
+            &RunResultRegistry::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(conflict).unwrap()["comparisonReason"],
+            "incompatible_unit"
+        );
+    }
+
+    #[test]
+    fn c010_currency_aliases_match_before_and_after_the_number() {
+        let registry = RunResultRegistry::default();
+        let figures = |unit| {
+            [
+                format!("{unit}372"),
+                format!("{unit} 372"),
+                format!("372{unit}"),
+                format!("372 {unit}"),
+            ]
+        };
+        for (code, aliases) in [
+            ("KRW", &["원", "₩", "￦", "won"][..]),
+            ("USD", &["$", "US$", "달러", "미국 달러", "dollars"]),
+            ("JPY", &["¥", "円", "엔", "yen"]),
+            ("EUR", &["€", "유로", "euros"]),
+            ("GBP", &["£", "파운드", "pound"]),
+            ("CNY", &["RMB", "元", "¥", "人民币", "위안"]),
+            ("TWD", &["NT$", "新台幣", "대만 달러", "$", "元"]),
+            ("HKD", &["HK$", "홍콩 달러", "$", "元"]),
+            ("NZD", &["NZ$", "$"]),
+            ("AUD", &["A$", "$"]),
+            ("CAD", &["C$", "$"]),
+            ("SGD", &["S$", "$"]),
+        ] {
+            for alias in aliases {
+                for named in figures(code) {
+                    for variant in figures(alias) {
+                        for (answer, source) in [(&named, &variant), (&variant, &named)] {
+                            let check = check_link(&link(answer), &page(source), None, &registry)
+                                .unwrap_or_else(|| panic!("did not parse {answer}"));
+                            assert_eq!(
+                                check.status,
+                                NumberCheckStatus::Matched,
+                                "{answer} against {source}: {check:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn c010_currencies_follow_scales_and_diagnostic_comparisons() {
+        use NumberCheckStatus::{Matched, NotFound};
+        let registry = RunResultRegistry::default();
+        for (label, source, status) in [
+            ("372원", "Dividend: 372", Matched),
+            ("1,372", "Dividend: KRW 1,372", Matched),
+            ("-KRW372", "Dividend: 원-372", Matched),
+            ("-372원", "Dividend: 372원", NotFound),
+            (
+                "3.72억 원",
+                "Common shares: KRW 372 million (0.2%)",
+                Matched,
+            ),
+            (
+                "3.72억 원",
+                "Common shares: 372 million USD (0.2%)",
+                NotFound,
+            ),
+            ("0.372조 원", "(단위: 백만원)\n매출 372,000", Matched),
+            ("1.372조 원", "매출 1조 3,720억원", Matched),
+            ("372원", "(Unit: KRW)\nCommon shares: 372", Matched),
+            ("372원", "Shares outstanding: 372", NotFound),
+            ("372원", "Shares: 372", NotFound),
+            ("3.72억 원", "Diluted EPS: KRW 372 million", NotFound),
+            ("USD 372", "(Unit: CAD)\nDividend: $372", NotFound),
+            ("JPY 372", "(Unit: CNY)\nDividend: 372¥", NotFound),
+            ("372元", "Dividend: ¥372", Matched),
+            ("372달러", "Closing price USD\n372", Matched),
+            ("372원", "Closing price USD\n372", NotFound),
+        ] {
+            let check = check_link(&link(label), &page(source), None, &registry).unwrap();
+            assert_eq!(check.status, status, "{label} against {source}: {check:?}");
+        }
+
+        for (answer, source, code) in [
+            ("372원", "Dividend: USD 372", "USD"),
+            ("372달러", "Dividend: 372원", "KRW"),
+            ("¥372", "Dividend: EUR 372", "EUR"),
+            ("3.72억 원", "Dividend: 372 million USD", "USD"),
+        ] {
+            let check = check_link(&link(answer), &page(source), None, &registry).unwrap();
+            assert_eq!(check.status, NotFound, "{answer} against {source}");
+            assert_eq!(
+                check.comparison_reason,
+                Some(crate::domain::answer_checks::ComparisonReason::IncompatibleUnit)
+            );
+            assert_eq!(check.nearest_source_unit.as_deref(), Some(code));
+            assert_eq!(check.text, answer);
+        }
+    }
+
+    #[tokio::test]
+    async fn c010_answer_and_structured_row_units_use_the_same_currency() {
+        for (currency, status) in [
+            ("KRW", NumberCheckStatus::Matched),
+            ("USD", NumberCheckStatus::NotFound),
+        ] {
+            let result = result(
+                "observations",
+                RunResultOrigin::AcquiredOriginal,
+                json!({
+                    "dataset_ref":{"dataset_id":"ds_dividends"},
+                    "data":[{"value":"372", "currency":currency, "scale":1000000}]
+                }),
+            );
+            let answer = format!(
+                "| 억 원 | 배당금 |\n|---|---|\n| | [3.72](#evidence-{}) |",
+                evidence::evidence_id(&result.result_ref)
+            );
+            let capture = ToolCapture::default();
+            capture
+                .run_results
+                .lock()
+                .await
+                .results
+                .insert(result.result_ref.clone(), result);
+            let checks = capture.number_checks(&answer, &[]).await;
+            assert_eq!(checks.len(), 1);
+            assert_eq!(checks[0].status, status, "{checks:?}");
+            if currency == "USD" {
+                assert_eq!(
+                    checks[0].comparison_reason,
+                    Some(crate::domain::answer_checks::ComparisonReason::IncompatibleUnit)
+                );
+                assert_eq!(checks[0].nearest_source_unit.as_deref(), Some("USD"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn v006_exact_scale_conversion_highlights_the_cited_accession() {
+        // The 2023 revenue fact appears in three annual filings. The
+        // literal passage from the audit identifies the FY2024 accession.
+        let selected = r#""end":"2023-09-30","val":383285000000,"accn":"0000320193-24-000123""#;
+        let text = concat!(
+            r#"[{"start":"2022-09-25","end":"2023-09-30","val":383285000000,"accn":"0000320193-23-000106","fy":2023},"#,
+            r#"{"start":"2022-09-25","end":"2023-09-30","val":383285000000,"accn":"0000320193-24-000123","fy":2024},"#,
+            r#"{"start":"2022-09-25","end":"2023-09-30","val":383285000000,"accn":"0000320193-25-000079","fy":2025}]"#
+        );
+        let mut source = page(text);
+        source.producer.runtime_id = "native-web".into();
+        source.upstream_result_refs = vec!["result:original".into()];
+        let chosen = text.find(selected).unwrap();
+        source.payload["content_offset"] = json!(1000);
+        source.payload["selection"] = json!({
+            "type":"literal_passage",
+            "offset_unit":"utf8_bytes",
+            "source_result_ref":"result:original",
+            "find":selected,
+            "match_offset":1000 + chosen
+        });
+        let evidence = evidence::project(&source);
+        let capture = ToolCapture::default();
+        capture
+            .run_results
+            .lock()
+            .await
+            .results
+            .insert(source.result_ref.clone(), source);
+        let answer = format!(
+            "| Total revenue (USD millions) |\n|---|\n| [383,285](#evidence-{0}) |\n| [383,300](#evidence-{0}) |",
+            evidence.id
+        );
+        let checks = capture
+            .number_checks(&answer, std::slice::from_ref(&evidence))
+            .await;
+        let (exact, rounded) = (&checks[0], &checks[1]);
+        assert_eq!(exact.status, NumberCheckStatus::Matched);
+        assert_eq!(exact.exact.as_deref(), Some("383285000000"));
+        assert_eq!(
+            serde_json::to_value(&exact.scale_conversion).unwrap(),
+            json!({
+                "source_scale":0, "answer_scale":6, "currency":"USD"
+            })
+        );
+        // One decimal of a billion is rounded from the same fact.
+        let answer = format!(
+            "Revenue in USD billions: [383.3](#evidence-{}).",
+            evidence.id
+        );
+        let real = capture
+            .number_checks(&answer, std::slice::from_ref(&evidence))
+            .await;
+        assert_eq!(real[0].status, NumberCheckStatus::Rounded);
+        assert_eq!(real[0].exact.as_deref(), Some("383285000000"));
+        assert!(real[0].scale_conversion.is_none());
+        assert_eq!(rounded.status, NumberCheckStatus::NotFound);
+        let offset = chosen + selected.find("383285000000").unwrap();
+        for check in [&checks[0], &real[0]] {
+            assert_eq!(check.span.as_ref().unwrap().start, offset);
+        }
+        let chosen_accession = text.find("0000320193-24-000123").unwrap();
+        let mut accession = evidence.clone();
+        accession.excerpt_match = Some(ChatEvidenceMatch {
+            start: chosen_accession,
+            end: chosen_accession + "0000320193-24-000123".len(),
+        });
+        let selected_row = capture.number_checks(&answer, &[accession]).await;
+        assert_eq!(selected_row[0].span.as_ref().unwrap().start, offset);
+
+        let first = ChatEvidenceRef {
+            excerpt_match: None,
+            ..evidence
+        };
+        let fallback = capture.number_checks(&answer, &[first]).await;
+        assert_eq!(
+            fallback[0].span.as_ref().unwrap().start,
+            text.find("383285000000").unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn c007_microsoft_segment_totals_use_the_filing_table_scale() {
+        let text = concat!(
+            "SEGMENT RESULTS OF OPERATIONS\n\n",
+            "| (In millions, except percentages) |  | 2024 |  |  | 2023 |  |  | Percentage Change |  |\n",
+            "| Revenue |  |  |  |  |  |  |  |  |  |\n",
+            "| Productivity and Business Processes |  | $77,728 |  |  | $69,274 |  |  | 12% |  |\n",
+            "| Intelligent Cloud |  | 105,362 |  |  | 87,907 |  |  | 20% |  |\n",
+            "| More Personal Computing |  | 62,032 |  |  | 54,734 |  |  | 13% |  |\n",
+            "| Total |  | $245,122 |  |  | $211,915 |  |  | 16% |  |\n"
+        );
+        let source = page(text);
+        let evidence = evidence::project(&source);
+        let capture = ToolCapture::default();
+        capture
+            .run_results
+            .lock()
+            .await
+            .results
+            .insert(source.result_ref.clone(), source);
+        let answer = format!(
+            "| Reported consolidated revenue (USD millions) |\n|---|\n| [211,915](#evidence-{0}) |\n| [245,122](#evidence-{0}) |",
+            evidence.id
+        );
+        let checks = capture.number_checks(&answer, &[evidence]).await;
+        assert_eq!(checks.len(), 2);
+        for check in checks {
+            assert_eq!(check.status, NumberCheckStatus::Matched, "{check:?}");
+            assert_eq!(check.unstated_scale, None, "{check:?}");
+        }
+    }
+
+    #[test]
+    fn c007_filing_scale_excludes_share_and_percentage_fields() {
+        for (caption, scale) in [
+            ("(In millions, except percentages)", 1e6),
+            ("(In millions, except per share amounts)", 1e6),
+            ("($ in millions)", 1e6),
+            ("(Dollars in millions)", 1e6),
+            ("(Dollars in millions except per share amounts)", 1e6),
+            ("in thousands, except share data", 1e3),
+            ("(단위: 백만원)", 1e6),
+            ("(単位：百万円)", 1e6),
+        ] {
+            let text = format!("| {caption} | Current year | Percentage Change |\n| Revenue | 245,122 | 16 |\n| Earnings per share | 4.25 | 3 |\n| Shares outstanding | 390,000 | 1 |");
+            let found = numbers::passage_candidates(&text);
+            let units_of = |lexeme: &str| {
+                found
+                    .iter()
+                    .filter_map(|candidate| match candidate.place {
+                        Place::Span { start, end } if &text[start..end] == lexeme => {
+                            Some(candidate.unit)
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert!(
+                units_of("245,122").contains(&Unit::Amount(scale)),
+                "{caption}: {found:?}"
+            );
+            assert!(
+                units_of("16").contains(&Unit::Percent),
+                "{caption}: {found:?}"
+            );
+            for skipped in ["16", "4.25", "390,000"] {
+                assert!(
+                    !units_of(skipped)
+                        .iter()
+                        .any(|unit| matches!(unit, Unit::Amount(_))),
+                    "{caption}: {found:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn w002_chart_values_use_the_displayed_column_units() {
+        for (label, figures) in [
+            (
+                "Revenue (USD millions)",
+                ["USD 40 million", "USD 48 million"],
+            ),
+            ("매출 (백만 달러)", ["40백만 달러", "48백만 달러"]),
+        ] {
+            let chart = result(
+                "chart_query",
+                RunResultOrigin::Derived,
+                json!({
+                    "columns": [{"id":"year","label":"Year","kind":"string"},
+                                {"id":"revenue","label":label,"kind":"number"}],
+                    "rows": [["2023", 40], ["2024", 48]]
+                }),
+            );
+            for (row, figure) in figures.into_iter().enumerate() {
+                let check =
+                    check_link(&link(figure), &chart, None, &RunResultRegistry::default()).unwrap();
+                assert_eq!(
+                    check.status,
+                    NumberCheckStatus::Matched,
+                    "{label}: {check:?}"
+                );
+                assert_eq!(check.unstated_scale, None);
+                assert_eq!(
+                    check.pointer.as_deref(),
+                    Some(format!("/rows/{row}/1").as_str())
+                );
+            }
+        }
+    }
+
+    fn assert_scale_unspecified(tool: &str, origin: RunResultOrigin, payload: Value) {
+        let read = result(tool, origin, payload);
+        let evidence = evidence::project(&read);
+        let check = check_link(
+            &link("USD 40 million"),
+            &read,
+            Some(&evidence),
+            &RunResultRegistry::default(),
+        )
+        .unwrap();
+        assert_eq!(check.status, NumberCheckStatus::Matched, "{check:?}");
+        assert_eq!(
+            check.unstated_scale,
+            Some(crate::domain::answer_checks::UnstatedScale::Source)
+        );
+        assert_eq!(check.comparison_reason, None);
+    }
+
+    #[test]
+    fn passage_without_scale_keeps_equal_digits() {
+        assert_scale_unspecified(
+            "web_fetch",
+            RunResultOrigin::AcquiredOriginal,
+            json!({"content":"Revenue: 40."}),
+        );
+    }
+
+    #[test]
+    fn structured_record_without_scale_keeps_equal_digits() {
+        assert_scale_unspecified(
+            "worldbank_series",
+            RunResultOrigin::AcquiredOriginal,
+            json!({"dataset_ref": {"revision":1}, "data": {"value":40}}),
+        );
+    }
+
+    #[test]
+    fn queried_dataset_without_scale_keeps_equal_digits() {
+        assert_scale_unspecified(
+            "dataset_query",
+            RunResultOrigin::Derived,
+            json!({"rows":[{"revenue":40}]}),
+        );
+    }
+
+    #[test]
+    fn chart_without_scale_keeps_equal_digits() {
+        assert_scale_unspecified(
+            "chart_query",
+            RunResultOrigin::Derived,
+            json!({"columns":[{"id":"revenue","label":"Revenue","kind":"number"}], "rows":[[40]]}),
+        );
+    }
+
+    #[test]
+    fn calculated_result_without_scale_keeps_equal_digits() {
+        assert_scale_unspecified(
+            "calculate",
+            RunResultOrigin::Derived,
+            json!({"values":[{"name":"total","value":40,"display":"40"}]}),
+        );
+    }
+
+    #[test]
+    fn grid_value_without_scale_keeps_equal_digits() {
+        let read = result(
+            "dataset_query",
+            RunResultOrigin::Derived,
+            json!({
+                "columns":{"value":{"unit":"USD millions"}}, "rows":[{"value":40}]
+            }),
+        );
+        let cell = link("40");
+        let printed =
+            super::super::grid::read_value(&cell.text, crate::chat::grid::GridUnit::Amount)
+                .unwrap();
+        let check = check_printed(&cell, printed, &read, None, &RunResultRegistry::default());
+        assert_eq!(check.status, NumberCheckStatus::Matched);
+        assert_eq!(
+            check.unstated_scale,
+            Some(crate::domain::answer_checks::UnstatedScale::Answer)
+        );
+        assert_eq!(check.comparison_reason, None);
+    }
+
+    #[test]
+    fn queried_cells_use_only_their_own_column_metadata() {
+        for metadata in [
+            json!({"unit":"억 원"}),
+            json!({"axis_title":"매출 (억 원)"}),
+            json!({"semantic_type":"KRW 100 million"}),
+            json!({"label":"매출 (억 원)"}),
+        ] {
+            let source = result(
+                "dataset_query",
+                RunResultOrigin::Derived,
+                json!({
+                    "metadata": {"columns":{"revenue":metadata}}, "rows":[{"year":2024,"revenue":40,"adjustment":48}]
+                }),
+            );
+            let compare = |text| {
+                check_link(&link(text), &source, None, &RunResultRegistry::default()).unwrap()
+            };
+            let amount = compare("40억 원");
+            assert_eq!(amount.status, NumberCheckStatus::Matched);
+            assert_eq!(amount.unstated_scale, None);
+            assert_eq!(amount.pointer.as_deref(), Some("/rows/0/revenue"));
+            assert_eq!(
+                compare("48억 원").unstated_scale,
+                Some(crate::domain::answer_checks::UnstatedScale::Source)
+            );
+            assert_eq!(
+                compare("40조 원").comparison_reason,
+                Some(crate::domain::answer_checks::ComparisonReason::ScaleConflict)
+            );
+            assert_ne!(compare("40백만 달러").status, NumberCheckStatus::Matched);
+        }
+    }
+
+    #[test]
+    fn c007_distinguishes_an_unstated_scale_and_a_captured_heading() {
+        use crate::domain::answer_checks::{ComparisonReason, UnstatedScale};
+        let excerpt = "| Total | $245,122 |";
+        let mut source = page(excerpt);
+        let evidence = evidence::project(&source);
+        let registry = RunResultRegistry::default();
+        let answer = link("245,122 USD million");
+        let unknown = check_link(&answer, &source, Some(&evidence), &registry).unwrap();
+        assert_eq!(unknown.status, NumberCheckStatus::Matched);
+        assert_eq!(unknown.unstated_scale, Some(UnstatedScale::Source));
+        let prefix = "| (In millions, except percentages) | 2024 |\n| Revenue | |\n";
+        source.payload["content"] = json!(format!("{prefix}{excerpt}"));
+        let known = check_link(&answer, &source, Some(&evidence), &registry).unwrap();
+        assert_eq!(known.status, NumberCheckStatus::Matched);
+        assert_eq!(known.unstated_scale, None);
+        assert_eq!(known.span, unknown.span);
+
+        let scaled = page("Revenue: 245,122 USD million.");
+        let receipt = evidence::project(&scaled);
+        let check = check_link(&link("245,122"), &scaled, Some(&receipt), &registry).unwrap();
+        assert_eq!(check.status, NumberCheckStatus::Matched);
+        assert_eq!(check.unstated_scale, Some(UnstatedScale::Answer));
+        let conflict = check_link(
+            &link("245,122 USD billion"),
+            &scaled,
+            Some(&receipt),
+            &registry,
+        )
+        .unwrap();
+        assert_eq!(conflict.status, NumberCheckStatus::NotFound);
+        assert_eq!(
+            conflict.comparison_reason,
+            Some(ComparisonReason::ScaleConflict)
+        );
+    }
+
+    #[test]
+    fn c007_adjacent_window_supplies_the_same_capture_heading() {
+        let preceding = "| (In millions, except percentages) | 2024 |\n| Revenue | |\n";
+        let text = "| Total | $245,122 |";
+        let mut parent = page(preceding);
+        parent.producer.runtime_id = "native-web".into();
+        parent.payload["source_id"] = json!("one-filing");
+        parent.payload["content_sha256"] = json!("same-capture");
+        parent.payload["content_offset"] = json!(0);
+        let mut current = parent.clone();
+        current.result_ref = "result:selected".into();
+        current.payload["content_offset"] = json!(preceding.len());
+        current.payload["content"] = json!(text);
+        current.upstream_result_refs.push(parent.result_ref.clone());
+        let mut registry = RunResultRegistry::default();
+        registry.results.insert(parent.result_ref.clone(), parent);
+        let evidence = evidence::project(&current);
+        let check = check_link(
+            &link("245,122 USD million"),
+            &current,
+            Some(&evidence),
+            &registry,
+        )
+        .unwrap();
+        assert_eq!(check.status, NumberCheckStatus::Matched);
+        assert!(check.unstated_scale.is_none());
+        let span = check.span.unwrap();
+        assert_eq!(&text[span.start..span.end], "$245,122");
+    }
+
+    #[tokio::test]
+    async fn c007_revenue_table_uses_its_stated_caption_for_the_raw_sec_dollars() {
+        let companies: Vec<Value> =
+            serde_json::from_str(include_str!("../tests/fixtures/c007-revenue.json")).unwrap();
+        let capture = ToolCapture::default();
+        let mut answer = String::from("**Reported consolidated revenue (USD millions)**\n\n| Company | Fiscal 2023 | Fiscal 2024 | 2024 Form 10-K |\n|---|---:|---:|---|\n");
+        for company in companies {
+            let name = company["company"].as_str().unwrap();
+            let content = serde_json::to_string(&company["facts"]).unwrap();
+            // The follow-up reused the saved Apple and Microsoft documents.
+            let mut source = if name == "Alphabet" {
+                page(&content)
+            } else {
+                result(
+                    "world_read",
+                    RunResultOrigin::SavedContext,
+                    json!({
+                        "text": json!({"content":content}).to_string()
+                    }),
+                )
+            };
+            source.result_ref = format!("result:{name}");
+            let id = evidence::evidence_id(&source.result_ref);
+            let a = company["answer"][0].as_str().unwrap();
+            let b = company["answer"][1].as_str().unwrap();
+            answer.push_str(&format!(
+                "| {name} | [{a}](#evidence-{id}) | [{b}](#evidence-{id}) | {name} filing |\n"
+            ));
+            capture
+                .run_results
+                .lock()
+                .await
+                .results
+                .insert(source.result_ref.clone(), source);
+        }
+        let checks = capture.number_checks(&answer, &[]).await;
+        assert_eq!(checks.len(), 6);
+        for check in checks {
+            assert_eq!(check.status, NumberCheckStatus::Matched, "{check:?}");
+            assert!(check.scale_conversion.is_some(), "{check:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn c007_answer_units_respect_table_scopes_and_raw_field_precision() {
+        use NumberCheckStatus::{Matched, NotFound, Rounded};
+        let cases: &[(&str, &[NumberCheckStatus])] = &[
+            ("| Revenue (USD m) | Employees |\n|---|---|\n| [383,285](#ID) | [383,285](#ID) |", &[Matched, NotFound]),
+            ("| Fiscal 2023 (USD m) | Change (%) |\n|---|---|\n| [383,285](#ID) | [383,285](#ID) |", &[Matched, NotFound]),
+            ("| USD millions | Fiscal 2023 |\n|---|---|\n| Apple | [383,285](#ID) |", &[Matched]),
+            ("| Year | Revenue (bn) |\n|---|---|\n| 2023 | [383](#ID) |", &[Rounded]),
+            ("| Year | Revenue |\n|---|---|\n| 2023 | [383,285](#ID) |\n\n$ in millions", &[Matched]),
+            ("| Metric | 2023 |\n|---|---|\n| Revenue (bn) | [383.3](#ID) |", &[Rounded]),
+            ("매출 (억 원) [3,832.85](#ID).", &[Matched]),
+            ("매출 (조 원) [0.383285](#ID).", &[Matched]),
+            ("매출 (백만 달러) [383,285](#ID).", &[Matched]),
+            ("Revenue (百万) [383,285](#ID).", &[Matched]),
+            ("Revenue (億) [3,832.85](#ID).", &[Matched]),
+            ("| 2023 |\n|---|\n| [383,285](#ID) |", &[NotFound]),
+            ("We sold 2 million units. Revenue was [383,285](#ID).", &[NotFound]),
+        ];
+        for &(markdown, expected) in cases {
+            let currency = if markdown.contains("원") {
+                "KRW"
+            } else {
+                "USD"
+            };
+            let source = result(
+                "observations",
+                RunResultOrigin::AcquiredOriginal,
+                json!({
+                    "dataset_ref": {"dataset_id":"ds_revenue"},
+                    "data": [{"unit":currency,"val":383285000000_i64}]
+                }),
+            );
+            let id = evidence::evidence_id(&source.result_ref);
+            let capture = ToolCapture::default();
+            capture
+                .run_results
+                .lock()
+                .await
+                .results
+                .insert(source.result_ref.clone(), source);
+            let answer = markdown.replace("#ID", &format!("#evidence-{id}"));
+            let checks = capture.number_checks(&answer, &[]).await;
+            let statuses: Vec<_> = checks.iter().map(|c| c.status).collect();
+            assert_eq!(statuses, expected, "{markdown}: {checks:?}");
+            if expected == [NotFound] {
+                assert_eq!(
+                    serde_json::to_value(&checks[0]).unwrap()["comparisonReason"],
+                    "no_candidate"
+                );
+                assert!(checks[0].compared_value.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn c002_tsmc_closing_price_and_decline_match_the_cited_passage() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/c002-tsmc-close.json")).unwrap();
+        let passage = fixture["excerpt"].as_str().unwrap();
+        let read = result(
+            "web_fetch",
+            RunResultOrigin::AcquiredOriginal,
+            json!({"content":passage,"url":fixture["url"]}),
+        );
+        let evidence: ChatEvidenceRef = serde_json::from_value(json!({
+            "id":"ev","title":"TSMC","kind":"original","tool_name":"web_fetch",
+            "retrieved_at":"2026-11-21T13:45:00Z","excerpt":passage,
+            "excerpt_truncated":false,"content_sha256":"a".repeat(64),"warnings":[]
+        }))
+        .unwrap();
+        let links = evidence_links(fixture["answer"].as_str().unwrap());
+        assert_eq!(links.len(), 2);
+        for (link, digits) in links.iter().zip(["1,385", "4.81%"]) {
+            for excerpt in [Some(&evidence), None] {
+                let check =
+                    check_link(link, &read, excerpt, &RunResultRegistry::default()).unwrap();
+                assert_eq!(check.status, NumberCheckStatus::Matched, "{check:?}");
+                assert!(check.comparison_reason.is_none());
+                let located = match (check.span, check.context.as_ref()) {
+                    (Some(span), _) => &passage[span.start..span.end],
+                    (_, Some(ctx)) => &ctx.text[ctx.start..ctx.end],
+                    _ => panic!("missing evidence location"),
+                };
+                assert_eq!(located.trim_end_matches('元'), digits);
+            }
+        }
+        let opposite = check_link(
+            &link("+4.81%"),
+            &read,
+            Some(&evidence),
+            &RunResultRegistry::default(),
+        )
+        .unwrap();
+        assert_eq!(opposite.status, NumberCheckStatus::NotFound);
+        assert_eq!(
+            serde_json::to_value(&opposite).unwrap()["comparisonReason"],
+            "sign_conflict"
+        );
+        assert_eq!(opposite.compared_value.as_deref(), Some("4.81%"));
     }
 
     /// rc2 RP-002, both trials: `−9%` and `-9%` cite "판매량이 2분기보다 약 9%

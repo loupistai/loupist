@@ -37,14 +37,14 @@ hand-off was staged. Custom exposure restores the outbound pause and carries
 Don't-save forward when the source connection applied it. The recorded connection
 identifies the source of the restriction and does not grant access to it.
 
-A verified Map link opened with **Look into it** starts at ThisTurn on the
+A verified World link opened with **Look into it** starts at ThisTurn on the
 ordinary Session surface. It keeps the same tool policy as a user-started
 Session, subject to that exposure and the host's exclusion of `ask_user`.
 Rust applies the receipt before the broker or Pi starts. No host-started
 research run can ask a question; the user can open it and steer it instead.
 
 Only the actual stored user request supplies user-typed sites. The Bot's note
-and the Map link's names and relationships are context. A later interactive
+and the World link's names and relationships are context. A later interactive
 turn that receives retained third-party hand-off context starts at ThisTurn
 and uses the interactive tool policy.
 
@@ -98,6 +98,12 @@ counts at whatever depth it spells the root, while on a case-sensitive volume
    runtime folders and the rest of app data remain private. Selecting the app-data
    root itself or a parent never grants access to its private contents.
 9. Outside: everything else.
+
+When user Skills are dormant, the host classifies the global and project Skill
+trees and the bundled Skill Creator subtree as AppPrivate before matching
+BundledSkill or Instructions. Native reads, writes and searches cannot use the
+dormant files. The host still loads ordinary project instructions and available
+bundled Skills.
 
 ## Policy table
 
@@ -158,6 +164,13 @@ gate it could write that text where a later reply loads it as instructions
 (`host_file_gate` in `src-tauri/src/commands/tool_executor/workspace.rs`).
 A search skips an entry it cannot read and reports the list as truncated; only
 an unreadable search root fails the call.
+
+Native Web Research identifies HTTPS requests to `sec.gov`, `www.sec.gov`,
+`data.sec.gov`, and `efts.sec.gov` with `Loupist <configured contact email>`.
+The address comes from the SEC EDGAR connection in Settings. Direct SEC reads
+require this setting. A cross-host redirect drops the identity, and a redirect
+into another SEC host requires its own direct read. Native SEC requests across
+all chats are spaced at least 125 milliseconds apart.
 
 ## Python execution
 

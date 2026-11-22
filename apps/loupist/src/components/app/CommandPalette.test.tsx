@@ -9,7 +9,7 @@ import type { AttentionItem } from "../../contracts/attention";
 import type { KnowledgeMapNode, Principle } from "../../contracts/knowledge";
 import type { InboxItem } from "../../contracts/scheduled";
 import { useAppShortcuts } from "../../app/useAppShortcuts";
-import { SHORTCUTS } from "../../app/shortcuts";
+import { SHORTCUTS, shortcutKeys } from "../../app/shortcuts";
 import { KeyboardSettings } from "../settings/KeyboardSettings";
 import { AssetPageOpenerProvider, type OpenAssetPage } from "../assets/assetOpener";
 import { CommandPalette, SEARCH_LOUPISTS, type PaletteAction } from "./CommandPalette";
@@ -98,7 +98,7 @@ it("moves through rows with the arrow keys and folds long groups behind More", a
   expect(handlers.onOpenAttention).toHaveBeenCalledWith(attention[1]);
 });
 
-it("searches names on the active Loupist's Map and its principles", async () => {
+it("searches names on the active Loupist's World and its principles", async () => {
   const user = userEvent.setup();
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const map = await bridge.knowledgeMap({ loupistId: loupist.id, maxNodes: 1000 });
@@ -107,7 +107,7 @@ it("searches names on the active Loupist's Map and its principles", async () => 
   const handlers = { onOpenAttention: vi.fn(), onOpenThread: vi.fn(), onOpenMapNode: vi.fn(), onOpenPrinciple: vi.fn(), onOpenBriefing: vi.fn(), onOpenChange: vi.fn() };
   render(<CommandPalette open bridge={bridge} loupists={[loupist]} selectedLoupistId={loupist.id} threadsByLoupist={{}} attention={[]} actions={[]} {...handlers} />);
   await user.type(screen.getByRole("combobox", { name: "Search" }), name.label.slice(0, 4));
-  const group = await waitFor(() => within(screen.getByRole("listbox", { name: "Results" })).getByRole("group", { name: "Map" }));
+  const group = await waitFor(() => within(screen.getByRole("listbox", { name: "Results" })).getByRole("group", { name: "World" }));
   fireEvent.click(within(group).getAllByRole("option")[0]!);
   expect(handlers.onOpenMapNode).toHaveBeenCalledWith(loupist.id, expect.objectContaining({ kind: "entity" }));
 });
@@ -137,7 +137,7 @@ describe("search across Loupists", () => {
     await user.type(screen.getByRole("combobox", { name: "Search" }), "hanul");
     const list = screen.getByRole("listbox", { name: "Results" });
     const names = await waitFor(() => {
-      const group = within(list).getByRole("group", { name: "Map" });
+      const group = within(list).getByRole("group", { name: "World" });
       expect(within(group).getAllByRole("option")).toHaveLength(2);
       return group;
     });
@@ -159,8 +159,8 @@ describe("search across Loupists", () => {
     reads.mockImplementation((request) => request.loupistId === "loupist-0" ? new Promise(() => undefined) : answer(request));
     render(<CommandPalette open bridge={bridge} loupists={many} selectedLoupistId="loupist-3" threadsByLoupist={{}} attention={[]} actions={[]} {...handlers()} />);
     await user.type(screen.getByRole("combobox", { name: "Search" }), "hanul");
-    fireEvent.click(await screen.findByRole("option", { name: /More from Map/ }));
-    const names = () => within(within(screen.getByRole("listbox", { name: "Results" })).getByRole("group", { name: "Map" })).getAllByRole("option");
+    fireEvent.click(await screen.findByRole("option", { name: /More from World/ }));
+    const names = () => within(within(screen.getByRole("listbox", { name: "Results" })).getByRole("group", { name: "World" })).getAllByRole("option");
     // The active Loupist leads; the one that has not answered and the two past the cap are missing.
     await waitFor(() => expect(names().map((row) => row.textContent)).toEqual([3, 1, 2, 4, 5, 6, 7].map((index) => `Hanul Loupist ${index}Loupist ${index}`)));
     expect(reads).toHaveBeenCalledTimes(SEARCH_LOUPISTS);
@@ -207,12 +207,19 @@ it("opens the palette with ⌘K and focuses the composer with a bare slash", () 
   field.remove();
 });
 
-it("lists every shortcut the app handles on Settings › Keyboard", () => {
-  render(<KeyboardSettings />);
-  const rows = screen.getAllByRole("row").slice(1);
-  expect(rows).toHaveLength(SHORTCUTS.length);
-  // ⌘K is named as the sidebar and its dialog name it.
-  expect(screen.getByRole("row", { name: /^Search/ })).toBeInTheDocument();
+it.each([{ platform: "MacIntel", mac: true }, { platform: "Win32", mac: false }])("lists the shortcuts supported on $platform in Settings › Keyboard", ({ platform, mac }) => {
+  const reportedPlatform = vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+  try {
+    render(<KeyboardSettings />);
+    expect(screen.getAllByRole("row").slice(1)).toHaveLength(SHORTCUTS.filter(shortcut => shortcutKeys(shortcut, mac)).length);
+    expect(screen.getByRole("row", { name: /^Search/ })).toBeInTheDocument();
+    expect(screen.getByRole("row", { name: /^Bot · Following · World · Lens · Schedule/ })).toHaveTextContent(mac ? "⌘5" : "Ctrl+5");
+    const hide = screen.queryByRole("row", { name: /^Hide Loupist/ });
+    if (mac) expect(hide).toHaveTextContent("⌘H");
+    else expect(hide).toBeNull();
+  } finally {
+    reportedPlatform.mockRestore();
+  }
 });
 
 it("lists two follows of one ticker as two rows, each opening its own asset by id", async () => {
@@ -285,4 +292,18 @@ it("names an untitled research session as the sidebar does", () => {
     onOpenAttention={vi.fn()} onOpenThread={vi.fn()} onOpenMapNode={vi.fn()} onOpenPrinciple={vi.fn()} onOpenBriefing={vi.fn()} onOpenChange={vi.fn()} />);
   const list = screen.getByRole("listbox", { name: "Results" });
   expect(within(list).getAllByRole("option")[0]).toHaveTextContent("Untitled research session");
+});
+
+it("groups the home thread as Bot when searching by Loupist name", async () => {
+  const user = userEvent.setup();
+  const openThread = vi.fn();
+  const home = { ...thread("home", "Bot", "2026-10-28T00:00:00Z"), home: true };
+  render(<CommandPalette open bridge={new MockLoupistBridge({ delay_ms: 0 })} loupists={[loupist]} selectedLoupistId={loupist.id}
+    threadsByLoupist={{ [loupist.id]: [home] }} attention={[]} actions={[]} onOpenAttention={vi.fn()} onOpenThread={openThread}
+    onOpenMapNode={vi.fn()} onOpenPrinciple={vi.fn()} onOpenBriefing={vi.fn()} onOpenChange={vi.fn()} />);
+  await user.type(screen.getByRole("combobox"), loupist.name);
+  expect(within(screen.getByRole("group", { name: "Bot" })).getByRole("option")).toHaveTextContent(loupist.name);
+  expect(screen.queryByRole("group", { name: "Research sessions" })).toBeNull();
+  await user.keyboard("{Enter}");
+  expect(openThread).toHaveBeenCalledWith(loupist.id, home.id);
 });

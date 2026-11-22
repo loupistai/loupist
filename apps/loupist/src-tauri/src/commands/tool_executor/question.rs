@@ -109,6 +109,7 @@ impl AppToolExecutor {
             self.capture.opening_task_id.as_deref(),
             question.options.len(),
         );
+        let admission = park_tool_for_user();
         sink(call_id.clone(), question.clone());
         let answer = tokio::select! {
             answer = receiver => answer.ok(),
@@ -123,6 +124,7 @@ impl AppToolExecutor {
         question.answer = answer.clone();
         pending.settle(answer.is_some());
         sink(call_id, question.clone());
+        resume_tool_after_user(admission).await?;
         Ok(match answer {
             Some(QuestionAnswer::Choice(index)) => {
                 let label = &question.options[usize::from(index)].label;

@@ -128,6 +128,9 @@ pub(super) fn decode(query: &str, bytes: &[u8]) -> Result<Vec<AssetLookupCandida
                 && row.security_type2.as_deref() == Some("Mutual Fund")
                 && row.market_sector.as_deref() == Some("Equity"));
         let group = row.composite_figi.filter(|id| equity && valid_figi(id));
+        let exchange = bounded(row.exch_code, 64);
+        let exchange_name = bounded(row.exchange_name, 128)
+            .or_else(|| super::exchange_name(exchange.as_deref()?).map(str::to_owned));
         let listing = Listing {
             exact: ticker
                 .as_deref()
@@ -139,8 +142,8 @@ pub(super) fn decode(query: &str, bytes: &[u8]) -> Result<Vec<AssetLookupCandida
                 figi: row.figi,
                 name,
                 ticker,
-                exchange: bounded(row.exch_code, 64),
-                exchange_name: bounded(row.exchange_name, 128),
+                exchange,
+                exchange_name,
                 security_type: bounded(row.security_type, 64),
                 market_sector: bounded(row.market_sector, 64),
             },
@@ -227,12 +230,12 @@ mod tests {
              "securityType":"Common Stock","marketSector":"Equity","description":"unrelated text"},
             {"figi":"BBG000BBJQV0","name":"duplicate"},
             {"figi":"no","name":"invalid"},
-            {"figi":"BBG000000008","name":"Named venue listing","exchangeName":"Example Exchange"}
+            {"figi":"BBG000000008","name":"Named venue listing","exchCode":"PW","exchangeName":"Example Exchange"}
         ]}"#,
         )
         .unwrap();
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].exchange_name, None);
+        assert_eq!(rows[0].exchange_name.as_deref(), Some("United States"));
         assert_eq!(rows[1].exchange_name.as_deref(), Some("Example Exchange"));
         assert_eq!(rows[0].security_type.as_deref(), Some("Common Stock"));
         assert_eq!(rows[0].exchange.as_deref(), Some("US"));
@@ -244,5 +247,26 @@ mod tests {
         assert!(decode("unknown", br#"{"warning":"No identifier found."}"#)
             .unwrap()
             .is_empty());
+    }
+}
+
+#[cfg(test)]
+mod venue_tests {
+    use super::*;
+
+    #[test]
+    fn search_uses_published_venue_names_for_unambiguous_codes() {
+        for (code, name) in [
+            ("EO", Some("OTC Composite")),
+            ("PW", Some("Warsaw SE")),
+            ("EZ", Some("European Lit Composite")),
+            ("X9", Some("Tradeweb APA EU")),
+            ("TT", None),
+            ("UNKNOWN", None),
+        ] {
+            let response = serde_json::json!({"data":[{"figi":"BBG000BBJQV0", "name":"Apple", "exchCode":code}]});
+            let result = decode("Apple", response.to_string().as_bytes()).unwrap();
+            assert_eq!(result[0].exchange_name.as_deref(), name, "{code}");
+        }
     }
 }

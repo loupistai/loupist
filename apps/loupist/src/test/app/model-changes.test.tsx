@@ -6,32 +6,31 @@ import { PreviewBridge, prepareFixture } from "../../preview/fixtures";
 import { openApp } from "../renderApp";
 
 describe("Loupist · Model changes (W17.5)", () => {
-  it("shows the default-changed line once and acknowledges it on ×", async () => {
+  it("shows the default-changed line once and acknowledges it when the picker opens", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
-    bridge.setModelNotice({ id: "notice-1", kind: "now_using", model: "GPT-6.1 Sol" });
+    bridge.setDefaultModelChange("loupist-quality", { id: "notice-1", previous: { id: "old", name: "GPT-5.4", provider: "openai", model: "old" }, current: { id: "model-test", name: "GPT-5.6 Luna", provider: "openai", model: "gpt-5.6-luna" } });
     const ack = vi.spyOn(bridge, "modelNoticeAck");
     await openApp(bridge);
     const line = await waitFor(() => { const found = document.querySelector(".model-notice-line"); expect(found).not.toBeNull(); return found; });
-    expect(line).toHaveTextContent("Now using GPT-6.1 Sol. Change");
+    expect(line).toHaveTextContent("Now answering with GPT-5.6 Luna (was GPT-5.4) Change");
     await user.click(screen.getByRole("button", { name: "Change" }));
     expect(await screen.findByRole("dialog", { name: "Available models" })).toBeInTheDocument();
     await user.keyboard("{Escape}");
-    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+
     expect(ack).toHaveBeenCalledExactlyOnceWith({ id: "notice-1" });
     await waitFor(() => expect(document.querySelector(".model-notice-line")).toBeNull());
-    // The × went with the line; the message takes focus rather than the page.
-    await waitFor(() => expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveFocus());
+    expect((await bridge.configRead({ scope: { kind: "project", loupistId: "loupist-quality" } })).defaultModelChange).toBeUndefined();
   });
 
-  it("acknowledges the line when the next message goes out, and an Auto send names no model", async () => {
+  it("acknowledges the line when the next message goes out, and a default send names no model", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
-    bridge.setModelNotice({ id: "notice-2", kind: "removed", model: "GPT-5.4" });
+    bridge.setDefaultModelChange("loupist-quality", { id: "notice-2", previous: { id: "old", name: "GPT-5.4", provider: "openai", model: "old" }, current: { id: "model-test", name: "GPT-5.6 Luna", provider: "openai", model: "gpt-5.6-luna" } });
     const ack = vi.spyOn(bridge, "modelNoticeAck");
     const send = vi.spyOn(bridge, "chatSend");
     await openApp(bridge);
-    expect(document.querySelector(".model-notice-line")).toHaveTextContent("GPT-5.4 is no longer offered. Chat uses Auto now.");
+    expect(document.querySelector(".model-notice-line")).toHaveTextContent("Now answering with GPT-5.6 Luna (was GPT-5.4)");
     await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), "Compare the margins");
     await user.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(send).toHaveBeenCalled());
@@ -39,7 +38,7 @@ describe("Loupist · Model changes (W17.5)", () => {
     expect(send.mock.calls[0][0]).toMatchObject({ model_profile_id: "", run_options: {} });
   });
 
-  // W17.5: Rust retries a retired model once on Auto inside the turn. The renderer never resends.
+  // W17.5: Rust retries a retired model once with the default model inside the turn. The renderer never resends.
   const storedAnswer = (bridge: PreviewBridge, change: Record<string, unknown>) => {
     const original = bridge.loupistSelect.bind(bridge);
     bridge.loupistSelect = async (loupistId) => {
@@ -68,7 +67,7 @@ describe("Loupist · Model changes (W17.5)", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("names the retired model under the answer Rust gave on Auto", async () => {
+  it("names the retired model under the answer the default model provided", async () => {
     const bridge = new PreviewBridge({ delay_ms: 0 });
     await prepareFixture(bridge, "answer");
     storedAnswer(bridge, {

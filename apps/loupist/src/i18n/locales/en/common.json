@@ -1,5 +1,9 @@
 {
   "shareCount": "{{value}} shares",
+  "externalLink": {
+    "opensInBrowser": "Opens in your browser.",
+    "couldNotOpen": "Couldn’t open the link in your browser."
+  },
   "dialog": {
     "close": "Close"
   },

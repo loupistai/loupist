@@ -73,7 +73,7 @@ it("names the key, the local server and an Anthropic key by credential", async (
 it("turns Reconnect into the primary action when the sign-in stopped working", () => {
   const { card } = renderCard({ option: option("openai", { status: status({ state: "needs_reconnect" }) }) });
   expect(card).toHaveTextContent("Needs reconnect");
-  expect(card).toHaveTextContent("Your sign-in stopped working. Reconnect to keep going; your chats and map are safe.");
+  expect(card).toHaveTextContent("Your sign-in stopped working. Reconnect to keep going. Your chats and World are safe.");
   expect(within(card).getByRole("button", { name: "Reconnect ChatGPT" })).toHaveAttribute("data-variant", "default");
 });
 

@@ -89,6 +89,8 @@ pub(crate) struct RunLog {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_save_skip: Option<crate::domain::MemorySaveSkipReason>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory_commit_failure: Option<MemoryCommitFailure>,
     pub model: Option<String>,
     pub effort: Option<String>,
@@ -180,6 +182,7 @@ impl RunLog {
             duration_ms: 0,
             status: "ok".into(),
             failure_kind: None,
+            memory_save_skip: None,
             memory_commit_failure: None,
             model: None,
             effort: None,
@@ -201,7 +204,7 @@ impl RunLog {
             .max(0) as u64;
         self.status = status.into();
         self.failure_kind = failure.map(str::to_owned);
-        if status != "failed" {
+        if status != "failed" && self.memory_save_skip.is_none() {
             self.memory_commit_failure = None;
         }
     }
@@ -540,6 +543,7 @@ pub(crate) fn record_scheduled(store: &SqliteStore, run: &crate::scheduled_tasks
         run.started_at_ms,
     );
     record.chat_id = run.thread_id.clone();
+    record.memory_save_skip = run.memory_save_skip;
     if let Some(chat) = run
         .thread_id
         .as_ref()

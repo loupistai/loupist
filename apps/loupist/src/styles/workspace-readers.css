@@ -47,6 +47,26 @@
 .reader-data-table .reader-row-number { min-width: var(--gg-size-control-lg); width: var(--gg-size-control-lg); max-width: 50px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); text-align: right; font-weight: var(--gg-weight-regular); }
 .reader-data-table tbody tr:hover { background: var(--gg-color-bg-hover); }
 .reader-data-table .is-numeric { text-align: right; white-space: nowrap; }
+.reader-data-table .is-error { color: var(--gg-color-warning); }
+.reader-data-table [data-formula="cached"] { position: relative; }
+.reader-data-table [data-formula="cached"]::after {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  width: 0;
+  height: 0;
+  border-block-start: var(--gg-space-1) solid var(--gg-color-text-secondary);
+  border-inline-start: var(--gg-space-1) solid transparent;
+  content: "";
+}
+.reader-data-table [data-formula="uncached"] { color: var(--gg-color-text-secondary); }
+.reader-workbook-content { min-height: 0; overflow: hidden; }
+.reader-workbook { height: 100%; min-width: 0; min-height: 0; }
+.reader-workbook .reader-workbook-tabs { flex: none; justify-content: flex-start; width: 100%; height: auto; overflow-x: auto; padding: var(--gg-space-2) var(--gg-space-3); }
+.reader-workbook-tabs [role="tab"] { flex: none; gap: var(--gg-space-1); }
+.reader-workbook-hidden { font-size: var(--gg-text-caption); font-weight: var(--gg-weight-regular); }
+.reader-workbook-sheet { flex: 1; min-height: 0; overflow: auto; }
+.reader-workbook-sheet .reader-error { margin: var(--gg-space-3); }
 .reader-error { padding: var(--gg-space-3) 14px; border-radius: var(--gg-radius-sm); border: 1px solid color-mix(in srgb, var(--gg-color-negative) 28%, var(--gg-color-border-subtle)); background: color-mix(in srgb, var(--gg-color-negative) 4%, var(--gg-color-bg-app)); font-size: var(--gg-text-meta); }
 .reader-error p { margin: var(--gg-space-1) 0 9px; line-height: 1.6; }
 .reader-error strong { color: var(--gg-color-negative); font-weight: var(--gg-weight-medium); }

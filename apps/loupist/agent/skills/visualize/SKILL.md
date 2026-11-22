@@ -19,10 +19,12 @@ App charts do not execute arbitrary HTML, JavaScript, Vega specifications or
 custom slider controls. `chart_publish` is the in-app chart. A matplotlib figure
 is a file: save it as PNG under `/workspace/outputs/`. Bundled fonts do not cover
 Korean, Japanese or Chinese labels: use `chart_publish` for those, or label the
-figure in Latin script and say so. Files previews CSV/TSV as tables and raster
-formats as images; HTML and SVG open as source.
+figure in Latin script and say so. Files previews CSV/TSV as tables, and raster
+formats and SVG as images; an SVG over 256 KiB and HTML open as source.
 
 ## Publish and revise
+
+Several series on a bar chart are drawn side by side and on an area chart overlaid, so each can be read against the axis. Stack them (`stack: true`) only when they are parts of one total at each x, such as the segments of one company's revenue. When you describe a chart in the answer, describe the form you asked for: say bars are side by side or stacked according to that setting.
 
 Follow the `chart_publish` contract for data binding and
 revision arguments. Use `chart_query` when exact stored values are needed.

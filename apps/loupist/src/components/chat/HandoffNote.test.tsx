@@ -29,13 +29,14 @@ const linkFirst: ChatMessage = {
 const reply: ChatMessage = { id: "answer", role: "assistant", status: "complete", content: "Saved answer.", created_at: "2026-11-18T09:01:00Z" };
 
 /** A research session opened from a hand-off, through the same stream adapter and hook the app reads it with. */
-function session(first: ChatMessage, onEditUser = vi.fn()) {
+function session(first: ChatMessage, last: ChatMessage = reply) {
+  const onEditUser = vi.fn();
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
-  const chat = new Chat<LoupistUIMessage>({ transport: new TauriChatTransport(bridge), messages: [first, reply].map(toLoupistUIMessage) });
+  const chat = new Chat<LoupistUIMessage>({ transport: new TauriChatTransport(bridge), messages: [first, last].map(toLoupistUIMessage) });
   function Conversation() {
     const { messages, messageKeys } = useLoupistChat({ bridge, chat, loupistId: "loupist-quality", activeThread: undefined, setThreads: vi.fn() });
     return <ChatConversation loupistId="loupist-quality" loupistName="Loupist" bridge={bridge} messages={messages} messageKeys={messageKeys}
-      onSuggestion={vi.fn()} onEditUser={onEditUser} onReadAttachment={vi.fn()} />;
+      onSuggestion={vi.fn()} onEditUser={onEditUser} onRetry={vi.fn()} onReadAttachment={vi.fn()} />;
   }
   return { onEditUser, ...render(<Conversation />) };
 }
@@ -48,36 +49,37 @@ it("keeps the stored note and chosen action through the stream adapter", () => {
   expect(fromLoupistUIMessage(toLoupistUIMessage({ ...linkFirst, handoff_note: undefined, handoff_action: undefined }))).not.toHaveProperty("handoff_note");
 });
 
-it("shows the user's whole request, with the Bot's note closed under it as data", async () => {
-  const { onEditUser } = session({ id: "first", role: "user", status: "complete", content: REQUEST, created_at: at, handoff_note: NOTE });
-  const first = firstMessage();
-  expect(within(first).getByText(REQUEST)).toBeVisible();
-  expect(first.querySelector(".message-user-text")?.textContent?.endsWith(LIMIT)).toBe(true);
-  // One user message: the note never reads as a second question from the user.
-  expect(document.querySelectorAll(".message.user")).toHaveLength(1);
+it("shows a Bot hand-off as Markdown with an avatar and a closed note quoting the original request", async () => {
+  const user = userEvent.setup();
+  const brief = "Check **filings** first.";
+  session({ id: "first", role: "bot_handoff", status: "complete", content: brief, created_at: at,
+    handoff_note: { ...NOTE, userMessageInBot: REQUEST } });
+  const first = document.querySelector<HTMLElement>('[data-message-id="first"]')!;
+  expect(first).not.toHaveClass("user");
+  expect(first.querySelector(".loupist-avatar")).toBeInTheDocument();
+  expect(within(first).getByText("From Bot")).toBeVisible();
+  expect(await within(first).findByText("filings", { selector: '[data-streamdown="strong"]' })).toBeVisible();
+  expect(within(first).queryByRole("button", { name: /Edit|Retry/ })).toBeNull();
   const note = first.querySelector("details")!;
   expect(note).not.toHaveAttribute("open");
-  const summary = within(first).getByText("From Bot");
-  expect(within(note).getByText("Sealed supply")).not.toBeVisible();
-
-  // A native summary: it takes focus, and Enter and Space activate it in the WebView
-  // (jsdom has no key activation for summary; the native persistence journey presses Enter).
-  const user = userEvent.setup();
-  const trigger = summary.closest("summary")!;
-  trigger.focus();
-  expect(trigger).toHaveFocus();
-  await user.click(trigger);
-  expect(note).toHaveAttribute("open");
+  await user.click(note.querySelector("summary")!);
   expect(within(note).getByText("Sealed supply")).toBeVisible();
   expect(within(note).getByText("Who else makes HBM4?")).toBeVisible();
-  expect(within(note).getByText("Check filings <img src=x onerror=alert(1)> first.")).toBeVisible();
-  expect(note.querySelector("img")).toBeNull();
-  await user.click(trigger);
-  expect(note).not.toHaveAttribute("open");
+  expect(within(note).getByText("You said in Bot")).toBeVisible();
+  expect(note.querySelector("blockquote")).toHaveTextContent(REQUEST);
+  await user.click(within(first).getByRole("button", { name: /Copy/ }));
+  expect(await navigator.clipboard.readText()).toBe(brief);
+});
 
-  // The user wrote this request: it stays editable like any other.
-  await user.click(within(first.parentElement!).getByRole("button", { name: "Edit message" }));
-  expect(onEditUser).toHaveBeenCalledWith(expect.objectContaining({ content: REQUEST }), 0);
+it.each(["user", "bot_handoff"] as const)("offers retry after a stopped answer only for a user request (%s)", async role => {
+  session({ id: "opening", role, content: "Check filings", created_at: at }, { ...reply, status: "aborted" });
+  if (role === "user") {
+    expect(await screen.findByRole("button", { name: "Try again" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Edit message" })).toBeInTheDocument();
+  } else {
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit message" })).toBeNull();
+  }
 });
 
 it("says the user chose a link action instead of showing the host's caption, and names the link context as the link's", async () => {
@@ -109,6 +111,6 @@ it("reads a session from before notes as it always did", async () => {
   expect(firstMessage().querySelector("details")).toBeNull();
   expect(screen.queryByText("From Bot")).toBeNull();
   await act(async () => { await i18n.changeLanguage("ko"); });
-  session({ id: "first-ko", role: "user", status: "complete", content: REQUEST, created_at: at, handoff_note: NOTE });
+  session({ id: "first-ko", role: "bot_handoff", status: "complete", content: NOTE.brief, created_at: at, handoff_note: { ...NOTE, userMessageInBot: REQUEST } });
   expect(screen.getByText("봇이 전달한 내용")).toBeVisible();
 });

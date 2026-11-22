@@ -230,14 +230,7 @@ pub(crate) fn research_level(
     loupist_id: &str,
     profile_id: &str,
 ) -> Result<String, crate::app::CommandError> {
-    let directory = crate::commands::loupist_config_directory(state, loupist_id)?;
-    let defaults =
-        crate::scoped_config::resolve(&state.artifacts.app_data_dir, Some(&directory))?.chat;
-    let profile_id = if profile_id.is_empty() {
-        defaults.model_profile_id.as_deref().unwrap_or_default()
-    } else {
-        profile_id
-    };
+    let defaults = crate::commands::loupist_configuration(state, loupist_id)?.chat;
     let model = admit(state, profile_id, "", &BTreeMap::new())?.model;
     Ok(defaults
         .thinking_level
@@ -256,33 +249,59 @@ pub fn admit(
     run_options: &BTreeMap<String, String>,
 ) -> Result<AutoChoice, crate::app::CommandError> {
     let catalog = state.model_catalog()?;
-    if let Some(model) = offered(&catalog, model_profile_id, &known_provider) {
-        let thinking_level = if thinking_level.is_empty() {
-            model_level(&model)
-        } else {
-            thinking_level.to_owned()
-        };
-        return Ok(AutoChoice {
-            model,
-            thinking_level,
-            run_options: run_options.clone(),
-        });
+    if let Some(choice) = explicit_choice(&catalog, model_profile_id, thinking_level, run_options) {
+        return Ok(choice);
     }
-    let view = state.model_catalog_view()?;
-    let statuses = crate::providers::status::load_all(state)?;
-    let choice = resolve(&view, &catalog, &statuses).ok_or_else(|| {
+    let snapshot = state.selection_catalog_for(catalog)?;
+    let choice = snapshot.default.ok_or_else(|| {
         crate::app::CommandError::new(
-            "provider_unavailable",
-            "Connect an AI account in Settings › Models & providers before chatting.",
+            crate::app::CommandErrorCode::ProviderUnavailable,
+            "Connect an AI account in Settings › AI accounts before chatting.",
         )
     })?;
-    remember(state, &catalog, &choice);
-    // A fallback for a model that left the catalog ignores controls chosen for that model.
-    Ok(if model_profile_id.is_empty() {
-        with_requested_controls(choice, thinking_level, run_options)
+    remember(state, &choice);
+    Ok(default_controls(
+        choice,
+        model_profile_id,
+        thinking_level,
+        run_options,
+    ))
+}
+
+pub(super) fn explicit_choice(
+    catalog: &ModelCatalog,
+    id: &str,
+    level: &str,
+    options: &BTreeMap<String, String>,
+) -> Option<AutoChoice> {
+    let model = offered(catalog, id, &known_provider)?;
+    let thinking_level = if level.is_empty() {
+        model_level(&model)
+    } else {
+        level.to_owned()
+    };
+    Some(AutoChoice {
+        model,
+        thinking_level,
+        run_options: options.clone(),
+    })
+}
+
+pub(crate) fn uses_default(id: &str) -> bool {
+    id.is_empty() || id == "auto"
+}
+
+pub(super) fn default_controls(
+    choice: AutoChoice,
+    id: &str,
+    level: &str,
+    options: &BTreeMap<String, String>,
+) -> AutoChoice {
+    if uses_default(id) {
+        with_requested_controls(choice, level, options)
     } else {
         choice
-    })
+    }
 }
 
 /// An explicit choice that may still run: in the catalog and on a provider
@@ -292,7 +311,7 @@ fn offered(
     model_profile_id: &str,
     known: &dyn Fn(&str) -> bool,
 ) -> Option<ConfiguredModel> {
-    if model_profile_id.is_empty() {
+    if uses_default(model_profile_id) {
         return None;
     }
     catalog
@@ -322,9 +341,9 @@ fn with_requested_controls(
     choice
 }
 
-/// Stores Auto's resolution per provider; a different resolution whose old
-/// model is gone records the "Now using …" notice once.
-fn remember(state: &crate::app::AppState, catalog: &ModelCatalog, choice: &AutoChoice) {
+/// Preserve the provider's most recent admission. Scoped configuration reads
+/// own default-change notices, including switches to a different account.
+fn remember(state: &crate::app::AppState, choice: &AutoChoice) {
     let provider = choice.model.provider.as_str();
     let fresh = crate::providers::status::ProviderStatusRow::fresh(
         provider,
@@ -333,17 +352,10 @@ fn remember(state: &crate::app::AppState, catalog: &ModelCatalog, choice: &AutoC
     );
     // Only Auto's column changes, in one transaction: a plan-limit notice
     // recorded meanwhile stays.
-    let Ok(previous) = state.store.provider_status_remember_auto(
+    let _ = state.store.provider_status_remember_auto(
         &crate::store::provider_status::ProviderStatusRecord::from(&fresh),
         &choice.model.id,
-    ) else {
-        return;
-    };
-    let previous_gone = previous
-        .is_some_and(|previous| previous != choice.model.id && catalog.resolve(&previous).is_err());
-    if previous_gone {
-        set_notice(state, "now_using", &choice.model.name);
-    }
+    );
 }
 
 fn set_notice(state: &crate::app::AppState, kind: &str, model: &str) {
@@ -607,6 +619,135 @@ mod tests {
     }
 
     #[test]
+    fn catalog_exposes_the_concrete_default_before_admission() {
+        let directory = tempfile::tempdir().unwrap();
+        let state = signed_in_state(directory.path());
+        let catalog = serde_json::to_value(state.model_catalog_view().unwrap()).unwrap();
+        assert_eq!(
+            catalog["default_selection"]["model"]["id"],
+            "openai/gpt-6.1-sol"
+        );
+        assert_eq!(catalog["default_selection"]["is_default"], true);
+    }
+
+    #[test]
+    fn config_exposes_explicit_choices_and_an_unavailable_reason() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = signed_in_state(dir.path());
+        let snapshot = state.selection_catalog().unwrap();
+        let explicit = snapshot.selection("openai/gpt-5.6-sol", "high", &BTreeMap::new());
+        let model = explicit.model.unwrap();
+        assert_eq!(
+            (
+                model.provider.as_str(),
+                model.model.as_str(),
+                model.name.as_str()
+            ),
+            ("openai", "gpt-5.6-sol", "gpt-5.6-sol")
+        );
+        assert!(!explicit.is_default);
+        assert_eq!(explicit.thinking_level.as_deref(), Some("high"));
+        assert!(explicit.thinking_levels.contains(&"high".into()));
+        assert_eq!(
+            snapshot
+                .selection("auto", "", &BTreeMap::new())
+                .model
+                .unwrap()
+                .id,
+            "openai/gpt-6.1-sol"
+        );
+        let empty = crate::app::AppState::for_test(dir.path().join("empty"));
+        let result = empty
+            .selection_catalog()
+            .unwrap()
+            .selection("", "", &BTreeMap::new());
+        assert!(result.is_default && result.model.is_none());
+        assert_eq!(
+            result.unavailable_reason,
+            Some(crate::providers::selection::ModelUnavailableReason::NoConnectedAccount)
+        );
+    }
+
+    #[test]
+    fn legacy_default_markers_in_settings_resolve_without_rewriting_the_file() {
+        use crate::scoped_config::{read_scope, ConfigScope};
+        let dir = tempfile::tempdir().unwrap();
+        let state = signed_in_state(dir.path());
+        let directory = &state.artifacts.app_data_dir;
+        let file = directory.join("config.toml");
+        for marker in ["", "auto"] {
+            let contents = format!("[chat]\nmodel_profile_id = \"{marker}\"\n");
+            std::fs::write(&file, &contents).unwrap();
+            let raw = read_scope(directory, None, ConfigScope::Global).unwrap();
+            let selection = crate::commands::configuration::present(&state, raw)
+                .unwrap()
+                .model_selection
+                .unwrap();
+            assert!(selection.is_default);
+            assert_eq!(selection.model.unwrap().id, "openai/gpt-6.1-sol");
+            assert_eq!(std::fs::read_to_string(&file).unwrap(), contents);
+        }
+    }
+
+    #[test]
+    fn changed_default_is_scoped_acknowledgeable_and_leaves_settings_unset() {
+        use crate::scoped_config::{read_scope, ConfigScope};
+        let dir = tempfile::tempdir().unwrap();
+        let state = signed_in_state(dir.path());
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let read = |id: &str| {
+            let raw = read_scope(
+                &state.artifacts.app_data_dir,
+                Some(&project),
+                ConfigScope::Project {
+                    loupist_id: id.into(),
+                },
+            )
+            .unwrap();
+            crate::commands::configuration::present(&state, raw).unwrap()
+        };
+        assert!(read("one").default_model_change.is_none());
+        assert!(read("two").default_model_change.is_none());
+        state
+            .replace_provider_models(
+                "openai",
+                vec![model("openai", "gpt-5.6-sol", true, 272_000)],
+            )
+            .unwrap();
+        let changed = read("one");
+        assert!(changed.effective.chat.model_profile_id.is_none());
+        assert_eq!(
+            changed.model_selection.unwrap().model.unwrap().id,
+            "openai/gpt-5.6-sol"
+        );
+        let notice = changed.default_model_change.unwrap();
+        assert_eq!(notice.previous.unwrap().id, "openai/gpt-6.1-sol");
+        assert_eq!(notice.current.unwrap().id, "openai/gpt-5.6-sol");
+        assert_eq!(read("one").default_model_change.unwrap().id, notice.id);
+        state.store.model_notice_ack(&notice.id).unwrap();
+        assert!(read("one").default_model_change.is_none());
+        assert_ne!(read("two").default_model_change.unwrap().id, notice.id);
+
+        state
+            .replace_provider_models(
+                "anthropic",
+                vec![model("anthropic", "claude-sonnet-5-5", true, 128_000)],
+            )
+            .unwrap();
+        std::fs::write(
+            state.artifacts.app_data_dir.join("pi/auth.json"),
+            br#"{"anthropic":{"type":"api_key","key":"fixture"}}"#,
+        )
+        .unwrap();
+        let switched = read("one").default_model_change.unwrap();
+        assert_eq!(switched.previous.unwrap().provider, "openai");
+        assert_eq!(switched.current.unwrap().provider, "anthropic");
+        state.store.model_notice_ack(&notice.id).unwrap();
+        assert_eq!(read("one").default_model_change.unwrap().id, switched.id);
+    }
+
+    #[test]
     fn admission_resolves_auto_and_honors_an_offered_explicit_choice() {
         let directory = tempfile::tempdir().unwrap();
         let state = signed_in_state(directory.path());
@@ -626,14 +767,16 @@ mod tests {
         // No connected account: Auto explains instead of guessing.
         let empty = crate::app::AppState::for_test(directory.path().join("empty"));
         empty.replace_provider_models("openai", vec![]).unwrap();
+        let error = admit(&empty, "", "", &BTreeMap::new()).unwrap_err();
+        assert_eq!(error.code, "provider_unavailable");
         assert_eq!(
-            admit(&empty, "", "", &BTreeMap::new()).unwrap_err().code,
-            "provider_unavailable"
+            error.message,
+            "Connect an AI account in Settings › AI accounts before chatting."
         );
     }
 
     #[test]
-    fn a_gone_model_is_pruned_and_auto_says_what_it_uses_now_once() {
+    fn a_gone_model_is_pruned_and_the_retry_uses_the_remaining_default() {
         let directory = tempfile::tempdir().unwrap();
         let state = signed_in_state(directory.path());
         let first = admit(&state, "", "", &BTreeMap::new()).unwrap();
@@ -654,20 +797,9 @@ mod tests {
             .unwrap()
             .resolve("openai/gpt-6.1-sol")
             .is_err());
-        // The one retry resolves Auto without it, and the composer is told once.
+        // The retry uses the surviving model. The project snapshot owns the notice.
         let retry = admit(&state, "", "", &BTreeMap::new()).unwrap();
         assert_eq!(retry.model.id, "openai/gpt-5.6-sol");
-        let notice = state.model_catalog_view().unwrap().model_notice.unwrap();
-        assert_eq!(
-            (notice.kind.as_str(), notice.model.as_str()),
-            ("now_using", "gpt-5.6-sol")
-        );
-        admit(&state, "", "", &BTreeMap::new()).unwrap();
-        assert_eq!(
-            state.model_catalog_view().unwrap().model_notice.unwrap().id,
-            notice.id
-        );
-        state.store.model_notice_ack(&notice.id).unwrap();
         assert!(state.model_catalog_view().unwrap().model_notice.is_none());
         // A saved explicit choice that left the catalog falls back to Auto at its next use.
         let fallback = admit(&state, "openai/gpt-6.1-sol", "high", &BTreeMap::new()).unwrap();

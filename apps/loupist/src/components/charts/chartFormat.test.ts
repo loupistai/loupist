@@ -71,6 +71,8 @@ describe("periods and units", () => {
     expect(columnUnit("revenue_krw", "Revenue")).toEqual({ currency: "KRW", scale: undefined, named: false });
     expect(columnUnit("revenue", "매출(원)")).toEqual({ currency: "KRW", scale: undefined, named: true });
     expect(columnUnit("sales_usd_bn", "Sales")).toEqual({ currency: "USD", scale: "bn", named: false });
+    expect(columnUnit("sales", "Sales ($m)")).toEqual({ currency: "USD", scale: "m", named: true });
+    expect(columnUnit("sales", "Sales", "USD millions")).toEqual({ currency: "USD", scale: "m", named: false });
     expect(columnUnit("margin", "Operating margin")).toEqual({ currency: undefined, scale: undefined, named: false });
     expect(unitText(columnUnit("sales_usd_bn", "Sales"))).toBe("USD bn");
     expect(unitText(columnUnit("margin", "Margin"))).toBe("");

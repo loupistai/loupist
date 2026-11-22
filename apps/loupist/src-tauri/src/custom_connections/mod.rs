@@ -12,10 +12,14 @@ pub mod taint;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectionError {
+    #[error("This feature is not available in this version.")]
+    Unavailable,
     #[error("The connection URL must use HTTPS, or HTTP on localhost or 127.0.0.1.")]
     InvalidUrl,
     #[error("The custom connection returned an invalid or oversized response.")]
     Protocol,
+    #[error("The custom connection rejected the tool arguments.")]
+    InvalidArguments,
     #[error("The custom connection could not be reached.")]
     Network,
     #[error("The custom connection transport stopped or timed out.")]
@@ -30,6 +34,14 @@ pub enum ConnectionError {
     ClientIdRequired,
     #[error("The system credential store could not complete the operation.")]
     CredentialStore,
+    #[error("A saved-key operation for this connection is still waiting for macOS.")]
+    KeychainBusy,
+    #[error("The Keychain did not respond in time.")]
+    KeychainUnavailable,
+    #[error("The Keychain did not respond in time.")]
+    KeychainMutationPending,
+    #[error("Loupist is installing an update")]
+    UpdateInstalling,
     #[error("The tool is not approved for this Loupist and connection.")]
     ApprovalRequired,
     #[error("The custom connection configuration is invalid.")]

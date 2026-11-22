@@ -1,12 +1,10 @@
 import type {
-  EffectiveConfig,
+  ConfigSnapshot,
   ModelCatalog,
   ModelRunSelection,
 } from "../types";
 import i18n from "../i18n/index";
-import modelDefaults from "../../chat-model-defaults.json";
 
-type Surface = "bot" | "session";
 import type { ModelRunControl, ModelRunControlChoice } from "../types";
 
 const thinkingKeys = {
@@ -37,25 +35,13 @@ export function runChoiceDescription(control: ModelRunControl, choice: ModelRunC
   return choice.description;
 }
 
-export const resolveConfiguredModelRunSelection = (
-  catalog: ModelCatalog | null,
-  explicit: ModelRunSelection | undefined,
-  defaults: Pick<EffectiveConfig["chat"], "model_profile_id" | "thinking_level" | "run_options"> | undefined,
-  lastProfileId?: string | null,
-  surface: Surface = "session",
-): ModelRunSelection => {
-  if (explicit) return resolveModelRunSelection(catalog, explicit.model_profile_id, explicit.thinking_level, explicit.run_options);
-  if (defaults?.model_profile_id && !visibleCatalogModels(catalog).some((model) => model.id === defaults.model_profile_id)) return emptyModelRunSelection();
-  const preferred = defaults?.model_profile_id ?? (surface === "bot" ? autoModel(catalog)?.id : lastProfileId) ?? undefined;
-  const model = visibleCatalogModels(catalog).find((model) => model.id === preferred);
-  const level = defaults?.thinking_level ?? (model ? surfaceThinkingLevel(model, surface) : undefined);
-  const initial = resolveModelRunSelection(catalog, preferred, level);
-  if (!initial.model_profile_id) return initial;
-  const selected = catalog!.models.find((model) => model.id === initial.model_profile_id)!;
-  if (defaults?.thinking_level != null && !selected.thinking_levels.includes(defaults.thinking_level)) return emptyModelRunSelection();
-  if (Object.entries(defaults?.run_options ?? {}).some(([key, value]) => !selected.run_controls.some((control) => control.id === key && control.choices.some((choice) => choice.id === value)))) return emptyModelRunSelection();
-  return { ...initial, run_options: { ...initial.run_options, ...defaults?.run_options } };
-};
+export function modelRunSelection(resolved: ConfigSnapshot["modelSelection"]): ModelRunSelection {
+  return {
+    model_profile_id: resolved?.model?.id ?? "",
+    thinking_level: resolved?.thinking_level ?? "",
+    run_options: resolved?.run_options ?? {},
+  };
+}
 
 const emptyModelRunSelection = (): ModelRunSelection => ({
   model_profile_id: "",
@@ -65,32 +51,6 @@ const emptyModelRunSelection = (): ModelRunSelection => ({
 
 export const defaultThinkingLevel = (levels: readonly string[]) =>
   levels.includes("medium") ? "medium" : (levels[0] ?? "");
-
-export function surfaceThinkingLevel(model: ModelCatalog["models"][number], _surface: Surface): string {
-  const entry = modelDefaults.providers.find((group) => group.provider === model.provider)?.models.find((entry) => entry.id === model.model);
-  const preferred = entry?.thinking_level;
-  return preferred && model.thinking_levels.includes(preferred) ? preferred : defaultThinkingLevel(model.thinking_levels);
-}
-
-// Mirror Rust's Auto policy for the level shown before admission; Rust still
-// chooses on send, using the newest account state.
-function autoModel(catalog: ModelCatalog | null) {
-  if (!catalog) return undefined;
-  const models = visibleCatalogModels(catalog).filter((model) => model.credential_source !== "missing");
-  const providers = [...catalog.providers, ...catalog.custom_providers].filter((provider) => provider.credential_source !== "missing");
-  providers.sort((a, b) => Number(a.status.state === "needs_reconnect") - Number(b.status.state === "needs_reconnect")
-    || (a.status.connected_at_ms ?? Number.MAX_SAFE_INTEGER) - (b.status.connected_at_ms ?? Number.MAX_SAFE_INTEGER));
-  for (const provider of providers) {
-    const offered = models.filter((model) => model.provider === provider.id);
-    for (const entry of modelDefaults.providers.find((group) => group.provider === provider.id)?.models ?? []) {
-      const model = offered.find((model) => model.model === entry.id);
-      if (model) return model;
-    }
-    const model = offered.find((model) => model.reasoning && model.context_window >= 20_000);
-    if (model) return model;
-  }
-  return models.find((model) => !providers.some((provider) => provider.id === model.provider && provider.status.state === "needs_reconnect")) ?? models[0];
-}
 
 export const defaultRunOptions = (model: ModelCatalog["models"][number]) =>
   Object.fromEntries(
@@ -103,39 +63,20 @@ export const visibleCatalogModels = (catalog: ModelCatalog | null) => {
   return catalog.models.filter((model) => !hidden.has(model.id));
 };
 
-const resolveModelRunSelection = (
+export const resolveExplicitSelection = (
   catalog: ModelCatalog | null,
-  preferredProfileId?: string,
-  preferredThinkingLevel?: string,
-  preferredRunOptions?: Record<string, string>,
+  selection: ModelRunSelection,
 ): ModelRunSelection => {
   const models = visibleCatalogModels(catalog);
-  const preferred = preferredProfileId
-    ? models.find((item) => item.id === preferredProfileId)
-    : models[0];
-  const preferredIsHidden = Boolean(
-    preferredProfileId &&
-      catalog?.hidden_model_profile_ids.includes(preferredProfileId),
-  );
-  const model = preferred ?? (preferredIsHidden ? models[0] : undefined);
+  const model = models.find(item => item.id === selection.model_profile_id)
+    ?? (catalog?.hidden_model_profile_ids.includes(selection.model_profile_id) ? models[0] : undefined);
   if (!model) return emptyModelRunSelection();
+  const options = selection.run_options;
+  const supported = model.run_controls.length === Object.keys(options).length
+    && model.run_controls.every(control => control.choices.some(choice => choice.id === options[control.id]));
   return {
     model_profile_id: model.id,
-    thinking_level:
-      preferredThinkingLevel === undefined
-        ? defaultThinkingLevel(model.thinking_levels)
-        : model.thinking_levels.includes(preferredThinkingLevel)
-          ? preferredThinkingLevel
-          : "",
-    run_options:
-      preferredRunOptions !== undefined &&
-      model.run_controls.length === Object.keys(preferredRunOptions).length &&
-      model.run_controls.every((control) =>
-        control.choices.some(
-          (choice) => choice.id === preferredRunOptions[control.id],
-        ),
-      )
-        ? preferredRunOptions
-        : defaultRunOptions(model),
+    thinking_level: model.thinking_levels.includes(selection.thinking_level) ? selection.thinking_level : "",
+    run_options: supported ? options : defaultRunOptions(model),
   };
 };

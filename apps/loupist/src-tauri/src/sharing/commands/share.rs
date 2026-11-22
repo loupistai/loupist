@@ -117,7 +117,9 @@ pub struct ShareSummary {
 /// every custom-connection secret and every finance connector credential.
 /// The values are compared here and never leave Rust.
 pub(crate) fn private_context(state: &AppState) -> Result<PrivateContext, CommandError> {
-    private_context_with_finance(state, crate::finance_credentials::get)
+    private_context_with_finance(state, |_, id| {
+        crate::finance_credentials::get_for_state(state, id)
+    })
 }
 
 pub(crate) fn private_context_with_finance(
@@ -159,7 +161,10 @@ fn private_context_with_credentials(
 ) -> Result<PrivateContext, CommandError> {
     let mut context = PrivateContext::default();
     let environment = state.credential_environment.to_string();
-    if let Some(token) = github_token.map_err(credential_scan_unavailable)? {
+    if let Some(token) = github_token.map_err(|error| match error {
+        github::TokenStoreError::Store => credential_scan_unavailable(error),
+        _ => error.command_error(),
+    })? {
         context.secrets.push(token);
     }
     let directory = state.pi_agent_data_dir()?;
@@ -167,12 +172,27 @@ fn private_context_with_credentials(
         crate::providers::catalog::saved_credential_values(&directory)
             .map_err(credential_scan_unavailable)?,
     );
-    context
-        .secrets
-        .extend(connections().map_err(credential_scan_unavailable)?);
+    context.secrets.extend(connections().map_err(|error| {
+        use crate::{custom_connections::ConnectionError, keychain_operation::KeychainError};
+        match error {
+            ConnectionError::KeychainBusy => KeychainError::Busy.command_error(),
+            ConnectionError::KeychainUnavailable | ConnectionError::KeychainMutationPending => {
+                KeychainError::Unavailable.command_error()
+            }
+            _ => credential_scan_unavailable(error),
+        }
+    })?);
     let catalog = crate::marketplace::bundled_catalog().map_err(internal)?;
     for entry in &catalog.entries {
-        if let Some(bundle) = get(&environment, &entry.id).map_err(credential_scan_unavailable)? {
+        if let Some(bundle) = get(&environment, &entry.id).map_err(|error| {
+            use crate::finance_credentials::FinanceCredentialError;
+            match error {
+                FinanceCredentialError::Busy | FinanceCredentialError::Unavailable => {
+                    crate::marketplace::credentials::credential_store_error(error)
+                }
+                _ => credential_scan_unavailable(error),
+            }
+        })? {
             context.secrets.extend(
                 bundle
                     .stored_values_for_sharing()
@@ -252,7 +272,7 @@ mod credential_scan_tests {
             &state,
             |_, _| Ok(None),
             || Ok(Vec::new()),
-            Err(github::TokenStoreError),
+            Err(github::TokenStoreError::Store),
         ));
         let absent =
             private_context_with_credentials(&state, |_, _| Ok(None), || Ok(Vec::new()), Ok(None))
@@ -589,6 +609,15 @@ pub(crate) fn build_pack(
     })
 }
 
+pub(super) async fn build_pack_off_thread(
+    state: &AppState,
+    request: &ShareRequest,
+    open_url: Option<String>,
+) -> Result<Built, CommandError> {
+    let request = request.clone();
+    crate::app::off_main_thread(state, move |state| build_pack(state, &request, open_url)).await
+}
+
 pub(crate) fn record_identity(
     state: &AppState,
     loupist_id: &str,
@@ -610,11 +639,17 @@ fn tone_name(tone: crate::domain::LoupistTone) -> String {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn share_summary(
+pub async fn share_summary(
     request: ShareSummaryRequest,
     state: State<'_, AppState>,
 ) -> Result<ShareSummary, CommandError> {
-    let state = state.inner();
+    crate::app::off_main_thread(&state, move |state| share_summary_for_state(state, request)).await
+}
+
+fn share_summary_for_state(
+    state: &AppState,
+    request: ShareSummaryRequest,
+) -> Result<ShareSummary, CommandError> {
     let profile = admit(state, &request.loupist_id)?;
     let gathered = gather(state, &request.loupist_id)?;
     let identity = &gathered.identity;
@@ -734,7 +769,7 @@ pub fn share_summary(
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn share_copy_text(
+pub async fn share_copy_text(
     request: ShareRequest,
     state: State<'_, AppState>,
 ) -> Result<Value, CommandError> {
@@ -743,7 +778,7 @@ pub fn share_copy_text(
             "Copy as text shares one method or principle.",
         ));
     }
-    let built = build_pack(state.inner(), &request, None)?;
+    let built = build_pack_off_thread(&state, &request, None).await?;
     let text = built
         .files
         .iter()

@@ -14,18 +14,11 @@ a previously delivered card. A hidden research card stays in its version until t
 version is selected again. Link delivery marks commit in the
 same SQLite transaction as their Thread messages.
 Posting takes the chat-mutation lock; while a reply runs in the Thread, delivery
-waits for the next completion or workspace load. The result's tag names the task once,
-its foot reads "{cadence} · Open" and Open goes to the run's Chat; a failed run says "This
-run couldn't finish." under the warning-toned tag. A run's session goes with the run
-([run sessions](../runtime/scheduled-runs.md#scheduled-chats)), so Open (the `run`
-destination in `useAppOpen.ts`) reads the chats again first: once the session is gone
-it opens the task in Schedule, and once the task is gone too the card says "This run's
-record was removed." (이 실행의 기록은 삭제되었습니다.) in place of Open. Briefing and
-crash-interrupted cards follow the same rule. Showing results marks them read.
-Bot’s task cards read the current Schedule list by task ID. Active tasks show their next run, paused tasks omit it, and deleted tasks keep their title and a muted Deleted label. The card omits status until the list loads. Task cards, delivery posts and Needs attention use Schedule’s localized briefing title and preserve custom titles. For an unopened Loupist, the briefing task’s dedicated session ID identifies its attention row.
+waits for the next completion or workspace load. The post names Schedule, the task and the run’s finish date and time. Open shows the exact run in Schedule. A failed run says "This run couldn't finish." A post whose task or run has been removed keeps its preview and explains that the record was removed when opened. Seeing a delivery for one second marks it read, as does opening its run reader.
+Bot’s task cards share the current Schedule list by task ID. A changed tool receipt refreshes that list for every card, including when a deletion replaces a read at the same task revision. Active tasks show their next run. A deleted task card shows its title and a muted Deleted label. Cards omit status while the list loads. Task cards, delivery posts and Needs attention use Schedule’s localized briefing title and preserve custom titles. For an unopened Loupist, the briefing task’s dedicated session ID identifies its attention row.
 
-A [price setup](../knowledge/asset-pages.md#host-reads-and-refresh) with a missing
-read uses the same delivery pass. Its pending reply is stored in the Loupist's
+A [price setup](../knowledge/asset-pages.md#host-reads-and-refresh) that ran and left an asset
+without a ready price read uses the same delivery pass. Its pending reply is stored in the Loupist's
 database and removed in the same transaction that appends the Bot message.
 A crossed asset-page line posts one host message per move through the same path
 once the committing reply finishes (a busy Thread gets it on the next completion or
@@ -44,7 +37,7 @@ After the run ends, the title stays linked. Removing the session removes the but
 The session’s Chat holds its guidance and Stop controls. When the session ends, the host posts one message with a `handoff`
 record (`handoffId`, `chatId`, `title`, `status`, optional `connectionId`, `stopReason` and
 `learned`), timed when it ended (`ThreadHandoff.tsx`). A finished session's post leads with
-its answer's preview above "Researched: {title} · Learned n things · Open"; one that failed
+its answer's preview above "Session ended: {title} · Learned n things · Open"; one that failed
 reads "Research: {title} · Couldn't finish · Open" and one stopped in its session
 "Research: {title} · Stopped · Open". Nothing in a post runs, counts or stops. A session the
 app quit in the middle of is stopped with `stopReason: interrupted`: "The app quit before
@@ -54,9 +47,9 @@ completed hand-offs preview the first prose paragraph as plain text, up to 280 c
 skipping headings, tables and lists. When the host shortens a preview or generates a
 40-character session title from the first prompt line, it ends at a whole word and
 adds an ellipsis within the limit. Text without spaces ends at a grapheme boundary. A short bold-only label can serve as the preview if no
-paragraph follows it. When the preview is empty the host stores "Researched: {title}." for
-the history; the post does not show that English caption and reads as its status line alone
-("조사 결과: {title}" in Korean). "Learned n things" counts changed sections, not pages, in the
+paragraph follows it. When the preview is empty the host stores "Session ended: {title}." in the history. Bot hides that fallback and its older "Researched: {title}." wording.
+The `done` status records that the child turn ended with an answer. A child may answer
+only part of the request. "Learned n things" counts changed sections, not pages, in the
 answer receipt's own words ("새로 배운 것 n개" in Korean). A post the host stopped
 without running carries `stopReason` and says why above its status, ending "Ask again
 to run it." (`before_update`: "Opened before an update."; also `origin_unavailable` and
@@ -65,10 +58,12 @@ asks Bot again, and a link offers Look into it again. The Bot's
 `research_open` tool and the bridge's `research_handoff_start` both commit through the
 same function; the Bot is never selected and its draft never changes. A finished
 `delivery` record may carry the same optional `learned` digest.
-The session's first message shows the request as the user wrote it, whole. The Bot's
-note (`handoff_note`: title, optional question and brief) is a closed "From Bot"
-disclosure under it, plain text and never a bubble of its own; a message without a note
-reads as before. When the user chose an action instead (`handoff_action`, a link's Look
+The session opens with Bot's brief, falling back to Bot's question. The host projects
+this text in `content` with role `bot_handoff`. The session shows the brief as Markdown beside the Loupist avatar under **From Bot**.
+Its closed **Hand-off details** disclosure shows the title and question, then quotes
+`handoff_note.userMessageInBot` under **You said in Bot** when present. Copy takes the
+brief. Markdown, print and PDF attribute the brief to Bot and include the quotation.
+A fresh attempt at the opening goes through Bot. When the user chose an action instead (`handoff_action`, a link's Look
 into it), the message reads "You chose “Look into it” on a link in Bot." in place of the
 host's caption and has no Edit. "Link details" shows the stored start, directed
 claims with localized relation names, and the far end. The session starts
@@ -98,14 +93,14 @@ reconciles every idle chat it holds, so the open Bot and a session opened later 
 stored messages without a reload; a refresh that cannot read the store is retried on the
 next two-second poll.
 Automatic link posts are disabled. Extracted product or segment relations remain
-on the Map; the stored paths do not prove that both ends are followed or that
+in World; the stored paths do not prove that both ends are followed or that
 a followed asset links to a dated event. See [discovery](../knowledge/worlds.md#discovery-after-publication)
 for the conditions needed to enable Bot delivery again. Previously posted link
 records keep their Look into it and Not useful actions on one quiet line, with the path
-on hover of "Show on the map" (the button is named by those words, so voice control finds
+on hover of "Show in World" (the button is named by those words, so voice control finds
 it); a vocabulary post is one line with Undo. Look into it
 sends only the Loupist, the link's `connectionId` and the Bot composer's choices at the
-click (model or Auto, thinking level, run options and Memory flags). The host
+click (explicit or default model, thinking level, run options and Memory flags). The host
 writes the request and marks the link opened in the same step. One press at a
 time reaches the host. While the session works the link reads "Researching it. The
 result will arrive here." from the session's `handoff_run`, with no actions; once Bot posts
@@ -119,8 +114,7 @@ than leaving the card) and, for a crossed line, the accent hairline. A hand-off 
 too: its preview or stop reason above, its status line as the foot. Every host
 post sits like an answer, beside the Loupist's face (decorative there: a post has no activity
 to open) with its name and time (`BotPostBody` in `BotPost.tsx`), and the news's lead is a
-bubble. Each post's region is named for what it is ("Line crossed: {name}", "New on the
-map: {list}", "Research: {title}", "Result from {task}"). A status line of "a · b · c" wraps
+bubble. Each post's region is named for what it is ("Line crossed: {name}", "New in World: {list}", "Research: {title}", "Result from {task}"). A status line of "a · b · c" wraps
 only between items and never ends or starts on a separator: every item carries its silent "·"
 in front and the row clips the one that begins a line (`MetaLine`). In running text, such as a
 tile's "As of {date} · {provider}" or the Bot trace line, `joinMeta` (a no-break space) or
@@ -185,11 +179,11 @@ was sent; news already on screen stays. It also needs something to say and goes 
 person writes. It concerns only what the person follows: under a lead sentence
 ("2 things since Thursday."), one card holds the latest briefing and pending dated Journal
 checks. The lead counts exactly the lines the card shows. Prices are on the tiles and the asset
-pages, not in the news. The Map's
+pages, not in the news. World's
 growth (names and relationships added) is not news here, and Bot's suggested questions are about
-followed assets and checks, never built from Map entries; the Map's What's new shows its growth.
+followed assets and checks, never built from World entries; World's What's new shows its growth.
 An empty research session shows only the
-questions, which may come from what changed on the Map. "Last seen" is a per-device value per
+questions, which may come from what changed in World. "Last seen" is a per-device value per
 Loupist in `localStorage` (`loupist.loupistVisit.v1`), written when the user leaves a Loupist
 after a visit of at least five minutes. The visit in progress (`currentVisit` in
 `src/app/loupistVisit.ts`: when it opened and whether it is active) is kept in memory only; each
@@ -215,7 +209,7 @@ What stays after a quick ask is what the host keeps without a model call: the
 conversation and each answer's evidence, the data reads the answer used, the dated
 rows those reads add to a followed asset's page, and [Bot memory](#bot-memory).
 What does not: the model's own synthesis. A quick ask writes no Lens page and
-retains no Source, so the Map does not grow from it. Those come from research
+retains no Source, so World does not grow from it. Those come from research
 sessions, a file the user hands over, an explicit request to keep something,
 scheduled briefings and scheduled tasks. A Loupist used only for quick asks therefore
 has a full conversation and full asset pages and a thin Lens.

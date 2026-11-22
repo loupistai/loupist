@@ -1,5 +1,6 @@
-import { coverageLabel } from "../knowledge/presentation";
+import { coverageLabel, timePointValue } from "../knowledge/presentation";
 import i18n from "@/i18n";
+import { formatDate } from "@/i18n/format";
 import type { ChatEvidenceRef } from "../types";
 import { parseCredentialFreeHttpUrl } from "../lib/credentialFreeUrl";
 import { displayHost } from "../lib/displayHost";
@@ -7,6 +8,7 @@ import { connectionText } from "../lib/connectionCopy";
 import type { MarketplaceEntry } from "../marketplace/types";
 import { providerName } from "../lib/marketProviderName";
 import { operationName } from "./numberText";
+import { knownActivityLabel, readNounFor } from "./progressLabels";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -104,6 +106,11 @@ export function evidenceTitle(evidence: ChatEvidenceRef): string {
     const name = operationName(evidence.calc_operation);
     if (name) return name;
   }
+  const tool = toolLeaf(evidence.tool_name);
+  if (isExecutionEvidence(evidence) && [tool, tool.replaceAll("_", " ")].includes(evidence.title)) {
+    const label = readNounFor(tool) ?? knownActivityLabel(tool, "done");
+    if (label) return label;
+  }
   const url = parseCredentialFreeHttpUrl(evidence.title);
   if (!url) return evidence.title;
   const filename = url.pathname.split("/").filter(Boolean).at(-1);
@@ -111,11 +118,23 @@ export function evidenceTitle(evidence: ChatEvidenceRef): string {
   try { return decodeURIComponent(filename); } catch { return filename; }
 }
 
+/** A comparison names the retained document, with a host as the fallback. */
+export function comparisonSourceTitle(evidence: ChatEvidenceRef): string {
+  const title = evidenceTitle(evidence).trim();
+  // Saved evidence can still carry the original English store title "Map".
+  const storeNames = ["Map", "World", "Lens", "Memory", "Sources", t("evidence.map"), t("evidence.lens"), t("evidence.memory"), t("workspaceEvidence.kind.savedSource")];
+  const storeOnly = evidence.kind === "saved_context" && storeNames.includes(title);
+  return (!storeOnly && title) || displayHost(evidence.url) || t("workspaceEvidence.kind.source");
+}
+
 /** Byte offsets come from the host's exact passage selector, never model prose. */
 export function evidenceExcerptParts(evidence: ChatEvidenceRef) {
-  const match = evidence.excerpt_match;
+  return byteMatchParts(evidence.excerpt, evidence.excerpt_match);
+}
+
+export function byteMatchParts(text: string, match: ChatEvidenceRef["excerpt_match"]) {
   if (!match || !Number.isSafeInteger(match.start) || !Number.isSafeInteger(match.end) || match.start < 0 || match.end <= match.start) return null;
-  const bytes = new TextEncoder().encode(evidence.excerpt);
+  const bytes = new TextEncoder().encode(text);
   if (match.end > bytes.length) return null;
   try {
     const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -125,6 +144,18 @@ export function evidenceExcerptParts(evidence: ChatEvidenceRef) {
       after: decoder.decode(bytes.slice(match.end)),
     };
   } catch { return null; }
+}
+
+const extractionWarnings = new Set([
+  "navigation_heavy", "very_short", "decoding_replaced", "javascript_required", "official_fallback",
+  "undated_result", "usage_metadata_unavailable", "provider_fallback",
+] as const);
+
+export function evidenceWarning(tool: string, warning: string): string {
+  for (const code of extractionWarnings) if (code === warning) return t(`evidence.warnings.${code}`);
+  // Other connectors also deliver prose warnings, such as missing rows in a financial report.
+  if (toolLeaf(tool).startsWith("web_") || /^[a-z0-9_-]+$/iu.test(warning)) return t("evidence.warnings.unknown");
+  return warning;
 }
 
 /** Keep passage coverage useful without exposing storage offsets. */
@@ -163,7 +194,7 @@ for (const { name, runtime } of bundledConnections) {
   }
 }
 
-export function sourceIdentityLabel(evidence: ChatEvidenceRef) {
+function directSourceIdentityLabel(evidence: ChatEvidenceRef) {
   // Before the Map: a number checked against pasted text names who handed it over.
   if (isUserProvided(evidence)) return t("evidence.userProvided");
   if (evidence.tool_name.startsWith("world_")) return t("evidence.map");
@@ -181,6 +212,46 @@ export function sourceIdentityLabel(evidence: ChatEvidenceRef) {
   if (isMarketDataRead(evidence.tool_name)) return t("evidence.marketData");
   if (evidence.tool_name.startsWith("web") || evidence.kind === "original" || evidence.kind === "discovery") return t("evidence.web");
   return evidencePresentation(evidence).label;
+}
+
+function provenanceDay(value?: string | null) {
+  const date = value ? Date.parse(value) : Number.NaN;
+  if (!Number.isFinite(date)) return undefined;
+  return formatDate(date, /^\d{4}-\d{2}-\d{2}$/u.test(value ?? "") ? { timeZone: "UTC" } : {});
+}
+
+function memoryPublisher(evidence: ChatEvidenceRef) {
+  const publisher = evidence.memory_origin?.publisher;
+  const connection = publisher && connectionNames.get(publisher);
+  return connection ? connectionText(connection) : providerName(publisher);
+}
+
+/** What the evidence originally came from, with local retention on its own line. */
+export function evidenceProvenance(evidence: ChatEvidenceRef, directName?: string) {
+  const origin = evidence.memory_origin;
+  const attribution = origin ? memoryPublisher(evidence) : directName ?? directSourceIdentityLabel(evidence);
+  const name = attribution ?? comparisonSourceTitle(evidence);
+  const kind = origin ? origin.publication?.kind : "published";
+  const time = origin?.publication?.time;
+  const date = origin
+    ? time?.value && time.precision !== "unknown" ? timePointValue({ ...time, value: time.value }) : undefined
+    : provenanceDay(evidence.published_at);
+  const publication = kind && date ? {
+    kind, date, label: kind === "updated" ? t("evidence.provenance.updated", { date }) : t("numberChip.published", { date }),
+  } : undefined;
+  const fetched = origin ? undefined : provenanceDay(evidence.retrieved_at);
+  const fetchLabel = fetched ? t("evidence.provenance.fetched", { date: fetched }) : undefined;
+  const saved = provenanceDay(origin?.saved_at);
+  const routeLabel = origin ? t(`evidence.provenance.route.${origin.route}`) : undefined;
+  const route = [routeLabel, saved ? t("evidence.provenance.saved", { date: saved }) : undefined].filter(Boolean).join(" · ");
+  const rawSourceDate = origin ? (publication ? time?.value : undefined) : evidence.published_at ?? evidence.retrieved_at;
+  return { name, attribution, publication, fetched, fetchLabel, route,
+    dateLabel: origin ? publication?.label : publication?.date ?? fetchLabel,
+    sourceDay: rawSourceDate?.slice(0, 10) ?? "" };
+}
+
+export function sourceIdentityLabel(evidence: ChatEvidenceRef) {
+  return evidence.memory_origin ? memoryPublisher(evidence) ?? comparisonSourceTitle(evidence) : directSourceIdentityLabel(evidence);
 }
 
 export function evidencePresentation(evidence: ChatEvidenceRef) {

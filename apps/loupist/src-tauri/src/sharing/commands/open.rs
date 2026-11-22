@@ -69,7 +69,7 @@ async fn fetch_github(
     location: deep_link::GithubLocation,
 ) -> Result<Fetched, Result<OpenResult, CommandError>> {
     let api = Github::production();
-    let token = github::load_token(&state.credential_environment);
+    let token = github::load_token(state).await;
     let label = Some(location.label());
     let source_url = Some(location.url());
     match &location {

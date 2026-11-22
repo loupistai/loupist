@@ -21,9 +21,9 @@ pub(crate) mod update;
 /// The README notice, in the sharer's language.
 pub(crate) fn readme_notice(language: &str) -> &'static str {
     if language == "ko" {
-        "AI 리서치 동료 루피스트로 만들었습니다. 방법과 지도는 AI의 도움으로 작성되어 틀릴 수 있습니다. 투자 조언이 아닙니다."
+        "AI 리서치 동료 루피스트로 만들었습니다. 방법과 월드는 AI의 도움으로 작성되어 틀릴 수 있습니다. 투자 조언이 아닙니다."
     } else {
-        "Made with Loupist, an AI research companion. Methods and the map were written with AI help and can be wrong. This is not financial advice."
+        "Made with Loupist, an AI research companion. Methods and World were written with AI help and can be wrong. This is not financial advice."
     }
 }
 

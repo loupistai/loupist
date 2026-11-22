@@ -52,6 +52,27 @@ it("fills a class template's persona and picks starters into the draft, never fo
   expect(screen.queryByRole("button", { name: /^Follow / })).toBeNull();
 });
 
+it("restores the Custom draft after comparing presets until the form closes", async () => {
+  const user = userEvent.setup();
+  const form = render(<Harness />);
+  const custom = () => screen.getByRole("button", { name: /^Custom/ });
+  await user.click(custom());
+  await user.type(screen.getByLabelText("Name"), "Chip margins");
+  await user.type(screen.getByLabelText("Focus"), "Foundry earnings");
+  await user.click(custom());
+  await user.click(screen.getByRole("button", { name: /^Semiconductors/ }));
+  expect(screen.getByLabelText("Name")).not.toHaveValue("Chip margins");
+  await user.click(screen.getByRole("button", { name: /^Crypto/ }));
+  await user.click(custom());
+  expect(screen.getByLabelText("Name")).toHaveValue("Chip margins");
+  expect(screen.getByLabelText("Focus")).toHaveValue("Foundry earnings");
+  form.unmount();
+  render(<Harness />);
+  await user.click(custom());
+  expect(screen.getByLabelText("Name")).toHaveValue("");
+  expect(screen.getByLabelText("Focus")).toHaveValue("");
+});
+
 it("keeps onboarding's template step to templates and starters, plus Focus for Custom", async () => {
   const user = userEvent.setup();
   function Essentials() {

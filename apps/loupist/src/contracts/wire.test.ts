@@ -88,6 +88,7 @@ export type CompatibleContracts = [
 export type SameShapeContracts = [
   Expect<SameShape<scheduled.BriefingSettings, Wire.BriefingSettings>>,
   Expect<SameShape<chat.ChartDataset, Wire.ChartDataset>>,
+  Expect<Equal<Pick<Exclude<chat.ChartDocument["view"], { kind: "candlestick" }>, "stack">, { stack?: boolean }>>,
   Expect<SameShape<chat.ChatArtifactPayload, Wire.ChatArtifactPayload>>,
   Expect<SameShape<chat.ChatArtifactRevision, Wire.ChatArtifactRevision>>,
   Expect<SameShape<chat.ChatArtifactView, Wire.ChatArtifactViewDto>>,

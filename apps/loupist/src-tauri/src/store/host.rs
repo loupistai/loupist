@@ -11,6 +11,16 @@ const HOST_DDL: &str = "CREATE TABLE IF NOT EXISTS host_environment (
         entry_id TEXT PRIMARY KEY NOT NULL,
         config_digest TEXT NOT NULL,
         scope_digest TEXT NOT NULL
+     ) STRICT;
+     CREATE TABLE IF NOT EXISTS connector_scope_pending (
+        entry_id TEXT PRIMARY KEY NOT NULL
+     ) STRICT;
+     CREATE TABLE IF NOT EXISTS credential_namespace_created (
+        id INTEGER PRIMARY KEY CHECK(id=1)
+     ) STRICT;
+     CREATE TABLE IF NOT EXISTS connector_credential_status (
+        entry_id TEXT PRIMARY KEY NOT NULL,
+        status_json TEXT NOT NULL
      ) STRICT;";
 
 fn is_environment_id(id: &str) -> bool {
@@ -55,7 +65,7 @@ pub(crate) struct AppliedConnectorConfig {
 
 impl SqliteStore {
     pub(crate) fn initialize_host_environment(&self) -> StoreResult<String> {
-        self.seed_host_environment(&uuid::Uuid::new_v4().to_string())
+        self.seed_host_environment(&uuid::Uuid::new_v4().to_string(), true)
     }
 
     /// Records `id` as this catalog's environment identity unless it has one.
@@ -65,17 +75,20 @@ impl SqliteStore {
                 "host environment identity is invalid".into(),
             ));
         }
-        self.seed_host_environment(id)
+        self.seed_host_environment(id, false)
     }
 
-    fn seed_host_environment(&self, candidate: &str) -> StoreResult<String> {
+    fn seed_host_environment(&self, candidate: &str, fresh_namespace: bool) -> StoreResult<String> {
         let mut connection = self.lock()?;
         let tx = connection.transaction()?;
         tx.execute_batch(HOST_DDL)?;
-        tx.execute(
+        let seeded = tx.execute(
             "INSERT OR IGNORE INTO host_environment(id, environment_id) VALUES(1, ?1)",
             [candidate],
         )?;
+        if seeded != 0 && fresh_namespace {
+            tx.execute("INSERT INTO credential_namespace_created(id) VALUES(1)", [])?;
+        }
         let id: String = tx.query_row(
             "SELECT environment_id FROM host_environment WHERE id=1",
             [],
@@ -88,6 +101,75 @@ impl SqliteStore {
         }
         tx.commit()?;
         Ok(id)
+    }
+
+    pub(crate) fn legacy_credential_namespace(&self) -> StoreResult<bool> {
+        Ok(!self.lock()?.query_row(
+            "SELECT EXISTS(SELECT 1 FROM credential_namespace_created WHERE id=1)",
+            [],
+            |row| row.get::<_, bool>(0),
+        )?)
+    }
+
+    pub(crate) fn connector_credential_status(
+        &self,
+        entry_id: &str,
+    ) -> StoreResult<Option<String>> {
+        self.lock()?
+            .query_row(
+                "SELECT status_json FROM connector_credential_status WHERE entry_id=?1",
+                [entry_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
+    pub(crate) fn set_connector_credential_status(
+        &self,
+        entry_id: &str,
+        status: &str,
+    ) -> StoreResult<()> {
+        self.lock()?.execute(
+            "INSERT INTO connector_credential_status(entry_id,status_json) VALUES(?1,?2)
+             ON CONFLICT(entry_id) DO UPDATE SET status_json=excluded.status_json",
+            params![entry_id, status],
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn connector_scope_pending(&self, entry_id: &str) -> StoreResult<bool> {
+        self.lock()?
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM connector_scope_pending WHERE entry_id=?1)",
+                [entry_id],
+                |row| row.get(0),
+            )
+            .map_err(Into::into)
+    }
+
+    pub(crate) fn note_connector_scope_change(&self, entry_id: &str) -> StoreResult<()> {
+        self.lock()?.execute(
+            "INSERT OR IGNORE INTO connector_scope_pending(entry_id) VALUES(?1)",
+            [entry_id],
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn finish_connector_scope_change(
+        &self,
+        entry_id: &str,
+        applied: &AppliedConnectorConfig,
+    ) -> StoreResult<()> {
+        let mut connection = self.lock()?;
+        let tx = connection.transaction()?;
+        Self::write_applied_connector_config(&tx, entry_id, applied)?;
+        tx.execute(
+            "DELETE FROM connector_scope_pending WHERE entry_id=?1",
+            [entry_id],
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     pub(crate) fn applied_connector_config(
@@ -114,7 +196,16 @@ impl SqliteStore {
         entry_id: &str,
         applied: &AppliedConnectorConfig,
     ) -> StoreResult<()> {
-        self.lock()?.execute(
+        let connection = self.lock()?;
+        Self::write_applied_connector_config(&connection, entry_id, applied)
+    }
+
+    fn write_applied_connector_config(
+        connection: &Connection,
+        entry_id: &str,
+        applied: &AppliedConnectorConfig,
+    ) -> StoreResult<()> {
+        connection.execute(
             "INSERT INTO connector_config_state(entry_id,config_digest,scope_digest) VALUES(?1,?2,?3)
              ON CONFLICT(entry_id) DO UPDATE SET config_digest=excluded.config_digest,scope_digest=excluded.scope_digest",
             params![entry_id, applied.config_digest, applied.scope_digest],

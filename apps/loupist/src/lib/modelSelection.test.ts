@@ -1,4 +1,4 @@
-import { resolveConfiguredModelRunSelection as resolve } from "./modelSelection";
+import { modelRunSelection, resolveExplicitSelection as resolve } from "./modelSelection";
 import type { ModelCatalog } from "../types";
 
 const luna: ModelCatalog["models"][number] = {
@@ -9,36 +9,14 @@ const luna: ModelCatalog["models"][number] = {
 const catalog: ModelCatalog = { hidden_model_profile_ids: [], models: [luna, { ...luna, id: "pi/sol", name: "Sol" }], providers: [], custom_providers: [], model_notice: null };
 const empty = { model_profile_id: "", thinking_level: "", run_options: {} };
 
-it("applies configured defaults before the last used model while keeping explicit composer choices", () => {
-  const defaults = { model_profile_id: "pi/sol", thinking_level: "max", run_options: {} };
-  expect(resolve(catalog, undefined, defaults, "pi/luna")).toMatchObject({ model_profile_id: "pi/sol", thinking_level: "max" });
-  const explicit = { model_profile_id: "pi/luna", thinking_level: "deliberate", run_options: {} };
-  expect(resolve(catalog, explicit, defaults, "pi/sol")).toEqual(explicit);
-  expect(resolve(catalog, undefined, { ...defaults, model_profile_id: null }, "pi/luna").model_profile_id).toBe("pi/luna");
-  expect(resolve(catalog, undefined, undefined)).toEqual({ model_profile_id: "pi/luna", thinking_level: "deliberate", run_options: {} });
-});
-
-it("blocks unavailable configured defaults instead of replacing them", () => {
-  const defaults = { model_profile_id: "pi/luna", thinking_level: "max", run_options: {} };
-  expect(resolve(catalog, undefined, { ...defaults, model_profile_id: "missing/model" })).toEqual(empty);
-  expect(resolve({ ...catalog, hidden_model_profile_ids: ["pi/luna"] }, undefined, defaults)).toEqual(empty);
-  expect(resolve(catalog, undefined, { ...defaults, thinking_level: "unsupported" })).toEqual(empty);
-  expect(resolve(catalog, undefined, { ...defaults, run_options: { performance: "fast" } })).toEqual(empty);
+it("uses the host identity and controls even when another model comes first in the catalog", () => {
+  expect(modelRunSelection({ model: catalog.models[1]!, thinking_level: "max", thinking_levels: ["max"], run_options: {}, run_controls: [], is_default: true, unavailable_reason: null }))
+    .toEqual({ model_profile_id: "pi/sol", thinking_level: "max", run_options: {} });
+  expect(modelRunSelection(undefined)).toEqual(empty);
 });
 
 it("does not silently replace a stale explicit choice, but moves past a hidden one", () => {
-  expect(resolve(catalog, { model_profile_id: "removed/profile", thinking_level: "max", run_options: {} }, undefined)).toEqual(empty);
-  expect(resolve(catalog, { model_profile_id: "pi/luna", thinking_level: "removed-level", run_options: {} }, undefined)).toMatchObject({ model_profile_id: "pi/luna", thinking_level: "" });
-  expect(resolve({ ...catalog, hidden_model_profile_ids: ["pi/luna"] }, { model_profile_id: "pi/luna", thinking_level: "max", run_options: {} }, undefined)).toMatchObject({ model_profile_id: "pi/sol", thinking_level: "max" });
-});
-
-it("resolves the same explicit, saved and model reasoning defaults on both surfaces", () => {
-  const grok = { ...luna, id: "xai/grok-4.7", provider: "xai", model: "grok-4.7", thinking_levels: ["low", "medium", "high"] };
-  const models = { ...catalog, models: [grok] };
-  const defaults = { model_profile_id: grok.id, thinking_level: "high", run_options: {} };
-  for (const surface of ["bot", "session"] as const) {
-    expect(resolve(models, undefined, defaults, undefined, surface).thinking_level).toBe("high");
-    expect(resolve(models, { model_profile_id: grok.id, thinking_level: "medium", run_options: {} }, defaults, undefined, surface).thinking_level).toBe("medium");
-    expect(resolve(models, undefined, { ...defaults, thinking_level: null }, undefined, surface).thinking_level).toBe("medium");
-  }
+  expect(resolve(catalog, { model_profile_id: "removed/profile", thinking_level: "max", run_options: {} })).toEqual(empty);
+  expect(resolve(catalog, { model_profile_id: "pi/luna", thinking_level: "removed-level", run_options: {} })).toMatchObject({ model_profile_id: "pi/luna", thinking_level: "" });
+  expect(resolve({ ...catalog, hidden_model_profile_ids: ["pi/luna"] }, { model_profile_id: "pi/luna", thinking_level: "max", run_options: {} })).toMatchObject({ model_profile_id: "pi/sol", thinking_level: "max" });
 });

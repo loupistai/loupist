@@ -94,7 +94,7 @@ jobs:
 
       - id: profile
         name: Read the tag-bound release profile
-        run: python3 apps/loupist/scripts/release_profile.py >> "$GITHUB_OUTPUT"
+        run: python3 apps/loupist/scripts/release_profile.py ${{ steps.identity.outputs.dry_run == 'true' && '--rehearsal' || '' }} >> "$GITHUB_OUTPUT"
 
       - id: macos_bundle_version
         name: Allocate a monotonic macOS bundle build number
@@ -263,7 +263,7 @@ jobs:
       full: true
 
   build-macos:
-    timeout-minutes: 90
+    timeout-minutes: 240
     name: macOS arm64 release build
     needs: [validate, full-ci]
     if: always() && needs.validate.result == 'success' && (needs.full-ci.result == 'success' || (needs.validate.outputs.dry_run == 'true' && needs.full-ci.result == 'skipped'))
@@ -314,6 +314,8 @@ jobs:
       - name: Import the selected signing certificate
         env:
           DRY_RUN: ${{ needs.validate.outputs.dry_run }}
+          LOUPIST_APPLE_SIGNING_IDENTITY: ${{ secrets.LOUPIST_APPLE_SIGNING_IDENTITY }}
+          LOUPIST_APPLE_TEAM_ID: ${{ secrets.LOUPIST_APPLE_TEAM_ID }}
           LOUPIST_CERTIFICATE: ${{ needs.validate.outputs.signing_mode == 'developer-id' && secrets.LOUPIST_APPLE_CERTIFICATE || secrets.LOUPIST_SELF_SIGNED_CERTIFICATE }}
           LOUPIST_CERTIFICATE_PASSWORD: ${{ needs.validate.outputs.signing_mode == 'developer-id' && secrets.LOUPIST_APPLE_CERTIFICATE_PASSWORD || secrets.LOUPIST_SELF_SIGNED_CERTIFICATE_PASSWORD }}
         shell: bash
@@ -325,6 +327,10 @@ jobs:
           else
             python3 apps/loupist/scripts/release_credentials.py import
           fi
+
+      - name: Rehearse headless notarization credential storage
+        if: needs.validate.outputs.dry_run == 'true' && needs.validate.outputs.signing_mode == 'developer-id'
+        run: python3 apps/loupist/scripts/release_credentials.py store-notary --dry-run
 
       - name: Configure embedded updater
         shell: bash
@@ -339,6 +345,7 @@ jobs:
             --version "$LOUPIST_RELEASE_VERSION" \
             --macos-bundle-version "$LOUPIST_MACOS_BUNDLE_VERSION" \
             --release-config apps/loupist/src-tauri/tauri.release.conf.json \
+            ${{ needs.validate.outputs.signing_mode == 'developer-id' && '--package-after-build' || '' }} \
             --output "$RELEASE_CONFIG"
           python3 - "$RELEASE_CONFIG" "$LOUPIST_MACOS_BUNDLE_VERSION" <<'PY'
           import json
@@ -351,11 +358,12 @@ jobs:
 
       - name: Stage and sign sidecars and OpenBB runtime
         env:
+          APPLE_TEAM_ID: ${{ secrets.LOUPIST_APPLE_TEAM_ID }}
           LOUPIST_REQUIRE_DISTRIBUTION_SIGNING: "1"
         run: apps/loupist/scripts/stage-macos-arm64.sh
 
       - name: Build and sign unnotarized Loupist
-        if: needs.validate.outputs.dry_run == 'true' || needs.validate.outputs.signing_mode != 'developer-id'
+        if: needs.validate.outputs.signing_mode != 'developer-id'
         working-directory: apps/loupist
         env:
           DRY_RUN: ${{ needs.validate.outputs.dry_run }}
@@ -372,51 +380,39 @@ jobs:
             python3 scripts/release_credentials.py build
           fi
 
-      - name: Build, sign, and notarize Loupist with Developer ID
-        if: needs.validate.outputs.dry_run != 'true' && needs.validate.outputs.signing_mode == 'developer-id'
+      - name: Build the Developer ID app bundle
+        if: needs.validate.outputs.signing_mode == 'developer-id'
         working-directory: apps/loupist
+        run: npm exec -- tauri build --no-sign --target aarch64-apple-darwin --bundles app --config "$LOUPIST_TAURI_RELEASE_CONFIG"
+
+      - name: Store notarization credentials in the temporary signing keychain
+        if: needs.validate.outputs.dry_run != 'true' && needs.validate.outputs.signing_mode == 'developer-id'
+        env:
+          APPLE_ID: ${{ secrets.LOUPIST_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.LOUPIST_APPLE_PASSWORD }}
+        run: python3 apps/loupist/scripts/release_credentials.py store-notary
+
+      - name: Sign and package the app and disk image
+        if: needs.validate.outputs.signing_mode == 'developer-id'
+        run: |
+          python3 apps/loupist/scripts/package-macos-release.py \
+            apps/loupist/src-tauri/target/aarch64-apple-darwin/release/bundle \
+            ${{ needs.validate.outputs.dry_run == 'true' && '--dry-run' || '' }}
+
+      - name: Sign the packaged Developer ID updater
+        if: needs.validate.outputs.signing_mode == 'developer-id'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.LOUPIST_TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.LOUPIST_TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.LOUPIST_APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.LOUPIST_APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.LOUPIST_APPLE_TEAM_ID }}
-        shell: bash
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          set -euo pipefail
-          test -z "${TAURI_CONFIG:-}"
-          test -s "$LOUPIST_TAURI_RELEASE_CONFIG"
-          python3 scripts/release_credentials.py build
+          python3 apps/loupist/scripts/release_credentials.py sign-updater --version "$RELEASE_VERSION" \
+            --archive apps/loupist/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Loupist.app.tar.gz \
+            ${{ needs.validate.outputs.dry_run == 'true' && '--dry-run' || '' }}
 
-      - name: Notarize and staple the DMG
-        if: needs.validate.outputs.dry_run != 'true' && needs.validate.outputs.signing_mode == 'developer-id'
-        shell: bash
-        env:
-          APPLE_ID: ${{ secrets.LOUPIST_APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.LOUPIST_APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.LOUPIST_APPLE_TEAM_ID }}
-        run: |
-          set -euo pipefail
-          BUNDLE_ROOT="apps/loupist/src-tauri/target/aarch64-apple-darwin/release/bundle"
-          shopt -s nullglob
-          DMGS=("$BUNDLE_ROOT"/dmg/*.dmg)
-          test "${#DMGS[@]}" -eq 1
-          NOTARY_RESULT="$RUNNER_TEMP/loupist-dmg-notary.json"
-          xcrun notarytool submit "${DMGS[0]}" \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" \
-            --wait \
-            --output-format json > "$NOTARY_RESULT"
-          python3 - "$NOTARY_RESULT" <<'PY'
-          import json
-          import sys
-
-          result = json.load(open(sys.argv[1], encoding="utf-8"))
-          if result.get("status") != "Accepted":
-              raise SystemExit(f"DMG notarization was not accepted: {result}")
-          PY
-          xcrun stapler staple "${DMGS[0]}"
+      - name: Record rehearsal notarization boundary
+        if: needs.validate.outputs.dry_run == 'true'
+        run: echo "Ephemeral signatures exercised. Apple submission and stapling are skipped." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify signatures, notarization, and updater artifacts
         shell: bash
@@ -450,7 +446,7 @@ jobs:
           test -s "$APP_BUNDLE/Contents/Resources/THIRD_PARTY_NOTICES.md"
           test -s "$UPDATER.sig"
           python3 apps/loupist/scripts/macos_release_signing.py verify-bundle \
-            --app "$APP_BUNDLE" --dmg "$DMG" \
+            --app "$APP_BUNDLE" --dmg "$DMG" --updater "$UPDATER" \
             --release-config "$LOUPIST_TAURI_RELEASE_CONFIG" --report signing-report.json
           MOUNT_DIR="$(mktemp -d "$RUNNER_TEMP/loupist-dmg.XXXXXX")"
           DMG_ATTACHED=false
@@ -517,14 +513,13 @@ jobs:
         if: always()
         shell: bash
         run: |
-          if [[ -n "${LOUPIST_SIGNING_KEYCHAIN:-}" ]]; then
-            security delete-keychain "$LOUPIST_SIGNING_KEYCHAIN" || true
-          fi
           rm -rf -- "$RUNNER_TEMP/loupist-ephemeral"
           rm -f -- \
             "$RUNNER_TEMP/loupist-signing.p12" \
-            "$RUNNER_TEMP/loupist-tauri-release.json" \
-            "$RUNNER_TEMP/loupist-dmg-notary.json"
+            "$RUNNER_TEMP/loupist-tauri-release.json"
+          if [[ -n "${LOUPIST_SIGNING_KEYCHAIN:-}" ]] && ! security delete-keychain "$LOUPIST_SIGNING_KEYCHAIN"; then
+            echo "::warning::Could not delete the temporary signing keychain before runner disposal."
+          fi
 
   assemble:
     timeout-minutes: 30

@@ -1,6 +1,24 @@
 import i18n from "@/i18n";
+import { connectionText } from "@/lib/connectionCopy";
+import type { ChatToolRefusal } from "../../contracts/chat";
+import type { SkippedTool } from "../../contracts/scheduled";
 import { formatDate, formatDateTime, formatNumber, formatRelative, formatTime } from "@/i18n/format";
 import type { ScheduledCadence } from "../../types";
+
+export function skippedToolNames(tools: readonly SkippedTool[]) {
+  return {
+    ordinary: tools.filter(tool => tool.reason !== "keychain_permission_required").map(tool => tool.name),
+    savedKeys: tools.filter(tool => tool.reason === "keychain_permission_required").map(tool => tool.name),
+  };
+}
+
+export function skippedSavedKeyNames(refusals: readonly ChatToolRefusal[] = []) {
+  return refusals.filter(refusal => refusal.reason === "saved_key_permission").map(refusal => refusal.connection_name);
+}
+
+export function skippedSavedKeyLabel(names: readonly string[] = []) {
+  return names.length ? i18n.t("briefings:skippedSavedKeys", { names: names.map(connectionText).join(", ") }) : null;
+}
 
 export const weekdays = () => Array.from({ length: 7 }, (_, day) => formatDate(new Date(2023, 0, 1 + day), { weekday: "short", year: undefined, month: undefined, day: undefined }));
 const WEEKDAY_PRESET = [1, 2, 3, 4, 5];
