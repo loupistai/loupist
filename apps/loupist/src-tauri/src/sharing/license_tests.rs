@@ -17,7 +17,9 @@ async fn share_summary_exposes_legal_code_urls_for_every_allowed_license() {
         "loupistId": id, "scope": {"kind": "loupist"}
     }))
     .unwrap();
-    let summary = commands::share::share_summary(request, app.state()).unwrap();
+    let summary = commands::share::share_summary(request, app.state())
+        .await
+        .unwrap();
     let value = serde_json::to_value(summary).unwrap();
     let expected: Vec<_> = License::OPEN
         .into_iter()
@@ -900,6 +902,7 @@ async fn summary_keeps_the_saved_nondefault_license_and_version() {
         .unwrap(),
         app.state(),
     )
+    .await
     .unwrap();
     let value = serde_json::to_value(summary).unwrap();
     assert_eq!(value["defaultLicense"], License::CcBy.id());

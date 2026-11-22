@@ -280,19 +280,21 @@ and checks the app binary.
 For a runtime change, measure both the staged tree and the rebuilt app bundle,
 and include the comparison and measurement method in the PR. Runtime file bytes,
 Tauri's app-size report and a compressed installer are different measurements.
-When `APPLE_SIGNING_IDENTITY` is set, `--ensure` reapplies that identity even when
+When a signing mode and `APPLE_SIGNING_IDENTITY` are set, `--ensure` reapplies that identity even when
 the runtime was previously cached with an ad-hoc signature. Distribution checks
 branch on `LOUPIST_MACOS_SIGNING_MODE`: unset preserves local/CI behavior,
-`developer-id` requires an Apple chain, and `self-signed` requires the pinned leaf.
+`developer-id` requires the Apple anchor, expected team and secure timestamp, and `self-signed` requires the pinned leaf.
 
-| Executable | Developer ID | Self-signed Beta | Mode unset |
+| Executable | Developer ID | Self-signed | Mode unset |
 | --- | --- | --- | --- |
 | App (Tauri) | Runtime, no entitlements, notarized | Runtime, no entitlements | Local linker signature |
 | Python worker | Runtime, worker entitlement, timestamp | Runtime, worker entitlement, no timestamp | Ad-hoc runtime and worker entitlement |
 | Pi | Runtime, Pi entitlements, timestamp | Certificate, no runtime or entitlements | Upstream signature |
 | Other Pi Mach-O | Runtime, timestamp | Certificate, no runtime or entitlements | Untouched |
-| OpenBB | PyInstaller identity, runtime, timestamp | PyInstaller ad-hoc, then sign every Mach-O without runtime, main executable last | PyInstaller ad-hoc |
+| OpenBB | Sign all materialized Mach-O files with runtime and timestamp, seal nested bundles, sign the launcher last | PyInstaller ad-hoc, then sign every Mach-O without runtime, main executable last | PyInstaller ad-hoc |
 | DMG | Signed, notarized and stapled | Signed, no ticket | Unsigned |
+
+Both release modes check for absolute non-system library loads and sign nested executable bundles inside out. Local staging with no mode keeps upstream Pi, ad-hoc OpenBB and an ad-hoc worker on a fresh stage. It skips the distribution dependency gate and nested-bundle signing even when an identity is present.
 
 Without a Team ID, library validation prevents a hardened Pi/OpenBB process from
 loading its own libraries. Self-signed staging therefore omits hardened runtime
@@ -318,6 +320,28 @@ require the release macOS WKWebView and native notification checks.
 
 After a bundle change use the bundle checks in [CI and releases](../ci-cd.md).
 Do not commit staged binaries, build output, credentials, databases or attachments.
+
+### Hardened helper startup before a tag
+
+On an Apple Silicon Mac with staged resources and the release identity in the keychain, run
+`apps/loupist/scripts/check-hardened-helpers.sh 'Developer ID Application: Name (TEAMID)'`.
+Use `--no-timestamp` for an offline signing check. The script copies the resources,
+signs them inside-out, verifies each signature and entitlement, then starts Pi RPC,
+the OpenBB MCP server and the Python WASI snapshot. A failed probe prints its stderr
+and makes the check fail. The inputs stay in place.
+
+Pi uses Bun's JIT and unsigned executable memory entitlements. Its bundled native
+add-on is signed with the same identity. The app and OpenBB need no entitlements.
+PyInstaller's Python library and extension modules are signed with the bootloader's
+identity so library validation can stay enabled. Only the standalone WASI worker
+gets its worker-specific memory entitlement. The offline ad-hoc command
+`apps/loupist/scripts/check-hardened-helpers.sh --no-timestamp -` exercises startup
+and failure reporting. Pi and the worker started on the development Mac; OpenBB's
+loader rejected the ad-hoc Python library. A Developer ID run must establish
+the behavior of the libraries loaded during startup. All 297 OpenBB library
+signatures are checked individually. Additional tools can load other modules later.
+[Bun macOS signing](https://bun.com/guides/runtime/codesign-macos-executable) ·
+[PyInstaller macOS signing](https://pyinstaller.org/en/stable/feature-notes.html#macos-binary-code-signing)
 
 ## Shared window
 

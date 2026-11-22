@@ -7,13 +7,13 @@ import { mainTab, openApp } from "../renderApp";
 async function openMap(bridge = new MockLoupistBridge({ delay_ms: 0 })) {
   const user = userEvent.setup();
   await openApp(bridge);
-  await user.click(await mainTab(/Map/));
-  await screen.findByRole("combobox", { name: /Search the map/ });
-  await screen.findByText("37 on the map · 36 relationships");
+  await user.click(await mainTab(/World/));
+  await screen.findByRole("combobox", { name: /Search World/ });
+  await screen.findByText("37 in World · 36 relationships");
   return { user, bridge };
 }
 
-describe("Loupist · Map", () => {
+describe("Loupist · World", () => {
   it("browses the unified map through its keyboard-accessible list and preserves selection across Chat", async () => {
     const { user } = await openMap();
     await user.click(screen.getByRole("button", {name:"More actions"}));
@@ -22,17 +22,19 @@ describe("Loupist · Map", () => {
     expect(within(names).getAllByRole("row")).toHaveLength(38);
     await user.click(within(names).getByRole("button", { name: "Apple" }));
     expect(await screen.findByRole("heading", { name: "Apple" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Show its connections" }));
     await user.click(await mainTab(/Chat/));
     expect(screen.getByRole("textbox", { name: "Message Loupist" })).toBeVisible();
-    await user.click(await mainTab(/Map/));
+    await user.click(await mainTab(/World/));
     expect(await screen.findByRole("heading", { name: "Apple" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Whole World" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "More actions" }));
     // The item keeps its name; its checked state says the list is showing.
     await user.click(screen.getByRole("menuitemcheckbox", { name: "List view", checked: true }));
-    expect(await screen.findByRole("img", { name: "37 on the map · 36 relationships" })).toBeVisible();
+    expect(await screen.findByRole("img", { name: "37 in World · 36 relationships" })).toBeVisible();
   });
 
-  it("opens the Lens wiki independently of the map and shows the saved page as sections", async () => {
+  it("opens the Lens wiki independently of World and shows the saved page as sections", async () => {
     const { user, bridge } = await openMap();
     const loupistId = "loupist-quality";
     const catalog = await bridge.knowledgeCatalog({ loupistId });
@@ -40,16 +42,16 @@ describe("Loupist · Map", () => {
     const saved = await bridge.knowledgeLensRead({ loupistId, recordId: method.recordId });
     expect(screen.queryByRole("button", { name: "Lens wiki" })).toBeNull();
     await user.click(await mainTab(/Lens/));
-    const page = await screen.findByRole("region", { name: /What .* knows/ });
+    const page = await screen.findByRole("region", { name: /’s Lens$/ });
     await user.click(await within(page).findByRole("button", { name: new RegExp(method.title) }));
     const article = await within(page).findByRole("article", { name: "Page" });
     await within(article).findByRole("heading", { name: method.title });
     if (saved.body.kind === "principle") throw new Error("A method is a page");
     expect(within(article).getAllByRole("heading", { level: 3 }).slice(0, saved.body.sections.length).map(heading => heading.textContent)).toEqual(saved.body.sections.map(section => section.heading));
-    await user.click(await mainTab(/Map/));
-    expect(screen.getByRole("combobox", { name: "Search the map" })).toBeVisible();
+    await user.click(await mainTab(/World/));
+    expect(screen.getByRole("combobox", { name: "Search World" })).toBeVisible();
     await user.click(await mainTab(/Lens/));
-    expect(await screen.findByRole("region", { name: /What .* knows/ })).toBeVisible();
+    expect(await screen.findByRole("region", { name: /’s Lens$/ })).toBeVisible();
   });
 
   it("ignores a late remote alias search when the query changes", async () => {
@@ -58,7 +60,7 @@ describe("Loupist · Map", () => {
     let release: ((page: WorldGraphView) => void) | undefined;
     vi.spyOn(bridge, "knowledgeWorldQuery").mockImplementation((request) => request.search === "Ghost" ? new Promise((resolve) => { release = resolve; }) : original(request));
     const { user } = await openMap(bridge);
-    const search = screen.getByRole("combobox", { name: "Search the map" });
+    const search = screen.getByRole("combobox", { name: "Search World" });
     await user.type(search, "Ghost");
     await waitFor(() => expect(release).toBeDefined());
     await user.clear(search);

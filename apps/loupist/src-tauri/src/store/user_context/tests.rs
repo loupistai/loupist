@@ -39,13 +39,16 @@ fn a_follow_keeps_the_listing_exchange_name_when_supplied() {
             .unwrap()
     };
     let first = follow(listing(FIGI));
-    assert!(first
-        .reference
-        .as_ref()
-        .unwrap()
-        .fields
-        .exchange_name
-        .is_none());
+    assert_eq!(
+        first
+            .reference
+            .as_ref()
+            .unwrap()
+            .fields
+            .exchange_name
+            .as_deref(),
+        Some("United States")
+    );
     let named = follow(AssetReferenceFields {
         exchange_name: Some("Example Exchange".into()),
         ..listing(FIGI)
@@ -202,7 +205,10 @@ fn asset_follow_name_with_a_figi_adds_a_reference_to_the_same_name() {
         followed,
         AssetRow {
             reference: Some(AssetReference {
-                fields,
+                fields: AssetReferenceFields {
+                    exchange_name: Some("United States".into()),
+                    ..fields
+                },
                 origin: AssetReferenceOrigin::Openfigi
             }),
             ..named

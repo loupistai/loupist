@@ -1264,6 +1264,10 @@ pub struct LensLogEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub key: Option<String>,
+    /// Section label at the time of this operation, for the user's history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub section_heading: Option<String>,
     pub origin: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
@@ -1478,7 +1482,14 @@ pub struct PageRead {
 impl PageRead {
     /// The exact model-facing text; its digest binds a read receipt.
     pub fn delivery_text(&self) -> KnowledgeResult<String> {
-        Ok(canonical_string(&to_value(self)?))
+        let mut document = to_value(self)?;
+        // History labels can describe sections the user has forgotten.
+        if let Some(history) = document["history"].as_array_mut() {
+            for entry in history.iter_mut().filter_map(Value::as_object_mut) {
+                entry.remove("sectionHeading");
+            }
+        }
+        Ok(canonical_string(&document))
     }
 
     pub fn markdown(&self, with_keys: bool) -> String {
@@ -1650,16 +1661,33 @@ pub(super) fn history(
     limit: usize,
 ) -> KnowledgeResult<Vec<LensLogEntry>> {
     let mut statement = tx.prepare(
-        "SELECT op_id, op_json, outcome, section_key, origin, chat_id, message_id, created_at_ms, undoes_op_id
+        "SELECT op_id, op_json ->> '$.op', outcome, section_key, origin, chat_id, message_id, created_at_ms, undoes_op_id,
+                COALESCE(NULLIF(op_json ->> '$.heading', ''), before_json ->> '$.heading')
          FROM knowledge_lens_log WHERE record_id = ?1
          ORDER BY created_at_ms DESC, rowid DESC LIMIT ?2",
     )?;
     let rows = statement.query_map(params![record_id, limit as i64], |row| {
+        let key: Option<String> = row.get(3)?;
+        let recorded: Option<String> = row.get(9)?;
+        let section_heading = key.as_deref().map(|key| {
+            recorded
+                .filter(|heading| !heading.trim().is_empty())
+                .unwrap_or_else(|| {
+                    // Section keys are ASCII slugs. This also gives the renderer
+                    // its canonical English spelling for a localized default.
+                    let mut label = key.replace('-', " ");
+                    if let Some(initial) = label.get_mut(..1) {
+                        initial.make_ascii_uppercase();
+                    }
+                    label
+                })
+        });
         Ok(LensLogEntry {
             op_id: row.get(0)?,
             op: row.get(1)?,
             outcome: row.get(2)?,
-            key: row.get(3)?,
+            key,
+            section_heading,
             origin: row.get(4)?,
             chat_id: row.get(5)?,
             message_id: row.get(6)?,
@@ -1667,14 +1695,7 @@ pub(super) fn history(
             undoes_op_id: row.get(8)?,
         })
     })?;
-    let mut entries = Vec::new();
-    for row in rows {
-        let mut entry = row?;
-        let op: LensOp = from_json(&entry.op)?;
-        entry.op = op.name().to_owned();
-        entries.push(entry);
-    }
-    Ok(entries)
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
 struct LogRow {
@@ -2663,6 +2684,62 @@ mod tests {
             all_refused[0].outcomes[0].outcome,
             OpOutcome::RefusedBasis { .. }
         ));
+    }
+
+    #[test]
+    fn history_uses_the_heading_recorded_for_each_section_change() {
+        let (_dir, store) = store();
+        let mut op = put("facts", "Revenue rose.", None);
+        if let LensOp::Put { heading, .. } = &mut op {
+            *heading = "Reported annual revenue".into();
+        }
+        let filed = file_in(
+            &store,
+            &turn("msg-1"),
+            vec![create_subject("Apple", vec![op])],
+            100,
+        );
+        let id = &filed[0].record_id;
+        let forgotten = store
+            .transact(|write| write.forget_section(LOUPIST, id, "facts", 200))
+            .unwrap();
+        let check = |page: &PageRead| {
+            for entry in &page.history {
+                assert_eq!(
+                    serde_json::to_value(entry).unwrap()["sectionHeading"],
+                    "Reported annual revenue",
+                    "{}",
+                    entry.outcome
+                );
+            }
+        };
+        check(&forgotten);
+        assert!(!forgotten
+            .delivery_text()
+            .unwrap()
+            .contains("Reported annual revenue"));
+        let forget_op = &forgotten.history[0].op_id;
+        let undo = store
+            .transact(|write| write.undo_op(LOUPIST, forget_op, 300))
+            .unwrap();
+        check(&undo);
+        store
+            .transact(|write| {
+                write.tx.execute(
+                    "INSERT INTO knowledge_lens_log
+                        (op_id, loupist_id, record_id, op_json, outcome, section_key, origin, created_at_ms)
+                     SELECT ?1, loupist_id, record_id, op_json, outcome, section_key, origin, 400
+                     FROM knowledge_lens_log WHERE op_id = ?2",
+                    params![mint_id("lop"), forget_op],
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        let legacy = read(&store, id);
+        assert_eq!(
+            serde_json::to_value(&legacy.history[0]).unwrap()["sectionHeading"],
+            "Facts"
+        );
     }
 
     #[test]

@@ -46,15 +46,16 @@ read-only check with `apps/loupist/scripts/verify-published-release.sh TAG`.
 
 `apps/loupist/release-profile.json` is part of the tag: `channel` is `beta` or
 `stable`, and `macos_signing.mode` is `self-signed` or `developer-id`.
-The default Beta pins the public certificate's SHA-1 and SHA-256 and common name;
-`apps/loupist/release-signing-certificate.pem` contains only that public certificate.
+The 0.1.3 Beta selects Developer ID. Before a real tag, replace the team placeholder in `apps/loupist/release-profile.json` and both publisher instructions in `installation.md`. The tag pins the public team through import, artifact verification and qualification. Its three certificate fields are null so the
+team can renew its Apple-issued leaf. Self-signed mode requires a common name
+and both fingerprints in the tag’s profile.
 Switching modes requires a source change and a new tag, never a mutable repository
 variable. Local staging with no mode keeps its existing behavior.
 
 | Mode | Release credentials | Package assertions |
 | --- | --- | --- |
 | Self-signed | Three updater secrets and `LOUPIST_SELF_SIGNED_CERTIFICATE`, `LOUPIST_SELF_SIGNED_CERTIFICATE_PASSWORD` | Pinned certificate root and leaf, no Apple team or stapled ticket, per-executable runtime flags and entitlements |
-| Developer ID | Three updater secrets and six `LOUPIST_APPLE_*` secrets | Apple chain and team, notarization and stapling, existing sidecar entitlements |
+| Developer ID | Three updater secrets and six `LOUPIST_APPLE_*` secrets | Apple anchor, Developer ID Application certificate, configured team and secure timestamps, exact runtime flags and entitlements, stapled app and DMG |
 
 The updater secrets are `LOUPIST_UPDATER_PUBLIC_KEY`,
 `LOUPIST_TAURI_SIGNING_PRIVATE_KEY`, and
@@ -62,8 +63,7 @@ The updater secrets are `LOUPIST_UPDATER_PUBLIC_KEY`,
 the closed asset manifest, checksums, and build provenance. `RELEASE-METADATA.json`
 schema 1 records `macos_signing`: mode, notarized, team ID or null, certificate
 SHA-256, and the app's designated requirement. A release with an Apple Team ID
-admits only
-helpers with that team; a teamless signed release requires the helper's actual
+requires both the app and its helpers to satisfy a strict requirement for the Apple anchor, Developer ID Application leaf extension and the same team OU; a teamless signed release requires the helper's actual
 leaf certificate SHA-256 to match the running app's own signature. The app finds
 its resources and that signature from its own executable path with symlinks
 resolved once at start, so an app opened through a symlinked folder (`/tmp`) still
@@ -71,8 +71,7 @@ finds its helpers; Tauri's `resource_dir` refuses such a path. Ad-hoc apps
 cannot establish a shared signer and refuse all bundled helpers; ad-hoc mode is
 therefore not selectable for a release. Unsigned development/CI staging remains
 available, without claiming release runtime trust. Qualification compares these
-facts to both the tag's profile and the mounted app. No unnotarized build claims
-Apple notarization; Gatekeeper output is recorded without gating on runner policy.
+facts to both the tag's profile and the mounted app. For teamless builds, Gatekeeper output is recorded without gating on runner policy.
 
 Before tagging, after a green exact-commit main run and the read-only setup audit:
 
@@ -82,10 +81,14 @@ gh workflow run release.yml --ref main -f dry_run=true
 ```
 
 The rehearsal builds with a certificate and updater key generated inside the job,
-imports the certificate through the real base64/keychain path, stages and signs,
+imports the certificate through the real base64/keychain path, signs every materialized
+Mach-O with the same inside-out traversal as a tag, checks library load paths,
 verifies the mounted DMG and runs sidecar checks, assembles and verifies all assets,
 and runs the app's headless `--check-bundled-helpers` entry point from the mounted
-image through the real Pi, MCP and Python host launch paths. It uploads
+image through the real Pi, MCP and Python host launch paths. It extracts the
+updater archive and compares its sealed app with the build. Teamless signing omits
+hardened runtime on Pi and OpenBB so they can load their libraries. The rehearsal
+records that Apple submission and stapling were skipped. It uploads
 `loupist-assembled-release` and `loupist-signing-report` for one day.
 It uses `release-dry-run`, receives no release secrets, and publishes or attests
 nothing. Metadata mode `dry-run-ephemeral` is accepted only with the explicit
@@ -106,20 +109,48 @@ feed, though it will not see a later RC. A burned stable tag requires a higher
 patch version. Publication asks for `release` approval separately from building;
 inspect build verification before approving it.
 
-Keep the updater key and bundle identifier when moving to Developer ID. Change
-the profile to `developer-id` (certificate fields may be null for an unpinned
-Developer ID leaf), configure its six secrets, remove the Beta About line and
-update install instructions in that same release. Qualify the new path through
-RCs: its notarization and sidecar signing have not yet been exercised on a runner.
-When Developer ID is first used, require `anchor apple generic` together with Team
-ID equality in the runtime helper check; Team ID equality alone does not establish
-an Apple signer because a self-signed certificate can carry a team identifier.
-The identity change can ask once for access to each saved Data/custom connection
-secret and GitHub sharing token. Choosing Always Allow settles it. Until then every
-self-signed update asks once per saved key (each build has its own cdhash
-partition); the install guide and `.github/release-notes/self-signed.md` say so. AI sign-ins
-are files and are unaffected. The ad-hoc release fallback was removed because it
-cannot satisfy helper trust.
+Keep the updater key and bundle identifier across the transition from 0.1.2.
+The six Apple secrets in the `release` environment are:
+
+- `LOUPIST_APPLE_CERTIFICATE` (base64-encoded .p12) and `LOUPIST_APPLE_CERTIFICATE_PASSWORD`
+- `LOUPIST_APPLE_SIGNING_IDENTITY` (the full `Developer ID Application: Name (TEAMID)` common name) and `LOUPIST_APPLE_TEAM_ID`
+- `LOUPIST_APPLE_ID` and `LOUPIST_APPLE_PASSWORD` (an app-specific password)
+
+Import matches the configured name and team to the leaf with the private key,
+checks the signing chain and uses that leaf’s SHA-1 identifier for codesign.
+If the new keychain lacks the issuing intermediate, import can fetch the pinned
+public Developer ID intermediates from Apple. The rehearsal checks its disposable leaf's
+common name and OU, imports the public intermediates, and verifies the disposable
+leaf still lacks trusted identity status. The published DER for the Developer ID G2
+intermediate hashes to SHA-256
+`f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a`.
+[Apple's Developer ID G2 intermediate](https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer).
+
+The signed build stages managed standalone Python for OpenBB and signs each
+Mach-O after symlinks have been materialized. Libraries, executable bundles and
+helpers are signed inside out. Tauri builds the app bundle without signing. The release
+script seals the outer app with hardened runtime and no entitlements. Only Pi and the
+WASI worker receive their respective executable-memory entitlements. A post-build
+step stores the Apple credentials once in the temporary keychain. On macOS arm64,
+notarytool 1.0.0 (37) accepted a dummy password on piped stdin with no controlling
+terminal (`start_new_session=True`). With `--no-validate`, it exited 0, reported
+“Credentials saved to Keychain.” on stdout and printed the app-specific-password
+prompt on stderr. The rehearsal repeats this before building and checks the saved
+profile by account and service in the job keychain. A real tag uses Apple's default
+credential validation. The release script
+uses that keychain profile to submit the app ZIP and staple the accepted app. It
+archives the stapled app for the updater and copies it into a drag-to-Applications
+disk image. It signs and submits the DMG, then staples it. Both submissions print
+their IDs before a bounded wait and fetch Apple's log on rejection. Tauri's signer
+binds the final updater signature to the release version. Build verification and qualification compare the
+extracted updater’s sealed app to the reference app and validate its stapled ticket.
+
+Developer ID signing and notarization have not yet been exercised on a Loupist
+runner. **Pending qualification:** record the first real tag, the Gatekeeper dialog
+on first opening a quarantined download, startup of all hardened helpers, and the
+once-per-key prompts when updating from 0.1.2. Only the following update signed by
+the same team can establish that choosing Always Allow prevents the prompt from
+returning. Check a saved GitHub sharing token as well. AI sign-ins are files.
 
 ## Candidate update qualification
 
@@ -157,7 +188,7 @@ developer's daily-use machine or on a production network.
    credential-free HTTPS evidence for the macOS candidate.
 5. On the clean signed macOS candidate, complete the `LOUPIST.md` Data connections,
    Chat, and Knowledge flow, including a later turn that uses a retained Source
-   or a revised Map or Lens. Capture durable credential-free HTTPS evidence
+   or a revised World or Lens. Capture durable credential-free HTTPS evidence
    that identifies the candidate tag and candidate-set digest; OAuth or
    connector credentials must never appear in that evidence.
 6. Dispatch `release-qualification.yml` from the candidate `vX.Y.Z` tag (not

@@ -101,21 +101,20 @@ pub(super) fn contains_protected_value(value: &Value, protected: &[String]) -> b
     any(target_os = "macos", windows)
 ))]
 fn entry(environment: &str, id: &str) -> Result<keyring::Entry, ConnectionError> {
-    keyring::Entry::new(
-        "com.monarchjuno.loupist.custom-connections",
-        &format!("{environment}:{id}"),
-    )
-    .map_err(|_| ConnectionError::CredentialStore)
+    keyring::Entry::new(SERVICE, &format!("{environment}:{id}"))
+        .map_err(|_| ConnectionError::CredentialStore)
 }
 
 #[cfg(all(
     not(any(debug_assertions, test, feature = "webdriver")),
     any(target_os = "macos", windows)
 ))]
-fn store_load(environment: &str, id: &str) -> Result<Secrets, ConnectionError> {
+fn store_load(environment: &str, id: &str) -> Result<Option<Secrets>, ConnectionError> {
     match entry(environment, id)?.get_password() {
-        Ok(encoded) => serde_json::from_str(&encoded).map_err(|_| ConnectionError::CredentialStore),
-        Err(keyring::Error::NoEntry) => Ok(Secrets::default()),
+        Ok(encoded) => serde_json::from_str(&encoded)
+            .map(Some)
+            .map_err(|_| ConnectionError::CredentialStore),
+        Err(keyring::Error::NoEntry) => Ok(None),
         Err(_) => Err(ConnectionError::CredentialStore),
     }
 }
@@ -136,17 +135,14 @@ fn store_save(environment: &str, id: &str, secrets: &Secrets) -> Result<(), Conn
     any(target_os = "macos", windows)
 ))]
 fn store_remove(environment: &str, id: &str) -> Result<(), ConnectionError> {
-    match entry(environment, id)?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(_) => Err(ConnectionError::CredentialStore),
-    }
+    crate::keychain_operation::delete_entry(entry(environment, id)?).map_err(Into::into)
 }
 
 #[cfg(all(
     not(any(debug_assertions, test, feature = "webdriver")),
     not(any(target_os = "macos", windows))
 ))]
-fn store_load(_: &str, _: &str) -> Result<Secrets, ConnectionError> {
+fn store_load(_: &str, _: &str) -> Result<Option<Secrets>, ConnectionError> {
     Err(ConnectionError::CredentialStore)
 }
 #[cfg(all(
@@ -179,8 +175,34 @@ pub(crate) fn test_reads() -> &'static std::sync::Mutex<BTreeMap<String, (usize,
     READS.get_or_init(Default::default)
 }
 
+#[cfg(test)]
+fn test_mutations() -> &'static std::sync::Mutex<BTreeMap<String, usize>> {
+    static MUTATIONS: std::sync::OnceLock<std::sync::Mutex<BTreeMap<String, usize>>> =
+        std::sync::OnceLock::new();
+    MUTATIONS.get_or_init(Default::default)
+}
+
+#[cfg(test)]
+pub(crate) fn backend_calls(environment: &str) -> usize {
+    let prefix = format!("{environment}:");
+    let reads: usize = test_reads()
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(account, _)| account.starts_with(&prefix))
+        .map(|(_, (reads, _))| *reads)
+        .sum();
+    reads
+        + test_mutations()
+            .lock()
+            .unwrap()
+            .get(environment)
+            .copied()
+            .unwrap_or_default()
+}
+
 #[cfg(any(debug_assertions, test, feature = "webdriver"))]
-fn store_load(environment: &str, id: &str) -> Result<Secrets, ConnectionError> {
+fn store_load(environment: &str, id: &str) -> Result<Option<Secrets>, ConnectionError> {
     #[cfg(test)]
     {
         let mut reads = test_reads()
@@ -196,11 +218,18 @@ fn store_load(environment: &str, id: &str) -> Result<Secrets, ConnectionError> {
         .lock()
         .map_err(|_| ConnectionError::CredentialStore)?
         .get(&(environment.into(), id.into()))
-        .cloned()
-        .unwrap_or_default())
+        .cloned())
 }
 #[cfg(any(debug_assertions, test, feature = "webdriver"))]
 fn store_save(environment: &str, id: &str, secrets: &Secrets) -> Result<(), ConnectionError> {
+    #[cfg(test)]
+    {
+        *test_mutations()
+            .lock()
+            .unwrap()
+            .entry(environment.into())
+            .or_default() += 1;
+    }
     memory_store()
         .lock()
         .map_err(|_| ConnectionError::CredentialStore)?
@@ -209,6 +238,14 @@ fn store_save(environment: &str, id: &str, secrets: &Secrets) -> Result<(), Conn
 }
 #[cfg(any(debug_assertions, test, feature = "webdriver"))]
 fn store_remove(environment: &str, id: &str) -> Result<(), ConnectionError> {
+    #[cfg(test)]
+    {
+        *test_mutations()
+            .lock()
+            .unwrap()
+            .entry(environment.into())
+            .or_default() += 1;
+    }
     memory_store()
         .lock()
         .map_err(|_| ConnectionError::CredentialStore)?
@@ -216,46 +253,167 @@ fn store_remove(environment: &str, id: &str) -> Result<(), ConnectionError> {
     Ok(())
 }
 
-/// Connections whose secrets macOS refused in this session. Holding the lock
-/// is the gate: concurrent readers wait for the first answer, and a refused
-/// connection is not asked again until its secrets are saved or removed.
+const SERVICE: &str = "com.monarchjuno.loupist.custom-connections";
+
 fn refused() -> &'static std::sync::Mutex<BTreeSet<String>> {
     static REFUSED: std::sync::OnceLock<std::sync::Mutex<BTreeSet<String>>> =
         std::sync::OnceLock::new();
     REFUSED.get_or_init(Default::default)
 }
 
-pub(super) fn load(environment: &str, id: &str) -> Result<Secrets, ConnectionError> {
-    let mut refused = refused()
-        .lock()
-        .map_err(|_| ConnectionError::CredentialStore)?;
+use crate::{
+    extension_availability,
+    keychain_operation::{check_mutation_deadline, KeychainError, KeychainOperation},
+    runs::maintenance::MaintenanceCoordinator,
+};
+
+fn require_available() -> Result<(), ConnectionError> {
+    if extension_availability::custom_connections() {
+        Ok(())
+    } else {
+        Err(ConnectionError::Unavailable)
+    }
+}
+
+impl From<KeychainError> for ConnectionError {
+    fn from(error: KeychainError) -> Self {
+        match error {
+            KeychainError::UpdateInstalling => Self::UpdateInstalling,
+            KeychainError::Busy => Self::KeychainBusy,
+            KeychainError::Unavailable | KeychainError::TimedOut => Self::KeychainUnavailable,
+        }
+    }
+}
+
+pub(super) fn is_pending(environment: &str, id: &str) -> Result<bool, ConnectionError> {
+    Ok(KeychainOperation::pending(
+        SERVICE,
+        format!("{environment}:{id}"),
+    )?)
+}
+
+pub(super) fn read_blocked(environment: &str, id: &str) -> bool {
     let account = format!("{environment}:{id}");
-    if refused.contains(&account) {
-        return Err(ConnectionError::CredentialStore);
-    }
-    let secrets = store_load(environment, id);
-    if secrets.is_err() {
-        refused.insert(account);
-    }
-    secrets
+    refused()
+        .lock()
+        .is_ok_and(|refused| refused.contains(&account))
+        || KeychainOperation::read_timed_out(SERVICE, account)
 }
 
-pub(super) fn save(environment: &str, id: &str, secrets: &Secrets) -> Result<(), ConnectionError> {
-    let mut refused = refused()
-        .lock()
-        .map_err(|_| ConnectionError::CredentialStore)?;
-    store_save(environment, id, secrets)?;
-    refused.remove(&format!("{environment}:{id}"));
-    Ok(())
+pub(super) fn load(environment: &str, id: &str) -> Result<Secrets, ConnectionError> {
+    load_item(environment, id, false).map(Option::unwrap_or_default)
 }
 
-pub(super) fn remove(environment: &str, id: &str) -> Result<(), ConnectionError> {
-    let mut refused = refused()
-        .lock()
-        .map_err(|_| ConnectionError::CredentialStore)?;
-    store_remove(environment, id)?;
-    refused.remove(&format!("{environment}:{id}"));
-    Ok(())
+fn load_item(
+    environment: &str,
+    id: &str,
+    recheck: bool,
+) -> Result<Option<Secrets>, ConnectionError> {
+    require_available()?;
+    let account = format!("{environment}:{id}");
+    let operation = KeychainOperation::begin(SERVICE, account.clone())?;
+    let environment = environment.to_owned();
+    let id = id.to_owned();
+    operation.read(move || {
+        {
+            let mut refused = refused()
+                .lock()
+                .map_err(|_| ConnectionError::CredentialStore)?;
+            if recheck {
+                refused.remove(&account);
+            } else if refused.contains(&account) {
+                return Err(ConnectionError::KeychainUnavailable);
+            }
+        }
+        let result = store_load(&environment, &id);
+        if result.is_err() {
+            refused()
+                .lock()
+                .map_err(|_| ConnectionError::CredentialStore)?
+                .insert(account);
+            return Err(ConnectionError::KeychainUnavailable);
+        }
+        result
+    })?
+}
+
+pub(super) async fn load_async(
+    environment: &str,
+    id: &str,
+    recheck: bool,
+) -> Result<Option<Secrets>, ConnectionError> {
+    // Check on the caller before crossing to a blocking thread. The flags
+    // are process-wide in the app and thread-local in tests.
+    require_available()?;
+    let environment = environment.to_owned();
+    let id = id.to_owned();
+    tokio::task::spawn_blocking(move || load_item(&environment, &id, recheck))
+        .await
+        .map_err(|_| ConnectionError::KeychainUnavailable)?
+}
+
+pub(super) fn save(
+    environment: &str,
+    id: &str,
+    secrets: &Secrets,
+    maintenance: &MaintenanceCoordinator,
+    completed: impl FnOnce(bool) -> Result<(), ConnectionError> + Send + 'static,
+) -> Result<(), ConnectionError> {
+    require_available()?;
+    let account = format!("{environment}:{id}");
+    let operation = KeychainOperation::begin(SERVICE, account.clone())?;
+    let environment = environment.to_owned();
+    let id = id.to_owned();
+    let secrets = secrets.clone();
+    operation
+        .mutate(maintenance, move || {
+            let result = check_mutation_deadline()
+                .map_err(ConnectionError::from)
+                .and_then(|()| store_save(&environment, &id, &secrets));
+            completed(result.is_ok())?;
+            if result.is_ok() {
+                refused()
+                    .lock()
+                    .map_err(|_| ConnectionError::CredentialStore)?
+                    .remove(&account);
+            }
+            result
+        })
+        .map_err(|error| match error {
+            KeychainError::TimedOut => ConnectionError::KeychainMutationPending,
+            other => other.into(),
+        })?
+}
+
+pub(super) fn remove(
+    environment: &str,
+    id: &str,
+    maintenance: &MaintenanceCoordinator,
+    completed: impl FnOnce(bool) -> Result<(), ConnectionError> + Send + 'static,
+) -> Result<(), ConnectionError> {
+    require_available()?;
+    let account = format!("{environment}:{id}");
+    let operation = KeychainOperation::begin(SERVICE, account.clone())?;
+    let environment = environment.to_owned();
+    let id = id.to_owned();
+    operation
+        .mutate(maintenance, move || {
+            let result = check_mutation_deadline()
+                .map_err(ConnectionError::from)
+                .and_then(|()| store_remove(&environment, &id));
+            completed(result.is_ok())?;
+            if result.is_ok() {
+                refused()
+                    .lock()
+                    .map_err(|_| ConnectionError::CredentialStore)?
+                    .remove(&account);
+            }
+            result
+        })
+        .map_err(|error| match error {
+            KeychainError::TimedOut => ConnectionError::KeychainMutationPending,
+            other => other.into(),
+        })?
 }
 
 #[cfg(test)]
@@ -266,7 +424,14 @@ mod tests {
     fn a_refused_connection_is_asked_once_until_its_secrets_change() {
         let environment = uuid::Uuid::new_v4().to_string();
         let account = format!("{environment}:custom-gate");
-        save(&environment, "custom-gate", &Secrets::default()).unwrap();
+        save(
+            &environment,
+            "custom-gate",
+            &Secrets::default(),
+            &MaintenanceCoordinator::default(),
+            |_| Ok(()),
+        )
+        .unwrap();
         test_reads()
             .lock()
             .unwrap()
@@ -279,10 +444,23 @@ mod tests {
             .lock()
             .unwrap()
             .insert(account.clone(), (1, false));
-        save(&environment, "custom-gate", &Secrets::default()).unwrap();
+        save(
+            &environment,
+            "custom-gate",
+            &Secrets::default(),
+            &MaintenanceCoordinator::default(),
+            |_| Ok(()),
+        )
+        .unwrap();
         assert!(load(&environment, "custom-gate").is_ok());
         assert_eq!(test_reads().lock().unwrap()[&account].0, 2);
-        remove(&environment, "custom-gate").unwrap();
+        remove(
+            &environment,
+            "custom-gate",
+            &MaintenanceCoordinator::default(),
+            |_| Ok(()),
+        )
+        .unwrap();
     }
 
     #[test]

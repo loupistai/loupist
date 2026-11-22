@@ -7,6 +7,7 @@ export type SourceWorldClaim = {
   claimId: string,
   proposition: string,
   relation: string,
+  isRelationship: boolean,
 };
 
 export type WorldSourceTarget = {

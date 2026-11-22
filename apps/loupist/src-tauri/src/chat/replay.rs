@@ -167,6 +167,7 @@ mod tests {
             run_id: "run".into(),
             sequence: 0,
             progress: ChatProgress {
+                save_activity: None,
                 started_at_ms: 1,
                 finished_at_ms: None,
                 items: vec![],
@@ -227,6 +228,7 @@ mod tests {
             run_id: "run".into(),
             sequence: 0,
             progress: ChatProgress {
+                save_activity: None,
                 started_at_ms: 1,
                 finished_at_ms: None,
                 items: vec![ChatProgressItem::Commentary {

@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import i18n from "@/i18n";
 import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import type { ChatEvidenceRef, ChatMessage, ChatStreamEvent } from "../../types";
+import type { ChatEvidenceRef, ChatMessage, ChatStreamEvent, KnowledgeReference } from "../../types";
+import type { SourceSpanView } from "../../contracts/knowledge";
 import { evidenceFixture } from "../evidenceFixtures";
 import { openApp, openChat } from "../renderApp";
 import { completedRun } from "../streamFixtures";
@@ -25,6 +26,132 @@ const completed = (run_id: string, final_text: string): Extract<ChatStreamEvent,
 });
 
 describe("Loupist · Chat evidence", () => {
+  it("uses replayed checks for the number mark and the receipt when opening a saved conversation", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const source = evidenceFixture({ excerpt: "Revenue was 383,285 million." });
+    const storedChecks: NonNullable<ChatMessage["number_checks"]> = ["383,285", "400,000"].map((text, link_index) => ({
+      text, link_index, evidence_id: source.id, kind: "passage", status: "not_found",
+    }));
+    const select = bridge.loupistSelect.bind(bridge);
+    vi.spyOn(bridge, "loupistSelect").mockImplementation(async (id) => {
+      const workspace = await select(id);
+      const message = workspace.threads[0]!.messages.at(-1)!;
+      message.content = `Revenue was [383,285](#evidence-${source.id}). Target was [400,000](#evidence-${source.id}).`;
+      message.evidence_refs = [source];
+      message.number_checks = [{ ...storedChecks[0]!, status: "matched", unstated_scale: "answer" }, storedChecks[1]!];
+      return workspace;
+    });
+    render(<App bridge={bridge} />);
+    await openChat();
+    const mark = await screen.findByRole("button", { name: /^383,285,/u });
+    expect(mark).toHaveAttribute("data-status", "matched");
+    expect(mark).toHaveAccessibleDescription("Matches the source’s number; the answer does not state a unit.");
+    const receipt = within(mark.closest("article")!).getByTestId("memory-row");
+    await userEvent.click(within(receipt).getByRole("button", { name: "1 number to check" }));
+    const list = await screen.findByRole("dialog");
+    expect(list).toHaveTextContent("400,000");
+    expect(list).not.toHaveTextContent("383,285");
+  });
+
+  it("opens each filing figure at its own passage and opens the receipt at the first", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const catalog = await bridge.knowledgeCatalog({ loupistId: "loupist-quality" });
+    const source = catalog.sources[0]!;
+    const { selectedSpanId: spanId } = await bridge.knowledgeSourceRead({
+      loupistId: catalog.loupistId, recordId: source.recordId, revisionId: source.revisionId, purpose: "renderer_inspection",
+    });
+    if (!spanId) throw new Error("The filing fixture has no saved span");
+    const reference: KnowledgeReference = { kind: "source", recordId: source.recordId, revisionId: source.revisionId, objectId: spanId, spanId };
+    const sales = "| 서비스 매출 | 96,169 | 85,200 |";
+    const margin = "| 서비스 매출총이익률 | 73.9% | 70.8% |";
+    const text = [sales, "다른 회계 정보 🌏".repeat(60), margin].join("\n\n");
+    const bytes = (value: string) => new TextEncoder().encode(value).length;
+    const range = (value: string) => {
+      const start = bytes(text.slice(0, text.indexOf(value)));
+      return { start, end: start + bytes(value) };
+    };
+    const amounts = ["96,169", "73.9%", "74.0%"];
+    const marks = ["96,169", "73.9%", "73.9%"].map(range);
+    const presentation: NonNullable<SourceSpanView["presentation"]> = {
+      text, sourcePointer: "/content", extractionMethod: "readability", contentOffset: 0, nextOffset: null, extractionTruncated: false,
+      citedPassages: [
+        { ...range(sales), marks: [marks[0]!, range("85,200")] },
+        { ...range(margin), marks: [marks[1]!, range("70.8%")] },
+      ],
+    };
+    const evidence = evidenceFixture({ kind: "saved_context", title: source.title, tool_name: "world_read", read_ref: "filing-read", url: undefined, excerpt: text });
+    const select = bridge.loupistSelect.bind(bridge);
+    vi.spyOn(bridge, "loupistSelect").mockImplementation(async id => {
+      const workspace = await select(id);
+      const message = workspace.threads[0]!.messages.at(-1)!;
+      message.content = amounts.map(amount => `[${amount}](#evidence-${evidence.id})`).join(" · ");
+      message.evidence_refs = [evidence];
+      message.memory_refs = [{ kind: "source", read_ref: evidence.read_ref!, title: source.title, excerpt: text, access: "exact_read", as_of: null, section: null, knowledge: reference }];
+      message.memory_update = { status: "applied", commitId: "filing", changes: [{ kind: "Source", recordId: source.recordId, operation: "create", title: source.title, knowledge: reference, lesson: "", basis: "", futureUse: "" }] };
+      message.number_checks = amounts.map((value, link_index) => ({
+        kind: "passage", evidence_id: evidence.id, text: value, link_index, span: marks[link_index],
+        ...(link_index === 2 ? { status: "not_found", comparedValue: "73.9%", comparisonReason: "digits_differ" } : { status: "matched" }),
+      }));
+      return workspace;
+    });
+    const originalRead = bridge.knowledgeSourceRead.bind(bridge);
+    const read = vi.spyOn(bridge, "knowledgeSourceRead").mockImplementation(async request => ({
+      ...await originalRead(request),
+      selectedSpanId: spanId,
+      spans: [{ spanId, mediaType: "text/plain", selector: "", contextNote: "", text, presentation: {
+        ...presentation, ...(request.figure ? { focusedMark: marks[request.figure.linkIndex] } : {}),
+      } }],
+    }));
+    render(<App bridge={bridge} />);
+    await openChat();
+    const expectPassage = async (position: string, value?: string) => {
+      await waitFor(() => {
+        const panel = within(screen.getByLabelText("Side panel"));
+        expect(panel.getByText(position)).toBeVisible();
+        const reader = panel.getByRole("article", { name: "Source reader" });
+        const focus = [...reader.querySelectorAll('mark[aria-current="true"]')].map(mark => mark.textContent);
+        expect(focus).toEqual(value ? [value] : []);
+        expect(reader.querySelectorAll("mark")).toHaveLength(4);
+      });
+    };
+    const openFigure = async (button: RegExp) => {
+      await user.click(await screen.findByRole("button", { name: button }));
+      await user.click(within(await screen.findByRole("dialog", { name: source.title })).getByRole("button", { name: "Open in Evidence" }));
+    };
+
+    await openFigure(/^96,169/u);
+    await expectPassage("1 of 2", "96,169");
+    const first = read.mock.lastCall?.[0].figure;
+    expect(first).toEqual({ threadId: "thread-margin", messageId: expect.any(String), evidenceId: evidence.id, linkIndex: 0 });
+    await openFigure(/^73\.9 percent/u);
+    await expectPassage("2 of 2", "73.9%");
+    expect(read.mock.lastCall?.[0].figure).toEqual({ ...first, linkIndex: 1 });
+
+    const panel = within(screen.getByLabelText("Side panel"));
+    await user.click(panel.getByRole("button", { name: "Previous cited passage" }));
+    expect(panel.getByText("1 of 2")).toBeVisible();
+    await openFigure(/^73\.9 percent/u);
+    await expectPassage("2 of 2", "73.9%");
+
+    await user.click(screen.getByRole("button", { name: "1 number to check" }));
+    await user.click(await screen.findByRole("button", { name: "Open the source" }));
+    await expectPassage("2 of 2", "73.9%");
+    expect(read.mock.lastCall?.[0].figure).toEqual({ ...first, linkIndex: 2 });
+
+    await user.click(screen.getByRole("button", { name: "Activity" }));
+    const activity = await screen.findByRole("complementary", { name: "Activity" });
+    const checkRow = within(activity).getAllByRole("listitem").find(item => item.textContent?.includes("96,169"))!;
+    await user.click(within(checkRow).getByRole("button", { name: source.title }));
+    await expectPassage("1 of 2", "96,169");
+    expect(read.mock.lastCall?.[0].figure).toEqual(first);
+
+    const receipt = screen.getByRole("navigation", { name: "What this answer used and saved" });
+    await user.click(within(receipt).getByRole("button", { name: "Saved 1 source" }));
+    await expectPassage("1 of 2");
+    expect(read.mock.lastCall?.[0].figure).toBeUndefined();
+  });
+
   it("opens a web citation in the browser first and keeps the saved passage when that open fails", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
@@ -211,10 +338,12 @@ describe("Loupist · Chat evidence", () => {
     // Opening the same citation twice keeps one saved passage.
     expect(within(panel).getByRole("button", { name: "Back" })).toBeDisabled();
     // Revealed words are wrapped one by one while the reply streams; the unissued citation is still not a control.
-    const unknown = [...document.querySelectorAll(".message.assistant .message-content *")]
-      .find((element) => element.textContent === "Unknown source" && ![...element.children].some((child) => child.textContent === "Unknown source"));
-    expect(unknown).toBeDefined();
-    expect(unknown!.closest("a, button")).toBeNull();
+    await waitFor(() => {
+      const unknown = [...document.querySelectorAll(".message.assistant .message-content *")]
+        .find((element) => element.textContent === "Unknown source" && ![...element.children].some((child) => child.textContent === "Unknown source"));
+      expect(unknown).toBeDefined();
+      expect(unknown!.closest("a, button")).toBeNull();
+    });
     await emit({ type: "evidence", run_id: request.run_id, evidence });
 
     const persisted: ChatMessage = { id: "assistant-evidence", role: "assistant", status: "complete", content: answer, created_at: "2026-10-11T03:01:00Z", evidence_refs: [structuredClone(evidence)] };

@@ -14,14 +14,23 @@ it("posts a finished session's answer lead under its title, with Open and no sta
   const { open: onOpen } = renderWithOpen(<ThreadHandoff message={card({})} loupistName="Quality" />);
   const article = screen.getByRole("article", { name: "Research: Hynix HBM supply" });
   expect(article).toHaveAttribute("data-status", "done");
-  expect(within(article).getByText("Researched: Hynix HBM supply")).toBeVisible();
+  expect(within(article).getByText("Session ended: Hynix HBM supply")).toBeVisible();
   expect(within(article).getByText("HBM4 supply widens in 2027.")).toBeVisible();
-  // "Researched" already says it finished; nothing in the post runs or stops.
+  // The heading already says it finished; nothing in the post runs or stops.
   expect(within(article).queryByText("Done")).toBeNull();
   expect(within(article).queryByText(/Learned/)).toBeNull();
   expect(within(article).queryByRole("button", { name: /^Stop/ })).toBeNull();
   await userEvent.setup().click(within(article).getByRole("button", { name: "Open" }));
   expect(onOpen).toHaveBeenCalledExactlyOnceWith({ kind: "chat", threadId: "chat-session" });
+});
+
+it("lists the items a finished hand-off could not keep", () => {
+  render(<ThreadHandoff message={card({ memorySaveSkip: "failed", discardedMemoryItems: [{ kind: "lens_page", title: "Supply forecast" }] }, "I saved the supply forecast.")} loupistName="Quality" />);
+  const article = within(screen.getByRole("article", { name: "Research: Hynix HBM supply" }));
+  expect(article.getByText("I saved the supply forecast.")).toBeVisible();
+  expect(article.getByText("Not saved to Memory: saving failed.")).toBeVisible();
+  expect(article.getByText("What this answer says it saved was not kept.")).toBeVisible();
+  expect(article.getByRole("list", { name: "Not kept" })).toHaveTextContent("Supply forecast");
 });
 
 it("counts what a finished session learned in the words of its answer's receipt", async () => {
@@ -84,14 +93,16 @@ it("says why a hand-off the host stopped before running did not run, and still o
 it("shows no preview for a finished session with no prose, rather than the host's English caption", async () => {
   const { rerender } = render(<ThreadHandoff message={card({}, "Researched: Hynix HBM supply.")} loupistName="Quality" />);
   const article = screen.getByRole("article", { name: "Research: Hynix HBM supply" });
-  expect(within(article).getByText("Researched: Hynix HBM supply")).toBeVisible();
+  expect(within(article).getByText("Session ended: Hynix HBM supply")).toBeVisible();
   expect(within(article).queryByText("Researched: Hynix HBM supply.")).toBeNull();
+  rerender(<ThreadHandoff message={card({}, "Session ended: Hynix HBM supply.")} loupistName="Quality" />);
+  expect(within(article).queryByText("Session ended: Hynix HBM supply.")).toBeNull();
   // A link's hand-off keeps the host's caption under the action's name.
   rerender(<ThreadHandoff message={card({ connectionId: "con_1" }, "Researched: Look into it.")} loupistName="Quality" />);
   expect(screen.queryByText("Researched: Look into it.")).toBeNull();
   await act(async () => { await i18n.changeLanguage("ko"); });
   rerender(<ThreadHandoff message={card({}, "Researched: Hynix HBM supply.")} loupistName="Quality" />);
-  expect(screen.getByText("조사 결과: Hynix HBM supply")).toBeVisible();
+  expect(screen.getByText("세션 종료: Hynix HBM supply")).toBeVisible();
   expect(screen.queryByText(/Researched/)).toBeNull();
   await act(async () => { await i18n.changeLanguage("en"); });
 });
@@ -102,7 +113,7 @@ it("wraps its status line only between items: each separator leads the item it b
   ] } })} loupistName="Quality" />);
   // Each item starts with its own silent "·"; the row clips the one that begins a line (bot-cards.css).
   const items = [...screen.getByRole("article").querySelectorAll(".thread-delivery-source .bot-meta-item")];
-  expect(items.map((item) => item.textContent)).toEqual(["·Researched: Hynix HBM supply", "·Learned 1 thing", "·Open"]);
+  expect(items.map((item) => item.textContent)).toEqual(["·Session ended: Hynix HBM supply", "·Learned 1 thing", "·Open"]);
   for (const item of items) expect(item.firstElementChild).toHaveAttribute("aria-hidden", "true");
 });
 

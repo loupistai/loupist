@@ -32,6 +32,9 @@ from loupist_openbb.failures import (
     AlphaVantagePaidPlanRequired,
     YAHOO_ADJUSTMENT,
     CredentialRejectedError,
+    FRED_INVALID_ARGUMENTS,
+    FRED_INVALID_SYMBOL,
+    InvalidProviderArguments,
     call_tool_with_failures,
     classify_rest_failures,
 )
@@ -203,23 +206,45 @@ def apply_sec_contact_email(contact_email: str | None) -> None:
 
     @wraps(original_async)
     async def sec_aware_async_request(url: str, *args: Any, **kwargs: Any) -> Any:
-        if _is_sec_url(url):
-            if contact_email is None:
-                raise PermissionError("SEC requests require a configured contact email")
-            kwargs["headers"] = _headers_with_identity(
-                kwargs.get("headers"), user_agent
-            )
-        return await original_async(url, *args, **kwargs)
+        if not _is_sec_url(url):
+            return await original_async(url, *args, **kwargs)
+        if contact_email is None:
+            raise PermissionError("SEC requests require a configured contact email")
+        kwargs["headers"] = _headers_with_identity(kwargs.get("headers"), user_agent)
+        # The pinned helper accepts a positional callback after method and timeout.
+        callback = args[2] if len(args) > 2 else kwargs.get("response_callback")
+
+        async def check_response(response: Any, session: Any) -> Any:
+            if response.status in {400, 422}:
+                raise InvalidProviderArguments()
+            if callback is not None:
+                return await callback(response, session)
+            return await response.json()
+
+        if len(args) > 2:
+            args = (*args[:2], check_response, *args[3:])
+        else:
+            kwargs["response_callback"] = check_response
+        result = await original_async(url, *args, **kwargs)
+        if (
+            isinstance(result, dict)
+            and result.get("status") in (400, 422)
+            and isinstance(result.get("error"), dict)
+        ):
+            raise InvalidProviderArguments()
+        return result
 
     @wraps(original_sync)
     def sec_aware_sync_request(url: str, *args: Any, **kwargs: Any) -> Any:
-        if _is_sec_url(url):
-            if contact_email is None:
-                raise PermissionError("SEC requests require a configured contact email")
-            kwargs["headers"] = _headers_with_identity(
-                kwargs.get("headers"), user_agent
-            )
-        return original_sync(url, *args, **kwargs)
+        if not _is_sec_url(url):
+            return original_sync(url, *args, **kwargs)
+        if contact_email is None:
+            raise PermissionError("SEC requests require a configured contact email")
+        kwargs["headers"] = _headers_with_identity(kwargs.get("headers"), user_agent)
+        result = original_sync(url, *args, **kwargs)
+        if result.status_code in {400, 422}:
+            raise InvalidProviderArguments()
+        return result
 
     setattr(sec_aware_async_request, "__loupist_sec_original__", original_async)
     setattr(sec_aware_sync_request, "__loupist_sec_original__", original_sync)
@@ -311,6 +336,14 @@ def apply_fred_error_guard() -> None:
         if "api_key" in message:
             reason = "key_format" if "32 character" in message else "key_not_accepted"
             raise CredentialRejectedError(reason)
+        code = str(payload["error_code"])
+        names_series = (
+            "series_id" in message or "the series does not exist" in message.lower()
+        )
+        if code in {"400", "422"} or (code == "404" and names_series):
+            raise InvalidProviderArguments(
+                FRED_INVALID_SYMBOL if names_series else FRED_INVALID_ARGUMENTS
+            )
         raise OpenBBError("FRED returned an error for this request.")
 
     setattr(check_payload, "__loupist_fred_original__", original)

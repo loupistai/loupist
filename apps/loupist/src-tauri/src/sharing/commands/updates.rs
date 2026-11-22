@@ -344,7 +344,7 @@ pub(crate) async fn check_update(
     if let Some(check) = state.sharing.checks.recent(&row.import_id) {
         return Ok(check);
     }
-    let token = github::load_token(&state.credential_environment);
+    let token = github::load_token(state).await;
     let newer = match fetch_newer(api, token.as_deref(), &row).await {
         Err(error) if error.code == "rate_limited" => {
             with_tx(state, &request.loupist_id, |tx, _| {

@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import i18n from "@/i18n";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import type { WorkspaceFile } from "../../types";
+import type { LoupistBridge, WorkbookRead, WorkspaceDocumentOpen, WorkspaceFile } from "../../types";
 import { WorkspaceFiles } from "./WorkspaceFiles";
 
 const file: WorkspaceFile = { path: "analysis.py", content: "print(17 * 23)", content_sha256: "abc123", media_type: "text/plain", size_bytes: 14, truncated: false, binary: false };
@@ -29,7 +30,7 @@ it.each(["https://example.com/chart.png", "data:image/svg+xml;base64,PHN2Zz4=", 
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   vi.spyOn(bridge, "workspaceRead").mockResolvedValue({ ...file, path: "chart.png", content: null, binary: true, image_data_url });
   render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="" filePath="chart.png" onNavigate={vi.fn()} onAsk={vi.fn()} />);
-  await screen.findByText(/No text preview/);
+  await screen.findByText("No preview for this kind of file.");
   expect(screen.queryByRole("img")).not.toBeInTheDocument();
 });
 it("previews an SVG output only as an image resource, with its source one toggle away", async () => {
@@ -84,14 +85,17 @@ it("discards a delayed file from a previous Loupist and reports binary/truncated
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   let resolve!: (value: WorkspaceFile) => void;
   vi.spyOn(bridge, "workspaceRead").mockReturnValueOnce(new Promise((done) => { resolve = done; })).mockResolvedValue({ ...file, path: "report.pdf", binary: true, content: null, truncated: true });
+  const open = vi.spyOn(bridge, "workspaceDocumentOpen").mockResolvedValue({ status: "requested", application_name: null });
   const props = { bridge, path: "", onNavigate: vi.fn(), onAsk: vi.fn(), onOpenLink: vi.fn() };
   const { rerender } = render(<WorkspaceFiles {...props} loupistId="first" filePath="analysis.py" />);
   rerender(<WorkspaceFiles {...props} loupistId="second" filePath="report.pdf" />);
-  await screen.findByText(/No text preview/);
+  await screen.findByText("No preview for this kind of file.");
   await act(async () => resolve(file));
   expect(screen.queryByText("print(17 * 23)")).not.toBeInTheDocument();
   expect(screen.getByText(/Preview truncated/)).toBeVisible();
   await waitFor(() => expect(screen.getByRole("button", { name: "Ask about this" })).toBeEnabled());
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Open" }));
+  expect(open).toHaveBeenCalledWith({ loupist_id: "second", path: "report.pdf" });
 });
 
 it("previews financial CSV as exact text with a header choice and an inspectable source", async () => {
@@ -147,4 +151,129 @@ it("shows an empty folder's next step without a filter for nothing", async () =>
   list.mockResolvedValue({ path: "", truncated: false, entries: [{ kind: "file", name: "notes.md", path: "notes.md", size_bytes: 12 }] });
   await user.click(screen.getByRole("button", { name: "Refresh files" }));
   expect(await screen.findByRole("textbox", { name: "Filter files" })).toBeVisible();
+});
+
+const workbookFile: WorkspaceFile = {
+  ...file, path: "outputs/comparison.xlsx", content: null,
+  media_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", binary: true,
+};
+
+it("reads a workbook and switches visible sheets while keeping their workbook indices", async () => {
+  const user = userEvent.setup();
+  const bridge: LoupistBridge = new MockLoupistBridge({ delay_ms: 0 });
+  vi.spyOn(bridge, "workspaceRead").mockResolvedValue(workbookFile);
+  vi.spyOn(bridge, "workspaceDocumentHandler").mockResolvedValue({ status: "allowed", application_name: "Microsoft Excel" });
+  const open = vi.spyOn(bridge, "workspaceDocumentOpen");
+  const sheets = [
+    { name: "Comparison", hidden: false, worksheet: true },
+    { name: "Assumptions", hidden: true, worksheet: true },
+    { name: "Forecast", hidden: false, worksheet: true },
+  ];
+  const summary: WorkbookRead = {
+    status: "ready", sheets, selected_sheet: 0, first_row: 12, first_column: 26,
+    rows_total: 203, columns_total: 4, truncated: true, omitted: ["charts", "images", "visual_styles"],
+    rows: [
+      [{ kind: "text", display: "Revenue", formula: false },
+        { kind: "number", display: "12.5%", formula: true },
+        { kind: "date", display: "2026-11-21", formula: false },
+        { kind: "error", display: "#DIV/0!", formula: false }],
+      [{ kind: "text", display: "Operating income", formula: false }, { kind: "empty", display: "", formula: true }],
+    ],
+  };
+  let finish!: (result: WorkbookRead) => void;
+  const read = vi.spyOn(bridge, "workspaceWorkbookRead")
+    .mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }))
+    .mockResolvedValue({ ...summary, selected_sheet: 2, first_row: 1, first_column: 1,
+      rows_total: 1, columns_total: 1, truncated: false, rows: [[{ kind: "number", display: "125,000", formula: false }]] });
+  render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="outputs" filePath={workbookFile.path} onNavigate={vi.fn()} onAsk={vi.fn()} />);
+  expect(await screen.findByText("Reading the workbook…")).toHaveAttribute("role", "status");
+  expect(await screen.findByRole("button", { name: "Open in Microsoft Excel" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Show in file manager" })).toBeEnabled();
+  expect(open).not.toHaveBeenCalled();
+  await act(async () => finish(summary));
+
+  const tabs = screen.getAllByRole("tab");
+  expect(tabs.map(tab => tab.textContent?.trim())).toEqual(["Comparison", "Forecast", "Assumptions hidden"]);
+  expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+  expect(tabs[2]).toBeDisabled();
+  const comparison = screen.getByRole("table", { name: "Data preview for Comparison" });
+  expect(within(comparison).getByRole("columnheader", { name: "AA" })).toBeVisible();
+  expect(within(comparison).getByRole("rowheader", { name: "12" })).toBeVisible();
+  const formula = within(comparison).getByRole("cell", { name: "12.5%" });
+  expect(formula).toHaveAttribute("title", "Calculated by a formula. The saved result is shown.");
+  expect(formula).toHaveAttribute("data-formula", "cached");
+  const uncached = within(comparison).getByRole("cell", { name: "—" });
+  expect(uncached).toHaveAttribute("title", "This formula has no saved result yet. Open the file in a spreadsheet application to calculate it.");
+  expect(uncached).toHaveAttribute("data-formula", "uncached");
+  expect(within(comparison).getByRole("cell", { name: "12.5%" })).toHaveClass("is-numeric");
+  expect(within(comparison).getByRole("cell", { name: "2026-11-21" })).toBeVisible();
+  expect(within(comparison).getByRole("cell", { name: "#DIV/0!" })).toHaveClass("is-error");
+  expect(screen.getByText(/Values only/)).toHaveTextContent("Charts, images and formatting are not shown. Showing the first 2 of 203 rows.");
+
+  await user.click(tabs[1]!);
+  expect(read).toHaveBeenLastCalledWith({ loupist_id: "loupist", path: workbookFile.path, sheet_index: 2 }, expect.any(Function));
+  expect(within(await screen.findByRole("table", { name: "Data preview for Forecast" })).getByRole("cell", { name: "125,000" })).toBeVisible();
+});
+
+it("explains why a workbook preview failed and shows an Open refusal inline", async () => {
+  const user = userEvent.setup();
+  const bridge: LoupistBridge = new MockLoupistBridge({ delay_ms: 0 });
+  vi.spyOn(bridge, "workspaceRead").mockResolvedValue(workbookFile);
+  vi.spyOn(bridge, "workspaceWorkbookRead").mockResolvedValue({ status: "encrypted" });
+  vi.spyOn(bridge, "workspaceDocumentHandler").mockResolvedValue({ status: "allowed", application_name: null });
+  const open = vi.spyOn(bridge, "workspaceDocumentOpen").mockResolvedValue({ status: "refused", reason: "unsafe_document" });
+  render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="outputs" filePath={workbookFile.path} onNavigate={vi.fn()} onAsk={vi.fn()} />);
+  expect(await screen.findByRole("alert")).toHaveTextContent("This workbook is password-protected.");
+  await user.click(await screen.findByRole("button", { name: "Open" }));
+  expect(open).toHaveBeenCalledWith({ loupist_id: "loupist", path: workbookFile.path });
+  expect(await screen.findByText("This file cannot be opened safely.")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Open" })).toBeEnabled();
+});
+
+it.each([
+  ["en", "Open in Numbers", "Couldn’t open this file in Microsoft Excel.", "Show in file manager"],
+  ["ko", "Numbers에서 열기", "이 파일을 Microsoft Excel에서 열지 못했습니다.", "파일 관리자에서 보기"],
+])("waits for the system launch result and offers to reveal the workbook on failure (%s)", async (language, openLabel, errorText, revealLabel) => {
+  await i18n.changeLanguage(language);
+  const user = userEvent.setup();
+  const bridge: LoupistBridge = new MockLoupistBridge({ delay_ms: 0 });
+  vi.spyOn(bridge, "workspaceRead").mockResolvedValue(workbookFile);
+  vi.spyOn(bridge, "workspaceWorkbookRead").mockResolvedValue({ status: "encrypted" });
+  vi.spyOn(bridge, "workspaceDocumentHandler").mockResolvedValue({ status: "allowed", application_name: "Numbers" });
+  let settle!: (result: WorkspaceDocumentOpen) => void;
+  const open = vi.spyOn(bridge, "workspaceDocumentOpen").mockReturnValue(new Promise(resolve => { settle = resolve; }));
+  const reveal = vi.spyOn(bridge, "workspaceReveal").mockResolvedValue(undefined);
+  const view = render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="outputs" filePath={workbookFile.path} onNavigate={vi.fn()} onAsk={vi.fn()} />);
+  try {
+    const button = await screen.findByRole("button", { name: openLabel });
+    await user.click(button);
+    expect(button).toBeDisabled();
+    expect(screen.queryByText(errorText)).not.toBeInTheDocument();
+    const request = { loupist_id: "loupist", path: workbookFile.path };
+    expect(open).toHaveBeenCalledExactlyOnceWith(request);
+
+    const reason = "The application could not read the file.";
+    await act(async () => settle({ status: "handler_unavailable", application_name: "Microsoft Excel", reason }));
+    const message = await screen.findByText(errorText);
+    expect(message).toBeVisible();
+    const alert = within(message.closest<HTMLElement>("[role=alert]")!);
+    expect(alert.getByText(reason)).toBeVisible();
+    expect(button).toBeEnabled();
+    await user.click(alert.getByRole("button", { name: revealLabel }));
+    expect(reveal).toHaveBeenCalledExactlyOnceWith(request);
+  } finally {
+    view.unmount();
+    await i18n.changeLanguage("en");
+  }
+});
+
+it.each(["xls", "xlsb"])("explains an unsupported %s preview and retains the Open action", async extension => {
+  const bridge: LoupistBridge = new MockLoupistBridge({ delay_ms: 0 });
+  const path = `outputs/comparison.${extension}`;
+  vi.spyOn(bridge, "workspaceRead").mockResolvedValue({ ...workbookFile, path });
+  vi.spyOn(bridge, "workspaceWorkbookRead").mockResolvedValue({ status: "unsupported_format" });
+  vi.spyOn(bridge, "workspaceDocumentHandler").mockResolvedValue({ status: "refused", reason: "unsupported_type" });
+  render(<WorkspaceFiles bridge={bridge} loupistId="loupist" path="outputs" filePath={path} onNavigate={vi.fn()} onAsk={vi.fn()} />);
+  expect(await screen.findByRole("alert")).toHaveTextContent(`${extension.toUpperCase()} workbooks cannot be previewed.`);
+  expect(screen.getByRole("button", { name: "Open" })).toBeEnabled();
 });

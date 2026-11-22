@@ -55,6 +55,7 @@ const allowedTerms = new Map([
 // Technical literals and subscription names are exceptions only at the exact
 // catalog key where they are required. Keep a reason with every exception.
 const exceptions = new Map([
+  ["briefings.following.securityType.cedear", { terms: ["CEDEAR"], reason: "Official abbreviation of the Argentine depositary receipt" }],
   ["settings.general.betaNotice", { terms: ["Apple"], reason: "Company name in the Beta notarization notice" }],
   ["assets.assetPage.metrics.ev_ebitda", { terms: ["EBITDA"], reason: "Valuation multiple written as the acronym in Korean finance too" }],
   ["chat.numberChip.quoteField.evEbitda", { terms: ["EBITDA"], reason: "The same valuation multiple in a number popover; identical to the asset page's label" }],

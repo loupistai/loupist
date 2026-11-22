@@ -53,6 +53,11 @@ this category from the terminal host log for that exact run as
 without the field remain readable, and missing diagnostics do not change the
 eval result.
 
+A Chat or scheduled run with a retained answer and skipped Memory can still
+finish with status `ok`. Its `memorySaveSkip` records the reason separately
+from failures that prevented completion. Chat progress keeps its saving
+duration and the time spent waiting for admission.
+
 The logger never takes prompts, answer or Source text, file contents,
 credential/header values, or raw error bodies. It applies the shared
 credential detector to metadata strings and map keys.

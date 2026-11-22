@@ -4,7 +4,9 @@ use serde_json::Value;
 use tauri::{ipc::Channel, State};
 
 use super::github_account::api_error;
-use super::share::{build_pack, record_identity, require_shareable, ScopeRequest, ShareRequest};
+use super::share::{
+    build_pack_off_thread, record_identity, require_shareable, ScopeRequest, ShareRequest,
+};
 use crate::app::{AppState, CommandError};
 use crate::sharing::export::Sections;
 use crate::sharing::github::{self, Github};
@@ -72,8 +74,9 @@ pub async fn share_publish(
             "GitHub publishing isn't available in this version.",
         ));
     }
-    let environment = state.credential_environment.to_string();
-    let token = github::load_token(&environment)
+    let token = github::account_token(state)
+        .await
+        .map_err(|error| error.command_error())?
         .ok_or_else(|| CommandError::new("signed_out", "Sign in to GitHub first."))?;
     let share = ShareRequest {
         loupist_id: request.loupist_id.clone(),
@@ -92,14 +95,14 @@ pub async fn share_publish(
                     "A gist shares one method or principle.",
                 ));
             }
-            let built = build_pack(state, &share, None)?;
+            let built = build_pack_off_thread(state, &share, None).await?;
             let _ = on_event.send(PublishEvent::Uploading {
                 files: built.files.len() as u32,
             });
             let url = api
                 .create_gist(&token, &built.files, &built.name, visibility == "public")
                 .await
-                .map_err(|error| api_error(error, &environment, state))?;
+                .map_err(|error| api_error(error, state))?;
             Ok(
                 serde_json::json!({"url": url, "fullName": null, "version": built.version, "commit": null}),
             )
@@ -109,7 +112,7 @@ pub async fn share_publish(
                 return Err(CommandError::invalid("Publish a single method as a gist."));
             }
             // Validate everything before anything is created on GitHub.
-            let checked = build_pack(state, &share, None)?;
+            let checked = build_pack_off_thread(state, &share, None).await?;
             let created = matches!(target, PublishTarget::Repo { .. });
             let repo = match target {
                 PublishTarget::Repo { name } => {
@@ -129,7 +132,7 @@ pub async fn share_publish(
                     let repo = api
                         .create_repo(&token, &name, &description)
                         .await
-                        .map_err(|error| api_error(error, &environment, state))?;
+                        .map_err(|error| api_error(error, state))?;
                     let _ = api.set_topic(&token, &repo.full_name).await;
                     repo
                 }
@@ -146,7 +149,7 @@ pub async fn share_publish(
                     {
                         Ok(repo) => repo,
                         Err(github::RecordedError::Api(error)) => {
-                            return Err(api_error(error, &environment, state))
+                            return Err(api_error(error, state))
                         }
                         Err(github::RecordedError::Mismatch) => {
                             return Err(CommandError::new(
@@ -159,7 +162,8 @@ pub async fn share_publish(
             };
             let mut published = false;
             let result: Result<Value, CommandError> = async {
-                let mut built = build_pack(state, &share, Some(repo.html_url.clone()))?;
+                let mut built =
+                    build_pack_off_thread(state, &share, Some(repo.html_url.clone())).await?;
                 let _ = on_event.send(PublishEvent::Uploading {
                     files: built.files.len() as u32,
                 });
@@ -172,7 +176,7 @@ pub async fn share_publish(
                         &format!("Loupist pack v{}", built.version),
                     )
                     .await
-                    .map_err(|error| api_error(error, &environment, state))?;
+                    .map_err(|error| api_error(error, state))?;
                 published = true;
                 built.identity.repo = Some(repo.full_name.clone());
                 built.identity.repo_url = Some(repo.html_url.clone());

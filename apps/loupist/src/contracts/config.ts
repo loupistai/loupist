@@ -32,6 +32,10 @@ export type EffectiveConfig = {
 
 export type ConfigDiagnostic = Wire.ConfigDiagnostic;
 export type ConfigSnapshot = {
+  modelSelection?: Wire.ResolvedModelSelection;
+  defaultModelChange?: Wire.DefaultModelChange;
+  userSkillsAvailable?: boolean;
+  customConnectionsAvailable?: boolean;
   scope: ConfigScope;
   path: string;
   revision: string;

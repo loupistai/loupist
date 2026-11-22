@@ -112,7 +112,7 @@ it("explains a step paused by the untrusted-text rule in the step, calmly and wi
   expect(screen.queryByText("Failed")).toBeNull();
   expect(screen.getAllByText("Paused").length).toBeGreaterThanOrEqual(2);
   const notes = screen.getAllByRole("note");
-  expect(notes[0]).toHaveTextContent("so changing instruction and Skill files is turned off for this answer.");
+  expect(notes[0]).toHaveTextContent("so changing instruction files is turned off for this answer.");
   expect(notes[1]).toHaveTextContent("so opening this page is turned off for this answer.");
   for (const note of notes) expect(within(note).queryByRole("button")).toBeNull();
   expect(follows(screen.getByText("AGENTS.md"), notes[0]!)).toBe(true);
@@ -203,14 +203,14 @@ it("keeps internal targets out of live and saved progress", () => {
 
 describe("names a step read", () => {
   const reading: ChatProgress = { startedAtMs: 1, items: [
-    { id: "map-1", kind: "tool", category: "memory", operation: "read", action: "Read the map", running: "Reading the map", status: "running", entityIds: ["a", "b"], target: null, href: null, startedAtMs: 0, finishedAtMs: null },
+    { id: "map-1", kind: "tool", category: "memory", operation: "read", action: "Read World", running: "Reading World", status: "running", entityIds: ["a", "b"], target: null, href: null, startedAtMs: 0, finishedAtMs: null },
     { id: "web-1", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", status: "succeeded", target: null, href: null, startedAtMs: 0, finishedAtMs: null },
   ], finishedAtMs: null };
 
   it("labels the step with its name count and leaves steps without names alone", () => {
     render(ledger(reading, "streaming"));
     fireEvent.click(screen.getByRole("button", { name: "2 steps" }));
-    const names = screen.getAllByText("2 on the map");
+    const names = screen.getAllByText("2 in World");
     expect(names).toHaveLength(1);
     expect(names[0].tagName).toBe("SPAN");
   });
@@ -225,7 +225,7 @@ describe("names a step read", () => {
       {ledger(reading, "streaming")}
     </ChatMapProvider>);
     fireEvent.click(screen.getByRole("button", { name: "2 steps" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Show 2 on the map" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Show 2 in World" }));
     expect(onOpen).toHaveBeenCalledOnce();
   });
 });

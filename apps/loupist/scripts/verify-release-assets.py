@@ -171,8 +171,11 @@ def main() -> int:
         expected_certificate=arguments.expected_certificate_sha256,
     )
 
-    if arguments.profile:
-        match_profile(metadata["macos_signing"], load_profile(arguments.profile))
+    if arguments.profile or metadata["macos_signing"]["mode"] == "developer-id":
+        profile = (
+            load_profile(arguments.profile) if arguments.profile else load_profile()
+        )
+        match_profile(metadata["macos_signing"], profile)
 
     expected_artifacts = {
         name: {"sha256": sha256(arguments.assets / name)} for name in canonical

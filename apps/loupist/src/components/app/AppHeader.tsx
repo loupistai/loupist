@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { ActivityIcon, ArrowLeftIcon, PanelBottomIcon, PanelRightIcon } from "lucide-react";
 import i18n, { useTranslation } from "@/i18n";
 import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
@@ -17,15 +17,16 @@ export { LoupistAvatar } from "./LoupistAvatar";
  * right: on a conversation, the side panel's two splits (top and bottom, left and right) and the activity sheet. On Bot it is the Loupist's face and name, and "Working" while it has a run (its focus is in the sidebar); elsewhere the page's
  * or the research session's title; a Map or Lens page entered from a conversation leads with the way back to it.
  * The sidebar toggle appears here while the sidebar is an
- * icon rail or a drawer, and in the rail's width range after it expands the rail. It also owns ⌘1–⌘4 and ⌘\.
+ * icon rail or a drawer, and in the rail's width range after it expands the rail. It also owns ⌘1–⌘5 and ⌘\.
  */
-export function AppHeader({ tab, loupist, running, title, back = null, onNavigate, materials, workspaceOpen, workspacePlacement, onWorkspaceToggle, onWorkspaceSplit }: {
+export function AppHeader({ tab, loupist, running, title, origin, back = null, onNavigate, materials, workspaceOpen, workspacePlacement, onWorkspaceToggle, onWorkspaceSplit }: {
   tab: AppTab;
   loupist: LoupistSummary | null;
   /** The current Loupist has a reply or scheduled run in progress. */
   running: boolean;
   /** The page or session title. Without one, the header shows the Loupist (its Bot). */
   title: string | null;
+  origin?: ReactNode;
   /** Returns to the conversation a Map or Lens page was opened from. */
   back?: { label: string; onBack: () => void } | null;
   onNavigate: (destination: AppDestinationId) => void;
@@ -63,7 +64,7 @@ export function AppHeader({ tab, loupist, running, title, back = null, onNavigat
   return <header className="app-header" data-tauri-drag-region="deep">
     {isMobile || railWidth || state === "collapsed" ? <SidebarTrigger className="app-header-sidebar-trigger" aria-label={i18n.t("app:macTitlebarControls.showOrHideSidebar")} /> : null}
     {back ? <Button type="button" variant="ghost" size="sm" className="app-header-back" data-page-back onClick={back.onBack}><ArrowLeftIcon aria-hidden="true" />{back.label}</Button> : null}
-    {title !== null ? <strong className="app-header-title" data-tauri-drag-region="deep">{title}</strong>
+    {origin ? <div className="app-header-who-text"><strong>{title}</strong>{origin}</div> : title !== null ? <strong className="app-header-title" data-tauri-drag-region="deep">{title}</strong>
       : loupist ? <div className="app-header-who" data-busy={running || undefined} data-tauri-drag-region="deep">
         <LoupistAvatar loupist={loupist} size={36} busy={running} />
         <span className="app-header-who-text"><strong>{loupist.name}</strong>

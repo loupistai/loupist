@@ -99,6 +99,8 @@ const registeredCommands = (source: string) => {
   return new Set(
     block
       .replace(/\/\/.*$/gm, "")
+      // A command compiled only into e2e builds has no caller in the shipped bridge.
+      .replace(/#\[cfg\([^\]]*feature = "e2e"[^\]]*\]\s*[^,]+,/g, "")
       .replace(/#\[[^\]]*\]/g, "")
       .split(",")
       .map((entry) => entry.trim())

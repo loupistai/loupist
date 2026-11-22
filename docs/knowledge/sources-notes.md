@@ -28,6 +28,20 @@ connection authored comes back to the model delimited and raises the
 
 Acquisition deduplication includes origin, attribution, coverage and material
 lineage. Repeated acquisition or a changed title is not independent corroboration.
+New HTML captures keep table rows together. A single header with consistent
+columns becomes a Markdown table. Filing year headers can cover several cells
+that print one amount, such as a currency sign and its digits. Irregular tables
+use pipe-separated rows and mark merged headers. PDF captures use the text layer
+and add separators when a detected grid agrees with a unique run of complete
+lines on the page. Ambiguous layouts retain the extracted reading order. A scan
+without a text layer still has no extracted passage.
+
+Evidence and the Library render captured Markdown rows as a table and irregular
+pipe-separated rows in aligned monospace columns. Wide rows scroll within the passage.
+Literal selections and number checks use the captured text, including its row
+separators. An 8 KiB selection around a figure can end inside a wide row or omit
+a distant header. Earlier captures continue to use their stored text and offsets.
+
 An unchanged retained source can be reused without another extraction. Manual
 source saves commit immediately; Chat saves stage until completion.
 
@@ -37,6 +51,13 @@ provide a prior-revision browser or restore action. Retained Source material is
 immutable, and notes/Journal entries capture their own evidence inputs. Those snapshots
 must not be confused with a complete history of every Memory document. A stale
 record reference can become unavailable after replacement.
+
+The host derives the Library preview on read from the saved text. The Library
+wraps the complete returned summary in its row. It prefers a complete
+sentence, drops filing navigation and table fragments, and keeps the labels of
+inline links. When a capture begins inside a word, the next complete sentence
+can supply the preview. A source containing only navigation or numbers can have
+no preview.
 
 Source readers distinguish retention from processing status, show coverage and
 exact passages, and link current World claims. Metadata-only Sources cannot cite
@@ -60,7 +81,7 @@ Chat, never a tool argument), newest first, comparing each run of whitespace as 
 space, and copies the bytes from that message. The agent can point at text but
 never supply it: its own words, a paraphrase, a changed figure, tool results, an
 assistant reply, attachments (those use `workspace_capture`), a hand-off's opening
-request, a Map link, a scheduled task's prompt and another Chat's messages are not
+request, a World link, a scheduled task's prompt and another Chat's messages are not
 found. A stated `url` must appear verbatim and a stated `publisher` (case and
 spacing aside) in the user's messages of this Chat. Scheduled and delegated runs and
 host hand-offs refuse the tool, and `source_save` refuses pasted text that looks
@@ -89,11 +110,13 @@ What differs from a fetched Source:
   whoever pasted it. A `world_read` adds `source.sourceClass` and
   `source.provided` (`pastedAt`, `statedUrl`, `statedPublisher`).
 - Its evidence kind is `user_provided` in the capturing turn; a later read stays
-  `saved_context` with `user_provided` set. A number linked to either checks as a
+  `saved_context` with `user_provided` set. Its evidence `read_ref` identifies the
+  exact Source, revision and span in the answer’s Memory references. These IDs
+  let a receipt group repeated citations to the same Source. A number linked to either checks as a
   `passage` against the pasted text, so a match means the figure is what the user
   gave, not that the original says it.
 - It can back a Lens fact (`{source: saveRef}` or a Source read), as a span the
-  reader labels user-provided; Map extraction runs as for any Source.
+  reader labels user-provided; World building runs as for any Source.
 - [Sharing](sharing.md#sharing) keeps it private: it is user-authored, not a
   publisher's record.
 
@@ -118,11 +141,11 @@ World view and Lens documents captured with the saved work.
 A Journal entry records the user's own judgment, with optional reasoning, linked
 World entities and a dated check. Entity links use current World node ids, not
 names or ticker labels. Chat validates them against the complete current World
-before staging, including entities outside the Map's display limit; an unknown
+before staging, including entities outside World's display limit; an unknown
 link is refused at `journal.entities` so the same turn can omit or repair it. The
 completed-turn transaction checks the links again. The Loupist’s
 own view belongs in research notes, not in the user’s Journal.
-The Map’s Library has separate Sources, Journal and Notes tabs. Notes lists the
+World’s Library has separate Sources, Journal and Notes tabs. Notes lists the
 Loupist’s saved analysis. In Journal, the user can list, create, edit and archive
 entries through `journal_list`, `journal_create`, `journal_update` and
 `journal_archive`. Focusing a field in the Journal form scrolls it clear of the sticky search. Chat uses `journal_save`

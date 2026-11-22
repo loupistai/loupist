@@ -18,7 +18,7 @@
     "correctTheConfigurationFileInSettingsChat": "Correct the configuration file in Loupist settings → Chat defaults to start a new run.",
     "theConfiguredChatDefaultsAreUnavailableFor": "The configured Chat defaults are unavailable for the current model. Review Loupist settings → Chat defaults or choose a model in Chat.",
     "correctTheConfigurationFileBeforeSending": "Correct the configuration file in Loupist settings → Chat defaults before sending.",
-    "showOrLoadAModelInSettings": "Show or load a model in Settings to send messages. Your saved chats, Map and Lens are available.",
+    "showOrLoadAModelInSettings": "Show or load a model in Settings to send messages. Your saved chats, World and Lens are available.",
     "pleaseLookAtWorkspaceFile": "Please look at workspace file {{path}}. ",
     "source": "Source",
     "openingView": "Opening {{view}}",
@@ -26,7 +26,7 @@
     "skillDraftGlobalEmpty": "{{skill}} Create a reusable skill in my personal skill folder for all Loupists.\n\nThe workflow I want to create: ",
     "skillDraftLoupist": "{{skill}} Create a reusable skill in this Loupist's skill folder.\n\n{{brief}}",
     "skillDraftLoupistEmpty": "{{skill}} Create a reusable skill in this Loupist's skill folder.\n\nThe workflow I want to create: ",
-    "workspaceUnavailableDescription": "<0>Workspace folder unavailable.</0> Reconnect the original or copied Loupist folder to open its saved chats, Map and Lens.",
+    "workspaceUnavailableDescription": "<0>Workspace folder unavailable.</0> Reconnect the original or copied Loupist folder to open its saved chats, World and Lens.",
     "couldNotExport": "Couldn’t export this chat.",
     "couldNotPrint": "Couldn’t open printing. Try again.",
     "correctThis": "Correct this: ",
@@ -78,6 +78,9 @@
     "application": "Application"
   },
   "loupistChatItem": {
+    "fromRun": "From Schedule: {{title}} · run of {{date}}",
+    "fromTask": "From Schedule: {{title}}",
+    "startedBySchedule": "Started by a schedule",
     "rename": "Rename",
     "delete": "Delete",
     "running": "Running",
@@ -86,7 +89,7 @@
     "print": "Print or save as PDF…",
     "unsentDraft": "Unsent draft",
     "privateChat": "Private chat",
-    "homeDescriptor": "Chat, briefings, and alerts"
+    "homeDescriptor": "Chat and scheduled task results"
   },
   "loupistNavigationGroup": {
     "hasActiveSessions": "{{label}} has active sessions"
@@ -116,10 +119,10 @@
     "skills": "Skills",
     "skillsCreatorInstallerInstructionsWorkflowsCreateInstallZip": "skills creator installer instructions workflows create install zip github",
     "addAndManageReusableWorkflowsForYourLoupists": "Manage shared skills and defaults for all Loupists. Customize one Loupist on its settings page.",
-    "worldProcessing": "Map building",
+    "worldProcessing": "World building",
     "memorySourcesRelationshipsProcessingModelLimits": "memory sources relationships processing model limits",
     "chooseHowEachLoupistConnectsWhatItLearns": "Choose how each Loupist connects what it learns from saved sources.",
-    "worldProcessingCaption": "How new sources become map knowledge",
+    "worldProcessingCaption": "How new sources build your World",
     "appearance": "Appearance",
     "themeLightDarkSystemDisplay": "theme light dark system display",
     "makeYourWorkspaceFeelAtHome": "Choose the theme, the language and how prices are shown.",
@@ -138,7 +141,7 @@
   },
   "loupistAvailabilityBoundary": {
     "workspaceFolderUnavailable": "Workspace folder unavailable",
-    "thisLoupistSFolderWasMovedOrIs": "This Loupist’s folder was moved or is unavailable. Reconnect the original or copied folder to open its chats, Map and Lens.",
+    "thisLoupistSFolderWasMovedOrIs": "This Loupist’s folder was moved or is unavailable. Reconnect the original or copied folder to open its chats, World and Lens.",
     "reconnectFolder": "Reconnect folder",
     "earlierVersion": "Made by an earlier version",
     "earlierVersionBody": "This Loupist was made by an earlier version and can't be opened. Remove it from the app, then create a new Loupist; its folder stays on this Mac.",
@@ -147,12 +150,13 @@
     "removeLoupist": "Remove Loupist"
   },
   "shell": {
+    "profileNumber": "Profile {{number}}",
     "chatMaterials": "Chat materials",
-    "chatMaterialsHint": "This chat's map, evidence and outputs",
+    "chatMaterialsHint": "This chat’s World, evidence and outputs",
     "sessions": "Research sessions",
-    "sessionsEmpty": "Start new research to dig into one question. Briefings and alerts stay in Bot.",
+    "sessionsEmpty": "Start new research to dig into one question. Scheduled runs stay in Schedule. A run you continue also appears here.",
     "newResearch": "New research",
-    "newResearchHint": "New research: dig into one question. Briefings and alerts stay in Bot.",
+    "newResearchHint": "New research: dig into one question. Scheduled runs stay in Schedule. A run you continue also appears here.",
     "principles": "Research principles",
     "taskHistory": "Scheduled tasks",
     "moreActions": "More",
@@ -166,17 +170,23 @@
     "loupistSettings": "Loupist settings",
     "removeLoupist": "Remove Loupist…",
     "wordmark": "Loupist",
+    "mapBuilding": "World · building",
+    "mapBuildingFromSources_one": "World · building from {{formattedCount}} source",
+    "mapBuildingFromSources_other": "World · building from {{formattedCount}} sources",
+    "scheduleRunning": "Schedule · running {{title}}",
+    "scheduleRunsInProgress": "Schedule · {{count}} runs in progress",
     "close": "Close",
     "tabs": {
       "lens": "Lens",
       "chat": "Bot",
-      "map": "Map",
+      "map": "World",
       "schedule": "Schedule",
       "following": "Following"
     },
     "backToChat": "Back to chat",
     "searchShortcut": "Search {{shortcut}}",
-    "unreadBriefings": "{{count}} unread briefings",
+    "unreadScheduledResults_one": "{{count}} unread scheduled result",
+    "unreadScheduledResults_other": "{{count}} unread scheduled results",
     "needsAttention": "Needs attention",
     "panel": "Panel",
     "togglePanel": "Show or hide the panel ({{shortcut}})",
@@ -224,7 +234,7 @@
     "refinedMethod": "Refined a method · {{date}}",
     "deferred": "Nothing worth keeping yet · {{date}}",
     "failed": "Couldn't run · {{date}}",
-    "empty": "Your Loupist reviews new information as your Map grows.",
+    "empty": "Your Loupist reviews new information as your World grows.",
     "fewFacts": "Too few related facts",
     "covered": "Already covered by '{{title}}'",
     "checks": "Output didn't pass checks",
@@ -237,9 +247,9 @@
     "uncertainAttempt": "The request was sent, but its result could not be confirmed."
   },
   "tracking": {
-    "heading": "What the map tracks",
+    "heading": "What World tracks",
     "advanced": "Advanced",
-    "core": "Every map tracks companies, people, products, technologies, industries, markets and assets, places, policies, events and metrics.",
+    "core": "Every Loupist’s World tracks companies, people, products, technologies, industries, markets and assets, places, policies, events and metrics.",
     "intro": "Also tracked for this Loupist:",
     "relations": "Links: {{list}}",
     "remove": "Stop tracking {{label}}",
@@ -257,7 +267,7 @@
     "undoLabel": "Undo: {{change}}",
     "undone": "Undone. Sources you add from now on won't use it.",
     "empty": "Only the basics so far. Ask your Loupist to track something new, or it suggests what it notices after reading about 10 sources.",
-    "error": "Couldn't load what the map tracks.",
+    "error": "Couldn't load what World tracks.",
     "retry": "Try again",
     "actionError": "Couldn't save that change."
   },
@@ -276,6 +286,7 @@
     }
   },
   "attention": {
+    "savedKeyPermission": "Allow Loupist to use your saved keys ({{count}})",
     "approval": "{{loupistSubject}} wants your OK to use {{connection}}",
     "approvalAny": "{{loupistSubject}} is waiting for your OK",
     "question": "{{loupistSubject}} has a question for you in “{{chat}}”",
@@ -308,7 +319,7 @@
       "attention": "Needs attention",
       "chats": "Research sessions",
       "following": "Following",
-      "map": "Map",
+      "map": "World",
       "principles": "Principles",
       "briefings": "Briefings",
       "actions": "Actions"
@@ -316,7 +327,7 @@
     "actions": {
       "newChat": "New research",
       "openChat": "Open Bot",
-      "openMap": "Open Map",
+      "openMap": "Open World",
       "openLens": "Open Lens",
       "openSchedule": "Open Schedule",
       "newJournalEntry": "New Journal entry",

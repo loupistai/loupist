@@ -259,7 +259,7 @@ describe("anchored reading", () => {
     return t;
   };
 
-  it("keeps the reader's place and adds no room while a full-page Map or Lens hides the thread", () => {
+  it("keeps the reader's place and adds no room while a full-page World or Lens hides the thread", () => {
     const t = readUnderHeader();
     try {
       const turn = t.element.querySelector<HTMLElement>("[data-turn]")!;

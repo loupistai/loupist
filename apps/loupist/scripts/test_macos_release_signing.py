@@ -4,7 +4,8 @@ import hashlib
 import json
 import os
 import plistlib
-import shutil
+import contextlib
+import io
 import subprocess
 import tempfile
 import unittest
@@ -153,6 +154,7 @@ class SigningTests(unittest.TestCase):
             pi / "openbb/library.dylib",
         ]
         with (
+            patch.object(signing, "external_libraries", return_value=[]),
             patch.object(signing, "macho_files", return_value=files),
             patch.object(signing, "verify_binary") as verify,
             patch.object(signing, "require_flags") as flags,
@@ -166,6 +168,19 @@ class SigningTests(unittest.TestCase):
             self.assertEqual(
                 flags.call_args_list[-1].args[2], {signing.WORKER_ENTITLEMENT: True}
             )
+
+    def test_staging_refuses_external_library_install_paths(self):
+        pi, worker = Path("/runtime"), Path("/worker")
+        with (
+            patch.object(signing, "macho_files", return_value=[pi / "loupist-pi"]),
+            patch.object(
+                signing,
+                "external_libraries",
+                return_value=["/opt/build/libexample.dylib"],
+            ),
+        ):
+            with self.assertRaisesRegex(ValueError, "/opt/build/libexample"):
+                signing.verify_runtime(pi, worker, "developer-id", None, "ABCDE12345")
 
     def test_missing_ticket_is_positive_evidence_not_any_tool_error(self):
         with patch.object(
@@ -239,6 +254,8 @@ class SigningTests(unittest.TestCase):
                 self.assertEqual(args.count("-T"), 1)
                 certificate = Path(args[2])
                 self.assertEqual(certificate.stat().st_mode & 0o777, 0o600)
+            if "x509" in args:
+                return result("    organizationalUnitName    = ABCDE12345\n")
             if "find-identity" in args:
                 return result(identities["value"])
             if "find-certificate" in args:
@@ -326,6 +343,44 @@ class SigningTests(unittest.TestCase):
                 certificate_sha1=None, certificate_sha256=None
             )
             refuses("must be pinned")
+            profile["macos_signing"].update(mode="developer-id", team_id="ABCDE12345")
+            name = "Developer ID Application: Example (ABCDE12345)"
+            identities["value"] = f'  1) {sha1} "{name}"\n'
+            with patch.dict(
+                os.environ,
+                LOUPIST_APPLE_SIGNING_IDENTITY=name,
+                LOUPIST_APPLE_TEAM_ID="ABCDE12345",
+            ):
+                self.assertEqual(
+                    credentials.import_certificate(
+                        Path(directory), profile, dry_run=False
+                    ),
+                    {"APPLE_SIGNING_IDENTITY": sha1},
+                )
+                os.environ["LOUPIST_APPLE_TEAM_ID"] = "OTHER12345"
+                refuses("name and team")
+                os.environ["LOUPIST_APPLE_TEAM_ID"] = "ABCDE12345"
+                os.environ["LOUPIST_APPLE_SIGNING_IDENTITY"] = name.replace(
+                    "Example", "Other"
+                )
+                refuses("name and team")
+
+    def test_rehearsal_import_checks_the_disposable_leaf_and_intermediate_pins(self):
+        with tempfile.TemporaryDirectory() as directory:
+            keychain = Path(directory) / "temporary.keychain-db"
+
+            def wrong_download(*args, **kwargs):
+                if "curl" in args:
+                    Path(args[args.index("--output") + 1]).write_bytes(
+                        b"changed intermediate"
+                    )
+                return result()
+
+            with patch.object(credentials, "run", side_effect=wrong_download):
+                with self.assertRaisesRegex(
+                    ValueError, "intermediate certificate fingerprint mismatch"
+                ):
+                    credentials.check_apple_chain(keychain, "A" * 40, "", dry_run=True)
 
     def test_dry_run_generator_uses_libressl_and_base64_roundtrip(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -361,32 +416,97 @@ class SigningTests(unittest.TestCase):
         self.assertIn("Mach-O", result.stdout)
         self.assertIn("universal", result.stdout)
 
-    def test_a_framework_bundle_in_a_runtime_is_refused_before_signing(self):
-        # A host framework Python makes PyInstaller ship Python.framework, which
-        # codesign cannot sign in place; staging builds on uv's standalone Python.
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "loupist-openbb").write_bytes(b"main")
-            framework = root / "_internal" / "Python.framework"
-            framework.mkdir(parents=True)
-            (framework / "Python").write_bytes(b"library")
-            with patch.object(signing, "run") as run:
-                with self.assertRaisesRegex(ValueError, "Python.framework"):
-                    signing.sign_runtime(root, "openbb", "self-signed", "A" * 40)
-                run.assert_not_called()
-            shutil.rmtree(framework)
+    def test_nested_bundles_are_signed_inside_out_after_materialization(self):
+        root = Path("/runtime")
+        framework = root / "Helper.app/Contents/Frameworks/Python.framework"
+        main = root / "loupist-openbb"
+        inner = framework / "Versions/3.12/Python"
+        with (
+            patch.object(signing, "macho_files", return_value=[main, inner]),
+            patch.object(signing, "run") as run,
+        ):
+            signing.sign_runtime(root, "openbb", "developer-id", "fixture")
+            self.assertEqual(
+                [call.args[-1] for call in run.call_args_list],
+                list(map(str, [inner, framework, root / "Helper.app", main])),
+            )
+            for call in run.call_args_list:
+                self.assertIn("--timestamp", call.args)
+                self.assertIn("runtime", call.args)
+                self.assertNotIn("--entitlements", call.args)
+
+    def test_rejected_dmg_prints_the_notary_log_even_on_nonzero_exit(self):
+        for code in (0, 1):
             with (
-                patch.object(
-                    signing, "macho_files", return_value=[root / "loupist-openbb"]
+                patch.dict(
+                    os.environ,
+                    LOUPIST_SIGNING_KEYCHAIN="/tmp/fixture.keychain",
                 ),
-                patch.object(signing, "run") as run,
+                patch.object(
+                    signing,
+                    "run",
+                    side_effect=[
+                        result('{"id":"submission"}'),
+                        result('{"status":"Invalid"}', code=code),
+                        result("bad signature at path"),
+                    ],
+                ) as run,
+                contextlib.redirect_stdout(io.StringIO()) as printed,
             ):
-                signing.sign_runtime(root, "openbb", "self-signed", "A" * 40)
-                self.assertEqual(run.call_count, 1)
-        text = (
-            Path(__file__).resolve().parent / "stage-openbb-macos-arm64.sh"
-        ).read_text()
-        self.assertIn("--python-preference only-managed", text)
+                with self.assertRaisesRegex(ValueError, "Invalid"):
+                    signing.notarize(Path("test.dmg"), Path("test.dmg"))
+                self.assertEqual(
+                    run.call_args.args[:4], ("xcrun", "notarytool", "log", "submission")
+                )
+                self.assertIn("bad signature at path", printed.getvalue())
+                self.assertNotIn("fixture", printed.getvalue())
+
+    def test_timestamp_retries_only_timestamp_failures(self):
+        command = ["codesign", "--timestamp", "fixture"]
+        with (
+            patch.object(signing.time, "sleep"),
+            patch.object(
+                signing,
+                "run",
+                side_effect=[RuntimeError("timestamp service unavailable"), result()],
+            ) as run,
+        ):
+            signing.sign_code(command)
+            self.assertEqual(run.call_count, 2)
+        for message, count in [
+            ("timestamp service unavailable", 3),
+            ("invalid identity", 1),
+        ]:
+            with (
+                patch.object(signing.time, "sleep"),
+                patch.object(signing, "run", side_effect=RuntimeError(message)) as run,
+                self.assertRaises(RuntimeError),
+            ):
+                try:
+                    signing.sign_code(command)
+                finally:
+                    self.assertEqual(run.call_count, count)
+
+    def test_developer_id_requires_a_secure_timestamp_and_expected_team(self):
+        path = Path("/runtime/worker")
+        for listing, accepted in [
+            ("TeamIdentifier=ABCDE12345\nTimestamp=today", True),
+            ("TeamIdentifier=OTHER12345\nTimestamp=today", False),
+            ("TeamIdentifier=ABCDE12345\nSigned Time=today", False),
+        ]:
+            with patch.object(
+                signing, "run", return_value=result(stderr=listing)
+            ) as run:
+                if accepted:
+                    signing.verify_binary(path, "developer-id", None, "ABCDE12345")
+                    requirement = run.call_args_list[0].args[-2]
+                    self.assertTrue(
+                        requirement.startswith("=anchor apple generic and ")
+                    )
+                    self.assertIn("1.2.840.113635.100.6.1.13", requirement)
+                else:
+                    with self.assertRaises(ValueError):
+                        signing.verify_binary(path, "developer-id", None, "ABCDE12345")
 
     def test_staging_shell_entrypoints_delegate_to_the_tested_signing_policy(self):
         # Security invariant: no inline shell signing path may bypass this policy.
@@ -400,9 +520,6 @@ class SigningTests(unittest.TestCase):
             self.assertIn('macos_release_signing.py" ' + command, text)
             self.assertNotIn("codesign --force", text)
         text = (scripts / "stage-openbb-macos-arm64.sh").read_text()
-        self.assertIn(
-            '"${LOUPIST_MACOS_SIGNING_MODE:-developer-id}" = developer-id', text
-        )
         self.assertLess(
             text.index("materialize_bundle_symlinks.py"),
             text.index("sign-runtime --kind openbb"),
@@ -412,24 +529,34 @@ class SigningTests(unittest.TestCase):
         app, dmg = Path("/Loupist.app"), Path("/fixture.dmg")
         main = app / "Contents/MacOS/loupist"
         worker = app / "Contents/Resources/python-runtime/loupist-python-worker"
-        profile = load_profile()
+        profile = load_profile(rehearsal=True)
         profile["macos_signing"] = {
             key: "developer-id" if key == "mode" else None
             for key in profile["macos_signing"]
         }
-        requirement = 'identifier "com.monarchjuno.loupist" and anchor apple generic and certificate leaf[subject.OU] = ABCDE12345'
+        profile["macos_signing"]["team_id"] = "ABCDE12345"
+        requirement = 'identifier "com.monarchjuno.loupist" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = ABCDE12345'
         with (
             patch.object(signing, "run", return_value=result()),
             patch.object(signing, "verify_runtime"),
             patch.object(signing, "verify_binary") as verify,
             patch.object(signing, "require_flags") as flags,
-            patch.object(signing, "macho_files", return_value=[main, worker]),
+            patch.object(
+                signing,
+                "macho_files",
+                return_value=[
+                    main,
+                    worker,
+                    app / "Contents/Resources/pi-runtime/loupist-pi",
+                    app / "Contents/Resources/pi-runtime/openbb/loupist-openbb",
+                ],
+            ),
             patch.object(signing, "require_ticket", return_value="ticket") as ticket,
             patch.object(signing, "certificate_hash", return_value="A" * 64),
             patch.object(signing, "designated_requirement", return_value=requirement),
         ):
             record = signing.verify_bundle(app, dmg, profile, team="ABCDE12345")
-            self.assertEqual(verify.call_count, 3)
+            self.assertEqual(verify.call_count, 5)
             self.assertEqual(record["mode"], "developer-id")
             self.assertIs(record["notarized"], True)
             self.assertEqual(record["certificate_sha256"], "A" * 64)
@@ -439,10 +566,28 @@ class SigningTests(unittest.TestCase):
             )
 
     def test_credential_command_failure_does_not_print_password_arguments(self):
-        with patch.object(credentials.subprocess, "run", return_value=result(code=1)):
+        message = "permission denied: secret-argument secret-input secret-child"
+        with (
+            patch.object(
+                credentials.subprocess,
+                "run",
+                return_value=result(stderr=message, code=1),
+            ),
+            contextlib.redirect_stderr(io.StringIO()) as printed,
+        ):
             with self.assertRaises(RuntimeError) as error:
-                credentials.run("security", "import", "-P", "private-password-fixture")
-        self.assertNotIn("private-password-fixture", str(error.exception))
+                credentials.run(
+                    "security",
+                    "import",
+                    "-P",
+                    "secret-argument",
+                    input="secret-input\n",
+                    env={"TAURI_SIGNING_PRIVATE_KEY": "secret-child"},
+                )
+        self.assertEqual(
+            printed.getvalue(), "permission denied: [REDACTED] [REDACTED] [REDACTED]\n"
+        )
+        self.assertNotIn("secret-", str(error.exception))
 
 
 if __name__ == "__main__":

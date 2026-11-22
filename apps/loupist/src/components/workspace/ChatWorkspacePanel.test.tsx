@@ -4,7 +4,7 @@ import { renderWithOpen, destinations } from "../../test/open";
 import { ChatMapProvider } from "./ChatMapContext";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import type { ChatArtifactView, LoupistArtifactItem } from "../../types";
+import type { ChatArtifact, ChatArtifactView } from "../../types";
 import { ChatWorkspacePanel } from "./ChatWorkspacePanel";
 import { AssetPageOpenerProvider } from "../assets/assetOpener";
 import { GRID_SCHEMA } from "../../contracts/chat";
@@ -153,27 +153,25 @@ describe("ChatWorkspacePanel Evidence reader", () => {
   });
 });
 
-const workItem = (id: string, chat: string, title: string, kind: "chart" | "markdown" = "markdown", updated = 1_700_000_000_000): LoupistArtifactItem => ({
-  artifact: { id, chat_session_id: chat, kind, title, current_revision: 2, created_at_ms: updated, updated_at_ms: updated },
-  chat_title: chat === "chat" ? "This chat" : "Earlier chat",
+const workItem = (id: string, title: string, kind: "chart" | "markdown" = "markdown", updated = 1_700_000_000_000): ChatArtifact => ({
+  id, chat_session_id: "chat", kind, title, current_revision: 2, created_at_ms: updated, updated_at_ms: updated,
 });
 
 describe("ChatWorkspacePanel Work tab", () => {
-  it("lists the Loupist's work across chats with charts still building, and opens an item from its own chat", async () => {
+  it("lists the session’s work and opens its published items while a new chart is building", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
-    vi.spyOn(bridge, "loupistArtifactList").mockResolvedValue([workItem("note", "chat", "Saved note"), workItem("older", "chat-1", "Supplier map", "chart")]);
-    const read = vi.spyOn(bridge, "chatArtifactRead").mockResolvedValue({ ...view, artifact: { ...view.artifact, id: "older", chat_session_id: "chat-1" } });
+    vi.spyOn(bridge, "chatArtifactList").mockResolvedValue([workItem("note", "Saved note"), workItem("older", "Supplier map", "chart")]);
+    const read = vi.spyOn(bridge, "chatArtifactRead").mockResolvedValue({ ...view, artifact: { ...view.artifact, id: "older", chat_session_id: "chat" } });
     const props = { ...panelProps(bridge), session: { tabs: [], active_tab_id: WORK_TAB_ID } };
     render(<ChatWorkspacePanel {...props} buildingWork={[{ key: "building:step", title: "Margin vs utilization" }]} />);
-    const list = await screen.findByRole("list", { name: "Charts, tables and documents" });
+    const list = await screen.findByRole("list", { name: "Work from this conversation" });
     expect(list).toHaveTextContent("Margin vs utilization");
     expect(list).toHaveTextContent("Preparing");
     expect(screen.getByRole("button", { name: /Supplier map/ })).toHaveTextContent("Chart · Version 2");
-    expect(screen.getByRole("button", { name: /Supplier map/ })).toHaveTextContent("Earlier chat");
     await user.click(screen.getByRole("button", { name: /Supplier map/ }));
-    expect(read).toHaveBeenCalledWith("loupist", "chat-1", "older");
-    expect(props.onOpenArtifact).toHaveBeenCalledWith(expect.objectContaining({ artifact_id: "older", digest: "a".repeat(64) }), "chat-1");
+    expect(read).toHaveBeenCalledWith("loupist", "chat", "older");
+    expect(props.onOpenArtifact).toHaveBeenCalledWith(expect.objectContaining({ artifact_id: "older", digest: "a".repeat(64) }), "chat");
   });
 
   it("shows an open item in place and returns to the list", async () => {
@@ -191,7 +189,7 @@ describe("ChatWorkspacePanel Work tab", () => {
   it("moves keyboard focus into an opened item and back to its row, and keeps it on the row when the read fails", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
-    vi.spyOn(bridge, "loupistArtifactList").mockResolvedValue([workItem("note", "chat", "Saved note"), workItem("older", "chat-1", "Supplier map", "chart")]);
+    vi.spyOn(bridge, "chatArtifactList").mockResolvedValue([workItem("note", "Saved note"), workItem("older", "Supplier map", "chart")]);
     const read = vi.spyOn(bridge, "chatArtifactRead").mockRejectedValueOnce(new Error("gone")).mockResolvedValue(view);
     // The shell keeps the Work tab: opening an item puts it in the tab, "All work" clears it.
     function Shell() {
@@ -218,7 +216,7 @@ describe("ChatWorkspacePanel Work tab", () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const pending = deferred<ChatArtifactView>();
-    vi.spyOn(bridge, "loupistArtifactList").mockResolvedValue([workItem("note", "chat", "Saved note")]);
+    vi.spyOn(bridge, "chatArtifactList").mockResolvedValue([workItem("note", "Saved note")]);
     vi.spyOn(bridge, "chatArtifactRead").mockReturnValue(pending.promise);
     const props = { ...panelProps(bridge), session: { tabs: [], active_tab_id: WORK_TAB_ID } };
     const mounted = render(<ChatWorkspacePanel {...props} />);
@@ -383,7 +381,7 @@ describe("ChatWorkspacePanel Expand", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("opens the full Map page instead when the Map tab is shown, leaving the panel for the way back", async () => {
+  it("opens the full World page instead when World tab is shown, leaving the panel for the way back", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const onClose = vi.fn();
@@ -391,7 +389,7 @@ describe("ChatWorkspacePanel Expand", () => {
     render(<ChatMapProvider bridge={bridge} loupistId="loupist-quality" chatId="chat" messages={[]} onOpen={vi.fn()}>
       <ChatWorkspacePanel {...panelProps(bridge)} loupistId="loupist-quality" session={{ tabs: [], active_tab_id: undefined }} onClose={onClose} onOpenKnowledgePage={onOpenKnowledgePage} />
     </ChatMapProvider>);
-    expect(await screen.findByRole("button", { name: "Open full map →" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Open World →" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Panel menu" }));
     await user.click(await screen.findByRole("menuitem", { name: "Expand" }));
     expect(onOpenKnowledgePage).toHaveBeenCalledExactlyOnceWith({ loupistId: "loupist-quality", surface: "world", selection: undefined });
@@ -425,4 +423,43 @@ it("opens a grid row from Work of the version shown by its ticker, through the s
   expect(await screen.findByText(/^You're viewing version 1/u)).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Berkshire Hathaway" }));
   expect(openAsset).toHaveBeenCalledExactlyOnceWith({ loupistId: "loupist", ticker: "BRK.B", name: "Berkshire Hathaway" });
+});
+
+it("mixes this session's written files with published work, newest first, and opens the file in Files", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const updated = Date.parse("2026-11-01T12:00:00Z");
+  const list = vi.spyOn(bridge, "chatArtifactList").mockResolvedValue([workItem("note", "Earlier report", "markdown", updated)]);
+  const onOpenFiles = vi.fn();
+  const step = { id: "step", kind: "tool" as const, category: "files" as const, operation: "write" as const, action: "Wrote file", status: "succeeded" as const, target: null, href: null, filePath: "outputs/revenue.csv", startedAtMs: updated + 1, finishedAtMs: updated + 2 };
+  const answer = { id: "answer", role: "assistant" as const, status: "complete" as const, created_at: new Date(updated + 3).toISOString(),
+    content: "[Download](outputs/revenue.csv) · [Input](inputs/report.txt)", progress: { startedAtMs: updated, items: [step, { ...step, id: "unlinked", filePath: "outputs/notes.md" }, { ...step, id: "failed", status: "failed" as const, filePath: "outputs/failed.txt" }], finishedAtMs: updated + 3 } };
+  render(<ChatWorkspacePanel {...panelProps(bridge)} workMessages={[{ ...answer, id: "write", content: "" }, { ...answer, progress: undefined }]} onOpenFiles={onOpenFiles} session={{ tabs: [], active_tab_id: WORK_TAB_ID }} />);
+  const report = await screen.findByRole("button", { name: /Earlier report/ });
+  const file = screen.getByRole("button", { name: /revenue\.csv/ });
+  expect(file.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.queryByText("report.txt")).toBeNull();
+  expect(screen.queryByText("failed.txt")).toBeNull();
+  expect(screen.getByRole("button", { name: /notes\.md/ })).toBeVisible();
+  expect(list).toHaveBeenCalledWith("loupist", "chat");
+  await userEvent.click(file);
+  expect(onOpenFiles).toHaveBeenCalledWith("outputs/revenue.csv");
+});
+
+it("lists the files Python wrote even when an answer links an existing input or a run stops early", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  vi.spyOn(bridge, "chatArtifactList").mockResolvedValue([]);
+  const paths = ["outputs/revenue.csv", "outputs/revenue.png", "outputs/revenue.svg", "outputs/report.md", "outputs/report.pdf"];
+  const step = { id: "python", kind: "tool" as const, category: "files" as const, operation: "execute" as const, toolName: "run_python",
+    action: "Ran Python", status: "failed" as const, target: null, href: null, filePath: paths[0], writtenPaths: paths, startedAtMs: 1, finishedAtMs: 2 };
+  const answer = { id: "answer", role: "assistant" as const, status: "error" as const, created_at: "2026-11-01T12:00:00Z",
+    content: "[Source](inputs/filing.txt)", progress: { startedAtMs: 1, items: [step,
+      { ...step, id: "retained-only", filePath: "inputs/filing.txt", writtenPaths: undefined }], finishedAtMs: 2 } };
+  const onOpenFiles = vi.fn();
+  render(<ChatWorkspacePanel {...panelProps(bridge)} workMessages={[answer]} onOpenFiles={onOpenFiles} session={{ tabs: [], active_tab_id: WORK_TAB_ID }} />);
+  const list = await screen.findByRole("list", { name: "Work from this conversation" });
+  expect(within(list).getAllByRole("button")).toHaveLength(5);
+  for (const path of paths) expect(within(list).getByText(path)).toBeVisible();
+  expect(within(list).queryByText("filing.txt")).toBeNull();
+  await userEvent.click(within(list).getByText("report.pdf"));
+  expect(onOpenFiles).toHaveBeenCalledWith("outputs/report.pdf");
 });

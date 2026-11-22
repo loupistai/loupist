@@ -6,7 +6,7 @@ import { chooseLoupist, mainTab, newChatButton, openApp } from "../renderApp";
 type User = ReturnType<typeof userEvent.setup>;
 const composer = () => screen.getByRole("textbox", { name: "Message Loupist" });
 async function attachSource(user: User) {
-  await user.click(await mainTab(/Map/));
+  await user.click(await mainTab(/World/));
   await user.click(await screen.findByRole("button", { name: "Library" }));
   await user.click(await screen.findByRole("tab", { name: "Sources" }));
   await user.click(await screen.findByRole("button", { name: /RFC 9110 HTTP semantics/ }));
@@ -14,12 +14,62 @@ async function attachSource(user: User) {
 }
 async function discussLens(user: User) {
   await user.click(await mainTab(/Lens/));
-  const lens = await screen.findByRole("region", { name: /What .* knows/ });
+  const lens = await screen.findByRole("region", { name: /’s Lens$/ });
   await user.click(await within(lens).findByRole("button", {name:/Compare independent accounts/}));
   await user.click(await within(lens).findByRole("button", { name: "Ask Bot to revise" }));
 }
 
 describe("World and Lens in the single Chat flow", () => {
+  it("opens a World reader's original in the default browser without leaving a Chat tab queued", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const url = "https://issuer.example/filing";
+    const read = bridge.knowledgeSourceRead.bind(bridge);
+    vi.spyOn(bridge, "knowledgeSourceRead").mockImplementation(async request => ({ ...await read(request), originLabel: url }));
+    const external = vi.spyOn(bridge, "openExternalUrl").mockRejectedValueOnce(new Error("Browser unavailable"));
+    const panel = vi.spyOn(bridge, "browserTabOpen");
+    await openApp(bridge);
+    await user.click(await mainTab(/World/));
+    await user.click(await screen.findByRole("button", { name: "Library" }));
+    await user.click(await screen.findByRole("tab", { name: "Sources" }));
+    await user.click(await screen.findByRole("button", { name: /RFC 9110 HTTP semantics/ }));
+    const link = await screen.findByRole("button", { name: /Open original/ });
+    expect(link.querySelector(".lucide-external-link")).toBeInTheDocument();
+    await user.click(link);
+    await waitFor(() => expect(external).toHaveBeenCalledExactlyOnceWith(url));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Couldn’t open the link in your browser.");
+    expect(alert).toHaveTextContent(url);
+    await user.click(screen.getByRole("button", { name: "How should we read the margin decline?" }));
+    expect(screen.queryByLabelText("Side panel")).toBeNull();
+    expect(panel).not.toHaveBeenCalled();
+  });
+
+  it("opens a Lens prose link in the default browser without leaving a Chat tab queued", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const url = "https://issuer.example/method";
+    const read = bridge.knowledgeLensRead.bind(bridge);
+    vi.spyOn(bridge, "knowledgeLensRead").mockImplementation(async request => {
+      const page = await read(request);
+      if (page.body.kind === "method" && page.body.sections[0]) {
+        page.body.sections[0].markdown = `Read the [source method](${url}).`;
+      }
+      return page;
+    });
+    const external = vi.spyOn(bridge, "openExternalUrl").mockResolvedValue(undefined);
+    const panel = vi.spyOn(bridge, "browserTabOpen");
+    await openApp(bridge);
+    await user.click(await mainTab(/Lens/));
+    const lens = await screen.findByRole("region", { name: /’s Lens$/ });
+    await user.click(await within(lens).findByRole("button", { name: /Compare independent accounts/ }));
+    await user.click(await within(lens).findByRole("link", { name: "source method" }));
+    await waitFor(() => expect(external).toHaveBeenCalledExactlyOnceWith(url));
+    await user.click(screen.getByRole("button", { name: "How should we read the margin decline?" }));
+    expect(screen.queryByLabelText("Side panel")).toBeNull();
+    expect(panel).not.toHaveBeenCalled();
+  });
+
   it("attaches an exact source to the current draft and sends it only with the next message", async () => {
     const user = userEvent.setup();
     const bridge = await openApp();
@@ -80,24 +130,27 @@ describe("World and Lens in the single Chat flow", () => {
 
   it("queues attached references for the next response instead of steering the live one", async () => {
     const user = userEvent.setup();
-    const bridge = new MockLoupistBridge({ delay_ms: 500 });
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
     await openApp(bridge);
     const steer = vi.spyOn(bridge, "chatSteer");
     const chatSend = vi.spyOn(bridge, "chatSend");
-    fireEvent.change(composer(), { target: { value: "Start research" } });
-    await user.click(screen.getByRole("button", { name: "Send" }));
-    await screen.findByRole("button", { name: "Stop response" });
-    await attachSource(user);
-    await user.type(composer(), "Include this source");
-    expect(screen.getByRole("button", { name: "Guide this response" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Send next" }));
-    expect(steer).not.toHaveBeenCalled();
-    expect(screen.getByLabelText("Pending chat instructions")).toHaveTextContent("Include this source");
-    expect(chatSend).toHaveBeenCalledOnce();
-    await user.click(screen.getByRole("button", { name: "Stop response" }));
+    const resume = bridge.pauseChatStreams();
+    try {
+      fireEvent.change(composer(), { target: { value: "Start research" } });
+      await user.click(screen.getByRole("button", { name: "Send" }));
+      await screen.findByRole("button", { name: "Stop response" });
+      await attachSource(user);
+      await user.type(composer(), "Include this source");
+      expect(screen.getByRole("button", { name: "Guide this response" })).toBeDisabled();
+      await user.click(screen.getByRole("button", { name: "Send next" }));
+      expect(steer).not.toHaveBeenCalled();
+      expect(screen.getByLabelText("Pending chat instructions")).toHaveTextContent("Include this source");
+      expect(chatSend).toHaveBeenCalledOnce();
+      await user.click(screen.getByRole("button", { name: "Stop response" }));
+    } finally { resume(); }
   });
 
-  it("opens a page's Source chip at its exact Source and returns to the page", async () => {
+  it("opens a page's source link at its exact Source and returns to the page", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const catalog = await bridge.knowledgeCatalog({ loupistId: "loupist-quality" });
@@ -107,10 +160,11 @@ describe("World and Lens in the single Chat flow", () => {
     await user.click(await mainTab(/Lens/));
     await user.click(await screen.findByRole("button", { name: /^TCP, Topic/ }));
     const overview = (await screen.findByRole("heading", { name: "Overview" })).closest("section")!;
-    await user.click(within(overview).getByRole("button", { name: `Source · ${source.title}` }));
+    await user.click(within(overview).getByText("Sources 1"));
+    await user.click(within(overview).getByRole("link", { name: source.title }));
     expect(await screen.findByRole("button", { name: "Add to question" })).toBeVisible();
     expect(read).toHaveBeenCalledWith(expect.objectContaining({ recordId: source.recordId, revisionId: source.revisionId }));
-    const page = screen.getByRole("region", { name: /What .* knows/ });
+    const page = screen.getByRole("region", { name: /’s Lens$/ });
     await user.click(within(page).getByRole("button", { name: /Back to/ }));
     expect(await screen.findByRole("heading", { name: "Overview" })).toBeVisible();
   });

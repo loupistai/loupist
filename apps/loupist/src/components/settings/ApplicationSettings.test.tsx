@@ -11,15 +11,15 @@ it("keeps Loupist in the menu bar through the host setting and lists what leaves
   render(<ApplicationSettings bridge={bridge} />);
   const toggle = screen.getByRole("switch", { name: "Keep running in the menu bar" });
   await waitFor(() => expect(toggle).toBeEnabled());
-  expect(screen.getByText("On because a briefing is active. You can turn it off here.")).toBeVisible();
+  expect(screen.getByText("On because a scheduled task was enabled. You can turn it off here.")).toBeVisible();
   const before = toggle.getAttribute("aria-checked") === "true";
   await userEvent.setup().click(toggle);
   expect(set).toHaveBeenCalledWith({ keepRunning: !before });
   await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", String(!before)));
   // An explicit choice replaces the automatic note.
-  expect(screen.queryByText("On because a briefing is active. You can turn it off here.")).toBeNull();
+  expect(screen.queryByText("On because a scheduled task was enabled. You can turn it off here.")).toBeNull();
   expect(screen.getByRole("heading", { name: "About & privacy" })).toBeVisible();
-  expect(screen.getByText("Beta. This build is signed by Loupist and is not notarized by Apple.")).toBeVisible();
+  expect(screen.getByText("Beta. Official macOS releases use Developer ID signing and Apple notarization.")).toBeVisible();
   // One sentence says what matters; where each kind of data goes opens on request.
   expect(screen.getByText(/^Your research stays on this Mac\./u)).toBeVisible();
   expect(screen.getByText("Loupist's makers receive nothing")).not.toBeVisible();
@@ -35,7 +35,7 @@ it("says when the menu bar setting cannot be saved", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   vi.spyOn(bridge, "briefingResidentSettingsSet").mockRejectedValue(new Error("nope"));
   render(<ApplicationSettings bridge={bridge} />);
-  const toggle = screen.getByRole("switch");
+  const toggle = screen.getByRole("switch", { name: "Keep running in the menu bar" });
   await waitFor(() => expect(toggle).toBeEnabled());
   await userEvent.setup().click(toggle);
   expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't change this setting. Try again.");
@@ -45,8 +45,8 @@ it("shows the Beta signing notice in Korean", async () => {
   await act(async () => { await i18n.changeLanguage("ko"); });
   try {
     render(<ApplicationSettings bridge={new MockLoupistBridge({ delay_ms: 0 })} />);
-    expect(screen.getByText("베타 버전입니다. Loupist가 서명했으며 Apple 공증은 받지 않았습니다.")).toBeVisible();
-    await waitFor(() => expect(screen.getByRole("switch")).toBeEnabled());
+    expect(screen.getByText("베타 버전입니다. 공식 macOS 배포판은 Apple이 발급한 개발자 인증서로 서명되며 Apple 공증을 받습니다.")).toBeVisible();
+    await waitFor(() => expect(screen.getByRole("switch", { name: "메뉴 막대에서 계속 실행" })).toBeEnabled());
   } finally {
     await act(async () => { await i18n.changeLanguage("en"); });
   }
@@ -145,4 +145,70 @@ describe("the holdings export row", () => {
       await act(async () => { await i18n.changeLanguage("en"); });
     }
   });
+});
+
+it("switches login and menu-bar residence together and explains turning both off", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  bridge.resident = { ...bridge.resident, keepRunning: false, loginItem: "off" };
+  const user = userEvent.setup();
+  render(<ApplicationSettings bridge={bridge} />);
+  const login = screen.getByRole("switch", { name: "Open Loupist at login" });
+  const menu = screen.getByRole("switch", { name: "Keep running in the menu bar" });
+  await waitFor(() => expect(login).toBeEnabled());
+  expect(login).not.toBeChecked();
+  await user.click(login);
+  expect(login).toBeChecked();
+  expect(menu).toBeChecked();
+  await user.click(login);
+  expect(menu).toBeChecked();
+  await user.click(login);
+  await user.click(menu);
+  expect(menu).not.toBeChecked();
+  expect(login).not.toBeChecked();
+  expect(screen.getByText("Open at login was turned off as well")).toBeVisible();
+});
+
+it("rereads macOS on focus and opens Login Items for approval or a system error", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const pane = vi.spyOn(bridge, "loginItemOpenSettings");
+  render(<ApplicationSettings bridge={bridge} />);
+  const login = screen.getByRole("switch", { name: "Open Loupist at login" });
+  expect(await screen.findByText("Available in the installed app")).toBeVisible();
+  expect(login).toBeDisabled();
+  for (const [status, text] of [["requiresApproval", "Turned off in System Settings."], ["error", "macOS did not allow this"]] as const) {
+    bridge.resident.loginItem = status;
+    act(() => { window.dispatchEvent(new Event("focus")); });
+    expect(await screen.findByText(text)).toBeVisible();
+    expect(login).not.toBeChecked();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Open Login Items" }));
+  }
+  expect(pane).toHaveBeenCalledTimes(2);
+  bridge.resident.loginItem = "on";
+  act(() => { window.dispatchEvent(new Event("focus")); });
+  await waitFor(() => expect(login).toBeChecked());
+  expect(screen.queryByRole("button", { name: "Open Login Items" })).toBeNull();
+});
+
+it("refreshes from the system after an in-flight change when the window regains focus", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  bridge.resident.loginItem = "off";
+  const read = vi.spyOn(bridge, "briefingResidentSettingsGet");
+  let finish!: () => void;
+  const gate = new Promise<void>(resolve => { finish = resolve; });
+  vi.spyOn(bridge, "loginItemSet").mockImplementation(async () => {
+    await gate;
+    // The item was registered, then disabled externally before the window regained focus.
+    bridge.resident.loginItem = "requiresApproval";
+    return { ...bridge.resident, loginItem: "on" };
+  });
+  render(<ApplicationSettings bridge={bridge} />);
+  const login = screen.getByRole("switch", { name: "Open Loupist at login" });
+  await waitFor(() => expect(login).toBeEnabled());
+  await userEvent.setup().click(login);
+  const before = read.mock.calls.length;
+  act(() => { window.dispatchEvent(new Event("focus")); });
+  await act(async () => { finish(); });
+  expect(read.mock.calls.length).toBeGreaterThan(before);
+  expect(await screen.findByText("Turned off in System Settings.")).toBeVisible();
+  expect(login).not.toBeChecked();
 });

@@ -1,12 +1,12 @@
 # Knowledge and Memory
 
-This page owns Memory: retained Sources, Map, Lens, research notes and Journal,
-plus retrieval, Map building (the internal World model) and sharing. Host authority and
+This page owns Memory: retained Sources, World, Lens, research notes and Journal,
+plus retrieval, World building and sharing. Host authority and
 storage locations are in [Architecture](architecture.md).
 
 ## Find a topic
 
-- [Map and Library](ui/map-lens.md#map-and-library)
+- [World and Library](ui/map-lens.md#world-and-library)
 - [Working files and retained knowledge](knowledge/sources-notes.md#working-files-and-retained-knowledge)
 - [Sources and exact references](knowledge/sources-notes.md#sources-and-exact-references)
 - [Worlds and graph processing](knowledge/worlds.md#worlds-and-graph-processing)

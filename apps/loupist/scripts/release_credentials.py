@@ -11,23 +11,63 @@ import os
 import re
 import secrets
 import subprocess
+import sys
 from pathlib import Path
 
-from release_profile import MODE_SECRETS, UPDATER_SECRETS, load_profile
+from release_profile import (
+    ALL_SECRETS,
+    MODE_SECRETS,
+    UPDATER_SECRETS,
+    check_team,
+    load_profile,
+)
 
 
 def run(*args: str, **kwargs) -> subprocess.CompletedProcess:
+    capture = kwargs.pop("capture_output", True)
     result = subprocess.run(
         list(map(str, args)),
         check=False,
-        capture_output=kwargs.pop("capture_output", True),
+        stdout=subprocess.PIPE if capture else None,
+        stderr=subprocess.PIPE,
         text=True,
         encoding="utf-8",
         errors="replace",
         **kwargs,
     )
+    if result.stderr and (result.returncode or not capture):
+        # Include disposable passwords too: these can come from stdin, an
+        # OpenSSL pass: argument, the keychain CLI or the child-only environment.
+        names = ALL_SECRETS | {
+            "APPLE_ID",
+            "APPLE_PASSWORD",
+            "LOUPIST_CERTIFICATE",
+            "LOUPIST_CERTIFICATE_PASSWORD",
+            "TAURI_SIGNING_PRIVATE_KEY",
+            "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
+        }
+        env = kwargs.get("env", os.environ)
+        private = [env.get(name, "") for name in names]
+        private.append(kwargs.get("input", "").rstrip("\n"))
+        flags = {"-p", "-P", "-passout"}
+        if args[:2] == ("security", "set-key-partition-list"):
+            flags.add("-k")
+        for flag, value in zip(args, args[1:]):
+            if flag in flags:
+                private.append(
+                    str(value).removeprefix("pass:")
+                    if flag == "-passout"
+                    else str(value)
+                )
+        diagnostic = result.stderr
+        for value in sorted(
+            {line for value in private for line in value.splitlines() if line},
+            key=len,
+            reverse=True,
+        ):
+            diagnostic = diagnostic.replace(value, "[REDACTED]")
+        print(diagnostic.rstrip(), file=sys.stderr)
     if result.returncode:
-        # Never include the command arguments: security/openssl take passwords.
         raise RuntimeError(f"{args[0]} failed during release credential setup")
     return result
 
@@ -57,15 +97,20 @@ def require(mode: str) -> dict[str, str]:
     return {"LOUPIST_UPDATER_PUBLIC_KEY": os.environ["LOUPIST_UPDATER_PUBLIC_KEY"]}
 
 
+DRY_TEAM = "DRYRUN1234"
+DRY_IDENTITY = f"Loupist Dry Run Ephemeral ({DRY_TEAM})"
+
+
 def ephemeral(root: Path) -> dict[str, str]:
     root.mkdir(mode=0o700)
     config = root / "codesign.cnf"
-    config.write_text("""[req]
+    config.write_text(f"""[req]
 distinguished_name=dn
 x509_extensions=ext
 prompt=no
 [dn]
-CN=Loupist Dry Run Ephemeral
+CN={DRY_IDENTITY}
+OU={DRY_TEAM}
 O=Loupist
 [ext]
 basicConstraints=critical,CA:false
@@ -104,7 +149,7 @@ subjectKeyIdentifier=hash
         "-in",
         certificate,
         "-name",
-        "Loupist Dry Run Ephemeral",
+        DRY_IDENTITY,
         "-out",
         p12,
         "-passout",
@@ -135,6 +180,57 @@ subjectKeyIdentifier=hash
         .read_text()
         .strip(),
     }
+
+
+def check_apple_chain(
+    keychain: Path, sha1: str, listing: str, *, dry_run: bool
+) -> None:
+    def valid() -> bool:
+        identities = run(
+            "security", "find-identity", "-v", "-p", "codesigning", keychain
+        ).stdout
+        return bool(
+            re.search(rf'^\s*\d+\) {sha1} "', identities, re.MULTILINE | re.IGNORECASE)
+        )
+
+    if valid() and not dry_run:
+        return
+    # A .p12 can contain only the leaf and private key. Supply the public
+    # intermediates in the job keychain without changing any trust settings.
+    for name, digest in {
+        "DeveloperIDCA": "7afc9d01a62f03a2de9637936d4afe68090d2de18d03f29c88cfb0b1ba63587f",
+        "DeveloperIDG2CA": "f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a",
+    }.items():
+        if f"SHA-256 hash: {digest}".lower() in listing.lower():
+            continue
+        public_cert = keychain.with_name(name + ".cer")
+        run(
+            "curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--retry",
+            "3",
+            "--output",
+            public_cert,
+            f"https://www.apple.com/certificateauthority/{name}.cer",
+        )
+        if hashlib.sha256(public_cert.read_bytes()).hexdigest() != digest:
+            raise ValueError(
+                "Apple Developer ID intermediate certificate fingerprint mismatch"
+            )
+        run("security", "add-certificates", "-k", keychain, public_cert)
+        if not dry_run and valid():
+            return
+    if dry_run:
+        if valid():
+            raise ValueError(
+                "disposable rehearsal certificate unexpectedly has a trusted chain"
+            )
+        return
+    raise ValueError(
+        "imported Developer ID identity is invalid or its Apple chain is incomplete"
+    )
 
 
 def import_certificate(root: Path, profile: dict, *, dry_run: bool) -> dict[str, str]:
@@ -225,6 +321,54 @@ def import_certificate(root: Path, profile: dict, *, dry_run: bool) -> dict[str,
     sha1, sha256 = hashes[0], hashlib.sha256(leaf).hexdigest().upper()
     if listed_sha256 and listed_sha256.upper() != sha256:
         raise ValueError("identity and imported certificate do not match")
+    if profile["macos_signing"]["mode"] == "developer-id":
+        # security reports the common name next to the fingerprint of the
+        # certificate whose private key it located in the temporary keychain.
+        names = {
+            name
+            for fingerprint, name in re.findall(
+                r'^\s*\d+\) ([A-Fa-f0-9]{40}) "([^"\n]+)"', identities, re.MULTILINE
+            )
+            if fingerprint.upper() == sha1
+        }
+        expected = (
+            DRY_IDENTITY if dry_run else os.environ["LOUPIST_APPLE_SIGNING_IDENTITY"]
+        )
+        team = DRY_TEAM if dry_run else check_team(profile["macos_signing"]["team_id"])
+        # Match the actual leaf's OU independently of the human-readable name.
+        pem = (
+            "-----BEGIN CERTIFICATE-----\n"
+            + base64.encodebytes(leaf).decode()
+            + "-----END CERTIFICATE-----\n"
+        )
+        subject = run(
+            "/usr/bin/openssl",
+            "x509",
+            "-subject",
+            "-nameopt",
+            "multiline",
+            "-noout",
+            input=pem,
+        ).stdout
+        units = re.findall(
+            r"^\s*organizationalUnitName\s*= (.+)$", subject, re.MULTILINE
+        )
+        if (
+            names != {expected}
+            or units != [team]
+            or (
+                not dry_run
+                and (
+                    not expected.startswith("Developer ID Application: ")
+                    or team != os.environ["LOUPIST_APPLE_TEAM_ID"]
+                )
+            )
+            or not expected.endswith(f" ({team})")
+        ):
+            raise ValueError(
+                "imported identity does not match the configured Developer ID Application name and team"
+            )
+        check_apple_chain(keychain, sha1, listing, dry_run=dry_run)
     if not dry_run:
         policy = profile["macos_signing"]
         if policy["certificate_sha1"] and (
@@ -274,7 +418,7 @@ def load_ephemeral(root: Path) -> dict[str, str]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def build(root: Path, *, dry_run: bool) -> None:
+def updater_environment(root: Path, *, dry_run: bool) -> dict[str, str]:
     names = ("TAURI_SIGNING_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY_PASSWORD")
     try:
         values = load_ephemeral(root) if dry_run else os.environ
@@ -288,7 +432,11 @@ def build(root: Path, *, dry_run: bool) -> None:
         # needs the private handoff, even when validation or the build fails.
         if dry_run:
             ephemeral_file(root).unlink(missing_ok=True)
-    # Keep real and disposable material scoped to this Tauri invocation.
+    return environment
+
+
+def build(root: Path, *, dry_run: bool) -> None:
+    environment = updater_environment(root, dry_run=dry_run)
     run(
         "npm",
         "exec",
@@ -309,15 +457,82 @@ def build(root: Path, *, dry_run: bool) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["require", "ephemeral", "import", "build"])
+    parser.add_argument(
+        "command",
+        choices=[
+            "require",
+            "ephemeral",
+            "import",
+            "build",
+            "store-notary",
+            "sign-updater",
+        ],
+    )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--archive", type=Path)
+    parser.add_argument("--version")
     args = parser.parse_args()
-    profile = load_profile()
+    profile = load_profile(rehearsal=args.dry_run or args.command == "ephemeral")
     root = Path(os.environ["RUNNER_TEMP"])
     if args.command == "require":
         export(require(profile["macos_signing"]["mode"]))
     elif args.command == "ephemeral":
         persist_ephemeral(root)
+    elif args.command == "store-notary":
+        from macos_release_signing import NOTARY_PROFILE
+
+        keychain = os.environ["LOUPIST_SIGNING_KEYCHAIN"]
+        if args.dry_run:
+            password, apple_id, team = (
+                "dummy-notary-password",
+                "rehearsal@example.invalid",
+                DRY_TEAM,
+            )
+        else:
+            password = os.environ.pop("APPLE_PASSWORD")
+            apple_id, team = os.environ["APPLE_ID"], profile["macos_signing"]["team_id"]
+        run(
+            "xcrun",
+            "notarytool",
+            "store-credentials",
+            NOTARY_PROFILE,
+            "--keychain",
+            keychain,
+            "--apple-id",
+            apple_id,
+            "--team-id",
+            team,
+            *(["--no-validate"] if args.dry_run else []),
+            input=password + "\n",
+            start_new_session=True,
+        )
+        if args.dry_run:
+            # Look up metadata only, restricted to the named profile in this job's keychain.
+            run(
+                "security",
+                "find-generic-password",
+                "-a",
+                f"com.apple.gke.notary.tool.saved-creds.{NOTARY_PROFILE}",
+                "-s",
+                "appSpecificPassword",
+                keychain,
+            )
+    elif args.command == "sign-updater":
+        if not args.archive or not args.version:
+            parser.error("sign-updater requires --archive and --version")
+        run(
+            "npm",
+            "exec",
+            "--",
+            "tauri",
+            "signer",
+            "sign",
+            "--app-version",
+            args.version,
+            args.archive.resolve(),
+            env=updater_environment(root, dry_run=args.dry_run),
+            cwd=Path(__file__).resolve().parents[1],
+        )
     elif args.command == "build":
         build(root, dry_run=args.dry_run)
     else:

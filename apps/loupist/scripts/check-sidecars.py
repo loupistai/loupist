@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import hashlib
+import http.client
 import json
 import os
 import platform
@@ -855,7 +856,13 @@ def validate_openbb_bundle(executable: Path, runtime_dir: Path) -> dict[str, Any
     return public_manifest
 
 
-def openbb_smoke(executable: Path, runtime_dir: Path) -> None:
+def openbb_smoke(
+    executable: Path,
+    runtime_dir: Path,
+    *,
+    startup_only: bool = False,
+    stderr=subprocess.PIPE,
+) -> None:
     """Verify the frozen OpenBB control surface and full provider inventory."""
     manifest = validate_openbb_bundle(executable, runtime_dir)
     with tempfile.TemporaryDirectory(prefix="loupist-openbb-smoke-") as name:
@@ -867,7 +874,7 @@ def openbb_smoke(executable: Path, runtime_dir: Path) -> None:
             cwd=runtime_dir,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=stderr,
             text=True,
             encoding="utf-8",
             env=openbb_environment(),
@@ -917,8 +924,12 @@ def openbb_smoke(executable: Path, runtime_dir: Path) -> None:
                     "credentials": {},
                     "settings": {
                         "allowed_categories": categories,
-                        "enabled_provider_ids": sorted(provider_ids),
-                        "allowed_network_hosts": sorted(network_hosts),
+                        "enabled_provider_ids": []
+                        if startup_only
+                        else sorted(provider_ids),
+                        "allowed_network_hosts": []
+                        if startup_only
+                        else sorted(network_hosts),
                         "provider_config": {},
                     },
                 },
@@ -991,6 +1002,16 @@ def openbb_smoke(executable: Path, runtime_dir: Path) -> None:
             category_rows = (
                 available.get("result", {}).get("structuredContent", {}).get("result")
             )
+            if startup_only:
+                if (
+                    available.get("error")
+                    or available.get("result", {}).get("isError")
+                    or not isinstance(category_rows, list)
+                ):
+                    raise RuntimeError("OpenBB available_categories failed")
+                stop_root_process(process)
+                completed = True
+                return
             discovered_categories = {
                 row.get("name")
                 for row in category_rows or []
@@ -1270,6 +1291,98 @@ def provider_smoke_key_answer(
     return {"type": "extension_ui_response", "id": request_id, "value": smoke_key}
 
 
+def provider_callback_smoke(
+    process: subprocess.Popen[str],
+    lines: queue.Queue[str],
+    provider: str,
+    language: str,
+    reason: str,
+) -> None:
+    """Drive Pi's real loopback handler without opening the sign-in page or exchanging a token."""
+    send_json(
+        process,
+        {
+            "id": f"login-{provider}",
+            "type": "prompt",
+            "message": f"/loupist-provider-login {provider} {language}",
+        },
+    )
+    deadline = time.monotonic() + TIMEOUT_SECONDS
+    authorized = False
+    prompt_id = None
+    while not authorized or prompt_id is None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError(f"{provider} callback server did not start")
+        message = read_json_line(lines, remaining)
+        if message.get("type") == "extension_ui_request":
+            if (
+                message.get("method") == "input"
+                and message.get("title") == "loupist-provider/1:manual_code"
+            ):
+                prompt_id = message["id"]
+            if message.get("method") == "notify":
+                prefix = "loupist-provider/1:"
+                value = message.get("message", "")
+                if value.startswith(prefix):
+                    event = json.loads(value[len(prefix) :])
+                    if event["type"] == "failed":
+                        raise RuntimeError(
+                            f"{provider} callback login failed before the probe"
+                        )
+                    authorized |= event["type"] == "authorization_url"
+
+    connection = http.client.HTTPConnection("127.0.0.1", 1455, timeout=5)
+    try:
+        connection.request(
+            "GET", "/auth/callback?code=fixture&state=deliberately-wrong"
+        )
+        response = connection.getresponse()
+        page = response.read(64 * 1024).decode()
+        heading = (
+            "로그인을 완료하지 못했습니다"
+            if language == "ko"
+            else "Sign-in did not complete"
+        )
+        if (
+            response.status != 400
+            or "<title>Loupist</title>" not in page
+            or f'<html lang="{language}">' not in page
+            or f"<h1>{heading}</h1>" not in page
+            or reason not in page
+        ):
+            raise RuntimeError(
+                f"{provider} returned an unexpected wrong-state callback page"
+            )
+    finally:
+        connection.close()
+    # Reject the manual fallback in this same process to close its listener
+    # before the next login needs the fixed callback port. Never send a valid code.
+    send_json(
+        process,
+        {
+            "type": "extension_ui_response",
+            "id": prompt_id,
+            "value": "http://127.0.0.1:1455/auth/callback?code=fixture&state=wrong",
+        },
+    )
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError(f"{provider} did not finish its rejected login")
+        message = read_json_line(lines, remaining)
+        if message.get("method") == "notify" and message.get("message", "").startswith(
+            "loupist-provider/1:"
+        ):
+            if (
+                json.loads(message["message"].removeprefix("loupist-provider/1:")).get(
+                    "type"
+                )
+                == "failed"
+            ):
+                return
+
+
 def provider_extension_smoke(
     executable: Path,
     runtime_dir: Path,
@@ -1301,6 +1414,10 @@ def provider_extension_smoke(
         shutil.copyfile(run_controls, isolated_agent / run_controls.name)
         shutil.copyfile(native_search, isolated_agent / native_search.name)
         shutil.copyfile(inference, isolated_agent / inference.name)
+        shutil.copyfile(
+            extension.with_name("provider-signin-page.mjs"),
+            isolated_agent / "provider-signin-page.mjs",
+        )
         shutil.copytree(
             native_search_modules, isolated_agent / native_search_modules.name
         )
@@ -1317,6 +1434,7 @@ def provider_extension_smoke(
                 "--mode",
                 "rpc",
                 "--no-session",
+                "--offline",
                 "--no-builtin-tools",
                 "--no-extensions",
                 "--extension",
@@ -1421,6 +1539,12 @@ def provider_extension_smoke(
                 raise RuntimeError(
                     "Pi CredentialStore produced an unsafe auth file mode"
                 )
+            provider_callback_smoke(
+                process, lines, "openai", "ko", "OAuth state mismatch"
+            )
+            provider_callback_smoke(
+                process, lines, "openai-codex", "en", "State mismatch."
+            )
             stop_root_process(process)
             completed = True
         finally:

@@ -1,7 +1,5 @@
 .briefings-view { height: 100%; min-height: 0; display: flex; flex-direction: column; }
-.briefings-bar { min-height: 52px; padding: 0 var(--gg-space-5); border-bottom: 1px solid var(--gg-color-border-subtle); display: flex; align-items: center; gap: var(--gg-space-4); flex-wrap: wrap; }
 .briefings-meta { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
-.briefings-bar > p { flex: 1; min-width: 0; }
 .briefings-actions { display: flex; align-items: center; gap: var(--gg-space-2); flex-wrap: wrap; }
 .briefings-layout { flex: 1; display: grid; grid-template-columns: var(--gg-size-inspector) minmax(0, 1fr); min-height: 0; }
 .briefings-item { display: block; width: 100%; min-height: var(--gg-space-10); padding: var(--gg-space-3) var(--gg-space-4); text-align: left; }
@@ -35,8 +33,6 @@
 .briefings-continue,
 .briefings-conflicts { margin-inline-start: -0.625rem; }
 @media (max-width: 899px) {
-  .briefings-bar { padding: var(--gg-space-2) var(--gg-space-4); gap: var(--gg-space-2); }
-  .briefings-bar > p { flex-basis: 70%; }
   .briefings-layout { display: flex; }
   .schedule-list { width: 100%; border: 0; }
   .briefings-reader-scroll { display: none; }
@@ -101,6 +97,19 @@
 .schedule-view .briefings-back { display: inline-flex; margin-bottom: var(--gg-space-4); }
 .schedule-view .briefings-reader { margin-inline: 0; padding-inline: var(--gg-space-4); }
 
+.schedule-view .briefings-layout[data-run-open] { width: 100%; margin-inline: 0; container: scheduled-run / inline-size; }
+.schedule-view [data-run-open] .briefings-reader {
+  max-width: var(--gg-size-chat-column);
+  width: calc(100% - 2 * var(--gg-space-5));
+  margin-inline: auto;
+  padding-inline: 0;
+}
+.briefings-reader .message-meta:empty { display: none; }
+/* token-exception: breakpoint; matches the narrow chat reading pane. */
+@container scheduled-run (max-width: 760px) {
+  .schedule-view [data-run-open] .briefings-reader { width: calc(100% - 2 * var(--gg-space-3)); }
+}
+
 /* Schedule entry and Active filter. */
 .schedule-create { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); margin: var(--gg-space-4) var(--gg-space-4) 0; }
 .schedule-filter { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--gg-space-1); margin: var(--gg-space-3) var(--gg-space-4) 0; }
@@ -114,17 +123,37 @@
   .schedule-create { margin-inline: var(--gg-space-4); }
   .schedule-create > button[type="submit"] { flex: 1 1 auto; }
 }
-/* The spending line is the bar's second row on the list; a task or run detail keeps its height.
-   No max-width: it would shrink the line's basis below 100% and pull it up beside the count at the far right of a wide window. */
-.briefings-bar > .schedule-spending { flex: 1 0 100%; margin: 0; }
-.schedule-view .briefings-bar { padding-block: var(--gg-space-2); row-gap: var(--gg-space-1); align-content: center; }
-.schedule-view:has(.briefings-layout[data-reader-open]) .schedule-spending { display: none; }
+.schedule-header {
+  display: grid;
+  gap: var(--gg-space-1);
+  padding: var(--gg-space-2) var(--gg-space-5);
+}
+.schedule-header p { margin: 0; }
+.schedule-view .briefings-layout[data-intro] { width: 100%; margin-inline: 0; }
+.schedule-empty {
+  width: min(calc(100% - 2 * var(--gg-space-5)), var(--gg-size-chat-column));
+  margin-inline: auto;
+  padding-block: 25vh var(--gg-space-5);
+}
+.schedule-empty h2 { margin: 0; font-size: var(--gg-text-heading); font-weight: var(--gg-weight-semibold); }
+.schedule-empty > p { margin: var(--gg-space-2) 0 0; color: var(--gg-color-text-secondary); }
+.schedule-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gg-space-3); margin-block: var(--gg-space-5) var(--gg-space-3); }
+.schedule-option { display: flex; flex-direction: column; align-items: flex-start; gap: var(--gg-space-2); padding: var(--gg-space-4); }
+.schedule-option h3 { margin: 0; font-size: var(--gg-text-body); font-weight: var(--gg-weight-semibold); }
+.schedule-option p { margin: 0; color: var(--gg-color-text-secondary); line-height: var(--gg-leading-reading); }
+.schedule-option button { margin-top: auto; }
+.schedule-detail-title { display: flex; align-items: center; gap: var(--gg-space-2); }
+.schedule-task-heading strong { flex: 0 1 auto; }
+.schedule-task-status { margin-left: auto; }
+@media (max-width: 899px) {
+  .schedule-options { grid-template-columns: minmax(0, 1fr); }
+  .schedule-empty { padding-block-start: var(--gg-space-6); }
+}
 
 /* S1/S3: the detail status leads with the state; rows end in a quiet chevron; the list ends with how to add a task. */
 .schedule-detail-status strong { font-weight: var(--gg-weight-medium); color: var(--gg-color-text-primary); }
 .schedule-task-row { position: relative; }
 .schedule-task-chevron { position: absolute; right: var(--gg-space-3); top: 50%; width: 16px; height: 16px; translate: 0 -50%; color: var(--gg-color-text-tertiary); pointer-events: none; }
-.schedule-empty { text-align: start; align-items: flex-start; margin: var(--gg-space-4); }
 .schedule-footer { margin: var(--gg-space-4); max-width: 72ch; }
 .schedule-task-row .schedule-task-summary { padding-right: calc(var(--gg-space-3) + 20px); }
 

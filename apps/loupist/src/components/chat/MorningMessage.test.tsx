@@ -67,7 +67,7 @@ describe("Bot's news", () => {
     expect(within(message).getAllByRole("listitem").filter((item) => item.closest(".morning-card"))).toHaveLength(2);
     // The Map shows its own growth: no counts, no names from it, no questions built from it.
     expect(source.knowledgeGrowthEvents).not.toHaveBeenCalled();
-    expect(message).not.toHaveTextContent(/on the map|relationship|Morrow Components/);
+    expect(message).not.toHaveTextContent(/in World|relationship|Morrow Components/);
     // A question about the overdue check says so, as the bullet above it does.
     expect(within(screen.getByRole("region", { name: "You could ask" })).getAllByRole("button").map((button) => button.textContent)).toEqual([
       "Is my check on inventory days still on track?overdue since Oct 29",
@@ -189,12 +189,12 @@ describe("A research session's questions", () => {
     const ask = await screen.findByRole("region", { name: "You could ask" });
     const questions = within(ask).getAllByRole("button");
     expect(questions.map((button) => button.textContent)).toEqual([
-      "What changed for Hanul Precision since Thursday?new on the map",
+      "What changed for Hanul Precision since Thursday?new in World",
       "Why is Morrow Components linked to Hanul Precision?new relationship",
       "Is my check on inventory days still on track?overdue since Oct 29",
     ]);
     expect(questions[0]).toHaveAccessibleName("What changed for Hanul Precision since Thursday?");
-    expect(questions[0]).toHaveAccessibleDescription("new on the map");
+    expect(questions[0]).toHaveAccessibleDescription("new in World");
     await user.click(questions[1]!);
     expect(handlers.onAsk).toHaveBeenCalledWith("Why is Morrow Components linked to Hanul Precision?");
   });

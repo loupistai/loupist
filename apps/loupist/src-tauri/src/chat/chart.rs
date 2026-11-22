@@ -681,7 +681,7 @@ pub enum ChartView {
         test,
         ts(
             untagged,
-            type = "{ kind: AnalyticChartType, x: string, y: Array<string>, color: string | null, semantic_types: { [key in string]: string }, title: string | null, subtitle: string | null }"
+            type = "{ kind: AnalyticChartType, x: string, y: Array<string>, color: string | null, stack?: boolean, semantic_types: { [key in string]: string }, title: string | null, subtitle: string | null }"
         )
     )]
     Analytic {
@@ -692,6 +692,8 @@ pub enum ChartView {
         y: Vec<String>,
         #[serde(default)]
         color: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stack: Option<bool>,
         #[serde(default)]
         semantic_types: BTreeMap<String, String>,
         #[serde(default)]
@@ -768,14 +770,22 @@ impl ChartView {
                 }
             }
             Self::Analytic {
+                chart_type,
                 x,
                 y,
                 color,
+                stack,
                 semantic_types,
                 title,
                 subtitle,
-                ..
             } => {
+                if stack.is_some()
+                    && !matches!(chart_type, AnalyticChartType::Bar | AnalyticChartType::Area)
+                {
+                    return Err(ChatArtifactError::Invalid(
+                        "view.stack: only bar and area views accept stack",
+                    ));
+                }
                 let mut referenced_fields = BTreeSet::from([x.as_str()]);
                 referenced_fields.extend(y.iter().map(String::as_str));
                 referenced_fields.extend(color.as_deref());
@@ -1437,6 +1447,7 @@ mod tests {
             view.validate().unwrap();
             let stored = serde_json::to_value(&view).unwrap();
             assert_eq!(stored["y"], json!(["revenue"]));
+            assert!(stored.get("stack").is_none());
             assert_eq!(serde_json::from_value::<ChartView>(stored).unwrap(), view);
         }
         let candle = json!({"kind":"candlestick","symbol":"AAPL","interval":"1d","time":"date","open":"open","high":"high","low":"low","close":"close"});
@@ -1449,11 +1460,34 @@ mod tests {
             x: "date".into(),
             y: vec!["close".into(), "close".into()],
             color: None,
+            stack: None,
             semantic_types: BTreeMap::new(),
             title: None,
             subtitle: None,
         };
         assert!(duplicate_series.validate().is_err());
+    }
+
+    #[test]
+    fn chart_view_retains_explicit_stack_only_for_bars_and_areas() {
+        for kind in ["bar", "area", "line", "scatter"] {
+            for stack in [true, false] {
+                let view: ChartView = serde_json::from_value(
+                    json!({"kind": kind, "x": "quarter", "y": ["revenue"], "stack": stack}),
+                )
+                .unwrap();
+                if matches!(kind, "bar" | "area") {
+                    view.validate().unwrap();
+                    assert_eq!(serde_json::to_value(&view).unwrap()["stack"], json!(stack));
+                } else {
+                    assert!(view
+                        .validate()
+                        .unwrap_err()
+                        .to_string()
+                        .contains("view.stack"));
+                }
+            }
+        }
     }
 
     fn receipt(result_ref: &str) -> ChartResultReceipt {

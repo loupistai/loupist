@@ -17,3 +17,11 @@ const englishHeading = (key: string) => (key[0]!.toUpperCase() + key.slice(1)).r
 export function displaySectionHeading(key: string, heading: string): string {
   return isSuggestedKey(key) && heading === englishHeading(key) ? i18n.t(`knowledge:pageReader.sectionHeading.${key}`) : heading;
 }
+
+/** Old history entries may identify only a section kind. Its current title can belong to a later edit. */
+export function historySectionHeading({ key, sectionHeading }: { key?: string; sectionHeading?: string }): string {
+  if (sectionHeading?.trim()) return displaySectionHeading(key ?? "", sectionHeading);
+  return key && isSuggestedKey(key)
+    ? i18n.t(`knowledge:pageReader.sectionHeading.${key}`)
+    : i18n.t("knowledge:pageReader.unnamedSection");
+}

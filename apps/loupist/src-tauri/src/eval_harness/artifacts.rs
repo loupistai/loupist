@@ -178,6 +178,7 @@ const FILES: &[(&str, &[u8])] = &[
     asset!("prompts/briefing.md"),
     asset!("prompts/method-learning.md"),
     asset!("provider-inference.mjs"),
+    asset!("provider-signin-page.mjs"),
     asset!("skills/NOTICE.md"),
     asset!("skills/comparison/SKILL.md"),
     asset!("skills/comparison/references/peer-analysis.md"),
@@ -454,7 +455,9 @@ mod tests {
         );
         let mut unrelated = config;
         unrelated.system_prompt = input.path().join("SYSTEM.md");
-        let args = unrelated.rpc_arguments();
+        let args = crate::extension_availability::with_test_flags(false, false, || {
+            unrelated.rpc_arguments()
+        });
         assert_eq!(
             args[index + 1],
             sent_prompt(include_str!("../../../agent/SYSTEM.md"))

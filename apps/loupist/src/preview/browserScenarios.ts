@@ -82,29 +82,29 @@ function addressField() {
   return document.querySelector<HTMLInputElement>(".workspace-panel .browser-toolbar input");
 }
 
-function historyBack() {
-  return document.querySelector<HTMLButtonElement>(".workspace-panel .browser-history-actions button");
+function reloadButton() {
+  return document.querySelector<HTMLButtonElement>(".workspace-panel .browser-history-actions button:last-child");
 }
 
 function articleReady(select: Helpers["select"]) {
   const viewport = select(".workspace-panel .browser-viewport");
   const address = addressField();
-  const back = historyBack();
-  if (!viewport || select(".browser-error") || address?.value !== BROWSER_ARTICLE_URL || !back || back.disabled) return null;
+  const reload = reloadButton();
+  if (!viewport || select(".browser-error") || address?.value !== BROWSER_ARTICLE_URL || !reload || reload.disabled) return null;
   return viewport;
 }
 
 function articleKept(select: Helpers["select"], kind: "blocked" | "failure") {
   const alert = select(".workspace-panel .browser-error");
   const address = addressField();
-  const back = historyBack();
+  const reload = reloadButton();
   const retry = document.querySelector<HTMLButtonElement>(".workspace-panel .browser-recovery-actions button");
   const raw = alert?.textContent?.includes(BROWSER_RAW_ENGINE_MESSAGE) || address?.value.includes("about:blank");
-  if (!alert || raw || address?.value !== BROWSER_ARTICLE_URL || !back || !retry || retry.disabled) return null;
+  if (!alert || raw || address?.value !== BROWSER_ARTICLE_URL || !reload || !retry || retry.disabled) return null;
   if (kind === "blocked") {
-    return !back.disabled && select(".workspace-panel .browser-viewport") ? alert : null;
+    return !reload.disabled && select(".workspace-panel .browser-viewport") ? alert : null;
   }
-  return back.disabled ? alert : null;
+  return reload.disabled ? alert : null;
 }
 
 /** The latest open is the child the panel kept. A discarded open must not emit into a closed tab. */

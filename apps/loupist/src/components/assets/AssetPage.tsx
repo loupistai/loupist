@@ -3,14 +3,16 @@ import { formatDate, formatNumber, storedPriceWasRounded } from "@/i18n/format";
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
 import { ArrowLeftIcon, ArrowUpIcon, NetworkIcon, RefreshCwIcon } from "lucide-react";
 import type { ChatThread, LoupistBridge, LoupistSummary } from "../../types";
-import { assetExchangeLabel, assetTicker, type AssetEvidence, type AssetMapCounts, type AssetOpenRequest, type AssetPage as AssetPageData, type AssetPageTarget, type AssetPricePoint, type AssetStoredPrice } from "../../contracts/assets";
+import { assetTicker, type AssetEvidence, type AssetMapCounts, type AssetOpenRequest, type AssetPage as AssetPageData, type AssetPageTarget, type AssetPricePoint, type AssetStoredPrice } from "../../contracts/assets";
 import { AssetTile } from "../market/AssetTile";
 import { PriceText } from "../market/PriceText";
 import { ConvertedAmount } from "../market/ConvertedAmount";
+import { readNoun } from "../../chat/progressLabels";
 import { priceAsOf } from "../market/priceAsOf";
 import { chartPoints, offeredRanges, PriceChart, rangePoints, type PriceRange } from "./PriceChart";
 import { useOnline } from "../../app/useOnline";
 import { Button } from "../ui/button";
+import { ExternalLinkError, useExternalLink } from "../navigation/ExternalLinkError";
 import { Spinner } from "../ui/spinner";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { connectionLabel } from "./connectionName";
@@ -18,6 +20,7 @@ import { AssetThesis } from "./AssetThesis";
 import { citationNumbers, moveSentence, readSentence, shortDay, SourceChips } from "./assetText";
 import { providerName } from "@/lib/marketProviderName";
 import { useAssetNames } from "./assetName";
+import { listingExchange } from "./listingExchange";
 import "@/styles/asset-page.css";
 import { commandErrorCode } from "@/lib/errors";
 
@@ -70,6 +73,7 @@ type CheckNote = "follow" | "noModel" | "failed" | null;
  * Map line. No figure on the page is computed here; nothing reads a provider but the host.
  */
 export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onOpenChat, onOpenMap, onOpenLink, onOpenSource, onOpenConnections, onChanged, onName }: Props) {
+  const { open: openBrowser, failedUrl } = useExternalLink(onOpenLink);
   useTranslation(["assets", "chat"]);
   const loupistId = loupist.id;
   const online = useOnline();
@@ -234,10 +238,10 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onO
   };
 
   const openEvidence = useCallback((evidence: AssetEvidence) => {
-    if (evidence.url) { void onOpenLink(evidence.url); return; }
+    if (evidence.url) { void openBrowser(evidence.url); return; }
     if (evidence.worldId) { onOpenMap(page?.entityId ?? undefined); return; }
     if (evidence.recordId) onOpenSource(evidence.recordId);
-  }, [onOpenLink, onOpenMap, onOpenSource, page?.entityId]);
+  }, [openBrowser, onOpenMap, onOpenSource, page?.entityId]);
 
   // The source is the provider's page or the retained price receipt.
   const price = page?.currentPrice ?? null;
@@ -253,7 +257,7 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onO
   const submitQuestion = (event: FormEvent) => { event.preventDefault(); ask(question.trim()); };
   const focusAsk = () => { askInputRef.current?.scrollIntoView?.({ block: "center" }); askInputRef.current?.focus(); };
 
-  const exchangeLabel = assetExchangeLabel(page?.asset.reference);
+  const { exchange: exchangeLabel, country } = listingExchange(page?.asset.reference, i18n.language);
   const meta = page ? [ticker ? <span key="ticker" className="gg-num">{ticker}</span> : null, exchangeLabel ? <span key="exchange">{exchangeLabel}</span> : null].filter(Boolean) : [];
   const checkBlocked = !online ? t("offlineTooltip") : undefined;
   const header = <header className="asset-page-header">
@@ -342,7 +346,7 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onO
       <PriceText value={price.value} currency={currency} digits="auto" size="figure" />
       <small className="asset-quote-meta" data-price-date={price.date}>{priceAsOf(price.date, price.kind)}{providerName(price.provider) ? ` · ${providerName(price.provider)}` : ""}
         {" "}<SourceChips evidence={priceEvidence} numbers={numbers} onOpen={evidence => {
-          if (evidence.url) void onOpenLink(evidence.url);
+          if (evidence.url) void openBrowser(evidence.url);
           else setPriceSource(price);
         }} /></small>
       {/* The display currency, from the stored price's own currency; none when the result stated none. */}
@@ -398,13 +402,18 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onO
               <dt>{t("price.storedValue")}</dt><dd className="gg-num">{String(priceSource.value)}</dd>
             </> : null}
             <dt>{i18n.t("chat:workspaceEvidence.dataset")}</dt>
-            <dd><code>{priceSource.dataset.dataset_id}</code> · {i18n.t("chat:workspaceEvidence.datasetVersion", { version: priceSource.dataset.revision })}</dd>
+            <dd>{[ticker ? `${name} (${ticker})` : name, country, providerName(priceSource.provider), page.savedRead && readNoun(page.savedRead.current.tool), shortDay(priceSource.date.slice(0, 10))].filter(Boolean).join(" · ")}</dd>
           </dl>
+          <details className="asset-meta">
+            <summary>{i18n.t("chat:chatActivityDetailView.details")}</summary>
+            <code>{priceSource.dataset.dataset_id}</code> · {i18n.t("chat:workspaceEvidence.datasetVersion", { version: priceSource.dataset.revision })}
+          </details>
         </DialogBody>
       </DialogContent> : null}
     </Dialog>
     {header}
     {priceLine}
+    {failedUrl ? <div className="external-link-toast"><ExternalLinkError url={failedUrl} /></div> : null}
     {!online ? <p className="asset-page-offline">{t("offline")}</p> : null}
     {actionError ? <p className="inline-error asset-action-error" role="alert">{actionError}</p> : null}
     <p className="sr-only" aria-live="polite">{announcement}</p>

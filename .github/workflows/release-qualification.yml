@@ -249,7 +249,9 @@ jobs:
           DMG_ATTACHED=true
           APP="$MOUNT_DIR/Loupist.app"
           python3 apps/loupist/scripts/macos_release_signing.py verify-bundle \
-            --app "$APP" --dmg "$DMG" --metadata candidate-assets/RELEASE-METADATA.json
+            --app "$APP" --dmg "$DMG" \
+            --updater "candidate-assets/Loupist-${RELEASE_VERSION}-darwin-aarch64.app.tar.gz" \
+            --metadata candidate-assets/RELEASE-METADATA.json
           python3 apps/loupist/scripts/check-macos-bundle-version.py \
             --tauri-config apps/loupist/src-tauri/tauri.conf.json \
             --source-plist apps/loupist/src-tauri/Info.plist \

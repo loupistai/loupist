@@ -52,7 +52,7 @@ it("keeps World and Lens pack sharing out of the user app", async () => {
   await user.click(within(create).getByRole("button", { name: "Cancel" }));
 
   await user.click(await mainTab(/Lens/));
-  const lens = await screen.findByRole("region", { name: /What .* knows/ });
+  const lens = await screen.findByRole("region", { name: /’s Lens$/ });
   expectNoPackSharing(lens);
   await user.click(within(lens).getByRole("tab", { name: /Pages/ }));
 
@@ -69,8 +69,8 @@ it("keeps World and Lens pack sharing out of the user app", async () => {
   expect(await within(rule).findByText(SHARED_LINE)).toBeVisible();
   expectNoPackSharing(rule);
 
-  await user.click(await mainTab(/Map/));
-  const map = await screen.findByRole("region", { name: "Map" });
+  await user.click(await mainTab(/World/));
+  const map = await screen.findByRole("region", { name: "World" });
   // Export lives in More and saves a file; it never opens a share sheet.
   await user.click(within(map).getByRole("button", { name: "More actions" }));
   expect(await screen.findByRole("menuitem", { name: "Export image (PNG)" })).toHaveAttribute("data-map-export");

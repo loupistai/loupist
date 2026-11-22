@@ -22,25 +22,25 @@ function Surface({ onOpenFull = vi.fn() }: { onOpenFull?: (location: KnowledgeLo
  const state = useChatMap();
  return <><MessageMemoryRow loupistId="loupist" chatId={state?.chatId} message={answer} /><WorkspaceTabBar session={{ tabs: [] }} menuOpen={false} onMenuOpenChange={vi.fn()} onSelectTab={vi.fn()} onCloseTab={vi.fn()} onNewBrowser={vi.fn()} />{state?.active ? <ChatMiniMap onOpenFull={onOpenFull} /> : null}</>;
 }
-it('opens the local Map from its answer chip, highlights every added node, and offers list and full-map actions', async () => {
+it('opens the local World from its answer chip, highlights every added node, and offers list and full-map actions', async () => {
  const bridge = setup(); const onOpen = vi.fn(), onOpenFull = vi.fn();
  render(<ChatMapProvider bridge={bridge} loupistId="loupist" chatId="chat" messages={[answer]} onOpen={onOpen}><Surface onOpenFull={onOpenFull} /></ChatMapProvider>);
- fireEvent.click(await screen.findByRole('button', { name: /Show 3 new on the map/ }));
+ fireEvent.click(await screen.findByRole('button', { name: /Show 3 new in World/ }));
  expect(onOpen).toHaveBeenCalledOnce();
- expect(screen.getByRole('tab', { name: 'Chat map' })).toHaveAttribute('aria-selected', 'true');
+ expect(screen.getByRole('tab', { name: 'World for this chat' })).toHaveAttribute('aria-selected', 'true');
  expect(await screen.findByRole('img')).toHaveAttribute('data-highlight', 'a,b,c');
  fireEvent.click(screen.getByRole('button', { name: 'List view' }));
  expect(screen.getByRole('table', { name: 'List view' })).toBeVisible();
  // The toggle keeps its name; pressed says the list is showing.
  expect(screen.getByRole('button', { name: 'List view' })).toHaveAttribute('aria-pressed', 'true');
- fireEvent.click(screen.getByRole('button', { name: 'Open full map →' }));
+ fireEvent.click(screen.getByRole('button', { name: 'Open World →' }));
  expect(onOpenFull).toHaveBeenCalledWith({ loupistId: 'loupist', surface: 'world', selection: undefined });
 });
 it('counts no relationship for a value a name reports about itself', async () => {
  const bridge = setup();
  vi.spyOn(bridge, 'knowledgeMap').mockResolvedValue({ ...map, edges: [...map.edges, { id: 'reports-a', kind: 'claim', relation: 'REPORTS', source: 'a', target: 'a' }] } as KnowledgeMap);
  render(<ChatMapProvider bridge={bridge} loupistId="loupist" chatId="chat" messages={[answer]} onOpen={vi.fn()}><Surface /></ChatMapProvider>);
- fireEvent.click(await screen.findByRole('button', { name: /Show 3 new on the map/ }));
+ fireEvent.click(await screen.findByRole('button', { name: /Show 3 new in World/ }));
  expect(await screen.findByRole('img')).toHaveAttribute('aria-label', '3 names · 1 relationship');
 });
 it('keeps other chats and answers out of the chip and resets immediately on a chat switch', async () => {
@@ -48,12 +48,12 @@ it('keeps other chats and answers out of the chip and resets immediately on a ch
  const props = { bridge, loupistId: 'loupist', chatId: 'chat', messages: [answer], onOpen: vi.fn() };
  const view = render(<ChatMapProvider {...props}><Surface /></ChatMapProvider>);
  await waitFor(() => expect(bridge.knowledgeGrowthEvents).toHaveBeenCalled());
- expect(screen.queryByRole('button', { name: /on the map/ })).toBeNull();
- fireEvent.click(screen.getByRole('tab', { name: 'Chat map' }));
+ expect(screen.queryByRole('button', { name: /in World/ })).toBeNull();
+ fireEvent.click(screen.getByRole('tab', { name: 'World for this chat' }));
  await screen.findByRole('img');
  view.rerender(<ChatMapProvider {...props} chatId="empty"><Surface /></ChatMapProvider>);
  expect(screen.queryByRole('img')).toBeNull();
- fireEvent.click(screen.getByRole('tab', { name: 'Chat map' }));
+ fireEvent.click(screen.getByRole('tab', { name: 'World for this chat' }));
  expect(await screen.findByText('Companies and topics from this chat appear here.')).toBeVisible();
 });
 it('retries failed requests and reads every growth-event page before filtering the chat', async () => {
@@ -61,10 +61,10 @@ it('retries failed requests and reads every growth-event page before filtering t
  vi.mocked(bridge.knowledgeMap).mockRejectedValueOnce(new Error('offline'));
  vi.mocked(bridge.knowledgeGrowthEvents).mockResolvedValueOnce({ events: [event('a', 'other')], nextCursor: 'next' }).mockResolvedValue({ events: [event('b')], nextCursor: null });
  render(<ChatMapProvider bridge={bridge} loupistId="loupist" chatId="chat" messages={[answer]} onOpen={vi.fn()}><Surface /></ChatMapProvider>);
- fireEvent.click(screen.getByRole('tab', { name: 'Chat map' }));
+ fireEvent.click(screen.getByRole('tab', { name: 'World for this chat' }));
  expect(await screen.findByRole('alert')).toBeVisible();
  fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
- expect(await screen.findByRole('button', { name: /Show 1 new on the map/ })).toBeVisible();
+ expect(await screen.findByRole('button', { name: /Show 1 new in World/ })).toBeVisible();
  expect(bridge.knowledgeGrowthEvents).toHaveBeenCalledWith({ loupistId: 'loupist', limit: 5000, cursor: 'next' });
 });
 it('fetches on a completed turn without polling or refetching for streaming text', async () => {
@@ -94,12 +94,12 @@ it('shows the answer chip once World processing delivers the saved Source after 
   function SavedSurface() { const state = useChatMap(); return <MessageMemoryRow loupistId="loupist" chatId={state?.chatId} message={saved} />; }
   render(<ChatMapProvider bridge={bridge} loupistId="loupist" chatId="chat" messages={[saved]} onOpen={vi.fn()}><SavedSurface /></ChatMapProvider>);
   await waitFor(() => expect(growth).toHaveBeenCalledTimes(1));
-  expect(screen.queryByRole('button', { name: /Show 1 new on the map/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: /Show 1 new in World/ })).toBeNull();
   await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
-  expect(await screen.findByRole('button', { name: /Show 1 new on the map/ })).toBeVisible();
+  expect(await screen.findByRole('button', { name: /Show 1 new in World/ })).toBeVisible();
  } finally { vi.useRealTimers(); }
 });
-const streamingRead = (entityIds: string[]): ChatMessage => ({ id: 'live', role: 'assistant', content: '', created_at: '2026-10-28', status: 'streaming', progress: { startedAtMs: 1, items: [{ id: 'read', kind: 'tool', category: 'memory', operation: 'read', action: 'Read the map', status: 'running', entityIds, target: null, href: null, startedAtMs: 0, finishedAtMs: null }], finishedAtMs: null } });
+const streamingRead = (entityIds: string[]): ChatMessage => ({ id: 'live', role: 'assistant', content: '', created_at: '2026-10-28', status: 'streaming', progress: { startedAtMs: 1, items: [{ id: 'read', kind: 'tool', category: 'memory', operation: 'read', action: 'Read World', status: 'running', entityIds, target: null, href: null, startedAtMs: 0, finishedAtMs: null }], finishedAtMs: null } });
 function MapOnly() {
  const state = useChatMap();
  return state?.active ? <ChatMiniMap onOpenFull={vi.fn()} /> : <button type="button" onClick={() => state?.select()}>Show map</button>;
@@ -124,7 +124,7 @@ it('lights the names a running step reads only while the reply runs, and only fo
  view.rerender(<ChatMapProvider {...finished}><RunningReply chatId="other" ids={['a']} /><MapOnly /></ChatMapProvider>);
  expect(screen.getByRole('img')).toHaveAttribute('data-live', '');
 });
-it('marks the Map tab at a chat\'s first names when the panel is busy, and only once', async () => {
+it('marks World tab at a chat\'s first names when the panel is busy, and only once', async () => {
  const bridge = setup([]);
  const onFirstNames = vi.fn<() => 'opened' | 'badged' | 'none'>().mockReturnValue('badged');
  const props = { bridge, loupistId: 'loupist', chatId: 'chat', messages: [answer], onOpen: vi.fn(), onFirstNames };
@@ -134,13 +134,13 @@ it('marks the Map tab at a chat\'s first names when the panel is busy, and only 
  vi.mocked(bridge.knowledgeGrowthEvents).mockResolvedValue({ events: [event('a')], nextCursor: null });
  view.rerender(<ChatMapProvider {...props} refreshKey={1}><Surface /></ChatMapProvider>);
  await waitFor(() => expect(onFirstNames).toHaveBeenCalledOnce());
- expect(await screen.findByText('New in Chat map')).toBeInTheDocument();
+ expect(await screen.findByText('New in World for this chat')).toBeInTheDocument();
  vi.mocked(bridge.knowledgeGrowthEvents).mockResolvedValue({ events: [event('a'), event('b')], nextCursor: null });
  view.rerender(<ChatMapProvider {...props} refreshKey={2}><Surface /></ChatMapProvider>);
  await waitFor(() => expect(bridge.knowledgeGrowthEvents).toHaveBeenCalledTimes(3));
  expect(onFirstNames).toHaveBeenCalledOnce();
 });
-it('shows the Map tab itself when the panel accepts the first names', async () => {
+it('shows World tab itself when the panel accepts the first names', async () => {
  const bridge = setup([]);
  const onFirstNames = vi.fn<() => 'opened' | 'badged' | 'none'>().mockReturnValue('opened');
  const props = { bridge, loupistId: 'loupist', chatId: 'chat', messages: [answer], onOpen: vi.fn(), onFirstNames };
@@ -184,7 +184,7 @@ it("keeps the chat map readable as a list when its canvas throws", async () => {
   try {
     const bridge = setup();
     render(<ChatMapProvider bridge={bridge} loupistId="loupist" chatId="chat" messages={[answer]} onOpen={vi.fn()}><Surface /></ChatMapProvider>);
-    fireEvent.click(await screen.findByRole("button", { name: /Show 3 new on the map/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Show 3 new in World/ }));
     expect(await screen.findByRole("table", { name: "List view" })).toBeVisible();
   } finally { canvasFailure.active = false; error.mockRestore(); }
 });

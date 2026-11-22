@@ -1,9 +1,7 @@
 use std::path::Path;
 
 use crate::{
-    app::CommandError,
-    chat::execution_session::ChatExecutionSession,
-    runs::coordinator::{PendingMemoryWrite, RunLease, RunRegistration},
+    chat::execution_session::ChatExecutionSession, runs::coordinator::RunLease,
     runs::scratch::RunScratch,
 };
 
@@ -12,7 +10,7 @@ use crate::{
 /// tear down files or unregister the run while Pi is still settling.
 #[derive(Debug)]
 pub(crate) struct ChatTurnResources {
-    run_lease: Option<RunLease>,
+    _run_lease: RunLease,
     run_scratch: RunScratch,
     pi_session: ChatExecutionSession,
 }
@@ -24,7 +22,7 @@ impl ChatTurnResources {
         pi_session: ChatExecutionSession,
     ) -> Self {
         Self {
-            run_lease: Some(run_lease),
+            _run_lease: run_lease,
             run_scratch,
             pi_session,
         }
@@ -40,17 +38,6 @@ impl ChatTurnResources {
 
     pub(crate) fn pi_session_mut(&mut self) -> &mut ChatExecutionSession {
         &mut self.pi_session
-    }
-
-    /// Converts the turn from a shared Chat reader into its already-reserved
-    /// FIFO Memory writer. The reservation must exist before this method drops
-    /// the Chat lease, so no same-Loupist reader can enter between both phases.
-    pub(crate) async fn handoff_to_memory_write(
-        &mut self,
-        pending: PendingMemoryWrite,
-    ) -> (RunRegistration, Result<(), CommandError>) {
-        self.run_lease = None;
-        pending.wait_retaining_registration().await
     }
 }
 

@@ -6,7 +6,7 @@ import { MockLoupistBridge } from "../../bridge/mockBridge";
 
 vi.mock('../../components/map/MapCanvas', () => ({ default: ({ selectedId }: { selectedId?: string }) => <div data-testid="principle-map" data-selected={selectedId} /> }));
 
-it("opens a feedback principle on What it knows and returns to the original Chat", async () => {
+it("opens a feedback principle on Lens and returns to the original Chat", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const original = bridge.loupistSelect.bind(bridge);
   vi.spyOn(bridge, 'loupistSelect').mockImplementation(async loupistId => {

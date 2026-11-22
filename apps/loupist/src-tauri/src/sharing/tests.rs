@@ -762,9 +762,7 @@ async fn the_export_scan_blocks_every_secret_rust_holds() {
     .remove(0);
     crate::custom_connections::service::for_state(&state)
         .unwrap()
-        .lock()
-        .await
-        .add_pending(parsed)
+        .add(parsed)
         .unwrap();
     let provider = principle(&state, &id, "Rotate fixtureproviderkey7 every year.");
     let custom = principle(&state, &id, "The header fixturedesksecret42 stays private.");
@@ -1924,10 +1922,13 @@ async fn a_merge_supports_identical_claims_and_shows_a_differing_value_without_t
         .find(|c| c.relation == "REPORTS" && c.id != "own-margin")
         .unwrap();
     assert_eq!(theirs.status, ClaimStatus::Disputed);
-    assert!(theirs
-        .qualifiers
-        .iter()
-        .any(|q| q.key == "shared_note" && q.value == "Differs from a value already on your map"));
+    assert!(
+        theirs
+            .qualifiers
+            .iter()
+            .any(|q| q.key == "shared_note"
+                && q.value == "Differs from a value already in your World")
+    );
     commands::with_tx(&state, &b, |tx, blobs| {
         commands::added::remove(tx, blobs, &b, &row.import_id, false, AT + 1)
     })
@@ -3704,7 +3705,7 @@ async fn sharing_private_context_blocks_read_failures_but_accepts_empty_credenti
     let state = AppState::for_folder_test(temp.path().join("empty"));
     let id = loupist(&state, "Empty credentials").await;
     perspective(&state, &id);
-    assert!(super::github::load_token(&state.credential_environment).is_none());
+    assert!(super::github::load_token(&state).await.is_none());
     assert!(
         commands::share::private_context_with_finance(&state, |_, _| Ok(None))
             .unwrap()

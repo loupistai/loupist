@@ -2,8 +2,10 @@
 // LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract
 
 import type { AgentSkillSummary } from "./agent_harness";
+import type { AppMenuContext } from "./app_menu";
 import type { BriefingSettings, BriefingSettingsRequest, BriefingsLoupistRequest, InboxPage, InboxRequest, ReadRequest, UnreadCount } from "./briefings/commands";
-import type { ResidentRequest, ResidentSettings } from "./briefings/desktop";
+import type { ResidentRequest } from "./briefings/desktop";
+import type { DesktopSettings, LoginItemRequest } from "./briefings/login_item";
 import type { ChatActivityDetail } from "./chat/activity";
 import type { ChatArtifact, ChatArtifactVersion } from "./chat/artifacts";
 import type { ModelVisibilityUpdateRequest } from "./commands";
@@ -40,6 +42,7 @@ import type { CustomConnection } from "./custom_connections/service";
 import type { ChatFeedback } from "./domain/chat";
 import type { JsonValue } from "./external";
 import type { FxDisplay } from "./finance_data/fx";
+import type { WorkspaceDocumentHandler, WorkspaceDocumentOpen, WorkspaceDocumentRequest } from "./fs/workspace_document";
 import type { WorkspaceDirectory, WorkspaceFile } from "./fs/workspace_files";
 import type { FollowedStatus } from "./knowledge/followed";
 import type { GraphJobView, GraphProcessingView } from "./knowledge/graph_jobs";
@@ -59,6 +62,7 @@ import type { ModelCatalogView } from "./providers/catalog";
 import type { ModelNoticeAckRequest, ProviderConfigureRequest, ProviderConnectionRequest, ProviderModelsRequest, ProviderPageRequest, ProviderSubmitCodeRequest } from "./providers/connection";
 import type { CustomProviderRequest } from "./providers/custom";
 import type { LocalDiscovery, ProviderCustomTestRequest, ProviderCustomTestResult, ProviderPresetRequest } from "./providers/local";
+import type { WorkbookRead, WorkbookRequest } from "./python_run/workbook";
 import type { RunActivity } from "./runs/coordinator";
 import type { DiagnosticsRequest } from "./runs/log";
 import type { WatchSnapshot } from "./scheduled_tasks";
@@ -87,13 +91,17 @@ import type { BrowserTabBoundsRequest, BrowserTabHistoryRequest, BrowserTabNavig
  * `src-tauri/src/bridge_contract.rs`). `never`: the command takes other arguments.
  */
 export type BridgeCommands = {
+  app_menu_update: { request: AppMenuContext, response: null },
   briefing_settings_get: { request: BriefingsLoupistRequest, response: BriefingSettings },
   briefing_settings_set: { request: BriefingSettingsRequest, response: BriefingSettings },
   inbox_list: { request: InboxRequest, response: InboxPage },
   inbox_mark_read: { request: ReadRequest, response: null },
   inbox_unread_counts: { request: never, response: Array<UnreadCount> },
-  briefing_resident_settings_get: { request: never, response: ResidentSettings },
-  briefing_resident_settings_set: { request: ResidentRequest, response: ResidentSettings },
+  briefing_resident_settings_get: { request: never, response: DesktopSettings },
+  briefing_resident_settings_set: { request: ResidentRequest, response: DesktopSettings },
+  login_item_set: { request: LoginItemRequest, response: DesktopSettings },
+  login_item_hint_dismiss: { request: never, response: DesktopSettings },
+  login_item_open_settings: { request: never, response: null },
   model_catalog_get: { request: never, response: ModelCatalogView },
   model_visibility_update: { request: ModelVisibilityUpdateRequest, response: ModelCatalogView },
   open_external_url: { request: never, response: null },
@@ -249,7 +257,13 @@ export type BridgeCommands = {
   legacy_holdings_dismiss: { request: never, response: LegacyHoldingsStatus },
   chat_activity_read: { request: ChatActivityRequest, response: ChatActivityDetail },
   workspace_list: { request: WorkspacePathRequest, response: WorkspaceDirectory },
+  workspace_workbook_read: { request: WorkbookRequest, response: WorkbookRead },
   workspace_read: { request: WorkspacePathRequest, response: WorkspaceFile },
+  workspace_document_handler: {
+    request: WorkspaceDocumentRequest,
+    response: WorkspaceDocumentHandler,
+  },
+  workspace_document_open: { request: WorkspaceDocumentRequest, response: WorkspaceDocumentOpen },
   workspace_reveal: { request: WorkspacePathRequest, response: null },
   chat_draft_files_read: { request: DraftIdentity, response: Array<DraftAttachment> },
   chat_draft_files_write: { request: DraftIdentity, response: null },
@@ -295,6 +309,8 @@ export type BridgeCommands = {
     request: MarketplaceCredentialRequest,
     response: Array<MarketplaceCredentialStatusDto>,
   },
+  marketplace_credentials_allow_access: { request: string, response: null },
+  marketplace_credentials_cancel_access: { request: string, response: null },
   marketplace_credential_verify: {
     request: MarketplaceCredentialRequest,
     response: Array<MarketplaceCredentialStatusDto>,

@@ -3,7 +3,7 @@ use super::*;
 use crate::agent_harness::native_policy::{
     self, NativeDecision, NativeRefusal, NativeRequest, NativeRoots, NativeTool,
 };
-use crate::custom_connections::taint::{HARD_LINK_WRITE_REFUSAL, INSTRUCTION_WRITE_REFUSAL};
+use crate::custom_connections::taint::{instruction_write_refusal, HARD_LINK_WRITE_REFUSAL};
 
 const SEARCH_COVERS_APP_DATA_NEXT: &str = "This search root contains the app's private data folder, so it is not searched. Search a narrower folder, such as the workspace or one of its subfolders.";
 const UNRESOLVABLE_NEXT: &str = "This path goes through a symbolic link that loops or cannot be read, so it is not touched. Use the real file's path.";
@@ -43,10 +43,14 @@ impl NativeGate {
 
 fn refusal_error(refusal: NativeRefusal) -> BrokerError {
     match refusal {
-        NativeRefusal::BundledSkill => BrokerError::Execution(
-            "Bundled Skills are read-only. Write a Skill under this Loupist's skills folder."
-                .into(),
-        ),
+        NativeRefusal::BundledSkill => {
+            let message = if crate::extension_availability::user_skills() {
+                "Bundled Skills are read-only. Write a Skill under this Loupist's skills folder."
+            } else {
+                "Bundled Skills are read-only."
+            };
+            BrokerError::Execution(message.into())
+        }
         NativeRefusal::AppPrivate => BrokerError::ProtectedPath,
         NativeRefusal::Credentials => BrokerError::ProtectedPath.with_next(CREDENTIALS_NEXT),
         NativeRefusal::GitDir => BrokerError::ProtectedPath.with_next(GIT_DIR_NEXT),
@@ -57,7 +61,7 @@ fn refusal_error(refusal: NativeRefusal) -> BrokerError {
         NativeRefusal::Unresolvable => BrokerError::ProtectedPath.with_next(UNRESOLVABLE_NEXT),
         NativeRefusal::Outside => BrokerError::OutsideWorkspace,
         NativeRefusal::InstructionsAfterUntrustedText => {
-            BrokerError::UntrustedTextPaused.with_next(INSTRUCTION_WRITE_REFUSAL)
+            BrokerError::UntrustedTextPaused.with_next(instruction_write_refusal())
         }
         NativeRefusal::HardLinkAfterUntrustedText => {
             BrokerError::UntrustedTextPaused.with_next(HARD_LINK_WRITE_REFUSAL)
@@ -271,6 +275,12 @@ impl AppToolExecutor {
             self.capture.search_cancel.clone(),
         )
         .await
+    }
+
+    pub(super) fn captured_attachment_snapshot_title(&self, path: &str) -> Option<String> {
+        self.capture
+            .file_labels
+            .attachment_snapshot_title(path, self.capture.native.roots()?)
     }
 
     pub(super) fn workspace_capture(&self, params: Value) -> Result<Value, BrokerError> {

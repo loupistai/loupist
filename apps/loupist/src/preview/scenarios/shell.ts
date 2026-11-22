@@ -3,6 +3,40 @@ import { prepareFixture, previewKo, type PreviewBridge } from "../fixtures";
 import { semiconductorTrackingView } from "../../bridge/mock/worldSchema";
 import { base, click, hasLayout, openLoupistMenu, openLoupistSettings, openNavigation, select, settings, toggleSidebar, until, type PreviewScenario } from "./kit";
 
+const buildingMapRow = '[data-sidebar-place="map"] button:has(.thread-running)';
+const runningScheduleRow = '[data-sidebar-place="schedule"] button:has(.thread-running)';
+
+function runningScheduleLandmark(container = "") {
+  const row = select(`${container}${runningScheduleRow}`);
+  return row && !row.querySelector(".shell-unread") ? row : null;
+}
+
+async function runningSchedule(bridge: PreviewBridge) {
+  await prepareFixture(bridge);
+  const [lastRun] = await bridge.scheduledTaskRuns({ loupist_id: "loupist-quality", task_id: "preview-task-0" });
+  if (!lastRun) throw new Error("Schedule preview run is missing");
+  bridge.scheduledTasksActivity = async ({ loupist_id }) => loupist_id === lastRun.loupist_id ? [{
+    ...lastRun, id: "preview-running-task", run_id: "preview-running-task",
+    status: "running", finished_at_ms: null, message_id: null,
+  }] : [];
+}
+
+async function buildingMap(bridge: PreviewBridge) {
+  await prepareFixture(bridge);
+  const read = bridge.knowledgeCatalog.bind(bridge);
+  bridge.knowledgeCatalog = async request => {
+    const catalog = await read(request);
+    let index = 0;
+    return { ...catalog, sources: catalog.sources.map(source => ({
+      ...source,
+      objects: source.objects.map(object => {
+        const status = ["running", "queued"][index++];
+        return status ? { ...object, processing: { jobId: object.id, status, error: null } } : object;
+      }),
+    })) };
+  };
+}
+
 /** Loupists, chats, the page header and the sidebar. */
 export const shellScenarios: PreviewScenario[] = [
   { ...base("chat-topic-empty", "A new topic Chat offers only questions", () => select(".morning-ask-only .morning-question"), async root => {
@@ -12,7 +46,7 @@ export const shellScenarios: PreviewScenario[] = [
   }) },
   base("loupists", "Loupists in Settings", () => select(".settings-loupists"), (root) => settings(root, "loupists")),
   base("loupist-settings", "Editable Loupist profile", () => select(".loupist-settings-page #loupist-profile-focus"), async () => { await openLoupistSettings(); await until(() => select("#loupist-profile-name"), "Profile editor did not open"); }),
-  { ...base("loupist-settings-tracking", "What the map tracks", () => select(".loupist-tracking-changes"), async () => {
+  { ...base("loupist-settings-tracking", "What World tracks", () => select(".loupist-tracking-changes"), async () => {
     await openLoupistSettings();
     await click('[data-loupist-section="world"] > summary');
     await click("[data-loupist-tracking-advanced] > summary");
@@ -77,7 +111,7 @@ export const shellScenarios: PreviewScenario[] = [
   // open session Bot handed off (a long title), and Bot itself while another view is open.
   { ...base("shell-sidebar-running", "Research sessions and Bot with a reply running show a spinner", () => {
     const sidebar = select(".loupist-navigation");
-    return sidebar && sidebar.querySelectorAll(".thread-running").length === 3 && select('.loupist-sessions [data-thread-id="preview-chat-2"][aria-current="page"]') ? sidebar : null;
+    return sidebar && sidebar.querySelectorAll('[data-testid="loupist-chat-row"] .thread-running').length === 3 && select('.loupist-sessions [data-thread-id="preview-chat-2"][aria-current="page"]') ? sidebar : null;
   }, async () => {
     await until(() => select("textarea[data-chat-composer]"), "Bot did not initialize");
     await openNavigation(".loupist-sessions");
@@ -89,6 +123,20 @@ export const shellScenarios: PreviewScenario[] = [
     await click('[data-sidebar-place="following"] button');
     if (!select('[data-collapsible="icon"] .navigation-search')) toggleSidebar();
   }), setup: runningSessions },
+  { ...base("shell-map-building", "World row shows building work while Bot is open", () => select(buildingMapRow), async () => {
+    await openNavigation('[data-sidebar-place="map"] button');
+  }), setup: buildingMap },
+  { ...base("shell-map-building-rail", "World spinner sits in the icon rail's corner", () => select(`[data-collapsible="icon"] ${buildingMapRow}`), async () => {
+    await openNavigation('[data-sidebar-place="map"] button');
+    if (!select('[data-collapsible="icon"] [data-sidebar-place="map"] button')) toggleSidebar();
+  }), setup: buildingMap },
+  { ...base("shell-schedule-running", "The Schedule spinner replaces the unread count while a task runs", () => runningScheduleLandmark(), async () => {
+    await openNavigation('[data-sidebar-place="schedule"] button');
+  }), setup: runningSchedule },
+  { ...base("shell-schedule-running-rail", "The Schedule spinner sits in the icon rail's corner", () => runningScheduleLandmark('[data-collapsible="icon"] '), async () => {
+    await openNavigation('[data-sidebar-place="schedule"] button');
+    if (!select('[data-collapsible="icon"] [data-sidebar-place="schedule"] button')) toggleSidebar();
+  }), setup: runningSchedule },
   // The one-time line after holdings left Loupist, above Bot.
   ...([["exported", "Holdings were saved to a file: Show file, Save a copy… and Dismiss"], ["failed", "The holdings export has not succeeded yet: Try again and Dismiss"]] as const).map(([state, title]): PreviewScenario => ({
     ...base(`shell-legacy-holdings-${state}`, title, () => select(`[data-legacy-holdings="${state}"]`), async () => {

@@ -218,7 +218,14 @@ impl HttpTransport {
             // MCP uses 404 for a session that the server no longer recognizes.
             return Err(ConnectionError::Transport);
         }
-        if !response.status().is_success() {
+        let client_error = !response.status().is_success();
+        if client_error
+            && !(method == "tools/call"
+                && matches!(
+                    response.status(),
+                    StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY
+                ))
+        {
             return Err(ConnectionError::Protocol);
         }
         if let Some(session) = response.headers().get("Mcp-Session-Id") {
@@ -254,6 +261,17 @@ impl HttpTransport {
         if value.get("jsonrpc").and_then(Value::as_str) != Some("2.0")
             || value.get("id").and_then(Value::as_str) != Some(id.as_str())
         {
+            return Err(ConnectionError::Protocol);
+        }
+        if method == "tools/call"
+            && value.get("result").is_none()
+            && value
+                .get("error")
+                .is_some_and(crate::mcp::is_invalid_params)
+        {
+            return Err(ConnectionError::InvalidArguments);
+        }
+        if client_error {
             return Err(ConnectionError::Protocol);
         }
         let result = value

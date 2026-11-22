@@ -28,11 +28,11 @@ function post(): ChatMessage {
 
 const receipt = { chatId: "chat-9", handoffId: "handoff-9" };
 
-it("renders the path with its relations and opens the Map on it", async () => {
+it("renders the path with its relations and opens World on it", async () => {
   const { open: onOpenMap } = renderWithOpen(<ThreadLink message={post()} loupistId="loupist-a" loupistName="Chip desk" />);
   expect(screen.getByText("New link: Alpha ↔ Gamma through Beta.")).toBeVisible();
   // One quiet line: the button is named by its words, and the path is named on hover, not drawn as a card.
-  const path = screen.getByRole("button", { name: "Show on the map" });
+  const path = screen.getByRole("button", { name: "Show in World" });
   expect(path).toHaveAttribute("title", "Alpha → supplies → Beta ← uses ← Gamma");
   await userEvent.setup().click(path);
   expect(onOpenMap).toHaveBeenCalledWith({ kind: "page", location: { loupistId: "loupist-a", surface: "world", view: { highlightEntityIds: ["a", "b", "c"] } } });
@@ -109,7 +109,7 @@ it("says a link the host no longer holds is gone, without marking it opened", as
   expect(await screen.findByRole("alert")).toHaveTextContent("This link is no longer available. Ask about it in a message instead.");
   expect(screen.queryByText(/Researching it/)).toBeNull();
   expect(screen.queryByRole("button", { name: "Look into it" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Show on the map" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Show in World" })).toBeVisible();
 });
 
 it("keeps the link to try again when the host could not start, and says a repeat with other settings already runs", async () => {

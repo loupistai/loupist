@@ -94,6 +94,7 @@ impl ActivityRecorder {
         tool_name: &str,
         args: &Value,
         at_ms: i64,
+        file: Option<&super::local_files::FileDisplay>,
     ) -> Result<Option<ActivityReference>, CommandError> {
         if !matches!(
             tool_name,
@@ -106,9 +107,14 @@ impl ActivityRecorder {
         }
         let raw_input = serde_json::to_string_pretty(args).map_err(internal)?;
         let file_path = if matches!(tool_name, "read" | "write" | "edit") {
-            args.get("path")
-                .and_then(Value::as_str)
-                .and_then(|path| workspace_relative(&self.workspace, path))
+            match file {
+                Some(file) => file.workspace_path.clone(),
+                None => args
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .and_then(|path| workspace_relative(&self.workspace, path))
+                    .and_then(|path| super::local_files::ordinary_title(&path)),
+            }
         } else {
             None
         };
@@ -498,7 +504,13 @@ mod tests {
         let mut recorder =
             ActivityRecorder::new(&root, "loupist-a", "chat-a", "run-batch", temp.path()).unwrap();
         let first = recorder
-            .start("first", "write", &json!({"path":"outputs/note.txt"}), 1)
+            .start(
+                "first",
+                "write",
+                &json!({"path":"outputs/note.txt"}),
+                1,
+                None,
+            )
             .unwrap()
             .unwrap();
         recorder
@@ -510,7 +522,13 @@ mod tests {
             )
             .unwrap();
         let second = recorder
-            .start("second", "read", &json!({"path":"notes/input.txt"}), 3)
+            .start(
+                "second",
+                "read",
+                &json!({"path":"notes/input.txt"}),
+                3,
+                None,
+            )
             .unwrap()
             .unwrap();
         assert_eq!(recorder.unsynced.len(), 2);
@@ -529,7 +547,7 @@ mod tests {
             ChatProgressStatus::Stopped
         );
         let third = recorder
-            .start("third", "read", &json!({"path":"notes/input.txt"}), 5)
+            .start("third", "read", &json!({"path":"notes/input.txt"}), 5, None)
             .unwrap()
             .unwrap();
         drop(recorder);
@@ -553,6 +571,7 @@ mod tests {
                 "run_python",
                 &json!({"code":"print(391)","timeout_seconds":60}),
                 1,
+                None,
             )
             .unwrap()
             .unwrap();
@@ -586,7 +605,13 @@ mod tests {
         let mut recorder =
             ActivityRecorder::new(&root, "loupist-a", "chat-a", "run-a", &workspace).unwrap();
         let reference = recorder
-            .start("call", "grep", &json!({"pattern":"python analysis.py"}), 1)
+            .start(
+                "call",
+                "grep",
+                &json!({"pattern":"python analysis.py"}),
+                1,
+                None,
+            )
             .unwrap()
             .unwrap();
         recorder
@@ -638,6 +663,7 @@ mod tests {
                 "write",
                 &json!({"path":workspace.join("report.md"),"content":"report"}),
                 10,
+                None,
             )
             .unwrap()
             .unwrap();
@@ -687,7 +713,7 @@ mod tests {
         let mut recorder =
             ActivityRecorder::new(&root, "loupist-a", "chat-a", "run-a", temp.path()).unwrap();
         let reference = recorder
-            .start("call", "grep", &json!({"pattern":"report"}), 1)
+            .start("call", "grep", &json!({"pattern":"report"}), 1, None)
             .unwrap()
             .unwrap();
         let output = "\u{0001}".repeat(MAX_OUTPUT_BYTES);

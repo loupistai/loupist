@@ -58,7 +58,7 @@ it("shows only the basics once nothing extra is tracked", async () => {
   render(<LoupistTracking bridge={bridge} loupistId="loupist-quality" />);
   expect(screen.queryByText(/Only the basics/)).toBeNull();
   await act(async () => { resolveGet(schema()); });
-  expect(screen.getByRole("heading", { name: "What the map tracks" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "What World tracks" })).toBeVisible();
   expect(screen.getByText(/Only the basics so far/)).toBeVisible();
   expect(screen.queryByRole("button", { name: /Undo/ })).toBeNull();
 });
@@ -95,7 +95,7 @@ it("moves focus to the next stop control, then to the heading", async () => {
   expect(betaButton).toBeDisabled();
   expect(remove).toHaveBeenLastCalledWith({ loupistId: "loupist-quality", kind: "type", name: "BetaType" });
   await act(async () => { resolveBeta(schema()); });
-  expect(screen.getByRole("heading", { name: "What the map tracks" })).toHaveFocus();
+  expect(screen.getByRole("heading", { name: "What World tracks" })).toHaveFocus();
 });
 it("lists recent changes and undoes one while the others stay", async () => {
   const process = trackedType("ProcessNode", "Process node", "product");
@@ -115,7 +115,7 @@ it("lists recent changes and undoes one while the others stay", async () => {
   expect(screen.getByRole("button", { name: "Undo: Added Process node" })).toBeDisabled();
   await act(async () => { resolveUndo(schema([process], [], [change("c3", "undo", [], true, [capacity]), change("c2", "review", [capacity], false), change("c1", "preset", [process])])); });
   expect(screen.getByRole("status")).toHaveTextContent("Undone.");
-  expect(screen.getByRole("heading", { name: "What the map tracks" })).toHaveFocus();
+  expect(screen.getByRole("heading", { name: "What World tracks" })).toHaveFocus();
   expect(screen.queryByRole("button", { name: "Undo: Added Capacity plan" })).toBeNull();
   expect(screen.getByRole("button", { name: "Undo: Removed Capacity plan" })).toBeVisible();
 });
@@ -130,7 +130,7 @@ it("shows a load error and retries", async () => {
   const { bridge } = trackingApi(schema(), { worldSchemaGet: get });
   render(<LoupistTracking bridge={bridge} loupistId="loupist-quality" />);
   const user = userEvent.setup();
-  expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load what the map tracks.");
+  expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load what World tracks.");
   expect(screen.queryByText(/Only the basics/)).toBeNull();
   await user.click(screen.getByRole("button", { name: "Try again" }));
   expect(await screen.findByText("Process node")).toBeVisible();

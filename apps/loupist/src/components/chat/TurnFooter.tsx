@@ -108,6 +108,7 @@ type Props = {
   announce: string;
   /** Guidance sent while this reply runs; it applies after the current step. */
   guiding?: readonly string[];
+  savingLine?: ReactNode;
   /** The settled row: sources, copy, receipt and feedback, drawn by the card. */
   children?: ReactNode;
   /** The reply shows its notes on the page, so the line does not repeat the latest one. */
@@ -120,19 +121,20 @@ type Props = {
  * the actions, receipt and sources. At commit the live line fades out as the
  * action row fades in; nothing above the slot moves.
  */
-export function TurnFooter({ footer: given, announce, guiding, onOpenActivity, children, noteOnPage = false }: Props) {
+export function TurnFooter({ footer: given, announce, guiding, onOpenActivity, savingLine, children, noteOnPage = false }: Props) {
   useTranslation("chat");
   const bot = useChatSurface().kind === "bot";
   // A note on the page right above the line is not said again: the line reads as working.
   const quiet = given.kind === "live" && noteOnPage ? given.line.besideNote : undefined;
   const footer = quiet && given.kind === "live" ? { ...given, line: quiet } : given;
-  const announced = useThrottledAnnouncement(quiet ? quiet.label : announce, true);
+  const announced = useThrottledAnnouncement(quiet ? quiet.label : announce, !savingLine);
   const arrived = useArrived();
   // The live line the reader last saw, kept for its exit when the slot settles.
   const [last, setLast] = useState<{ line: LiveLineView; sinceMs: number } | null>(footer.kind === "live" ? footer : null);
   const [committed, setCommitted] = useState(false);
   if (footer.kind === "live" && last?.line !== footer.line) setLast({ line: footer.line, sinceMs: footer.sinceMs });
-  if (footer.kind === "settled" && last && !committed) setCommitted(true);
+  if (savingLine && last) setLast(null);
+  if (!savingLine && footer.kind === "settled" && last && !committed) setCommitted(true);
   useEffect(() => {
     if (!committed || !last) return;
     const timer = window.setTimeout(() => setLast(null), LEAVE_MS);
@@ -141,14 +143,14 @@ export function TurnFooter({ footer: given, announce, guiding, onOpenActivity, c
   // The row arrives with its entrance when the reader watched the reply finish, not when the turn is read later.
   const arriving = committed || (arrived && footer.kind === "settled");
   return (
-    <div className="turn-footer" data-state={footer.kind}>
+    <div className="turn-footer" data-state={savingLine ? "saving" : footer.kind}>
       {footer.kind === "live" ? bot ? <BotWorkingLine line={footer.line} sinceMs={footer.sinceMs} onOpen={onOpenActivity} /> : <LiveLine line={footer.line} sinceMs={footer.sinceMs} />
         : <>
-          {last ? <p className={bot ? "turn-live bot-working" : "turn-live"} data-leaving="" aria-hidden="true">
+          {savingLine || (last ? <p className={bot ? "turn-live bot-working" : "turn-live"} data-leaving="" aria-hidden="true">
             {bot ? null : <span className="turn-live-glyph"><TurnGlyph glyph={last.line.glyph} /></span>}
             <span className="turn-live-label">{last.line.label}</span>
-          </p> : null}
-          <div className="message-action-bar" data-arriving={arriving || undefined}>{children}</div>
+          </p> : null)}
+          <div className="message-action-bar" data-arriving={!savingLine && arriving || undefined}>{children}</div>
         </>}
       <span className="sr-only" aria-live="polite">{announced}</span>
       {/* No status of its own: the conversation log already says a row it adds, once. */}

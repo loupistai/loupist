@@ -35,9 +35,9 @@ it('marks a name with a value reported about itself but counts it as no relation
 });
 it('seeds names the host attributed to a step and lists them once in step order', () => {
   const running: ChatMessage = { ...answer, status: 'streaming', progress: { startedAtMs: 1, items: [
-    { id: 'read-1', kind: 'tool', category: 'memory', operation: 'read', action: 'Read the map', status: 'succeeded', entityIds: ['c', 'a'], target: null, href: null, startedAtMs: 0, finishedAtMs: null },
+    { id: 'read-1', kind: 'tool', category: 'memory', operation: 'read', action: 'Read World', status: 'succeeded', entityIds: ['c', 'a'], target: null, href: null, startedAtMs: 0, finishedAtMs: null },
     { id: 'note', kind: 'commentary', text: 'Checking' },
-    { id: 'read-2', kind: 'tool', category: 'memory', operation: 'read', action: 'Read the map', status: 'running', entityIds: ['a', 'missing'], target: null, href: null, startedAtMs: 0, finishedAtMs: null },
+    { id: 'read-2', kind: 'tool', category: 'memory', operation: 'read', action: 'Read World', status: 'running', entityIds: ['a', 'missing'], target: null, href: null, startedAtMs: 0, finishedAtMs: null },
   ], finishedAtMs: null } };
   expect(stepEntityIds(running)).toEqual(['c', 'a', 'missing']);
   expect(chatMapData(map, [running], [], 'chat').nodes.map(node => node.id)).toEqual(['a', 'b', 'c', 'd']);

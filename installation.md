@@ -8,17 +8,13 @@ Loupist runs on macOS 13 or newer on Apple Silicon. Windows, Intel Macs and Linu
 
 1. Download [Loupist-macOS-arm64.dmg](https://github.com/loupistai/loupist/releases/latest/download/Loupist-macOS-arm64.dmg).
 2. Open the file and drag Loupist to Applications.
-3. Open Loupist from Applications. **macOS will refuse the first time**, because this Beta is not notarized by Apple. Close the warning without deleting the app:
-   - **macOS 13 or 14:** the warning reads "“Loupist” can’t be opened because Apple cannot check it for malicious software." and "This software needs to be updated. Contact the developer for more information." Click **OK**.
-   - **macOS 15 or newer:** the warning says Apple could not verify that Loupist is free of malware. Click **Done**. Do not click **Move to Trash**.
+3. Open Loupist from Applications. Starting with 0.1.3, the release is signed with Developer ID and notarized by Apple. On first launch, you should see the standard macOS confirmation for an app downloaded from the internet. If it appears, click **Open**.
 
-   "This software needs to be updated" is the sentence macOS shows for any app that is not notarized. It does not mean your download is old.
-4. Allow it once: open **System Settings → Privacy & Security** and scroll down to **Security**. Next to the line about Loupist (on macOS 13 and 14: "“Loupist” was blocked from use because it is not from an identified developer."), click **Open Anyway**. On macOS 15 or newer, confirm with **Open Anyway** again. Enter your login password when macOS asks, and click **Open** if it asks once more. The button is shown for about an hour after step 3; if it is gone, repeat step 3.
-5. From now on Loupist opens normally. Updates install inside the app and do not ask again.
+**If you downloaded 0.1.2**
+
+That download uses Loupist’s self-signed certificate. If macOS blocks its first launch, click **OK** on macOS 13 or 14, or **Done** on macOS 15 or later. Open **System Settings → Privacy & Security**, find the message about Loupist under **Security**, and click **Open Anyway**. Confirm with your Mac login password if requested. If the button has disappeared, open the app again to bring back the prompt.
 
 If macOS says Loupist "is damaged and can't be opened", the download may be incomplete or may have been changed. Delete it, download again, and check it as described below. Do not work around that message.
-
-**Why the warning?** Apple's notarization requires a paid Apple Developer membership, which this Beta does not have yet. The app is signed with Loupist's own certificate instead, so macOS can tell that an update comes from the same publisher, but Apple has not scanned it. You can check for yourself that your download is the file built from the public source code: see "Verify your download".
 
 **Verify your download**
 
@@ -35,21 +31,20 @@ gh attestation verify ~/Downloads/Loupist-macOS-arm64.dmg --repo loupistai/loupi
   --signer-workflow loupistai/loupist/.github/workflows/release.yml
 ```
 
-Publisher. After installing, the app's signature should name Loupist's certificate. The fingerprint is in `RELEASE-METADATA.json` and in `apps/loupist/release-profile.json`:
+Publisher. For 0.1.3 and later Developer ID releases, look for `TeamIdentifier=FX2J28HNK6` in the signature details and compare that team ID with `macos_signing.team_id` in the same release’s `RELEASE-METADATA.json`. To check the signature and stapled notarization ticket, run:
 
 ```sh
-codesign -d -r- /Applications/Loupist.app
-# designated => identifier "com.monarchjuno.loupist" and certificate root = H"<fingerprint>"
+codesign --verify --deep --strict -R '=anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' /Applications/Loupist.app
+codesign -dvv /Applications/Loupist.app
+xcrun stapler validate /Applications/Loupist.app
 ```
 
 **What Beta means**
 
 - The app is complete enough to use for real research, and it will change. Expect rough edges and report them in [Issues](https://github.com/loupistai/loupist/issues).
-- It is not notarized by Apple. First launch needs the one-time step above.
 - It has been tested by its maintainer on one Mac. It has not been tested on every supported macOS version.
 - Your data stays in your Loupist folders and is upgraded in place by later versions, after a backup is written beside each database. Downgrading is not supported.
-- **After every update, macOS asks once for your login password for each saved Data connection key**, until Loupist is signed with an Apple Developer ID. macOS ties a saved key to the exact app that saved it, and each Beta update is a new app to macOS. The request appears once per key soon after the updated Loupist starts, while the rest of the app stays usable. It reads "Loupist wants to access key ‘com.monarchjuno.loupist.finance’ in your keychain". Enter your Mac login password and click **Always Allow**: macOS stops asking for that key until the next update. **Deny** keeps the key saved but locked for that session; Settings → Data connections marks it "Locked until you allow access in macOS" with **Try again**, and every other connection keeps working.
-- A later version will switch to an Apple Developer ID signature. On that update macOS will ask once for permission to use each saved Data connection key. Choosing Always Allow settles it; after that, updates no longer ask.
+- When updating from 0.1.2, macOS asks once per saved Data connection key because the app’s signing identity changes. Enter your Mac login password and click **Always Allow**. Later updates from the same Developer ID team should retain access to that key without another prompt. If you choose **Deny**, the key stays saved. Open **Settings → Data connections → Try again** to grant access later. A saved GitHub sharing token can prompt in the same way. AI sign-ins are unaffected.
 - Loupist never trades and is not a licensed adviser.
 
 ## 한국어 설치 안내
@@ -60,17 +55,13 @@ Loupist는 Apple Silicon Mac의 macOS 13 이상에서 동작합니다. Windows, 
 
 1. [Loupist-macOS-arm64.dmg](https://github.com/loupistai/loupist/releases/latest/download/Loupist-macOS-arm64.dmg)를 내려받습니다.
 2. 파일을 열고 Loupist를 응용 프로그램 폴더로 끌어다 놓습니다.
-3. 응용 프로그램 폴더에서 Loupist를 엽니다. 이 베타는 Apple 공증을 받지 않았기 때문에 **처음에는 macOS가 실행을 막습니다.** 앱을 지우지 말고 경고만 닫으십시오.
-   - **macOS 13, 14:** "‘Loupist’은(는) Apple에서 악성 소프트웨어가 있는지 확인할 수 없기 때문에 열 수 없습니다."와 "이 소프트웨어는 업데이트가 필요합니다. 자세한 사항은 개발자에게 문의하십시오."라는 경고가 나옵니다. **확인**을 누르십시오.
-   - **macOS 15 이상:** Apple이 Loupist에 악성 코드가 없는지 확인할 수 없다는 경고가 나옵니다. **완료**를 누르십시오. **휴지통으로 이동**은 누르지 마십시오.
+3. 응용 프로그램 폴더에서 Loupist를 엽니다. 0.1.3부터 배포판은 Developer ID로 서명되며 Apple 공증을 받습니다. 처음 실행하면 인터넷에서 내려받은 앱을 열지 묻는 macOS 확인 창이 나타날 수 있습니다. 창이 나타나면 **열기**를 누르십시오.
 
-   "이 소프트웨어는 업데이트가 필요합니다"는 공증을 받지 않은 앱이면 macOS가 항상 보여 주는 문장입니다. 내려받은 파일이 오래되었다는 뜻이 아닙니다.
-4. 한 번만 허용합니다. **시스템 설정 → 개인정보 보호 및 보안**을 열고 아래쪽 **보안** 항목으로 내려갑니다. Loupist 관련 문구(macOS 13, 14에서는 "확인된 개발자가 등록한 응용 프로그램이 아니기 때문에 ‘Loupist’ 사용을 차단했습니다.") 옆의 **그래도 열기**를 누릅니다. macOS 15 이상에서는 한 번 더 **그래도 열기**를 누릅니다. macOS가 요청하면 로그인 암호를 입력하고, 한 번 더 물으면 **열기**를 누릅니다. 이 버튼은 3번에서 실행을 시도한 뒤 약 1시간 동안만 보입니다. 보이지 않으면 3번을 다시 진행하십시오.
-5. 이후에는 평소처럼 열립니다. 업데이트는 앱 안에서 설치되며 이 과정을 다시 거치지 않습니다.
+**0.1.2를 내려받은 경우**
+
+0.1.2는 Loupist 자체 인증서로 서명되었습니다. macOS가 첫 실행을 차단하면 macOS 13·14에서는 **확인**, macOS 15 이상에서는 **완료**를 누르십시오. **시스템 설정 → 개인정보 보호 및 보안**의 **보안** 항목에서 Loupist 옆의 **그래도 열기**를 누르십시오. 요청 시 Mac 로그인 암호를 입력하십시오. 버튼이 사라졌다면 앱을 다시 열어 경고를 표시하십시오.
 
 macOS가 Loupist가 "손상되었기 때문에 열 수 없습니다"라고 하면 다운로드가 불완전하거나 파일이 바뀌었을 수 있습니다. 파일을 지우고 다시 내려받은 뒤 아래 방법으로 확인하십시오. 이 메시지는 우회하지 마십시오.
-
-**경고가 나오는 이유** Apple 공증에는 유료 Apple Developer 멤버십이 필요한데, 이 베타는 아직 가입하지 않았습니다. 대신 Loupist 자체 인증서로 서명했습니다. 그래서 macOS는 업데이트가 같은 배포자에게서 왔는지는 알 수 있지만, Apple이 앱을 검사한 것은 아닙니다. 내려받은 파일이 공개된 소스 코드로 빌드된 바로 그 파일인지 직접 확인할 수 있습니다. "다운로드 확인"을 참고하십시오.
 
 **다운로드 확인**
 
@@ -87,21 +78,20 @@ gh attestation verify ~/Downloads/Loupist-macOS-arm64.dmg --repo loupistai/loupi
   --signer-workflow loupistai/loupist/.github/workflows/release.yml
 ```
 
-배포자. 설치 후 앱 서명에 Loupist 인증서가 표시되어야 합니다. 지문은 `RELEASE-METADATA.json`과 `apps/loupist/release-profile.json`에 있습니다.
+배포자. Developer ID로 서명된 0.1.3 이상 배포판은 앱의 서명 정보에서 `TeamIdentifier=FX2J28HNK6`을 확인하십시오. 이 값은 해당 릴리스의 `RELEASE-METADATA.json`에 기록된 `macos_signing.team_id`와 일치합니다. 다음 명령으로 서명과 앱에 첨부된 공증 티켓을 확인할 수 있습니다.
 
 ```sh
-codesign -d -r- /Applications/Loupist.app
-# designated => identifier "com.monarchjuno.loupist" and certificate root = H"<지문>"
+codesign --verify --deep --strict -R '=anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' /Applications/Loupist.app
+codesign -dvv /Applications/Loupist.app
+xcrun stapler validate /Applications/Loupist.app
 ```
 
 **베타의 의미**
 
 - 실제 리서치에 쓸 수 있을 만큼 갖춰져 있지만 앞으로 바뀝니다. 거친 부분이 있을 수 있으니 [Issues](https://github.com/loupistai/loupist/issues)에 알려 주십시오.
-- Apple 공증을 받지 않았습니다. 첫 실행 때 위의 절차가 한 번 필요합니다.
 - 관리자가 Mac 한 대에서 테스트했습니다. 지원하는 모든 macOS 버전에서 테스트하지는 못했습니다.
 - 데이터는 각 Loupist 폴더에 남고, 이후 버전이 데이터베이스 옆에 백업을 만든 뒤 그 자리에서 업그레이드합니다. 다운그레이드는 지원하지 않습니다.
-- **Apple Developer ID로 서명되기 전까지는 업데이트할 때마다 macOS가 저장된 데이터 연결 키마다 로그인 암호를 한 번 묻습니다.** macOS는 저장된 키를 그 키를 저장한 앱에 묶어 두는데, 베타 업데이트는 macOS가 보기에 매번 새 앱이기 때문입니다. 업데이트한 Loupist가 시작된 직후 키마다 한 번 나타나며(그동안 앱의 나머지는 그대로 쓸 수 있습니다), "Loupist이(가) 키체인에서 ‘com.monarchjuno.loupist.finance’ 키 접근을 허용하고자 합니다."라고 표시됩니다. Mac 로그인 암호를 입력하고 **항상 허용**을 누르십시오. 다음 업데이트까지 그 키는 다시 묻지 않습니다. **거부**를 누르면 키는 저장된 채로 그 실행 동안 잠기고, 설정 → 데이터 연결에 "macOS에서 접근을 허용할 때까지 잠겨 있습니다"와 **다시 시도**가 표시됩니다. 다른 연결은 그대로 동작합니다.
-- 이후 버전에서 Apple Developer ID 서명으로 바뀝니다. 그 업데이트 때 macOS가 저장된 데이터 연결 키마다 사용 허용을 한 번 묻습니다. "항상 허용"을 선택하면 됩니다. 그 뒤로는 업데이트할 때 묻지 않습니다.
+- 0.1.2에서 업데이트하면 앱의 서명 정보가 바뀌기 때문에 macOS가 저장된 데이터 연결 키마다 한 번씩 접근 권한을 묻습니다. Mac 로그인 암호를 입력하고 **항상 허용**을 누르십시오. 이후 같은 Developer ID 팀이 서명한 업데이트에서는 다시 묻지 않고 키를 사용할 수 있을 것으로 예상합니다. **거부**해도 키는 저장된 상태로 남습니다. 나중에 **설정 → 데이터 연결 → 다시 시도**에서 접근을 허용할 수 있습니다. 저장된 GitHub 공유 토큰에도 같은 요청이 나타날 수 있습니다. AI 로그인에는 영향이 없습니다.
 - Loupist는 매매를 하지 않으며 인가받은 투자자문업자가 아닙니다.
 
 ## Updates
@@ -113,6 +103,8 @@ interface language, never the host's diagnostic strings. A background check fail
 says Loupist will retry later; a manual failure asks the user to check the internet
 connection and try again. Download or signature-verification failure, installation
 failure and a changed update offer each have their own localized guidance. Unknown
-host failures use a localized message for the failed operation.
+host failures use a localized message for the failed operation. If macOS is
+still handling a saved-key write or removal, an installation request reports
+that blocker immediately. Retry once the Keychain operation finishes.
 
 Compatible development databases are upgraded in place on first open, after a private backup is written beside the database. Formats older than the supported baseline, and databases from newer versions, are refused and left unchanged.

@@ -36,7 +36,6 @@ type Props = {
   onQuote?: (messageId: string, text: string) => void;
   onSaveFeedback?: SaveAnswerFeedback;
   onTeachFeedback?: (text: string) => void;
-  feedbackBusy?: boolean;
   active?: boolean;
   messages: ChatMessage[];
   messageKeys: string[];
@@ -47,6 +46,7 @@ type Props = {
   loupistAvatar?: LoupistAvatarId;
   workspacePath?: string;
   progressFocus?: string | null;
+  blockingChat?: ChatThread;
   /** Guidance sent while the latest reply runs; shown in its timeline. */
   guiding?: readonly string[];
   onReadWorldJob?: (jobId: string) => Promise<GraphJobView>;
@@ -103,6 +103,7 @@ export function ChatConversation({
   loupistAvatar,
   workspacePath,
   progressFocus,
+  blockingChat,
   guiding,
   onReadWorldJob,
   onWorldChanged,
@@ -124,7 +125,6 @@ export function ChatConversation({
   bridge,
   onSaveFeedback,
   onTeachFeedback,
-  feedbackBusy = false,
   run,
   home = false,
   offerQuestions = true,
@@ -191,14 +191,48 @@ export function ChatConversation({
   const [visitStartMs] = useState(() => Date.now());
   const hasUserMessage = lastUserIndex >= 0;
   const repliedThisVisit = messages.some((message) => message.role === "user" && Date.parse(message.created_at) > visitStartMs);
-  // Results posted into the Thread count as read once the Thread shows them.
-  const deliveredRunIds = useMemo(() => messages.flatMap((message) => message.delivery ? [message.delivery.run_id] : []).slice(-20), [messages]);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const deliveredRunIds = useMemo(() => messages.flatMap(message => message.delivery ? [message.delivery.run_id] : []), [messages]);
+  const deliveryKey = JSON.stringify(deliveredRunIds);
   useEffect(() => {
-    if (!home || !active || !bridge || !deliveredRunIds.length) return;
-    const timer = window.setTimeout(() => { void bridge.inboxMarkRead({ loupistId, runIds: deliveredRunIds }).catch(() => {}); }, 1000);
-    return () => window.clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- the joined run ids are the key, so the same deliveries are marked once.
-  }, [home, active, bridge, loupistId, deliveredRunIds.join(",")]);
+    if (!home || !active || !bridge || !contentRef.current) return;
+    const cards = [...contentRef.current.querySelectorAll<HTMLElement>("[data-delivery-run]")];
+    if (!cards.length) return;
+    const markRead = (ids: string[]) => bridge.inboxMarkRead({ loupistId, runIds: ids }).catch(() => {});
+    // Older webviews cannot report visibility. Keep their existing batch behaviour.
+    if (typeof IntersectionObserver === "undefined") {
+      const timer = window.setTimeout(() => void markRead(cards.slice(-20).map(card => card.dataset.deliveryRun!)), 1000);
+      return () => window.clearTimeout(timer);
+    }
+    const timers = new Map<Element, number>();
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        window.clearTimeout(timers.get(entry.target));
+        timers.delete(entry.target);
+        if (!entry.isIntersecting || document.hidden) continue;
+        timers.set(entry.target, window.setTimeout(() => {
+          if (!document.hidden) {
+            void markRead([(entry.target as HTMLElement).dataset.deliveryRun!]);
+            observer.unobserve(entry.target);
+          }
+          timers.delete(entry.target);
+        }, 1000));
+      }
+    });
+    const observeVisible = () => {
+      observer.disconnect();
+      timers.forEach(timer => window.clearTimeout(timer));
+      timers.clear();
+      if (!document.hidden) cards.forEach(card => observer.observe(card));
+    };
+    observeVisible();
+    document.addEventListener("visibilitychange", observeVisible);
+    return () => {
+      observer.disconnect();
+      timers.forEach(timer => window.clearTimeout(timer));
+      document.removeEventListener("visibilitychange", observeVisible);
+    };
+  }, [home, active, bridge, loupistId, deliveryKey]);
   // Home shown again (back from Following, Settings…): the checklist reads its steps again.
   const [wasActive, setWasActive] = useState(active);
   const [homeRevision, setHomeRevision] = useState(0);
@@ -216,7 +250,7 @@ export function ChatConversation({
     onAsk={onSuggestion}
     lastWroteAtMs={Number.isFinite(lastWrote) ? lastWrote : undefined}
     refreshRevision={homeRevision}
-    deliveredRunIds={home ? deliveredRunIds : undefined}
+    deliveredRunIds={home ? deliveredRunIds.slice(-20) : undefined}
     template={loupistTemplate}
   /> : null;
   // Bot is a conversation with the Loupist: its face, bubbles and the greeting. A research session stays a document.
@@ -249,9 +283,14 @@ export function ChatConversation({
     });
   }, [messages]);
   // A scheduled run's request is run again by its task, not sent again as the user's turn.
-  const lastRequestScheduled = useMemo(() => [...messages].reverse().find((message) => message.role === "user" && !message.steer)?.scheduled, [messages]);
-  const receiptKey = home && active ? messages.flatMap(message => (message.schedule_receipts ?? [])
-    .flatMap(receipt => "revision" in receipt ? [`${receipt.task_id}:${receipt.revision}`] : [])).join(",") : "";
+  const lastRequest = useMemo(() => [...messages].reverse().find((message) => message.role !== "assistant" && !message.steer), [messages]);
+  const lastRequestScheduled = lastRequest?.scheduled;
+  // A tool can replace a receipt without changing the revision, as when a read is followed by a delete.
+  const receiptKey = home && active ? messages
+    .flatMap(message => message.schedule_receipts ?? [])
+    .filter(receipt => "revision" in receipt)
+    .map(({ task_id, revision, action, status, next_run_at_ms }) => [task_id, revision, action, status, next_run_at_ms].join(":"))
+    .join(",") : "";
   const botTasks = useBotScheduleTasks(bridge, loupistId, receiptKey);
   const dividerKey = JSON.stringify(messages.map(({ id, created_at }) => [id, created_at]));
   const dividerDay = new Date().toDateString();
@@ -273,7 +312,7 @@ export function ChatConversation({
       footer={messages.length > 0 ? <ChatStatusPill message={last?.role === "assistant" ? last : undefined} run={run} /> : null}
     >
       {onQuote && active ? <QuoteAsk onQuote={onQuote} /> : null}
-      <ConversationContent className="conversation-content">
+      <ConversationContent ref={contentRef} className="conversation-content">
         {!messages.length ? (
           // The empty Bot greets; an empty topic Chat only offers questions.
           home ? greeting : offerQuestions ? morning("questions") : null
@@ -300,11 +339,13 @@ export function ChatConversation({
               bridge={bridge}
               active={active}
               message={message}
+              blockingChat={message.memorySaving ? blockingChat : undefined}
+              loupistAvatar={message.role === "bot_handoff" ? loupistAvatar : undefined}
               researchSession={home && message.role === "assistant" && message.research_session_id
                 ? researchSessions?.find(thread => thread.id === message.research_session_id && thread.loupist_id === loupistId && !thread.home) : undefined}
+              feedbackHeld={message.role === "assistant" && Boolean(run?.running)}
               onSaveFeedback={onSaveFeedback}
               onTeachFeedback={onTeachFeedback}
-              feedbackBusy={message.role === "assistant" && feedbackBusy}
               loupistId={loupistId}
               chatId={chatId}
               loupistName={loupistName}
@@ -319,7 +360,7 @@ export function ChatConversation({
               onWorldChanged={onWorldChanged}
               onAskArtifact={onAskArtifact}
               // Run flags reach only the cards that use them, so a send or a commit redraws no other answer.
-              askArtifactDisabled={hasCards(message) && run?.running}
+              askArtifactDisabled={hasCards(message) && run?.running && !last?.memorySaving}
               onReadAttachment={onReadAttachment}
               mentionSkills={mentionSkills}
               mentionPlugins={mentionPlugins}
@@ -328,7 +369,7 @@ export function ChatConversation({
               editDisabled={message.role === "user" && Boolean(run?.running)}
               onEarlierVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "earlier", onSwitchVersion) : undefined}
               onLaterVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "later", onSwitchVersion) : undefined}
-              onRetry={message.role === "assistant" && index === messages.length - 1 && (message.status === "error" || message.status === "aborted") && !lastRequestScheduled ? onRetry : undefined}
+              onRetry={message.role === "assistant" && index === messages.length - 1 && (message.status === "error" || message.status === "aborted") && lastRequest?.role !== "bot_handoff" && !lastRequestScheduled ? onRetry : undefined}
               scheduledRetry={message.role === "assistant" && index === messages.length - 1 && (message.status === "error" || message.status === "aborted") ? lastRequestScheduled : undefined}
               latest={message.role === "assistant" ? index === lastAssistantIndex : index === lastUserIndex}
               providerName={message.status === "error" ? providerLabel?.(message.execution_model?.provider) : undefined}

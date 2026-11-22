@@ -422,6 +422,13 @@ pub(crate) fn persisted(message: &ChatMessage, pi: &PiTrace) -> Value {
         "usage":{"input":usage.map(|p|p.input_tokens),"output":usage.map(|p|p.output_tokens),"cache_read":usage.map(|p|p.cache_read_tokens),"cache_write":usage.map(|p|p.cache_write_tokens)},
         "performance":{"setup_ms":performance.map(|p|p.setup_ms),"first_text_ms":performance.and_then(|p|p.first_text_ms),"answer_text_ms":performance.and_then(|p|p.answer_text_ms),"total_ms":performance.map(|p|p.total_ms)}
     });
+    if let Some(reason) = message
+        .memory_update
+        .as_ref()
+        .and_then(|update| update.skip_reason)
+    {
+        record["memory_save_skip"] = json!(reason);
+    }
     pi.record_startup_failure(&mut record);
     pi.record_round_usage(&mut record);
     record

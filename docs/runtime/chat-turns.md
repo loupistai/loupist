@@ -4,6 +4,12 @@ A turn freezes its authority in Rust, then Pi runs in the selected workspace. Th
 
 ## Chat
 
+Chat admission returns `memory_busy` while a Memory writer holds the Loupist.
+A queued submission can retry when that active `memory_write` leaves the run list.
+Completed chats waiting their turn to save keep their thread reserved and leave
+other conversations free to start. A same-thread conflict or a full worker pool
+keeps its own refusal.
+
 SQLite owns the transcript. Pi JSONL is a derived cache. Rust prepares the turn
 once in `commands/chat_runtime/setup.rs`, capturing model, Memory policy, connectors,
 Skills and workspace resources. Each turn launches a disposable Pi process with
@@ -95,6 +101,8 @@ paths, bounds and hashes. Changes invalidate the session cache.
 Explicit `$skill-name` mentions select methods without changing Memory permissions.
 `@` context supplies selected references or file paths; it does not acknowledge a
 read. For a small text attachment inside the workspace, the host supplies its relative path and digest for workspace_capture. The response cites the returned evidence link. Saving the original as a Source requires Memory writes.
+Rust labels the captured attachment from the message's upload record. Reader
+and receipt labels use that name while the capture keeps its exact file locator.
 
 The composer keeps unsent drafts and pending turns per Chat during the app
 session. Live guidance accepts text; attachments/references belong to a later turn.
@@ -107,14 +115,44 @@ messages stay in the history and are skipped when choosing that request; local f
 Rust independently gates Memory reads and writes. Search, Skill selection and
 renderer inspection do not grant exact-read or write authority. Broker delivery
 uses acknowledgment and a commit barrier; an indeterminate barrier aborts the turn.
-One successful host transaction publishes the completed Chat and authorized Memory
-changes, graph jobs and artifacts. In Bot, changes to [Bot memory](../ui/home-thread.md#bot-memory)
+After Pi settles, Chat stores the generated answer, checked numbers, and
+published artifacts before waiting to save Memory. The live saving state
+separates remaining storage work from writing the reply. The save waits in FIFO
+order and takes exclusive admission in the same coordinator step that confirms
+every reader has drained. **Skip saving** ends the wait and keeps the answer
+and its outputs. The wait
+also ends at ten minutes. If the app exits before saving, the stored answer
+and artifacts carry the interrupted-save receipt. Scheduled results and
+research hand-offs still deliver the completed answer with its skip reason.
+Qualified quiet checks stay quiet and keep their reason in run history.
+If writing the answer itself fails, the live view keeps the generated text
+available for copying and shows the save error. Rust tries to store a generic
+failure placeholder so reopening the Chat shows the error.
+
+The Memory transaction updates the Chat receipt with authorized changes and
+graph jobs. In Bot, changes to [Bot memory](../ui/home-thread.md#bot-memory)
 (tool `bot_memory`) and its review queue ride in the same Chat compare-and-swap. It also records acknowledged Lens delivery receipts
 and usage, including principles actually attached to bounded context when the turn
 saves no new Memory. The host records each receipt's kind and revision; model text
 cannot set it. A conflicting Lens update becomes a proposal. Failed or cancelled
 turns publish no staged Memory or completed delivery usage; immediate file,
 dataset-import and schedule changes have their own persistence boundaries.
+
+A user question or approval parks its tool call. Once all parallel broker
+calls finish or park, the Chat releases reader admission while keeping its
+thread and Stop control. The tool re-enters as a reader before it continues.
+An unpinned read or search can see a newer head after the wait. Exact delivery
+receipts keep the revision that was actually read. If an applied Lens link
+points to a different current revision, or the item is paused, the host leaves
+out that application row and records it in the run diagnostics. A Memory reset
+during the turn skips the turn's staged Memory transaction. The background
+method worker and World enqueue use the current learning settings.
+
+Chat progress keeps the saving start time, terminal save time when observed,
+time spent waiting for Loupist admission, and the last single blocking
+conversation identified by the coordinator. The live event carries the same
+facts as the stored progress. An abrupt quit can leave a saved answer without
+an observed saving end time.
 
 A turn's as-of date (`ChatSendRequest.as_of`, `YYYY-MM-DD`) must lie between
 1990-01-01 and today on the device; admission refuses any other value before the
@@ -134,8 +172,8 @@ date). `source_save` refuses undated material with an argument error whose messa
 starts `as_of_undated`, under the code `malformed_request`. A step whose tool failed
 with `as_of_unsupported` gets the progress status `skipped`, not `failed`.
 
-At commit Rust writes two records on the answer and sends them with the completed
-event; the renderer only reads them and model text cannot set them. `number_checks`
+Rust records the checks before Memory admission and supplies them to the
+renderer when saving begins. `number_checks`
 (at most 200) holds the [number checks](../analysis/number-checks.md#number-checks); a
 number link past that bound stays a citation with its text as written. An
 as-of turn's `as_of_report` holds its cutoff; the tools refused with `as_of_unsupported` (with
@@ -153,6 +191,16 @@ and eval trace; the host never copies the raw storage error into that category.
 
 Pi's `agent_settled` remains the completion barrier; a visible final text chunk
 alone cannot commit Chat or Memory, bypass Stop, or discard acknowledged steering.
+While saving, Chat keeps the session active and lets the reader copy the answer
+and open its citations, figures, files and Activity. The status names and opens
+a single identified blocking conversation. New messages queue, and feedback and
+edits wait for the turn to finish. Other conversations can start during the
+wait. The Memory busy notice applies during the exclusive transaction.
+
+On completion the receipt shows any skip reason. The warning also appears on
+delivered Bot results and in the Schedule run reader. Reasons include a user
+request, the wait deadline, app exit, save failure or a Memory reset.
+
 The extension defers automatic compaction after a finished answer until the next
 input. A cancelled or deferred attempt leaves no successful or failed compaction step in the
 answer's progress. Compaction before a prompt and between tool rounds retains its
@@ -163,10 +211,12 @@ normal error, timeout and cancellation handling.
 A successful Bot reply can commit one acknowledged `research_open` request.
 Its assistant message and live completion carry the new research session’s ID
 from the same transaction.
-The new session begins with the whole original Bot user message. Rust finds it
-by Loupist, thread and message ID, including retained Chat versions. The Bot's
-question and brief belong to the hand-off note. An identical retry of that
-source turn returns the same receipt. A later Bot turn can reuse the model's
+The child model receives the user's original message in Bot. Rust resolves it
+by Loupist, thread and message ID, including retained Chat versions. Bot's title,
+question and optional brief arrive separately in the hand-off note. The transcript
+projects the brief, or the question when the brief is absent, as a Bot-authored
+opening. This projection also applies to sessions saved by 0.1.2. An identical
+retry of that source turn returns the same receipt. A later Bot turn can reuse the model's
 `requestKey` and start its own hand-off.
 
 A retained **Look into it** action supplies its scoped connection and the
@@ -186,15 +236,13 @@ started, and Stop in the session cancels it. When the run ends, Bot gets one pos
 with the outcome ([Bot](../ui/home-thread.md#home-thread)).
 
 This app holds a Running hand-off while its Chat run is registered or its live
-lease is alive. The sink that records the run's outcome owns the lease, so the
-lease outlives the registration, which the turn hands to the Memory writer before
-its answer commits: a delivery pass from any caller in that window leaves the row
-running. A pass that finds a Running row with neither (the app quit, or the run
-ended without reporting) settles it in one transaction. If the reply after the
-session's opening request is a complete answer, the row is Done with it;
-otherwise it stops as interrupted, not a run to retry silently.
+lease is alive. The registration keeps the same thread through the wait to save,
+and the terminal sink owns the live lease through delivery. A pass that finds
+a Running row with neither settles it in one transaction. A retained answer
+completes the row and carries any Memory skip reason. If the session kept no
+answer, the hand-off stops as interrupted.
 
-Typed Bot hand-offs use Delegated. A verified Map link uses the ordinary Session
+Typed Bot hand-offs use Delegated. A verified World link uses the ordinary Session
 surface with its own language context. Neither host-started path offers
 `ask_user`; a new user-started reply uses the ordinary interactive policy.
 

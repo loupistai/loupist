@@ -62,7 +62,23 @@ const OTHER_SOURCES_NOTE = "Other data sources (e.g. FRED, SEC EDGAR, OpenDART, 
 // Host-owned display names of bundled connections this Loupist has not enabled, each
 // with the first sentence of its purpose, so the model can tell which one a request
 // needs and name it instead of guessing.
+const SAVED_KEY_PERMISSION_REASON = "its saved key needs the user's permission in macOS";
+const SAVED_KEY_PERMISSION_MESSAGE = "This connection's saved key needs the user's permission in macOS first.";
+const SAVED_KEY_PERMISSION_NEXT = "Tell the user to open Settings > Data connections and choose Allow access, then ask again. Continue this reply without this connection.";
+
 function otherSourcesNote(unavailable, canSetUp) {
+  const permission = (unavailable ?? []).filter((item) => item?.reason === SAVED_KEY_PERMISSION_REASON);
+  const ordinary = (unavailable ?? []).filter((item) => item?.reason !== SAVED_KEY_PERMISSION_REASON);
+  const other = ordinary.length || !permission.length ? disabledSourcesNote(ordinary, canSetUp) : null;
+  if (!permission.length) return other;
+  const names = permission.map((item) => `${item.name}: ${SAVED_KEY_PERMISSION_REASON}`).join("; ");
+  return [
+    `${names}. ${SAVED_KEY_PERMISSION_NEXT}`,
+    other,
+  ].filter(Boolean).join("\n");
+}
+
+function disabledSourcesNote(unavailable, canSetUp) {
   const seen = new Set();
   const items = [];
   for (const item of unavailable ?? []) {
@@ -84,13 +100,21 @@ function otherSourcesNote(unavailable, canSetUp) {
   return `Not enabled for this Loupist: ${list}. When the enabled sources cannot do what was asked and one of these would, name it and offer to set it up; call connection_setup with that name only when the user asks for that source or offers its key.`;
 }
 
+/** The connections a component reads for, by catalog id, in a stable order. */
+function servedNote(component) {
+  const ids = [...new Set((component.entry_ids ?? []).filter(Boolean))].sort();
+  if (ids.length === 0) return "";
+  const fred = ids.includes("fred.macro") ? " A FRED series is read with economy_fred_series." : "";
+  return ` It reads for these connections: ${ids.join(", ")}.${fred}`;
+}
+
 function formatCapabilityLine(component) {
   if (component.id === "web-research") return `- \`${component.id}\` — ${component.name}: loaded.`;
   const description = String(component.description ?? "").replace(/\s+/gu, " ").trim();
   const tools = (component.tool_names ?? []).filter(Boolean);
   const toolNote = tools.length > 0 ? ` Tools: ${tools.join(", ")}.` : "";
   const runtimeNote = component.bundled === true ? BUNDLED_RUNTIME_NOTE : "";
-  return `- \`${component.id}\` — ${component.name}: ${description}${toolNote}${runtimeNote}`;
+  return `- \`${component.id}\` — ${component.name}: ${description}${toolNote}${runtimeNote}${servedNote(component)}`;
 }
 
 /** Model-facing capability index. Volatile turn data stays in the user envelope. */
@@ -144,6 +168,10 @@ export function resolveCapability(id, components, unavailable = [], skillNames =
     if (closest && components.has(closest)) return components.get(closest);
     throw new Error(prefix + "This is a Skill already listed in the session; no capability load is needed. " +
       `Available capability ids: ${available || "none"}.`);
+  }
+  if (requested && unavailable.some((item) => item.reason === SAVED_KEY_PERMISSION_REASON &&
+      (normalize(item.id) === requested || normalize(item.name).replace(/\s+/g, "-") === requested))) {
+    throw new Error(SAVED_KEY_PERMISSION_MESSAGE + " " + SAVED_KEY_PERMISSION_NEXT);
   }
   // Display-name aliases are diagnostic only; they never resolve a load.
   if (requested && unavailable.some((item) => normalize(item.id) === requested ||

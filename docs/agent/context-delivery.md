@@ -122,11 +122,11 @@ and references. It runs in a delegated Chat and saves price reads for the
 selected assets when a source supports them.
 
 Interactive Bot and research turns receive only `interface.display_currency`
-when set. They can read the seven product and navigation labels through
+when set. They can read product and navigation labels through
 `interface_labels` with or without Memory. The same admitted appearance drives
 every tool round and a same-turn retry. The next turn reads appearance again.
-Scheduled, delegated and host-started Map-link turns receive the resolved
-`interface.language`, five product `names` and the optional currency. For scheduled
+Scheduled, delegated and host-started World-link turns receive the resolved
+`interface.language`, localized product and navigation `names` and the optional currency. For scheduled
 runs, the task stands in for the user. The run answers in the language the task names or, by default,
 the language the task is written in. A task with no wording of its own follows
 `interface.language`. Briefings receive that value as `appLanguage` as well. A
@@ -155,9 +155,11 @@ The earlier unattended hint made `interface.language` the default. In the
 wave 11 evaluation, GPT-6.2 Sol at medium answered in the saved task's language
 in five of six runs where the task and the app used different languages.
 
-Scheduled and delegated turns have no `interface_labels` tool; a Map-link run
-on the Session surface retains it. The host reads the five product
-names from the bundled agent catalogs, the Research sessions heading from the
+Scheduled and delegated turns have no `interface_labels` tool; a World-link run
+on the Session surface retains it. The host reads the original product names from the bundled agent catalogs,
+exposing World under the `world` key. Lens and Following use the sidebar
+catalog. Journal and Sources use the Library tab labels, and Lens groups use
+the page headings. The tool also reads the Research sessions heading from the
 sidebar catalog and Market data from the Connections catalog. An unbundled
 language keeps its tag in unattended context and uses English labels.
 The `system` preference looks up the OS language

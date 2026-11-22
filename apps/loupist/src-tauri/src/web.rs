@@ -58,6 +58,8 @@ const JS_REQUIRED_PHRASES: &[&str] = &[
 
 #[derive(Debug, Error)]
 pub enum WebError {
+    #[error("SEC contact required")]
+    SecContactRequired,
     #[cfg(feature = "eval-harness")]
     #[error("{0}")]
     Replay(String),
@@ -252,6 +254,19 @@ impl WebFetchSnapshot {
         self.source_id == source_id && self.content_sha256 == content_sha256
     }
 
+    /// The cited bytes with the preceding captured text needed to recognize
+    /// their table context. The caller still checks only the cited excerpt.
+    pub(crate) fn number_check_window(&self, offset: usize, excerpt: &str) -> Option<&str> {
+        let end = offset.checked_add(excerpt.len())?;
+        if self.content.get(offset..end)? != excerpt {
+            return None;
+        }
+        let start = self.content.ceil_char_boundary(
+            offset.saturating_sub(4 * crate::domain::MAX_CHAT_EVIDENCE_EXCERPT_BYTES),
+        );
+        self.content.get(start..end)
+    }
+
     /// Select exact bytes from the already-acquired representation. A literal
     /// only locates text; it can never replace or supply the returned content.
     pub(crate) fn literal_passage(
@@ -364,6 +379,7 @@ pub(crate) async fn search_exa_once(query: &WebSearchQuery) -> Result<SearchHits
         SEARCH_TIMEOUT,
         MAX_SEARCH_RESPONSE_BYTES,
         "application/json, text/event-stream",
+        None,
     )
     .await?;
     if !response.status.is_success() {
@@ -546,20 +562,72 @@ fn parse_published_date(value: &str) -> Option<NaiveDate> {
         })
 }
 
+const WEB_USER_AGENT: &str = "Loupist-Web/1.0 (+pi-web-access-compatible)";
+
+pub(crate) fn sec_host(url: &Url) -> bool {
+    matches!(
+        url.host_str(),
+        Some("www.sec.gov" | "sec.gov" | "data.sec.gov" | "efts.sec.gov")
+    )
+}
+
+fn user_agent_for_hop(
+    url: &Url,
+    first_host: Option<&str>,
+    contact: Option<&str>,
+) -> Result<String, WebError> {
+    if !sec_host(url) {
+        return Ok(WEB_USER_AGENT.into());
+    }
+    // A redirect cannot authorize disclosure to a new origin. A redirect
+    // into another SEC host requires a new direct read with its own identity.
+    if url.scheme() != "https" || url.host_str() != first_host {
+        return Err(WebError::UrlDenied);
+    }
+    let contact = contact
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or(WebError::SecContactRequired)?;
+    Ok(format!("Loupist {contact}"))
+}
+
+// Space actual outbound SEC requests across concurrent chats and retries.
+async fn await_sec_slot(deadline: Instant) -> Result<(), WebError> {
+    static NEXT: tokio::sync::Mutex<Option<tokio::time::Instant>> =
+        tokio::sync::Mutex::const_new(None);
+    tokio::time::timeout(deadline.saturating_duration_since(Instant::now()), async {
+        let mut next = NEXT.lock().await;
+        if let Some(at) = *next {
+            tokio::time::sleep_until(at).await;
+        }
+        *next = Some(tokio::time::Instant::now() + Duration::from_millis(125));
+    })
+    .await
+    .map_err(|_| WebError::Timeout)
+}
+
+#[cfg(test)]
 pub(crate) async fn fetch(source: &WebSource) -> Result<WebFetchSnapshot, WebError> {
+    fetch_with_sec_contact(source, None).await
+}
+
+pub(crate) async fn fetch_with_sec_contact(
+    source: &WebSource,
+    contact: Option<&str>,
+) -> Result<WebFetchSnapshot, WebError> {
     let requested = validate_source_url(&source.url)?;
     if let Some(target) = official::match_official(&requested) {
         match fetch_official(source, &target).await {
             Ok(snapshot) => return Ok(snapshot),
             Err(error) if official_allows_generic_fallback(&error) => {
-                let mut snapshot = fetch_generic(source, &requested).await?;
+                let mut snapshot = fetch_generic(source, &requested, contact).await?;
                 push_warning(&mut snapshot.quality_warnings, "official_fallback");
                 return Ok(snapshot);
             }
             Err(error) => return Err(error),
         }
     }
-    fetch_generic(source, &requested).await
+    fetch_generic(source, &requested, contact).await
 }
 
 fn official_allows_generic_fallback(error: &WebError) -> bool {
@@ -584,8 +652,12 @@ async fn fetch_official(
     source: &WebSource,
     target: &official::OfficialTarget,
 ) -> Result<WebFetchSnapshot, WebError> {
-    let response =
-        get_with_429_retry(target.representation_url.clone(), FETCH_OFFICIAL_ACCEPT).await?;
+    let response = get_with_429_retry(
+        target.representation_url.clone(),
+        FETCH_OFFICIAL_ACCEPT,
+        None,
+    )
+    .await?;
     if !response.status.is_success() {
         return Err(status_error_with_retry(
             response.status,
@@ -628,8 +700,12 @@ async fn fetch_official(
     })
 }
 
-async fn fetch_generic(source: &WebSource, requested: &Url) -> Result<WebFetchSnapshot, WebError> {
-    let response = get_with_429_retry(requested.clone(), FETCH_ACCEPT).await?;
+async fn fetch_generic(
+    source: &WebSource,
+    requested: &Url,
+    contact: Option<&str>,
+) -> Result<WebFetchSnapshot, WebError> {
+    let response = get_with_429_retry(requested.clone(), FETCH_ACCEPT, contact).await?;
     if response.challenge {
         return Err(WebError::Challenge);
     }
@@ -693,7 +769,11 @@ async fn fetch_generic(source: &WebSource, requested: &Url) -> Result<WebFetchSn
     })
 }
 
-async fn get_with_429_retry(url: Url, accept: &str) -> Result<BoundedResponse, WebError> {
+async fn get_with_429_retry(
+    url: Url,
+    accept: &str,
+    contact: Option<&str>,
+) -> Result<BoundedResponse, WebError> {
     let started = Instant::now();
     let response = request_bounded(
         Method::GET,
@@ -702,6 +782,7 @@ async fn get_with_429_retry(url: Url, accept: &str) -> Result<BoundedResponse, W
         FETCH_TIMEOUT,
         MAX_FETCH_RESPONSE_BYTES,
         accept,
+        contact,
     )
     .await?;
     if response.status != StatusCode::TOO_MANY_REQUESTS {
@@ -728,6 +809,7 @@ async fn get_with_429_retry(url: Url, accept: &str) -> Result<BoundedResponse, W
         remaining,
         MAX_FETCH_RESPONSE_BYTES,
         accept,
+        contact,
     )
     .await
 }
@@ -794,7 +876,9 @@ async fn request_bounded(
     timeout: Duration,
     max_bytes: usize,
     accept: &str,
+    contact: Option<&str>,
 ) -> Result<BoundedResponse, WebError> {
+    let first_host = url.host_str().map(str::to_owned);
     #[cfg(feature = "eval-harness")]
     if let Some(response) = crate::eval_harness::replay::lookup(
         "web",
@@ -830,8 +914,9 @@ async fn request_bounded(
         if remaining.is_zero() {
             return Err(WebError::Timeout);
         }
+        let user_agent = user_agent_for_hop(&url, first_host.as_deref(), contact)?;
         #[cfg(test)]
-        if let Some(scripted) = script::take(&url, accept) {
+        if let Some(scripted) = script::take(&url, accept, &user_agent) {
             if (300..400).contains(&scripted.status) && scripted.status != 304 {
                 if method != Method::GET {
                     return Err(WebError::Provider);
@@ -865,10 +950,13 @@ async fn request_bounded(
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .insert(host, addresses);
+        if sec_host(&url) {
+            await_sec_slot(deadline).await?;
+        }
         let mut request = client
             .request(method.clone(), url.clone())
             .timeout(deadline.saturating_duration_since(Instant::now()))
-            .header(USER_AGENT, "Loupist-Web/1.0 (+pi-web-access-compatible)")
+            .header(USER_AGENT, user_agent)
             .header(ACCEPT, accept);
         if let Some(body) = &json_body {
             request = request.json(body);
@@ -1824,6 +1912,7 @@ pub(crate) mod script {
         owner: std::thread::ThreadId,
         routes: Vec<Route>,
         requests: Vec<(String, String)>,
+        agents: Vec<String>,
     }
 
     static STATE: Mutex<Option<ScriptState>> = Mutex::new(None);
@@ -1850,11 +1939,12 @@ pub(crate) mod script {
                 })
                 .collect(),
             requests: Vec::new(),
+            agents: Vec::new(),
         });
         Guard(run)
     }
 
-    pub fn take(url: &Url, accept: &str) -> Option<ScriptedResponse> {
+    pub fn take(url: &Url, accept: &str, agent: &str) -> Option<ScriptedResponse> {
         let mut state = STATE.lock().ok()?;
         let state = state.as_mut()?;
         // Scripted tests use a current-thread runtime. RUN serializes their
@@ -1862,6 +1952,7 @@ pub(crate) mod script {
         if state.owner != std::thread::current().id() {
             return None;
         }
+        state.agents.push(agent.into());
         state
             .requests
             .push((url.as_str().to_owned(), accept.to_owned()));
@@ -1884,6 +1975,16 @@ pub(crate) mod script {
             }
         }
         None
+    }
+
+    pub fn agents() -> Vec<String> {
+        STATE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .unwrap()
+            .agents
+            .clone()
     }
 
     pub fn requests() -> Vec<(String, String)> {
@@ -2251,6 +2352,74 @@ mod tests {
         assert!(output.untrusted_content);
     }
 
+    #[tokio::test]
+    async fn c004_sec_missing_contact_refuses_before_any_http_request() {
+        let _script = script::install(vec![("sec.gov", vec![script::ok("text/plain", b"Filing")])]);
+        let source = web_source(
+            "Filing".into(),
+            "https://www.sec.gov/Archives/filing.htm".into(),
+            String::new(),
+            None,
+        );
+        assert!(fetch(&source).await.is_err());
+        assert!(script::requests().is_empty());
+    }
+
+    #[tokio::test]
+    async fn sec_identity_is_confined_to_the_direct_https_recipient() {
+        for host in ["www.sec.gov", "sec.gov", "data.sec.gov", "efts.sec.gov"] {
+            let url = Url::parse(&format!("https://{host}/filing")).unwrap();
+            assert_eq!(
+                user_agent_for_hop(&url, Some(host), Some("research@example.com")).unwrap(),
+                "Loupist research@example.com"
+            );
+            assert!(matches!(
+                user_agent_for_hop(&url, Some(host), None),
+                Err(WebError::SecContactRequired)
+            ));
+        }
+        for url in ["https://sec.gov.example.org", "https://filings.sec.gov"] {
+            let url = Url::parse(url).unwrap();
+            assert_eq!(
+                user_agent_for_hop(&url, url.host_str(), Some("research@example.com")).unwrap(),
+                WEB_USER_AGENT
+            );
+        }
+        let url = Url::parse("http://sec.gov/").unwrap();
+        assert!(user_agent_for_hop(&url, url.host_str(), Some("research@example.com")).is_err());
+        let url = Url::parse("https://data.sec.gov/").unwrap();
+        assert!(
+            user_agent_for_hop(&url, Some("www.sec.gov"), Some("research@example.com")).is_err()
+        );
+        let _guard = script::install(vec![
+            (
+                "www.sec.gov",
+                vec![script::ScriptedResponse {
+                    status: 302,
+                    location: Some("https://example.org/report".into()),
+                    ..script::ok("text/plain", Vec::new())
+                }],
+            ),
+            (
+                "example.org",
+                vec![script::ok("text/plain", b"Public report")],
+            ),
+        ]);
+        let source = web_source(
+            "Filing".into(),
+            "https://www.sec.gov/report".into(),
+            String::new(),
+            None,
+        );
+        fetch_with_sec_contact(&source, Some("research@example.com"))
+            .await
+            .unwrap();
+        assert_eq!(
+            script::agents(),
+            ["Loupist research@example.com", WEB_USER_AGENT]
+        );
+    }
+
     #[test]
     fn quality_warnings_flag_short_js_and_navigation_pages() {
         assert_eq!(
@@ -2284,6 +2453,49 @@ mod tests {
         let requests = script::requests();
         assert_eq!(requests.len(), 1);
         assert!(requests[0].1.starts_with("text/markdown"));
+    }
+
+    #[tokio::test]
+    async fn sec_table_passage_selects_exact_bounded_bytes_with_its_amount_scale() {
+        use crate::knowledge::numbers::{check, parse_printed, passage_candidates, Verdict};
+        let filing = include_str!("web/document/fixtures/apple-segment-sales.html");
+        let html = format!(
+            "<article><p>{}</p>{filing}<p>{}</p></article>",
+            "사업 보고서. ".repeat(1000),
+            "Annual report. ".repeat(1000)
+        );
+        let url = "https://example.com/10-k";
+        let _guard = script::install(vec![(url, vec![script::ok("text/html", html)])]);
+        let snapshot = fetch(&web_source("10-K".into(), url.into(), String::new(), None))
+            .await
+            .unwrap();
+        let literal = "$167,045";
+        let (passage, at) = snapshot.literal_passage(literal, 0).unwrap();
+        assert!(passage.truncated);
+        assert!(passage.content.len() <= crate::domain::MAX_CHAT_EVIDENCE_EXCERPT_BYTES);
+        let start = passage.content_offset;
+        assert_eq!(
+            passage.content,
+            snapshot.content[start..start + passage.content.len()]
+        );
+        assert!(passage.content[at - start..].starts_with(literal));
+        assert!(passage
+            .content
+            .contains("| Americas | $167,045 | 3% | $162,560 |"));
+        let candidates = passage_candidates(&passage.content);
+        for (printed, expected) in [
+            ("$167.045bn", Verdict::Rounded),
+            ("$167.045m", Verdict::NotFound),
+            ("$167.054bn", Verdict::NotFound),
+            ("-4%", Verdict::Matched),
+            ("4%", Verdict::NotFound),
+        ] {
+            assert_eq!(
+                check(&parse_printed(printed).unwrap(), &candidates, false).0,
+                expected,
+                "{printed}"
+            );
+        }
     }
 
     #[tokio::test]

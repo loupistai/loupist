@@ -116,6 +116,22 @@ const answer = (evidence: ChatEvidenceRef[]): ChatMessage => ({ id: "answer", ro
 const inTurn = (message: ChatMessage, text: string, extra: Partial<ComponentProps<typeof MessageResponse>> = {}) =>
   <TurnProvider message={message} loupistId="loupist-a"><MessageResponse {...extra}>{text}</MessageResponse></TurnProvider>;
 
+it.each([
+  ["The report ended.", "ended.", ""],
+  ["매출은 증가했습니다.", "증가했습니다.", " "],
+  ["Results were **better than expected**.", "expected.", " "],
+])("keeps the last word of %s with its first citation", async (sentence, lastWord, space) => {
+  const first = evidenceFixture(), second = evidenceFixture({ id: "ev_second" });
+  const body = `${sentence}${space}[13](#evidence-${first.id}) [14](#evidence-${second.id})`;
+  const { container } = renderWithOpen(inTurn(answer([first, second]), body, { mode: "static" }));
+  const chips = container.querySelectorAll<HTMLButtonElement>("button.loupist-citation");
+  expect(chips).toHaveLength(2);
+  const group = chips[0]!.closest(".citation-keep");
+  expect(group?.textContent).toBe(lastWord + space + "13");
+  expect(group).not.toContainElement(chips[1]);
+  if (sentence.includes("**")) expect(group?.querySelector('[data-streamdown="strong"]')).toHaveTextContent("expected");
+});
+
 it("opens only host-attached citations and refreshes the binding when evidence arrives during streaming", async () => {
   const evidence = evidenceFixture();
   const user = userEvent.setup();

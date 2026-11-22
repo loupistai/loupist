@@ -16,6 +16,12 @@ pub(in crate::commands) struct BotMemoryReservations {
 }
 
 impl BotMemoryReservations {
+    pub(super) fn has_delivered(&self) -> bool {
+        self.calls
+            .iter()
+            .any(|(_, delivered, changes)| *delivered && !changes.is_empty())
+    }
+
     fn reserved(&self) -> Vec<StagedBotMemory> {
         self.calls
             .iter()

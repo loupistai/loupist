@@ -819,15 +819,15 @@ test("scoped dataset, finance and chart calls reach the broker unchanged and can
 
 test("interface_labels routes only requested keys through the interactive core tool", async (t) => {
   useHostContext(t, runtimeContext("chat", ["interface_labels"]));
-  const received = await startToolBroker(t, () => ({ map: "Map" }));
+  const received = await startToolBroker(t, () => ({ lens: "Lens", your_principles: "Your principles" }));
   const labels = loadExtension().registered.get("interface_labels");
   const validate = (args) => validateToolArguments(labels, { id: "labels", name: labels.name, arguments: args });
-  const result = await labels.execute("labels", validate({ keys: ["map"] }), new AbortController().signal);
-  assert.deepEqual(received.at(-1).params, { keys: ["map"] });
+  const result = await labels.execute("labels", validate({ keys: ["lens", "your_principles"] }), new AbortController().signal);
+  assert.deepEqual(received.at(-1).params, { keys: ["lens", "your_principles"] });
   assert.equal(received.at(-1).method, "interface.labels");
-  assert.deepEqual(result.details, { map: "Map" });
-  for (const rejected of [{}, { keys: [] }, { keys: ["map", "map"] }, { keys: ["unknown"] },
-    { keys: ["map"], locale: "en" }]) {
+  assert.deepEqual(result.details, { lens: "Lens", your_principles: "Your principles" });
+  for (const rejected of [{}, { keys: [] }, { keys: ["world", "world"] }, { keys: ["unknown"] }, { keys: ["map"] },
+    { keys: ["world"], locale: "en" }]) {
     assert.throws(() => validate(rejected));
   }
 });
@@ -1249,4 +1249,21 @@ test("no tool declares a top-level schema combinator a provider refuses", () => 
     .filter((tool) => refused.some((keyword) => Object.hasOwn(tool.parameters ?? {}, keyword)))
     .map((tool) => tool.name);
   assert.deepEqual(offenders, []);
+});
+
+test("the runtime directs permission-blocked saved keys to Settings", () => {
+  const source = {
+    id: "fred.macro",
+    name: "FRED",
+    description: "Economic series.",
+    reason: "its saved key needs the user's permission in macOS",
+  };
+  for (const core_tool_names of [["connection_setup"], []]) {
+    const index = formatRuntimeIndex({ core_tool_names, components: [], unavailable_connections: [source] });
+    assert.match(index, /FRED: its saved key needs the user's permission in macOS\./);
+    assert.match(index, /Settings > Data connections and choose Allow access/);
+  }
+  assert.throws(() => resolveCapability("fred.macro", new Map(), [source]), {
+    message: "This connection's saved key needs the user's permission in macOS first. Tell the user to open Settings > Data connections and choose Allow access, then ask again. Continue this reply without this connection.",
+  });
 });

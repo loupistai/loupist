@@ -447,6 +447,9 @@ pub struct ConfiguredModelView {
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ModelCatalogView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub default_selection: Option<super::selection::ResolvedModelSelection>,
     pub models: Vec<ConfiguredModelView>,
     pub providers: Vec<ModelProviderOption>,
     pub custom_providers: Vec<CustomProviderView>,
@@ -699,6 +702,7 @@ pub fn catalog_view(
         })
         .collect::<Result<Vec<_>, CommandError>>()?;
     Ok(ModelCatalogView {
+        default_selection: None,
         models,
         providers,
         custom_providers,

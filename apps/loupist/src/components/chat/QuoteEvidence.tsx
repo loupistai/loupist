@@ -3,6 +3,7 @@ import { formatDateTime } from "@/i18n/format";
 import { Popover } from "radix-ui";
 import { useRef } from "react";
 import type { ChatEvidenceRef } from "../../types";
+import { evidenceProvenance } from "../../chat/evidence";
 import { quoteEvidence, type QuoteRead, type QuoteRow } from "../../chat/quoteEvidence";
 import { providerName } from "@/lib/marketProviderName";
 
@@ -23,8 +24,8 @@ export function QuoteEvidenceBody({ read, evidence, mode, checked }: {
   checked?: { value: string; symbol?: string };
 }) {
   const { t } = useTranslation("chat");
-  const retrieved = clock(evidence.retrieved_at);
-  const provider = providerName(evidence.provider);
+  const origin = evidenceProvenance(evidence, providerName(evidence.provider) ?? "");
+  const retrieved = evidence.memory_origin ? null : clock(evidence.retrieved_at);
   const focus = mode === "cell" ? read.focus : null;
   const listed = focus ? [] : read.rows.slice(0, shownRows);
   const hidden = focus ? 0 : read.rows.length - listed.length;
@@ -42,7 +43,9 @@ export function QuoteEvidenceBody({ read, evidence, mode, checked }: {
   return <div className="quote-evidence-body">
     <header>
       <strong>{focus ? focus.symbol : t("quoteEvidence.title")}</strong>
-      {provider ? <p>{t("quoteEvidence.provider", { provider })}</p> : null}
+      {origin.attribution ? <p>{t("quoteEvidence.provider", { provider: origin.attribution })}</p> : null}
+      {evidence.memory_origin && origin.publication ? <p>{origin.publication.label}</p> : null}
+      {origin.route ? <p className="quote-evidence-note">{origin.route}</p> : null}
       {retrieved ? <p>{t("quoteEvidence.retrieved", { time: retrieved })}</p> : null}
       {!focus ? <p>{coverage}</p> : null}
       {read.partial ? <p>{t("quoteEvidence.incomplete")}</p> : null}

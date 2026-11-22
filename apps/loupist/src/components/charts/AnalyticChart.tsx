@@ -2,7 +2,7 @@ import i18n, { useTranslation } from "@/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import vegaEmbed, { type Result as VegaResult } from "vega-embed";
 import type { ChartDataset, ChartDocument } from "../../types";
-import { assembleAnalyticSpec } from "./analyticAdapter";
+import { assembleAnalyticSpec, describeAnalyticAxes } from "./analyticAdapter";
 import { useChartTokens } from "./chartTokens";
 import { datasetRows } from "./dataset";
 import { useChartSnapshotSlot } from "./chartSnapshot";
@@ -19,6 +19,7 @@ const VEGA_OPTIONS = {
   actions: false,
   ast: true,
   renderer: "svg",
+  patch: describeAnalyticAxes,
 } as const;
 
 const syncVegaSize = (result: VegaResult, container: HTMLElement) => {

@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import i18n, { useTranslation } from "@/i18n";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -85,11 +86,17 @@ export function LoupistTemplateFields({ draft, onChange, busy = false, idPrefix 
   essentials?: boolean;
 }) {
   const { t } = useTranslation("onboarding");
+  const customDraft = useRef<LoupistDraft | null>(null);
+  const selectTemplate = (id: TemplateId) => {
+    if (id === draft.template) return;
+    if (draft.template === "custom") customDraft.current = draft;
+    onChange(id === "custom" && customDraft.current ? customDraft.current : templateDraft(id, draft.tone));
+  };
   const starters = draft.template in TEMPLATE_STARTERS ? TEMPLATE_STARTERS[draft.template as keyof typeof TEMPLATE_STARTERS] : null;
   return <div className="loupist-template-fields">
     <div className="loupist-template-grid" role="group" aria-label={t("wizard.templatesLabel")}>
       {loupistTemplates.map(({ id }) => <button type="button" key={id} className="loupist-template-card" data-testid="loupist-template-card"
-        aria-pressed={draft.template === id} disabled={busy} onClick={() => onChange(templateDraft(id, draft.tone))}>
+        aria-pressed={draft.template === id} disabled={busy} onClick={() => selectTemplate(id)}>
         <strong>{t(`wizard.templates.${id}.title`)}</strong><span title={t(`wizard.templates.${id}.focus`)}>{t(`wizard.templates.${id}.focus`)}</span>
       </button>)}
     </div>

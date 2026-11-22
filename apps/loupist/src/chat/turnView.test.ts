@@ -314,8 +314,12 @@ describe("segments, in the order they happened", () => {
 
   it("places an approval after the step that waits for it", () => {
     const approval = { requestId: "ok", itemId: "read", connectionId: "web", connectionName: "Web", toolName: "web_fetch", state: "waiting" as const, requestedAtMs: now };
-    expect(keys(view(message({ phase: "tool", progress: { startedAtMs: start, items: [search, reading], approvals: [approval], finishedAtMs: null } }))))
-      .toEqual(["ledger:activity", "approval:approval:ok"]);
+    const turn = message({ phase: "tool", progress: { startedAtMs: start, items: [search, reading], approvals: [approval], finishedAtMs: null } });
+    const enabled = view(turn, { customConnections: true });
+    expect(keys(enabled)).toEqual(["ledger:activity", "approval:approval:ok"]);
+    expect(enabled.state.kind).toBe("awaiting_approval");
+    expect(keys(view(turn))).toEqual(["ledger:activity"]);
+    expect(view(turn).state.kind).toBe("running");
   });
 
   it("places a plan-only ledger before the live answer, where it stays once the answer settles", () => {
@@ -333,7 +337,20 @@ describe("segments, in the order they happened", () => {
     const output = evidenceFixture({ id: "result", kind: "derived", tool_name: "calculate" });
     const fetch = step("fetch", { operation: "read", resultIds: ["hit", "result", "source"] });
     const turn = view(message({ status: "complete", content: "Done.", evidence_refs: [hit, original, output], progress: { startedAtMs: start, finishedAtMs: start + 100, items: [fetch] } }));
-    expect(ledger(turn)).toMatchObject({ sources: [original], evidence: [hit, output] });
+    expect(ledger(turn)).toMatchObject({ sources: [{ evidence: original }], evidence: [hit, output] });
+  });
+
+  it("counts distinct cited Source objects with the same title in the footer and ledger", () => {
+    const evidence = evidenceFixture({ id: "ev_a", kind: "saved_context", tool_name: "world_read", read_ref: "first" });
+    const ref = { kind: "source" as const, recordId: "library", revisionId: "rev", objectId: "first-source" };
+    const memory = { kind: "source" as const, read_ref: "first", title: "Annual report", excerpt: "", as_of: null, section: null, access: "exact_read" as const, knowledge: ref };
+    const turn = view(message({ status: "complete", content: "[1](#evidence-ev_a) [1](#evidence-ev_a) [2](#evidence-ev_b)",
+      evidence_refs: [evidence, { ...evidence, id: "ev_b", read_ref: "second" }],
+      memory_refs: [memory, { ...memory, read_ref: "second", knowledge: { ...ref, objectId: "second-source" } }],
+    }));
+    const sources = [{ saved: { citations: 2, reference: { objectId: "first-source" } } }, { saved: { citations: 1, reference: { objectId: "second-source" } } }];
+    expect(turn.footer).toMatchObject({ kind: "settled", sources });
+    expect(ledger(turn)).toMatchObject({ sources });
   });
 
   it("counts in the receipt the sources the footer lists, including one no step's results name", () => {
@@ -341,8 +358,8 @@ describe("segments, in the order they happened", () => {
     const unlinked = evidenceFixture({ id: "unlinked", url: "https://hanul.example/ir", title: "IR deck" });
     const fetch = step("fetch", { operation: "read", resultIds: ["linked"] });
     const turn = view(message({ status: "complete", content: "Done.", evidence_refs: [linked, unlinked], progress: { startedAtMs: start, finishedAtMs: start + 100, items: [fetch] } }));
-    expect(turn.footer).toMatchObject({ kind: "settled", sources: [linked, unlinked] });
-    expect(ledger(turn)).toMatchObject({ sources: [linked, unlinked], ledger: { text: "Worked 1s · 1 step · 2 sources" } });
+    expect(turn.footer).toMatchObject({ kind: "settled", sources: [{ evidence: linked }, { evidence: unlinked }] });
+    expect(ledger(turn)).toMatchObject({ sources: [{ evidence: linked }, { evidence: unlinked }], ledger: { text: "Worked 1s · 1 step · 2 sources" } });
   });
 });
 

@@ -134,6 +134,28 @@ exec /bin/sleep 30
     assert.equal(processIdentity(server), null, "Xvfb exits with its launcher");
     const shown = await captured(launch(["/bin/sh", "-c", 'echo "$DISPLAY"'], lockPath, { ...headless, DISPLAY: ":5" }));
     assert.equal(shown.stdout.trim(), ":5", "an existing display is used as is");
+
+    const smokeBin = join(directory, "smoke-bin");
+    const seen = join(directory, "smoke-display");
+    await mkdir(smokeBin);
+    await writeFile(join(smokeBin, "python3"), `#!/bin/sh
+printf '%s\\n' "\${DISPLAY-unset}" "\${WAYLAND_DISPLAY-unset}" > ${JSON.stringify(seen)}
+exit 0
+`);
+    await chmod(join(smokeBin, "python3"), 0o755);
+    const cleared = spawn(smoke, [], {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        DISPLAY: ":5",
+        WAYLAND_DISPLAY: "wayland-0",
+        PATH: `${smokeBin}:${process.env.PATH}`,
+      },
+    });
+    const clearedResult = await result(cleared);
+    assert.equal(clearedResult.code, 0, clearedResult.stderr);
+    assert.equal(await readFile(seen, "utf8"), "unset\nunset\n",
+      "the native smoke drops an inherited desktop display before the GUI lease");
   }
 } finally {
   owner?.kill("SIGKILL");

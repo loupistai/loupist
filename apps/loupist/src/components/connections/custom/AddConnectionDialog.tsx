@@ -1,5 +1,7 @@
+import { errorMessage } from "../../../lib/errors";
+import { jsonSyntaxIssue } from "./jsonSyntax";
 import { ConnectionAuth } from "./ConnectionAuth";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "../../../i18n";
 import type { CustomConnection, CustomConnectionsBridge } from "../../../contracts/customConnections";
 import { Button } from "../../ui/button";
@@ -16,13 +18,15 @@ export function AddConnectionDialog({ bridge, loupistId, onClose, onChanged }: {
   const [url, setUrl] = useState("");
   const [name, setName] = useState("");
   const [json, setJson] = useState("");
+  const issue = useMemo(() => mode === "json" ? jsonSyntaxIssue(json) : null, [mode, json]);
+  const issueId = useId();
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
   const [env, setEnv] = useState<Array<{ key: string; value: string }>>([]);
   const [pending, setPending] = useState<CustomConnection[]>([]);
   const [review, setReview] = useState<CustomConnection | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<boolean | string>(false);
   const retry = useRef<(() => Promise<void>) | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -64,7 +68,7 @@ export function AddConnectionDialog({ bridge, loupistId, onClose, onChanged }: {
   async function run(action: () => Promise<void>) {
     retry.current = action;
     setBusy(true); setError(false);
-    try { await action(); onChanged(); } catch { setError(true); } finally { setBusy(false); }
+    try { await action(); onChanged(); } catch (cause) { setError(mode === "json" && !pending.length && !review ? errorMessage(cause, t("custom.error")) : true); } finally { setBusy(false); }
   }
   async function confirm(record: CustomConnection) {
     retry.current = () => confirm(record);
@@ -78,6 +82,7 @@ export function AddConnectionDialog({ bridge, loupistId, onClose, onChanged }: {
     }
   }
   async function submit() {
+    if (issue) return;
     await run(async () => {
       if (mode === "url") {
         const record = await bridge.customConnectionAddUrl({ url, name: name.trim() || undefined });
@@ -102,7 +107,7 @@ export function AddConnectionDialog({ bridge, loupistId, onClose, onChanged }: {
     <DialogHeader><DialogTitle>{t(review && !review.pending && review.auth_state !== "in_progress" && review.auth_state !== "sign_in_needed" ? "custom.reviewTools" : "custom.addTitle")}</DialogTitle></DialogHeader>
     <div className="custom-scroll">
     <DialogBody ref={bodyRef} className={bodyFades ? "custom-stack custom-body-fade" : "custom-stack"}>
-      {error ? <p role="alert" className="custom-status negative">{t("custom.error")} <Button variant="link" disabled={busy} onClick={() => { if (retry.current) void run(retry.current); else setError(false); }}>{t("custom.tryAgain")}</Button></p> : null}
+      {error ? <p role="alert" className="custom-status negative">{typeof error === "string" ? error : t("custom.error")} <Button variant="link" disabled={busy} onClick={() => { if (retry.current) void run(retry.current); else setError(false); }}>{t("custom.tryAgain")}</Button></p> : null}
       {!loupistId ? <p className="custom-status warning">{t("custom.chooseLoupist")}</p> : null}
       {review ? <>
         {review.auth_state === "sign_in_needed" || review.auth_state === "in_progress" ? <ConnectionAuth bridge={bridge} connection={review} autoStart onChanged={next => {
@@ -111,13 +116,14 @@ export function AddConnectionDialog({ bridge, loupistId, onClose, onChanged }: {
           else setReview(next);
         }} /> : review.pending ? <p role="alert" className="custom-status negative">{t("custom.failed")} <Button variant="link" disabled={busy} onClick={() => void run(() => confirm(review))}>{t("custom.tryAgain")}</Button></p> : <ToolReview bridge={bridge} connection={review} loupistId={loupistId} hint={false} onChanged={setReview} onError={() => { retry.current = null; setError(true); }} />}
       </> : <>
-        <SegmentedControl value={mode === "command" ? "" : mode} onValueChange={value => { setMode(value); setPending([]); }} aria-label={t("custom.method")}><SegmentedControlItem value="url"><span>{t("custom.serverUrl")}</span><small>{t("custom.recommended")}</small></SegmentedControlItem><SegmentedControlItem value="json">{t("custom.pasteJson")}</SegmentedControlItem></SegmentedControl>
+        <SegmentedControl value={mode === "command" ? "" : mode} onValueChange={value => { setMode(value); setPending([]); setError(false); }} aria-label={t("custom.method")}><SegmentedControlItem value="url"><span>{t("custom.serverUrl")}</span><small>{t("custom.recommended")}</small></SegmentedControlItem><SegmentedControlItem value="json">{t("custom.pasteJson")}</SegmentedControlItem></SegmentedControl>
         {pending.length ? <><p className="custom-meta">{t("custom.nothingRuns")}</p><ul className="custom-tools">{pending.map(record => {
           const local = record.transport.kind === "stdio";
           return <li className="custom-tool" key={record.id}><strong>{record.name}</strong><span className="custom-meta">{t(local ? "custom.localCommand" : "custom.server")}</span><p className="custom-meta">{t("custom.envNames")}: {record.env_keys.join(", ") || t("custom.none")}</p><p className="custom-meta">{t("custom.headerNames")}: {record.header_names.join(", ") || t("custom.none")}</p>{local && record.command_line ? <pre className="custom-command">{record.command_line}</pre> : null}{record.transport.kind === "http" ? <pre className="custom-command">{record.transport.url}</pre> : null}{local ? <p className="custom-status warning">{t("custom.commandWarning")}</p> : null}<Button disabled={busy} onClick={() => void run(() => confirm(record))}>{t("custom.add")}</Button></li>;
         })}</ul></> : <>
           {mode === "url" ? <><label className="custom-field">{t("custom.serverUrl")}<Input type="url" placeholder={t("custom.urlPlaceholder", { scheme: "https://" })} value={url} onChange={event => setUrl(event.target.value)} /></label><label className="custom-field">{t("custom.optionalName")}<Input value={name} onChange={event => setName(event.target.value)} /></label></> : null}
-          {mode === "json" ? <><label className="custom-field">{t("custom.pasteJson")}<Textarea className="custom-code-input" rows={8} value={json} onChange={event => setJson(event.target.value)} /></label><p className="custom-meta">{t("custom.nothingRuns")}</p></> : null}
+          {mode === "json" ? <><label className="custom-field">{t("custom.pasteJson")}<Textarea className="custom-code-input" rows={8} aria-invalid={Boolean(issue)} aria-describedby={issue ? issueId : undefined} value={json} onChange={event => { setJson(event.target.value); setError(false); }} /></label>
+            {issue ? <p id={issueId} className="custom-status negative">{t("custom.jsonLocation", { line: issue.line, column: issue.column, reason: t(`custom.jsonProblem.${issue.reason}`) })}</p> : null}<p className="custom-meta">{t("custom.nothingRuns")}</p></> : null}
           <Disclosure title={t("custom.advanced")}><div className="custom-stack"><Button variant="outline" onClick={() => setMode("command")}>{t("custom.localCommand")}</Button>
             {mode === "command" ? <><p className="custom-status warning">{t("custom.commandWarning")}</p><label className="custom-field">{t("custom.command")}<Input value={command} onChange={event => setCommand(event.target.value)} /></label><label className="custom-field">{t("custom.args")}<Textarea rows={3} value={args} onChange={event => setArgs(event.target.value)} /></label><div className="custom-stack"><span>{t("custom.environment")}</span>{env.map((row, index) => <div className="custom-env-row" key={index}><Input aria-label={t("custom.envKey", { number: index + 1 })} value={row.key} onChange={event => setEnv(rows => rows.map((item, i) => i === index ? { ...item, key: event.target.value } : item))} /><Input type="password" autoComplete="new-password" aria-label={t("custom.envValue", { number: index + 1 })} value={row.value} onChange={event => setEnv(rows => rows.map((item, i) => i === index ? { ...item, value: event.target.value } : item))} /></div>)}<Button variant="outline" onClick={() => setEnv(rows => [...rows, { key: "", value: "" }])}>{t("custom.addVariable")}</Button></div></> : null}
           </div></Disclosure>
@@ -126,6 +132,6 @@ export function AddConnectionDialog({ bridge, loupistId, onClose, onChanged }: {
     </DialogBody>
     {bodyFades ? <div className="custom-scroll-fade" aria-hidden="true" /> : null}
     </div>
-    <DialogFooter>{review && !review.pending && !reviewComplete(review) ? <ReviewHint /> : null}{review ? <Button disabled={busy || !loupistId || review.pending || review.auth_state === "in_progress" || review.auth_state === "sign_in_needed" || !reviewComplete(review)} onClick={() => { void run(async () => { if (pending.length) setReview(null); else onClose(); }); }}>{t("custom.done")}</Button> : pending.length && mode === "json" ? <Button type="button" variant="outline" disabled={busy} onClick={() => void returnToPaste()}>{t("custom.back")}</Button> : !pending.length ? <Button disabled={busy || (mode === "url" ? !url.trim() : mode === "json" ? !json.trim() : !command.trim())} onClick={() => void submit()}>{t(busy ? "custom.connecting" : mode === "url" ? "custom.connect" : "custom.review")}</Button> : null}</DialogFooter>
+    <DialogFooter>{review && !review.pending && !reviewComplete(review) ? <ReviewHint /> : null}{review ? <Button disabled={busy || !loupistId || review.pending || review.auth_state === "in_progress" || review.auth_state === "sign_in_needed" || !reviewComplete(review)} onClick={() => { void run(async () => { if (pending.length) setReview(null); else onClose(); }); }}>{t("custom.done")}</Button> : pending.length && mode === "json" ? <Button type="button" variant="outline" disabled={busy} onClick={() => void returnToPaste()}>{t("custom.back")}</Button> : !pending.length ? <Button disabled={busy || (mode === "url" ? !url.trim() : mode === "json" ? !json.trim() || Boolean(issue) : !command.trim())} onClick={() => void submit()}>{t(busy ? "custom.connecting" : mode === "url" ? "custom.connect" : "custom.review")}</Button> : null}</DialogFooter>
   </DialogContent></Dialog>;
 }

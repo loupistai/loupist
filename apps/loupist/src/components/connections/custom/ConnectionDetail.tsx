@@ -12,10 +12,11 @@ import "../../../styles/connections.css";
 export function ConnectionDetail({ bridge, connection, loupistId, onChanged, onClose, onRemoved }: {
   bridge: CustomConnectionsBridge; connection: CustomConnection; loupistId: string; onChanged: (record: CustomConnection) => void; onClose: () => void; onRemoved: () => void;
 }) {
-  const { t } = useTranslation("settings");
+  const { t } = useTranslation(["settings", "connections"]);
   const [remove, setRemove] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
+  const keyAccessBlocked = connection.last_error === "credential_access_unavailable";
   async function update(action: () => Promise<unknown>) {
     setBusy(true); setError(false);
     try { await action(); } catch { setError(true); } finally { setBusy(false); }
@@ -28,12 +29,16 @@ export function ConnectionDetail({ bridge, connection, loupistId, onChanged, onC
       <section><h3>{t("custom.tools")}</h3><ToolReview bridge={bridge} connection={connection} loupistId={loupistId} busy={busy} onChanged={onChanged} onError={() => setError(true)} /></section>
       <section className="custom-stack"><h3>{t("custom.memory")}</h3><label className="custom-switch">{t("custom.saveToMemory")}<Switch aria-label={t("custom.saveToMemory")} checked={!connection.dont_save_to_memory} disabled={busy} onCheckedChange={save => void update(async () => { await bridge.customConnectionSetMemory({ connection_id: connection.id, dont_save_to_memory: !save }); const records = await bridge.customConnectionList({ loupist_id: loupistId }); const next = records.find(record => record.id === connection.id); if (next) onChanged(next); })} /></label><p className="custom-meta">{t("custom.memoryCaption")}</p></section>
       <section className="custom-stack"><h3>{t("custom.connection")}</h3><pre className="custom-command">{connection.transport.kind === "http" ? connection.transport.url : connection.command_line}</pre>
+        {keyAccessBlocked ? <>
+          <p className="custom-meta">{t("connections:marketplaceCard.lockedExplanation")}</p>
+          <Button disabled={busy} onClick={() => void update(async () => onChanged(await bridge.customConnectionConfirm({ connection_id: connection.id })))}>{t("connections:marketplaceCard.checkSavedKey")}</Button>
+        </> : null}
         {connection.transport.kind === "http" ? <ConnectionAuth bridge={bridge} connection={connection} reauthenticate onChanged={onChanged} /> : null}
         {connection.pending ? <>
           <p className="custom-meta">{t("custom.nothingRuns")}</p>
           <p className="custom-meta">{t("custom.envNames")}: {connection.env_keys.join(", ") || t("custom.none")}</p>
           <p className="custom-meta">{t("custom.headerNames")}: {connection.header_names.join(", ") || t("custom.none")}</p>
-          <Button disabled={busy} onClick={() => void update(async () => onChanged(await bridge.customConnectionConfirm({ connection_id: connection.id })))}>{t("custom.add")}</Button></> : null}
+          {!keyAccessBlocked ? <Button disabled={busy} onClick={() => void update(async () => onChanged(await bridge.customConnectionConfirm({ connection_id: connection.id })))}>{t("custom.add")}</Button> : null}</> : null}
         <Button variant="destructive" disabled={busy} onClick={() => setRemove(true)}>{t("custom.remove")}</Button>
       </section>
     </div>

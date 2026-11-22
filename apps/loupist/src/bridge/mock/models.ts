@@ -3,7 +3,7 @@
  * rules (`providers/catalog.rs`) the mock bridge applies to them.
  */
 import type * as Contract from "../../types";
-import { defaultRunOptions } from "../../lib/modelSelection";
+import { defaultRunOptions, defaultThinkingLevel } from "../../lib/modelSelection";
 
 /** Oct 31 2026, 09:00 UTC: a fixed "connected since" date keeps previews stable. */
 export const MOCK_CONNECTED_AT_MS = Date.UTC(2026, 9, 31, 9, 0);
@@ -232,14 +232,14 @@ export function listProviderModels(catalog: Contract.ModelCatalog, provider: str
   ];
 }
 
-/** The model a run is locked to, as `chat_send` resolves it; an empty profile is Auto. */
+/** The model a run is locked to, as `chat_send` resolves it; an empty profile uses the host default. */
 export function executionModelLock(
   catalog: Contract.ModelCatalog,
   model_profile_id: string,
   thinking_level: string,
   run_options: Record<string, string>,
 ): Contract.ExecutionModelLock {
-  // An empty profile is Auto: like Rust, take the first connected model shown in Chat at its default controls.
+  // An empty profile uses the resolved Chat default and its default controls.
   if (!model_profile_id) {
     const hidden = new Set(catalog.hidden_model_profile_ids);
     const auto = catalog.models.find((item) => !hidden.has(item.id) && item.credential_source !== "missing");
@@ -269,4 +269,19 @@ export function executionModelLock(
     thinking_level,
     run_options,
   };
+}
+
+/** Preview projection of a scoped request using the fixture catalog. */
+export function mockModelSelection(catalog: Contract.ModelCatalog, request?: Pick<Contract.EffectiveConfig["chat"], "model_profile_id" | "thinking_level" | "run_options">): NonNullable<Contract.ModelCatalog["default_selection"]> {
+  const id = request?.model_profile_id;
+  const requested = catalog.models.find(model => model.id === id);
+  const hidden = catalog.hidden_model_profile_ids;
+  const model = requested ?? catalog.models.find(model => !hidden.includes(model.id) && model.credential_source !== "missing");
+  const connected = [...catalog.providers, ...catalog.custom_providers].some(option => option.credential_source !== "missing");
+  const unavailable = !model ? connected ? "no_eligible_model" : "no_connected_account"
+    : hidden.includes(model.id) ? "model_hidden" : model.credential_source === "missing" ? "account_disconnected" : null;
+  if (!model || unavailable) return { model: null, is_default: !requested, unavailable_reason: unavailable, thinking_levels: [], thinking_level: null, run_options: {}, run_controls: [] };
+  return { model: { id: model.id, name: model.name, provider: model.provider, model: model.model }, is_default: !requested, unavailable_reason: null,
+    thinking_level: request?.thinking_level || defaultThinkingLevel(model.thinking_levels), thinking_levels: model.thinking_levels,
+    run_controls: model.run_controls, run_options: { ...defaultRunOptions(model), ...request?.run_options } };
 }

@@ -1,9 +1,9 @@
 """Typed provider failures across OpenBB's REST and MCP boundaries.
 
 Only exception types and our private REST markers are inspected. Provider text,
-URLs and credentials never enter the MCP diagnostic: an unreachable provider is
-``offline`` and a refused key is ``credential_rejected``.
-An Alpha Vantage subscription refusal has its own marker.
+URLs and credentials never enter the MCP diagnostic. The fixed markers cover
+unreachable providers, refused credentials, rejected arguments, and provider
+capability limits.
 """
 
 from __future__ import annotations
@@ -22,6 +22,18 @@ YAHOO_ADJUSTMENT = {
         "supported": ["splits_only", "splits_and_dividends"],
     }
 }
+INVALID_ARGUMENTS = {"loupist_error": {"kind": "invalid_arguments"}}
+FRED_INVALID_ARGUMENTS = {
+    "loupist_error": {"kind": "invalid_arguments", "provider": "fred"}
+}
+FRED_INVALID_SYMBOL = {
+    "loupist_error": {
+        "kind": "invalid_arguments",
+        "provider": "fred",
+        "field": "symbol",
+    }
+}
+ARGUMENT_REFUSALS = (INVALID_ARGUMENTS, FRED_INVALID_ARGUMENTS, FRED_INVALID_SYMBOL)
 CREDENTIAL_REASONS = frozenset({"key_format", "key_not_accepted"})
 
 
@@ -29,6 +41,16 @@ def credential_rejected(reason: str) -> dict[str, Any]:
     if reason not in CREDENTIAL_REASONS:
         raise ValueError("unknown credential rejection reason")
     return {"loupist_error": {"kind": "credential_rejected", "reason": reason}}
+
+
+class InvalidProviderArguments(Exception):
+    """A provider or the REST schema explicitly rejected the request."""
+
+    def __init__(self, diagnostic: dict[str, Any] = INVALID_ARGUMENTS) -> None:
+        if diagnostic not in ARGUMENT_REFUSALS:
+            raise ValueError("unknown argument rejection")
+        super().__init__("invalid_arguments")
+        self.diagnostic = diagnostic
 
 
 class CredentialRejectedError(Exception):
@@ -66,9 +88,10 @@ def _causes(error: BaseException) -> list[BaseException]:
 
 
 def provider_refusal(error: BaseException) -> dict[str, Any] | None:
-    """Return a fixed diagnostic for a credential, plan, or adjustment refusal."""
+    """Return only a reviewed diagnostic for a known rejection."""
 
     import httpx
+    from fastapi.exceptions import RequestValidationError
 
     pending = [error]
     seen: set[int] = set()
@@ -81,6 +104,10 @@ def provider_refusal(error: BaseException) -> dict[str, Any] | None:
             return YAHOO_ADJUSTMENT
         if isinstance(current, AlphaVantagePaidPlanRequired):
             return PAID_ALPHA_PLAN
+        if isinstance(current, RequestValidationError):
+            return INVALID_ARGUMENTS
+        if isinstance(current, InvalidProviderArguments):
+            return current.diagnostic
         if isinstance(current, CredentialRejectedError):
             return credential_rejected(current.reason)
         if isinstance(current, httpx.HTTPStatusError):
@@ -92,6 +119,9 @@ def provider_refusal(error: BaseException) -> dict[str, Any] | None:
                 return YAHOO_ADJUSTMENT
             if body == PAID_ALPHA_PLAN:
                 return PAID_ALPHA_PLAN
+            for refusal in ARGUMENT_REFUSALS:
+                if body == refusal:
+                    return refusal
             marker = body.get("loupist_error") if isinstance(body, dict) else None
             if (
                 isinstance(marker, dict)
@@ -163,13 +193,13 @@ def is_offline_error(error: BaseException) -> bool:
 
 
 def _refusal_status(rejection):
-    if rejection == YAHOO_ADJUSTMENT:
+    if rejection == YAHOO_ADJUSTMENT or rejection in ARGUMENT_REFUSALS:
         return 422
     return 402 if rejection == PAID_ALPHA_PLAN else 401
 
 
 def classify_rest_failures(app: Any) -> None:
-    """Keep OpenBB's handlers, replacing only unreachable-provider failures."""
+    """Keep OpenBB's handlers for exceptions without a typed refusal."""
     from starlette.responses import JSONResponse
 
     def wrap(handler: Callable[..., Any]) -> Callable[..., Any]:
@@ -218,7 +248,8 @@ async def call_tool_with_failures(
             return ToolResult(
                 content=(
                     rejection["loupist_error"]["kind"]
-                    if rejection in (PAID_ALPHA_PLAN, YAHOO_ADJUSTMENT)
+                    if rejection
+                    in (PAID_ALPHA_PLAN, YAHOO_ADJUSTMENT, *ARGUMENT_REFUSALS)
                     else "The data provider rejected the configured key."
                 ),
                 structured_content=rejection,

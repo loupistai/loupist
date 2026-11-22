@@ -49,7 +49,7 @@ export function assertMapOverlays(maps, { label = "map", tolerance = 1.5 } = {})
     for (const overlay of map.overlays) {
       const { box } = overlay;
       assert.ok(box.x >= free.x - tolerance && box.right <= free.right + tolerance && box.y >= free.y - tolerance && box.bottom <= free.bottom + tolerance,
-        `${label}: ${overlay.name} is not inside the free part of the Map ${JSON.stringify({ overlay: box, free, covers: map.covers })}`);
+        `${label}: ${overlay.name} is not inside the free part of World ${JSON.stringify({ overlay: box, free, covers: map.covers })}`);
     }
   }
 }

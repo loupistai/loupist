@@ -33,8 +33,10 @@ export type ModelSelectionMenuProps = {
   onManageModels?: () => void;
   onSelectionChange: (selection: ModelRunSelection) => void;
   openSignal?: number;
-  /** The composer's "Auto" row: the app's default run profile, used when nothing is chosen for this Loupist. */
-  auto?: { active: boolean; onSelect: () => void };
+  modelName?: string;
+  isDefault?: boolean;
+  onChooseDefault?: () => void;
+  triggerId?: string;
   /** A billing line under the model list ("Using your ChatGPT plan · Manage usage"). */
   planLine?: ReactNode;
   /**
@@ -90,7 +92,10 @@ export function ModelSelectionMenu({
   onManageModels,
   onSelectionChange,
   openSignal = 0,
-  auto,
+  modelName,
+  isDefault,
+  onChooseDefault,
+  triggerId,
   planLine,
   levelOnModelPick = (model) => defaultThinkingLevel(model.thinking_levels),
 }: ModelSelectionMenuProps) {
@@ -123,13 +128,12 @@ export function ModelSelectionMenu({
     );
     return choice && choice.id !== control.default_choice ? [runChoiceLabel(control, choice)] : [];
   }) ?? [];
-  const triggerLabel = selectedModel
+  const name = modelName ?? selectedModel?.name;
+  const triggerLabel = name && selection.thinking_level
     ? i18n.t(selectedOptionLabels.length ? "settings:modelSelectionMenu.selectionWithOptions" : "settings:modelSelectionMenu.selection", {
-        model: selectedModel.name,
-        thinking: thinkingLabel(selection.thinking_level) || i18n.t("settings:modelSelectionMenu.chooseThinking"),
-        options: selectedOptionLabels.join(" · "),
+        model: name, thinking: thinkingLabel(selection.thinking_level), options: selectedOptionLabels.join(" · "),
       })
-    : i18n.t("settings:modelSelectionMenu.chooseModel");
+    : name ?? i18n.t("settings:modelSelectionMenu.chooseModel");
 
   const selectionFor = (model: ConfiguredModel): ModelRunSelection =>
     model.id === selection.model_profile_id
@@ -144,7 +148,7 @@ export function ModelSelectionMenu({
     <DropdownMenu modal open={open} onOpenChange={(next) => { setOpen(next); if (!next) { setQuery(""); setAdvanced(false); } }}>
       <DropdownMenuTrigger asChild aria-haspopup="dialog">
         {renderTrigger ? renderTrigger(triggerLabel) : (
-          <Button type="button" variant="outline" aria-label={ariaLabel ? `${triggerLabel} · ${ariaLabel}` : undefined} aria-description={triggerLabel} disabled={disabled || (!models.length && !onManageModels)} className="world-model-menu">
+          <Button id={triggerId} type="button" variant="outline" aria-label={ariaLabel ? `${triggerLabel} · ${ariaLabel}` : undefined} aria-description={triggerLabel} disabled={disabled || (!models.length && !onManageModels)} className="world-model-menu">
             <span>{triggerLabel}</span>
             <ChevronDownIcon aria-hidden="true" />
           </Button>
@@ -194,25 +198,17 @@ export function ModelSelectionMenu({
               }} />{query ? <Button variant="ghost" size="icon-sm" aria-label={i18n.t("settings:modelSelectionMenu.clearSearch")} onClick={() => setQuery("")}><XIcon /></Button> : null}</div> : null}
           </div>
           <div className="model-menu-catalog" role="menu" aria-label={i18n.t("settings:modelSelectionMenu.availableModels")}>
-          {auto && models.length ? <>
-            <DropdownMenuRadioGroup value={auto.active ? "auto" : ""} onValueChange={() => auto.onSelect()}>
-              <DropdownMenuRadioItem value="auto">
-                {i18n.t(auto.active ? "chat:chatModelMenu.autoRecommended" : "chat:chatModelMenu.resetToAuto")}
-              </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel>{i18n.t("chat:chatModelMenu.chooseModel")}</DropdownMenuLabel>
-          </> : null}
           {catalog.length === 0 ? (
             <DropdownMenuItem disabled>{models.length ? i18n.t("settings:modelSelectionMenu.noMatchingModels") : i18n.t("settings:modelSelectionMenu.noConnectedModels")}</DropdownMenuItem>
           ) : (
             catalog.map((provider, index) => (
               <DropdownMenuRadioGroup
                 key={provider.id}
-                value={auto?.active ? "" : selection.model_profile_id}
+                value={selection.model_profile_id}
                 onValueChange={(profileId) => {
                   const model = provider.models.find((item) => item.id === profileId);
-                  if (model) onSelectionChange(selectionFor(model));
+                  if (model && isDefault && model.id === selection.model_profile_id && onChooseDefault) onChooseDefault();
+                  else if (model) onSelectionChange(selectionFor(model));
                 }}
               >
                 {index > 0 ? <DropdownMenuSeparator /> : null}
@@ -228,6 +224,7 @@ export function ModelSelectionMenu({
                     onSelect={keepMenuOpen}
                   >
                     <span className="model-menu-name">{model.name}</span>
+                    {isDefault && model.id === selection.model_profile_id ? <small>{i18n.t("chat:chatModelMenu.default")}</small> : null}
                     {model.credential_source === "missing" ? <small>{i18n.t("settings:modelSelectionMenu.notConnected")}</small> : null}
                   </DropdownMenuRadioItem>
                 ))}

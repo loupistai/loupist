@@ -207,6 +207,7 @@ fn finalized_learning_report_opens_canonical_sources_lens_and_journal_even_when_
             purpose: "renderer_inspection".into(),
             world_record_id: None,
             world_revision_id: None,
+            figure: None,
         },
     )
     .unwrap();

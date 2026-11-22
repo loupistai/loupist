@@ -118,7 +118,7 @@ toward the 16 Source saves per reply like any other.
 
 [Asset pages](../knowledge/asset-pages.md#asset-pages) expose saved context in
 `asset_page_read`. The tool takes an `assetId` or a ticker or name and returns the
-thesis, linked Map entity, stored price and saved call. Its citation describes
+thesis, linked World entity, stored price and saved call. Its citation describes
 the page. A price read or other dated source supplies original evidence. Under
 an as-of cutoff, the result keeps the dated reasons, lines and moves and leaves
 out the current verdict, saved call, stored price and entity link.
@@ -157,10 +157,10 @@ date, source and revision stay with the conversion receipt.
 
 `world_schema_update` (Memory save in `memory-save`, interactive turns only, one call
 per reply, not on the scheduled-run allowlist) takes up to two `types` and three
-`relations` for a kind of thing or link the user asked the map to track. Rust checks
+`relations` for a kind of thing or link the user asked World to track. Rust checks
 names against the live vocabulary and its limits when the call arrives, stages the
 change, and applies it with the reply together with the asking message; a stopped
-reply applies nothing, and a change whose name the map gained since staging is
+reply applies nothing, and a change whose name World gained since staging is
 skipped and listed in the answer's `memory_update.skippedKinds`. [Worlds](../knowledge/worlds.md#presets-changes-and-undo) owns the rules.
 
 `loupist_setup` (Memory save in `memory-save`, Bot and interactive Chats only, one call
@@ -179,11 +179,11 @@ stays empty, and a follow that matches an existing catalog asset (the same refer
 first, else the same name where no reference conflicts) reuses it, another Loupist's
 included, instead of adding another. In the reply's
 transaction the focus is written to the Loupist profile and the World settings'
-`research_focus` together (it files no Lens page), and the preset adds its curated kinds the map lacks as one
+`research_focus` together (it files no Lens page), and the preset adds its curated kinds World lacks as one
 `preset` change carrying the asking message. A preset's default focus (the New
 Loupist dialog's copy) fills only an empty focus, so a repeated preset changes
 nothing. The answer's `memory_update.setup` lists each applied change (`followed`,
-`unfollowed`, `focus`, `tracks`) for the receipt; preset kinds the map has no room for
+`unfollowed`, `focus`, `tracks`) for the receipt; preset kinds World has no room for
 are listed in `skippedKinds`. `SYSTEM.md` tells the agent to call it in the reply where
 the user says what they research, what to follow or picks a starting point, and never
 to send them to settings.
@@ -249,7 +249,8 @@ disagreeing figures as a conflict card. A `world_read` with disputed claims retu
 `interface_labels` (core, Bot and interactive Chats only) reads product and navigation
 labels in the appearance captured for the turn, with or without Memory. It takes
 only `keys`, an array of one to seven distinct keys from the tool catalog. The result
-maps each requested key to its localized label. Invalid arguments share one repair.
+maps each requested key to its localized label. Keys include Lens, Following,
+Journal, Sources and the five Lens groups. Invalid arguments share one repair.
 [Turn context](context-delivery.md#memory-and-context) describes how unattended turns
 receive interface wording.
 
@@ -281,7 +282,7 @@ the untrusted-text rule, and the answer joins the private text no URL may carry 
 third-party text. The description tells the model to ask only when the answer
 changes the work materially and no sensible default exists, never for credentials or
 account numbers, and never for permission to run a tool. Scheduled runs and all
-host-started research hand-offs refuse it, including a Map-link hand-off on the
+host-started research hand-offs refuse it, including a World-link hand-off on the
 Session surface. The tool is omitted and the broker refuses a direct call. The card and
 `chat_question_answer` are described in [Chat composer](../ui/chat-composer.md#chat-composer).
 

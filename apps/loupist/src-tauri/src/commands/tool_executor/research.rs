@@ -7,6 +7,8 @@ use super::*;
 /// category, naming that host.
 fn web_error(error: crate::web::WebError) -> BrokerError {
     match error {
+        crate::web::WebError::SecContactRequired => BrokerError::Execution("SEC answers only requests that declare a contact, and none is set in this app, so this page was not requested.".into())
+            .with_next("Use a data connection that serves SEC filings if one is listed. Otherwise tell the user to add their contact under Settings > Data connections > SEC EDGAR, then read this page again."),
         crate::web::WebError::Offline(host) => BrokerError::Offline(host),
         crate::web::WebError::UrlDenied => BrokerError::invalid("url", "Only http and https URLs without credentials or a custom port open."),
         crate::web::WebError::NoTextLayer => BrokerError::Execution("This document is a scan with no text layer, so it cannot be read. Look for a text version or another source.".into()),
@@ -223,6 +225,22 @@ impl AppToolExecutor {
             .await
             .get(&source.source_id)
             .cloned();
+        let contact = if existing_snapshot.is_none()
+            && reqwest::Url::parse(&source.url).is_ok_and(|url| crate::web::sec_host(&url))
+        {
+            Some(
+                crate::marketplace::connector_config_value(
+                    &self.state,
+                    "sec.edgar",
+                    "contact_email",
+                )
+                .map_err(command_error)?
+                .filter(|contact| !contact.trim().is_empty())
+                .ok_or_else(|| web_error(crate::web::WebError::SecContactRequired))?,
+            )
+        } else {
+            None
+        };
         // A URL the model wrote opens only where this turn may still go; a
         // search result's source_id and a page already read need no new check.
         if existing_snapshot.is_none() && url.is_some() {
@@ -231,7 +249,11 @@ impl AppToolExecutor {
         let mut run_snapshot = match existing_snapshot {
             Some(snapshot) => snapshot,
             None if content_offset == 0 => RunWebFetchSnapshot {
-                fetched: crate::web::fetch(&source).await.map_err(web_error)?,
+                fetched: {
+                    crate::web::fetch_with_sec_contact(&source, contact.as_deref())
+                        .await
+                        .map_err(web_error)?
+                },
                 issued_offsets: BTreeSet::from([0]),
             },
             None => return Err(BrokerError::Malformed),

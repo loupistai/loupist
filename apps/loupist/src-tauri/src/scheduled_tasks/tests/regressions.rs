@@ -699,19 +699,24 @@ fn recurring_failures_retry_until_three_consecutive_non_successes_and_success_re
 
 #[test]
 fn model_or_credential_setup_pauses_immediately_but_transient_text_does_not() {
-    for (error, paused) in [
+    let old_hint = "Connect an AI account in Settings › Models & providers before chatting.";
+    for (code, message, paused) in [
         (
-            "Connect an AI account in Settings › Models & providers before chatting.",
+            "provider_unavailable",
+            "Account instructions in different words.",
             true,
         ),
-        ("Temporary network outage", false),
-        ("The model response was malformed", false),
+        ("provider_unavailable", old_hint, true),
+        ("internal", old_hint, false),
+        ("internal", "Temporary network outage", false),
+        ("internal", "The model response was malformed", false),
         (
+            "internal",
             "Credential lookup service is temporarily unavailable",
             false,
         ),
-        (crate::pi::provider_failure::RATE_LIMITED, false),
-        (crate::pi::provider_failure::UNAVAILABLE, false),
+        ("internal", crate::pi::provider_failure::RATE_LIMITED, false),
+        ("internal", crate::pi::provider_failure::UNAVAILABLE, false),
     ] {
         let store = fixture();
         let task = store
@@ -721,20 +726,26 @@ fn model_or_credential_setup_pauses_immediately_but_transient_text_does_not() {
             .unwrap()
             .unwrap()
             .run;
+        let error = crate::app::CommandError::new(code, message);
         store
-            .scheduled_task_finish(
-                "loupist-a",
-                &run.run_id,
-                RunStatus::Failed,
-                Some(error),
-                3_000,
-            )
+            .scheduled_task_failed_to_start("loupist-a", &run.run_id, &error, 3_000)
             .unwrap();
         let saved = store
             .scheduled_task_get("loupist-a", &task.id)
             .unwrap()
             .unwrap();
-        assert_eq!(saved.status == TaskStatus::Paused, paused, "{error}");
+        assert_eq!(
+            saved.status == TaskStatus::Paused,
+            paused,
+            "{code} {message}"
+        );
+        assert_eq!(saved.last_error.as_deref(), Some(message));
+        let receipt = store
+            .scheduled_task_run_get("loupist-a", &run.run_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(receipt.status, RunStatus::Failed);
+        assert_eq!(receipt.error.as_deref(), Some(message));
     }
     let store = fixture();
     let task = store

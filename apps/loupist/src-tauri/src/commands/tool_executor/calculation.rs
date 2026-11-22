@@ -179,6 +179,7 @@ fn printed_input(value: &Value, unit: Unit, exponent_precision: bool) -> Option<
     Some(numbers::Printed {
         value: number,
         unit,
+        currency: None,
         precision: 0.5 * 10f64.powi(exponent.saturating_sub(decimals as i32)),
         signed: text.starts_with(['+', '-']),
     })

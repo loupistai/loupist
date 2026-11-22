@@ -199,7 +199,7 @@ pub(crate) fn apply_watchlist(
     state: &AppState,
     loupist_id: &str,
     setup: &StagedSetup,
-) -> Vec<SetupChange> {
+) -> Vec<(SetupChange, String)> {
     let mut changes = Vec::new();
     for asset in &setup.unfollow {
         if state
@@ -208,30 +208,45 @@ pub(crate) fn apply_watchlist(
             .is_ok_and(|asset| asset.is_some())
         {
             let item = user_context::MapContextItem::from(asset);
-            changes.push(SetupChange::Unfollowed {
-                symbol: label(&item, &asset.name),
-                market: (!item.market.is_empty()).then_some(item.market),
-            });
+            changes.push((
+                SetupChange::Unfollowed {
+                    symbol: label(&item, &asset.name),
+                    market: (!item.market.is_empty()).then_some(item.market),
+                },
+                watchlist_label(asset),
+            ));
         }
     }
-    for asset in &setup.follow {
+    for staged in &setup.follow {
         if let Ok(Some(asset)) =
             state
                 .store
-                .apply_asset_follow(loupist_id, asset, crate::commands::now_ms())
+                .apply_asset_follow(loupist_id, staged, crate::commands::now_ms())
         {
             let item = user_context::MapContextItem::from(&asset);
-            changes.push(SetupChange::Followed {
-                symbol: label(&item, &asset.name),
-                market: (!item.market.is_empty()).then_some(item.market),
-                name: Some(asset.name),
-            });
+            changes.push((
+                SetupChange::Followed {
+                    symbol: label(&item, &asset.name),
+                    market: (!item.market.is_empty()).then_some(item.market),
+                    name: Some(asset.name),
+                },
+                watchlist_label(staged),
+            ));
         }
     }
     if !changes.is_empty() {
         crate::commands::assets::follows_changed(state);
     }
     changes
+}
+
+pub(super) fn watchlist_label(asset: &AssetRow) -> String {
+    label(&user_context::MapContextItem::from(asset), &asset.name)
+        .chars()
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .collect::<String>()
+        .trim()
+        .to_owned()
 }
 
 fn label(item: &user_context::MapContextItem, name: &str) -> String {

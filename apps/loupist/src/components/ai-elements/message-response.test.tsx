@@ -1,6 +1,32 @@
 import { render, waitFor } from "@testing-library/react";
 import { MessageResponse } from "./message-response";
 
+it.each([
+  ["MacIntel", "⌘", { metaKey: true }],
+  ["Linux", "Ctrl", { ctrlKey: true }],
+  ["Win32", "Ctrl", { ctrlKey: true }],
+] as const)(
+  "explains and uses the browser shortcut for %s",
+  async (platform, modifier, gesture) => {
+    const { screen, fireEvent } = await import("@testing-library/react");
+    const { renderWithOpen } = await import("../../test/open");
+    const platformValue = vi.spyOn(window.navigator, "platform", "get").mockReturnValue(platform);
+    try {
+      const url = "https://issuer.example/report";
+      const target = { kind: "link", url };
+      const { open } = renderWithOpen(<MessageResponse mode="static">{`[Read the report](${url})`}</MessageResponse>);
+      const link = await screen.findByRole("link", { name: "Read the report" });
+      expect(link).toHaveAttribute("title", `Opens beside the chat. ${modifier}-click to open in your browser.`);
+      fireEvent.click(link);
+      expect(open).toHaveBeenLastCalledWith(target, { anchor: link });
+      fireEvent.click(link, gesture);
+      expect(open).toHaveBeenLastCalledWith(target, { anchor: link, external: true });
+    } finally {
+      platformValue.mockRestore();
+    }
+  },
+);
+
 it("draws a Mermaid fence as a ruled frame instead of code while diagrams are held", async () => {
   const text = "Before.\n\n```mermaid\ngraph TD\n  A-->B\n```\n\nAfter.";
   const held = render(<MessageResponse mode="static" holdDiagrams>{text}</MessageResponse>);

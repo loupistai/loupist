@@ -2,7 +2,6 @@ import { createLabelFrame } from "./labelFrame";
 import { conflictMark, drawnRadius, LIVE_GLOW_REACH, nodeRings, placeLabels, showMetricLabel } from "./labels";
 import { entityLabel, isDrawnRelation } from "../../knowledge/mapItems";
 import { relationName } from "./relations";
-import { LOCAL_VIEW_MIN_NODES } from "./localView";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import ForceGraph, { type ForceGraphMethods } from "react-force-graph-2d";
 import type { KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
@@ -842,7 +841,7 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
           // With a drawn selection, dimmed nodes stay unnamed so the labels describe only what is in focus.
           if (placedSelection && !emphasized && !selectedNeighbors.has(node.id) && !linkedIds.has(node.id)) return false;
           // A small drawing names every node: the mini map up to 8, a focal view or young map up to 30.
-          const fewNodes = visible.length <= (compact ? 8 : LOCAL_VIEW_MIN_NODES);
+          const fewNodes = visible.length <= (compact ? 8 : 60);
           const prominent = exportLabels || emphasized || pinned || anchored || fewNodes || selectedNeighbors.has(node.id) || linkedIds.has(node.id);
           // The best-connected names fade in first as the Map zooms in, every other name from 1.2× (full at 1.6×).
           const alpha = prominent ? 1 : Math.max(hubs.has(node.id) ? ramp(scale, .6, .85) : 0, ramp(scale, 1.2, 1.6));

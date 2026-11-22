@@ -171,7 +171,8 @@ pub(crate) fn settings_get(
         .scheduled_tasks_list(loupist_id)
         .map_err(map_store)?
         .into_iter()
-        .find(|t| t.kind == TaskKind::Briefing);
+        .find(|t| t.kind == TaskKind::Briefing)
+        .map(|task| service::present(state, task));
     let schedule = match &task {
         Some(task) => task.schedule.clone(),
         None => super::default_schedule(
@@ -222,66 +223,31 @@ pub(crate) fn settings_set(
             .map_err(map_store)?;
     } else if create {
         let config = crate::commands::loupist_configuration(state, &request.loupist_id)?;
-        let profile = state
-            .store
-            .get_loupist(&request.loupist_id)
-            .map_err(map_store)?
-            .ok_or_else(|| CommandError::not_found("Loupist"))?;
-        let catalog = state.model_catalog()?;
-        // Pick what a new Chat would: the configured model, the Loupist's last visible model, then the
-        // first model in the picker. Raw catalog order can start with a provider the user never connected.
-        let view = state.model_catalog_view()?;
-        let shown = |id: &str| {
-            view.models.iter().any(|model| model.id == id)
-                && !view
-                    .hidden_model_profile_ids
-                    .iter()
-                    .any(|hidden| hidden == id)
+        let model_id = config.chat.model_profile_id.unwrap_or_default();
+        let requested_level = config.chat.thinking_level.unwrap_or_default();
+        let (thinking, run_options) = if let Ok(model) = state.model_catalog()?.resolve(&model_id) {
+            let level = if model.thinking_levels.contains(&requested_level) {
+                requested_level
+            } else {
+                crate::providers::auto::model_level(&model)
+            };
+            let options = model
+                .run_controls
+                .iter()
+                .map(|control| {
+                    let choice = config
+                        .chat
+                        .run_options
+                        .get(&control.id)
+                        .filter(|id| control.choices.iter().any(|choice| choice.id == **id))
+                        .unwrap_or(&control.default_choice);
+                    (control.id.clone(), choice.clone())
+                })
+                .collect();
+            (level, options)
+        } else {
+            (requested_level, config.chat.run_options)
         };
-        let model_id = config
-            .chat
-            .model_profile_id
-            .or(profile.last_model_profile_id.filter(|id| shown(id)))
-            .or_else(|| {
-                view.models
-                    .iter()
-                    .find(|model| shown(&model.id))
-                    .map(|model| model.id.clone())
-            })
-            .ok_or_else(|| {
-                CommandError::invalid("Configure a model before setting up briefings")
-            })?;
-        let model = catalog.resolve(&model_id)?;
-        let thinking = config
-            .chat
-            .thinking_level
-            .filter(|level| model.thinking_levels.contains(level))
-            .unwrap_or_else(|| {
-                if model.thinking_levels.iter().any(|l| l == "medium") {
-                    "medium".into()
-                } else {
-                    model.thinking_levels[0].clone()
-                }
-            });
-        let run_options = model
-            .run_controls
-            .iter()
-            .map(|control| {
-                let choice = config
-                    .chat
-                    .run_options
-                    .get(&control.id)
-                    .filter(|choice| {
-                        control
-                            .choices
-                            .iter()
-                            .any(|candidate| candidate.id == **choice)
-                    })
-                    .cloned()
-                    .unwrap_or_else(|| control.default_choice.clone());
-                (control.id.clone(), choice)
-            })
-            .collect();
         let draft = TaskDraft {
             title: "Briefings".into(),
             prompt: super::PROMPT.into(),

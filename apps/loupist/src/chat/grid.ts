@@ -1,7 +1,7 @@
 import i18n from "@/i18n";
 import type { AssetsGrid, ChatEvidenceRef, GridCell, GridEmptyCell, GridEmptyReason, GridValueCell } from "../types";
 import { citedPlainText } from "./citedText";
-import { sourceIdentityLabel } from "./evidence";
+import { evidenceProvenance } from "./evidence";
 import { exportFootnote, needsChecking } from "./numberChecks";
 import { providerName } from "../lib/marketProviderName";
 
@@ -155,10 +155,8 @@ export function currencyOf(value: string): string {
 /** A model-written note for a file: each citation target becomes its source's name. */
 const noteText = (note: string, evidenceRefs: readonly ChatEvidenceRef[]) => citedPlainText(note, (id) => {
   const evidence = evidenceRefs.find((item) => item.id === id);
-  return evidence ? providerName(evidence.provider) ?? sourceIdentityLabel(evidence) : t("citedNote.source");
+  return evidence ? evidenceProvenance(evidence, providerName(evidence.provider)).name : t("citedNote.source");
 });
-
-const isoDay = (evidence: ChatEvidenceRef | undefined) => (evidence?.published_at ?? evidence?.retrieved_at ?? "").slice(0, 10);
 
 /**
  * "CSV with sources": one row per cell (tidy) with its source or formula, the
@@ -181,12 +179,13 @@ export function gridCsv(grid: AssetsGrid, evidenceRefs: readonly ChatEvidenceRef
       if (calc) {
         // A calculated cell names its formula with the inputs substituted, and the inputs' sources.
         const inputs = calc.inputs.flatMap((input) => evidenceRefs.filter((item) => item.id === input.evidence_id));
-        const sources = [...new Set(inputs.map((item) => item.provider ?? sourceIdentityLabel(item)))].join("; ");
-        lines.push([...base, cell.value, column.unit, currency, cell.check.status, sources, isoDay(inputs[0]), calcEquation(calc)]);
+        const origins = inputs.map(item => evidenceProvenance(item, item.provider));
+        const sources = [...new Set(origins.map(origin => origin.name))].join("; ");
+        lines.push([...base, cell.value, column.unit, currency, cell.check.status, sources, origins[0]?.sourceDay ?? "", calcEquation(calc)]);
         return;
       }
-      const source = evidence ? providerName(evidence.provider) ?? sourceIdentityLabel(evidence) : "";
-      lines.push([...base, cell.value, column.unit, currency, cell.check.status, source, isoDay(evidence), evidence?.url ?? ""]);
+      const origin = evidence ? evidenceProvenance(evidence, providerName(evidence.provider)) : undefined;
+      lines.push([...base, cell.value, column.unit, currency, cell.check.status, origin?.name ?? "", origin?.sourceDay ?? "", evidence?.url ?? ""]);
     });
   });
   const csv = lines.map((line) => line.map(csvCell).join(","));

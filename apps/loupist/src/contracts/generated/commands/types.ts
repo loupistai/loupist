@@ -3,14 +3,17 @@
 
 import type { AgentHarnessSnapshot } from "../agent_harness";
 import type { LoupistAvailability } from "../app";
+import type { CalcOperation } from "../calculations";
 import type { ChatArtifact, ChatArtifactRef, ChatArtifactRevision } from "../chat/artifacts";
 import type { ChartDataset } from "../chat/chart";
 import type { LinkPath } from "../chat/handoff";
-import type { ChatProgress, ChatProgressPatch } from "../chat/progress";
+import type { ChatProgress, ChatProgressPatch, ChatSaveActivity } from "../chat/progress";
+import type { DatasetRef } from "../datasets";
 import type { AsOfReport, NumberCheck } from "../domain/answer_checks";
-import type { ChatEvidenceRef, ChatFailureKind, ChatFeedback, ChatFeedbackRating, ChatMessageStatus, ChatPerformance, ChatToolRefusal, HandoffAction, HomeAlert, HomeDelivery, HomeHandoff, HomeLink, HomeVocabulary, MemoryUpdateResult, ScheduledTurn, UnsavedThesis } from "../domain/chat";
+import type { ChatEvidenceDelivery, ChatEvidenceKind, ChatEvidenceMatch, ChatFailureKind, ChatFeedback, ChatFeedbackRating, ChatMessageStatus, ChatPerformance, ChatToolRefusal, DiscardedMemoryItem, HandoffAction, HomeAlert, HomeDelivery, HomeHandoff, HomeLink, HomeVocabulary, MemorySaveSkipReason, MemoryUpdateResult, ScheduledTurn, UnsavedThesis } from "../domain/chat";
 import type { LoupistTemplate, LoupistTone } from "../domain/loupist";
 import type { LensReceipt } from "../domain/memory";
+import type { RecordKind, TimePoint } from "../knowledge/model";
 import type { ExecutionModelLock } from "../providers/catalog";
 import type { ScheduleReceipt } from "../scheduled_tasks/types";
 
@@ -41,7 +44,7 @@ export type ChatArtifactViewDto = {
    * A grid's cited evidence, from the reply that published the revision,
    * so its number popovers open wherever the grid is shown.
    */
-  evidence_refs?: Array<ChatEvidenceRef>,
+  evidence_refs?: Array<ChatEvidenceViewDto>,
 };
 
 export type ChatAttachmentDto = {
@@ -90,6 +93,36 @@ export type ChatControlRequestDto = { loupist_id: string, thread_id: string, pro
 export type ChatCreateRequest = { loupist_id: string, title?: string | null };
 
 export type ChatDeleteRequest = { loupist_id: string, thread_id: string };
+
+export type ChatEvidenceViewDto = {
+  memory_origin?: MemoryEvidenceOrigin,
+  id: string,
+  title: string,
+  kind: ChatEvidenceKind,
+  url?: string,
+  provider?: string,
+  tool_name: string,
+  /**
+   * The read returned a user-provided Source (`SourceClass::UserProvided`):
+   * material the user pasted earlier, kept as given and never verified.
+   */
+  user_provided?: boolean,
+  /** For a `calculate` result: its operation, the stable id it is worded by. */
+  calc_operation?: CalcOperation,
+  read_ref?: string,
+  retrieved_at: string,
+  published_at?: string,
+  as_of?: string,
+  coverage?: string,
+  excerpt: string,
+  excerpt_match?: ChatEvidenceMatch,
+  excerpt_truncated: boolean,
+  content_sha256: string,
+  warnings: Array<string>,
+  dataset_ref?: DatasetRef,
+  model_delivery?: ChatEvidenceDelivery,
+  upstream_evidence_ids?: Array<string>,
+};
 
 export type ChatFeedbackRequest = {
   loupist_id: string,
@@ -170,14 +203,14 @@ export type ChatMessageDto = {
   agent_harness?: AgentHarnessSnapshot,
   attachments?: Array<ChatAttachmentDto>,
   artifact_refs?: Array<ChatArtifactRef>,
-  evidence_refs?: Array<ChatEvidenceRef>,
+  evidence_refs?: Array<ChatEvidenceViewDto>,
   schedule_receipts?: Array<ScheduleReceipt>,
   progress?: ChatProgress,
   performance?: ChatPerformance,
 };
 
-/** The roles a stored Chat message may cross the renderer boundary with. */
-export type ChatMessageRoleDto = "user" | "assistant";
+/** Transcript authorship for the renderer, including a request written by Bot. */
+export type ChatMessageRoleDto = "user" | "assistant" | "bot_handoff";
 
 export type ChatRenameRequest = { loupist_id: string, thread_id: string, title: string };
 
@@ -221,13 +254,25 @@ export type ChatStreamEvent =
   | { "type": "progress", run_id: string, sequence: number, progress: ChatProgress }
   | { "type": "progress_patch", run_id: string, patch: ChatProgressPatch }
   | { "type": "phase", run_id: string, phase: ChatRunPhase }
+  | {
+    "type": "saving",
+    run_id: string,
+    waiting_for_other_chat: boolean,
+    blocking_chat_id?: string,
+    final_text?: string,
+    number_checks?: Array<NumberCheck>,
+    save_activity?: ChatSaveActivity,
+  }
   | { "type": "memory_update", run_id: string, result: MemoryUpdateResult }
   | { "type": "schedule", run_id: string, receipt: ScheduleReceipt }
-  | { "type": "evidence", run_id: string, evidence: ChatEvidenceRef }
+  | { "type": "evidence", run_id: string, evidence: ChatEvidenceViewDto }
   | { "type": "artifact_staged", run_id: string, view: ChatArtifactViewDto }
   | { "type": "artifact", run_id: string, artifact: ChatArtifactRef }
   | {
     "type": "completed",
+    save_activity?: ChatSaveActivity,
+    memory_save_skip?: MemorySaveSkipReason,
+    discarded_memory_items?: Array<DiscardedMemoryItem>,
     research_session_id?: string,
     lens_receipts: Array<LensReceipt>,
     tool_refusals: Array<ChatToolRefusal>,
@@ -304,6 +349,8 @@ export type HandoffNoteDto = {
   question?: string,
   brief?: string,
   linkPath?: LinkPath,
+  /** The user's words in Bot, quoted in context for a Bot-authored opening. */
+  userMessageInBot?: string,
 };
 
 export type HandoffRunDto = {
@@ -370,6 +417,18 @@ export type LoupistSummary = {
 };
 
 export type LoupistWorkspace = { loupist: LoupistSummary, threads: Array<ChatThreadDto> };
+
+export type MemoryEvidenceDate = { kind: MemoryEvidenceDateKind, time: TimePoint };
+
+export type MemoryEvidenceDateKind = "published" | "updated";
+
+/** Read-time projection. Chat and turn snapshots keep their original wire-independent shape. */
+export type MemoryEvidenceOrigin = {
+  route: RecordKind,
+  publisher?: string,
+  publication?: MemoryEvidenceDate,
+  saved_at?: string,
+};
 
 export type MemoryRefDto = {
   read_ref: string,

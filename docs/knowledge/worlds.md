@@ -6,7 +6,7 @@ Each Loupist has one World. Rust extracts and reconciles in-process, then publis
 
 Each Loupist has at most one World. Its current sealed snapshot contains nodes,
 claims, ordered endpoint roles and Source support/opposition/context. World content
-in Map is read-only; questions or correction requests attach the relevant claim to
+in World is read-only; questions or correction requests attach the relevant claim to
 Chat. A correction retains its exact Source basis.
 
 Detail reads resolve the exact Loupist/revision and do not invoke inference. Graph
@@ -57,7 +57,7 @@ rates_fx, real_asset, prediction, private), rendered from the enum, and its
 estate and private deals are Assets of class `real_asset` and `private`. An entity
 that fits no type stays `Entity`, and a relationship that fits no type keeps a
 specific open name, so the vocabulary guides extraction without closing it.
-`Metric` stays reserved for existing Maps, which remain readable, but new measured
+`Metric` stays reserved for existing World records, which remain readable, but new measured
 values are claims about their subject. `REPORTS` uses the same subject in both
 endpoint roles, with the exact value, unit, period, basis and status in its text.
 Extraction and publication reject new nodes named as quantities, measurements,
@@ -98,7 +98,7 @@ extracted, as Graphiti's `semaphore_gather` runs them), then relation resolution
 attributes. Prompts, the number of calls and the order the call budget is spent in
 are those of one call after another (`Bridge::llm_many`). The next episode's entity
 extraction does not start early: its instructions name the relations already on
-the Map, which the episode before it can change.
+World, which the episode before it can change.
 
 Each request has a time limit, four minutes by default and at most five
 (`DEFAULT_TIMEOUT_MS`, `MAX_TIMEOUT_MS`); saved limits, including 60 seconds, are
@@ -122,24 +122,24 @@ span of the Source's current revision with a fresh allowance from current settin
 It requeues only that span's unfunded tail, sharing the new allowance; it refuses
 active, uncertain, quarantined, stale-revision or user-paused work. Duplicate clicks
 while queued cannot refill it. If this attempt exhausts its allowance again it
-stops again; only another explicit Source retry can fund it. Resuming Map building,
+stops again; only another explicit Source retry can fund it. Resuming World building,
 settings changes and restarts never refill a spent allowance.
-Its Library row, Source reader and Chat status then read "Map building stopped for this source"; a row reads "Map
-building paused" only while the user has paused Map building (`source_processing`
+Its Library row, Source reader and Chat status then read "World building stopped for this source"; a row reads "World
+building paused" only while the user has paused World building (`source_processing`
 and `knowledge_graph_job` report such a job as `paused`, an exhausted one keeps
 `paused_budget`). Chat reads parked jobs once on opening and offers Refresh status
 without scheduling work.
 Only in `paused_budget` do those three places offer a neutral "Try again", which
-says it uses one more allowance of the Map building setting's model requests per
-source and is the only renderer caller of this bridge action
+uses one more allowance of model requests for that Source as set in World building.
+This is the only renderer caller of the bridge action
 (`components/knowledge/SourceRetry.tsx`). It is disabled while the host decides,
 shows the host's refusal inline, and on success refreshes the row or reader and
-follows the returned job like other Map building progress. The reader's settings
+follows the returned job like other World building progress. The reader's settings
 button continues to manage global processing.
 Revision and growth-event timestamps reflect extraction completion.
 
 An attempt that publishes nothing ends one of three ways (`finish_unpublished` in
-`knowledge/graph_jobs.rs`). Publication is one transaction, so the World is unchanged
+`knowledge/graph_jobs.rs`). Publication is one transaction, so World is unchanged
 in each case. Driver errors settle their claimed attempt. Each scheduler pass also
 settles expired leases that have no live host worker, using the same retry and
 quarantine rules, without restarting the app. Replacement attempts have a new
@@ -147,7 +147,7 @@ identity: an old worker cannot record calls or publish after reclamation.
 
 - **Nothing paid was sent** (the provider went away, its settings changed under
   it): the attempt cost nothing and queues again, up to three times, then fails
-  without quarantining the World; Try again can run it. Enqueuing that Source or
+  without quarantining World; Try again can run it. Enqueuing that Source or
   backfilling saved Sources requeues its failed or cancelled chunks only when
   no paid or uncertain attempt remains, preserving their frozen allowances and
   binding them to the current generation.
@@ -163,7 +163,7 @@ identity: an old worker cannot record calls or publish after reclamation.
 After a quarantine the graph worker queues the recovery itself
 (`recover_world_unattended`): the rebuild calls no model, re-queues the jobs that
 never ran, and enqueues Sources saved during the quarantine. If that rebuild fails,
-the next one waits for Map building recovery in Loupist settings, so a broken
+the next one waits for World building recovery in Loupist settings, so a broken
 rebuild cannot loop.
 Only a committed `reconcile_required` receipt may add a generation to quarantine;
 a rolled-back attempt cannot leave a quarantine without a recovery receipt.
@@ -172,8 +172,8 @@ while paused; recovery rebuilds remain runnable while extraction is paused.
 
 ### Keeping the Mac awake
 
-Loupist settings → Map building offers one application-wide choice, off by default:
-keep this Mac awake during Map building (`keep_awake` in the host
+Loupist settings → World building offers one application-wide choice, off by default:
+keep this Mac awake during World building (`keep_awake` in the host
 `application_settings` row, read once at startup). Rust holds a single
 `PreventUserIdleSystemSleep` IOKit assertion exactly while the choice is on, World
 jobs are running and the Mac is not on battery or UPS power; an unknown power source
@@ -199,7 +199,7 @@ stored. Every change validates, applies at once and writes a `schema_extended` o
 - **Preset.** A semiconductors, dividends or macro & rates Loupist starts with its
   template's curated extension (`curated_seed(template)` in
   `knowledge/world_schema.rs`), whatever its focus text says. `loupist_setup` applies
-  a preset later from chat: only the curated kinds the map lacks, as one preset change
+  a preset later from chat: only the curated kinds World lacks, as one preset change
   that keeps the asking message, so repeating it adds nothing. Other templates start
   empty; a new curated seed ships only after the
   [template seed check](../../apps/loupist/evals/world/README.md#template-seed-check)
@@ -207,13 +207,13 @@ stored. Every change validates, applies at once and writes a `schema_extended` o
   lower typed share than the same Sources without it, or it reports `hold`.
 - **Chat.** `world_schema_update` (`memory_write`, in `memory-save`, interactive
   turns only, one per turn) is staged and commits with the reply, so a stopped
-  turn applies nothing. A change naming a kind the map gained after staging is
+  turn applies nothing. A change naming a kind World gained after staging is
   skipped, and the answer's `memory_update.skippedKinds` lists its kinds so the
   receipt says they were not added; any other refusal at commit is an error. The
   user's sentence is the approval, and the change keeps the asking message. The Memory envelope carries a `worldKinds` block so the agent can
   tell what is already tracked.
 - **Review.** After about ten later Source jobs, once a day and when the World queue
-  is idle, the World model may promote what the World already shows. Nothing waits
+  is idle, the World model may promote what World already shows. Nothing waits
   for the user. The host counts from the snapshot and refuses an unsupported proposal:
   a relationship must be an open relation name with at least six live claims from at
   least three Sources, and a type must cover at least five names that are still
@@ -229,13 +229,13 @@ stored. Every change validates, applies at once and writes a `schema_extended` o
   one without touching the newer kinds. A kind a later change added or removed
   stays as that change left it, even under the same name; a change with nothing
   else left to reverse offers no Undo. A review change also posts one Bot message,
-  "Your map now also tracks ...", in the labels the user sees, with Undo. A preset
+  "Your World now also tracks ...", in the labels the user sees, with Undo. A preset
   applied at creation posts nothing. A chat change, a preset applied from chat
   included, is already in the reply. Settings lists these changes, with Undo when
   available, under
-  [What the map tracks](../ui/map-lens.md#what-the-map-tracks).
+  [What World tracks](../ui/map-lens.md#what-world-tracks).
 
-The Map draws an extension type in that type's
+World draws an extension type in that type's
 category and labels the inspector with the type's display name. Instruments the
 job's Loupist follows are an extraction hint when the episode names them, and each is also an
 anchor ([What you follow](follow.md#what-you-follow)). A hint or anchor counts only when the
@@ -297,7 +297,7 @@ exactly (an ambiguous symbol seeds nothing; that Loupist's saved followed list i
 the app database before the Loupist transaction opens) plus the nodes open idea
 pages are anchored to. A middle node with more than 40 neighbours is never walked
 through, and a Place or Metric node is neither a far name nor a middle: a shared
-country or a reported number is not a connection. The score prefers a far name in another Map category, short paths,
+country or a reported number is not a connection. The score prefers a far name in another World category, short paths,
 low-degree middles, parallel support and recent claims. Work is bounded (claims per
 node, expansions per publication, 50 candidates), and a result says when it was
 cut short. `knowledge_connections` keeps one row per (seed, far) pair for ever, with
@@ -306,7 +306,7 @@ posts are disabled: extraction of a company's products or segments does not esta
 personal relevance. Re-enabling delivery requires a current followed-list
 snapshot read before the Loupist transaction, exact identity resolution at both
 ends (or a followed asset linked to an event with a fact date), and at most one
-card per reply. Existing detected paths remain in the Map silently. A link is new to this
+card per reply. Existing detected paths remain in World silently. A link is new to this
 Loupist, never a claim that the market missed it.
 
 

@@ -343,7 +343,7 @@ fn reject_changed_path(
 /// Validates an executable immediately before use. Development builds require
 /// a regular, non-link/reparse file. A macOS release additionally requires the
 /// helper to remain inside the current signed app bundle, the whole bundle and
-/// helper signatures to validate, and both executables to share the app's Team ID
+/// helper signatures to validate, and both executables to share an Apple-anchored Team ID
 /// or (for a teamless app) its actual leaf certificate. Ad-hoc apps fail closed. A
 /// Windows release requires the native Authenticode trust policy to accept it.
 pub fn verify_executable(path: &Path) -> Result<VerifiedExecutable, ArtifactTrustError> {
@@ -441,29 +441,26 @@ fn verify_macos_identity_for_app(current: &Path, helper: &Path) -> Result<(), Ar
     if !helper.starts_with(&app_bundle) {
         return Err(ArtifactTrustError::Untrusted);
     }
-    verify_codesign(&app_bundle, true)?;
-    verify_codesign(&helper, false)?;
-    let app_identity = macos_signing_identity(&current_executable)?;
-    let helper_identity = macos_signing_identity(&helper)?;
-    require_macos_matching_signer(&app_identity, &helper_identity)
-}
-
-#[cfg(any(test, all(not(debug_assertions), target_os = "macos")))]
-fn require_macos_matching_signer(
-    app: &MacosSigningIdentity,
-    helper: &MacosSigningIdentity,
-) -> Result<(), ArtifactTrustError> {
-    if app != helper {
+    // The display read only selects a candidate team. codesign enforces the
+    // complete requirement on the sealed app and on the helper independently.
+    if let Some(team) = macos_team(&current_executable)? {
+        let requirement = developer_id_requirement(&team);
+        verify_codesign(&app_bundle, true, Some(&requirement))?;
+        return verify_codesign(&helper, false, Some(&requirement));
+    }
+    verify_codesign(&app_bundle, true, None)?;
+    verify_codesign(&helper, false, None)?;
+    if macos_team(&helper)?.is_some() || macos_leaf(&current_executable)? != macos_leaf(&helper)? {
         return Err(ArtifactTrustError::Untrusted);
     }
     Ok(())
 }
 
-#[cfg(any(test, all(not(debug_assertions), target_os = "macos")))]
-#[derive(Debug, PartialEq, Eq)]
-enum MacosSigningIdentity {
-    Team(String),
-    Certificate(String),
+#[cfg(all(target_os = "macos", any(not(debug_assertions), test)))]
+fn developer_id_requirement(team: &str) -> String {
+    format!(
+        r#"=anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = "{team}""#
+    )
 }
 
 #[cfg(any(test, all(not(debug_assertions), target_os = "macos")))]
@@ -487,7 +484,7 @@ fn parse_macos_team(details: &str) -> Result<Option<String>, ArtifactTrustError>
 }
 
 #[cfg(all(target_os = "macos", any(not(debug_assertions), test)))]
-fn macos_signing_identity(path: &Path) -> Result<MacosSigningIdentity, ArtifactTrustError> {
+fn macos_team(path: &Path) -> Result<Option<String>, ArtifactTrustError> {
     let output = Command::new("/usr/bin/codesign")
         .env_clear()
         .args(["--display", "--verbose=4"])
@@ -497,9 +494,11 @@ fn macos_signing_identity(path: &Path) -> Result<MacosSigningIdentity, ArtifactT
     if !output.status.success() {
         return Err(ArtifactTrustError::Untrusted);
     }
-    if let Some(team) = parse_macos_team(&String::from_utf8_lossy(&output.stderr))? {
-        return Ok(MacosSigningIdentity::Team(team));
-    }
+    parse_macos_team(&String::from_utf8_lossy(&output.stderr))
+}
+
+#[cfg(all(target_os = "macos", any(not(debug_assertions), test)))]
+fn macos_leaf(path: &Path) -> Result<String, ArtifactTrustError> {
     // Read the actual embedded leaf, never the designated requirement text or
     // a compiled-in certificate pin. The private directory prevents path swaps;
     // no keychain, trust setting or certificate from the user's profile is used.
@@ -525,15 +524,22 @@ fn macos_signing_identity(path: &Path) -> Result<MacosSigningIdentity, ArtifactT
     if std::fs::metadata(&leaf)?.len() == 0 {
         return Err(ArtifactTrustError::Untrusted);
     }
-    Ok(MacosSigningIdentity::Certificate(digest))
+    Ok(digest)
 }
 
 #[cfg(all(target_os = "macos", any(not(debug_assertions), test)))]
-fn verify_codesign(path: &Path, deep: bool) -> Result<(), ArtifactTrustError> {
+fn verify_codesign(
+    path: &Path,
+    deep: bool,
+    requirement: Option<&str>,
+) -> Result<(), ArtifactTrustError> {
     let mut command = Command::new("/usr/bin/codesign");
     command.env_clear().args(["--verify", "--strict"]);
     if deep {
         command.arg("--deep");
+    }
+    if let Some(requirement) = requirement {
+        command.args(["-R", requirement]);
     }
     let status = command
         .arg(path)
@@ -614,32 +620,6 @@ mod tests {
 
     #[test]
     fn macos_signer_identity_negative_corpus() {
-        let team = MacosSigningIdentity::Team("ABCDE12345".into());
-        let certificate = MacosSigningIdentity::Certificate("a".repeat(64));
-        require_macos_matching_signer(&team, &MacosSigningIdentity::Team("ABCDE12345".into()))
-            .unwrap();
-        require_macos_matching_signer(
-            &certificate,
-            &MacosSigningIdentity::Certificate("a".repeat(64)),
-        )
-        .unwrap();
-        for (app, helper) in [
-            (team, MacosSigningIdentity::Team("OTHER12345".into())),
-            (
-                certificate,
-                MacosSigningIdentity::Certificate("b".repeat(64)),
-            ),
-            (
-                MacosSigningIdentity::Team("ABCDE12345".into()),
-                MacosSigningIdentity::Certificate("a".repeat(64)),
-            ),
-            (
-                MacosSigningIdentity::Certificate("a".repeat(64)),
-                MacosSigningIdentity::Team("ABCDE12345".into()),
-            ),
-        ] {
-            assert!(require_macos_matching_signer(&app, &helper).is_err());
-        }
         assert_eq!(parse_macos_team("TeamIdentifier=not set").unwrap(), None);
         assert_eq!(
             parse_macos_team("TeamIdentifier=ABCDE12345")

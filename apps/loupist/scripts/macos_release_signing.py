@@ -11,9 +11,10 @@ import plistlib
 import re
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
-from release_profile import IDENTIFIER, MODES, load_profile, match_profile
+from release_profile import check_team, IDENTIFIER, MODES, load_profile, match_profile
 
 WORKER_ENTITLEMENT = "com.apple.security.cs.allow-unsigned-executable-memory"
 PI_ENTITLEMENTS = {"com.apple.security.cs.allow-jit": True, WORKER_ENTITLEMENT: True}
@@ -35,15 +36,34 @@ def run(*command: str, check: bool = True) -> subprocess.CompletedProcess:
     return result
 
 
-def signing_mode() -> str:
-    mode = os.environ.get("LOUPIST_MACOS_SIGNING_MODE") or "developer-id"
-    if mode not in MODES:
+def sign_code(command: list[str]) -> None:
+    for attempt in range(3):
+        try:
+            run(*command)
+            return
+        except RuntimeError as error:
+            if (
+                "--timestamp" not in command
+                or "timestamp" not in str(error).lower()
+                or attempt == 2
+            ):
+                raise
+            print(
+                f"Timestamp failed for {command[-1]}, retrying ({attempt + 2}/3)",
+                flush=True,
+            )
+            time.sleep(2 ** (attempt + 1))
+
+
+def signing_mode() -> str | None:
+    mode = os.environ.get("LOUPIST_MACOS_SIGNING_MODE") or None
+    if mode is not None and mode not in MODES:
         raise ValueError("unknown LOUPIST_MACOS_SIGNING_MODE")
     return mode
 
 
 def sidecar_command(
-    path: Path, mode: str, identity: str, *, pi: bool = False
+    path: Path, mode: str, identity: str, *, pi: bool = False, timestamp: bool = True
 ) -> list[str]:
     if (
         mode not in MODES
@@ -53,7 +73,11 @@ def sidecar_command(
         raise ValueError("sidecar signing requires a valid mode and identity")
     command = ["codesign", "--force", "--sign", identity]
     if mode == "developer-id":
-        command += ["--options", "runtime", "--timestamp"]
+        command += [
+            "--options",
+            "runtime",
+            "--timestamp" if timestamp else "--timestamp=none",
+        ]
         if pi:
             command += [
                 "--entitlements",
@@ -63,38 +87,80 @@ def sidecar_command(
 
 
 def macho_files(root: Path) -> list[Path]:
-    return sorted(
-        path
-        for path in root.rglob("*")
-        if path.is_file()
-        and not path.is_symlink()
-        and "Mach-O" in run("file", "-b", str(path)).stdout
-    )
-
-
-def framework_directories(root: Path) -> list[Path]:
-    return sorted(
-        path
-        for path in root.rglob("*.framework")
-        if path.is_dir() and not path.is_symlink()
-    )
-
-
-def sign_runtime(root: Path, kind: str, mode: str, identity: str) -> None:
-    main = root / ("loupist-pi" if kind == "pi" else "loupist-openbb")
-    frameworks = framework_directories(root)
-    if frameworks:
-        # codesign treats a file inside a flat *.framework as a bundle and
-        # refuses it; the runtime must be built on a non-framework Python.
-        raise ValueError(
-            "runtime contains a framework bundle that cannot be signed in place: "
-            + ", ".join(str(path.relative_to(root)) for path in frameworks)
+    # Only ask file(1) about possible Mach-O headers. A universal binary
+    # and a Java class can share a magic number.
+    magic = {
+        bytes.fromhex(value)
+        for value in (
+            "feedface",
+            "cefaedfe",
+            "feedfacf",
+            "cffaedfe",
+            "cafebabe",
+            "bebafeca",
+            "cafebabf",
+            "bfbafeca",
         )
+    }
+    files = []
+    for path in root.rglob("*"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        with path.open("rb") as stream:
+            if stream.read(4) not in magic:
+                continue
+        if "Mach-O" in run("file", "-b", str(path)).stdout:
+            files.append(path)
+    return sorted(files)
+
+
+def external_libraries(path: Path) -> list[str]:
+    output = run("otool", "-arch", "all", "-l", str(path)).stdout
+    # LC_ID_DYLIB names the library itself. Only load commands are dependencies.
+    dependencies = re.findall(
+        r"^\s*cmd LC_(?:LOAD|LOAD_WEAK|REEXPORT|LOAD_UPWARD|LAZY_LOAD)_DYLIB\n"
+        r"\s*cmdsize \d+\n\s*name (/[^\n]+?) \(offset",
+        output,
+        re.MULTILINE,
+    )
+    return sorted(
+        {
+            name
+            for name in dependencies
+            if not name.startswith(("/System/Library/", "/usr/lib/"))
+        }
+    )
+
+
+def nested_bundles(root: Path, files: list[Path]) -> set[Path]:
+    extensions = {".framework", ".app", ".appex", ".xpc", ".bundle", ".plugin"}
+    return {
+        parent
+        for path in files
+        for parent in path.relative_to(root).parents
+        if parent.suffix in extensions
+    }
+
+
+def sign_runtime(
+    root: Path, kind: str, mode: str, identity: str, *, timestamp: bool = True
+) -> None:
+    main = root / ("loupist-pi" if kind == "pi" else "loupist-openbb")
     files = macho_files(root)
     if main not in files:
         raise ValueError(f"missing Mach-O main executable: {main}")
-    for path in [path for path in files if path != main] + [main]:
-        run(*sidecar_command(path, mode, identity, pi=kind == "pi" and path == main))
+    targets = set(files) | {root / path for path in nested_bundles(root, files)}
+    targets.remove(main)
+    for path in sorted(targets, key=lambda path: (-len(path.parts), path)) + [main]:
+        sign_code(
+            sidecar_command(
+                path,
+                mode,
+                identity,
+                pi=kind == "pi" and path == main,
+                timestamp=timestamp,
+            )
+        )
 
 
 def details(path: Path) -> str:
@@ -124,18 +190,30 @@ def require_flags(path: Path, runtime: bool, expected_entitlements: dict) -> str
     return text
 
 
-def verify_binary(path: Path, mode: str, sha1: str | None, team: str | None) -> None:
+def verify_binary(
+    path: Path, mode: str, sha1: str | None, team: str | None, *, timestamp: bool = True
+) -> None:
     command = ["codesign", "--verify", "--strict", "--verbose=2"]
     if mode == "self-signed":
         if not sha1 or re.fullmatch("[A-Fa-f0-9]{40}", sha1) is None:
             raise ValueError("self-signed verification requires the pinned SHA-1")
         command += ["-R", f'=certificate leaf = H"{sha1}"']
     elif mode == "developer-id":
-        command += ["-R", "anchor apple generic"]
+        team = check_team(team)
+        command += [
+            "-R",
+            "=anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists"
+            f' and certificate leaf[subject.OU] = "{team}"',
+        ]
+    else:
+        raise ValueError("unknown macOS signing mode")
     run(*command, str(path))
     text = details(path)
-    if mode == "developer-id" and team and f"TeamIdentifier={team}\n" not in text:
-        raise ValueError(f"wrong Apple team: {path}")
+    if mode == "developer-id":
+        if f"TeamIdentifier={team}" not in text.splitlines():
+            raise ValueError(f"wrong Apple team: {path}")
+        if timestamp and not re.search(r"^Timestamp=.+$", text, re.MULTILINE):
+            raise ValueError(f"missing secure timestamp: {path}")
     if mode == "self-signed" and "TeamIdentifier=not set" not in text:
         raise ValueError(f"self-signed binary unexpectedly has an Apple team: {path}")
 
@@ -147,13 +225,23 @@ def verify_runtime(
     if pi / "loupist-pi" not in files:
         raise ValueError("Pi executable is missing from runtime")
     for path in files + [worker]:
+        if libraries := external_libraries(path):
+            raise ValueError(
+                f"non-system absolute library dependencies in {path}: {libraries}"
+            )
         verify_binary(path, mode, sha1, team)
-        if path == worker:
-            require_flags(path, True, {WORKER_ENTITLEMENT: True})
-        elif mode == "self-signed":
-            require_flags(path, False, {})
-        elif path == pi / "loupist-pi":
-            require_flags(path, True, PI_ENTITLEMENTS)
+        verify_flags(path, mode, pi, worker)
+
+
+def verify_flags(
+    path: Path, mode: str, pi: Path, worker: Path, main: Path | None = None
+) -> None:
+    expected = {}
+    if path == worker:
+        expected = {WORKER_ENTITLEMENT: True}
+    elif mode == "developer-id" and path == pi / "loupist-pi":
+        expected = PI_ENTITLEMENTS
+    require_flags(path, mode == "developer-id" or path in (main, worker), expected)
 
 
 def designated_requirement(app: Path) -> str:
@@ -190,6 +278,102 @@ def require_ticket(path: Path, notarized: bool) -> str:
     return text
 
 
+NOTARY_PROFILE = "loupist-release"
+
+
+def notarize(upload: Path, staple_target: Path) -> None:
+    auth = [
+        "--keychain-profile",
+        NOTARY_PROFILE,
+        "--keychain",
+        os.environ["LOUPIST_SIGNING_KEYCHAIN"],
+    ]
+    submitted = run(
+        "xcrun",
+        "notarytool",
+        "submit",
+        str(upload),
+        *auth,
+        "--output-format",
+        "json",
+        check=False,
+    )
+    if submitted.stderr:
+        print(submitted.stderr, flush=True)
+    try:
+        result = json.loads(submitted.stdout)
+    except ValueError:
+        raise ValueError(
+            f"notarytool returned no submission record: {submitted.stdout}"
+        ) from None
+    submission = result.get("id")
+    if submitted.returncode or not submission:
+        raise ValueError(f"Apple submission failed: {result}")
+    print(
+        f"Apple submission {submission} for {upload.name}. Recover with notarytool info/log {submission}.",
+        flush=True,
+    )
+    waited = run(
+        "xcrun",
+        "notarytool",
+        "wait",
+        submission,
+        *auth,
+        "--timeout",
+        "80m",
+        "--output-format",
+        "json",
+        check=False,
+    )
+    if waited.stderr:
+        print(waited.stderr, flush=True)
+    try:
+        status = json.loads(waited.stdout).get("status")
+    except ValueError:
+        status = waited.stdout or "no final status"
+    if waited.returncode or status != "Accepted":
+        log = run("xcrun", "notarytool", "log", submission, *auth, check=False)
+        print(log.stdout + log.stderr, flush=True)
+        raise ValueError(
+            f"Apple submission {submission} did not complete as Accepted: {status}"
+        )
+    run("xcrun", "stapler", "staple", str(staple_target))
+    require_ticket(staple_target, True)
+
+
+def verify_updater(archive: Path, app: Path, notarized: bool) -> None:
+    # Match the signed CodeDirectory, which seals the bundle resources, and
+    # independently check the ticket survived the updater's tar round trip.
+    match = re.search(
+        r"^CDHash=([a-fA-F0-9]{40})$",
+        run("codesign", "-d", "-vvv", str(app)).stderr,
+        re.MULTILINE,
+    )
+    if not match:
+        raise ValueError("missing reference app CodeDirectory hash")
+    with tempfile.TemporaryDirectory(prefix="loupist-updater-") as directory:
+        run("/usr/bin/tar", "-xzf", str(archive), "-C", directory)
+        root = Path(directory)
+        unpacked = root / app.name
+        if (
+            list(root.iterdir()) != [unpacked]
+            or unpacked.is_symlink()
+            or not unpacked.is_dir()
+        ):
+            raise ValueError("updater must contain exactly the release app")
+        run(
+            "codesign",
+            "--verify",
+            "--deep",
+            "--strict",
+            "-R",
+            f'=cdhash H"{match[1]}"',
+            str(unpacked),
+        )
+        if notarized:
+            require_ticket(unpacked, True)
+
+
 def verify_bundle(
     app: Path,
     dmg: Path,
@@ -201,6 +385,11 @@ def verify_bundle(
     policy = profile["macos_signing"]
     mode = "self-signed" if ephemeral_sha1 else policy["mode"]
     sha1 = ephemeral_sha1 or policy["certificate_sha1"]
+    if mode == "developer-id":
+        pinned = check_team(policy["team_id"])
+        if team and team != pinned:
+            raise ValueError("expected Apple team differs from the release profile")
+        team = pinned
     run("hdiutil", "verify", str(dmg))
     run("codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app))
     verify_binary(dmg, mode, sha1, team)
@@ -218,16 +407,17 @@ def verify_bundle(
     main = app / "Contents/MacOS/loupist"
     worker = app / "Contents/Resources/python-runtime/loupist-python-worker"
     pi = app / "Contents/Resources/pi-runtime"
-    verify_runtime(pi, worker, mode, sha1, team)
-    for path in macho_files(app / "Contents"):
+    contents = app / "Contents"
+    files = macho_files(contents)
+    if not {main, worker, pi / "loupist-pi", pi / "openbb/loupist-openbb"}.issubset(
+        files
+    ):
+        raise ValueError("a required app or runtime executable is missing")
+    for path in files:
         verify_binary(path, mode, sha1, team)
-        if mode == "self-signed":
-            require_flags(
-                path,
-                path in {main, worker},
-                {WORKER_ENTITLEMENT: True} if path == worker else {},
-            )
-    require_flags(main, True, {})
+        verify_flags(path, mode, pi, worker, main)
+    for bundle in nested_bundles(contents, files):
+        verify_binary(contents / bundle, mode, sha1, team)
     ticket = require_ticket(dmg, mode == "developer-id")
     if mode == "developer-id":
         require_ticket(app, True)
@@ -316,10 +506,21 @@ def main() -> None:
     bundle.add_argument("--metadata", type=Path)
     bundle.add_argument("--release-config", type=Path)
     bundle.add_argument("--report", type=Path)
+    bundle.add_argument("--updater", type=Path)
     compare = sub.add_parser("compare-reports")
     compare.add_argument("--expected", type=Path, required=True)
     compare.add_argument("--actual", type=Path, required=True)
     args = parser.parse_args()
+    if args.command in {"sign-runtime", "verify-runtime"}:
+        mode = signing_mode()
+        if not mode:
+            parser.error("distribution signing requires LOUPIST_MACOS_SIGNING_MODE")
+        team = None
+        if mode == "developer-id":
+            policy = load_profile()["macos_signing"]
+            team = check_team(policy["team_id"])
+            if os.environ.get("APPLE_TEAM_ID", team) != team:
+                parser.error("staging Apple team differs from the release profile")
     if args.command == "sign-runtime":
         sign_runtime(
             args.runtime,
@@ -333,11 +534,19 @@ def main() -> None:
             args.worker,
             signing_mode(),
             os.environ.get("APPLE_SIGNING_IDENTITY"),
+            team,
         )
     elif args.command == "compare-reports":
         compare_reports(args.expected, args.actual)
     else:
-        profile = load_profile(args.profile) if args.profile else load_profile()
+        options = {
+            "rehearsal": bool(os.environ.get("LOUPIST_EPHEMERAL_CERTIFICATE_SHA1"))
+        }
+        profile = (
+            load_profile(args.profile, **options)
+            if args.profile
+            else load_profile(**options)
+        )
         if args.metadata:
             metadata = json.loads(args.metadata.read_text())
             match_profile(metadata["macos_signing"], profile)
@@ -349,6 +558,8 @@ def main() -> None:
             or (metadata["macos_signing"]["team_id"] if args.metadata else None),
             ephemeral_sha1=os.environ.get("LOUPIST_EPHEMERAL_CERTIFICATE_SHA1"),
         )
+        if args.updater:
+            verify_updater(args.updater, args.app, record["notarized"])
         if args.metadata and record != metadata["macos_signing"]:
             raise ValueError("mounted app signing facts differ from metadata")
         if args.report:

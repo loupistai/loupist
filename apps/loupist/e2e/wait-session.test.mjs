@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createServer } from "node:http";
 import { createServer as createNetServer } from "node:net";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -198,12 +198,12 @@ console.log("wait-session readiness contract passed");
 // port 1420, or touch the repository's current-session.json in these tests.
 const lifecycleDirectory = mkdtempSync(join(tmpdir(), "loupist-owner-"));
 const appStandIn = join(lifecycleDirectory, "loupist");
-// macOS ps comm names a script's interpreter, so use a real executable there.
+// macOS ps comm preserves the invoked symlink path. The original signed image
+// can be reaped reliably where a copy of it can remain stuck in exit.
 // Linux uutils dispatches on argv[0]; the shell fixture preserves the owned
 // script path in ps args while invoking sleep by its own name.
 if (process.platform === "darwin") {
-  copyFileSync("/bin/sleep", appStandIn);
-  chmodSync(appStandIn, 0o755);
+  symlinkSync("/bin/sleep", appStandIn);
 } else {
   writeFileSync(appStandIn, '#!/bin/sh\nsleep "$1"\n', { mode: 0o755 });
 }
@@ -282,6 +282,7 @@ try {
   assert.equal(await webdriverIsReady(output.port), true);
 
   writeManualSession(sessionPath, launcher.pid, launcher.pid, "knowledge-preview");
+  if (process.platform === "linux") unlinkSync(appStandIn);
   await stopSession(sessionPath);
   assert.equal(processIdentity(launcher.pid), null);
   assert.equal(processIdentity(nativePid), null);

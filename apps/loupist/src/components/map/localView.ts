@@ -1,13 +1,9 @@
 import type { KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
-import { nodeCategory } from "../../knowledge/mapKinds";
 import type { MapPoint } from "./layout";
 
 /** How far around the focal name the Map draws: one or two hops over relationships, or everything. */
 export type MapScope = "1" | "2" | "all";
 export const mapScopes: readonly MapScope[] = ["1", "2", "all"];
-export const isMapScope = (value: unknown): value is MapScope => value === "1" || value === "2" || value === "all";
-/** Up to this many names the whole Map is already a local view, so the focal and scope controls hide. */
-export const LOCAL_VIEW_MIN_NODES = 60;
 /** A local view never draws more names than this; the 1-hop ring always comes first. */
 export const LOCAL_VIEW_CAP = 150;
 
@@ -67,18 +63,6 @@ export function localSet(nodes: readonly KnowledgeMapNode[], edges: readonly Kno
     }
   }
   return { ids, total: ordered.length, shown: names.length, capped: ordered.length > names.length, neighbors: first.size };
-}
-
-/**
- * Where the Map centers on open: the remembered name, else the followed company
- * with the highest degree, then the best-connected company.
- */
-export function defaultFocal(nodes: readonly KnowledgeMapNode[], rememberedId?: string) {
-  const names = nodes.filter((node) => node.kind === "entity" && !node.archived);
-  if (rememberedId && names.some((node) => node.id === rememberedId)) return rememberedId;
-  const companies = names.filter((node) => nodeCategory(node) === "company");
-  return (companies.filter((node) => node.watched).sort(byDegree)[0]
-    ?? [...companies].sort(byDegree)[0])?.id;
 }
 
 /** Followed names, by degree. */

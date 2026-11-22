@@ -1,10 +1,13 @@
 import type { ChatSubmission } from "./submission";
 import type { VisibleSteer } from "./visibleSteers";
 
+export const MEMORY_BUSY = Symbol("memory_busy");
+export type QueueHold = string | typeof MEMORY_BUSY | null;
+
 export type ChatDraftSessionState = {
   queued: Record<string, ChatSubmission[]>;
   steers: Record<string, VisibleSteer[]>;
-  holds: Record<string, string | null>;
+  holds: Record<string, QueueHold>;
   consumeThreads: Record<string, boolean>;
 };
 export type ChatDraftSession = ReturnType<typeof createChatDraftSession>;

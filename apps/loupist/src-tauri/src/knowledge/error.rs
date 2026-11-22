@@ -41,7 +41,7 @@ pub enum KnowledgeError {
     NotFound,
     #[error("invalid knowledge value: {0}")]
     Invalid(&'static str),
-    #[error("the map already tracks a kind with that name")]
+    #[error("World already tracks a kind with that name")]
     KindAlreadyKnown,
     #[error("{code}: {expected}")]
     JournalField {

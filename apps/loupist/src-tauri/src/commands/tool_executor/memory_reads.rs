@@ -642,7 +642,7 @@ async fn merge_graph_retrieval(
     (hits, warnings)
 }
 
-const MODEL_LOADING: &str = "The local embedding model is still loading, so these results match words and Map names only and can miss a Source written in another language. Search again shortly before concluding the information is absent.";
+const MODEL_LOADING: &str = "The local embedding model is still loading, so these results match words and World names only and can miss a Source written in another language. Search again shortly before concluding the information is absent.";
 
 const RRF_K: f64 = 60.0;
 

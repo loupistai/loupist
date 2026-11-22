@@ -35,7 +35,7 @@ const margin = node("margin", "Operating margin", { entityKind: "Metric" });
 const base: MorningInputs = { language: "en", nowMs: NOW, lastSeenAtMs: LAST_SEEN, map: map([hanul, morrow, margin], [claim("c1", "morrow", "hanul"), claim("c2", "hanul", "margin")]) };
 
 describe("morning message", () => {
-  it("counts every line it shows: the briefing and each check; the Map's growth is not news in Bot", () => {
+  it("counts every line it shows: the briefing and each check; World's growth is not news in Bot", () => {
     const message = morningMessage({ ...base, bot: true, events: [event("entity_added", "hanul"), event("claim_added", "c1")],
       briefing: briefing(), journal: [check("j1", "2026-11-04")] });
     expect(message.count).toBe(1 + 1);
@@ -48,7 +48,7 @@ describe("morning message", () => {
     expect(message.questions.filter((question) => question.template === "changed").map((question) => question.params)).toEqual([{ name: "Hanul Precision", date: "Tuesday" }]);
   });
 
-  it("asks Bot nothing built from the Map", () => {
+  it("asks Bot nothing built from World", () => {
     const message = morningMessage({ ...base, bot: true, events: [event("entity_added", "hanul"), event("claim_added", "c1"), event("claim_disputed", "c2")],
       watchlist: [{ assetId: mockAssetId("Apple"), name: "Apple" }] }, "Tuesday");
     expect(message.questions.map((question) => question.template)).toEqual(["briefing", "general", "markets"]);

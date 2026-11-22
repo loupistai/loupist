@@ -12,6 +12,7 @@ def test_credentials_feed_rest_context_without_persisting(tmp_path: Path) -> Non
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from loupist_openbb.bootstrap import configure_scratch_environment
 
 scratch = Path(sys.argv[1])
@@ -46,7 +47,7 @@ async def fake_async_request(url, *args, **kwargs):
 
 def fake_sync_request(url, *args, **kwargs):
     sync_calls.append((url, kwargs.get("headers")))
-    return object()
+    return SimpleNamespace(status_code=200)
 
 # Import the SEC helper first so the patch must also replace an already-bound
 # module alias. The latest-financial-reports route imports the core helper from

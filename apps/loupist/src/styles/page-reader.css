@@ -10,12 +10,17 @@
 .page-reader-meta > span + span::before { content: "·"; margin-right: var(--gg-space-3); }
 .page-idea-status { color: var(--gg-color-accent-ink); font-weight: var(--gg-weight-medium); }
 .page-reader-summary { margin: 0; max-width: 60ch; color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: 22px; }
-.page-sections { display: grid; gap: var(--gg-space-1); }
-.page-section { padding: var(--gg-space-4) 0; border-top: 1px solid var(--gg-color-border-subtle); }
+.page-sections { min-width: 0; display: grid; gap: var(--gg-space-1); }
+.page-section { min-width: 0; padding: var(--gg-space-4) 0; border-top: 1px solid var(--gg-color-border-subtle); }
 .page-section:first-child { border-top: 0; padding-top: 0; }
-.page-section > header { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: var(--gg-space-2) var(--gg-space-3); margin-bottom: var(--gg-space-2); }
 .page-section h3 { margin: 0; font-size: var(--gg-text-subtitle); line-height: var(--gg-leading-subtitle); font-weight: var(--gg-weight-semibold); overflow-wrap: anywhere; }
-.page-section-tools { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1) var(--gg-space-2); }
+.page-section[data-section-key] > h3 { margin-bottom: var(--gg-space-2); }
+.page-section-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1) var(--gg-space-2); }
+.page-section-tools > .message-sources { margin: 0; }
+.page-section-tools > .message-sources[open] { flex-basis: 100%; }
+.page-section-tools .message-sources > summary { padding-inline: 0; }
+.page-section-tools .message-sources ol { grid-template-columns: minmax(0, 1fr); }
+.page-section-tools .message-sources .source-row-static > span:last-child { display: grid; min-width: 0; }
 /* Forget stops competing: quiet, and shown only on the section a person is on (and on keyboard focus). */
 .page-section-tools .page-forget { margin-inline-start: auto; color: var(--gg-color-text-tertiary); font-weight: var(--gg-weight-regular); font-size: var(--gg-text-meta); opacity: 0; }
 .page-section:is(:hover, :focus-within) .page-forget, .page-forget:focus-visible { opacity: 1; }
@@ -27,8 +32,8 @@ button.page-chip { cursor: pointer; }
 button.page-chip:hover { border-color: var(--gg-color-border-strong); color: var(--gg-color-text-primary); }
 .page-chip[data-chip="view"] { border-style: dashed; color: var(--gg-color-text-primary); }
 .page-chip[data-chip="said"] { background: var(--gg-color-accent-soft); border-color: transparent; color: var(--gg-color-accent-ink); }
-.page-chip[data-chip="source"], .page-chip[data-chip="claim"] { color: var(--gg-color-text-primary); }
-.page-section-tools .page-chip:is([data-chip="source"], [data-chip="page"]) { max-width: 22ch; }
+.page-chip[data-chip="claim"] { color: var(--gg-color-text-primary); }
+.page-section-tools .page-chip[data-chip="page"] { max-width: 22ch; }
 .page-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .page-contested { display: inline-flex; align-items: center; gap: var(--gg-space-1); min-height: 24px; padding: 0 var(--gg-space-2); border: 1px solid currentColor; border-radius: var(--gg-radius-full); background: transparent; color: var(--gg-color-map-edge-disputed); font: inherit; font-size: var(--gg-text-caption); cursor: pointer; }
 .page-contested:disabled { cursor: default; }

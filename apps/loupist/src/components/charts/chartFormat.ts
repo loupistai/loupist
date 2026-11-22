@@ -77,25 +77,52 @@ export function seriesLabel(key: unknown, labels: unknown): string {
   return labels && typeof labels === "object" && text in labels ? String((labels as Record<string, unknown>)[text]) : text;
 }
 
-const FUNCTIONS = { loupistTick: axisTick, loupistLabel: dataLabel, loupistExact: exactValue, loupistDate: dateLabel, loupistSeries: seriesLabel };
+/** The SVG axis description uses Vega's final scale domain, including the baseline and nice bounds. */
+function axisDescription(title: string, domain: unknown, date: boolean, utc: boolean): string {
+  if (!Array.isArray(domain) || domain.length < 2) return t("chartAxis.namedAxis", { title });
+  const start = Number(domain[0]);
+  const end = Number(domain.at(-1));
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return t("chartAxis.namedAxis", { title });
+  const display = (value: number) => date
+    ? formatDate(value, { timeZone: utc ? "UTC" : undefined })
+    : formatNumber(value, { maximumSignificantDigits: 15 });
+  return t("chartAxis.range", { title, min: display(start), max: display(end) });
+}
+
+const FUNCTIONS = {
+  loupistTick: axisTick, loupistLabel: dataLabel, loupistExact: exactValue,
+  loupistDate: dateLabel, loupistSeries: seriesLabel, loupistAxisDescription: axisDescription,
+};
 for (const [name, fn] of Object.entries(FUNCTIONS)) vega.expressionFunction(name, fn);
 
 // A currency the column names: "revenue_krw", "Revenue (USD)", "매출(원)", "$".
 const CURRENCY_CODE = /(?:^|[^A-Za-z])(KRW|USD|EUR|JPY|CNY|GBP)(?![A-Za-z])/iu;
 const CURRENCY_SIGN: Array<[RegExp, string]> = [[/₩|￦|원/u, "KRW"], [/\$|달러/u, "USD"], [/€|유로/u, "EUR"], [/¥|엔/u, "JPY"], [/위안/u, "CNY"], [/£|파운드/u, "GBP"]];
-// A scale written into a column id: "revenue_krw_trillion", "sales_usd_bn".
-const SCALE_WORD = /_(trillions?|tn|billions?|bn|millions?|mn|thousands?)$/iu;
-const SCALE_NAMES = { tn: ["tn", "조"], bn: ["bn", "십억"], m: ["m", "백만"], k: ["k", "천"] } as const;
+// Scale words are carried by the readable label, the field id or a semantic type.
+const scalePatterns = [
+  ["tn", /\b(?:trillions?|tn)\b|(?<![가-힣])조/u],
+  ["bn", /\b(?:billions?|bn)\b|(?<![가-힣])십억/u],
+  ["m", /\b(?:millions?|mn)\b|(?<![가-힣])백만/u],
+  ["k", /\bthousands?\b|(?<![가-힣])천(?=\s*(?:원|달러|엔|유로|위안|파운드|[)\]]|$))/u],
+  ["eok", /(?<![가-힣])억(?=\s*(?:원|달러|엔|유로|위안|파운드|[)\]]|$))/u],
+  ["man", /(?<![가-힣])만(?=\s*(?:원|달러|엔|유로|위안|파운드|[)\]]|$))/u],
+] as const;
+const SCALE_NAMES = { tn: ["tn", "조"], bn: ["bn", "십억"], m: ["m", "백만"], k: ["k", "천"], eok: ["100m", "억"], man: ["10k", "만"] } as const;
 
 const currencyIn = (text: string) => CURRENCY_CODE.exec(text)?.[1]?.toUpperCase() ?? CURRENCY_SIGN.find(([pattern]) => pattern.test(text))?.[1];
+const scaleIn = (text: string) => {
+  const words = text.toLowerCase().replaceAll("_", " ");
+  return scalePatterns.find(([, pattern]) => pattern.test(words))?.[0]
+    ?? /(?:[$€£¥₩￦]\s*|\b(?:krw|usd|eur|jpy|cny|gbp)\s+)([mk])\b/u.exec(words)?.[1] as "m" | "k" | undefined;
+};
 
-/** The currency (and a scale its id writes in) a value column holds, and whether its label already says so. */
-export function columnUnit(id: string, label: string): { currency?: string; scale?: keyof typeof SCALE_NAMES; named: boolean } {
-  const named = Boolean(currencyIn(label));
-  const currency = currencyIn(label) ?? currencyIn(id.replaceAll("_", " "));
-  const word = SCALE_WORD.exec(id)?.[1]?.toLowerCase();
-  const scale = !word ? undefined : word.startsWith("t") && word !== "thousand" && word !== "thousands" ? "tn" : word.startsWith("b") ? "bn" : word.startsWith("m") ? "m" : "k";
-  return { currency, scale, named };
+/** The column's currency and scale, and whether both already appear in the label. */
+export function columnUnit(id: string, label: string, semantic = ""): { currency?: string; scale?: keyof typeof SCALE_NAMES; named: boolean } {
+  const labelCurrency = currencyIn(label);
+  const labelScale = scaleIn(label);
+  const currency = labelCurrency ?? currencyIn(id.replaceAll("_", " ")) ?? currencyIn(semantic);
+  const scale = labelScale ?? scaleIn(id) ?? scaleIn(semantic);
+  return { currency, scale, named: Boolean(currency || scale) && (!currency || Boolean(labelCurrency)) && (!scale || Boolean(labelScale)) };
 }
 
 /** The unit as a title names it once: "KRW", "KRW bn" / "원", "십억 원"; empty when the dataset names none. */

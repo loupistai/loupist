@@ -36,13 +36,13 @@ it("folds Scope into the Around menu, which then reads the focal name, when Libr
       local={{ focal, followed: [], recent: [], onFocal: noop, onPickOnMap: noop, scope: "1", onScope }} />);
     expect(document.querySelector("[data-overflow-item=scope]")).toHaveAttribute("inert");
     expect(document.querySelector("[data-map-scope-menu]")).toBeNull();
-    const around = screen.getByRole("button", { name: "Around Acme, Scope: Direct links" });
+    const around = screen.getByRole("button", { name: "Around Acme, Scope: Direct connections" });
     expect(around).toHaveAttribute("data-scope-folded", "true");
     expect(around.querySelector(".map-around-name")).toHaveTextContent("Acme");
     expect(screen.getByRole("button", { name: "Library" })).not.toHaveAttribute("inert");
     await user.click(around);
     const menuScope = await screen.findByRole("region", { name: "Scope" });
-    await user.click(within(menuScope).getByRole("button", { name: "Links of links" }));
+    await user.click(within(menuScope).getByRole("button", { name: "One step further" }));
     expect(onScope).toHaveBeenCalledWith("2");
   } finally { width.mockRestore(); rect.mockRestore(); }
 });

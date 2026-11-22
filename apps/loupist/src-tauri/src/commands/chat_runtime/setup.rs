@@ -58,7 +58,7 @@ impl PreparedChatTurn {
             &config.skills,
         )
         .map_err(map_internal)?;
-        let context = chat_host_context(
+        let mut context = chat_host_context(
             request,
             prompt,
             surface,
@@ -66,6 +66,10 @@ impl PreparedChatTurn {
             capabilities,
             workspace,
         )?;
+        context
+            .agent_runtime
+            .mark_saved_keys_needing_permission(&connector_authority.saved_keys_needing_permission)
+            .map_err(map_internal)?;
         let runtime_policy_sha256 = pi_session_cache_runtime_policy_sha256(
             request.as_of.as_deref(),
             web_search_policy,
@@ -129,6 +133,41 @@ pub(super) fn chat_host_context(
         explicit_skill_names: agent_harness::explicit_skill_names(prompt),
         surface,
     })
+}
+
+pub(super) fn record_saved_key_skips(
+    state: &AppState,
+    loupist_id: &str,
+    scheduled_run_id: Option<&str>,
+    runtime: &agent_harness::AgentRuntimeProfile,
+    on_event: &ChatEventSink,
+) -> Result<(), CommandError> {
+    let unavailable = runtime.unavailable_connections.iter().filter(|connection| {
+        connection.reason == Some(agent_harness::UnavailableConnectionReason::SavedKeyPermission)
+    });
+    if let Some(run_id) = scheduled_run_id {
+        for connection in unavailable {
+            state
+                .store
+                .scheduled_run_skip_tool(
+                    loupist_id,
+                    run_id,
+                    &connection.name,
+                    crate::scheduled_tasks::types::SAVED_KEY_PERMISSION_SKIP,
+                )
+                .map_err(map_store)?;
+        }
+    } else if let Ok(mut refusals) = on_event.tool_refusals.lock() {
+        refusals.extend(
+            unavailable.map(|connection| crate::domain::ChatToolRefusal {
+                connection_id: connection.id.clone(),
+                connection_name: connection.name.clone(),
+                tool_name: String::new(),
+                reason: crate::domain::ChatToolRefusalReason::SavedKeyPermission,
+            }),
+        );
+    }
+    Ok(())
 }
 
 /// Context gathered during setup that launch renders into the turn envelope.
@@ -408,6 +447,15 @@ pub(super) fn admit_chat_turn(
             .agent_runtime
             .core_tool_names
             .retain(|name| name != "ask_user");
+    }
+    if scheduled_turn.is_some() || host_handoff {
+        record_saved_key_skips(
+            state,
+            &profile.id,
+            scheduled_turn.as_ref().map(|turn| turn.run_id.as_str()),
+            &context.agent_runtime,
+            &on_event,
+        )?;
     }
     let policy = context.tool_policy(
         profile.id.clone(),

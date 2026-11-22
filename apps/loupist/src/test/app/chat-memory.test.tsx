@@ -42,7 +42,7 @@ describe("Loupist · Chat memory", () => {
       const processing = () => screen.queryByText("Reviewing sources…");
       await waitFor(() => expect(processing()).toBeVisible());
       expect(processing()).toHaveAttribute("role", "status");
-      expect(within(sheet).queryByRole("button", { name: /Show on the map/ })).toBeNull();
+      expect(within(sheet).queryByRole("button", { name: /Show in World/ })).toBeNull();
       statuses = { first: "completed", second: "running" };
       await act(() => vi.advanceTimersByTimeAsync(5000));
       expect(processing()).toBeVisible();
@@ -113,7 +113,7 @@ describe("Loupist · Chat memory", () => {
     expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveValue("Check the next quarter too");
     // Open in Lens goes to the Lens page; Back to chat returns to the draft and the panel as they were.
     await user.click(within(panel).getByRole("button", { name: "Open in Lens" }));
-    const page = await screen.findByRole("region", { name: /What .* knows/ });
+    const page = await screen.findByRole("region", { name: /’s Lens$/ });
     expect(document.getElementById("main-panel-lens")).toContainElement(page);
     expect(await within(page).findByRole("complementary", { name: "Compare independent accounts" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Back to chat" }));
@@ -124,14 +124,27 @@ describe("Loupist · Chat memory", () => {
 
   it("opens the Bot composer with the page pinned and Correct this when Fix is chosen, without sending", async () => {
     const user = userEvent.setup();
-    const bridge = await openApp();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const loupistId = "loupist-quality";
+    const workspace = await bridge.loupistSelect(loupistId);
+    const message = workspace.threads[0].messages[0];
+    message.memory_update = { status: "applied", commitId: "saved-method", changes: [] };
+    vi.spyOn(bridge, "loupistSelect").mockResolvedValue(workspace);
+    const messageId = message.id;
+    const catalog = await bridge.knowledgeCatalog({ loupistId });
+    const method = catalog.lenses.find(lens => lens.lensKind === "method")!;
+    const page = await bridge.knowledgeLensRead({ loupistId, recordId: method.recordId });
+    if (page.body.kind !== "method") throw new Error("Expected a saved method");
+    const section = page.body.sections[0];
+    vi.spyOn(bridge, "memoryLearned").mockImplementation(async ({ messageIds }) => messageIds.includes(messageId) ? [{
+      messageId, pages: [{ recordId: method.recordId, kind: "method", title: page.title, created: false,
+        outcomes: [{ opId: "saved-method-change", key: section.key, outcome: "added" }] }],
+    }] : []);
     const send = vi.spyOn(bridge, "chatSend");
-    fireEvent.change(screen.getByRole("textbox", { name: "Message Loupist" }), { target: { value: "Learn from this mistake" } });
-    await user.click(screen.getByRole("button", { name: "Send" }));
-    await user.click(await screen.findByRole("button", { name: "Learned 1 thing" }, { timeout: 40_000 }));
+    await openApp(bridge);
+    await user.click(await screen.findByRole("button", { name: "Learned 1 thing" }));
     const card = await screen.findByRole("group", { name: "Filed in this answer" });
-    send.mockClear();
-    await user.click(await within(card).findByRole("button", { name: "Fix Review lesson" }));
+    await user.click(await within(card).findByRole("button", { name: `Fix ${section.heading}` }));
     await waitFor(() => expect((screen.getByRole("textbox", { name: "Message Loupist" }) as HTMLTextAreaElement).value).toContain("Correct this:"));
     expect(document.querySelector('.composer-prompt-highlight [data-inline-reference="lens"]')).toHaveTextContent("Compare independent accounts");
     expect(send).not.toHaveBeenCalled();
@@ -166,7 +179,7 @@ describe("Loupist · Chat memory", () => {
     });
     await openApp(bridge);
     await user.click(await screen.findByRole("button", { name: "Saved record · Memory: Protocol world" }));
-    const world = await screen.findByRole("region", { name: "Map" });
+    const world = await screen.findByRole("region", { name: "World" });
     expect(await within(world).findByText("The protocol preserves the sender's original statement.")).toBeVisible();
     expect(query).toHaveBeenCalledWith(expect.objectContaining({ recordId: "world-protocols", revisionId: "saved-revision" }));
   });

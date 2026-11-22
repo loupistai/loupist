@@ -13,14 +13,12 @@ const t = i18n.getFixedT(null, "chat");
 
 export type SaveAnswerFeedback = (messageId: string, value: Pick<ChatFeedback, "rating" | "correction">) => Promise<ChatFeedback>;
 
-const busyReason = () => t("answerFeedback.availableWhenTheReplyFinishes");
-
-export function AnswerFeedback({ message, onSave, onTeach, feedbackBusy = false, bridge, loupistId, chatId }: {
+export function AnswerFeedback({ message, onSave, onTeach, threadRunning = false, bridge, loupistId, chatId }: {
   bridge?: LoupistBridge; loupistId?: string; chatId?: string;
   message: ChatMessage;
   onSave: SaveAnswerFeedback;
+  threadRunning?: boolean;
   onTeach: (text: string) => void;
-  feedbackBusy?: boolean;
 }) {
   useTranslation("chat");
   const go = useGo();
@@ -48,6 +46,9 @@ export function AnswerFeedback({ message, onSave, onTeach, feedbackBusy = false,
   }, [editing]);
   const closeEditor = () => { returnFocus.current = true; setEditing(false); };
   useEffect(() => { setFeedback(message.feedback); }, [message.feedback]);
+  const writing = message.status === "streaming" && !message.memorySaving;
+  const feedbackBusy = writing || Boolean(message.memorySaving) || threadRunning;
+  const busyReason = writing ? t("answerFeedback.availableWhenTheReplyFinishes") : t("chatMessageCard.afterCurrentReply");
   const unavailable = feedbackBusy || pending;
   const save = async (rating: ChatFeedback["rating"], correction: string | null, close = false) => {
     if (busy.current || feedbackBusy) return;
@@ -83,10 +84,10 @@ export function AnswerFeedback({ message, onSave, onTeach, feedbackBusy = false,
   return <>
     <div className="answer-feedback">
       <div className="message-actions" aria-describedby={feedbackBusy ? busyReasonId : undefined}>
-        {feedbackBusy ? <span id={busyReasonId} className="sr-only">{busyReason()}</span> : null}
-        <button type="button" aria-label={t("answerFeedback.helpful")} title={feedbackBusy ? busyReason() : t("answerFeedback.helpful")} aria-pressed={feedback?.rating === "up"} aria-describedby={feedbackBusy ? busyReasonId : undefined} disabled={unavailable} onClick={() => void save(feedback?.rating === "up" ? null : "up", feedback?.correction ?? null)}><ThumbsUpIcon /></button>
-        <button type="button" aria-label={t("answerFeedback.notHelpful")} title={feedbackBusy ? busyReason() : t("answerFeedback.notHelpful")} aria-pressed={feedback?.rating === "down"} aria-describedby={feedbackBusy ? busyReasonId : undefined} disabled={unavailable} onClick={() => void save(feedback?.rating === "down" ? null : "down", feedback?.correction ?? null)}><ThumbsDownIcon /></button>
-        <button ref={correctButton} type="button" aria-expanded={editing} aria-describedby={feedbackBusy ? busyReasonId : undefined} title={feedbackBusy ? busyReason() : t("answerFeedback.correct")} {...(editing ? { "aria-controls": editorId } : {})} disabled={unavailable}
+        {feedbackBusy ? <span id={busyReasonId} className="sr-only">{busyReason}</span> : null}
+        <button type="button" aria-label={t("answerFeedback.helpful")} title={feedbackBusy ? busyReason : t("answerFeedback.helpful")} aria-pressed={feedback?.rating === "up"} aria-describedby={feedbackBusy ? busyReasonId : undefined} disabled={unavailable} onClick={() => void save(feedback?.rating === "up" ? null : "up", feedback?.correction ?? null)}><ThumbsUpIcon /></button>
+        <button type="button" aria-label={t("answerFeedback.notHelpful")} title={feedbackBusy ? busyReason : t("answerFeedback.notHelpful")} aria-pressed={feedback?.rating === "down"} aria-describedby={feedbackBusy ? busyReasonId : undefined} disabled={unavailable} onClick={() => void save(feedback?.rating === "down" ? null : "down", feedback?.correction ?? null)}><ThumbsDownIcon /></button>
+        <button ref={correctButton} type="button" aria-expanded={editing} aria-describedby={feedbackBusy ? busyReasonId : undefined} title={feedbackBusy ? busyReason : t("answerFeedback.correct")} {...(editing ? { "aria-controls": editorId } : {})} disabled={unavailable}
           // It opens and closes the editor it controls; closing keeps nothing that was not saved.
           onClick={() => { if (editing) { setEditing(false); return; } setDraft(feedback?.correction ?? ""); setEditing(true); }}>{t("answerFeedback.correct")}</button>
       </div>
@@ -99,7 +100,7 @@ export function AnswerFeedback({ message, onSave, onTeach, feedbackBusy = false,
         <small>{t("answerFeedback.characterCount", { count: [...draft.trim()].length, formattedCount: formatNumber([...draft.trim()].length) })}</small>
         <div className="message-actions">
           <button type="button" aria-describedby={feedbackBusy ? busyReasonId : undefined} disabled={unavailable || [...draft.trim()].length > 4000} onClick={() => void save(feedback?.rating ?? null, draft, true)}>{pending ? t("answerFeedback.saving") : t("answerFeedback.saveCorrection")}</button>
-          <button type="button" aria-describedby={feedbackBusy ? busyReasonId : undefined} disabled={unavailable} onClick={closeEditor}>{t("answerFeedback.cancel")}</button>
+          <button type="button" disabled={pending} onClick={closeEditor}>{t("answerFeedback.cancel")}</button>
         </div>
       </> : null}
       {feedback?.correction && !editing ? <>
@@ -108,7 +109,7 @@ export function AnswerFeedback({ message, onSave, onTeach, feedbackBusy = false,
           <p className="answer-saved-correction">{feedback.correction}</p>
         </>}
         {savedPrinciple ? <SavedPrinciple className="principle-saved" statement={savedPrinciple.statement} pending={archiving} onUndo={() => void undoPrinciple()} onView={viewPrinciple} /> : <div className="message-actions">
-          <button type="button" aria-describedby={feedbackBusy ? busyReasonId : undefined} disabled={unavailable} onClick={() => onTeach(feedbackTeachingPrompt(message.content, feedback.correction!))}>{t("answerFeedback.teachTheLoupist")}</button>
+          <button type="button" disabled={pending} onClick={() => onTeach(feedbackTeachingPrompt(message.content, feedback.correction!))}>{t("answerFeedback.teachTheLoupist")}</button>
           {bridge && loupistId && chatId ? <button type="button" data-feedback-principle disabled={unavailable} onClick={() => setPrincipleForm(true)}>{t("principles.save")}</button> : null}
         </div>}
       </> : null}

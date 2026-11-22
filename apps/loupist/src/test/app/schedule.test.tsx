@@ -37,11 +37,63 @@ async function openFirstRun(user: ReturnType<typeof userEvent.setup>) {
   await user.click(within(history).getAllByRole("button")[0]!);
 }
 
+async function openScheduleFromResearch(bridge: MockLoupistBridge, user: ReturnType<typeof userEvent.setup>) {
+  const title = "Apple revenue research";
+  await bridge.chatCreate({ loupist_id: "loupist-quality", title });
+  await openApp(bridge);
+  await user.click(await screen.findByRole("button", { name: title }));
+  await screen.findByRole("heading", { name: title });
+  const composer = screen.getByRole("textbox", { name: "Message Loupist" });
+  fireEvent.change(composer, { target: { value: "Keep my research draft" } });
+  await user.click(await mainTab(/Schedule/));
+}
+
+it("offers a built-in briefing and a custom task in the empty Schedule, with the account note after both", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const enable = vi.spyOn(bridge, "briefingSettingsSet");
+  const user = userEvent.setup();
+  const send = vi.spyOn(bridge, "chatSend");
+  await openScheduleFromResearch(bridge, user);
+  const heading = await screen.findByRole("heading", { name: "Nothing is scheduled yet" });
+  const choices = within(heading.parentElement!);
+  expect(choices.getByText("Loupist can run work for you at set times and post the result in Bot.")).toBeVisible();
+  expect(choices.getAllByRole("heading", { level: 3 }).map(node => node.textContent)).toEqual(["Morning briefing", "Your own task"]);
+  const [turnOn, askBot] = choices.getAllByRole("button");
+  expect(turnOn).toHaveAccessibleName("Turn on");
+  expect(askBot).toHaveAccessibleName("Ask Bot");
+  const note = choices.getByText(/Scheduled tasks use your AI account/);
+  expect(askBot!.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(note.closest("header")).toBeNull();
+  expect(screen.getAllByText(/Scheduled tasks use your AI account/)).toHaveLength(1);
+  await user.click(turnOn!);
+  expect(send).not.toHaveBeenCalled();
+  expect(enable).toHaveBeenCalledExactlyOnceWith({ loupistId: "loupist-quality", enabled: true });
+  const row = await taskRow(/^Briefing/);
+  expect(within(row).getByText("Built in")).toBeVisible();
+  await user.click(within(row).getByRole("button"));
+  expect(within(await screen.findByRole("article", { name: "Briefing" })).getByText("Built in")).toBeVisible();
+});
+
+it("opens Bot from an empty Schedule with the custom example focused and unsent", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const send = vi.spyOn(bridge, "chatSend");
+  const user = userEvent.setup();
+  await openScheduleFromResearch(bridge, user);
+  await user.click(await screen.findByRole("button", { name: "Ask Bot" }));
+  const composer = await screen.findByRole("textbox", { name: "Message Loupist" });
+  expect(composer).toHaveValue("Every Monday at 8, summarize semiconductor news.");
+  expect(composer).toHaveFocus();
+  expect(screen.getByRole("button", { name: "Bot" })).toHaveAttribute("aria-current", "page");
+  expect(send).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Apple revenue research" }));
+  expect(await screen.findByRole("textbox", { name: "Message Loupist" })).toHaveValue("Keep my research draft");
+});
+
 it("opens a run from the task history, shows its sections, and marks it read after a second", async () => {
   const { bridge, user } = await fixture();
   await openApp(bridge);
   await openFirstRun(user);
-  expect(await screen.findByText("+3 on the map · 2 relationships · 0 conflicts")).toBeVisible();
+  expect(await screen.findByText("+3 in World · 2 relationships · 0 conflicts")).toBeVisible();
   expect(screen.getByText("Hanul Precision supplies Morrow Components")).toBeVisible();
   expect(screen.getByRole("button", { name: /To check by .*: Inventory days below 50/ })).toBeVisible();
   expect(bridge.inboxMarkRead).not.toHaveBeenCalled();
@@ -71,11 +123,11 @@ it("updates the tab and Loupist badge on inbox-changed, and routes inbox-open to
   await openApp(bridge);
   // The switcher at the top of the sidebar counts each Loupist's unread results.
   const profile = () => within(openLoupistSwitcher()).getByRole("menuitemradio", { name: "Quality Compounder" });
-  await waitFor(() => expect(profile()).toHaveAccessibleDescription("2 unread briefings"));
+  await waitFor(() => expect(profile()).toHaveAccessibleDescription("2 unread scheduled results"));
   expect(within(profile()).getByText("2")).toBeVisible();
   counts.mockResolvedValue([{ loupistId: "loupist-quality", count: 3 }]);
   await act(async () => listeners.forEach(fn => fn({loupistId:"loupist-quality"})));
-  await waitFor(() => expect(profile()).toHaveAccessibleDescription("3 unread briefings"));
+  await waitFor(() => expect(profile()).toHaveAccessibleDescription("3 unread scheduled results"));
   expect(within(profile()).getByText("3")).toBeVisible();
   fireEvent.keyDown(openLoupistSwitcher(), { key: "Escape" });
   const other = (await bridge.loupistList()).find(loupist => loupist.id !== "loupist-quality")!;
@@ -85,18 +137,32 @@ it("updates the tab and Loupist badge on inbox-changed, and routes inbox-open to
   expect(bridge.inboxList).toHaveBeenCalledWith(expect.objectContaining({ loupistId: other.id }));
 });
 
-it("continues in the run's own Chat at the selected answer", async () => {
-  const { bridge, user } = await fixture({ thread_id: "briefing-chat", message_id: "briefing-answer" });
+it.each([false, true])("opens the selected answer and describes whether this session was continued (%s)", async continued => {
+  const { bridge, user, run } = await fixture({ thread_id: "briefing-chat", message_id: "briefing-answer" });
   const select = bridge.loupistSelect.bind(bridge);
   vi.spyOn(bridge, "loupistSelect").mockImplementation(async id => {
     const workspace = await select(id);
-    workspace.threads.push({ id: "briefing-chat", loupist_id: id, title: "Briefings Chat", use_memory: true, update_memory: true, updated_at: new Date().toISOString(), messages: [{ id: "briefing-answer", role: "assistant", content: "The specific briefing answer.", status: "complete", created_at: new Date().toISOString() }] });
+    workspace.threads.push({ id: "briefing-chat", loupist_id: id, title: "Briefings Chat", use_memory: true, update_memory: true, updated_at: new Date().toISOString(), messages: [
+      { id: "scheduled-request", role: "user", content: "Prepare the briefing", status: "complete", created_at: new Date(run.started_at_ms).toISOString(),
+        scheduled: { run_id: run.run_id, task_id: run.task_id, task_title: run.task_title, task_kind: run.kind } },
+      { id: "briefing-answer", role: "assistant", content: "The specific briefing answer.", status: "complete", created_at: new Date().toISOString() }] });
+    if (continued) workspace.threads.at(-1)!.messages.push({ id: "reply", role: "user", status: "complete", content: "What changed?", created_at: new Date().toISOString() });
     return workspace;
   });
   await openApp(bridge); await openFirstRun(user);
   expect(await screen.findByText("The specific briefing answer.")).toBeVisible();
-  await user.click(screen.getByRole("button", { name: "Continue in Chat →" }));
+  expect(Boolean(screen.queryByText("Sending a message adds this session to Research sessions."))).toBe(!continued);
+  await user.click(screen.getByRole("button", { name: continued ? "Open the session" : "Continue in Chat →" }));
   expect(await screen.findByRole("heading", { name: "Briefings Chat" })).toBeVisible();
+  const session = screen.getByRole("button", { name: "Briefings Chat" });
+  if (continued) {
+    expect(session).toHaveAccessibleDescription("Started by a schedule");
+    await user.click(await screen.findByRole("button", { name: "From Schedule: Briefing" }));
+    expect(await screen.findByRole("article", { name: "Briefing" })).toBeVisible();
+  } else {
+    expect(session).not.toHaveAccessibleDescription("Started by a schedule");
+    expect(screen.queryByText("From Schedule: Briefing")).toBeNull();
+  }
 });
 
 it("prints the briefing as the reader shows it, for Save as PDF, without its controls (X9)", async () => {
@@ -113,7 +179,7 @@ it("prints the briefing as the reader shows it, for Save as PDF, without its con
   await user.click(screen.getByRole("button", { name: "Print or save as PDF…" }));
   await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
   const paper = document.querySelector<HTMLElement>(".print-sheet")!;
-  expect(paper).toHaveTextContent("+3 on the map · 2 relationships · 0 conflicts");
+  expect(paper).toHaveTextContent("+3 in World · 2 relationships · 0 conflicts");
   expect(paper).toHaveTextContent("Inventory days below 50");
   expect(paper).toHaveTextContent("The specific briefing answer.");
   expect(paper).toHaveTextContent("Companies: NVDA");
@@ -127,7 +193,7 @@ it("prints the briefing as the reader shows it, for Save as PDF, without its con
   print.mockRestore();
 });
 
-it("opens the Map with its conflicting evidence filter from the reader link", async () => {
+it("opens World with its conflicting evidence filter from the reader link", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const map = await bridge.knowledgeMap({ loupistId: "loupist-quality" });
   const edge = map.edges.find(edge => edge.kind === "claim")!;
@@ -139,7 +205,7 @@ it("opens the Map with its conflicting evidence filter from the reader link", as
   vi.spyOn(bridge, "inboxMarkRead").mockResolvedValue();
   const user = userEvent.setup();
   await openApp(bridge); await openFirstRun(user);
-  await user.click(await screen.findByRole("button", { name: "See conflicting evidence on the Map (2)" }));
+  await user.click(await screen.findByRole("button", { name: "See conflicting evidence in World (2)" }));
   await user.click(await screen.findByRole("button", { name: "Filter" }));
   expect(screen.getByRole("checkbox", { name: "Only where sources disagree" })).toBeChecked();
 });
@@ -155,7 +221,7 @@ it("shows a task on an account at its plan limit or needing reconnect as waiting
   await waitFor(() => expect(briefing).toHaveTextContent("Waiting: sign-in needs reconnect"));
 });
 
-it("offers See on the Map from a conflict card in the briefing reader", async () => {
+it("offers Show in World from a conflict card in the briefing reader", async () => {
   const { bridge, user } = await fixture({ thread_id: "briefing-chat", message_id: "briefing-answer" });
   const evidence: ChatEvidenceRef = { id: "ev_dart", title: "Solsup Foods FY2025 statements", kind: "original", provider: "OpenDART", tool_name: "dart_financials", retrieved_at: "2026-03-20T06:00:00Z", published_at: "2026-03-18", excerpt: "", excerpt_truncated: false, content_sha256: "c".repeat(64), warnings: [] };
   const conflict: ConflictGrid = {
@@ -180,7 +246,7 @@ it("offers See on the Map from a conflict card in the briefing reader", async ()
   });
   await openApp(bridge); await openFirstRun(user);
   expect(await screen.findByText("Sources disagree on FY2025 revenue.")).toBeVisible();
-  await user.click(await screen.findByRole("button", { name: "See on the Map" }));
+  await user.click(await screen.findByRole("button", { name: "Show in World" }));
   await user.click(await screen.findByRole("button", { name: "Filter" }));
   expect(screen.getByRole("checkbox", { name: "Only where sources disagree" })).toBeChecked();
 });

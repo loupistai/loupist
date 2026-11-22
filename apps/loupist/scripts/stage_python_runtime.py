@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from macos_release_signing import sign_code, signing_mode
+
 import argparse
 import hashlib
 import io
@@ -254,8 +256,9 @@ def verify(root: Path, source: str | None = None) -> None:
     assert_rust_crate_licenses(root)
 
 
-def codesign_command(executable: Path) -> list[str]:
-    identity = os.environ.get("APPLE_SIGNING_IDENTITY") or "-"
+def codesign_command(executable: Path, *, timestamp: bool = True) -> list[str]:
+    mode = signing_mode()
+    identity = (os.environ.get("APPLE_SIGNING_IDENTITY") if mode else None) or "-"
     command = [
         "codesign",
         "--force",
@@ -266,10 +269,8 @@ def codesign_command(executable: Path) -> list[str]:
         "--entitlements",
         str(WORKER / "Entitlements.plist"),
     ]
-    from macos_release_signing import signing_mode
-
-    if identity != "-" and signing_mode() == "developer-id":
-        command.append("--timestamp")
+    if identity != "-" and mode == "developer-id":
+        command.append("--timestamp" if timestamp else "--timestamp=none")
     command.append(str(executable))
     return command
 
@@ -318,13 +319,22 @@ def require_worker_signature(executable: Path) -> None:
 
 def apply_distribution_signature(root: Path) -> None:
     """An unsigned cache is reusable, but a requested signer must be applied."""
-    if sys.platform != "darwin" or os.environ.get("APPLE_SIGNING_IDENTITY", "-") in (
-        "",
-        "-",
+    if (
+        not signing_mode()
+        or sys.platform != "darwin"
+        or os.environ.get("APPLE_SIGNING_IDENTITY", "-")
+        in (
+            "",
+            "-",
+        )
     ):
         return
+    sign_staged_worker(root)
+
+
+def sign_staged_worker(root: Path, *, timestamp: bool = True) -> None:
     executable = root / BINARY
-    subprocess.run(codesign_command(executable), check=True)
+    sign_code(codesign_command(executable, timestamp=timestamp))
     require_worker_signature(executable)
     record = json.loads((root / MARKER).read_text())
     record["files"] = manifest(root)
@@ -439,7 +449,7 @@ def stage(root: Path, archive: Path | None, source: str) -> None:
         shutil.copy2(WORKER / "target/release" / BINARY, executable)
         executable.chmod(0o755)
         if sys.platform == "darwin":
-            subprocess.run(codesign_command(executable), check=True)
+            sign_code(codesign_command(executable))
         shutil.copy2(CRATE_LICENSES, stage_root / "rust-crate-licenses.json")
         (stage_root / MARKER).write_text(
             json.dumps(

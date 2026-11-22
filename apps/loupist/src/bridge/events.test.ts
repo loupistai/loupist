@@ -9,14 +9,21 @@ const isTest = (path: string) => /(?:^|\/)tests?(?:\/|\.rs$)|_tests?\.rs$/.test(
 const constants = (source: string) =>
   new Map([...source.matchAll(/const ([A-Z_]+): &str = "([^"]+)";/g)].map(([, name, value]) => [name!, value!]));
 
-/** The event name of every Tauri `emit` call (`.emit(` or `Emitter::emit(`) in production Rust. */
+const emitterPrefix = [
+  String.raw`(?:\.|::)emit\(\s*(?:&?[a-z_.0-9()]+,\s*)?`,
+  // A targeted event takes a window label before the event name.
+  String.raw`(?:\.|::)emit_to\(\s*(?:&?[a-z_.0-9()]+,\s*)?(?:"[^"]*"|[a-z_.0-9()]+)\s*,\s*`,
+].join("|");
+const rustEmitter = new RegExp(String.raw`(?:${emitterPrefix})((?:crate::)?events::[A-Z_]+|[A-Za-z_]+|"[^"]*")\s*,`, "g");
+
+/** The event names of Tauri's broadcast and targeted emit calls in production Rust. */
 function emittedNames() {
   const events = constants(registry);
   const names = new Set<string>();
   const problems: string[] = [];
   for (const [path, source] of Object.entries(rustSources)) {
     if (isTest(path)) continue;
-    for (const [, argument] of source.matchAll(/(?:\.|::)emit\(\s*(?:&?[a-z_.0-9()]+,\s*)?((?:crate::)?events::[A-Z_]+|[A-Za-z_]+|"[^"]*")\s*,/g)) {
+    for (const [, argument] of source.matchAll(rustEmitter)) {
       const event = argument!.replace(/^(?:crate::)?events::/, "");
       if (events.has(event) && argument!.includes("events::")) names.add(events.get(event)!);
       // `briefings::desktop::emit` forwards a registry name it was given.

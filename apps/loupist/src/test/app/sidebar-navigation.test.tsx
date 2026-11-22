@@ -1,5 +1,6 @@
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { LoupistWorkspace } from "../../types";
 import { chooseLoupist, mainTab, openApp, openLoupistSwitcher, selectedLoupistButton } from "../renderApp";
@@ -8,7 +9,7 @@ describe("Loupist shell navigation", () => {
   it("searches Settings and returns to the previous Loupist tab", async () => {
     const user = userEvent.setup();
     await openApp();
-    await user.click(await mainTab(/Map/));
+    await user.click(await mainTab(/World/));
     await user.click(await mainTab(/Settings/));
     expect(screen.queryByRole("button", { name: /^New research/ })).toBeNull();
     const search = screen.getByRole("searchbox", { name: "Search settings" });
@@ -17,6 +18,7 @@ describe("Loupist shell navigation", () => {
     expect(within(sections).queryByRole("button", { name: "AI accounts" })).toBeNull();
     await user.click(within(sections).getByRole("button", { name: "Chat defaults" }));
     expect(await screen.findByRole("heading", { name: "Chat defaults", level: 1 })).toBeVisible();
+    expect(search).toHaveValue("retry");
     await user.click(screen.getByRole("button", { name: "Clear settings search" }));
     expect(within(sections).getByRole("button", { name: "Data connections" })).toBeVisible();
     expect(within(sections).getByRole("button", { name: "Loupists" })).toBeVisible();
@@ -73,7 +75,7 @@ describe("Loupist shell navigation", () => {
     expect(appSidebar).toHaveAttribute("data-collapsible", "icon");
     expect(within(appSidebar).getByRole("button", { name: "Bot" })).toBeVisible();
     expect(within(appSidebar).queryByRole("button", {name:"Capital allocation checklist"})).toBeNull();
-    expect(within(appSidebar).queryByText("Chat, briefings, and alerts")).toBeNull();
+    expect(within(appSidebar).queryByText("Chat and scheduled task results")).toBeNull();
   });
 
   it("finds older sessions from Search and switches Loupists from the header", async () => {
@@ -151,15 +153,83 @@ describe("Loupist shell navigation", () => {
     expect(await screen.findByRole("region", { name: "Loupist settings" })).toBeVisible();
   });
 
-  it("opens Map and Lens as full pages: the open one is the current row, and Bot leaves it", async () => {
+  it("reopens the switcher while it is closing after a Loupist change and after remounting", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const getComputedStyle = window.getComputedStyle.bind(window);
+    // jsdom does not run CSS animations. Give Radix the live animation name
+    // it reads in WebKit so the dismiss layer survives while the menu closes.
+    const animatedStyle = vi.spyOn(window, "getComputedStyle").mockImplementation((element, pseudoElement) => {
+      const style = getComputedStyle(element, pseudoElement);
+      if (element.matches(".loupist-switcher-menu")) {
+        Object.defineProperty(style, "animationName", {
+          get: () => element.getAttribute("data-state") === "closed" ? "exit" : "enter",
+        });
+      }
+      return style;
+    });
+
+    try {
+      const app = render(<App bridge={bridge} />);
+      await screen.findByTestId("loupist-header-identity");
+      const menu = openLoupistSwitcher();
+      const option = within(menu).getByRole("menuitemradio", { name: "Cycle Reader" });
+      const newId = option.getAttribute("data-loupist-option");
+      await user.click(option);
+      await waitFor(() => expect(selectedLoupistButton()).toHaveAttribute("data-loupist-id", newId));
+      expect(menu).toHaveAttribute("data-state", "closed");
+
+      await user.click(selectedLoupistButton());
+      expect(selectedLoupistButton()).toHaveAttribute("aria-expanded", "true");
+      expect(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Loupist settings" })).toBeVisible();
+
+      app.unmount();
+      render(<App bridge={bridge} />);
+      const restored = await screen.findByTestId("loupist-header-identity");
+      expect(restored).toHaveAttribute("data-loupist-id", newId);
+      await user.click(restored);
+      expect(restored).toHaveAttribute("aria-expanded", "true");
+      expect(within(screen.getByRole("menu")).getByRole("menuitem", { name: "Loupist settings" })).toBeVisible();
+    } finally {
+      animatedStyle.mockRestore();
+    }
+  });
+
+  it("distinguishes duplicate Loupists in the switcher, search and Settings with the same visible focus", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    await bridge.loupistProfileUpdate({ loupistId: "loupist-quality", name: "Research", focus: "Chip prices" });
+    await bridge.loupistProfileUpdate({ loupistId: "loupist-value", name: "Research", focus: "Oil demand" });
+    await openApp(bridge);
+    const menu = openLoupistSwitcher();
+    for (const focus of ["Chip prices", "Oil demand"]) {
+      const option = within(menu).getByRole("menuitemradio", { name: `Research · ${focus}` });
+      expect(option).toHaveTextContent(focus);
+    }
+    await user.keyboard("{Escape}");
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    fireEvent.change(await screen.findByRole("combobox", { name: "Search" }), { target: { value: "Apple" } });
+    for (const focus of ["Chip prices", "Oil demand"]) {
+      expect(await screen.findByRole("option", { name: `Apple Research · ${focus}` })).toBeVisible();
+    }
+    await user.keyboard("{Escape}");
+    await user.click(await mainTab(/Settings/));
+    await user.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "Loupists" }));
+    for (const focus of ["Chip prices", "Oil demand"]) {
+      const settings = await screen.findByRole("button", { name: `Settings: Research · ${focus}` });
+      expect(settings.closest("li")).toHaveTextContent(focus);
+    }
+  });
+
+  it("opens World and Lens as full pages: the open one is the current row, and Bot leaves it", async () => {
     const user = userEvent.setup();
     await openApp();
-    const map = await mainTab(/Map/);
+    const map = await mainTab(/World/);
     await user.click(map);
     expect(await screen.findByTestId("map-view")).toBeVisible();
     expect(document.getElementById("main-panel-map")).toContainElement(screen.getByTestId("map-view"));
     expect(screen.queryByLabelText("Side panel")).toBeNull();
-    expect(document.querySelector(".app-header-title")).toHaveTextContent("Map");
+    expect(document.querySelector(".app-header-title")).toHaveTextContent("World");
     expect(map).toHaveAttribute("aria-current", "page");
     // Choosing the open place again keeps it open.
     await user.click(map);
@@ -176,13 +246,13 @@ describe("Loupist shell navigation", () => {
     expect(screen.getByRole("textbox", { name: "Message Loupist" })).toBeVisible();
   });
 
-  it("leads a Map page opened from a research session with the way back to it", async () => {
+  it("leads a World page opened from a research session with the way back to it", async () => {
     const user = userEvent.setup();
     await openApp();
     await user.click(screen.getByRole("button", { name: "Capital allocation checklist" }));
     await screen.findByRole("heading", { name: "Capital allocation checklist" });
     await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), "Still writing");
-    await user.click(await mainTab(/Map/));
+    await user.click(await mainTab(/World/));
     expect(await screen.findByTestId("map-view")).toBeVisible();
     // Moving on to Lens keeps the way back to the conversation.
     await user.click(await mainTab(/Lens/));
@@ -190,9 +260,9 @@ describe("Loupist shell navigation", () => {
     expect(await screen.findByRole("heading", { name: "Capital allocation checklist" })).toBeVisible();
     expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveValue("Still writing");
     // From Schedule there is no conversation to return to.
-    fireEvent.keyDown(window, { key: "4", metaKey: true });
+    fireEvent.keyDown(window, { key: "5", metaKey: true });
     await screen.findByRole("region", { name: "Schedule" });
-    fireEvent.keyDown(window, { key: "2", metaKey: true });
+    fireEvent.keyDown(window, { key: "3", metaKey: true });
     expect(await screen.findByTestId("map-view")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Back to chat" })).toBeNull();
   });
@@ -200,10 +270,12 @@ describe("Loupist shell navigation", () => {
   it("supports view shortcuts and the typed native menu hook", async () => {
     const bridge = await openApp();
     fireEvent.keyDown(window, { key: "2", metaKey: true });
-    expect(await screen.findByTestId("map-view")).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Following", level: 1 })).toBeVisible();
     fireEvent.keyDown(window, { key: "3", metaKey: true });
-    expect(await screen.findByTestId("memory-page")).toBeVisible();
+    expect(await screen.findByTestId("map-view")).toBeVisible();
     fireEvent.keyDown(window, { key: "4", metaKey: true });
+    expect(await screen.findByTestId("memory-page")).toBeVisible();
+    fireEvent.keyDown(window, { key: "5", metaKey: true });
     expect(await screen.findByRole("region", {name:"Schedule"})).toBeVisible();
     act(() => bridge.emitMenuAction("chat"));
     expect(await screen.findByRole("textbox", { name:"Message Loupist" })).toBeEnabled();
@@ -219,7 +291,7 @@ describe("Loupist shell navigation", () => {
     expect(screen.getByRole("button", { name: "Capital allocation checklist" })).not.toHaveAttribute("aria-current");
   });
 
-  it("opens a name found on another Loupist's Map in that Loupist", async () => {
+  it("opens a name found on another Loupist's World in that Loupist", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const read = bridge.knowledgeMap.bind(bridge);
@@ -237,6 +309,20 @@ describe("Loupist shell navigation", () => {
     await waitFor(() => expect(selectedLoupistButton()).toHaveTextContent("Contrarian Value"));
     expect(await screen.findByTestId("map-view")).toBeVisible();
     expect(await screen.findByRole("heading", { level: 2, name: "Pemberton Rail" })).toBeVisible();
+  });
+
+  it("finds World by its former names in the command palette", async () => {
+    const user = userEvent.setup();
+    await openApp();
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    const palette = await screen.findByRole("combobox", { name: "Search" });
+    for (const alias of ["map", "지도"]) {
+      await user.clear(palette);
+      await user.type(palette, alias);
+      expect(await screen.findByRole("option", { name: /^Open World/ })).toBeVisible();
+    }
+    await user.click(screen.getByRole("option", { name: /^Open World/ }));
+    expect(await screen.findByRole("heading", { name: "World", level: 1 })).toBeVisible();
   });
 
   it("offers no holdings import in the command palette", async () => {

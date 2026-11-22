@@ -313,9 +313,15 @@ class GitHubReleaseSetupTest(unittest.TestCase):
     def test_remote_audit_reads_only_name_and_policy_endpoints(self) -> None:
         base = f"/repos/{REPOSITORY}"
         listed = [{"id": index + 1, **rule} for index, rule in enumerate(rulesets())]
-        secrets = {
-            "release": AUDIT["UPDATER_SECRETS"] | AUDIT["MODE_SECRETS"]["self-signed"]
+        apple = {
+            "LOUPIST_APPLE_CERTIFICATE",
+            "LOUPIST_APPLE_CERTIFICATE_PASSWORD",
+            "LOUPIST_APPLE_SIGNING_IDENTITY",
+            "LOUPIST_APPLE_TEAM_ID",
+            "LOUPIST_APPLE_ID",
+            "LOUPIST_APPLE_PASSWORD",
         }
+        secrets = {"release": AUDIT["UPDATER_SECRETS"] | apple}
         endpoints = {
             base: configured()["repository_data"],
             f"{base}/rulesets?per_page=100&includes_parents=false": [
@@ -355,10 +361,40 @@ class GitHubReleaseSetupTest(unittest.TestCase):
         # The committed workflow references exactly the union of mode secret
         # names (pinned by the mode-union test below), so no fixture is written.
         workflow = SCRIPTS.parents[2] / ".github/workflows/release.yml"
-        with mock.patch.dict(remote_audit.__globals__, {"gh_api": fake_gh_api}):
+        with mock.patch.dict(
+            remote_audit.__globals__,
+            {
+                "gh_api": fake_gh_api,
+                "load_profile": lambda: {"macos_signing": {"mode": "developer-id"}},
+            },
+        ):
             findings = remote_audit(REPOSITORY, workflow, "read-only-gh")
         self.assertFalse(errors(findings))
         self.assertEqual(set(requests), set(endpoints))
+        # The old certificate cannot satisfy any of the six Apple requirements.
+        endpoint = f"{base}/environments/release/secrets?per_page=100"
+        for missing in apple:
+            names = (secrets["release"] - {missing}) | AUDIT["MODE_SECRETS"][
+                "self-signed"
+            ]
+            endpoints[endpoint] = {
+                "total_count": len(names),
+                "secrets": [{"name": key} for key in names],
+            }
+            with mock.patch.dict(
+                remote_audit.__globals__,
+                {
+                    "gh_api": fake_gh_api,
+                    "load_profile": lambda: {"macos_signing": {"mode": "developer-id"}},
+                },
+            ):
+                failed = errors(remote_audit(REPOSITORY, workflow, "read-only-gh"))
+            self.assertEqual(
+                failed,
+                {
+                    "release environment secrets": f"missing workflow-referenced secret names: {missing}"
+                },
+            )
 
     def test_mode_secret_union_drift_and_single_maintainer_review(self):
         release = SCRIPTS.parents[2] / ".github/workflows/release.yml"

@@ -549,7 +549,7 @@ it('keeps lines one screen pixel thin at every zoom, dashes included', () => {
   expect(record.dashes).toEqual([[], [2, 1.5]]);
 });
 
-it('fades ordinary names in as the Map zooms in, keeping prominent ones named', () => {
+it('fades ordinary names in as World zooms in, keeping prominent ones named', () => {
   reducedMotion();
   // A hundred names on a grid: the ten best-connected keep their names, the next hubs fade in first.
   const nodes = Array.from({ length: 100 }, (_, index) => ({ ...node(`n${index}`, (index % 10) * 80 - 400), y: Math.floor(index / 10) * 60 - 280, fy: Math.floor(index / 10) * 60 - 280, watched: false, degree: 100 - index }));

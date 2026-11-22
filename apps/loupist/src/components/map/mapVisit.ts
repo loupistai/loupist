@@ -1,10 +1,8 @@
-import { isMapScope, type MapScope } from "./localView";
-
 const storageKey = "loupist.mapVisit.v1";
 const RECENT_FOCAL = 5;
 
 /** Per-device, per-Loupist Map preferences. */
-type Visit = { hintDismissed?: boolean; focalId?: string; scope?: MapScope; recentFocal?: string[] };
+type Visit = { hintDismissed?: boolean; recentFocal?: string[] };
 
 function read(): Record<string, Visit> {
   try {
@@ -54,29 +52,12 @@ export function dismissMapHint(loupistId: string) {
   write(loupistId, { hintDismissed: true });
 }
 
-/** The name the Map last centered on or selected; the Map opens around it. */
-export function storedFocal(loupistId: string) {
-  const value = read()[loupistId]?.focalId;
-  return typeof value === "string" && value ? value : undefined;
-}
-
-export function rememberFocal(loupistId: string, focalId: string, { recent = false } = {}) {
-  const prior = read()[loupistId]?.recentFocal;
-  const list = Array.isArray(prior) ? prior.filter((id): id is string => typeof id === "string") : [];
-  write(loupistId, recent ? { focalId, recentFocal: [focalId, ...list.filter((id) => id !== focalId)].slice(0, RECENT_FOCAL) } : { focalId });
+export function rememberRecentFocal(loupistId: string, id: string) {
+  write(loupistId, { recentFocal: [id, ...recentFocal(loupistId).filter(other => other !== id)].slice(0, RECENT_FOCAL) });
 }
 
 /** Names the Map was centered on, newest first. */
 export function recentFocal(loupistId: string) {
   const value = read()[loupistId]?.recentFocal;
   return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string").slice(0, RECENT_FOCAL) : [];
-}
-
-export function storedScope(loupistId: string): MapScope | undefined {
-  const value = read()[loupistId]?.scope;
-  return isMapScope(value) ? value : undefined;
-}
-
-export function rememberScope(loupistId: string, scope: MapScope) {
-  write(loupistId, { scope });
 }

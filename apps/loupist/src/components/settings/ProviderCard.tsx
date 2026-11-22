@@ -39,10 +39,11 @@ type ProviderCardProps = {
   option: ModelProviderOption;
   models: ConfiguredModel[];
   hiddenModels: ReadonlySet<string>;
-  /** The Chat default when it belongs to this provider, null for Auto, undefined when another provider's model is the default. */
+  /** The Chat default when it belongs to this provider, otherwise absent. */
   chatModel: ConfiguredModel | null | undefined;
   loading: boolean;
   removing: boolean;
+  searchControls?: boolean;
   loadError: string | null | undefined;
   /** A provider mutation or visibility update is running somewhere in the panel. */
   locked: boolean;
@@ -58,7 +59,7 @@ type ProviderCardProps = {
 };
 
 /** One provider (spec providers §2.3): state, credential, billing, one notice, then its models. */
-export function ProviderCard({ option, models, hiddenModels, chatModel, loading, removing, loadError, locked, reloadDisabled, visibilityBusyId, now = Date.now(), onReload, onConnect, onOpenUsage, onRemove, onSetVisibility, onSetAllVisible }: ProviderCardProps) {
+export function ProviderCard({ searchControls = false, option, models, hiddenModels, chatModel, loading, removing, loadError, locked, reloadDisabled, visibilityBusyId, now = Date.now(), onReload, onConnect, onOpenUsage, onRemove, onSetVisibility, onSetAllVisible }: ProviderCardProps) {
   const { t } = useTranslation("settings");
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState("");
@@ -89,7 +90,7 @@ export function ProviderCard({ option, models, hiddenModels, chatModel, loading,
   const reconnect = status.state === "needs_reconnect";
   const removeText = t(option.custom ? "providers.remove" : "providers.disconnect");
   const removeLabel = t(option.custom ? "modelSettingsPanel.customRemoveLabel" : "modelSettingsPanel.disconnectLabel", { label: title });
-  // Only the account that owns the Chat default names it; Auto is said once, in Chat defaults.
+  // Only the account that owns the Chat default names it.
   const chatUses = chatModel ? t("providers.chatDefault", { model: chatModel.name }) : null;
   const canReconnect = Boolean(option.custom || option.api_key || option.oauth);
   const reconnectText = option.api_key && !option.oauth && !option.custom ? t("providers.changeKey") : t("providers.reconnectEllipsis");
@@ -132,8 +133,8 @@ export function ProviderCard({ option, models, hiddenModels, chatModel, loading,
             </DropdownMenu>
           </span>
         </div>
-        {expanded ? (
-          <div id={`provider-models-${option.id}`} className="provider-card-models">
+        {expanded || searchControls ? (
+          <div hidden={!expanded} data-setting-disclosure id={`provider-models-${option.id}`} className="provider-card-models">
             <div className="settings-model-toolbar">
               <div className="settings-model-search relative">
                 <SearchIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />

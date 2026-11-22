@@ -19,11 +19,11 @@ append an explicit omitted-change summary when needed. The Chat receipt reads
 The typed `knowledge_growth_events` bridge command returns Loupist-scoped, time-filtered
 pages with a cursor after checking that the Loupist is available, including deletion
 quarantine. This ledger stores bounded summaries, not prior document
-bodies or a quality score. Chat, Map and Loupist settings read it. There is no
+bodies or a quality score. Chat, World and Loupist settings read it. There is no
 separate Growth page. Method-learning events name the Loupist and the
 learning-review or World-job origin, with before/after summaries and a bounded
 rationale. When a graph job publishes a Source saved from a Chat, those World
-events copy that turn's chat id and message id. A Map-added Source has neither,
+events copy that turn's chat id and message id. A World-added Source has neither,
 so its events stay unattributed. A shared pack's Add and Remove write World events
 with actor `import` and the pack's origin (`shared_pack` or `shared_pack_removed`);
 an accepted shared method or perspective carries its `shared_pack` origin.
@@ -33,8 +33,9 @@ an accepted shared method or perspective carries its `shared_pack` origin.
 `source_save` and `note_save` stage changes using acknowledged material.
 `principle_save` uses the [User principles](lens.md#user-principles) contract.
 Source retention preserves delivered bytes; note and Journal evidence must name
-exact reads or valid same-turn Source save references. Rust commits the completed
-Chat, authorized Memory changes and graph jobs together. Lens pages change only
+exact reads or valid same-turn Source save references. Chat retains its answer
+before waiting for Memory. Rust commits the final Memory receipt, authorized
+changes and graph jobs together. Lens pages change only
 through `KnowledgeWrite::file` ([filing](lens.md#filing)): every op lands or is
 logged with its outcome, and a stale section edit is skipped, never a proposal.
 `lens_file` ([turn tools](../agent/turn-tools.md#turn-tools)) stages page deltas
@@ -47,7 +48,13 @@ from the log.
 
 A staged Source returns `saveRef`; job lookup before commit reports
 `waiting_for_turn_commit`. Processing begins after completion. Failed/cancelled
-turns publish none of these staged changes. Native file writes and `run_python`
+turns publish none of these staged changes. A completed answer whose save is
+skipped also publishes none of its staged Memory. The receipt records the
+reason and up to 32 distinct discarded item kinds and titles. It takes these
+from acknowledged writes still staged when the host checkpoints the answer.
+Titles are limited to 160 characters. The receipt keeps those titles across
+a reopen or interrupted save, including on scheduled and hand-off deliveries.
+Native file writes and `run_python`
 copy-back have already happened. There is no agent shell. The answer's Memory row reports actual retained changes.
 
 ## Folder portability
@@ -129,7 +136,7 @@ the ordinary recovery requirements.
 
 - Growth event log: `src-tauri/src/knowledge/growth.rs`, `src-tauri/src/commands/knowledge.rs`, `src/contracts/knowledge.ts`
 
-## On the Map
+## In World
 
 What's new lists growth events since the last visit (the same per-device value as
 the morning message), 7 or 30 days, or a date, grouped by day with one row per
@@ -141,7 +148,7 @@ whose Key facts list the values; a disputed one reads "Two sources disagree: KRW
 Changes one publication made that would read the same (kind, ends, relation and Source) are one
 row, and a reported-values row counts them; changes that differ in any of these stay separate.
 The same rule keeps the Bot's morning questions from asking how a name is linked to itself.
-Rows open the inspector or the Lens entry; rows for items no longer on the Map are dimmed. The
+Rows open the inspector or the Lens entry; rows for items no longer in World are dimmed. The
 toolbar badge counts changes since the last visit; Bot does not repeat this growth.
 Schema and truncation events are excluded.
 

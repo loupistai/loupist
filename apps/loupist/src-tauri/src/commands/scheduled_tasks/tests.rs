@@ -134,6 +134,77 @@ async fn scheduled_dispatch_defers_capacity_before_claiming_or_creating_chat() {
         "conflict"
     );
     drop(registrations);
+
+    let _writer = state
+        .register_run(
+            "writer".into(),
+            loupist.id.clone(),
+            RunKind::MemoryWrite,
+            RunTarget::MemoryWriteSession("session".into()),
+        )
+        .unwrap();
+    assert!(state
+        .scheduled
+        .dispatch(&state, &loupist.id, &task.id, false)
+        .await
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        state
+            .scheduled
+            .dispatch(&state, &loupist.id, &task.id, true)
+            .await
+            .unwrap_err()
+            .code
+            .as_str(),
+        "memory_busy"
+    );
+    assert!(state
+        .store
+        .scheduled_task_runs(&loupist.id, &task.id)
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
+async fn no_account_during_dispatch_pauses_auto_and_resume_names_the_settings_page() {
+    let directory = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(directory.path().join("app"));
+    let loupist = profile("account-free", workspace.path(), 1);
+    seed_profile(&state.store, &loupist);
+    state.replace_provider_models("openai", vec![]).unwrap();
+    let mut auto = draft(TaskStatus::Active);
+    auto.model_profile_id.clear();
+    let task = state
+        .store
+        .scheduled_task_create(&loupist.id, auto, 1)
+        .unwrap();
+    let run = state
+        .scheduled
+        .dispatch(&state, &loupist.id, &task.id, false)
+        .await
+        .unwrap()
+        .unwrap();
+    let paused = service::get(&state, &loupist.id, &task.id).unwrap();
+    assert_eq!(run.status, RunStatus::Failed);
+    assert_eq!(paused.status, TaskStatus::Paused);
+    assert!(paused.next_run_at_ms.is_none());
+    let error = service::set_status(
+        &state,
+        &loupist.id,
+        &task.id,
+        paused.revision,
+        TaskStatus::Active,
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "provider_unavailable");
+    assert_eq!(
+        error.message,
+        "Connect an AI account in Settings › AI accounts before chatting."
+    );
+    assert_eq!(run.error.as_deref(), Some(error.message.as_str()));
+    assert_eq!(service::get(&state, &loupist.id, &task.id).unwrap(), paused);
 }
 
 #[tokio::test]
@@ -310,7 +381,7 @@ fn resident_command_persists_the_setting_across_profile_restart() {
             app.state(),
         )
         .unwrap();
-        assert!(!settings.keep_running);
+        assert!(!settings.resident.keep_running);
         return;
     }
     let directory = tempfile::tempdir().unwrap();
@@ -328,6 +399,7 @@ fn resident_command_persists_the_setting_across_profile_restart() {
     assert!(
         !crate::briefings::desktop::briefing_resident_settings_get(reopened.state())
             .unwrap()
+            .resident
             .keep_running
     );
 }

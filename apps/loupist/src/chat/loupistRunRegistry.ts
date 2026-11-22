@@ -42,6 +42,7 @@ export class LoupistRunRegistry {
   readonly #hydrations = new Map<string, Promise<void>>();
   readonly #monitors = new Map<string, number>();
   readonly #abortRetries = new Map<string, number>();
+  readonly #memoryWaiters = new Map<string, { loupistId: string; resume: () => boolean }>();
   readonly #epochs = new Map<string, number>();
   #disposed = false;
   #generation = 0;
@@ -86,12 +87,16 @@ export class LoupistRunRegistry {
     this.#monitors.clear();
     this.#abortRetries.clear();
     this.#listeners.clear();
+    this.#memoryWaiters.clear();
   }
   removeLoupist(loupistId: string) {
     for (const threadId of Object.keys(this.getLoupistSnapshot(loupistId).chats))
       this.#clearTimers(loupistId, threadId);
     this.#epochs.set(loupistId, (this.#epochs.get(loupistId) ?? 0) + 1);
     this.#hydrations.delete(loupistId);
+    for (const [key, waiter] of this.#memoryWaiters) {
+      if (waiter.loupistId === loupistId) this.#memoryWaiters.delete(key);
+    }
     if (this.#states.delete(loupistId)) this.#emit();
   }
 
@@ -121,7 +126,7 @@ export class LoupistRunRegistry {
       loupistIds.map((loupistId) => [loupistId, this.#epochs.get(loupistId) ?? 0]),
     );
     try {
-      const activities = await this.bridge.runActivityList();
+      const activities = await this.#readActivities();
       if (this.#disposed) return;
       for (const activity of activities)
         if (
@@ -133,8 +138,26 @@ export class LoupistRunRegistry {
       // Activity discovery is best-effort; canonical Chat remains in SQLite.
     }
   }
-  async #loadActivities(loupistId: string, epoch: number) {
+  /** The existing activity poll also serves queued instructions, across visits to Chats. */
+  get hasMemoryWaiters() { return this.#memoryWaiters.size > 0; }
+  readonly waitForMemory = (loupistId: string, threadId: string, resume: () => boolean) => {
+    this.#memoryWaiters.set(timerKey(loupistId, threadId), { loupistId, resume });
+  };
+
+  async #readActivities() {
+    // Refusals arriving during this read need a newer snapshot.
+    const waiting = [...this.#memoryWaiters];
     const activities = await this.bridge.runActivityList();
+    for (const [key, waiter] of waiting) {
+      if (this.#memoryWaiters.get(key) !== waiter) continue;
+      if (!activities.some(activity => activity.loupist_id === waiter.loupistId && activity.kind === "memory_write")
+          && waiter.resume()) this.#memoryWaiters.delete(key);
+    }
+    return activities;
+  }
+
+  async #loadActivities(loupistId: string, epoch: number) {
+    const activities = await this.#readActivities();
     if (this.#disposed || (this.#epochs.get(loupistId) ?? 0) !== epoch) return;
     for (const activity of activities)
       if (activity.loupist_id === loupistId && activity.kind === "chat")
@@ -196,7 +219,7 @@ export class LoupistRunRegistry {
     const poll = async () => {
       if (!this.#isRun(loupistId, threadId, runId)) return;
       try {
-        const active = (await this.bridge.runActivityList()).some(
+        const active = (await this.#readActivities()).some(
           (activity) =>
             activity.kind === "chat" &&
             activity.run_id === runId &&

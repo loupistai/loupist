@@ -8,6 +8,7 @@ export type BrowserHistoryDirection = "back" | "forward";
 export type BrowserTabBoundsRequest = { tab_id: string, bounds: BrowserBounds, visible: boolean };
 
 export type BrowserTabEvent =
+  | { "type": "history_changed", tab_id: string, can_go_back: boolean, can_go_forward: boolean }
   | { "type": "load_started", tab_id: string, url: string }
   | { "type": "load_finished", tab_id: string, url: string }
   | { "type": "title_changed", tab_id: string, title: string }
@@ -23,6 +24,13 @@ export type BrowserTabOpenRequest = { url: string, bounds: BrowserBounds, visibl
 
 export type BrowserTabRequest = { tab_id: string };
 
-export type BrowserTabState = { tab_id: string, url: string, title: string, loading: boolean };
+export type BrowserTabState = {
+  tab_id: string,
+  url: string,
+  title: string,
+  loading: boolean,
+  can_go_back?: boolean | null,
+  can_go_forward?: boolean | null,
+};
 
 export type BrowserUrlError = "too_long" | "invalid" | "unsupported_protocol" | "credentials";

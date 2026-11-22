@@ -20,8 +20,8 @@ The first load takes about 2.5 seconds of CPU on Apple Silicon (4 on a busy
 machine), nearly all of it the tokenizer registering 30,000 added Chinese and
 Japanese words, which are kept. The app starts the load on its own thread at
 launch, and nothing interactive waits for it. Until it finishes, knowledge search
-ranks by words and Map names alone and `world_search` adds a warning that a Source
-in another language may be missing, while the Map index answers from the snapshot
+ranks by words and World names alone and `world_search` adds a warning that a Source
+in another language may be missing, while the World index answers from the snapshot
 with its unavailable warning. Only a search in the first seconds after launch meets
 this, and waiting would hold that turn for the rest of the load; the warning tells
 the model to search again rather than conclude that the material is absent. World
@@ -39,7 +39,7 @@ first use. Local inference callbacks encode their texts in bounded batches,
 sharing one model lookup for the batch.
 
 Fresh folders receive World processing settings from Rust. New Loupist uses these
-defaults; Loupist settings → Map building exposes enablement and model selection.
+defaults; Loupist settings → World building exposes enablement and model selection.
 Focusing a field there scrolls it into the settings column.
 Defaults prefer connected,
 supported text models using the ordered policy in
@@ -49,11 +49,11 @@ newest low-cost model first and keeps older ones as fallbacks; flagship models a
 never recommended. `agent/world-model-defaults.test.mjs` sends every pair through
 Pi's request serializer and response parser. GPT-6 Luna stays at high effort: on the
 World ontology corpus, medium was 42% faster but stored 14–18% fewer claims. Existing folders keep their
-saved choices; changing the Chat model does not change Map building.
+saved choices; changing the Chat model does not change World building.
 
 An enabled new Loupist without a suitable default stores a pending marker. Connecting
 or reloading a supported provider can complete that setup once. Explicitly saving
-Map building preferences clears the marker. Processing consumes the selected provider's
+World building preferences clears the marker. Processing consumes the selected provider's
 usage and sends retained text to it; account disconnection leaves Sources readable.
 [Shared providers](../runtime/providers.md#shared-providers-and-world-processing) owns
 credential and isolated inference boundaries.
@@ -67,13 +67,13 @@ A chunk whose frozen budget cannot cover extraction waits without inference.
 Rust validates output and commits the new World, its derived index rows and the
 job state in one transaction.
 
-Until a Source's job settles, its relationships are not on the Map. `world_search`
+Until a Source's job settles, its relationships are not in World. `world_search`
 marks such a Source hit `mapPending`, and the system prompt tells the model that
 missing World relationships for it prove nothing.
 
 Startup resumes untouched work and reruns attempts the app's exit cut short within
 their allowance ([interruptions](worlds.md#queue-and-interruptions)); an uncertain paid
-attempt past it quarantines. Recover map building rebuilds the derived index from the confirmed
+attempt past it quarantines. Recover World building rebuilds the derived index from the confirmed
 SQLite snapshot with local embeddings. Recovery does not authorize re-extraction
 of uncertain work, and preserves pause/uncertainty state. A confirmed rebuild lets
 untouched queued work continue. World processing publishes World; a shared pack's
@@ -82,8 +82,8 @@ is a separate review, described under [Method learning](lens.md#method-learning)
 
 ## Names across languages
 
-Knowledge search (`world_search`'s default scope, over Sources, Lens pages and Map
-claims) bridges names through the Map. When a query names a Map entity by its name,
+Knowledge search (`world_search`'s default scope, over Sources, Lens pages and World
+claims) bridges names through World. When a query names a World entity by its name,
 an alias or an upper-case ticker, a document that spells the entity another way
 counts as matching those query words: `한빛반도체` finds a Source that writes
 Hanbit Semiconductor, and the reverse. Nodes whose name keys meet (the
@@ -97,18 +97,18 @@ digits are never used. A short form, the first word of a name (`Hanbit`,
 `노스윈드`) or the start of a Korean name written as one word (`파인크레스트`),
 expands only when it belongs to one entity and at least half of the library's
 Sources and Lens pages that use it also spell a full name, so `bank` does not
-become the Bank of Korea. Names come from the current Map, read once per World
+become the Bank of Korea. Names come from the current World, read once per World
 revision; the query goes to no model or network.
 
 Knowledge search ranks by reciprocal rank fusion of the lexical order and the
-embedding's ten nearest texts from cosine 0.2, Graphiti's 1/rank as the Map index
+embedding's ten nearest texts from cosine 0.2, Graphiti's 1/rank as the World index
 fuses BM25 and vectors. A hit's `score` is its sum of 1/rank in each list times
 1,000,000, and equal values share a rank. So a Source in another language that the
 model puts near the query is not buried under a same-language Source that shares
 one query word. The score says where a hit ranks, not how much of the request it
 matched. The Lens pointer therefore takes a page that matches two of the request's
 words, or every term group of a request that is one concept (`cash flow`), and not
-a page that matches one word of several. The World-scope merge puts the Map's
+a page that matches one word of several. The World-scope merge puts World's
 fused rows first and keeps the other hits in knowledge-search order.
 
 Cross-language recall is measured by the [search recall test](../dev/tests.md#search-recall)
@@ -124,9 +124,9 @@ Cross-language recall is measured by the [search recall test](../dev/tests.md#se
 
 Same-language queries stayed at 1.0 in every row. Lexical first added up to 200
 embedding points to a lexical match and admitted an embedding-only match from
-cosine 0.55. The English-only potion-base-4M model's misses named no Map entity (a
+cosine 0.55. The English-only potion-base-4M model's misses named no World entity (a
 Fed decision, copper prices) or differed in words other than the name, and its
-vectors for Korean text are noise, so fusion lowered its recall. On the Map index,
+vectors for Korean text are noise, so fusion lowered its recall. In the World index,
 blink-multilingual-64M finds all 13 Korean queries' English claims in the top five,
 against 3. The multilingual model pays for itself only with fusion, so the two were
 adopted together (the last row).

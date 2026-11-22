@@ -2,15 +2,18 @@ import { ExternalLinkIcon, PanelRightOpenIcon } from "lucide-react";
 import { createContext, useCallback, useContext, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { destinationIcon, externalUrl, wantsExternal, type ChatDestination, type Open, type OpenHow } from "../../chat/navigation";
 
-const OpenContext = createContext<Open | null>(null);
+const OpenContext = createContext<{ open: Open; externalLinks: boolean } | null>(null);
 
 /** One layer of open policy. {@link useOpenLayer} builds one over its parent. */
-export function OpenProvider({ open, children }: { open: Open; children: ReactNode }) {
-  return <OpenContext.Provider value={open}>{children}</OpenContext.Provider>;
+export function OpenProvider({ open, externalLinks, children }: { open: Open; externalLinks?: boolean; children: ReactNode }) {
+  const parent = useContext(OpenContext);
+  const outsideChat = externalLinks ?? parent?.externalLinks ?? false;
+  const value = useMemo(() => ({ open, externalLinks: outsideChat }), [open, outsideChat]);
+  return <OpenContext.Provider value={value}>{children}</OpenContext.Provider>;
 }
 
 /** Null outside a provider (one component in a test or preview): entry points render as plain text. */
-export const useOpen = (): Open | null => useContext(OpenContext);
+export const useOpen = (): Open | null => useContext(OpenContext)?.open ?? null;
 
 /**
  * What one layer does with a destination before its parent sees it: nothing
@@ -61,21 +64,25 @@ export type OpenProps = {
   activate: (event: MouseEvent<HTMLElement>) => void;
   /** The target has a system-browser address, so a modifier click means something. */
   external: boolean;
+  opensInBrowser: boolean;
 };
 
 export function useOpenProps(to: ChatDestination): OpenProps {
-  const open = useOpen();
+  const context = useContext(OpenContext);
+  const open = context?.open ?? null;
   const [failed, setFailed] = useState(false);
   const external = externalUrl(to) !== null;
+  const opensInBrowser = external && to.kind === "link" && Boolean(context?.externalLinks);
   const activate = (event: MouseEvent<HTMLElement>) => {
     if (!open) return;
     setFailed(false);
-    open(to, { anchor: event.currentTarget, ...(external && wantsExternal(event) ? { external: true } : {}) }).catch(() => setFailed(true));
+    open(to, { anchor: event.currentTarget, ...(opensInBrowser || (external && wantsExternal(event)) ? { external: true } : {}) }).catch(() => setFailed(true));
   };
-  const kind = destinationIcon(to);
+  const kind = destinationIcon(to, { external: opensInBrowser });
   return {
     available: open !== null,
     external,
+    opensInBrowser,
     failed,
     activate,
     icon: kind ? icons[kind] : null,

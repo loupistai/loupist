@@ -1206,11 +1206,20 @@ fn query_start_identity(pid: i32) -> Result<Option<StartIdentity>, ProcessLeaseE
     Ok(macos_basic_process(pid)?.as_ref().map(macos_start_identity))
 }
 
+#[cfg(all(test, target_os = "macos"))]
+thread_local! {
+    static TEST_UNAVAILABLE_IMAGE: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+}
+
 #[cfg(target_os = "macos")]
 fn query_process(pid: i32) -> Result<Option<ObservedProcess>, ProcessLeaseError> {
     let Some(before) = macos_basic_process(pid)? else {
         return Ok(None);
     };
+    #[cfg(test)]
+    if TEST_UNAVAILABLE_IMAGE.with(|image| image.get() == Some(pid)) {
+        return Err(ProcessLeaseError::IdentityMismatch);
+    }
     let mut path_buffer = vec![0_u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
     // SAFETY: path_buffer is writable for the reported capacity.
     let path_length = unsafe {

@@ -2,6 +2,8 @@
 
 A number chip is a host check of a figure the answer used against a pinned input. The chip does not make the figure advice.
 
+A figure warning names the document it checked in the popover and receipt. If the document has no title, the warning uses its hostname when available. Calculator and Python checks name the calculation result.
+
 ## Number checks
 
 `SYSTEM.md` has the agent write each material number as a link whose text is only
@@ -26,6 +28,13 @@ export count the stored answer's links the same way and show a check only on the
 link at its index, and only when the evidence and text still agree. A repeated
 figure keeps each occurrence's own check, and a link past the bound has none.
 
+On read, the host rechecks saved unresolved numbers against the cited excerpt
+or its pinned dataset revision. The answer, receipt, grid and export receive
+the same projected result. Verified checks and checks with unavailable evidence
+retain their saved results. The in-memory cache uses checker version, reply or
+artifact identity, and evidence digests. Replay uses the existing per-turn data
+budget and never writes the message, artifact, Memory or a source.
+
 A link's text is a number when it is, within 64 bytes, an optional sign (`+`, `-`,
 `−`) or accounting negative (`(1,234)` with grouped digits, `△1,234`; `▲` is a rise), a
 currency symbol, `US$`-style prefix or ISO code, digits with `,` grouping and one
@@ -36,6 +45,8 @@ currency), Korean scales including compounds in decreasing order (`1조 2,300억
 and a trailing currency word or code or "per share". Words, dates, tickers, a bare
 year from 1900 to 2100 and a bare integer of one to three digits (a numbered
 citation) are not numbers.
+
+While the answer streams, a complete currency link stays underlined as one figure. When both amounts in a stored warning state different currencies, the warning names them.
 
 The linked result decides the check's kind and candidates:
 
@@ -61,14 +72,22 @@ Lowercase `try`, `ron` and `php` leave neighboring figures plain. Uppercase
 `PHP 8.2` remains an amount even in a passage about a software version; decimal
 syntax alone cannot distinguish that version from an amount.
 
-For structured `data` checks, an unsigned positive
+For structured `data` checks other than signed FRED observations, an unsigned positive
 figure may match the magnitude of a negative source value: the surrounding words
 can state the fall or distance below. The checker first tries the ordinary signed
 match, then the negative magnitude with the same unit and precision rules. An
 explicit plus/minus sign, accounting parentheses or triangle mark must agree with
 the source. This exception never applies to passages, derived steps or
-`calculate` results; text states a sign only with the number or in a word right
-after it ([Number matching](#number-matching)).
+`calculate` results; text states a sign only with the number or in adjacent financial wording ([Number matching](#number-matching)).
+
+For a FRED series read, the host checks the dated observation in the named series
+column. OpenBB supplies its units at `extra.results_metadata.<series>.units`.
+A stated scale governs conversion. When the series has no unit metadata, the
+printed figure can add a unit only if its signed numeric value agrees exactly
+with the observation. The checker ignores dates, metadata and the MCP text echo.
+In a filing table, a blank line between a monetary section label and its numbered
+subheading can occur during PDF extraction. The table's stated scale still applies
+to subsequent monetary rows, including cells with a dollar sign.
 
 A `run_python` step prints what the agent's own code computed, often a percent or
 point change as a bare number, in the figure's unit (`'qoq_pp': -1.374…`) or as a
@@ -82,9 +101,16 @@ with a unit keeps it, and other steps keep the units their payload states.
 
 The printed number must lie within half a unit of its last shown digit (`8.4%`
 within ±0.05%, `4,523억` within ±0.5억). The status is `matched` for a candidate
-in the same unit and scale; `rounded` when reaching it takes a scale, percent↔fraction
-or bp↔pp conversion (the check keeps the value as the evidence prints it, for a
-number inside a text field as printed there);
+in the same unit and scale or an exact conversion of a stated monetary scale.
+An exact conversion carries `scale_conversion` with the source and answer powers
+of ten and the available currency. Both it and `rounded` keep the value as the
+evidence prints it. A monetary conversion that changes the displayed precision,
+a percent↔fraction or bp↔pp conversion, and a conversion inferred from the
+digits use `rounded`. A verified literal passage selection takes priority
+when equal figures occur elsewhere in its context.
+The popover and its accessible description identify an exact conversion as a
+source match and name the scale shown in the answer. Approximation keeps the
+rounded label.
 `differs` only for a calculation with no value or input in range (the check keeps
 the nearest value as the result displays it); otherwise `not_found`. When the
 excerpt of a passage does not hold the number, the full retained result decides the
@@ -94,9 +120,7 @@ sizes or offsets. A matched or rounded fallback check keeps `context` from the
 content field holding the first match: at most 240 characters of `text` around the
 number, with end-exclusive UTF-8 byte offsets `start` and `end` inside that text.
 It has no excerpt `span`; excerpt matches keep their span and no context. Older
-stored checks without context still load, and data checks and `not_found` checks
-have none. Context records where the existing verdict matched; it does not change
-which numbers the host accepts. A matched or rounded check
+stored checks without context still load. Data checks use a pointer. A matched or rounded check
 keeps its data cell's pointer with up to four fields of the row (descriptive fields
 such as company, concept, period and basis, then the matched cell) or its passage
 span; a calculated check keeps the operation id (`percent_change`, `reverse_dcf`, ...), the
@@ -108,6 +132,12 @@ prints each input from these and never reads them from the formula or the eviden
 input without a unit prints as its bare number). On a short window the popover stays above the composer and
 scrolls, with its actions pinned. Surfaces are listed in
 [Where each item appears](surfaces.md#where-each-item-appears).
+
+For a structured observation, the popover displays the host's readable row and
+marks the observed value. In older field-based rows, only named amounts and
+matched quantities use digit grouping. Quotes keep their measurement-specific
+formatting. Dates, periods and codes retain their text. The evidence action opens
+the retained record.
 
 ### Number matching
 
@@ -135,30 +165,89 @@ text field (`"−1.20"`) as in a figure; `(1,234)` and `△1,234` are negatives;
 `1조 2,345억원` is one amount. Reading
 is bounded to 50,000 candidates and 1 MiB of text per result.
 
-A word of decrease right after an unsigned number and its unit, with at most two
-spaces between, states a fall: Korean `감소`, `줄었`/`줄어`/`줄고`/`줄인`/`줄여`,
-`하락`, `떨어`, `낮아`, `낮은`, `축소`, `급감` and `급락` (`9% 줄었고`,
-`14억원 감소`), or English `lower`, `less`, `below`, `fall`, `falls`, and `decline`,
-`decrease` or `drop` with their `-s` and past forms (`9% lower`, `a 9% decline`). A figure
-with its own sign (`+`, `-`, `−`, a triangle mark or accounting brackets) reads
-that number as negative: `−9%` matches `약 9% 줄었고` and `+9%` does not. An
-unsigned figure still matches the magnitude, since its own words state the
-direction. A cited `calculate` input reads the same way: `-9` matches, `9` matches
-the magnitude and `"+9"` does not. A particle, a line break or any other word between
-(`52억원으로 … 줄었다`, `248달러보다 낮아졌다`, `9% 이상 줄었다`) states nothing,
-a number printed with its own sign keeps it, and words of increase need no rule:
-an unsigned number already reads as a rise.
+A numeric link can inherit a scale explicitly stated in its Markdown table
+caption, column header, row label or sentence. Column units take priority over
+a general caption, so a percent column keeps its own unit. An SEC XBRL fact's
+`val` is in the series' base unit. For example, 383,285 in USD millions and
+383.3 in USD billions both verify against 383285000000 USD at the precision
+shown. Without the scale declaration the bare 383,285 remains unverified.
+Equal printed digits can verify when one side leaves scale unstated. The
+matched check names that side in `unstated_scale`. The popover and the chip's
+accessible description say whether the cited passage or the answer leaves out
+the unit. The result uses the verified style and stays out of the figures to
+check. Calculation inputs require agreement in their supplied units. A table's
+financial section can be an otherwise empty pipe row. Its subsequent totals keep
+the declared unit while percentage columns, per-share values and share counts
+keep theirs.
+A cited excerpt can inherit the same table caption from the adjoining retained
+window of its own capture.
+
+For a monetary figure linked to a passage or to `run_python` stdout, compare the
+signed source number at the precision the answer shows. A stated scale governs
+the conversion, including program labels such as `USDm` and the monetary rows
+under a filing's “Net sales by category” or “Net sales by reportable segment”
+heading. Saved web results in `world_read` can be JSON inside the Source text.
+The checker reads the decoded content with its original line breaks. Share counts
+cannot support a monetary figure, and per-share rows cannot support an aggregate
+expressed in millions or 억.
+
+When the passage or stdout states no scale, compare the digits as printed. For
+an answer with a magnitude word, align the significant digits by moving the
+decimal point. Accept the reading only when the signed value agrees at the
+answer's displayed precision. Monetary midpoints round away from zero. Thus `342.56달러` matches a bare `342.56`,
+`1,450.97억 달러` can match `145,097` in an excerpt missing its caption, and
+`504억 달러` matches `op USDm 50368.7433`. A stated “in millions” makes
+`5,040` equal to 50.4억, so it cannot verify 504억. The chip tests membership
+in the cited material. A match alone does not identify a company, period or row.
+
+For a passage, a signed figure must agree with the sign the source prints or the
+direction its wording gives the unsigned number. The host recognizes common
+financial phrases in English, Korean, simplified and traditional Chinese, Japanese,
+German, French and Spanish. For example, `loss of $70`, `9% 줄었고`, `跌幅4.81%`,
+`70円安`, `fiel um 4.81 %`, `baisse de 4.81 %` and `cayó un 4.81%` state declines.
+The cue must touch the number or its unit, allowing up to two spaces. A clause
+boundary, a line break or intervening prose ends its reach. In `下跌70元，跌幅4.81%`
+each change gets its own direction. A comparison such as `not down 4.81%` or
+`跌幅收窄至4.81%` still names a decline of that magnitude. The check identifies
+the quoted figure and its direction.
+
+An unsigned answer can cite the magnitude of a decline stated in words. A
+positive source number without a direction cue supports a positive or unsigned
+answer. An explicitly printed sign takes precedence over wording. Receipts keep
+the original UTF-8 evidence range even for full-width digits, punctuation and
+signs (`－４．８１％`). Amounts can carry `元` or `円`, and `万`/`萬` and `亿`/`億`
+scale by ten thousand and one hundred million respectively. `元` alone does not
+identify a specific dollar or yuan currency.
+
+A shared alias table reads ISO codes, words and symbols before or after a
+figure on either side of the check. A scale can follow the currency within
+the same quantity, as in `20 USD million`, or precede it, as in
+`20 million USD`. An interposed currency does not extend the scale across
+a comma, conjunction or line break. For example, `Common shares: KRW 372`
+verifies `372원` and `372 won`. A share-class label describes the row, while
+a share-count label such as `Shares outstanding` still identifies a count.
+Different explicit currencies give `incompatible_unit`. A shared sign
+can use the currency on the same figure or in its governing unit. Without
+that context, `$` is compatible with the supported dollar currencies, `¥`
+with yen or yuan, and `元` with yen, yuan or the supported Chinese-language
+dollar currencies. Unspecified currency still agrees with a currency amount
+where the scale and numeric reading allow it.
 
 A plain number in text also takes a unit the text states apart from it, and
 keeps its plain reading beside it. A row label's bracketed unit
 (`5. 배당금총액(원) 6,000,000,000`, `시가배당율(%) 보통주식 1.4`) reaches the first
 run of numbers after it, with at most three label words between, and ends at a
-line break, `;`, a sentence end or the first word after those numbers. A
+line break, `;`, a sentence end or the first word after those numbers. In a
+year-by-year list such as `Revenue (USD millions): 2024 245,122; 2023 211,915`,
+the years label the values and the unit continues across the separator. A
 table's unit (`(단위: 백만원)`, `단위 : 원`, `(Unit: KRW million)`,
 `(in KRW millions)`) reaches until a blank line, a sentence end or the next
 table's unit. A currency prefix also takes the stated amount scale. Filing headers
 such as `(Millions, except per share amounts)` scale identifiable monetary rows
-such as net revenue while leaving per-share and percentage cells unscaled. A list
+such as net revenue while leaving per-share and percentage cells unscaled. The same
+rule applies to a filing that states a separate share-count scale and to a caption
+immediately above its Markdown table. A filing caption ending in “(dollars in millions):”
+sets the scale of the pipe-separated rows that immediately follow it. A list
 of units such as `(단위: 원, %)` ends the preceding table without placing a scale. A unit in words or brackets right after one number (`184.6이고 단위는 십억 원`,
 `300 (원)`) describes that number only. Only a bare number inherits: an item's
 number (`4.` before a label), a number glued to a word (`18기`, `1,820명`) and a
@@ -170,6 +259,17 @@ A unit's number multiplies its scale (`KRW 100 million` = 1e8, `10억원` = 1e9,
 share or count unit, makes the unit ambiguous; what follows `per` or `/` is a
 denominator and never scales the amount.
 
+Chart and dataset query checks compare cells in the returned row window. Each
+cell takes the unit of its own column from column metadata, its display or axis
+label, or its semantic type. Dates and identifiers are dimensions. Labels and
+query metadata themselves supply no amounts.
+
+An exact digit match with a scale stated on only one side is marked
+`unstated_scale` on the other side. This applies to passages, structured
+observations, chart and dataset reads, calculation results and number checks in
+grids. A scale conflict requires differing stated scales or values separated
+by the exact factor of the one scale that is stated.
+
 For `dcf_grid` and `reverse_dcf`, numeric grid cells use the grid's unit and
 WACC and terminal growth axes use percentages. Unsolved cells supply no number.
 `reverse_dcf` also verifies the formula's implied enterprise value from the
@@ -180,8 +280,7 @@ output in base units of the target currency.
 An ISO code, recognized prefixed dollar sign, unambiguous currency symbol or
 currency word for a different currency gives `differs` regardless of the digits.
 Bare `$` and `¥`, dollar words such as “dollars” and “달러”, and links without a
-currency marker are checked on magnitude and scale. The general matcher for
-links to other results stays blind to currency identity.
+currency marker are checked on magnitude and scale.
 
 A line reading on an [asset page](../knowledge/thesis.md#thesis-and-the-read) is
 accepted only when the observed number, normalized to the line's unit, equals a
@@ -191,6 +290,48 @@ guess is refused. Only originals count: a filing, data read or fetched page, or 
 `calculate` result over one, whose computed value also confirms a number. Search
 snippets, Memory reads and the model's own text never do.
 
+### When a number is missing
+
+A new numeric `not_found` check records `comparisonReason`. The host picks a
+comparison only after it has finished verifying the citation. It first looks for
+the same digits with an opposite sign, a conflicting stated scale, or an
+incompatible unit such as a share count. It also recognizes adjacent transposed
+digits or a single changed digit within 2% of the answer. These comparisons
+require at least three digits at the answer's precision. On the line of a
+selected literal passage or in a short labelled result with a single value, the host
+can also offer the nearest value within 15%. Equally plausible values that differ in amount or stated unit leave
+the comparison open.
+
+With a candidate, `nearest` and `comparedValue` carry the figure as printed.
+`span` points into the excerpt, `context` locates the original number in other
+retained passage text, and a structured result or step uses its JSON `pointer`
+(for Python, `/stdout`). The diagnostic reason is `digits_differ`,
+`scale_conflict`, `sign_conflict` or `incompatible_unit`.
+`nearestSourceUnit` identifies a unit the evidence states. `nearestSourceScale`
+is the stated power of ten (6 for millions). An inferred scale stays absent.
+When no candidate qualifies, `no_candidate` carries no comparison value or
+location. On replay, a retained passage with no candidate also carries
+`comparisonReplay` with reason `no_candidate` and the searched passage
+(`retained_passage` and the Source title). If the evidence itself is unavailable,
+the replay reason is `evidence_unavailable`.
+These diagnostics are projected at read time from the evidence the host can
+still inspect. They do not change the saved answer.
+
+Opening a flagged figure names the Source or calculation result, then shows the
+answer’s figure beside the host’s printed candidate and its stated unit and
+scale. The sentence explains the recorded difference. A missing candidate has
+only the answer’s figure and names the saved passage when the host supplies its
+scope. The popover and the receipt distinguish a figure absent from the saved
+passage from one whose evidence is no longer stored. When the evidence is gone,
+the receipt and popover omit the source action. The receipt’s count opens a list
+of all flagged figures.
+Each comparison opens its own retained source passage, structured field or
+calculation step. Bot opens the selected calculation output in Activity. A
+research session expands the step in its timeline. If a saved excerpt ends
+before a structured field, the reader shows the recorded path and printed
+value from the receipt alongside that excerpt. A located passage opens in Evidence even when an ordinary
+citation to that web page would open the browser.
+
 ## Code
 
-- Number checks: `src-tauri/src/knowledge/numbers.rs`, `src-tauri/src/finance_data/percent_fields.rs`, `src-tauri/src/commands/tool_executor/number_checks.rs`, `src-tauri/src/commands/tool_executor/calculation.rs`, `src-tauri/src/domain/answer_checks.rs`, `src/chat/numberChecks.ts`, `src/components/chat/NumberChip.tsx`
+- Number checks: `src-tauri/src/knowledge/numbers.rs`, `src-tauri/src/finance_data/percent_fields.rs`, `src-tauri/src/commands/tool_executor/number_checks.rs`, `src-tauri/src/commands/tool_executor/number_checks/diagnostics.rs`, `src-tauri/src/commands/tool_executor/calculation.rs`, `src-tauri/src/domain/answer_checks.rs`, `src/chat/numberChecks.ts`, `src/components/chat/NumberChip.tsx`, `src/components/chat/FigureWarnings.tsx`

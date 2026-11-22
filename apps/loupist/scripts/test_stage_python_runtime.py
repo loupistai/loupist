@@ -206,7 +206,10 @@ class PythonRuntimeTests(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                {"APPLE_SIGNING_IDENTITY": "Developer ID Application: Example (TEST)"},
+                {
+                    "APPLE_SIGNING_IDENTITY": "Developer ID Application: Example (TEST)",
+                    "LOUPIST_MACOS_SIGNING_MODE": "developer-id",
+                },
             ),
             patch.object(stage.sys, "platform", "darwin"),
             patch.object(stage.platform, "machine", return_value="arm64"),
@@ -226,7 +229,7 @@ class PythonRuntimeTests(unittest.TestCase):
         for mode, identity, timestamp in [
             ("developer-id", "Example", True),
             ("self-signed", "A" * 40, False),
-            ("", "-", False),
+            ("", "unused identity", False),
         ]:
             with (
                 self.subTest(mode),
@@ -242,6 +245,8 @@ class PythonRuntimeTests(unittest.TestCase):
                 self.assertIn("runtime", command)
                 self.assertIn("--entitlements", command)
                 self.assertEqual("--timestamp" in command, timestamp)
+                if not mode:
+                    self.assertEqual(command[3], "-")
 
     def test_linux_stage_does_not_sign(self):
         destination = self.stage_runtime("linux", "x86_64", elf_x86_64())

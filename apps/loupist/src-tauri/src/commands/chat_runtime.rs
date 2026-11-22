@@ -71,7 +71,7 @@ use super::{
         ColdChatBootstrap,
     },
     capture_chat_connector_authority, fallback_chat_title, iso_time, map_internal, map_store,
-    memory_updates, new_id, now_ms, require_text,
+    new_id, now_ms, require_text,
     tool_executor::{AppToolExecutor, ToolCapture},
     types::{
         memory_ref_dto, ChatControlModeDto, ChatControlReceiptDto, ChatControlRequestDto,
@@ -103,7 +103,7 @@ pub(crate) struct ChatEventSink {
     pub(in crate::commands) price_setup_connect_failed: Option<Arc<std::sync::atomic::AtomicBool>>,
     send: Arc<ChatEventCallback>,
     baseline: Option<Arc<ChatBaselineCallback>>,
-    evidence: Arc<std::sync::Mutex<Vec<crate::domain::ChatEvidenceRef>>>,
+    evidence: Arc<std::sync::Mutex<Vec<crate::commands::types::ChatEvidenceViewDto>>>,
     tool_refusals: Arc<std::sync::Mutex<Vec<crate::domain::ChatToolRefusal>>>,
     schedules: Arc<std::sync::Mutex<Vec<crate::scheduled_tasks::types::ScheduleReceipt>>>,
     tool_trace: Arc<crate::broker::ToolTraceCapture>,
@@ -183,7 +183,10 @@ impl ChatEventSink {
                 .evidence
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
-            if let Some(prior) = snapshot.iter_mut().find(|prior| prior.id == evidence.id) {
+            if let Some(prior) = snapshot
+                .iter_mut()
+                .find(|prior| prior.snapshot.id == evidence.snapshot.id)
+            {
                 *prior = evidence.as_ref().clone();
             } else if snapshot.len() < crate::domain::MAX_CHAT_EVIDENCE_REFS {
                 snapshot.push(evidence.as_ref().clone());
@@ -210,6 +213,7 @@ impl ChatEventSink {
                     ChatStreamEvent::Completed {
                         execution_model,
                         performance,
+                        memory_save_skip,
                         ..
                     } => {
                         record.model(execution_model);
@@ -220,6 +224,7 @@ impl ChatEventSink {
                             cached_input: performance.cache_read_tokens,
                             output: performance.output_tokens,
                         });
+                        record.memory_save_skip = *memory_save_skip;
                         record.finish("ok", None);
                     }
                     ChatStreamEvent::Error { failure_kind, .. } => {
@@ -238,7 +243,7 @@ impl ChatEventSink {
                 if let Some((store, mut record)) = pending.take() {
                     record.refusals(&self.tool_refusals());
                     record.trace(&self.tool_trace.snapshot());
-                    record.record(store.as_ref());
+                    crate::store::bounded_chat_save(|| record.record(store.as_ref()));
                 }
             }
         }
@@ -326,7 +331,22 @@ impl ChatEventSink {
         self.evidence
             .lock()
             .unwrap_or_else(|error| error.into_inner())
-            .clone()
+            .iter()
+            .map(|item| item.snapshot.clone())
+            .collect()
+    }
+
+    fn evidence_view(
+        &self,
+        snapshot: &crate::domain::ChatEvidenceRef,
+    ) -> crate::commands::types::ChatEvidenceViewDto {
+        self.evidence
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .iter()
+            .find(|item| item.snapshot.id == snapshot.id)
+            .cloned()
+            .unwrap_or_else(|| snapshot.clone().into())
     }
 
     fn admitted(&self, chat: &crate::domain::ChatSession) {
@@ -551,6 +571,7 @@ async fn send_chat_inner(
     state: &AppState,
     admission: Option<ChatAdmission>,
 ) -> Result<RunStarted, CommandError> {
+    crate::app::off_main_thread(state, crate::marketplace::reconcile_credential_presence).await?;
     let admitted = match setup::admit_chat_turn(request, on_event, state, admission)? {
         ControlFlow::Continue(admitted) => admitted,
         ControlFlow::Break(settled) => return Ok(settled),
@@ -663,7 +684,7 @@ fn validated_chat_run_id(value: &str) -> Result<String, CommandError> {
 
 /// Classify only host-owned diagnostics; the persisted value is an enum allowlist.
 fn classify_turn_failure(error: &CommandError, fallback: ChatFailureKind) -> ChatFailureKind {
-    if error.code == "conflict" {
+    if matches!(error.code.as_str(), "conflict" | "memory_busy") {
         return ChatFailureKind::CancelledByConflict;
     }
     // Store/Memory boundaries classify their own errors without interpreting private details.

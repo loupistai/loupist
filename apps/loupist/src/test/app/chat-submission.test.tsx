@@ -1,7 +1,7 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import type { ChatThread } from "../../types";
+import type { ChatThread, RunActivity } from "../../types";
 import { chooseLoupist, newChatButton, openApp } from "../renderApp";
 
 type User = ReturnType<typeof userEvent.setup>;
@@ -17,6 +17,54 @@ const gate = () => {
 };
 
 describe("Chat submission ownership", () => {
+  it("resumes the queue in order only after its last Memory writer finishes", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const raw = "this Loupist has an active Memory reader or writer";
+    const chatSend = vi.spyOn(bridge, "chatSend").mockRejectedValueOnce({ code: "memory_busy", message: raw });
+    const writer = (id: string, loupist_id = "loupist-quality"): RunActivity =>
+      ({ run_id: id, loupist_id, kind: "memory_write", target: id, started_at_ms: 1 });
+    const activities = vi.spyOn(bridge, "runActivityList").mockResolvedValue([writer("first"), writer("last")]);
+    await openApp(bridge);
+    await send(user, "First instruction");
+    const waiting = "Waiting for another task in this Loupist to finish saving";
+    expect(await screen.findByText(waiting)).toBeVisible();
+    expect(screen.queryByText(raw, { exact: false })).toBeNull();
+    await send(user, "Second instruction");
+    const refresh = async () => {
+      activities.mockClear();
+      await act(async () => window.dispatchEvent(new Event("focus")));
+      await waitFor(() => expect(activities).toHaveBeenCalled());
+    };
+    activities.mockResolvedValue([writer("last")]);
+    await refresh();
+    expect(chatSend).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Send next now" })).toBeVisible();
+    activities.mockResolvedValue([writer("other", "loupist-contrarian")]);
+    await refresh();
+    await waitFor(() => expect(screen.queryByLabelText("Pending chat instructions")).toBeNull());
+    expect(chatSend.mock.calls.map(([request]) => request.prompt)).toEqual(["First instruction", "First instruction", "Second instruction"]);
+    expect(screen.queryByText(raw, { exact: false })).toBeNull();
+  });
+
+  it("allows an immediate manual retry of the selected instruction while another writer is listed", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    vi.spyOn(bridge, "runActivityList").mockResolvedValue([{ run_id: "writer", loupist_id: "loupist-quality", kind: "memory_write", target: "memory", started_at_ms: 1 }]);
+    const refusal = { code: "memory_busy", message: "Waiting for Memory" };
+    const chatSend = vi.spyOn(bridge, "chatSend").mockRejectedValueOnce(refusal).mockRejectedValueOnce(refusal);
+    await openApp(bridge);
+    await send(user, "First");
+    const queue = await screen.findByRole("group", { name: "Pending chat instructions" });
+    await within(queue).findByText("Waiting for another task in this Loupist to finish saving");
+    await send(user, "Second");
+    const secondRow = within(queue).getByText("Second").closest("li")!;
+    await user.click(within(secondRow).getByRole("button", { name: /actions/i }));
+    await user.click(screen.getByRole("menuitem", { name: "Send queued message now" }));
+    await waitFor(() => expect(chatSend.mock.calls.map(([request]) => request.prompt)).toEqual(["First", "Second"]));
+    expect(within(queue).getByRole("button", { name: "Send next now" })).toBeVisible();
+  });
+
   it("reconciles a late admission into the shared queue after leaving and returning to a Loupist", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });

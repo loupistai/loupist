@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import copy
-import hashlib
 import json
 import runpy
 import tempfile
@@ -13,25 +12,42 @@ SCRIPTS = Path(__file__).resolve().parent
 
 
 class ReleaseProfileTests(unittest.TestCase):
-    def test_profile_is_closed_and_certificate_pins_match_public_material(self):
-        import base64
-
-        profile = load_profile()
-        pem = (SCRIPTS.parent / "release-signing-certificate.pem").read_text()
-        der = base64.b64decode(
-            "".join(line for line in pem.splitlines() if not line.startswith("-----"))
-        )
+    def test_beta_uses_an_unpinned_developer_id_leaf(self):
+        profile = load_profile(rehearsal=True)
+        self.assertEqual(profile["channel"], "beta")
         self.assertEqual(
-            hashlib.sha1(der).hexdigest().upper(),
-            profile["macos_signing"]["certificate_sha1"],
-        )
-        self.assertEqual(
-            hashlib.sha256(der).hexdigest().upper(),
-            profile["macos_signing"]["certificate_sha256"],
+            profile["macos_signing"],
+            {
+                "mode": "developer-id",
+                "team_id": profile["macos_signing"]["team_id"],
+                "certificate_common_name": None,
+                "certificate_sha1": None,
+                "certificate_sha256": None,
+            },
         )
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "profile.json"
+            legacy = copy.deepcopy(profile)
+            legacy["macos_signing"].update(
+                mode="self-signed",
+                certificate_common_name="fixture",
+                certificate_sha1="A" * 40,
+                certificate_sha256="B" * 64,
+            )
+            legacy["macos_signing"].pop("team_id")
+            path.write_text(json.dumps(legacy))
+            self.assertIsNone(load_profile(path)["macos_signing"]["team_id"])
+            profile["macos_signing"]["team_id"] = "TEAMID0000"
+            path.write_text(json.dumps(profile))
+            with self.assertRaisesRegex(
+                ValueError,
+                r"placeholder.*apps/loupist/release-profile\.json.*installation\.md",
+            ):
+                load_profile(path)
+            profile["macos_signing"]["team_id"] = "ABCDE12345"
             for change in [
+                lambda v: v["macos_signing"].pop("team_id"),
+                lambda v: v["macos_signing"].update(team_id="invalid"),
                 lambda v: v.update(channel="nightly"),
                 lambda v: v.update(extra=True),
                 lambda v: v["macos_signing"].update(mode="unknown"),
@@ -45,18 +61,16 @@ class ReleaseProfileTests(unittest.TestCase):
                 path.write_text(json.dumps(value))
                 with self.assertRaises(ValueError):
                     load_profile(path)
-            for mode in ("developer-id",):
-                value = copy.deepcopy(profile)
-                value["macos_signing"] = {
-                    key: mode if key == "mode" else None
-                    for key in value["macos_signing"]
-                }
-                path.write_text(json.dumps(value))
-                self.assertEqual(load_profile(path), value)
 
     def test_signing_records_enforce_each_mode_and_tag_policy(self):
-        profile = load_profile()
+        profile = load_profile(rehearsal=True)
         policy = profile["macos_signing"]
+        policy.update(
+            mode="self-signed",
+            certificate_common_name="fixture",
+            certificate_sha1="A" * 40,
+            certificate_sha256="B" * 64,
+        )
         signed = {
             "mode": "self-signed",
             "notarized": False,
@@ -98,11 +112,35 @@ class ReleaseProfileTests(unittest.TestCase):
             "mode": "developer-id",
             "notarized": True,
             "team_id": "ABCDE12345",
-            "designated_requirement": 'identifier "com.monarchjuno.loupist" and anchor apple generic and certificate leaf[subject.OU] = ABCDE12345',
+            "designated_requirement": 'identifier "com.monarchjuno.loupist" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = ABCDE12345',
         }
         validate_signing_record(developer)
+        policy.update(mode="developer-id", team_id="OTHER12345")
+        with self.assertRaisesRegex(ValueError, "team differs"):
+            match_profile(developer, profile)
         with self.assertRaises(ValueError):
             validate_signing_record({**developer, "notarized": False})
+
+    def test_every_localized_publisher_line_matches_the_team_pin(self):
+        check = runpy.run_path(str(SCRIPTS / "check-release-configuration.py"))[
+            "check_publisher_guide"
+        ]
+        team = "ABCDE12345"
+        actual = "TeamIdentifier=" + team
+        section = "`" + actual + "`\n\ncodesign -dvv /Applications/Loupist.app\n"
+        guide = "## English\n" + section + "## 한국어\n" + section
+        check(guide, team)
+        for bad in (
+            guide.replace(actual, "TeamIdentifier=TEAMID0000", 1),
+            guide.replace(actual, "TeamIdentifier=WRONG00000"),
+            guide.replace(actual, "", 1),
+            guide + "\n`TeamIdentifier=OTHER98765`",
+        ):
+            with (
+                self.subTest(bad=bad),
+                self.assertRaisesRegex(ValueError, "installation.md"),
+            ):
+                check(bad, team)
 
     def test_release_configuration_checks_the_real_production_resource_map(self):
         module = runpy.run_path(str(SCRIPTS / "check-release-configuration.py"))
@@ -110,7 +148,8 @@ class ReleaseProfileTests(unittest.TestCase):
 
     def test_notes_render_each_mode_without_claiming_apple_signing_for_beta(self):
         render = runpy.run_path(str(SCRIPTS / "release-notes.py"))["render"]
-        profile = load_profile()
+        profile = load_profile(rehearsal=True)
+        profile["macos_signing"].update(mode="self-signed", certificate_sha256="A" * 64)
         beta = render("0.1.0-rc.1", profile)
         self.assertIn("Loupist 0.1.0-rc.1 (Beta)", beta)
         self.assertIn("Not notarized", beta)
@@ -132,17 +171,22 @@ class ReleaseProfileTests(unittest.TestCase):
             root = Path(directory)
             templates = root / ".github/release-notes"
             templates.mkdir(parents=True)
-            (templates / "self-signed.md").write_text(
+            (templates / "developer-id.md").write_text(
                 "{{version}}{{channel_suffix}}\n{{changelog}}"
             )
             changelog = root / "CHANGELOG.md"
             changelog.write_text(
                 "## 0.1.0 - 2026-11-13\n\n- Release feature\n\n## 0.0.9 - 2026-11-12\n- Old feature"
             )
-            self.assertIn("Release feature", render("0.1.0", load_profile(), root))
-            self.assertNotIn("Old feature", render("0.1.0", load_profile(), root))
             self.assertIn(
-                "See CHANGELOG.md", render("0.1.1-rc.1", load_profile(), root)
+                "Release feature", render("0.1.0", load_profile(rehearsal=True), root)
+            )
+            self.assertNotIn(
+                "Old feature", render("0.1.0", load_profile(rehearsal=True), root)
+            )
+            self.assertIn(
+                "See CHANGELOG.md",
+                render("0.1.1-rc.1", load_profile(rehearsal=True), root),
             )
 
 

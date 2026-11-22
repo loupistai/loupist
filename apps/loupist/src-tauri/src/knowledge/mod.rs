@@ -575,6 +575,16 @@ impl<'a> KnowledgeWrite<'a> {
         Ok((authority::require_edit(&module, loupist_id).is_ok(), false))
     }
 
+    pub(crate) fn visible_revision_by_digest(
+        &self,
+        loupist_id: &str,
+        record_id: &str,
+        digest: &str,
+    ) -> KnowledgeResult<RecordRevision> {
+        let record = authority::require_record(self.tx, loupist_id, record_id)?;
+        revision::visible_by_digest(self.tx, &record, digest)?.to_model()
+    }
+
     pub fn world_source_targets(
         &self,
         loupist_id: &str,

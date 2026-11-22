@@ -1,6 +1,10 @@
 """Shell pitfalls in the release workflows that only show on the real path."""
 
+import os
 import re
+import subprocess
+import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -42,6 +46,37 @@ class ReleaseWorkflowShellTests(unittest.TestCase):
             with self.subTest(workflow=name):
                 text = (WORKFLOWS / name).read_text()
                 self.assertEqual(unguarded_empty_array_expansions(text), [])
+
+    def test_failed_keychain_deletion_warns_after_other_cleanup(self):
+        workflow = (WORKFLOWS / "release.yml").read_text()
+        step = workflow.split("      - name: Remove temporary signing keychain\n")[
+            1
+        ].split("\n\n")[0]
+        cleanup = textwrap.dedent(step.split("        run: |\n")[1])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "loupist-ephemeral").mkdir()
+            (root / "loupist-ephemeral/credentials.json").touch()
+            for name in ("loupist-signing.p12", "loupist-tauri-release.json"):
+                (root / name).touch()
+            # Fail the test if the deletion is attempted while any handoff exists.
+            fake_security = (
+                'security() { [[ "$1" == delete-keychain && "$2" == fixture ]] || exit 2; '
+                '[[ -z "$(ls -A "$RUNNER_TEMP")" ]] || exit 3; return 1; }\n'
+            )
+            result = subprocess.run(
+                ["/bin/bash", "-eu", "-c", fake_security + cleanup],
+                text=True,
+                capture_output=True,
+                env={
+                    **os.environ,
+                    "RUNNER_TEMP": directory,
+                    "LOUPIST_SIGNING_KEYCHAIN": "fixture",
+                },
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("::warning::", result.stdout)
+            self.assertEqual(list(root.iterdir()), [])
 
     def test_publication_does_not_depend_on_the_implicit_success_check(self):
         # Without a status function GitHub adds success(), which also counts

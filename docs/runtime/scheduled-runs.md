@@ -29,6 +29,23 @@ granted. That notification does not open the item. Tray selection emits the
 typed `inbox-open` event. Schedules run only while the app process is running,
 including while the window is hidden.
 
+Settings → General also offers **Open Loupist at login**, initially off. Turning it
+on registers the current user's main app with macOS 13+ `SMAppService.mainApp`
+and explicitly enables menu-bar residence. Turning residence off unregisters the
+login item first. Turning login off leaves residence alone. General rereads the
+system status when opened or focused. When approval is required or macOS reports
+an error, **Open Login Items** opens the system pane. Only explicit user action
+requests registration.
+
+Registration requires the release build and its bundle identifier, installed in
+Applications or a user's Applications folder. The host checks the canonical
+main bundle path. The Developer ID-signed main app uses the system
+Service Management framework directly, with no extra entitlement, helper or
+service plist. During startup it reads the open-application Apple event's
+`keyAEPropData` for `keyAELaunchedAsLogInItem` while AppKit handles the launch.
+The installed app creates the window hidden and shows it immediately for a normal
+launch. A login launch leaves it hidden unless the tray fails to initialize.
+
 ## Runs
 
 The run coordinator allows at most four model workers and rejects concurrent runs
@@ -40,13 +57,13 @@ Memory writes and Loupist registration: admitted work and installation exclude e
 other. World jobs run sequentially per Loupist; their recovery is owned by
 [Knowledge and Memory](../knowledge/worlds.md#worlds-and-graph-processing), including
 completed-job receipts and disposal of derived extraction copies. A queued or
-running World load (Recover map building, or the load after a shared pack's Add or
+running World load (Recover World building, or the load after a shared pack's Add or
 Remove) runs before any extraction; the load after Add or Remove cancels an earlier
 load still waiting.
 
 ### Scheduled Chats
 
-Scheduled work reuses ordinary Chat admission, execution and persistence. A saved
+Scheduled work reuses ordinary Chat admission, execution and persistence. The task view and schedule tools resolve the requested model against the current catalog when read. An unset task keeps following the host default, including after an account change. The tool receipt names the current model profile or gives its unavailability reason. New briefings keep an unset Chat model unset. A saved
 definition has title, prompt, schedule, target, model/reasoning options and separate
 Memory read/save flags. Supported schedules are once, interval, daily and weekly;
 daily/weekly use IANA time zones. A run can target a new Chat per run, the task's
@@ -72,7 +89,7 @@ other. A failed or stopped run's reply there offers Run now, which runs the task
 again through the scheduler (`scheduled_task_run_now`) and opens the task in
 Schedule, instead of Try again, which would send the task's request again as the
 user's own turn; the host refuses that retry too (`prepare_chat_retry`). Results reach the user through Bot and Schedule, and the session
-opens from Bot's Open, the run reader's Continue in Chat and Search; the sidebar
+opens from the run reader’s Continue in Chat (Open the session after the user writes) and Search; Bot’s delivery opens the reader; the sidebar
 lists it while it is open ([Sidebar](../ui/sidebar.md#chat-selection)).
 
 Until the user writes in it, a session the scheduler made is its run's record and
@@ -96,7 +113,7 @@ says the run's record was removed once the task is gone too
 
 A separate Chat can submit a typed schedule handoff with its own model and Memory flags. The host registers the task idempotently and posts a receipt in the same Loupist’s Bot. When Bot is busy, receipts wait for the next delivery pass or workspace load. Unattended runs cannot manage or hand off schedules. A research hand-off from Bot
 (`chat_handoffs`, [Bot](../ui/home-thread.md#home-thread)) shares Chat admission
-without a scheduled task. Typed hand-offs use the unattended allowlist; Map-link
+without a scheduled task. Typed hand-offs use the unattended allowlist; World-link
 hand-offs use the Session surface. A `created` row with no run is sent once by
 the next delivery pass in Bot, a `running` row whose run is gone is marked
 interrupted, and a run that started is never sent again. Legacy
@@ -132,7 +149,9 @@ recovery explicitly records an unexpected interruption and still counts.
 Resume and every definition edit start a fresh failure window, persisted in the
 task JSON as a start timestamp and a revision tie-breaker for runs begun in the
 same millisecond; no schema step or public Task field is added. Only terminal
-receipts from that window count. The sink carries typed NeedsReconnect/ModelGone
+receipts from that window count. If admission returns `provider_unavailable` because
+Auto has no connected AI account, a recurring task pauses on its first failure.
+The stored pause status survives changes to the account hint. The sink carries typed NeedsReconnect/ModelGone
 failures into the task policy so rejected credentials or a missing model pause
 immediately, even though the Chat's failure text is the generic placeholder. A newer edit still prevents an old completion from changing the definition.
 History keeps a task's last 50 runs and records status, timing, error and target Chat, where the reply and its evidence remain. Renderer discovery polls every two
@@ -150,9 +169,9 @@ Each scheduled task is `custom` or `briefing`. A Loupist has at most one briefin
 with a continuing Memory-enabled Chat titled Briefings. The default briefing is
 08:00 Monday through Friday in the device time zone. At run time Rust supplies
 the date, elapsed time since the previous run, the followed names and reference
-fields with saved-read state, principles, up to 40 Map growth summaries, and up
+fields with saved-read state, principles, up to 40 World growth summaries, and up
 to five due Journal pointers. The briefing context keeps up to 20 disputed
-entity IDs for the Map filter. The unattended agent chooses its own data reads
+entity IDs for the World filter. The unattended agent chooses its own data reads
 and reports what it could check.
 
 Unattended runs, both briefing and custom, may call only the fixed allowlist
@@ -165,6 +184,13 @@ and recorded on the run as skipped tools; a delegated hand-off run has no schedu
 run row, so its refusals are not recorded, and a scheduled run whose row cannot take
 the record fails the call. A custom MCP call still requires an
 unchanged Always approval.
+When an enabled data connection's saved key still needs macOS permission,
+Chat omits its tools from executable authority and includes the recovery reason
+in the model context. Direct calls return the permission refusal. Scheduled
+runs and hand-offs proceed without these connections and carry their names
+and the reason into the result. Schedule readers and Bot posts render that
+reason in the interface language. Users grant permission in Settings >
+Data connections ([credentials](../capabilities/connections.md#connections-and-credentials)).
 The inbox is read with `inbox_list`, `inbox_mark_read` and `inbox_unread_counts`.
 The agent's schedule reader still uses the internal run history. Completed,
 failed and interrupted receipts share one unread state.
@@ -176,6 +202,10 @@ to check. A run that completes the check and finds nothing to report can call
 `schedule_quiet`. The host refuses quiet delivery if any tool was skipped or a
 data call was attempted without any acknowledged original data result. The
 reply and its Memory still commit if the run can no longer be marked quiet.
+The quiet decision belongs to the saved answer. It can survive a skipped
+Memory save, which the run records separately. A non-quiet answer with skipped
+Memory still reaches the Schedule history and Bot. The run, its delivered
+record and the next run's `previous_run` carry the same skip reason.
 A successful quiet run stays in history, where Schedule marks it "Nothing to
 report" and never unread. It leaves the Chat's sidebar recency unchanged and adds
 neither an inbox entry nor a Bot announcement. Failed runs use regular failure

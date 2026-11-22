@@ -44,7 +44,7 @@ export class MockScheduledTasks {
       const task = this.tasks.get(previous.task.id)!;
       Object.assign(task, { schedule, status, revision: task.revision + 1, updated_at_ms: Date.now(), next_run_at_ms: request.enabled ? preview(schedule) : null });
     } else if (request.enabled || request.schedule) {
-      const task = await this.create({ loupist_id: request.loupistId, title: "Briefings", prompt: "Host-authored briefing", schedule, status, target: { kind: "dedicated_chat" }, model_profile_id: "model-test", thinking_level: "medium", run_options: {}, use_memory: true, update_memory: true });
+      const task = await this.create({ loupist_id: request.loupistId, title: "Briefings", prompt: "Host-authored briefing", schedule, status, target: { kind: "dedicated_chat" }, model_profile_id: "", thinking_level: "", run_options: {}, use_memory: true, update_memory: true });
       this.tasks.get(task.id)!.kind = "briefing";
     }
     this.changed(request.loupistId);
@@ -53,7 +53,7 @@ export class MockScheduledTasks {
   async inboxList({ loupistId, cursor, limit }: InboxRequest): Promise<InboxPage> {
     if (limit < 1 || limit > 100) throw new Error("Inbox limit must be between 1 and 100.");
     if (!this.state.loupists.some(loupist => loupist.id === loupistId)) throw new Error("Loupist not found.");
-    const runs = [...this.runs.values()].filter(run => run.loupist_id === loupistId).sort((a,b) => b.started_at_ms - a.started_at_ms || b.run_id.localeCompare(a.run_id));
+    const runs = [...this.runs.values()].filter(run => run.loupist_id === loupistId && !(run.quiet && run.status === "succeeded")).sort((a,b) => b.started_at_ms - a.started_at_ms || b.run_id.localeCompare(a.run_id));
     const start = cursor ? runs.findIndex(run => run.run_id === cursor) + 1 : 0;
     if (cursor && start === 0) throw new Error("Inbox cursor not found.");
     const page = runs.slice(start, start + limit);
@@ -66,7 +66,7 @@ export class MockScheduledTasks {
     this.changed(loupistId);
   }
   async inboxUnreadCounts() {
-    return this.state.loupists.map(loupist => ({ loupistId: loupist.id, count: [...this.runs.values()].filter(run => run.loupist_id === loupist.id && run.status !== "running" && run.read_at_ms === null).length }));
+    return this.state.loupists.map(loupist => ({ loupistId: loupist.id, count: [...this.runs.values()].filter(run => run.loupist_id === loupist.id && run.status !== "running" && !(run.quiet && run.status === "succeeded") && run.read_at_ms === null).length }));
   }
 
   private task(request: ScheduledTaskIdentity) {
@@ -151,7 +151,7 @@ export class MockScheduledTasks {
   }
   /** Mirrors Rust: a finished run posts one short message into the home Thread. */
   deliver(run: ScheduledRun) {
-    if (run.status !== "succeeded" && run.status !== "failed") return;
+    if (run.status !== "failed" && (run.status !== "succeeded" || run.quiet)) return;
     const home = ensureHomeThread(this.state, run.loupist_id);
     if (run.thread_id === home.id || home.messages.some((message) => message.delivery?.run_id === run.run_id)) return;
     const task = this.tasks.get(run.task_id);

@@ -168,13 +168,15 @@ pub(in crate::commands) async fn settle_chat_controls_before_completion(
 ) -> Result<(), CommandError> {
     let deadline = Instant::now() + CHAT_CONTROL_SETTLE_TIMEOUT;
     loop {
-        persist_contiguous_chat_controls(
-            store,
-            loupist_id,
-            thread_id,
-            settled_controls,
-            next_control_to_persist,
-        )?;
+        crate::store::bounded_chat_save(|| {
+            persist_contiguous_chat_controls(
+                store,
+                loupist_id,
+                thread_id,
+                settled_controls,
+                next_control_to_persist,
+            )
+        })?;
         if pending_controls.is_empty() && settled_controls.is_empty() {
             return Ok(());
         }

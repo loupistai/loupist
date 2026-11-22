@@ -6,6 +6,7 @@ import type { LoupistBridge } from "../../types";
 import type { PackImportView, PackUpdate, PackUpdateCheck } from "../../contracts/sharing";
 import { commandErrorCode, errorMessage } from "../../lib/errors";
 import { Button } from "../ui/button";
+import { ExternalLinkError, useExternalLink } from "../navigation/ExternalLinkError";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { Spinner } from "../ui/spinner";
@@ -29,6 +30,7 @@ type Check = { busy: true } | { busy: false; result: CheckResult };
 export const SharedPacks = forwardRef<HTMLElement, { bridge: LoupistBridge; loupistId: string; imports: readonly PackImportView[]; indexConfigured: boolean; onChanged: (imports: PackImportView[]) => void }>(
   function SharedPacks({ bridge, loupistId, imports, indexConfigured, onChanged }, ref) {
     const { t } = useTranslation("sharing");
+    const browser = useExternalLink(url => bridge.openExternalUrl(url));
     const headingId = useId();
     const [removing, setRemoving] = useState<PackImportView | null>(null);
     const [done, setDone] = useState(false);
@@ -86,7 +88,8 @@ export const SharedPacks = forwardRef<HTMLElement, { bridge: LoupistBridge; loup
           <div className="shared-pack-text">
             <strong>{entry.name}</strong>
             <span className="shared-pack-meta">{t("addedOn", { date: formatDate(entry.addedAtMs), version: formatNumber(entry.version) })}</span>
-            {entry.sourceUrl ? <Button variant="link" size="sm" className="pack-review-link" onClick={() => void bridge.openExternalUrl(entry.sourceUrl!)}>{shortSource(entry.sourceUrl)}<ExternalLinkIcon aria-hidden="true" /></Button> : null}
+            {entry.sourceUrl ? <Button variant="link" size="sm" className="pack-review-link" onClick={() => void browser.open(entry.sourceUrl!)}>{shortSource(entry.sourceUrl)}<ExternalLinkIcon aria-hidden="true" /></Button> : null}
+            {entry.sourceUrl && browser.failedUrl === entry.sourceUrl ? <ExternalLinkError url={entry.sourceUrl} /> : null}
           </div>
           <div className="shared-pack-actions">
             {entry.sourceUrl ? <Button variant="outline" size="sm" disabled={state?.busy} data-pack-check onClick={() => void check(entry)}>{state?.busy ? <Spinner /> : null}{t("checkUpdates")}</Button>

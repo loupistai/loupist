@@ -26,16 +26,16 @@ describe("rail data", () => {
     tool_refusals: [{ connection_id: "c1", connection_name: "Morrow", tool_name: "read_filings", reason: "needs_approval" }],
   } as unknown as ChatMessage;
 
-  it("collects files, what the Loupist used, what it learned here and what waits for the user", () => {
+  it.each([true, false])("keeps saved activity and gates pending approvals (custom connections available: %s)", customConnections => {
     const data = railData({
-      messages: [question, answer], chatId: "chat", language: "ko", workspacePath: "/w",
+      messages: [question, answer], customConnections, chatId: "chat", language: "ko", workspacePath: "/w",
       map, events: [event("entity_added", "morrow", 1), event("entity_added", "hanul", 2), event("claim_added", "edge-1", 3), event("lens_created", "lens-1", 4), event("entity_added", "bluehaven", 5, "other")],
     });
     expect(data.files.map((file) => [file.filename, file.kind, file.fromLoupist])).toEqual([["deck.png", "image", false], ["holdings.csv", "file", false], ["memo.md", "file", true]]);
     expect(data.using.map((item) => [item.kind, item.label])).toEqual([["principle", "Check cash flow"], ["method", "Separate durable margins"], ["connection", "Morrow research tools"]]);
     // Another chat's growth does not count here; names show their local form.
     expect(data.learned).toMatchObject({ names: 2, methods: 1, chips: [{ id: "hanul", label: "한울정밀" }, { id: "morrow", label: "morrow" }] });
-    expect(data.needs).toHaveLength(1);
+    expect(data.needs).toHaveLength(customConnections ? 1 : 0);
     expect(data.hasCards).toBe(true);
   });
 
@@ -56,7 +56,7 @@ describe("rail data", () => {
 
   it("drops an approval once a newer answer no longer asks for it", () => {
     const later = { ...answer, id: "later", tool_refusals: [] } as ChatMessage;
-    expect(railData({ messages: [question, answer, later], chatId: "chat", language: "en" }).needs).toEqual([]);
+    expect(railData({ messages: [question, answer, later], customConnections: true, chatId: "chat", language: "en" }).needs).toEqual([]);
   });
 });
 
@@ -181,7 +181,7 @@ describe("activity turn", () => {
       evidence_refs: [evidence, { ...evidence, id: "e2" }] as ChatMessage["evidence_refs"],
       number_checks: [{ link_index: 0, text: "$162.85", evidence_id: "e1", kind: "data", status: "matched" }] as ChatMessage["number_checks"],
     }));
-    expect(turn.sources.map((source) => source.id)).toEqual(["e1"]);
+    expect(turn.sources.map((source) => source.evidence.id)).toEqual(["e1"]);
     expect(turn.groups[0]!.steps[0]!.evidence.map((item) => item.id)).toEqual(["e1"]);
     expect(turn.checks).toEqual([{ check: expect.objectContaining({ text: "$162.85" }), evidence: expect.objectContaining({ id: "e1" }) }]);
   });

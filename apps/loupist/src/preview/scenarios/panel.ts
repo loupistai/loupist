@@ -2,8 +2,9 @@
 import { prepareFixture, PreviewBridge, previewKo } from "../fixtures";
 import { workspaceOverlayMedia } from "../../components/workspace/useWorkspacePanelResize";
 import type { ChatProgressItem } from "../../contracts/chat";
+import type { WorkbookRead } from "../../contracts/workspace";
 import i18n from "../../i18n";
-import { asSession, base, chatGrowth, chatResearchMap, click, enterMap, hasLayout, inlineChartFixture, localViewMap, mapCanvas, pressMenu, rememberPreviewMap, select, selectPanel, submitPrompt, until, visible, type PreviewScenario } from "./kit";
+import { asSession, base, chatGrowth, chatResearchMap, click, enterMap, hasLayout, inlineChartFixture, localViewMap, mapCanvas, pressMenu, select, selectPanel, submitPrompt, until, visible, type PreviewScenario } from "./kit";
 
 /** The chat's first answer is the one that adds names; its growth appears once it completes. */
 const firstMapChange = { messageId: "" };
@@ -31,7 +32,7 @@ async function versionedDocument(bridge: PreviewBridge) {
     chart_dataset: null,
   });
   await prepareFixture(bridge, "answer");
-  bridge.loupistArtifactList = async () => [{ artifact: view(current()).artifact, chat_title: ko ? "한울정밀 영업이익률 하락 읽기" : "Reading Hanul Precision’s margin decline" }];
+  bridge.chatArtifactList = async () => [view(current()).artifact];
   bridge.chatArtifactRead = async (_loupistId, _chatId, _artifactId, revisionId) => view(revisionId ?? current());
   bridge.chatArtifactVersions = async () => [...kept.keys()].sort((a, b) => b - a).map(revision => ({ revision_id: revision, title, digest: String(revision).repeat(64), source_message_id: `preview-answer-${revision}`, created_at_ms: day(revision), ...(kept.get(revision)!.from ? { restored_from_revision_id: kept.get(revision)!.from } : {}) }));
   bridge.chatArtifactRestore = async ({ revision_id }) => {
@@ -96,19 +97,17 @@ async function viewSavedPassage() {
   button.click();
 }
 
-/** The Work tab's list: two charts and two documents across three chats. */
+/** The Work tab's list: two charts and two documents from one chat. */
 async function workListFixture(bridge: PreviewBridge) {
   await prepareFixture(bridge, "answer");
   const at = Date.parse("2026-10-28T00:00:00Z");
-  const item = (id: string, chat: string, title: string, kind: "chart" | "markdown", revision: number, days: number, chatTitle: string) => ({
-    artifact: { id, chat_session_id: chat, kind, title, current_revision: revision, created_at_ms: at - days * 86_400_000, updated_at_ms: at - days * 86_400_000 }, chat_title: chatTitle,
-  });
-  bridge.loupistArtifactList = async () => [
-    item("work-margin", "preview-chat", "Margin vs utilization", "chart", 2, 0, "Reading Hanul Precision’s margin decline"),
-    item("work-note", "preview-chat", "Hanul Precision Q3 notes", "markdown", 1, 1, "Reading Hanul Precision’s margin decline"),
-    item("work-suppliers", "preview-chat-1", "Supplier lead times", "chart", 3, 4, "Morrow Components supplier check"),
-    item("work-memo", "preview-chat-2", "Dividend coverage memo", "markdown", 1, 9, "Dividend income review"),
-  ];
+  bridge.chatArtifactList = async (_loupistId, threadId) => [
+    { id: "work-margin", title: "Margin vs utilization", kind: "chart" as const },
+    { id: "work-note", title: "Hanul Precision Q3 notes", kind: "markdown" as const },
+    { id: "work-suppliers", title: "Supplier lead times", kind: "chart" as const },
+    { id: "work-memo", title: "Dividend coverage memo", kind: "markdown" as const },
+  ].map((item, index) => ({ ...item, chat_session_id: threadId, current_revision: 1,
+    created_at_ms: at - index * 86_400_000, updated_at_ms: at - index * 86_400_000 }));
 }
 
 /** The side panel: sources, evidence, the Work list, docking and delivered files. */
@@ -172,13 +171,13 @@ export const panelScenarios: PreviewScenario[] = [
     await until(badgedTab, "New work did not mark its tab", 20_000);
   }), setup: bridge => citedAnswerFixture(bridge, false, false) },
   ...["chat-mini-map", "chat-mini-map-empty"].map((id): PreviewScenario => ({
-    ...base(id, "Chat research map", () => select(".chat-mini-map .map-empty") ?? (mapCanvas() ? select(".chat-mini-map .map-canvas") : null), async root => {
+    ...base(id, "World for this chat", () => select(".chat-mini-map .map-empty") ?? (mapCanvas() ? select(".chat-mini-map .map-canvas") : null), async root => {
       if (id === "chat-mini-map") await click('.chat-receipt [data-receipt="names"] button', root);
       else {
         await selectPanel("materials");
         await click("#workspace-tab-chat-map", root);
       }
-      await until(() => select(".chat-mini-map .map-empty") ?? (mapCanvas() ? select(".chat-mini-map .map-canvas") : null), "Chat map did not load");
+      await until(() => select(".chat-mini-map .map-empty") ?? (mapCanvas() ? select(".chat-mini-map .map-canvas") : null), "World for this chat did not load");
       if (hasLayout()) for (let frame = 0; frame < 3; frame++) await new Promise(requestAnimationFrame);
     }),
     setup: async bridge => {
@@ -194,13 +193,13 @@ export const panelScenarios: PreviewScenario[] = [
       bridge.knowledgeGrowthEvents = async () => ({ events: id === "chat-mini-map-empty" ? [] : [0, 1, 2].map(index => ({ eventId: `chat-growth-${index}`, loupistId: "loupist-quality", originChatId: "preview-chat", originMessageId: "preview-answer", atMs: Date.now(), kind: "entity_added", subjectId: `chat-node-${index}`, recordId: "preview-world", actor: "loupist", summary: "", beforeSummary: null, afterSummary: null })), nextCursor: null });
     },
   })),
-  { ...base("chat-live-map", "Names a running step reads glow on the mini map", () => document.querySelector(".chat-progress-names") && (mapCanvas() ? select(".chat-mini-map .map-canvas") : null), async root => {
+  { ...base("chat-live-map", "Names a running step reads glow in this chat’s World", () => document.querySelector(".chat-progress-names") && (mapCanvas() ? select(".chat-mini-map .map-canvas") : null), async root => {
     await submitPrompt(root);
     await click(".message.assistant.streaming .chat-progress-toggle", root);
     await until(() => document.querySelector(".chat-progress-names"), "Step names did not appear");
     await selectPanel("materials");
     await click("#workspace-tab-chat-map", root);
-    await until(() => mapCanvas() ? select(".chat-mini-map .map-canvas") : null, "Chat map did not load");
+    await until(() => mapCanvas() ? select(".chat-mini-map .map-canvas") : null, "World for this chat did not load");
     if (hasLayout()) for (let frame = 0; frame < 3; frame++) await new Promise(requestAnimationFrame);
   }), setup: async bridge => {
     await prepareFixture(bridge, "answer");
@@ -210,7 +209,7 @@ export const panelScenarios: PreviewScenario[] = [
       const run_id = request.run_id;
       observer({ type: "started", run_id });
       observer({ type: "progress", run_id, sequence: 1, progress: { startedAtMs: Date.now() - 9_000, items: [
-        { id: "preview-map-read", kind: "tool", category: "memory", operation: "read", action: "Read the map", status: "succeeded", entityIds: ["chat-node-0", "chat-node-2"], target: null, href: null, startedAtMs: 0, finishedAtMs: null },
+        { id: "preview-map-read", kind: "tool", category: "memory", operation: "read", action: "Read World", status: "succeeded", entityIds: ["chat-node-0", "chat-node-2"], target: null, href: null, startedAtMs: 0, finishedAtMs: null },
         { id: "preview-page", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", running: "Reading hanul.example", target: "Q3 operating review · hanul.example", status: "running", href: null, startedAtMs: 0, finishedAtMs: null },
       ], finishedAtMs: null } });
       observer({ type: "phase", run_id, phase: "tool" });
@@ -221,7 +220,7 @@ export const panelScenarios: PreviewScenario[] = [
   // W15.29, W15.32, W15.33: the inspector's Relationships view, the panel's Work list, and charts docked below the chat.
   { ...base("map-relationships", "A company's suppliers, customers and peers in the inspector", () => select(".map-relationships"), async (root) => {
     const map = await enterMap(root);
-    const input = await until(() => map.querySelector<HTMLInputElement>('[role="combobox"]'), "Map search did not load");
+    const input = await until(() => map.querySelector<HTMLInputElement>('[role="combobox"]'), "World search did not load");
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "TSMC");
     input.dispatchEvent(new Event("input", { bubbles: true }));
     await click('[role="option"]', map);
@@ -229,7 +228,7 @@ export const panelScenarios: PreviewScenario[] = [
     await click(".map-inspector-views button:last-child");
     // The dotted Lens line closes the view; bring it into the inspector's scroll.
     (await until(() => select(".map-relationship-lenses"), "The Lens line did not render")).scrollIntoView({ block: "nearest" });
-  }), setup: async (bridge) => { await prepareFixture(bridge); localViewMap(bridge, { lens: true }); rememberPreviewMap({ scope: "1" }); } },
+  }), setup: async (bridge) => { await prepareFixture(bridge); localViewMap(bridge, { lens: true }); } },
   { ...base("panel-charts-list", "The Work tab lists the Loupist's charts and documents", () => select(".work-list .work-row"), async (root) => {
     await until(() => root.querySelector("textarea[data-chat-composer]"), "Chat did not initialize");
     await selectPanel("materials");
@@ -288,6 +287,48 @@ export const panelScenarios: PreviewScenario[] = [
     await click("#workspace-tab-work");
     await click(".work-list button.work-row");
   }), setup: inlineChartFixture },
+  { ...base("panel-workbook", "A generated workbook opens in Files with its sheets and cached values", () => select(".reader-workbook .reader-data-table"), async root => {
+    await click('button[role="link"][title*="outputs/revenue-comparison.xlsx"]', root);
+  }), setup: async bridge => {
+    await prepareFixture(bridge, "answer");
+    const path = "outputs/revenue-comparison.xlsx";
+    const selectWorkspace = bridge.loupistSelect.bind(bridge);
+    bridge.loupistSelect = async loupistId => {
+      const workspace = await selectWorkspace(loupistId);
+      const answer = workspace.threads[0]?.messages.at(-1);
+      if (answer?.role === "assistant") {
+        const at = Date.parse(answer.created_at);
+        const step: ChatProgressItem = { id: "preview-workbook-write", kind: "tool", toolName: "run_python", category: "files", operation: "write", action: "Wrote a file", writtenPaths: [path], status: "succeeded", startedAtMs: at - 4000, finishedAtMs: at - 3000, target: null, href: null };
+        answer.progress = { startedAtMs: at - 9000, finishedAtMs: at, ...answer.progress, items: [...(answer.progress?.items ?? []), step] };
+        answer.content += `\n\n${previewKo() ? `[매출 비교 통합 문서](${path})를 저장했습니다.` : `I saved the [revenue comparison workbook](${path}).`}`;
+      }
+      return workspace;
+    };
+    const workspaceRead = bridge.workspaceRead.bind(bridge);
+    bridge.workspaceRead = async request => request.path === path ? {
+      path, size_bytes: 8919, content: null, content_sha256: null, binary: true, truncated: false,
+      media_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    } : workspaceRead(request);
+    bridge.workspaceDocumentHandler = async () => ({ status: "allowed", application_name: "Microsoft Excel" });
+    const sheets = [
+      { name: previewKo() ? "매출 비교" : "Comparison", hidden: false, worksheet: true },
+      { name: previewKo() ? "원본" : "Sources", hidden: false, worksheet: true },
+      { name: previewKo() ? "가정" : "Assumptions", hidden: true, worksheet: true },
+    ];
+    bridge.workspaceWorkbookRead = async ({ sheet_index }): Promise<WorkbookRead> => {
+      const active = sheet_index ?? 0;
+      if (active !== 0 && active !== 1) return { status: "unsupported_sheet" };
+      const rows = active === 0 ? [
+        [previewKo() ? "회사" : "Company", "FY 2023", "FY 2024"],
+        ["Apple", "383,285", "391,035"], ["Microsoft", "211,915", "245,122"], ["Alphabet", "307,394", "350,018"],
+      ] : [[previewKo() ? "출처" : "Source", "Form 10-K"]];
+      return {
+        status: "ready", sheets, selected_sheet: active, first_row: 1, first_column: 1,
+        rows_total: rows.length, columns_total: rows[0]!.length, truncated: false, omitted: ["charts", "images", "visual_styles"],
+        rows: rows.map((row, index) => row.map((display, column) => ({ kind: active === 0 && index > 0 && column > 0 ? "number" : "text", display, formula: false }))),
+      };
+    };
+  } },
   // B84 / side-panel.md X13: files an answer wrote and linked sit under it as chips; ⋯ shows one in Finder.
   { ...base("panel-delivered-files", "An answer with two delivered files and the chip row", () => select(".message-file-menu"), async (root) => {
     await until(() => root.querySelector("textarea[data-chat-composer]"), "Chat did not initialize");
@@ -309,7 +350,7 @@ export const panelScenarios: PreviewScenario[] = [
       return workspace;
     };
   } },
-  { ...base("panel-opens-first-map-change", "A chat's first names open the Map beside it", () => {
+  { ...base("panel-opens-first-map-change", "A chat's first names open World beside it", () => {
     const names = select('article.message.assistant.complete .chat-receipt [data-receipt="names"]');
     if (!names) return null;
     // Below 1280 px, or as a sheet, the panel stays closed and the receipt carries the names.
@@ -319,7 +360,7 @@ export const panelScenarios: PreviewScenario[] = [
     await submitPrompt(root);
     await until(() => select('article.message.assistant.complete .chat-receipt [data-receipt="names"]'), "The answer's names did not arrive", 20_000);
     if (hasLayout() && window.innerWidth >= 1280) {
-      await until(() => mapCanvas() ? select(".chat-mini-map .map-canvas") : null, "Map did not open beside the chat");
+      await until(() => mapCanvas() ? select(".chat-mini-map .map-canvas") : null, "World did not open beside the chat");
       for (let frame = 0; frame < 3; frame++) await new Promise(requestAnimationFrame);
     }
   }), setup: async bridge => {

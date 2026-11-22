@@ -2,7 +2,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { PreviewBridge } from "../../preview/fixtures";
 import { prepareConflictsFixture } from "../../preview/fixtures/conflicts";
 import { useConflictHighlights } from "./useConflictHighlights";
-it("recovers conflict nodes and edges omitted by the bounded Map using exact reads", async () => {
+it("recovers conflict nodes and edges omitted by the bounded World using exact reads", async () => {
   const bridge = new PreviewBridge({delay_ms:0}); await prepareConflictsFixture(bridge);
   const full = await bridge.knowledgeMap({loupistId:"loupist-quality"});
   const base = {...full,nodes:full.nodes.filter(node=>node.id!=="preview-node-1"),edges:full.edges.filter(edge=>edge.source!=="preview-node-1" && edge.target!=="preview-node-1")};

@@ -1,3 +1,7 @@
+import { SavedPassage } from "./SavedPassage";
+import { SavedSourceData } from "./SavedSourceData";
+import { readableCitedPassages } from "./citedPassages";
+import { QuoteAsk } from "../chat/QuoteAsk";
 import { useSettledScroll } from "./settledScroll";
 import { ConnectionOrigin } from "../connections/custom/ConnectionOrigin";
 import { formatDate, formatNumber } from "../../i18n/format";
@@ -5,9 +9,10 @@ import { coverageLabel, metadataLabel, dateValue, timePointValue, spanSelectorLa
 import i18n, { useTranslation } from "../../i18n";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Disclosure } from "@/components/ui/disclosure";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowLeftIcon, CheckIcon, ExternalLinkIcon, FileTextIcon, SearchIcon, Settings2Icon, UploadIcon, XIcon } from "lucide-react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, ExternalLinkIcon, FileTextIcon, SearchIcon, Settings2Icon, UploadIcon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
+import { ExternalLinkError, useExternalLink } from "../navigation/ExternalLinkError";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { Badge } from "../ui/badge";
@@ -15,10 +20,11 @@ import { Alert, AlertDescription } from "../ui/alert";
 import { EmptyState } from "../ui/empty-state";
 import { Spinner } from "../ui/spinner";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
-import type { LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin, KnowledgeSourceFile, RepresentationRole, SourceClass, SourceDetail } from "../../types";
+import type { LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin, KnowledgeSourceFile, KnowledgeSourceSelectionRequest, RepresentationRole, SourceClass, SourceDetail } from "../../types";
 import { errorMessage } from "../../lib/errors";
-import { pinForSource } from "../../knowledge/location";
-import { sourceOrigin, sourceTitle } from "../../knowledge/hostSource";
+import { pinForSource, type SourceOpen } from "../../knowledge/location";
+import { compactOrigin, sourceOrigin, sourceTitle } from "../../knowledge/hostSource";
+import { isMapProcessing, processingSourceCount } from "../../knowledge/mapProcessing";
 import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
 import { relationName } from "../map/relations";
 import { SourceRetry } from "./SourceRetry";
@@ -30,12 +36,6 @@ const originLabel = (): Record<SourceClass, string> => ({
   user_provided: i18n.t("knowledge:sourceWorkspace.userProvided"),
 });
 const materialLabel = (): Record<RepresentationRole, string> => ({ original: i18n.t("knowledge:sourceWorkspace.originalMaterial"), provider_payload: i18n.t("knowledge:sourceWorkspace.downloadedCopy"), extracted_text: i18n.t("knowledge:sourceWorkspace.extractedText"), structured: i18n.t("knowledge:sourceWorkspace.structuredData"), excerpt: i18n.t("knowledge:sourceWorkspace.excerpt"), derived: i18n.t("knowledge:sourceWorkspace.processedMaterial") });
-const compactOrigin = (value: string | undefined) => {
-  if (!value) return "";
-  if (value === "Pasted text") return i18n.t("knowledge:sourceWorkspace.pastedText");
-  try { const url = new URL(value); if (["https:", "http:"].includes(url.protocol)) return url.hostname.replace(/^www\./, ""); } catch { /* Named or local source. */ }
-  return value;
-};
 const sourceDate = (value: string | undefined) => {
   if (!value) return value;
   if (/^\d{4}(?:-\d{2})?$/.test(value)) return dateValue(value);
@@ -76,9 +76,9 @@ function ProvidedNote({ provided }: { provided: NonNullable<SourceDetail["provid
   </p>;
 }
 
-type Props = { bridge: LoupistBridge; catalog: KnowledgeCatalog; location: KnowledgeLocation; query?: string; onQueryChange?: (query: string) => void; onManageProcessing?: () => void; onAddSource?: () => void; readerOnly?: boolean; compact?: boolean; onOpen: (location: KnowledgeLocation) => void; onPatch?: (location: KnowledgeLocation) => void; onAsk: (pin: KnowledgePin) => void; onChanged: () => void; onOpenLink?: (url: string) => void | Promise<void> };
+type Props = { bridge: LoupistBridge; catalog: KnowledgeCatalog; location: KnowledgeLocation; sourceOpen?: SourceOpen; query?: string; onQueryChange?: (query: string) => void; onManageProcessing?: () => void; onAddSource?: () => void; readerOnly?: boolean; compact?: boolean; onOpen: (location: KnowledgeLocation) => void; onPatch?: (location: KnowledgeLocation) => void; onAsk: (pin: KnowledgePin) => void; onChanged: () => void; onOpenLink?: (url: string) => void | Promise<void>; opensLinksInPanel?: boolean; quoteCitedSelections?: boolean };
 
-export function SourceWorkspace({ bridge, catalog, location, query = "", onQueryChange, onManageProcessing, onAddSource, readerOnly = false, compact = false, onOpen, onPatch = onOpen, onAsk, onChanged, onOpenLink }: Props) {
+export function SourceWorkspace({ bridge, catalog, location, sourceOpen, query = "", onQueryChange, onManageProcessing, onAddSource, readerOnly = false, compact = false, onOpen, onPatch = onOpen, onAsk, onChanged, onOpenLink, opensLinksInPanel, quoteCitedSelections }: Props) {
   const { t } = useTranslation("knowledge");
   const selected = location.selection?.kind === "source" ? location.selection : undefined;
   const sourceRecord = catalog.sources.find((item) => item.recordId === location.recordId);
@@ -91,11 +91,16 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
   const [exporting, setExporting] = useState(false);
   const [exported, setExported] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [wholeSavedText, setWholeSavedText] = useState(false);
+  const [passageIndex, setPassageIndex] = useState<number | null>(null);
+  const originalLink = useExternalLink(url => onOpenLink ? onOpenLink(url) : bridge.openExternalUrl(url));
+  const opensOriginalInPanel = opensLinksInPanel && Boolean(onOpenLink);
   const generation = useRef(0);
   const readerRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
   const libraryRef = useRef<HTMLDivElement | null>(null);
   const scrollReaderRef = useRef<HTMLDivElement | null>(null);
+  const readerToolbarRef = useRef<HTMLDivElement | null>(null);
   const filter = location.view?.sourceFilter ?? "all";
   const patchView = (view: KnowledgeLocation["view"]) => onPatch({ ...location, view: { ...location.view, ...view } });
   const changedRef = useRef(onChanged);
@@ -104,16 +109,35 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
   const currentScope = useRef(scopeKey);
   currentScope.current = scopeKey;
   const reading = !compact && Boolean(selected?.sourceId || selected?.spanId);
+  const span = detail?.spans.find((item) => item.spanId === detail.selectedSpanId) ?? detail?.spans[0];
+  const presentation = span?.presentation;
+  const readableText = presentation?.text ?? span?.text;
+  const savedTable = presentation?.table;
+  const focusTable = Boolean(savedTable?.focusedCell && !detail?.figureFailure);
+  const mediaType = span?.mediaType;
+  const focusedMark = detail?.figureFailure ? undefined : presentation?.focusedMark;
+  const passages = useMemo(() => !savedTable && presentation && mediaType && textMedia(mediaType)
+    ? readableCitedPassages(presentation.text, presentation.citedPassages, focusedMark) : [], [presentation, mediaType, focusedMark, savedTable]);
+  const hasCitedPassages = passages.length > 0;
+  const readingCitations = hasCitedPassages && !wholeSavedText;
+  const initialPassage = passages.findIndex(passage => passage.marks.some(mark => mark.focused));
+  const currentPassage = Math.min(passageIndex ?? Math.max(0, initialPassage), passages.length - 1);
+  const stepPassage = (delta: -1 | 1) => {
+    setPassageIndex(currentPassage + delta);
+    setWholeSavedText(false);
+  };
   const onLibraryScroll = useSettledScroll((top) => patchView({ sourceScrollTop: top }), scopeKey, compact);
   const onReaderScroll = useSettledScroll((top) => patchView({ readerScrollTop: top }), scopeKey);
   const readSelectedSource = useCallback(() => bridge.knowledgeSourceRead({
     loupistId: location.loupistId, recordId: location.recordId!, revisionId: location.revisionId!,
     sourceId: selected?.sourceId, spanId: selected?.spanId, worldRecordId: selected?.worldRecordId,
     worldRevisionId: selected?.worldRevisionId, purpose: "renderer_inspection",
-  }), [bridge, location.loupistId, location.recordId, location.revisionId, selected?.sourceId, selected?.spanId, selected?.worldRecordId, selected?.worldRevisionId]);
+    ...(sourceOpen?.figure ? { figure: sourceOpen.figure } : {}),
+  }), [bridge, location.loupistId, location.recordId, location.revisionId, selected?.sourceId, selected?.spanId, selected?.worldRecordId, selected?.worldRevisionId, sourceOpen]);
 
   useEffect(() => {
     const ticket = ++generation.current;
+    setWholeSavedText(false); setPassageIndex(null);
     setDetail(null); setError(null); setProcessing(undefined); setDetailRefreshError(null); setDetailRefreshing(false); setExporting(false); setExported(false); setExportError(null);
     if (!reading || !location.recordId || !location.revisionId) return;
     void readSelectedSource()
@@ -144,9 +168,27 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
   }, [readSelectedSource, scopeKey]);
 
   useEffect(() => {
-    if (detail) { readerRef.current?.focus({ preventScroll: true }); if (scrollReaderRef.current) scrollReaderRef.current.scrollTop = location.view?.readerScrollTop ?? 0; }
+    if (!detail) return;
+    readerRef.current?.focus({ preventScroll: true });
+    if (!hasCitedPassages && !focusTable && scrollReaderRef.current) scrollReaderRef.current.scrollTop = location.view?.readerScrollTop ?? 0;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- focuses and restores the reader once per opened source span.
   }, [detail?.sourceId, detail?.selectedSpanId]);
+
+  useLayoutEffect(() => {
+    const scroller = scrollReaderRef.current;
+    if (!hasCitedPassages || !scroller) return;
+    if (wholeSavedText) {
+      scroller.scrollTop = 0;
+      return;
+    }
+    const passage = scroller.querySelector<HTMLElement>(`[data-cited-passage="${currentPassage}"]`);
+    if (!passage) return;
+    const toolbarHeight = readerToolbarRef.current?.offsetHeight ?? 0;
+    const focused = passage.querySelector("mark[data-cited-focus]");
+    const target = passage.offsetHeight > scroller.clientHeight - toolbarHeight && focused ? focused : passage;
+    scroller.scrollTop = Math.max(0, scroller.scrollTop + target.getBoundingClientRect().top
+      - scroller.getBoundingClientRect().top - toolbarHeight);
+  }, [detail?.sourceId, span?.spanId, hasCitedPassages, currentPassage, wholeSavedText]);
 
   useLayoutEffect(() => {
     if (libraryRef.current) libraryRef.current.scrollTop = location.view?.sourceScrollTop ?? 0;
@@ -207,12 +249,25 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
   const search = query.normalize("NFKC").trim().toLowerCase();
   const matching = catalog.sources.flatMap((record) => record.objects.map((item) => ({ record, item })))
     .filter(({ item }) => !search || `${sourceTitle(item)} ${item.summary ?? ""} ${sourceOrigin(item) ?? ""}`.normalize("NFKC").toLowerCase().includes(search));
-  const isProcessing = (status?: string) => status === "queued" || status === "running";
+  const processingCount = processingSourceCount(catalog);
   const needsAttention = (status?: string) => ["paused", "paused_budget", "failed_before_mutation", "reconcile_required", "cancelled_before_start", "unsupported", "no_text"].includes(status ?? "");
-  const sources = matching.filter(({ item }) => filter === "all" || (filter === "processing" ? isProcessing(item.processing?.status) : needsAttention(item.processing?.status)));
+  const sources = matching.filter(({ item }) => filter === "all" || (filter === "processing" ? isMapProcessing(item.processing?.status) : needsAttention(item.processing?.status)));
   const originalUrl = (() => { try { const url = new URL(detail?.originLabel ?? ""); return url.protocol === "https:" || url.protocol === "http:" ? url.href : null; } catch { return null; } })();
-  const span = detail?.spans.find((item) => item.spanId === detail.selectedSpanId) ?? detail?.spans[0];
-  const readableText = span?.presentation?.text ?? span?.text;
+  const retainedSource = readerOnly && detail && span ? {
+    loupistId: location.loupistId, recordId: detail.recordId, revisionId: detail.revisionId,
+    sourceId: detail.sourceId, spanId: span.spanId, worldRecordId: selected?.worldRecordId,
+    worldRevisionId: selected?.worldRevisionId, purpose: "renderer_inspection",
+  } : undefined;
+  const quoteAttributes = retainedSource ? {
+    "data-quote-source": `source:${retainedSource.sourceId}:${retainedSource.spanId}`,
+    "data-quote-retained-source": JSON.stringify(retainedSource),
+  } : {};
+  const addSelectionToQuestion = async (_sourceId: string, _text: string, request?: KnowledgeSourceSelectionRequest) => {
+    if (!request) return;
+    const ticket = generation.current;
+    const pin = await bridge.knowledgeSourceSelectionResolve(request);
+    if (generation.current === ticket) onAsk(pin);
+  };
   const exportFile = async () => {
     if (!detail || !span || exporting) return;
     const captured = scopeKey;
@@ -226,13 +281,17 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
   const closeReader = () => {
     onPatch({ loupistId: location.loupistId, surface: "source", view: { ...location.view, readerScrollTop: 0, focusSourceId: selected?.sourceId ?? detail?.sourceId } });
   };
+  const claimGroups = detail ? [
+    { kind: "facts", label: t("sourceWorkspace.factsFromThisSource"), claims: detail.relatedClaims.filter(claim => !claim.isRelationship) },
+    { kind: "relationships", label: t("sourceWorkspace.relationships"), claims: detail.relatedClaims.filter(claim => claim.isRelationship) },
+  ] : [];
 
   return <div className={`knowledge-source world-sources${reading ? " has-reader" : ""}${readerOnly ? " source-reader-only" : ""}${compact ? " is-library-only" : ""}`}>
     {!readerOnly ? <div ref={libraryRef} className="knowledge-browser source-library" onScroll={onLibraryScroll}>
       <div className="source-library-controls">
       {compact ? null : <div className="source-library-heading"><h2>{t("sourceWorkspace.savedSources")}</h2><span>{formatNumber(sources.length)}</span></div>}
       {onQueryChange ? <div className="memory-search source-search"><SearchIcon aria-hidden="true" /><Input aria-label={t("sourceWorkspace.searchSources")} placeholder={t("sourceWorkspace.companyFilingOrSource")} value={query} onChange={(event) => onQueryChange(event.target.value)} />{query ? <Button variant="ghost" size="icon-sm" aria-label={t("sourceWorkspace.clearSearch")} onClick={() => onQueryChange("")}><XIcon /></Button> : null}</div> : null}
-      <SegmentedControl value={filter} onValueChange={(value) => patchView({ sourceFilter: value as "all" | "processing" | "attention", sourceScrollTop: 0 })} aria-label={t("sourceWorkspace.sourceProcessingFilters")}><SegmentedControlItem value="all">{t("sourceWorkspace.all")}</SegmentedControlItem><SegmentedControlItem value="processing">{matching.some(({ item }) => isProcessing(item.processing?.status)) ? t("sourceWorkspace.processingCount", { countText: formatNumber(matching.filter(({ item }) => isProcessing(item.processing?.status)).length) }) : t("sourceWorkspace.processing")}</SegmentedControlItem><SegmentedControlItem value="attention">{t("sourceWorkspace.needsAttention")}</SegmentedControlItem></SegmentedControl></div>
+      <SegmentedControl value={filter} onValueChange={(value) => patchView({ sourceFilter: value as "all" | "processing" | "attention", sourceScrollTop: 0 })} aria-label={t("sourceWorkspace.sourceProcessingFilters")}><SegmentedControlItem value="all">{t("sourceWorkspace.all")}</SegmentedControlItem><SegmentedControlItem value="processing">{processingCount ? t("sourceWorkspace.processingCount", { countText: formatNumber(processingCount) }) : t("sourceWorkspace.processing")}</SegmentedControlItem><SegmentedControlItem value="attention">{t("sourceWorkspace.needsAttention")}</SegmentedControlItem></SegmentedControl></div>
       {compact ? <div className="source-library-heading library-section-label"><h2>{t("sourceWorkspace.savedSources")}</h2><span>{formatNumber(sources.length)}</span>{onAddSource ? <Button variant="outline" size="sm" className="library-add" onClick={onAddSource}>{t("map.addInLibrary")}</Button> : null}</div> : null}
       {!sources.length ? <EmptyState title={search || filter !== "all" ? t("sourceWorkspace.noMatchingSources") : t("sourceWorkspace.noSourcesYet")} description={search || filter !== "all" ? t("sourceWorkspace.tryAnotherSearchOrChooseAll") : t("sourceWorkspace.addTextAFileOrALinkToUseIn")} /> : null}
       <ul ref={listRef} aria-label={t("sourceWorkspace.sources")}>
@@ -240,7 +299,7 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
           <Button variant="ghost" className="source-library-row" data-testid="source-library-row" data-source-id={item.id} aria-current={item.id === selected?.sourceId} onClick={() => onOpen({ loupistId: location.loupistId, surface: "source", recordId: record.recordId, revisionId: record.revisionId, objectId: item.id, view: { ...location.view, readerScrollTop: 0, focusSourceId: item.id }, selection: { kind: "source", sourceId: item.id } })}>
             <span className="memory-rail-copy"><strong>{sourceTitle(item)}</strong>{item.summary ? <span className="source-summary">{item.summary}</span> : null}
               <small className="source-row-meta"><ConnectionOrigin origin={item.origin} />{item.userProvided ? <span className="source-row-provided">{t("sourceWorkspace.userProvided")}</span> : null}<span className="source-row-origin" title={sourceOrigin(item)}>{compactOrigin(sourceOrigin(item))}</span>{item.publicationTime?.value ?? item.acquiredAt?.value ? <time title={item.publicationTime?.value ?? item.acquiredAt?.value}>{sourceDate(item.publicationTime?.value ?? item.acquiredAt?.value)}</time> : null}
-              {quietStatus(item.processing?.status) ? null : <span className="source-row-status" data-attention={needsAttention(item.processing?.status) || undefined}>{isProcessing(item.processing?.status) ? <Spinner /> : item.processing?.status === "completed" ? <CheckIcon aria-hidden="true" /> : null}{sourceProcessingLabel(item.processing?.status)}</span>}</small>
+              {quietStatus(item.processing?.status) ? null : <span className="source-row-status" data-attention={needsAttention(item.processing?.status) || undefined}>{isMapProcessing(item.processing?.status) ? <Spinner /> : item.processing?.status === "completed" ? <CheckIcon aria-hidden="true" /> : null}{sourceProcessingLabel(item.processing?.status)}</span>}</small>
             </span>
           </Button>
           {item.processing?.status === "paused_budget" ? <SourceRetry key={item.processing.jobId ?? "retry"} retry={retrySource(record.recordId)} onRetried={rowRetried} /> : null}
@@ -248,27 +307,64 @@ export function SourceWorkspace({ bridge, catalog, location, query = "", onQuery
       </ul>
     </div> : null}
     {reading ? <div ref={scrollReaderRef} className="knowledge-reading source-reader" onScroll={onReaderScroll}>
-      <div className="memory-reader-toolbar">
+      <div ref={readerToolbarRef} className={hasCitedPassages ? "memory-reader-toolbar source-reader-toolbar" : "memory-reader-toolbar"}>
         {!readerOnly ? <Button variant="ghost" size="sm" aria-label={t("sourceWorkspace.closeSource")} onClick={closeReader}><ArrowLeftIcon />{t("sourceWorkspace.backToSources")}</Button> : <span>{t("sourceWorkspace.savedSourceReadOnly")}</span>}
         {detail ? <Button size="sm" onClick={() => onAsk(pinForSource(detail, location.loupistId))}>{t("sourceWorkspace.addToQuestion")}</Button> : null}
+        {hasCitedPassages ? <div className="source-passage-controls">
+          <Button variant="outline" size="sm" onClick={() => setWholeSavedText(value => !value)}>
+            {t(wholeSavedText ? "sourceWorkspace.showCitedPassages" : "sourceWorkspace.showWholeSavedText")}
+          </Button>
+          {passages.length > 1 ? <div className="source-passage-steps">
+            <Button variant="ghost" size="icon-sm" aria-label={t("sourceWorkspace.previousCitedPassage")} title={t("sourceWorkspace.previousCitedPassage")} disabled={currentPassage === 0} onClick={() => stepPassage(-1)}><ChevronUpIcon /></Button>
+            <span aria-live="polite">{t("sourceWorkspace.citedPassagePosition", { position: formatNumber(currentPassage + 1), total: formatNumber(passages.length) })}</span>
+            <Button variant="ghost" size="icon-sm" aria-label={t("sourceWorkspace.nextCitedPassage")} title={t("sourceWorkspace.nextCitedPassage")} disabled={currentPassage === passages.length - 1} onClick={() => stepPassage(1)}><ChevronDownIcon /></Button>
+          </div> : null}
+        </div> : null}
       </div>
       {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription><Button variant="outline" onClick={() => setReload((value) => value + 1)}>{t("sourceWorkspace.retrySource")}</Button></Alert> : null}
       {!detail && !error ? <p role="status" className="memory-loading-inline"><Spinner />{t("sourceWorkspace.openingSource")}</p> : null}
       {detail ? <article ref={readerRef} tabIndex={-1} aria-label={t("sourceWorkspace.sourceReader")} data-source-id={detail.sourceId}>
         <header className="knowledge-read-head source-read-head"><h2>{sourceTitle(detail)}</h2></header>
-        <div className="memory-meta-row"><ConnectionOrigin origin={detail.origin} /><Badge variant="outline">{metadataLabel(originLabel(), detail.sourceClass)}</Badge><span className="source-origin">{originalUrl ? <Button variant="link" title={originalUrl} onClick={() => { void Promise.resolve().then(() => (onOpenLink ?? bridge.openExternalUrl.bind(bridge))(originalUrl)).catch((cause: unknown) => setExportError(errorMessage(cause, t("sourceWorkspace.couldNotOpenTheOriginalSource")))); }}><ExternalLinkIcon />{t(detail.provided ? "sourceWorkspace.openStatedLink" : "sourceWorkspace.openOriginal", { hostname: new URL(originalUrl).hostname })}</Button> : compactOrigin(sourceOrigin(detail))}</span>{detail.publicationTime?.value ? <time title={detail.publicationTime.value}>{sourceDate(detail.publicationTime.value)}</time> : null}</div>
+        <div className="memory-meta-row"><ConnectionOrigin origin={detail.origin} />{detail.sourceClass === "tool_result" && detail.originLabel?.startsWith("tool:") ? null : <Badge variant="outline">{metadataLabel(originLabel(), detail.sourceClass)}</Badge>}<span className="source-origin">{originalUrl ? <Button variant="link" title={originalUrl} onClick={() => void originalLink.open(originalUrl)}>
+          {opensOriginalInPanel ? null : <ExternalLinkIcon aria-hidden="true" />}
+          {t(detail.provided ? "sourceWorkspace.openStatedLink" : "sourceWorkspace.openOriginal", { hostname: new URL(originalUrl).hostname })}
+        </Button> : compactOrigin(sourceOrigin(detail))}</span>{detail.publicationTime?.value ? <time title={detail.publicationTime.value}>{sourceDate(detail.publicationTime.value)}</time> : null}</div>
         {detail.provided ? <ProvidedNote provided={detail.provided} /> : null}
         <div className="source-evidence-summary"><span>{coverageLabel(detail.coverage)}</span>{detail.revisionId !== sourceRecord?.revisionId ? <span>{t("sourceWorkspace.savedVersion")}</span> : null}</div>
-        {exportError && originalUrl ? <p role="alert">{exportError}</p> : null}
-        {span ? <section className="source-passage-section" aria-label={t("sourceWorkspace.savedPassage")}><h3>{t("sourceWorkspace.savedPassage")}</h3>{textMedia(span.mediaType) && readableText ? <blockquote className="knowledge-passage" data-testid="knowledge-passage" data-quote-source={readerOnly ? `source:${detail.sourceId}:${span.spanId}` : undefined} data-quote-retained-source={readerOnly ? JSON.stringify({ loupistId: location.loupistId, recordId: detail.recordId, revisionId: detail.revisionId, sourceId: detail.sourceId, spanId: span.spanId, worldRecordId: selected?.worldRecordId, worldRevisionId: selected?.worldRevisionId, purpose: "renderer_inspection" }) : undefined}>{readableText}</blockquote> : <p>{t("sourceWorkspace.theOriginalFileIsSavedATextPreviewIsUnavailable")}</p>}{span.presentation && (span.presentation.contentOffset > 0 || span.presentation.nextOffset !== null) ? <p className="knowledge-hint">{t("sourceWorkspace.thisIsASavedSectionOfALongerDocument")}</p> : null}{span.presentation?.extractionTruncated ? <p className="knowledge-hint">{t("sourceWorkspace.textExtractionStoppedBeforeTheEndOfTheDocument")}</p> : null}</section> : <p>{t("sourceWorkspace.onlyTheSourceDetailsWereSavedNoPassageIsAvailable")}</p>}
+        {originalUrl && originalLink.failedUrl === originalUrl ? opensOriginalInPanel
+          ? <p role="alert">{t("sourceWorkspace.couldNotOpenTheOriginalSource")}</p>
+          : <ExternalLinkError url={originalUrl} /> : null}
+        {span ? <section className="source-passage-section" aria-label={t(savedTable ? "sourceWorkspace.savedData" : "sourceWorkspace.savedPassage")}>
+          <h3>{t(savedTable ? "sourceWorkspace.savedData" : "sourceWorkspace.savedPassage")}</h3>
+          {savedTable && presentation ? <SavedSourceData key={span.spanId} table={savedTable} original={presentation.text} focus={focusTable} />
+            : readingCitations && readableText ? passages.map((passage, index) => <Fragment key={passage.start}>
+            {index > 0 && passages[index - 1]!.end < passage.start ? <div className="source-passage-elision" role="img" aria-label={t("sourceWorkspace.textBetweenCitedPassages")}>…</div> : null}
+            <blockquote className="knowledge-passage" data-testid="knowledge-passage" data-cited-passage={index} {...quoteAttributes} data-quote-start-utf16={passage.start}>
+              <SavedPassage text={readableText.slice(passage.start, passage.end)} marks={passage.marks} singleTableRow />
+            </blockquote>
+          </Fragment>) : textMedia(span.mediaType) && readableText ? <blockquote className="knowledge-passage" data-testid="knowledge-passage" {...quoteAttributes}>
+            <SavedPassage text={readableText} />
+          </blockquote> : <p>{t("sourceWorkspace.theOriginalFileIsSavedATextPreviewIsUnavailable")}</p>}
+          {presentation && (presentation.contentOffset > 0 || presentation.nextOffset !== null) ? <p className="knowledge-hint">{t("sourceWorkspace.thisIsASavedSectionOfALongerDocument")}</p> : null}
+          {presentation?.extractionTruncated ? <p className="knowledge-hint">{t("sourceWorkspace.textExtractionStoppedBeforeTheEndOfTheDocument")}</p> : null}
+        </section> : <p>{t("sourceWorkspace.onlyTheSourceDetailsWereSavedNoPassageIsAvailable")}</p>}
         {span && !textMedia(span.mediaType) ? <div className="knowledge-inspector-actions"><Button variant="outline" disabled={exporting} onClick={() => void exportFile()}>{exporting ? t("sourceWorkspace.exporting") : detail.material === "original" ? t("sourceWorkspace.exportOriginalFile") : t("sourceWorkspace.exportSavedFile")}</Button>{exported ? <span role="status">{t("sourceWorkspace.fileExported")}</span> : null}{exportError ? <p role="alert">{exportError}</p> : null}</div> : null}
         {detail.spans.length > 1 ? <div className="knowledge-inspector-actions" aria-label={t("sourceWorkspace.sourcePassages")}>{detail.spans.map((item, index) => <Button key={item.spanId} variant={item.spanId === span?.spanId ? "secondary" : "ghost"} onClick={() => onOpen({ ...location, selection: { ...selected, kind: "source", sourceId: detail.sourceId, spanId: item.spanId } })}>{t("sourceWorkspace.passage", { index: formatNumber(index + 1) })}</Button>)}</div> : null}
-        <div className="source-processing-status" data-attention={needsAttention(processing) || undefined}><div><span className="source-reader-eyebrow">{t("sourceWorkspace.worldProcessing")}</span><p role="status">{isProcessing(processing) ? <Spinner /> : null}{sourceProcessingLabel(processing)}</p>{detail.processing?.error ? <p className="knowledge-hint">{detail.processing.error}</p> : null}{processing === "paused_budget" ? <SourceRetry retry={retrySource(detail.recordId)} onRetried={readerRetried} /> : null}</div>{onManageProcessing ? <Button variant="ghost" size="icon-sm" aria-label={t("sourceWorkspace.worldProcessingSettings")} title={t("sourceWorkspace.worldProcessingSettings")} onClick={onManageProcessing}><Settings2Icon /></Button> : null}</div>
+        <div className="source-processing-status" data-attention={needsAttention(processing) || undefined}><div><span className="source-reader-eyebrow">{t("sourceWorkspace.worldProcessing")}</span><p role="status">{isMapProcessing(processing) ? <Spinner /> : null}{sourceProcessingLabel(processing)}</p>{detail.processing?.error ? <p className="knowledge-hint">{detail.processing.error}</p> : null}{processing === "paused_budget" ? <SourceRetry retry={retrySource(detail.recordId)} onRetried={readerRetried} /> : null}</div>{onManageProcessing ? <Button variant="ghost" size="icon-sm" aria-label={t("sourceWorkspace.worldProcessingSettings")} title={t("sourceWorkspace.worldProcessingSettings")} onClick={onManageProcessing}><Settings2Icon /></Button> : null}</div>
         {detailRefreshError ? <div className="knowledge-inspector-actions"><p role="alert">{detailRefreshError}</p><Button variant="outline" disabled={detailRefreshing} onClick={() => void refreshDetail()}>{detailRefreshing ? t("sourceWorkspace.refreshingSource") : t("sourceWorkspace.refreshSourceDetails")}</Button></div> : null}
-        {detail.relatedClaims.length ? <details className="source-related-claims" aria-label={t("sourceWorkspace.relatedRelationships")}><summary>{t("sourceWorkspace.relationshipsUsingThisSource")}<span>{formatNumber(detail.relatedClaims.length)}</span></summary><ul aria-label={t("sourceWorkspace.relatedRelationships")}>{detail.relatedClaims.map((claim) => <li key={`${claim.worldRecordId}:${claim.worldRevisionId}:${claim.claimId}`}><Button variant="ghost" onClick={() => onOpen({ loupistId: location.loupistId, surface: "world", recordId: claim.worldRecordId, revisionId: claim.worldRevisionId, objectId: claim.claimId, selection: { kind: "claim", id: claim.claimId } })}>{claim.proposition}<small>{relationName(claim.relation, t)}</small></Button></li>)}</ul></details> : null}
+        {claimGroups.map(({ kind, label, claims }) => claims.length ? <details key={kind} className="source-related-claims" aria-label={label}>
+          <summary>{label}<span>{formatNumber(claims.length)}</span></summary>
+          <ul aria-label={label}>{claims.map((claim) => <li key={`${claim.worldRecordId}:${claim.worldRevisionId}:${claim.claimId}`}>
+            <Button variant="ghost" onClick={() => onOpen({
+              loupistId: location.loupistId, surface: "world", recordId: claim.worldRecordId, revisionId: claim.worldRevisionId,
+              objectId: claim.claimId, selection: { kind: "claim", id: claim.claimId },
+            })}>{claim.proposition}<small>{relationName(claim.relation, t)}</small></Button>
+          </li>)}</ul>
+        </details> : null)}
         {detail.derivation ? <p>{detail.derivation}</p> : null}
         <details className="knowledge-source-details"><summary>{t("sourceWorkspace.sourceDetails")}</summary><dl className="memory-meta-grid"><div><dt>{t("sourceWorkspace.coverage")}</dt><dd>{coverageLabel(detail.coverage)}</dd></div><div><dt>{t("sourceWorkspace.format")}</dt><dd>{metadataLabel(materialLabel(), detail.material)}</dd></div>{detail.acquiredAt ? <div><dt>{t("sourceWorkspace.saved")}</dt><dd>{timePointValue(detail.acquiredAt)}</dd></div> : null}</dl>{span?.contextNote ? <p>{span.contextNote}</p> : null}{span && spanSelectorLabel(span.selector) ? <p>{spanSelectorLabel(span.selector)}</p> : null}</details>
       </article> : null}
+      {readingCitations && retainedSource && quoteCitedSelections ? <QuoteAsk scope="reader" within={readerRef} onQuote={addSelectionToQuestion} /> : null}
     </div> : null}
   </div>;
 }

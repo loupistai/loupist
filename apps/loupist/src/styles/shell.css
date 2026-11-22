@@ -125,6 +125,8 @@ input[type="search"]::-webkit-search-decoration {
 .app-header-who-text { display: grid; min-width: 0; line-height: 1.25; }
 .app-header-who-text strong { overflow: hidden; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); font-weight: var(--gg-weight-strong); text-overflow: ellipsis; white-space: nowrap; }
 .app-header-who-text small { overflow: hidden; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); text-overflow: ellipsis; white-space: nowrap; }
+.app-header-who-text .scheduled-session-origin { white-space: normal; }
+.scheduled-session-origin > button { max-width: 100%; text-align: start; }
 .app-header-who[data-busy] small { color: var(--gg-color-accent-ink); }
 /* Activity and the two splits read pressed while their sheet or split is open. */
 .app-header :is(.header-panel-toggle, .header-workspace-split) { flex: none; color: var(--gg-color-text-secondary); }
@@ -337,7 +339,7 @@ input[type="search"]::-webkit-search-decoration {
 .command-palette-row[data-more] .command-palette-label { text-decoration: underline; text-decoration-color: var(--gg-color-border-strong); text-underline-offset: 3px; }
 .command-palette-row .map-swatch { flex: none; width: 8px; height: 8px; }
 .command-palette-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.command-palette-row small { flex: none; max-width: 45%; overflow: hidden; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); text-overflow: ellipsis; white-space: nowrap; }
+.command-palette-row small { flex: none; max-width: 45%; overflow: hidden; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); overflow-wrap: anywhere; }
 .command-palette-row[aria-selected="true"] small { color: var(--gg-color-text-secondary); }
 .command-palette-empty { margin: 0; padding: var(--gg-space-4) var(--gg-space-5); color: var(--gg-color-text-secondary); }
 /* The status stays in the tree while results show, so its next message is announced. */

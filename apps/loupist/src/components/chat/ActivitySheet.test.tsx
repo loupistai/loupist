@@ -1,4 +1,8 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { evidenceFixture } from "../../test/evidenceFixtures";
+import { destinations, renderWithOpen } from "../../test/open";
+import { formatTime } from "@/i18n/format";
+import i18n from "@/i18n";
 import userEvent from "@testing-library/user-event";
 import { ActivitySheet, OPEN_ACTIVITY_EVENT, useActivitySheet } from "./ActivitySheet";
 import { ChatLightboxProvider } from "./ChatLightbox";
@@ -46,6 +50,23 @@ function Harness({ data = rail, messages = [question, first, { ...question, id: 
 
 const openActivity = (detail?: Record<string, unknown>) => act(() => { window.dispatchEvent(new CustomEvent(OPEN_ACTIVITY_EVENT, { detail })); });
 
+it("shows recorded save and wait times and identifies a save interrupted before it finished", () => {
+  const message: ChatMessage = { ...first, progress: { ...first.progress!, saveActivity: {
+    startedAtMs: 1_000, finishedAtMs: 5_350, waitedMs: 4_300,
+  } } };
+  const { rerender } = render(<Harness messages={[question, message]} />);
+  openActivity();
+  const row = screen.getByText("Saving to Memory").closest("li")!;
+  expect(row.querySelector("time")).toHaveTextContent("4.4");
+  expect(row).toHaveTextContent(/Waited 4.3.*for other conversations in this Loupist/);
+  rerender(<Harness messages={[question, { ...message,
+    progress: { ...message.progress!, saveActivity: { ...message.progress!.saveActivity!, finishedAtMs: null } },
+    memory_update: { status: "no_change", skipReason: "interrupted", commitId: null, changes: [] },
+  }]} />);
+  expect(row).toHaveTextContent("Saving did not finish");
+  expect(row.querySelector("time")).toBeNull();
+});
+
 it("heads the sheet with its tabs and close alone: no face or name, the answer's time once, Working only while a reply runs", () => {
   function Sheet({ running }: { running: boolean }) {
     const sheet = useActivitySheet(true);
@@ -71,6 +92,42 @@ it("heads the sheet with its tabs and close alone: no face or name, the answer's
   expect(within(header).getByRole("status")).not.toHaveClass("sr-only");
 });
 
+it.each([undefined, "rate_limited"] as const)("shows and announces the failed reply's time and recorded reason (%s)", (failure_kind) => {
+  render(<Harness messages={[question, { ...first, status: "error", failure_kind }]} />);
+  openActivity();
+  const sheet = within(screen.getByTestId("activity-sheet"));
+  const time = `Failed at ${formatTime(Date.parse(first.created_at))}`;
+  const summary = failure_kind === "rate_limited" ? `${time} · Your AI account was busy.` : time;
+  expect(sheet.getByRole("status")).toHaveTextContent(summary);
+  expect(sheet.getByRole("heading", { name: /What it did/ })).toHaveTextContent(summary);
+  expect(sheet.queryByText(/Answered at|This answer ·/)).toBeNull();
+});
+
+it("groups two citations of one saved Source and opens its exact passage", async () => {
+  const ref = { kind: "source" as const, recordId: "apple", revisionId: "rev-2", objectId: "apple-text", spanId: "passage-a" };
+  const read = { read_ref: "read-a", kind: "source" as const, title: "Apple announces CFO transition", excerpt: "", access: "exact_read" as const, as_of: null, section: null, knowledge: ref };
+  const evidence = evidenceFixture({ id: "ev_a", kind: "saved_context", tool_name: "world_read", title: "world read", read_ref: "read-a", user_provided: true });
+  const message = { ...first, content: "The [announcement](#evidence-ev_a) set a [date][d].\n\n[d]: #evidence-ev_b",
+    evidence_refs: [evidence, { ...evidence, id: "ev_b", read_ref: "read-b" }, { ...evidence, id: "ev_unused", read_ref: "unused" }],
+    memory_refs: [read, { ...read, read_ref: "read-b", knowledge: { ...ref, spanId: "passage-b" } },
+      { ...read, read_ref: "unused", title: "Other filing", knowledge: { ...ref, recordId: "other" } }] };
+  const { open, rerender } = renderWithOpen(<Harness messages={[question, message]} />);
+  openActivity();
+  const sources = () => within(screen.getByRole("heading", { name: /What it read/ }).closest("section")!);
+  expect(sources().getByRole("heading")).toHaveTextContent("What it read1");
+  expect(sources().getAllByRole("listitem")).toHaveLength(1);
+  const row = sources().getByRole("button", { name: /Apple announces CFO transition/ });
+  expect(row).toHaveTextContent("User-provided");
+  expect(row).toHaveTextContent("2 citations");
+  expect(sources().queryByText("This answer cited no sources.")).toBeNull();
+  await userEvent.setup().click(row);
+  expect(destinations(open)).toMatchObject([{ kind: "memory", title: read.title, location: {
+    loupistId: MOCK_LOUPISTS[0]!.id, surface: "source", recordId: "apple", revisionId: "rev-2", selection: { spanId: "passage-a" },
+  } }]);
+  rerender(<Harness messages={[question, { ...message, content: "Only code: `[example](#evidence-ev_a)`." }]} />);
+  expect(sources().getByText("This answer cited no sources.")).toBeVisible();
+});
+
 it("never opens by itself, then opens on the event at the latest answer and closes with Esc", async () => {
   render(<Harness />);
   expect(screen.queryByTestId("activity-sheet")).toBeNull();
@@ -82,6 +139,34 @@ it("never opens by itself, then opens on the event at the latest answer and clos
   fireEvent.keyDown(window, { key: "Escape" });
   expect(screen.queryByTestId("activity-sheet")).toBeNull();
   expect(document.querySelector("[data-header-activity]")).toHaveAttribute("aria-pressed", "false");
+});
+
+it("updates chart and artifact result links and their step headings when the interface language changes", async () => {
+  const chart = evidenceFixture({ id: "chart-result", kind: "derived", tool_name: "chart_query", title: "chart query" });
+  const artifact = evidenceFixture({ id: "artifact-result", kind: "derived", tool_name: "artifact_read", title: "artifact read" });
+  const message = {
+    ...first,
+    progress: { ...first.progress, items: [
+      step("chart", "chart_query", { resultIds: [chart.id] }),
+      step("artifact", "artifact_read", { resultIds: [artifact.id] }),
+    ] },
+    evidence_refs: [chart, artifact], number_checks: [],
+  } as unknown as ChatMessage;
+  const view = renderWithOpen(<Harness messages={[question, message]} />);
+  try {
+    openActivity();
+    const sheet = within(screen.getByTestId("activity-sheet"));
+    expect(sheet.getByRole("button", { name: "chart data" })).toBeVisible();
+    expect(sheet.getByRole("button", { name: "conversation document" })).toBeVisible();
+    await act(async () => { await i18n.changeLanguage("ko"); });
+    expect(sheet.getByRole("button", { name: "차트 데이터" })).toBeVisible();
+    expect(sheet.getByRole("button", { name: "대화 문서" })).toBeVisible();
+    expect(sheet.getByText("차트 데이터 읽음")).toBeVisible();
+    expect(sheet.getByText("대화 문서 읽음")).toBeVisible();
+  } finally {
+    view.unmount();
+    await i18n.changeLanguage("en");
+  }
 });
 
 it("moves between tabs with the arrows, Home and End", async () => {
@@ -143,7 +228,7 @@ it("selects the asked-for answer: same-kind steps collapse with a count, failure
   expect(sheet).toHaveTextContent("Searched the web");
 });
 
-it("keeps what was learned and what is in use behind their tabs, with the map and the chat's materials one click away", async () => {
+it("keeps what was learned and what is in use behind their tabs, with World and the chat's materials one click away", async () => {
   const user = userEvent.setup();
   const onShowOnMap = vi.fn();
   const onOpenFile = vi.fn();
@@ -151,10 +236,10 @@ it("keeps what was learned and what is in use behind their tabs, with the map an
   const { rerender } = render(<Harness onShowOnMap={onShowOnMap} onOpenFile={onOpenFile} onOpenUsing={onOpenUsing} />);
   openActivity({ tab: "learned" });
   const sheet = screen.getByTestId("activity-sheet");
-  expect(sheet).toHaveTextContent("+2 on the map");
+  expect(sheet).toHaveTextContent("+2 in World");
   await user.click(within(sheet).getByRole("button", { name: "Hanul Precision" }));
   expect(onShowOnMap).toHaveBeenCalledWith(new Set(["hanul"]));
-  await user.click(within(sheet).getByRole("button", { name: "Show on the map" }));
+  await user.click(within(sheet).getByRole("button", { name: "Show in World" }));
   expect(onShowOnMap).toHaveBeenLastCalledWith(rail.learned!.highlightIds);
   // A source review still running is a quiet line, not a spinner.
   rerender(<Harness data={{ ...rail, learningPending: true }} onShowOnMap={onShowOnMap} />);
@@ -186,7 +271,7 @@ it("toggles from the header's button, keeps Esc for the composer while docked, a
 });
 
 it("stops an overlaying sheet above the composer, says the reply is done while sources are reviewed, and lists no host post as an answer", () => {
-  const post = { id: "post", role: "assistant", status: "complete", content: "The map now also tracks process nodes.", created_at: "2026-10-28T00:06:00Z", host_composed: true,
+  const post = { id: "post", role: "assistant", status: "complete", content: "World now also tracks process nodes.", created_at: "2026-10-28T00:06:00Z", host_composed: true,
     vocabulary: { added: [] } } as unknown as ChatMessage;
   const box = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
     const edges = this.classList.contains("composer-shell") ? { top: 640, bottom: 760 } : { top: 0, bottom: 760 };
@@ -212,4 +297,20 @@ it("stops an overlaying sheet above the composer, says the reply is done while s
   // The newest answer is shown; the host's own post is not one of the earlier answers.
   expect(sheet.querySelector("[data-activity-section=earlier]")!.querySelectorAll(":scope > ol > li")).toHaveLength(1);
   box.mockRestore();
+});
+
+it("opens Bot's flagged calculation in Activity at the selected output", async () => {
+  const result = evidenceFixture({ id: "ev_calc", kind: "derived", tool_name: "run_python",
+    excerpt: JSON.stringify({ input: "50368.7433", stdout: "Total 50368.7433" }) });
+  const message: ChatMessage = { ...first, evidence_refs: [result], number_checks: [{
+    link_index: 2, evidence_id: result.id, text: "50.4억 달러", kind: "step", status: "not_found",
+    comparisonReason: "scale_conflict", comparedValue: "50368.7433", pointer: "/stdout",
+  }] };
+  render(<Harness messages={[message, second]} />);
+  openActivity({ messageId: message.id, tab: "steps", figureIndex: 2 });
+  const output = await screen.findByLabelText("In the result");
+  expect(output).toHaveTextContent("Total 50368.7433");
+  expect(output.querySelector("mark")).toHaveTextContent("50368.7433");
+  openActivity({ messageId: second.id, tab: "steps" });
+  expect(screen.queryByLabelText("In the result")).toBeNull();
 });

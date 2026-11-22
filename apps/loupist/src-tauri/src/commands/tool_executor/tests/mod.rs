@@ -302,6 +302,7 @@ fn world_reads_report_their_delivered_names_once_and_in_order() {
         revision_id: "rev_world".into(),
         object_id: "rec_world".into(),
         title: "World".into(),
+        evidence_origin: None,
         payload,
     };
     let world = |nodes: &str| AckedPayload::World {
@@ -369,7 +370,10 @@ async fn kis_max_age_reuse_never_crosses_accounts() {
     };
     let balance = json!({"operation_id": "domestic_stock.inquire_balance", "params": {}});
     let reader = policy(false, false);
-    let key = || executor.persistent_request_key(&reader, ToolMethod::KisRead, &balance);
+    let key = || async {
+        let credential = executor.provider_credential_bundle(kis).await.unwrap();
+        executor.persistent_request_key(&reader, ToolMethod::KisRead, &balance, Some(&credential))
+    };
 
     use_account("11111111");
     let first = key().await;
@@ -407,4 +411,48 @@ async fn kis_max_age_reuse_never_crosses_accounts() {
         assert!(!first.contains(value) && !second.contains(value));
     }
     crate::finance_credentials::delete(&state.credential_environment, kis).unwrap();
+}
+
+#[tokio::test]
+async fn direct_saved_key_tools_refuse_with_the_permission_recovery() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let executor = executor_for(
+        &state,
+        Arc::new(ToolCapture {
+            saved_keys_needing_permission: BTreeSet::from([
+                "openfigi.lookup".into(),
+                "fred.macro".into(),
+            ]),
+            ..Default::default()
+        }),
+    );
+    for (method, params) in [
+        (ToolMethod::AssetLookup, json!({"query": "ACME"})),
+        (
+            ToolMethod::McpCall,
+            json!({
+                "server_id": "openbb",
+                "tool_name": "economy_fred_series",
+                "arguments": { "provider": "fred" }
+            }),
+        ),
+    ] {
+        let result = executor
+            .execute_for_delivery(&policy(false, false), method, params, "refusal")
+            .await;
+        assert_eq!(
+            crate::broker::error_body(&result.unwrap_err()),
+            json!({
+                "code": "keychain_permission_required",
+                "message": "This connection's saved key needs the user's permission in macOS first.",
+                "retryable": false,
+                "next": "Tell the user to open Settings > Data connections and choose Allow access, then ask again. Continue this reply without this connection."
+            })
+        );
+    }
+    assert_eq!(
+        crate::finance_credentials::test_store::backend_calls(&state.credential_environment),
+        0
+    );
 }

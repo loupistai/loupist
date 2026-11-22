@@ -1,1 +1,27 @@
-[]
+[
+  {
+    "key": "en.briefings.following.securityType.depositaryReceipt",
+    "term": "Receipt",
+    "reason": "Standard name of the financial instrument"
+  },
+  {
+    "key": "en.briefings.following.securityType.americanDepositaryReceipt",
+    "term": "Receipt",
+    "reason": "Standard name of the financial instrument"
+  },
+  {
+    "key": "en.briefings.following.securityType.globalDepositaryReceipt",
+    "term": "Receipt",
+    "reason": "Standard name of the financial instrument"
+  },
+  {
+    "key": "en.briefings.following.securityType.canadianDepositaryReceipt",
+    "term": "Receipt",
+    "reason": "Standard name of the financial instrument"
+  },
+  {
+    "key": "en.briefings.following.securityType.cedear",
+    "term": "Receipt",
+    "reason": "Standard name of the financial instrument"
+  }
+]

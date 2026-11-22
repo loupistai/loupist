@@ -64,6 +64,7 @@ export type ConfiguredModel = Wire.ConfiguredModelView;
 export type ModelNotice = { id: string; kind: "now_using" | "removed"; model: string };
 
 export type ModelCatalog = {
+  default_selection?: Wire.ResolvedModelSelection;
   models: ConfiguredModel[];
   providers: ModelProviderOption[];
   /** User-added OpenAI- or Anthropic-compatible endpoints. */

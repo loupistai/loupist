@@ -10,17 +10,17 @@ function post(): ChatMessage {
   return {
     id: "vocabulary-1",
     role: "assistant",
-    content: "Your map now also tracks Process node.",
+    content: "Your World now also tracks Process node.",
     created_at: "2026-10-30T09:00:00.000Z",
     status: "complete",
     vocabulary: { changeId: "change-7", producer: "preset", labels: ["Process node", "made on"], labelsKo: ["공정 노드", "제조 공정"] },
   } as unknown as ChatMessage;
 }
 
-it("says what the map now tracks in plain words and undoes only that change", async () => {
+it("says what World now tracks in plain words and undoes only that change", async () => {
   const undo = vi.fn(async () => ({}));
   render(<ThreadVocabulary message={post()} bridge={{ worldSchemaUndo: undo } as unknown as LoupistBridge} loupistId="loupist-a" loupistName="Chip desk" />);
-  expect(screen.getByText("Your map now also tracks Process node, made on.")).toBeVisible();
+  expect(screen.getByText("Your World now also tracks Process node, made on.")).toBeVisible();
   await userEvent.setup().click(screen.getByRole("button", { name: "Undo" }));
   expect(undo).toHaveBeenCalledWith({ loupistId: "loupist-a", changeId: "change-7" });
   expect(await screen.findByRole("status")).toHaveTextContent("Undone.");
@@ -31,7 +31,7 @@ it("names the post by what it adds, and moves the keyboard to what happened when
   let finish!: () => void;
   const undo = vi.fn(() => new Promise<void>((done) => { finish = done; }));
   render(<ThreadVocabulary message={post()} bridge={{ worldSchemaUndo: undo } as unknown as LoupistBridge} loupistId="loupist-a" loupistName="Chip desk" />);
-  expect(screen.getByRole("article", { name: "New on the map: Process node, made on" })).toBeVisible();
+  expect(screen.getByRole("article", { name: "New in World: Process node, made on" })).toBeVisible();
   const user = userEvent.setup();
   await user.tab();
   await user.keyboard("{Enter}");
@@ -55,5 +55,5 @@ it("keeps the card and says so when the undo fails", async () => {
 it("reads the Korean labels in Korean", async () => {
   await act(async () => { await i18n.changeLanguage("ko"); });
   render(<ThreadVocabulary message={post()} loupistId="loupist-a" loupistName="칩 데스크" />);
-  expect(screen.getByText("이제 지도가 공정 노드, 제조 공정도 추적합니다.")).toBeVisible();
+  expect(screen.getByText("이제 월드가 공정 노드, 제조 공정도 추적합니다.")).toBeVisible();
 });

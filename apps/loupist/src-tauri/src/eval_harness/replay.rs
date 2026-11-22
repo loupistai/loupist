@@ -826,6 +826,38 @@ mod tests {
         });
     }
 
+    #[tokio::test]
+    async fn native_replay_credentials_are_resolved_in_the_admitted_runtime() {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = crate::app::AppState::for_eval(temporary.path().join("app"));
+        let other = crate::app::AppState::for_eval(temporary.path().join("other"));
+        let replay: Replay = serde_json::from_str(include_str!(
+            "../../../evals/agent/suites/replay/kis-bada-balance.json"
+        ))
+        .unwrap();
+        let _replay = replay.install(&state.credential_environment).unwrap();
+
+        let caller = state.clone();
+        let other_caller = other.clone();
+        tokio::task::spawn_blocking(move || {
+            let entry_id = "koreainvestment.market-data";
+            let credential = crate::finance_credentials::get_for_state(&caller, entry_id)
+                .unwrap()
+                .expect("the admitted replay supplies a synthetic credential");
+            assert_eq!(credential.revision(), "eval-replay");
+            assert!(credential.get("account_number").is_some());
+            assert!(
+                crate::finance_credentials::get_for_state(&other_caller, entry_id)
+                    .unwrap()
+                    .is_none()
+            );
+        })
+        .await
+        .unwrap();
+        state.shutdown().await.unwrap();
+        other.shutdown().await.unwrap();
+    }
+
     #[test]
     fn eval_replay_query_rules_preserve_identity_and_bounds() {
         let entry: Entry = serde_json::from_value(serde_json::json!({

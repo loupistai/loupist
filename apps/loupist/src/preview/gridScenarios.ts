@@ -4,7 +4,7 @@
  * Fictional companies: Solsup Foods (990221), Iseul Logistics (990552) and
  * Hanbit Chem (990777). Korean previews use 억 amounts.
  */
-import type { AssetsGrid, CalcInputUnit, ChatArtifactView, ChatEvidenceRef, ChatMessage, ConflictGrid, GridCell, GridDocument, LoupistArtifactItem, NumberCheck } from "../types";
+import type { AssetsGrid, CalcInputUnit, ChatArtifactView, ChatEvidenceRef, ChatMessage, ConflictGrid, GridCell, GridDocument, NumberCheck } from "../types";
 import { GRID_SCHEMA } from "../contracts/chat";
 import { prepareFixture, previewKo, type PreviewBridge } from "./fixtures";
 import { prepareConflictsFixture } from "./fixtures/conflicts";
@@ -322,11 +322,7 @@ function install(bridge: PreviewBridge, messages: () => ChatMessage[], artifacts
   };
   const read = bridge.chatArtifactRead.bind(bridge);
   bridge.chatArtifactRead = async (loupistId, threadId, artifactId, revisionId) => structuredClone(artifacts().find((item) => item.artifact.id === artifactId) ?? await read(loupistId, threadId, artifactId, revisionId));
-  const list = bridge.loupistArtifactList.bind(bridge);
-  bridge.loupistArtifactList = async (request) => [
-    ...artifacts().map((item): LoupistArtifactItem => ({ artifact: item.artifact, chat_title: ko() ? "배당주 비교" : "Comparing dividend payers" })),
-    ...await list(request),
-  ];
+  bridge.chatArtifactList = async (_loupistId, threadId) => artifacts().map(item => ({ ...item.artifact, chat_session_id: threadId }));
   if (session) asSession(bridge);
 }
 
@@ -435,10 +431,10 @@ export function gridScenarios({ base, select, until, click, selectPanel, hasLayo
       await click("#workspace-tab-work");
       await click(".work-list button.work-row");
     }), setup: (bridge) => prepareGrid(bridge, "card", false) },
-    { ...base("chat-conflict-card", "Where sources disagree, linked to the Map", () => select(".conflict-card [data-conflict-map]"), async (root) => {
+    { ...base("chat-conflict-card", "Where sources disagree, linked to World", () => select(".conflict-card [data-conflict-map]"), async (root) => {
       await cardLoaded(root, ".conflict-card");
     }), setup: (bridge) => prepareConflict(bridge, true) },
-    { ...base("chat-conflict-no-map", "A conflict the Map has not recorded", () => {
+    { ...base("chat-conflict-no-map", "A conflict World has not recorded", () => {
       const card = select(".conflict-card");
       return card && !card.querySelector("[data-conflict-map]") && card.querySelector(".conflict-card-used") ? card : null;
     }, async (root) => {
@@ -446,7 +442,7 @@ export function gridScenarios({ base, select, until, click, selectPanel, hasLayo
     }), setup: (bridge) => prepareConflict(bridge, false) },
     { ...base("map-inspector-explain-disagreement", "The inspector offers to explain a disagreement", () => select(".map-conflicts [data-explain-disagreement]"), async (root) => {
       await navigate(root, "map");
-      const input = await until(() => select('.map-view [role="combobox"]'), "Map search missing") as HTMLInputElement;
+      const input = await until(() => select('.map-view [role="combobox"]'), "World search missing") as HTMLInputElement;
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Hanul");
       input.dispatchEvent(new Event("input", { bubbles: true }));
       await click('[role="option"]');

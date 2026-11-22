@@ -29,7 +29,7 @@ export function useMapExport({ bridge, loupistId, controls, replay, stats, onRec
       const footer: MapExportFooter = { name: loupist.name, stats, date: formatDate(replay.active ? replay.time : Date.now()), disclosure: t("map.export.disclosure") };
       const avatar = new Image(); avatar.src = loupistAvatarSource(loupist); await avatar.decode(); footer.avatar = avatar;
       if (cancel.current || !mounted.current) return;
-      const name = `${loupist.name.replace(/[/\\:]/g, "-")}-map`;
+      const name = `${loupist.name.replace(/[/\\:]/g, "-")}-${t("map.title").toLocaleLowerCase()}`;
       if (!video) {
         await bridge.exportSave(titledExport({ suggestedName: `${name}.png`, kind: "png" as const, bytes: Array.from(pngBytes(composeMapExport(source, footer))) }));
         return;

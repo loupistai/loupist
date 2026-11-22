@@ -55,7 +55,7 @@ describe("committed World status in research updates", () => {
     read.mockResolvedValue(job("reconciled_without_retry"));
     fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
     await act(async () => {});
-    expect(screen.getByRole("status")).toHaveTextContent("Source retained · Interrupted Map building was not retried");
+    expect(screen.getByRole("status")).toHaveTextContent("Source retained · Interrupted World building was not retried");
     expect(read).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("button", { name: "Refresh status" })).toBeNull();
   });
@@ -75,16 +75,16 @@ it("reads parked jobs once and distinguishes a Source stop from the user's pause
   const read = vi.fn().mockResolvedValue(job("paused_budget"));
   render(<WorldProcessingStatus jobId="job-1" initialStatus="paused_budget" readJob={read} />);
   await act(async () => {});
-  expect(screen.getByRole("status")).toHaveTextContent("Map: building stopped for this source");
+  expect(screen.getByRole("status")).toHaveTextContent("World: building stopped for this source");
   expect(read).toHaveBeenCalledOnce();
   read.mockResolvedValue(job("paused"));
   fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
   await act(async () => {});
-  expect(screen.getByRole("status")).toHaveTextContent("Map: building paused");
+  expect(screen.getByRole("status")).toHaveTextContent("World: building paused");
   read.mockResolvedValue(job("paused_budget"));
   fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
   await act(async () => {});
-  expect(screen.getByRole("status")).toHaveTextContent("Map: building stopped for this source");
+  expect(screen.getByRole("status")).toHaveTextContent("World: building stopped for this source");
 });
 
 describe("Try again on a Source that stopped", () => {
@@ -101,7 +101,7 @@ describe("Try again on a Source that stopped", () => {
     view.rerender(<WorldProcessingStatus jobId="job-1" initialStatus="paused_budget" readJob={read} retrySource={retry} />);
     await act(async () => {});
     expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled();
-    expect(screen.getByRole("status")).toHaveTextContent("Uses one more allowance of model requests per source, as set in Map building.");
+    expect(screen.getByRole("status")).toHaveTextContent("Uses one more allowance of model requests per source, as set in World building.");
   });
 
   it("disables while pending and shows the host's refusal inline", async () => {
@@ -127,10 +127,10 @@ describe("Try again on a Source that stopped", () => {
       await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Try again" })); });
       expect(changed).toHaveBeenCalledOnce();
       expect(read).toHaveBeenLastCalledWith("job-2");
-      expect(screen.getByRole("status")).toHaveTextContent("Map: connecting relationships");
+      expect(screen.getByRole("status")).toHaveTextContent("World: connecting relationships");
       expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
       await act(async () => vi.advanceTimersByTimeAsync(2_000));
-      expect(screen.getByRole("status")).toHaveTextContent("Map: relationships updated");
+      expect(screen.getByRole("status")).toHaveTextContent("World: relationships updated");
       expect(changed).toHaveBeenCalledTimes(2);
     } finally { vi.useRealTimers(); }
   });

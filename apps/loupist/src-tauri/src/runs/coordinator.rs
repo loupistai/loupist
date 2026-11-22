@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Mutex, Weak},
+    time::Duration,
 };
 
 use serde::Serialize;
@@ -9,10 +10,13 @@ use tokio::sync::watch;
 use crate::{
     app::CommandError,
     chat::control::{AcceptedChatControl, ChatControlHandle},
+    domain::MemorySaveSkipReason,
     runs::maintenance::{ActivityLease, MaintenanceBlocker, MaintenanceCoordinator},
 };
 
 pub const MAX_MODEL_WORKERS: usize = 4;
+const CHAT_SAVE_WAIT: Duration = Duration::from_secs(10 * 60);
+const CHAT_READER_RESUME_WAIT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RunKind {
@@ -41,19 +45,6 @@ impl RunKind {
     fn consumes_model_slot(self) -> bool {
         matches!(self, Self::Chat)
     }
-
-    fn loupist_access(self) -> LoupistAccess {
-        match self {
-            Self::MemoryWrite => LoupistAccess::ExclusiveMemory,
-            Self::Chat | Self::ChatMutation => LoupistAccess::SharedMemory,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum LoupistAccess {
-    SharedMemory,
-    ExclusiveMemory,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -95,6 +86,38 @@ struct ActiveRun {
     cancel: watch::Sender<bool>,
     chat_control: Option<ChatControlHandle>,
     terminal: TerminalState,
+    chat_access: ChatAccess,
+    tools_running: usize,
+    tools_parked: usize,
+    skip_save: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum ChatAccess {
+    #[default]
+    Reading,
+    PendingSave,
+    Saving,
+    Settled,
+}
+
+impl ActiveRun {
+    fn reads_memory(&self) -> bool {
+        match self.spec.kind {
+            RunKind::Chat => {
+                self.chat_access == ChatAccess::Reading
+                    && (self.tools_running != 0
+                        || (self.tools_parked == 0
+                            && self.terminal != TerminalState::CancelRequested))
+            }
+            RunKind::ChatMutation => true,
+            RunKind::MemoryWrite => false,
+        }
+    }
+
+    fn writes_memory(&self) -> bool {
+        self.spec.kind == RunKind::MemoryWrite || self.chat_access == ChatAccess::Saving
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -124,43 +147,6 @@ pub struct RunRegistration {
     pub lease: RunLease,
 }
 
-/// A Memory writer that already owns its FIFO queue position but has not yet
-/// waited for existing readers to drain. Reserving is synchronous so a Chat
-/// can establish the writer barrier before releasing its shared lease.
-#[derive(Debug)]
-pub struct PendingMemoryWrite {
-    #[cfg(test)]
-    pub(crate) wait_error: Option<CommandError>,
-    coordinator: RunCoordinator,
-    registration: RunRegistration,
-    loupist_id: String,
-    run_id: String,
-}
-
-impl PendingMemoryWrite {
-    #[cfg(test)]
-    pub async fn wait(self) -> Result<RunRegistration, CommandError> {
-        let (registration, ready) = self.wait_retaining_registration().await;
-        ready?;
-        Ok(registration)
-    }
-
-    /// Failure still owns admission until the caller has persisted its terminal result.
-    pub(crate) async fn wait_retaining_registration(
-        self,
-    ) -> (RunRegistration, Result<(), CommandError>) {
-        #[cfg(test)]
-        if let Some(error) = self.wait_error {
-            return (self.registration, Err(error));
-        }
-        let ready = self
-            .coordinator
-            .wait_for_memory_writer(&self.loupist_id, &self.run_id)
-            .await;
-        (self.registration, ready)
-    }
-}
-
 #[derive(Debug)]
 pub struct RunLease {
     run_id: String,
@@ -176,23 +162,65 @@ impl Drop for RunLease {
         };
         if let Ok(mut table) = coordinator.lock() {
             if let Some(run) = table.runs.remove(&self.run_id) {
-                if run.spec.kind == RunKind::MemoryWrite {
-                    let loupist_id = run.spec.loupist_id;
-                    let remove_queue = if let Some(queue) = table.writer_queues.get_mut(&loupist_id)
-                    {
-                        queue.retain(|queued| queued != &self.run_id);
-                        queue.is_empty()
-                    } else {
-                        false
-                    };
-                    if remove_queue {
-                        table.writer_queues.remove(&loupist_id);
-                    }
-                }
+                table.remove_writer(&run.spec.loupist_id, &self.run_id);
             }
         };
-        let next = self.changes.borrow().wrapping_add(1);
-        self.changes.send_replace(next);
+        self.changes
+            .send_modify(|next| *next = next.wrapping_add(1));
+    }
+}
+
+impl RunTable {
+    fn remove_writer(&mut self, loupist_id: &str, run_id: &str) {
+        if let Some(queue) = self.writer_queues.get_mut(loupist_id) {
+            queue.retain(|queued| queued != run_id);
+            if queue.is_empty() {
+                self.writer_queues.remove(loupist_id);
+            }
+        }
+    }
+}
+
+enum SaveAdmission {
+    Waiting(Option<String>),
+    Acquired,
+    Skipped(MemorySaveSkipReason),
+}
+
+/// A broker call belongs to its Chat reader while it is doing work. A user
+/// card parks just this call, so parallel tools must finish or park as well
+/// before the Chat stops excluding a writer.
+pub(crate) struct ChatToolAdmission {
+    coordinator: RunCoordinator,
+    run_id: String,
+    parked: bool,
+}
+
+impl ChatToolAdmission {
+    pub(crate) fn park(&mut self) {
+        self.coordinator.change_tool_state(&self.run_id, |run| {
+            run.tools_running -= 1;
+            run.tools_parked += 1;
+        });
+        self.parked = true;
+    }
+
+    pub(crate) async fn resume(&mut self) -> Result<(), CommandError> {
+        self.coordinator.admit_chat_tool(&self.run_id, true).await?;
+        self.parked = false;
+        Ok(())
+    }
+}
+
+impl Drop for ChatToolAdmission {
+    fn drop(&mut self) {
+        self.coordinator.change_tool_state(&self.run_id, |run| {
+            if self.parked {
+                run.tools_parked -= 1;
+            } else {
+                run.tools_running -= 1;
+            }
+        });
     }
 }
 
@@ -210,6 +238,204 @@ impl RunCoordinator {
             maintenance,
             changes,
         }
+    }
+
+    fn notify_change(&self) {
+        self.changes
+            .send_modify(|next| *next = next.wrapping_add(1));
+    }
+
+    fn table(&self) -> Result<std::sync::MutexGuard<'_, RunTable>, CommandError> {
+        self.inner
+            .lock()
+            .map_err(|_| CommandError::internal("run coordinator lock was poisoned"))
+    }
+
+    fn change_tool_state(&self, run_id: &str, change: impl FnOnce(&mut ActiveRun)) {
+        if let Ok(mut table) = self.table() {
+            if let Some(run) = table.runs.get_mut(run_id) {
+                change(run);
+            }
+        }
+        self.notify_change();
+    }
+
+    pub(crate) async fn begin_chat_tool(
+        &self,
+        run_id: &str,
+    ) -> Result<ChatToolAdmission, CommandError> {
+        self.admit_chat_tool(run_id, false).await?;
+        Ok(ChatToolAdmission {
+            coordinator: self.clone(),
+            run_id: run_id.to_owned(),
+            parked: false,
+        })
+    }
+
+    async fn admit_chat_tool(&self, run_id: &str, resuming: bool) -> Result<(), CommandError> {
+        let mut changes = self.changes.subscribe();
+        let admitted = tokio::time::timeout(CHAT_READER_RESUME_WAIT, async {
+            loop {
+                {
+                    let mut table = self.table()?;
+                    let run = table
+                        .runs
+                        .get(run_id)
+                        .ok_or_else(|| CommandError::not_found("Chat run"))?;
+                    if run.spec.kind != RunKind::Chat
+                        || run.chat_access != ChatAccess::Reading
+                        || run.terminal != TerminalState::Running
+                    {
+                        return Err(CommandError::conflict("Chat is no longer reading"));
+                    }
+                    if !table.runs.values().any(|other| {
+                        other.spec.loupist_id == run.spec.loupist_id && other.writes_memory()
+                    }) {
+                        let run = table.runs.get_mut(run_id).expect("same registry lock");
+                        if resuming {
+                            run.tools_parked -= 1;
+                        }
+                        run.tools_running += 1;
+                        return Ok(());
+                    }
+                }
+                changes
+                    .changed()
+                    .await
+                    .map_err(|_| CommandError::internal("Chat reader observation stopped"))?;
+            }
+        })
+        .await;
+        match admitted {
+            Ok(result) => result,
+            Err(_) => {
+                let _ = self.cancel(run_id, RunKind::Chat).await;
+                Err(CommandError::conflict("Chat reader could not resume"))
+            }
+        }
+    }
+
+    pub(crate) fn queue_chat_save(&self, run_id: &str) -> Result<(), CommandError> {
+        let mut table = self.table()?;
+        let run = table
+            .runs
+            .get_mut(run_id)
+            .ok_or_else(|| CommandError::not_found("Chat run"))?;
+        if run.spec.kind != RunKind::Chat
+            || run.terminal != TerminalState::CompletionClaimed
+            || run.chat_access != ChatAccess::Reading
+            || run.tools_running != 0
+            || run.tools_parked != 0
+        {
+            return Err(CommandError::conflict("Chat is not ready to save"));
+        }
+        run.chat_access = ChatAccess::PendingSave;
+        let loupist_id = run.spec.loupist_id.clone();
+        table
+            .writer_queues
+            .entry(loupist_id)
+            .or_default()
+            .push_back(run_id.to_owned());
+        drop(table);
+        self.notify_change();
+        Ok(())
+    }
+
+    /// Only the transition to an active exclusive save closes reader admission.
+    /// The deadline and a requested skip are checked under the same registry lock.
+    pub(crate) async fn wait_for_chat_save(
+        &self,
+        run_id: &str,
+        mut waiting: impl FnMut(Option<String>),
+    ) -> Result<Option<MemorySaveSkipReason>, CommandError> {
+        let deadline = tokio::time::Instant::now() + CHAT_SAVE_WAIT;
+        let mut changes = self.changes.subscribe();
+        let mut reported = None;
+        loop {
+            match self.poll_chat_save(run_id, deadline)? {
+                SaveAdmission::Acquired => return Ok(None),
+                SaveAdmission::Skipped(reason) => return Ok(Some(reason)),
+                SaveAdmission::Waiting(blocker) => {
+                    if Some(&blocker) != reported.as_ref() {
+                        waiting(blocker.clone());
+                        reported = Some(blocker);
+                    }
+                }
+            }
+            tokio::select! {
+                _ = tokio::time::sleep_until(deadline) => {}
+                updated = changes.changed() => {
+                    updated.map_err(|_| CommandError::internal("Chat save observation stopped"))?;
+                }
+            }
+        }
+    }
+
+    fn poll_chat_save(
+        &self,
+        run_id: &str,
+        deadline: tokio::time::Instant,
+    ) -> Result<SaveAdmission, CommandError> {
+        let mut table = self.table()?;
+        let run = table
+            .runs
+            .get(run_id)
+            .ok_or_else(|| CommandError::not_found("Chat run"))?;
+        if run.chat_access != ChatAccess::PendingSave {
+            return Err(CommandError::conflict("Chat save is not pending"));
+        }
+        let loupist_id = run.spec.loupist_id.clone();
+        let skip = if run.skip_save {
+            Some(MemorySaveSkipReason::User)
+        } else if table.shutting_down {
+            Some(MemorySaveSkipReason::Interrupted)
+        } else if tokio::time::Instant::now() >= deadline {
+            Some(MemorySaveSkipReason::Deadline)
+        } else {
+            None
+        };
+        if let Some(reason) = skip {
+            table
+                .runs
+                .get_mut(run_id)
+                .expect("same registry lock")
+                .chat_access = ChatAccess::Settled;
+            table.remove_writer(&loupist_id, run_id);
+            drop(table);
+            self.notify_change();
+            return Ok(SaveAdmission::Skipped(reason));
+        }
+        let at_front = table
+            .writer_queues
+            .get(&loupist_id)
+            .and_then(|queue| queue.front())
+            .is_some_and(|id| id == run_id);
+        let mut blockers = table.runs.values().filter(|other| {
+            other.spec.loupist_id == loupist_id && (other.reads_memory() || other.writes_memory())
+        });
+        let first = blockers.next();
+        if at_front && first.is_none() {
+            table
+                .runs
+                .get_mut(run_id)
+                .expect("same registry lock")
+                .chat_access = ChatAccess::Saving;
+            table.remove_writer(&loupist_id, run_id);
+            return Ok(SaveAdmission::Acquired);
+        }
+        let blocker = first
+            .filter(|_| blockers.next().is_none())
+            .and_then(|only| match &only.spec.target {
+                RunTarget::ChatThread(id) => Some(id.clone()),
+                RunTarget::MemoryWriteSession(_) => None,
+            });
+        Ok(SaveAdmission::Waiting(blocker))
+    }
+
+    pub(crate) fn finish_chat_save(&self, run_id: &str) {
+        self.change_tool_state(run_id, |run| {
+            run.chat_access = ChatAccess::Settled;
+        });
     }
 
     pub fn register(
@@ -265,8 +491,14 @@ impl RunCoordinator {
                 cancel,
                 chat_control,
                 terminal: TerminalState::Running,
+                chat_access: ChatAccess::Reading,
+                tools_running: 0,
+                tools_parked: 0,
+                skip_save: false,
             },
         );
+        drop(table);
+        self.notify_change();
         Ok(RunRegistration {
             cancel: receiver,
             lease: RunLease {
@@ -276,122 +508,6 @@ impl RunCoordinator {
                 _activity: activity,
             },
         })
-    }
-
-    /// Atomically reserves the Loupist's writer queue while the caller may still
-    /// hold a Chat reader lease. New readers are rejected as soon as this
-    /// returns, closing the Chat-completion-to-Memory-finalization admission
-    /// gap without awaiting (and deadlocking on) the caller's own reader.
-    pub fn reserve_memory_write(
-        &self,
-        spec: RunSpec,
-        availability_check: impl FnOnce() -> Result<(), CommandError>,
-    ) -> Result<PendingMemoryWrite, CommandError> {
-        if spec.kind != RunKind::MemoryWrite {
-            return Err(CommandError::internal(
-                "only Memory writes may reserve the writer queue",
-            ));
-        }
-        let activity = self.maintenance.admit_activity(MaintenanceBlocker {
-            id: spec.run_id.clone(),
-            kind: spec.kind.as_str().into(),
-            label: format!("Pending {}", spec.kind.activity_label()),
-        })?;
-        let run_id = spec.run_id.clone();
-        let loupist_id = spec.loupist_id.clone();
-        let registration = {
-            let mut table = self
-                .inner
-                .lock()
-                .map_err(|_| CommandError::internal("run coordinator lock was poisoned"))?;
-            availability_check()?;
-            Self::admit_waiting_memory_writer(&table, &spec)?;
-            let (cancel, receiver) = watch::channel(false);
-            table.runs.insert(
-                run_id.clone(),
-                ActiveRun {
-                    spec,
-                    started_at_ms: chrono::Utc::now().timestamp_millis(),
-                    cancel,
-                    chat_control: None,
-                    terminal: TerminalState::Running,
-                },
-            );
-            table
-                .writer_queues
-                .entry(loupist_id.clone())
-                .or_default()
-                .push_back(run_id.clone());
-            RunRegistration {
-                cancel: receiver,
-                lease: RunLease {
-                    run_id: run_id.clone(),
-                    coordinator: Arc::downgrade(&self.inner),
-                    changes: self.changes.clone(),
-                    _activity: activity,
-                },
-            }
-        };
-        Ok(PendingMemoryWrite {
-            #[cfg(test)]
-            wait_error: None,
-            coordinator: self.clone(),
-            registration,
-            loupist_id,
-            run_id,
-        })
-    }
-
-    async fn wait_for_memory_writer(
-        &self,
-        loupist_id: &str,
-        run_id: &str,
-    ) -> Result<(), CommandError> {
-        let mut changes = self.changes.subscribe();
-        loop {
-            let ready = {
-                let table = self
-                    .inner
-                    .lock()
-                    .map_err(|_| CommandError::internal("run coordinator lock was poisoned"))?;
-                let is_queue_head = table
-                    .writer_queues
-                    .get(loupist_id)
-                    .and_then(|queue| queue.front())
-                    .is_some_and(|queued| queued == run_id);
-                let readers_drained = table.runs.values().all(|run| {
-                    run.spec.loupist_id != loupist_id || run.spec.kind == RunKind::MemoryWrite
-                });
-                is_queue_head && readers_drained
-            };
-            if ready {
-                return Ok(());
-            }
-            changes
-                .changed()
-                .await
-                .map_err(|_| CommandError::internal("Memory writer queue stopped"))?;
-        }
-    }
-
-    fn admit_waiting_memory_writer(
-        table: &RunTable,
-        incoming: &RunSpec,
-    ) -> Result<(), CommandError> {
-        Self::admit_during_shutdown(table, incoming)?;
-        if table.runs.contains_key(&incoming.run_id) {
-            return Err(CommandError::conflict("run id is already active"));
-        }
-        for active in table.runs.values() {
-            if active.spec.loupist_id == incoming.loupist_id
-                && active.spec.target == incoming.target
-            {
-                return Err(CommandError::conflict(
-                    "this Loupist target already has an active run",
-                ));
-            }
-        }
-        Ok(())
     }
 
     pub async fn submit_chat_control(
@@ -433,7 +549,7 @@ impl RunCoordinator {
     }
 
     fn admit(table: &RunTable, incoming: &RunSpec) -> Result<(), CommandError> {
-        Self::admit_during_shutdown(table, incoming)?;
+        Self::admit_during_shutdown(table)?;
         if table.runs.contains_key(&incoming.run_id) {
             return Err(CommandError::conflict("run id is already active"));
         }
@@ -441,7 +557,9 @@ impl RunCoordinator {
             && table
                 .runs
                 .values()
-                .filter(|run| run.spec.kind.consumes_model_slot())
+                .filter(|run| {
+                    run.spec.kind.consumes_model_slot() && run.chat_access == ChatAccess::Reading
+                })
                 .count()
                 >= MAX_MODEL_WORKERS
         {
@@ -449,22 +567,31 @@ impl RunCoordinator {
                 "the four-worker model execution pool is full",
             ));
         }
-        for active in table.runs.values() {
-            if active.spec.loupist_id != incoming.loupist_id {
-                continue;
-            }
-            if active.spec.target == incoming.target {
-                return Err(CommandError::conflict(
-                    "this Loupist target already has an active run",
+        let mut local = table
+            .runs
+            .values()
+            .filter(|active| active.spec.loupist_id == incoming.loupist_id);
+        if local
+            .clone()
+            .any(|active| active.spec.target == incoming.target)
+        {
+            return Err(CommandError::conflict(
+                "this Loupist target already has an active run",
+            ));
+        }
+        if local.any(|active| {
+            active.writes_memory()
+                || (incoming.kind == RunKind::MemoryWrite && active.reads_memory())
+        }) {
+            if incoming.kind == RunKind::Chat {
+                return Err(CommandError::new(
+                    crate::app::CommandErrorCode::MemoryBusy,
+                    "Waiting for Memory",
                 ));
             }
-            if active.spec.kind.loupist_access() == LoupistAccess::ExclusiveMemory
-                || incoming.kind.loupist_access() == LoupistAccess::ExclusiveMemory
-            {
-                return Err(CommandError::conflict(
-                    "this Loupist has an active Memory reader or writer",
-                ));
-            }
+            return Err(CommandError::conflict(
+                "this Loupist has an active Memory reader or writer",
+            ));
         }
         Ok(())
     }
@@ -487,6 +614,11 @@ impl RunCoordinator {
             match run.terminal {
                 TerminalState::Running => run.terminal = TerminalState::CancelRequested,
                 TerminalState::CancelRequested => {}
+                TerminalState::CompletionClaimed if run.chat_access == ChatAccess::PendingSave => {
+                    run.skip_save = true;
+                    self.notify_change();
+                    return Ok(());
+                }
                 TerminalState::CompletionClaimed => {
                     return Err(CommandError::conflict(
                         "run completion already owns the terminal boundary",
@@ -495,17 +627,12 @@ impl RunCoordinator {
             }
             let _ = run.cancel.send(true);
         }
+        self.notify_change();
         Ok(())
     }
 
-    fn admit_during_shutdown(table: &RunTable, incoming: &RunSpec) -> Result<(), CommandError> {
-        let completing_chat = incoming.kind == RunKind::MemoryWrite
-            && table.runs.values().any(|run| {
-                run.spec.loupist_id == incoming.loupist_id
-                    && run.spec.kind == RunKind::Chat
-                    && run.terminal == TerminalState::CompletionClaimed
-            });
-        if table.shutting_down && !completing_chat {
+    fn admit_during_shutdown(table: &RunTable) -> Result<(), CommandError> {
+        if table.shutting_down {
             return Err(CommandError::conflict("Loupist is closing"));
         }
         Ok(())
@@ -523,6 +650,8 @@ impl RunCoordinator {
                 let _ = run.cancel.send(true);
             }
         }
+        drop(table);
+        self.notify_change();
         Ok(())
     }
 
@@ -626,7 +755,13 @@ impl RunCoordinator {
             .map(|run| RunActivity {
                 run_id: run.spec.run_id.clone(),
                 loupist_id: run.spec.loupist_id.clone(),
-                kind: run.spec.kind.as_str().into(),
+                kind: if run.chat_access == ChatAccess::Saving {
+                    RunKind::MemoryWrite
+                } else {
+                    run.spec.kind
+                }
+                .as_str()
+                .into(),
                 target: run.spec.target.value().into(),
                 started_at_ms: run.started_at_ms,
             })
@@ -717,161 +852,132 @@ mod tests {
             .unwrap();
     }
 
-    #[tokio::test]
-    async fn shutdown_preserves_claimed_completion_and_its_memory_handoff() {
+    #[tokio::test(start_paused = true)]
+    async fn pending_saves_keep_fifo_without_excluding_new_readers() {
         let coordinator = RunCoordinator::default();
-        let chat = coordinator
-            .register(spec("chat-a", RunKind::Chat, "thread-a"), || Ok(()))
-            .unwrap();
+        let add = |id| coordinator.register(spec(id, RunKind::Chat, id), || Ok(()));
+        let older = add("older").unwrap();
+        let first = add("first").unwrap();
+        let second = add("second").unwrap();
+        for id in ["first", "second"] {
+            assert!(coordinator.claim_completion(id, RunKind::Chat).unwrap());
+            coordinator.queue_chat_save(id).unwrap();
+        }
+        let later = add("later").unwrap();
         assert!(coordinator
-            .claim_completion("chat-a", RunKind::Chat)
-            .unwrap());
-        coordinator.request_shutdown().unwrap();
-        assert!(!*chat.cancel.borrow());
-        let pending = coordinator
-            .reserve_memory_write(
-                spec("writer-a", RunKind::MemoryWrite, "memory-a"),
-                || Ok(()),
-            )
-            .unwrap();
-        let mut unrelated = spec("writer-b", RunKind::MemoryWrite, "memory-b");
-        unrelated.loupist_id = "loupist-b".into();
-        assert!(coordinator
-            .reserve_memory_write(unrelated, || Ok(()))
+            .register(spec("retry", RunKind::Chat, "first"), || Ok(()))
             .is_err());
-        drop(chat);
-        let writer = pending.wait().await.unwrap();
-        assert!(!*writer.cancel.borrow());
+        assert!(tokio::time::timeout(
+            Duration::from_millis(1),
+            coordinator.wait_for_chat_save("first", |_| {})
+        )
+        .await
+        .is_err());
+        drop((older, later));
+        assert!(tokio::time::timeout(
+            Duration::from_millis(1),
+            coordinator.wait_for_chat_save("second", |_| {})
+        )
+        .await
+        .is_err());
+        assert_eq!(
+            coordinator
+                .wait_for_chat_save("first", |_| {})
+                .await
+                .unwrap(),
+            None
+        );
+        assert_eq!(add("late").unwrap_err().code, "memory_busy");
+        coordinator.finish_chat_save("first");
+        assert_eq!(
+            coordinator
+                .wait_for_chat_save("second", |_| {})
+                .await
+                .unwrap(),
+            None
+        );
+        coordinator.finish_chat_save("second");
+        let admitted = add("late").unwrap();
+        drop((first, second, admitted));
+        assert_eq!(coordinator.active_count(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_human_wait_parks_only_after_parallel_calls_drain_and_rejoins_after_save() {
+        let coordinator = RunCoordinator::default();
+        let _reader = coordinator
+            .register(spec("reader", RunKind::Chat, "question"), || Ok(()))
+            .unwrap();
+        let _saver = coordinator
+            .register(spec("saver", RunKind::Chat, "answer"), || Ok(()))
+            .unwrap();
+        let mut question = coordinator.begin_chat_tool("reader").await.unwrap();
+        let parallel = coordinator.begin_chat_tool("reader").await.unwrap();
+        question.park();
+        assert!(coordinator
+            .claim_completion("saver", RunKind::Chat)
+            .unwrap());
+        coordinator.queue_chat_save("saver").unwrap();
+        assert!(tokio::time::timeout(
+            Duration::from_millis(1),
+            coordinator.wait_for_chat_save("saver", |_| {})
+        )
+        .await
+        .is_err());
+        drop(parallel);
+        assert_eq!(
+            coordinator
+                .wait_for_chat_save("saver", |_| {})
+                .await
+                .unwrap(),
+            None
+        );
         assert!(
-            tokio::time::timeout(std::time::Duration::from_millis(20), coordinator.drain())
+            tokio::time::timeout(Duration::from_millis(1), question.resume())
                 .await
                 .is_err()
         );
-        drop(writer);
-        tokio::time::timeout(std::time::Duration::from_secs(1), coordinator.drain())
-            .await
-            .unwrap()
+        coordinator.finish_chat_save("saver");
+        question.resume().await.unwrap();
+        question.park();
+        coordinator.cancel("reader", RunKind::Chat).await.unwrap();
+        assert!(question.resume().await.is_err());
+        drop(question);
+        let writer = coordinator
+            .register(spec("writer", RunKind::MemoryWrite, "memory"), || Ok(()))
             .unwrap();
-        assert!(coordinator
-            .reserve_memory_write(
-                spec("late-writer", RunKind::MemoryWrite, "memory-c"),
-                || Ok(())
-            )
-            .is_err());
+        drop(writer);
     }
 
     #[tokio::test]
-    async fn chat_can_reserve_writer_barrier_before_releasing_its_reader() {
-        let coordinator = RunCoordinator::default();
-        let reader = coordinator
-            .register(spec("chat-a", RunKind::Chat, "thread-a"), || Ok(()))
-            .unwrap();
-        let pending = coordinator
-            .reserve_memory_write(
-                spec("writer-a", RunKind::MemoryWrite, "memory-a"),
-                || Ok(()),
-            )
-            .unwrap();
-
-        // The synchronous reservation closes both the same-thread ordering
-        // gap and reader barging from another thread before the Chat lease is
-        // released.
-        assert!(coordinator
-            .register(spec("chat-b", RunKind::Chat, "thread-a"), || Ok(()))
-            .is_err());
-        assert!(coordinator
-            .register(spec("chat-c", RunKind::Chat, "thread-c"), || Ok(()))
-            .is_err());
-
-        let writer = pending.wait();
-        tokio::pin!(writer);
-        tokio::select! {
-            result = &mut writer => panic!("writer entered before its Chat reader left: {result:?}"),
-            _ = tokio::time::sleep(std::time::Duration::from_millis(25)) => {}
+    async fn stop_or_quit_ends_pending_save_before_it_can_claim_the_writer() {
+        for (shutdown, expected) in [
+            (false, MemorySaveSkipReason::User),
+            (true, MemorySaveSkipReason::Interrupted),
+        ] {
+            let coordinator = RunCoordinator::default();
+            let _older = coordinator
+                .register(spec("older", RunKind::Chat, "older"), || Ok(()))
+                .unwrap();
+            let _saver = coordinator
+                .register(spec("saver", RunKind::Chat, "answer"), || Ok(()))
+                .unwrap();
+            assert!(coordinator
+                .claim_completion("saver", RunKind::Chat)
+                .unwrap());
+            coordinator.queue_chat_save("saver").unwrap();
+            if shutdown {
+                coordinator.request_shutdown().unwrap();
+            } else {
+                coordinator.cancel("saver", RunKind::Chat).await.unwrap();
+            }
+            assert_eq!(
+                coordinator
+                    .wait_for_chat_save("saver", |_| {})
+                    .await
+                    .unwrap(),
+                Some(expected)
+            );
         }
-        drop(reader);
-        let writer = tokio::time::timeout(std::time::Duration::from_secs(1), writer)
-            .await
-            .unwrap()
-            .unwrap();
-        drop(writer);
-        assert_eq!(coordinator.active_count(), 0);
-    }
-
-    #[test]
-    fn dropping_unawaited_writer_reservation_reopens_reader_admission() {
-        let coordinator = RunCoordinator::default();
-        let pending = coordinator
-            .reserve_memory_write(
-                spec("writer-a", RunKind::MemoryWrite, "memory-a"),
-                || Ok(()),
-            )
-            .unwrap();
-        assert!(coordinator
-            .register(spec("chat-a", RunKind::Chat, "thread-a"), || Ok(()))
-            .is_err());
-        drop(pending);
-        let reader = coordinator
-            .register(spec("chat-a", RunKind::Chat, "thread-a"), || Ok(()))
-            .unwrap();
-        drop(reader);
-        assert_eq!(coordinator.active_count(), 0);
-    }
-
-    #[tokio::test]
-    async fn memory_writers_queue_fifo_behind_multiple_readers_without_reader_barging() {
-        let coordinator = RunCoordinator::default();
-        let reader_a = coordinator
-            .register(spec("chat-a", RunKind::Chat, "thread-a"), || Ok(()))
-            .unwrap();
-        let reader_b = coordinator
-            .register(spec("chat-b", RunKind::Chat, "thread-b"), || Ok(()))
-            .unwrap();
-
-        let writer_a = coordinator
-            .reserve_memory_write(
-                spec("writer-a", RunKind::MemoryWrite, "memory-a"),
-                || Ok(()),
-            )
-            .unwrap()
-            .wait();
-        tokio::pin!(writer_a);
-        tokio::select! {
-            result = &mut writer_a => panic!("first writer entered while readers were active: {result:?}"),
-            _ = tokio::time::sleep(std::time::Duration::from_millis(25)) => {}
-        }
-        let writer_b = coordinator
-            .reserve_memory_write(
-                spec("writer-b", RunKind::MemoryWrite, "memory-b"),
-                || Ok(()),
-            )
-            .unwrap()
-            .wait();
-        tokio::pin!(writer_b);
-        tokio::select! {
-            result = &mut writer_b => panic!("second writer bypassed the queue: {result:?}"),
-            _ = tokio::time::sleep(std::time::Duration::from_millis(25)) => {}
-        }
-        assert!(coordinator
-            .register(spec("chat-c", RunKind::Chat, "thread-c"), || Ok(()))
-            .is_err());
-
-        drop(reader_a);
-        drop(reader_b);
-        let writer_a = tokio::time::timeout(std::time::Duration::from_secs(1), writer_a)
-            .await
-            .unwrap()
-            .unwrap();
-        tokio::select! {
-            result = &mut writer_b => panic!("second writer entered before the queue head left: {result:?}"),
-            _ = tokio::time::sleep(std::time::Duration::from_millis(25)) => {}
-        }
-        drop(writer_a);
-        let writer_b = tokio::time::timeout(std::time::Duration::from_secs(1), writer_b)
-            .await
-            .unwrap()
-            .unwrap();
-        drop(writer_b);
-        assert_eq!(coordinator.active_count(), 0);
     }
 }

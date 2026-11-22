@@ -1,4 +1,5 @@
 import { chatTitle } from "@/app/chatTitle";
+import { useExtensionAvailability } from "./extensionAvailability";
 import i18n, { Trans, useTranslation } from "@/i18n";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
@@ -137,6 +138,7 @@ export function AppDialogs({
   onFollowStarter,
 }: AppDialogsProps) {
   useTranslation();
+  const { userSkills } = useExtensionAvailability();
   const {
     importLoupistOpen, setImportLoupistOpen,
     reconnectLoupistOpen, setReconnectLoupistOpen, workspacePath, setWorkspacePath, workspaceTrusted, setWorkspaceTrusted,
@@ -175,7 +177,7 @@ export function AppDialogs({
   const folderControls = <section className="loupist-folder-section" aria-label={i18n.t("onboarding:appDialogs.workspaceSelection")}>
     <div className="loupist-folder-heading"><div><h3>{i18n.t("onboarding:appDialogs.localFolder")}</h3></div><Button type="button" variant="outline" size="sm" disabled={loupistMutationBusy || choosingFolder} onClick={() => void chooseFolder()}><FolderOpenIcon />{choosingFolder ? i18n.t("onboarding:appDialogs.choosing") : workspacePath ? i18n.t("onboarding:appDialogs.changeFolder") : i18n.t("onboarding:appDialogs.chooseFolder")}</Button></div>
     {workspacePath ? <div className="loupist-folder-selection"><FolderOpenIcon aria-hidden="true" /><p className="workspace-path" aria-label={i18n.t("onboarding:appDialogs.selectedWorkspaceFolder")}>{workspacePath}</p></div> : null}
-    {workspacePath ? <label className="workspace-trust loupist-folder-trust"><input type="checkbox" checked={workspaceTrusted} disabled={!workspacePath || loupistMutationBusy || choosingFolder} onChange={(event) => setWorkspaceTrusted(event.target.checked)} /><span><Trans ns="onboarding" i18nKey="appDialogs.workspaceTrust" components={[<strong />]} /></span></label> : null}
+    {workspacePath ? <label className="workspace-trust loupist-folder-trust"><input type="checkbox" checked={workspaceTrusted} disabled={!workspacePath || loupistMutationBusy || choosingFolder} onChange={(event) => setWorkspaceTrusted(event.target.checked)} /><span><Trans ns="onboarding" i18nKey={userSkills ? "appDialogs.workspaceTrustWithSkills" : "appDialogs.workspaceTrust"} components={[<strong />]} /></span></label> : null}
     {folderError ? <p className="inline-error" role="alert">{folderError}</p> : null}
   </section>;
 

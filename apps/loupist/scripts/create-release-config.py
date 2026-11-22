@@ -75,6 +75,7 @@ def main() -> int:
     parser.add_argument("--version", required=True)
     parser.add_argument("--macos-bundle-version")
     parser.add_argument("--release-config", required=True, type=Path)
+    parser.add_argument("--package-after-build", action="store_true")
     parser.add_argument("--output", required=True, type=Path)
     arguments = parser.parse_args()
 
@@ -90,6 +91,8 @@ def main() -> int:
     updater["requireSignedVersion"] = True
 
     if arguments.platform == "macos":
+        if arguments.package_after_build:
+            config["bundle"]["createUpdaterArtifacts"] = False
         macos = config.setdefault("bundle", {}).setdefault("macOS", {})
         macos["bundleVersion"] = macos_bundle_version(arguments.macos_bundle_version)
     elif arguments.macos_bundle_version is not None:

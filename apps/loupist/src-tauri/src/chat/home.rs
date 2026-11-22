@@ -102,6 +102,12 @@ pub(crate) fn delivery_message(state: &AppState, run: &Run) -> Result<ChatMessag
         .scheduled_task_get(&run.loupist_id, &run.task_id)
         .map_err(map_store)?;
     let finished = run.finished_at_ms.unwrap_or(run.started_at_ms);
+    let skipped_saved_keys = run
+        .skipped_tools
+        .iter()
+        .filter(|tool| tool.reason == crate::scheduled_tasks::types::SAVED_KEY_PERMISSION_SKIP)
+        .map(|tool| tool.name.clone())
+        .collect::<Vec<_>>();
     Ok(ChatMessage {
         tool_refusals: Vec::new(),
         feedback: None,
@@ -145,10 +151,14 @@ pub(crate) fn delivery_message(state: &AppState, run: &Run) -> Result<ChatMessag
             schedule: task.map(|task| task.schedule),
             run_thread_id: run.thread_id.clone(),
             status: run.status,
+            memory_save_skip: run.memory_save_skip,
+            discarded_memory_items: run.discarded_memory_items.clone(),
             finished_at_ms: finished,
+            skipped_saved_keys: (!skipped_saved_keys.is_empty()).then_some(skipped_saved_keys),
             learned: run
                 .message_id
                 .as_ref()
+                .filter(|_| run.memory_save_skip.is_none())
                 .and_then(|id| super::handoff::card_learned(state, &run.loupist_id, id)),
         }),
         as_of: None,
@@ -312,7 +322,7 @@ pub(crate) fn vocabulary_message(
         .collect();
     let mut message = host_message(
         "vocabulary",
-        format!("Your map now also tracks {}.", labels.join(", ")),
+        format!("Your World now also tracks {}.", labels.join(", ")),
         change.created_at_ms,
     )?;
     message.vocabulary = Some(crate::domain::HomeVocabulary {
@@ -506,6 +516,8 @@ pub(crate) fn deliver_finished_runs(
                             record.status == handoff.status
                                 && record.connection_id.as_deref() == handoff.link_connection_id()
                                 && record.stop_reason == handoff.stop_reason
+                                && record.memory_save_skip == handoff.memory_save_skip
+                                && record.discarded_memory_items == handoff.discarded_memory_items
                         }) =>
                     {
                         None

@@ -6,6 +6,7 @@ import type { LoupistBridge, LoupistSummary } from "../../types";
 import { LOUPIST_TONES, type LoupistTone } from "../../contracts/loupist";
 import type { PackAddResult, PackFlag, PackItemView, PackManifestView, PackOpenResult, PackPreview } from "../../contracts/sharing";
 import { Button } from "../ui/button";
+import { ExternalLinkError, useExternalLink } from "../navigation/ExternalLinkError";
 import { Input } from "../ui/input";
 import { NativeSelect } from "../ui/native-select";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
@@ -50,6 +51,7 @@ function ReviewBody({ bridge, preview, loupists, currentLoupistId, focusAdd, onA
   bridge: LoupistBridge; preview: PackPreview; loupists: readonly LoupistSummary[]; currentLoupistId?: string | null; focusAdd?: boolean; onAdded: (added: PackAddResult) => void;
 }) {
   const { t } = useTranslation("sharing");
+  const browser = useExternalLink(url => bridge.openExternalUrl(url));
   const ids = { name: useId(), tone: useId(), mode: useId(), target: useId() };
   const { manifest } = preview;
   const [mode, setMode] = useState<"new" | "merge">("new");
@@ -89,16 +91,17 @@ function ReviewBody({ bridge, preview, loupists, currentLoupistId, focusAdd, onA
     <div className="pack-review-summary">
       <p className="pack-review-name">{manifest.name}</p>
       <p className="pack-review-meta">{meta}</p>
-      {preview.sourceUrl && preview.sourceLabel ? <Button variant="link" size="sm" className="pack-review-link" onClick={() => void bridge.openExternalUrl(preview.sourceUrl!)}>{preview.sourceLabel}<ExternalLinkIcon aria-hidden="true" /></Button> : null}
+      {preview.sourceUrl && preview.sourceLabel ? <Button variant="link" size="sm" className="pack-review-link" onClick={() => void browser.open(preview.sourceUrl!)}>{preview.sourceLabel}<ExternalLinkIcon aria-hidden="true" /></Button> : null}
       {basedOn ? <p className="pack-review-meta">{t("basedOn", { names: basedOn })}</p> : null}
       <div className="pack-review-license" data-pack-license>
-        <Button variant="link" size="sm" className="pack-review-link" onClick={() => void bridge.openExternalUrl(manifest.licenseUrl)}>{licenseName(manifest.license)}<ExternalLinkIcon aria-hidden="true" /></Button>
+        <Button variant="link" size="sm" className="pack-review-link" onClick={() => void browser.open(manifest.licenseUrl)}>{licenseName(manifest.license)}<ExternalLinkIcon aria-hidden="true" /></Button>
         {/* Items under a license that does not allow sharing stay out of every later share. */}
         <p className={manifest.redistributable ? "pack-review-meta" : "pack-review-restricted"} data-pack-not-redistributable={!manifest.redistributable || undefined}>
           {manifest.redistributable ? licenseSummary(manifest.license) : t("notRedistributable")}
         </p>
       </div>
-      {manifest.credits.length ? <Credits credits={manifest.credits} onOpen={url => void bridge.openExternalUrl(url)} /> : null}
+      {manifest.credits.length ? <Credits credits={manifest.credits} onOpen={browser.open} /> : null}
+      <ExternalLinkError url={browser.failedUrl} />
       <h2 className="share-label">{t("safety")}</h2>
       <p className="pack-review-safety">{t("safetyNoAuthority")}</p>
       {preview.blocked ? <p className="pack-review-blocked" role="alert" data-pack-blocked>{t("safetyBlocked", { reason: t(`reason.${preview.blocked}`) })}</p>

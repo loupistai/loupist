@@ -1,4 +1,5 @@
 import i18n, { useTranslation } from "@/i18n";
+import { formatNumber } from "@/i18n/format";
 import { chatSessionKey } from "../../chat/sessionRegistry";
 import { runningHandoffChats } from "../../chat/useHostedRun";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -11,7 +12,9 @@ import {
   SidebarMenuButton, SidebarMenuItem, useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { SETTINGS_SECTIONS, type AppDestinationId, type AppTab, type SettingsSection } from "../../app/navigation";
+import { Spinner } from "@/components/ui/spinner";
+import { settingsSections, type AppDestinationId, type AppTab, type SettingsSection } from "../../app/navigation";
+import { useExtensionAvailability } from "../../app/extensionAvailability";
 import { LoupistChatItem } from "./LoupistChatItem";
 import { LoupistSwitcher } from "./LoupistSwitcher";
 import { SidebarResizeHandle } from "./SidebarResizeHandle";
@@ -19,8 +22,10 @@ import { NeedsAttention } from "./NeedsAttention";
 import type { AttentionItem } from "../../contracts/attention";
 import { getLoupistChatList, recentLoupistChats } from "./loupistNavigation";
 import { shortcutFor, tabShortcut } from "../../app/shortcuts";
+import { matchesSetting, normalizeSetting, settingTranslations, type SettingResult } from "../settings/settingSearch";
 import { APP_DESTINATIONS } from "../../app/navigation";
 import type { ChatThread, LoupistSummary } from "../../types";
+import type { MapBuildStatus } from "../../app/useMapCatalog";
 import "../../styles/navigation.css";
 
 type Props = {
@@ -47,12 +52,16 @@ type Props = {
   activeThreadId: string | null;
   /** Chats with a reply running that this window streams or the host reported on reload (keys from `chatSessionKey`). */
   runningThreadKeys: ReadonlySet<string>;
+  savingThreadKeys: ReadonlySet<string>;
   /** Chats with unsent composer text (keys from `chatSessionKey`). */
   draftThreadKeys?: ReadonlySet<string>;
   settingsSection: SettingsSection;
   updateAvailable: boolean;
   onTabChange: (tab: AppTab) => void;
-  onSettingsSectionChange: (section: SettingsSection) => void;
+  settingsQuery?: string;
+  onSettingsQuery?: (value: string) => void;
+  indexedSettings?: Partial<Record<SettingsSection, SettingResult[]>>;
+  onSettingsSectionChange: (section: SettingsSection, target?: SettingResult) => void;
   onExitSettings: () => void;
   onCreateThread: (loupistId: string) => void;
   onSelectThread: (thread: ChatThread) => void;
@@ -62,22 +71,33 @@ type Props = {
   onExportThread?: (thread: ChatThread, format: "md" | "pdf") => void;
   /** Unread scheduled results for the selected Loupist, shown on the Schedule row. */
   scheduleUnread?: number;
-  /** Opens a ⌘ destination: Bot, or the Map, Lens or Schedule page. */
+  scheduleRunning?: readonly string[];
+  mapBuild?: MapBuildStatus | null;
+  /** Opens a destination from the same list as the View menu. */
   onDestination?: (id: AppDestinationId) => void;
 };
 
 export function AppNavigation({
   attention = [], finishedThreadKeys = new Set(), onOpenAttention, onMoreAttention, tab, selectedLoupist, loupists, runningLoupists, unreadCounts,
   onSelectLoupist, onCreateLoupist, onLoupistSettings, loading, threadsByLoupist, activeThreadId,
-  runningThreadKeys, draftThreadKeys = new Set(), settingsSection, updateAvailable, onTabChange, onSettingsSectionChange, onExitSettings,
-  onCreateThread, onSelectThread, onRenameThread, onDeleteThread, onExportThread, onSearch, scheduleUnread = 0, onDestination,
+  runningThreadKeys, savingThreadKeys, draftThreadKeys = new Set(), settingsSection, settingsQuery: settingsSearch = "", onSettingsQuery: setSettingsSearch, indexedSettings, updateAvailable, onTabChange, onSettingsSectionChange, onExitSettings,
+  onCreateThread, onSelectThread, onRenameThread, onDeleteThread, onExportThread, onSearch, scheduleUnread = 0, scheduleRunning = [], mapBuild, onDestination,
 }: Props) {
   useTranslation();
   const { isMobile, setOpenMobile, state } = useSidebar();
   const searchShortcut = shortcutFor("palette");
   const newChatShortcut = shortcutFor("newChat");
   const canStartChat = selectedLoupist != null && !loading && selectedLoupist.availability.status === "available";
-  const [settingsSearch, setSettingsSearch] = useState("");
+  const { userSkills } = useExtensionAvailability();
+  const sections = settingsSections(userSkills);
+  const query = normalizeSetting(settingsSearch);
+  const searching = Boolean(query);
+  const language = i18n.resolvedLanguage ?? i18n.language;
+  const aliases = useMemo(() => searching ? settingTranslations(language) : () => [], [searching, language]);
+  const settingResults = query ? sections.flatMap(page =>
+    (indexedSettings?.[page.id] ?? []).filter(item => normalizeSetting(item.label) !== normalizeSetting(page.label)
+      && matchesSetting(item.label, item.description, query, aliases)).map(item => ({ ...item, pageLabel: page.label }))) : [];
+  const matchesPage = (item: typeof sections[number]) => matchesSetting(item.label, [item.keywords, item.caption, item.description].join(" "), query, aliases);
   const recent = selectedLoupist ? recentLoupistChats(getLoupistChatList(threadsByLoupist[selectedLoupist.id], activeThreadId), activeThreadId, selectedLoupist.id) : [];
   const iconOnly = !isMobile && state === "collapsed";
   // On a short window the section list scrolls above Back: the open section's row stays in view there.
@@ -93,18 +113,27 @@ export function AppNavigation({
    * Each is a destination: choosing it again keeps it open, and the row of the place on screen is raised.
    * Map and Lens open beside the conversation; while one is open its row is the current place.
    */
-  const placeRow = ({ id, icon: Icon, active, onClick, unread = 0 }: { id: "following" | AppDestinationId; icon: LucideIcon; active: boolean; onClick: () => void; unread?: number }) => {
+  const mapSourceCount = mapBuild?.sourceCount;
+  const mapActivity = mapBuild ? (mapSourceCount
+    ? i18n.t("app:shell.mapBuildingFromSources", { count: mapSourceCount, formattedCount: formatNumber(mapSourceCount) })
+    : i18n.t("app:shell.mapBuilding")) : undefined;
+  const scheduleActivity = scheduleRunning.length === 1
+    ? i18n.t("app:shell.scheduleRunning", { title: scheduleRunning[0] })
+    : scheduleRunning.length > 1 ? i18n.t("app:shell.scheduleRunsInProgress", { count: scheduleRunning.length }) : undefined;
+  const placeRow = ({ id, icon: Icon, active, onClick, unread = 0, activity }: { id: AppDestinationId; icon: LucideIcon; active: boolean; onClick: () => void; unread?: number; activity?: string }) => {
     const label = i18n.t(`app:shell.tabs.${id}`);
     const index = APP_DESTINATIONS.findIndex(item => item.id === id);
     const unreadId = `sidebar-${id}-unread`;
+    const showUnread = !activity && unread > 0;
     return <SidebarMenuItem key={id} className="loupist-chat-row loupist-place-row" data-sidebar-place={id}>
       <SidebarMenuButton type="button" className="loupist-chat-button" data-sidebar-schedule={id === "schedule" || undefined}
         isActive={active} aria-current={active ? "page" : undefined}
-        aria-label={iconOnly ? label : undefined} aria-describedby={unread > 0 ? unreadId : undefined}
-        title={index >= 0 ? `${label} ${tabShortcut(index + 1)}` : label} onClick={onClick}>
+        aria-label={activity ?? (iconOnly || showUnread ? label : undefined)} aria-describedby={showUnread ? unreadId : undefined}
+        title={activity ?? (index >= 0 ? `${label} ${tabShortcut(index + 1)}` : label)} onClick={onClick}>
         <Icon className="loupist-home-icon" aria-hidden="true" />
         {iconOnly ? null : <span className="loupist-chat-title">{label}</span>}
-        {unread > 0 ? <><span className="shell-unread" aria-hidden="true">{unread}</span><span className="sr-only" id={unreadId}>{i18n.t("app:shell.unreadBriefings", { count: unread })}</span></>
+        {activity ? <Spinner className="thread-running" role="img" aria-hidden="true" />
+          : showUnread ? <><span className="shell-unread" aria-hidden="true">{unread}</span><span className="sr-only" id={unreadId}>{i18n.t("app:shell.unreadScheduledResults", { count: unread })}</span></>
           : !iconOnly && index >= 0 ? <kbd className="loupist-place-key" aria-hidden="true">{tabShortcut(index + 1)}</kbd> : null}
       </SidebarMenuButton>
     </SidebarMenuItem>;
@@ -119,7 +148,7 @@ export function AppNavigation({
     // A session spins while a reply runs there; Bot, for its own reply or a hand-off it started,
     // only while it is not the open view: its header shows its own reply, the session's row the hand-off.
     const running = thread.home ? !active && (runningThreadKeys.has(key) || handoffs.size > 0) : runningThreadKeys.has(key) || handoffs.has(thread.id);
-    return <LoupistChatItem iconOnly={iconOnly} key={key} thread={thread} active={active} running={running} finished={finishedThreadKeys.has(key)} draft={draftThreadKeys.has(key)}
+    return <LoupistChatItem iconOnly={iconOnly} key={key} thread={thread} active={active} running={running} saving={savingThreadKeys.has(key)} finished={finishedThreadKeys.has(key)} draft={draftThreadKeys.has(key)}
       onSelect={item => { onSelectThread(item); closeMobile(); }} onSchedule={thread.home ? () => navigate("schedule") : undefined} onRename={onRenameThread} onDelete={onDeleteThread} onExport={onExportThread} />;
   };
   const closeMobile = () => { if (isMobile) setOpenMobile(false); };
@@ -132,14 +161,14 @@ export function AppNavigation({
           <div className="navigation-toolbar" data-tauri-drag-region="deep" />
           <div className="app-brand"><strong>{i18n.t("app:appNavigation.settings")}</strong></div>
           <div className="settings-search"><SearchIcon aria-hidden="true" />
-            <input type="search" aria-label={i18n.t("app:appNavigation.searchSettings")} placeholder={i18n.t("app:appNavigation.findASetting")} value={settingsSearch} onChange={(event) => setSettingsSearch(event.target.value)} />
-            {settingsSearch ? <button type="button" aria-label={i18n.t("app:appNavigation.clearSettingsSearch")} onClick={() => setSettingsSearch("")}><XIcon /></button> : null}
+            <input type="search" aria-label={i18n.t("app:appNavigation.searchSettings")} placeholder={i18n.t("app:appNavigation.findASetting")} value={settingsSearch} onChange={(event) => setSettingsSearch?.(event.target.value)} />
+            {settingsSearch ? <button type="button" aria-label={i18n.t("app:appNavigation.clearSettingsSearch")} onClick={() => setSettingsSearch?.("")}><XIcon /></button> : null}
           </div>
         </SidebarHeader>
         <SidebarContent ref={settingsList}>
           <nav aria-label={i18n.t("app:appNavigation.settingsSections")}>
             {(["research", "application"] as const).map((group) => {
-              const items = SETTINGS_SECTIONS.filter((item) => item.group === group && `${item.label} ${item.keywords} ${item.caption ?? ""}`.toLowerCase().includes(settingsSearch.trim().toLowerCase()));
+              const items = sections.filter((item) => item.group === group && matchesPage(item));
               return items.length ? <SidebarGroup key={group}>
                 <SidebarGroupLabel>{i18n.t(`app:appNavigation.${group}`)}</SidebarGroupLabel>
                 <SidebarGroupContent><SidebarMenu className="gap-1">
@@ -155,7 +184,11 @@ export function AppNavigation({
                 </SidebarMenu></SidebarGroupContent>
               </SidebarGroup> : null;
             })}
-            {!SETTINGS_SECTIONS.some((item) => `${item.label} ${item.keywords} ${item.caption ?? ""}`.toLowerCase().includes(settingsSearch.trim().toLowerCase())) ? <p className="settings-search-empty" role="status">{i18n.t("app:appNavigation.noSettingsFound")}</p> : null}
+            {settingResults.map(item => <SidebarMenuButton key={`${item.section}:${item.label}`} type="button" data-setting-result={item.section} aria-label={item.label}
+              onClick={() => { onSettingsSectionChange(item.section, { ...item }); closeMobile(); }}>
+              <span className="settings-nav-label"><span>{item.label}</span><small className="settings-nav-caption">{item.pageLabel}</small></span>
+            </SidebarMenuButton>)}
+            {!settingResults.length && !sections.some(matchesPage) ? <p className="settings-search-empty" role="status">{i18n.t("app:appNavigation.noSettingsFound")}</p> : null}
           </nav>
         </SidebarContent>
         <SidebarFooter className="navigation-footer">
@@ -181,10 +214,10 @@ export function AppNavigation({
       <SidebarContent>{onOpenAttention ? <NeedsAttention threads={threadsByLoupist} items={attention} onOpen={(item) => { onOpenAttention(item); closeMobile(); }} onMore={onMoreAttention ? () => { onMoreAttention(); closeMobile(); } : undefined} /> : null}<SidebarGroup className="loupist-navigation" data-testid="loupist-navigation">
         <SidebarMenu className="loupist-places">{recent.filter(thread => thread.home).map(row)}
           {selectedLoupist ? <>
-            {placeRow({ id: "following", icon: StarIcon, active: tab === "following", onClick: () => navigate("following") })}
-            {placeRow({ id: "map", icon: NetworkIcon, active: tab === "map", onClick: () => openDestination("map") })}
+            {placeRow({ id: "following", icon: StarIcon, active: tab === "following", onClick: () => openDestination("following") })}
+            {placeRow({ id: "map", icon: NetworkIcon, active: tab === "map", onClick: () => openDestination("map"), activity: mapActivity })}
             {placeRow({ id: "lens", icon: ApertureIcon, active: tab === "lens", onClick: () => openDestination("lens") })}
-            {placeRow({ id: "schedule", icon: CalendarClockIcon, active: tab === "schedule", onClick: () => navigate("schedule"), unread: scheduleUnread })}
+            {placeRow({ id: "schedule", icon: CalendarClockIcon, active: tab === "schedule", onClick: () => navigate("schedule"), unread: scheduleUnread, activity: scheduleActivity })}
           </> : null}
         </SidebarMenu>
         <div className="loupist-list-heading">

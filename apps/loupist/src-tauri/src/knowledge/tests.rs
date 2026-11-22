@@ -917,6 +917,12 @@ fn world_source_links_resolve_both_directions_for_the_owner_only() {
         claims.push(edge);
         sources.push(source);
     }
+    let mut observation = claims[0].clone();
+    observation.id = "claim-observation".into();
+    observation.proposition = "A reports 18 shipments".into();
+    observation.relation = "reports".into();
+    observation.endpoints[1].node_id = "a".into();
+    claims.push(observation);
     let record = create(&store, "loupist-a", RecordKind::World, "World");
     let mut request = SealWorld {
         loupist_id: "loupist-a".into(),
@@ -960,6 +966,9 @@ fn world_source_links_resolve_both_directions_for_the_owner_only() {
         })
     };
     let first = related("loupist-a", &sources[0].revision_id).unwrap();
+    assert_eq!(first.len(), 2);
+    assert!(first[0].is_relationship);
+    assert!(!first[1].is_relationship);
     assert_eq!(
         (
             first[0].claim_id.as_str(),

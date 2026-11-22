@@ -1,3 +1,4 @@
+import { comparisonTitle, warningReason, WarningAction, WarningDetails } from "./FigureWarnings";
 import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import "@/styles/answer-checks.css";
 import i18n, { useTranslation } from "@/i18n";
@@ -7,11 +8,11 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type Keyboard
 import type { ChatEvidenceRef, NumberCheck } from "../../types";
 import { providerName } from "@/lib/marketProviderName";
 import { formatAsOf } from "../../chat/asOf";
-import { evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
+import { byteMatchParts, evidenceProvenance, evidenceTitle, sourceIdentityLabel } from "../../chat/evidence";
 import { quoteEvidence } from "../../chat/quoteEvidence";
 import { QuoteEvidenceBody } from "./QuoteEvidence";
-import { citationNumber, copiedFormula, evidenceDate, formulaLines, needsChecking, spokenNumber, unbroken } from "../../chat/numberChecks";
-import { calcView, dataRows, exactAmount, shownExactly } from "../../chat/numberText";
+import { calculationCheck, citationNumber, copiedFormula, formulaLines, needsChecking, spokenNumber, unbroken } from "../../chat/numberChecks";
+import { calcView, dataRows, exactAmount, matchedConversion, shownExactly } from "../../chat/numberText";
 import { narrowWindow } from "../../chat/narrowWindow";
 import { wantsExternal } from "../../chat/navigation";
 import { Button } from "../ui/button";
@@ -24,12 +25,12 @@ const t = i18n.getFixedT(null, "chat");
 const FORMULA_LINES = 4;
 
 /** The status line under a popover's content (finance-show-the-math.md §2.4). */
-function StatusLine({ check, exact, asOf, id }: { check: NumberCheck; exact: string; asOf?: string; id: string }) {
+function StatusLine({ check, exact, matchDetail, asOf, id }: { check: NumberCheck; exact: string; matchDetail?: string; asOf?: string; id: string }) {
   useTranslation("chat");
   return <>
-    {check.status === "not_found" ? <p id={id} className="number-chip-status" data-status="not_found"><TriangleAlertIcon aria-hidden="true" />{t("numberChip.notFound")}</p> : null}
-    {check.status === "differs" ? <p id={id} className="number-chip-status" data-status="differs"><TriangleAlertIcon aria-hidden="true" />{t("numberChip.differs", { nearest: check.nearest ?? "", shown: check.text })}</p> : null}
+    {check.status === "differs" && !check.comparisonReplay ? <p id={id} className="number-chip-status" data-status="differs"><TriangleAlertIcon aria-hidden="true" />{t("numberChip.differs", { nearest: check.nearest ?? "", shown: check.text })}</p> : null}
     {check.status === "rounded" && check.exact && !shownExactly(check) ? <p id={id} className="number-chip-status" data-status="rounded">{t("numberChip.rounded", { exact })}</p> : null}
+    {matchDetail ? <p id={id} className="number-chip-status" data-status="matched">{matchDetail}</p> : null}
     {asOf ? <p className="number-chip-status" data-status="as_of">{t("numberChip.knownAsOf", { date: unbroken(formatAsOf(asOf)) })}</p> : null}
   </>;
 }
@@ -51,38 +52,22 @@ function hostChecked(check: NumberCheck): { value: string; symbol?: string } | u
   return value ? { value, symbol } : undefined;
 }
 
-/** Text split at a match given as UTF-8 byte offsets into it; null when the offsets do not decode inside it. */
-function markedParts(text: string, start: number, end: number) {
-  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start) return null;
-  const bytes = new TextEncoder().encode(text);
-  if (end > bytes.length) return null;
-  try {
-    const decoder = new TextDecoder("utf-8", { fatal: true });
-    // A short window around the number keeps the four-line clamp on the match.
-    const before = decoder.decode(bytes.slice(0, start));
-    return {
-      before: before.length > 220 ? `…${before.slice(-220)}` : before,
-      match: decoder.decode(bytes.slice(start, end)),
-      after: decoder.decode(bytes.slice(end)),
-    };
-  } catch { return null; }
-}
-
 /**
  * The marked passage: the check's span into the retained excerpt or, when the
  * excerpt lacks the number, the host's bounded context of the full result.
  * A span wins; offsets that do not decode leave the excerpt unmarked.
  */
-function passageParts(evidence: ChatEvidenceRef, span: NumberCheck["span"], context: NumberCheck["context"]) {
-  if (span) return markedParts(evidence.excerpt, span.start, span.end);
-  return context ? markedParts(context.text, context.start, context.end) : null;
+function passageParts(evidence: ChatEvidenceRef, span: NumberCheck["span"], context: NumberCheck["context"], lead: number) {
+  const parts = span ? byteMatchParts(evidence.excerpt, span) : context ? byteMatchParts(context.text, context) : null;
+  // Keep the marked figure visible in the popover’s four-line passage.
+  return parts && parts.before.length > lead ? { ...parts, before: `…${parts.before.slice(-lead)}` } : parts;
 }
 
 /** The passage with the number marked. Mounted only while the popover is open, so the text is encoded once per open. */
-function PassageBody({ evidence, span, context, meta }: { evidence: ChatEvidenceRef; span: NumberCheck["span"]; context: NumberCheck["context"]; meta: ReactNode }) {
-  const passage = useMemo(() => passageParts(evidence, span, context), [evidence, span, context]);
+function PassageBody({ evidence, span, context, meta, conversion = false }: { evidence: ChatEvidenceRef; span: NumberCheck["span"]; context: NumberCheck["context"]; meta: ReactNode; conversion?: boolean }) {
+  const passage = useMemo(() => passageParts(evidence, span, context, conversion ? 72 : 220), [evidence, span, context, conversion]);
   return <>
-    <small className="number-chip-meta">{meta}</small>
+    {meta ? <small className="number-chip-meta">{meta}</small> : null}
     <p className="number-chip-passage">{passage ? <>{passage.before}<mark>{passage.match}</mark>{passage.after}</> : evidence.excerpt}</p>
   </>;
 }
@@ -94,11 +79,14 @@ function InputSource({ source, evidenceRefs, publishedOnly = false }: { source: 
   const link = useOpenProps({ kind: "evidence", evidence: source });
   const number = citationNumber(source, evidenceRefs);
   const chip = number ? <span className="loupist-citation" aria-hidden="true">{number}</span> : null;
-  const date = evidenceDate(source, publishedOnly ? "published_only" : "published_at");
+  const origin = evidenceProvenance(source, providerText(source) ?? sourceIdentityLabel(source));
+  const sourceDate = source.memory_origin ? origin.publication?.label : publishedOnly ? origin.publication?.date : origin.dateLabel;
+  const date = sourceDate && unbroken(sourceDate);
   // The provider may wrap above the date; the date and its citation stay together.
   const body = <>
-    <span>{providerText(source) ?? sourceIdentityLabel(source)}{date ? " · " : ""}</span>
+    {origin.attribution ? <span>{origin.attribution}{date ? " · " : ""}</span> : null}
     {date ? <span className="number-chip-date">{date}{chip}</span> : chip}
+    {origin.route ? <small className="number-chip-meta number-chip-source-route">{origin.route}</small> : null}
   </>;
   return link.available ? <button type="button" {...link.props}>{body}</button> : <span>{body}</span>;
 }
@@ -250,13 +238,20 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
     (next ?? chip.current)?.focus();
   };
 
-  const source = sourceIdentityLabel(evidence);
+  const flagged = check.status === "not_found" || Boolean(check.comparisonReplay);
+  const unavailable = check.comparisonReplay?.reason === "evidence_unavailable";
+  const calculation = calculationCheck(check, evidence);
+  const source = flagged ? comparisonTitle(check, evidence) : sourceIdentityLabel(evidence);
   const value = spokenNumber(check.text);
   // A number its source does not hold is never named as coming from it.
-  const label = check.status === "not_found" ? t("numberChip.labelUnmatched", { value, source })
+  const label = unavailable ? value : flagged ? t("numberChip.labelUnmatched", { value, source })
     : check.kind === "calculated" ? t("numberChip.labelCalculated", { value }) : t("numberChip.labelSourced", { value, source });
   // "Rounded from …" only when the printed value is not the source value itself.
-  const status = needsChecking(check) || (check.status === "rounded" && !shownExactly(check)) ? statusId : undefined;
+  const conversion = matchedConversion(check);
+  const matchDetail = conversion ?? (check.status === "matched" && check.unstated_scale
+    ? t(check.unstated_scale === "source" ? "numberChip.unstatedSourceScale" : "numberChip.unstatedAnswerScale")
+    : undefined);
+  const status = matchDetail || needsChecking(check) || (check.status === "rounded" && !shownExactly(check)) ? statusId : undefined;
   // Worded only while open: popovers mount lazily (finance-show-the-math.md §3.3).
   const view = useMemo(() => open && check.kind === "calculated" && check.calc ? calcView(check, checks) : undefined, [open, check, checks]);
   const exact = useMemo(() => check.status === "rounded" && check.exact ? exactAmount(check, evidence, checks) : "", [check, evidence, checks]);
@@ -264,17 +259,21 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
     : check.kind === "data" ? rowTitle(check) ?? evidenceTitle(evidence)
     : evidenceTitle(evidence);
   const rows = useMemo(() => open && check.kind === "data" ? dataRows(check, evidence, checks, title) : [], [open, check, evidence, checks, title]);
+  const observation = useMemo(() => open && check.context && (check.kind === "data" || evidence.tool_name === "dataset_query")
+    ? byteMatchParts(check.context.text, check.context) : null, [open, check.context, check.kind, evidence.tool_name]);
   const symbolField = check.fields?.find((field) => field.key === "symbol")?.value;
-  const quote = useMemo(() => open && (check.kind === "passage" || check.kind === "data")
+  const quote = useMemo(() => open && !observation && (check.kind === "passage" || check.kind === "data")
     ? quoteEvidence(evidence, { pointer: check.pointer, asset, symbol: symbolField })
-    : null, [open, check.kind, check.pointer, evidence, asset, symbolField]);
+    : null, [open, observation, check.kind, check.pointer, evidence, asset, symbolField]);
   const checked = quote && quote.rows.length === 0 ? hostChecked(check) : undefined;
   // The head must not name a different ticker than the row the pointer selected.
   const headTitle = quote?.focus && title !== quote.focus.symbol && title !== evidenceTitle(evidence) ? evidenceTitle(evidence) : title;
   const headValue = check.kind === "calculated" ? (view ? view.value : check.text) : undefined;
   const cell = check.pointer ? check.fields?.find((field) => field.matched) : undefined;
   const stepLink = useOpenProps({ kind: "evidence", evidence });
-  const sourceLink = useOpenProps({ kind: "evidence", evidence, cell: cell && check.pointer ? { pointer: check.pointer, key: cell.key, value: cell.value } : undefined });
+  const sourceLink = useOpenProps({ kind: "evidence", evidence,
+    ...(evidence.kind === "saved_context" && evidence.read_ref ? { figureCheck: check } : {}),
+    cell: cell && check.pointer ? { pointer: check.pointer, key: cell.key, value: cell.value } : undefined });
   const closeThen = (action: (event: MouseEvent<HTMLElement>) => void) => (event: MouseEvent<HTMLElement>) => {
     action(event);
     setOpen(false);
@@ -282,8 +281,11 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
   };
   // Calculation and step evidence resolves to its inline step, which only an answer has.
   const showStep = closeThen(stepLink.activate);
-  const published = evidenceDate(evidence);
-  const fetched = evidenceDate(evidence, "retrieved_at");
+  const origin = open ? evidenceProvenance(evidence, check.kind === "data" && !flagged ? providerText(evidence) ?? source : source) : null;
+  const passageMeta = origin ? [origin.attribution, origin.publication?.label ?? origin.fetchLabel].filter(Boolean).join(" · ") : "";
+  const dataMeta = !evidence.memory_origin && origin?.publication && origin.fetched
+    ? t("numberChip.filedFetched", { provider: origin.name, filed: unbroken(origin.publication.date), fetched: unbroken(origin.fetched) })
+    : passageMeta;
 
   return <Popover.Root open={open} onOpenChange={(next) => { if (!next) { setOpen(false); setPinned(false); } }}>
     <Popover.Anchor asChild>
@@ -299,10 +301,10 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
           if (!pinned && !content.current?.contains(event.relatedTarget as Node | null)) schedule(false, CLOSE_DELAY_MS);
         }}
         onKeyDown={onChipKeyDown}
-        onAuxClick={sourceLink.props.onAuxClick}
+        onAuxClick={unavailable ? undefined : sourceLink.props.onAuxClick}
         onClick={(event) => {
           if (timer.current !== null) window.clearTimeout(timer.current);
-          if (sourceLink.external && wantsExternal(event)) { setOpen(false); setPinned(false); sourceLink.activate(event); return; }
+          if (!unavailable && sourceLink.external && wantsExternal(event)) { setOpen(false); setPinned(false); sourceLink.activate(event); return; }
           show(true);
         }}>
         {children}
@@ -310,7 +312,7 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
         {check.status === "not_found" ? <span className="number-chip-unmatched" aria-hidden="true" /> : null}
       </button>
     </Popover.Anchor>
-    {status ? <span id={statusId} hidden>{check.status === "not_found" ? t("numberChip.notFound") : check.status === "differs" ? t("numberChip.differs", { nearest: check.nearest ?? "", shown: check.text }) : t("numberChip.rounded", { exact })}</span> : null}
+    {status ? <span id={statusId} hidden>{matchDetail ?? (flagged ? warningReason(check, calculation) : check.status === "differs" ? t("numberChip.differs", { nearest: check.nearest ?? "", shown: check.text }) : t("numberChip.rounded", { exact }))}</span> : null}
     {open ? <Popover.Portal>
       {/* A non-modal dialog whether opened by hover, focus or click: it holds buttons, so it is never a tooltip. */}
       <Popover.Content ref={contentRef} id={popoverId} role="dialog" aria-modal={false} aria-labelledby={titleId}
@@ -330,29 +332,33 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
         onKeyDown={onContentKeyDown}
         onEscapeKeyDown={(event) => { event.preventDefault(); dismiss(); }}>
         <div className="number-chip-head">
-          <strong id={titleId}>{check.kind === "step" ? t("numberChip.fromStep") : headTitle}</strong>
-          {headValue ? <span className="gg-num">{headValue}</span> : null}
+          <strong id={titleId}>{flagged ? source : check.kind === "step" ? t("numberChip.fromStep") : headTitle}</strong>
+          {!flagged && headValue ? <span className="gg-num">{headValue}</span> : null}
         </div>
+        {flagged && evidence.memory_origin && passageMeta ? <small className="number-chip-meta">{passageMeta}</small> : null}
+        {flagged ? <WarningDetails check={check} calculation={calculation} /> : <>
         {quote ? <QuoteEvidenceBody read={quote} evidence={evidence} mode="cell" checked={checked} /> : null}
         {!quote && check.kind === "calculated" && check.calc && view ? <CalculatedBody check={check} view={view} evidenceRefs={evidenceRefs} /> : null}
         {!quote && check.kind === "passage" ? <PassageBody evidence={evidence} span={check.span} context={check.context}
-          meta={published ? t("numberChip.published", { source, date: published }) : source} /> : null}
-        {!quote && check.kind === "data" ? <>
-          {rows.length ? <table className="number-chip-row"><tbody>
+          meta={passageMeta} conversion={Boolean(conversion)} /> : null}
+        {!quote && (check.kind === "data" || observation) ? <>
+          {observation ? <p className="number-chip-observation">{observation.before}<mark>{observation.match}</mark>{observation.after}</p>
+            : rows.length ? <table className="number-chip-row"><tbody>
             {rows.map((row) => <tr key={row.key}><th scope="row">{row.label}</th><td className="gg-num">{row.matched ? <mark>{row.value}</mark> : row.value}</td></tr>)}
           </tbody></table> : null}
-          <small className="number-chip-meta">{evidence.published_at && fetched ? t("numberChip.filedFetched", { provider: providerText(evidence) ?? source, filed: published, fetched })
-            : [providerText(evidence) ?? source, fetched].filter(Boolean).join(" · ")}</small>
+          {dataMeta ? <small className="number-chip-meta">{dataMeta}</small> : null}
         </> : null}
-        {check.kind === "step" ? <p className="number-chip-meta">{evidenceTitle(evidence)}</p> : null}
+        {check.kind === "step" && !observation ? <p className="number-chip-meta">{evidenceTitle(evidence)}</p> : null}
+        </>}
+        {origin?.route && (!quote || flagged) ? <small className="number-chip-meta">{origin.route}</small> : null}
         {/* The status and actions stay in view when a short window makes the popover scroll. */}
         <div className="number-chip-foot">
-          <StatusLine check={check} exact={exact} asOf={asOf} id={`${statusId}-line`} />
+          <StatusLine check={check} exact={exact} matchDetail={matchDetail} asOf={asOf} id={`${statusId}-line`} />
           <div className="number-chip-actions">
-            {quote ? null : check.kind === "calculated" || check.kind === "step"
+            {flagged ? <WarningAction check={check} evidence={evidence} close={() => { setOpen(false); setPinned(false); }} /> : quote ? null : check.kind === "calculated" || check.kind === "step"
               ? stepLink.available ? <Button type="button" variant="ghost" size="sm" onClick={showStep}>{t("numberChip.showStep")}</Button> : null
               : sourceLink.available ? <Button type="button" variant="ghost" size="sm" onClick={closeThen(sourceLink.activate)} onAuxClick={sourceLink.props.onAuxClick}>{t("numberChip.openEvidence")}</Button> : null}
-            {check.kind === "calculated" && !check.calc?.grid ? <Button type="button" variant="ghost" size="sm" onClick={() => {
+            {!flagged && check.kind === "calculated" && !check.calc?.grid ? <Button type="button" variant="ghost" size="sm" onClick={() => {
               void copyText(copiedFormula(check, evidenceRefs));
             }}>{copied ? t("numberChip.copied") : t("numberChip.copyFormula")}</Button> : null}
           </div>
@@ -374,23 +380,6 @@ function composerClearance(chip: HTMLElement | null): number {
   const shell = chip?.closest(".chat-workspace")?.querySelector(".composer-shell");
   if (!(shell instanceof HTMLElement)) return 8;
   return Math.max(8, Math.round(window.innerHeight - shell.getBoundingClientRect().top + 8));
-}
-
-/**
- * The receipt's "numbers to check": scroll to the first such number in the answer and pin its popover.
- * The thread then stays at that number: a chat opened at its end no longer returns there when it grows.
- */
-export function useRevealNumberToCheck() {
-  const conversation = useConversationScroll();
-  return useCallback((messageId: string) => {
-    const answer = [...document.querySelectorAll<HTMLElement>("[data-message-id]")].find((element) => element.dataset.messageId === messageId);
-    const chip = answer?.querySelector<HTMLButtonElement>('[data-number-check="check"]');
-    if (!chip) return;
-    conversation?.holdScrollPosition();
-    const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    chip.scrollIntoView?.({ block: "center", behavior: reduced ? "auto" : "smooth" });
-    chip.click();
-  }, [conversation]);
 }
 
 /** A number link while its answer streams: a subtle underline, no popover, no layout shift. */

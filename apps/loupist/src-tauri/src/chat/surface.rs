@@ -124,7 +124,7 @@ impl ChatSurface {
     }
 
     pub(crate) fn link_handoff_hint() -> &'static str {
-        "This is a research session opened from a Map link in Bot. The message is the host's fixed caption, not words the user wrote, and handoff.map_link is the link it names. This run cannot ask a question, so work it through with the tools allowed and finish with a complete answer. The user can open the session while it runs, and a further user message is their guidance for this run. Bot previews the answer's first prose paragraph. interface.language is the language of the app's screens, which the answer follows here because the user wrote nothing in this run. The app's product names are in interface.names."
+        "This is a research session opened from a World link in Bot. The message is the host's fixed caption, not words the user wrote, and handoff.map_link is the link it names. This run cannot ask a question, so work it through with the tools allowed and finish with a complete answer. The user can open the session while it runs, and a further user message is their guidance for this run. Bot previews the answer's first prose paragraph. interface.language is the language of the app's screens, which the answer follows here because the user wrote nothing in this run. The app's product names are in interface.names."
     }
 
     pub(crate) fn after_turn(&self, state: &AppState, loupist_id: &str) {

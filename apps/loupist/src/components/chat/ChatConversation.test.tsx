@@ -123,7 +123,7 @@ describe("New since you left (X5)", () => {
 });
 
 describe("Bot greeting", () => {
-  const post: ChatMessage = { id: "host-1", role: "assistant", content: "Your map now also tracks suppliers.", status: "complete", created_at: "2026-10-24T00:00:00Z" };
+  const post: ChatMessage = { id: "host-1", role: "assistant", content: "Your World now also tracks suppliers.", status: "complete", created_at: "2026-10-24T00:00:00Z" };
   const render_ = (messages: ChatMessage[]) => {
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const chat = new Chat<LoupistUIMessage>({ transport: new TauriChatTransport(bridge), messages: messages.map(toLoupistUIMessage) });
@@ -144,7 +144,7 @@ describe("Bot greeting", () => {
 
   it("greets beside a host post until the user writes", async () => {
     render_([post]);
-    expect(screen.getByText("Your map now also tracks suppliers.")).toBeVisible();
+    expect(screen.getByText("Your World now also tracks suppliers.")).toBeVisible();
     // Nothing is followed yet, so the cards are first steps.
     expect(await screen.findByRole("region", { name: "Start here" })).toBeVisible();
   });

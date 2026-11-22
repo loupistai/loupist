@@ -246,7 +246,14 @@ impl PiLaunchConfig {
     }
 
     pub fn rpc_arguments(&self) -> Vec<String> {
-        let system_prompt = LOUPIST_SYSTEM_PROMPT.to_owned();
+        let system_prompt = if crate::extension_availability::user_skills() {
+            LOUPIST_SYSTEM_PROMPT.replace(
+                "User-owned instructions can be written only before this reply reads third-party text; Skills are read-only. This version has no way for the user to add a Skill or a connection of their own: asked for one, say so, and offer to keep the method or principle in the Lens instead.",
+                "User-owned instructions and Skills can be written only before this reply reads third-party text; bundled Skills are read-only.",
+            )
+        } else {
+            LOUPIST_SYSTEM_PROMPT.to_owned()
+        };
         #[cfg(feature = "eval-harness")]
         let system_prompt = crate::eval_harness::artifacts::registered_bytes(&self.system_prompt)
             .and_then(|bytes| String::from_utf8(bytes).ok())
@@ -1894,7 +1901,9 @@ mod production_asset_isolation_tests {
             config.validate(),
             Err(PiError::MissingExtension(_))
         ));
-        let args = config.rpc_arguments();
+        // A shipped build has both user-extension switches off.
+        let args =
+            crate::extension_availability::with_test_flags(false, false, || config.rpc_arguments());
         let index = args
             .iter()
             .position(|arg| arg == "--system-prompt")

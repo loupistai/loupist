@@ -58,8 +58,9 @@ export function thesisMovesFor(events: readonly GrowthEvent[] | undefined, messa
 
 export function chatReceipt(message: ChatMessage, additions?: MapAdditions, options: { saveOff?: boolean; thesisMoves?: ThesisMove[]; learned?: LearnedDigest } = {}): ChatReceiptData {
   const update = message.memory_update;
+  const skipped = Boolean(update?.skipReason);
   // A chat with saving off (private) cannot have saved anything; never claim it did.
-  const applied = update?.status === "applied" && !options.saveOff;
+  const applied = update?.status === "applied" && !options.saveOff && !skipped;
   const changes = applied ? update.changes : [];
   const setup = applied ? update.setup ?? [] : [];
   const saved = SAVED_RECEIPT_KINDS.flatMap((kind): SavedReceiptGroup[] => {
@@ -73,11 +74,11 @@ export function chatReceipt(message: ChatMessage, additions?: MapAdditions, opti
   const usedPrinciples = delivered.filter(item => item.kind === "principle").map(({ recordId, title }) => ({ recordId, title }));
   const usedMethods = delivered.filter(item => item.kind === "method").map(({ recordId, title }) => ({ recordId, title }));
   const usedPages = delivered.map(({ recordId, title, kind }) => ({ recordId, title, kind }));
-  const learned = options.saveOff ? null : learnedSummary(options.learned);
+  const learned = options.saveOff || skipped ? null : learnedSummary(options.learned);
 
-  const names = additions?.nodeIds.size ?? 0;
-  const relationships = additions?.edgeIds.size ?? 0;
-  const thesisMoves = options.thesisMoves ?? [];
+  const names = skipped ? 0 : additions?.nodeIds.size ?? 0;
+  const relationships = skipped ? 0 : additions?.edgeIds.size ?? 0;
+  const thesisMoves = skipped ? [] : options.thesisMoves ?? [];
   const unsavedTheses = (message.unsaved_theses ?? []).map(({ assetId, name }) => ({ assetId, name }));
   const skippedKinds = update?.skippedKinds ?? [];
   const toCheck = numbersToCheck(message);
@@ -104,4 +105,4 @@ export const showsReceipt = (message: ChatMessage) =>
   message.role === "assistant" && message.status !== "streaming" && message.status !== "error" && message.status !== "aborted";
 
 /** "Nothing new saved" is a fact only when the turn was allowed to save. */
-export const savesMemory = (message: ChatMessage, saveOff = false) => !saveOff && message.memory_update !== undefined;
+export const savesMemory = (message: ChatMessage, saveOff = false) => !saveOff && message.memory_update !== undefined && !message.memory_update.skipReason;

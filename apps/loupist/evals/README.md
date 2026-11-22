@@ -366,7 +366,9 @@ lock), Pi tool events in call order enriched by host `toolTrace` entries
 with a redacted excerpt of the saved content (≤ 1500 characters) and operation,
 `failureKind` (`empty_reply`, `provider_error`, `provider_timeout`, `pi_exited`,
 `protocol_error`, `output_limit`, `memory_commit_failed`, `store_failed`,
-`cancelled_by_conflict`, `other`) and `hostComposed`. `harness.dirty` covers
+`cancelled_by_conflict`, `other`) and `hostComposed`. A completed answer
+retains its `memory_save_skip` reason when saving is skipped and can carry
+`memory_commit_failure` diagnostics for a failed save. `harness.dirty` covers
 changes under `agent/` or `src-tauri/src/`; `harness.scenario_input_sha256` covers
 seeds, workspace files, connections, sessions, timeout and replay bytes.
 `admission` records the surface, Chat run and thread IDs, sent interface name
@@ -413,6 +415,8 @@ T-057 converts the April 16 KRX closes for Solsup Foods and Garam Bio to US doll
 
 Unit-test replays belong to the test's Tokio runtime, including its spawned
 broker tasks; other test runtimes keep their own fixtures and HTTP servers.
+The native credential entry point resolves a replay bundle within the calling
+runtime, where the replay scope is available.
 The serial eval runner keeps its replay process-wide for Tauri worker tasks.
 S-R09 replays one Korea Investment balance read. The host replaces every reviewed
 account field (quantities, amounts, prices paid and the rates derived from them)

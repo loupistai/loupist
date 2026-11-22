@@ -101,6 +101,7 @@ fn newer_captures_keep_world_citations_readable_and_refuse_historical_or_foreign
                 purpose: "renderer_inspection".into(),
                 world_record_id: Some(world_id.clone()),
                 world_revision_id: Some(sealed.clone()),
+                figure: None,
             },
         )
     };

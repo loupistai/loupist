@@ -6,6 +6,10 @@ use std::{
 };
 
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(loupist_release_build)");
+    if release_profile() {
+        println!("cargo:rustc-cfg=loupist_release_build");
+    }
     if (std::env::var_os("CARGO_FEATURE_WEBDRIVER").is_some()
         || std::env::var_os("CARGO_FEATURE_E2E").is_some())
         && release_profile()

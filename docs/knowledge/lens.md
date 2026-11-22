@@ -1,13 +1,13 @@
 # Lens learning
 
-Lens is the Loupist's wiki: Markdown pages with keyed sections, written only through `KnowledgeWrite::file`. The Map control is [Map and Lens](../ui/map-lens.md).
+Lens is the Loupist's wiki: Markdown pages with keyed sections, written only through `KnowledgeWrite::file`. For the World and Lens pages, see [World and Lens](../ui/map-lens.md).
 
 ## Lens
 
 A Lens record has one of five kinds, stored once in `knowledge_lens_metadata.kind`:
 `principle` (the user's rule: statement, why, example, origin), `perspective` (the
 Loupist's standing view, one active page per Loupist), `method` (a reusable way of
-checking something), `subject` (what the Loupist knows about one company, asset,
+checking something), `subject` (notes about one company, asset,
 sector, technology or theme) and `idea` (an unverified connection or thesis with a
 falsifier and an `IdeaState`: open, supported, weakened, refuted or retired). Every
 kind but principle is a page: a summary of at most 400 characters and at most 16
@@ -55,7 +55,7 @@ later create naming that node, and two pages bound to one node stay two pages.
 Method learning may still read a pending page as its company for one review
 ([Method learning](#method-learning)); that reading is never stored. A
 final-answer `lens:` link records `applied` anchors to the World nodes
-delivered in that turn. Anchors drive the Map's applies-to edges and the Lens
+delivered in that turn. Anchors drive World's applies-to edges and the Lens
 index order.
 
 ### Filing
@@ -104,7 +104,12 @@ metadata row and log.
 
 The bridge reads a page as `PageView` (`knowledge_lens_read`): kind, title, archived,
 paused, learned, the body with section keys, digests, basis and chip, suggested
-sections, anchors, links, backlinks and the newest 20 log entries. `knowledge_lens_search`
+sections, anchors, links, backlinks and the newest 20 log entries. Each section
+entry shows the heading recorded by that operation. A retired section takes its
+heading from the stored section the retire removed. Undo uses its own inverse
+operation. Both the page history and Lens-wide History use that recorded heading.
+Older entries show the localized section kind, or “Section” for a custom kind. These history labels belong to the reader and stay out of model
+deliveries. `knowledge_lens_search`
 accepts a `kinds` filter; `knowledge_lens_pages_for_node` lists the active pages
 anchored to a World node; `memory_section_forget`, `memory_op_undo` and
 `memory_learned` are the user's correction and receipt commands.
@@ -125,15 +130,15 @@ preserved original: an included publisher, user or tool capture that is not from
 a shared pack, removed or paused. Method pages are never evidence, so a turn's own
 method edits cannot feed learning. A put counts only while it is still that
 section's current, uncontested state: undoing, forgetting, retiring or replacing
-it, or the World withdrawing a claim it cites, withdraws it. Each turn commit
+it, or World withdrawing a claim it cites, withdraws it. Each turn commit
 checks the Lens log rows no review that reached inference has shown, once
 something was filed after the head the last review read. When two independent
 Chats filed that evidence about two different cases, Rust records one pending
 review. Chats are independent when each cites a Source the other never cited. A
 page's case is who its subject anchors (`about` on a subject or idea page) name.
-With World processing on, the World improves identity and never gates liveness:
-a page whose anchors the World resolved counts as those nodes, and a page whose
-subject it has not resolved counts once the World is through with the Sources
+With World building on, World improves identity and never gates liveness:
+a page whose anchors World resolved counts as those nodes, and a page whose
+subject it has not resolved counts once World is through with the Sources
 the page cites, however that processing ended, so a failed, empty or slow
 extraction never gates liveness. A case is the World nodes of the page's subject
 anchors, plus the company keys of each node's current World names and aliases
@@ -165,8 +170,8 @@ counted. A page with no subject anchor could concern any company, so its
 sections are not evidence, are not shown to a review, and are consumed like any
 other row.
 
-A page whose subject the World has not confirmed is read against the Sources
-its current sections cite, for that read only, once the World is through with
+A page whose subject World has not confirmed is read against the Sources
+its current sections cite, for that read only, once World is through with
 every one of them. A Source is processed when the World job table
 (`knowledge_graph_outbox`) holds no queued or running job for it and a job for
 its current revision has any other status: completed; failed, cancelled,
@@ -182,7 +187,7 @@ is then a case with the keys of each name it was filed under, with every World
 node whose names or aliases carry one of those keys, so with that node's keys
 and component too, and with every company in the current World (a node of the
 core Organization kind or an extension type of the company category) whose
-name or alias may name the page's subject, whichever Source the World met it
+name or alias may name the page's subject, whichever Source World met it
 in and whether or not a claim names it (`WorldIdentity::companies_naming`). A
 node may name the subject when the words of one of its keys contain, or are
 contained in, the words of one of the page's keys (`identity::may_name`):
@@ -192,22 +197,22 @@ name `loupist`, `kpmg` or `nordic auto`. So a page filed under `Halvorsen
 Cellworks` is one case with the node extraction canonicalized as `Halvorsen
 Cellworks ASA`, whether the report it cites claimed that node, claimed it and
 withdrew, or yielded nothing; a `Hana` page is one case with `Hana Financial
-Group` and `Hana Co.` wherever the World holds them, never independent of
+Group` and `Hana Co.` wherever World holds them, never independent of
 either, even when its own report's extraction failed or found nothing: a short
-name cannot pick the counterparty on its own, nor deny a bank the World already
+name cannot pick the counterparty on its own, nor deny a bank World already
 knows; and a `Samsung Electronics Inc.` page whose report published nothing is
 one case with a page about `삼성전자` when a node spells `삼성전자(Samsung
 Electronics)`. The auditor, exchange, bank, customer or regulator a report
 names beside its company is no case of the page, since its name does not match
 the page's: two reports whose disclaimers both name `Loupist` or `KPMG` leave
-their two companies two cases, so the review queues. A name the World never
+their two companies two cases, so the review queues. A name World never
 extracted, because the extraction failed or found nothing, still counts under
 its own key, so two Chats about `Halvorsen Cellworks` and `Ferroluz
 Componentes` learn with no World output at all, while `Kestrel Foundry` and
 `Kestrel Foundry Inc.` stay one case. A Product named like the page is no
 company it could be about.
 The anchor stays pending in storage either way. A pending page citing a Source
-the World is not through with is not evidence, but its rows are not consumed: a
+World is not through with is not evidence, but its rows are not consumed: a
 review that reaches inference advances its watermark past them and stores their
 ids as `held` in its snapshot, carried forward and rebuilt on every read, so the
 job or publication that frees them still finds them, however many reviews ran
@@ -216,7 +221,7 @@ meanwhile.
 input, and the watermark never moves below the one already consumed, so a
 row leaves `held` only when shown or no longer current; rows above the
 watermark that a review showed are stored as `shown`, and the latest started
-review's snapshot is the one read. A name on a Source the World never
+review's snapshot is the one read. A name on a Source World never
 reads never counts. So one Chat, one Source, one company however many subject
 and idea pages it has, an unanchored page, a page citing an unread Source, or a
 Chat repeating another's Sources never starts one. A World publication that resolves pending subject
@@ -231,7 +236,7 @@ publication (the seal rechecked while the job still ran, so its own Source was
 not yet processed), and at startup once interrupted jobs are given their
 final status. A review queued or running
 at that moment rechecks when it settles: its row stored how many subject
-anchors the World had confirmed when it was queued, its claim snapshot how
+anchors World had confirmed when it was queued, its claim snapshot how
 many at the claim, and a larger count then means a publication landed
 meanwhile. A settle after inference whose snapshot still holds rows rechecks
 too, so held leftovers reach their next review without a filing, while a
@@ -288,10 +293,10 @@ Deferral and failure write a review
 record and no growth event. Learned means a retained method, not model-weight
 training or a measured quality gain. A saved
 method alone does not demonstrate improved later work; use
-[evaluation](../../apps/loupist/evals/README.md) to test transfer. Loupist settings
-shows Learn methods from new information and the ten most recent reviews. A
+[evaluation](../../apps/loupist/evals/README.md) to test transfer. Loupist settings has the Learn methods from new information switch. Lens → History
+shows completed reviews, including **Nothing worth keeping** for a deferral. A
 successful review announces the method and links to its document in Lens. When
-that Loupist's Map is visible, the Map entities it applies to glow for four
+that Loupist's World is visible, World entities it applies to glow for four
 seconds, suppressed under reduced motion. An
 unacknowledged learned publication stays marked New for seven days.
 
@@ -299,7 +304,7 @@ unacknowledged learned publication stays marked New for seven days.
 
 User principles are Lens records of kind `principle` with a statement, optional
 why and example, and user origin (`settings`, `feedback` or `chat`), or `shared` for one
-accepted from a [shared Loupist](sharing.md#sharing). The Lens page shows the statement, its origin and application history. Asking your Loupist in Bot for a change uses the admitted Memory tools. A principle linked from a Map entity opens in Lens. An origin Chat
+accepted from a [shared Loupist](sharing.md#sharing). Lens shows the statement, its origin, how many answers read it and which chats those answers came from. Asking your Loupist in Bot for a change uses the admitted Memory tools. A principle linked from a World entity opens in Lens. An origin Chat
 link opens that conversation without changing its draft. Saved answer corrections
 can become principles. Feedback and the Memory row offer Undo, which archives, and
 View, which selects the principle in Lens. Direct creation accepts a
@@ -312,7 +317,7 @@ newest first, at most 30 rules and 6,000 characters including the overflow notic
 They outrank the standing perspective. Memory-off turns omit them. Only statements
 actually attached to that bounded block create context receipts and usage deliveries.
 Delivered context counts as acknowledgement for replacement and does not by
-itself create Map `applies_to` edges. An exact Lens read returns `lens_url` to open the rule or method from an answer. A final-answer `lens:` link to a current
+itself create World `applies_to` edges. An exact Lens read returns `lens_url` to open the rule or method from an answer. A final-answer `lens:` link to a current
 same-Loupist principle or method records applications to World entities delivered
 in that turn. `principle_save` stages a Chat-origin change only with Memory read
 and write permission. Replacement requires the admitted or explicitly read

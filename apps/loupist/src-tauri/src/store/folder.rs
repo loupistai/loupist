@@ -1,7 +1,8 @@
 //! Each Loupist owns a database and immutable bytes inside its selected folder.
 //! The host database is only a registration catalog and shared preferences.
 use super::{
-    map_loupist_profile_write, root_identity_columns, to_json, SqliteStore, StoreError, StoreResult,
+    lock_store, map_loupist_profile_write, root_identity_columns, to_json, SqliteStore, StoreError,
+    StoreResult,
 };
 use crate::{
     domain::LoupistProfile,
@@ -91,7 +92,7 @@ impl SqliteStore {
             return self.lock();
         }
         let dir = self.loupist_data_dir(loupist_id)?;
-        let mut folders = self.folders.lock().map_err(|_| StoreError::LockPoisoned)?;
+        let mut folders = lock_store(&self.folders)?;
         let root = BoundLoupistRoot::open_unbound(dir.clone()).map_err(invalid)?;
         if let Some(opened) = folders.get(loupist_id) {
             if opened.root.identity() != root.identity()
@@ -231,7 +232,7 @@ impl SqliteStore {
         // and database identity checks still run on this fast path.
         let mut opened = std::collections::BTreeSet::new();
         let owner = {
-            let folders = self.folders.lock().map_err(|_| StoreError::LockPoisoned)?;
+            let folders = lock_store(&self.folders)?;
             let mut owner = None;
             for (loupist, folder) in folders.iter() {
                 opened.insert(loupist.clone());
@@ -388,14 +389,20 @@ impl SqliteStore {
             .lock()
             .map_err(|_| StoreError::LockPoisoned)?
             .remove(&expected.id);
-        let connection = self.lock()?;
-        let changed = connection.execute(
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction()?;
+        let changed = transaction.execute(
             "DELETE FROM loupist_profiles WHERE id=?1 AND data_json=?2",
             params![expected.id, to_json(expected)?],
         )?;
         if changed != 1 {
             return Err(StoreError::Conflict("Loupist changed before removal"));
         }
+        transaction.execute(
+            "DELETE FROM app_settings WHERE id = ?1",
+            [format!("default_model:{}", expected.id)],
+        )?;
+        transaction.commit()?;
         Ok(())
     }
     /// Open a copied folder under its saved Loupist identity, rebinding only host

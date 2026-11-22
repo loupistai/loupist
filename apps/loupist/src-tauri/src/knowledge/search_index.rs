@@ -2037,7 +2037,7 @@ mod tests {
             .create_record(CreateRecord {
                 loupist_id: "loupist-a".into(),
                 kind: RecordKind::World,
-                title: "Map".into(),
+                title: "World".into(),
                 at_ms: 10,
             })
             .unwrap();

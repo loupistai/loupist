@@ -108,6 +108,7 @@ pub(super) async fn relaunch_on_auto(mut turn: LaunchedChatTurn) -> Relaunch {
                 state: &turn.app_state,
                 on_event: &turn.on_event,
                 run_id: &turn.run_id,
+                loupist_id: &turn.loupist_id,
                 thread_id: &turn.thread_id,
                 message_id: &turn.message_id,
                 memory_revision: &turn.memory_revision,

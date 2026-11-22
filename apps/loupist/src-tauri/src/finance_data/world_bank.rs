@@ -60,7 +60,7 @@ pub(super) fn world_bank_url(query: &ValidatedMacroDataQuery) -> Result<Url, Fin
         ]);
     url.query_pairs_mut()
         .append_pair("format", "json")
-        .append_pair("date", &format!("{}:{}", query.start_year, query.end_year))
+        .append_pair("date", &query.date_range())
         .append_pair(
             "per_page",
             &(query.end_year - query.start_year + 1).to_string(),
@@ -77,6 +77,9 @@ pub(super) fn normalize_world_bank_response(
     let root: Value =
         serde_json::from_slice(bytes).map_err(|_| FinanceDataError::InvalidResponse)?;
     let envelope = root.as_array().ok_or(FinanceDataError::InvalidResponse)?;
+    if let Some(error) = world_bank_error(query, &root) {
+        return Err(error);
+    }
     if envelope.len() != 2 {
         return Err(FinanceDataError::InvalidResponse);
     }
@@ -251,6 +254,68 @@ pub(super) fn normalize_world_bank_response(
     )
 }
 
+// World Bank returns some API errors inside HTTP 200. Use the documented ID
+// for classification and carry only recognized diagnostic text into the broker.
+fn world_bank_error(query: &ValidatedMacroDataQuery, root: &Value) -> Option<FinanceDataError> {
+    let messages = root.pointer("/0/message")?.as_array()?;
+    let mut errors = messages.iter().filter_map(|entry| {
+        let id = entry.get("id")?.as_str()?;
+        let key = entry.get("key")?.as_str()?;
+        let value = entry.get("value")?.as_str()?;
+        Some((id, key, value))
+    });
+    let (id, key, value) = errors.next()?;
+    if !matches!(id, "115" | "120") {
+        return Some(FinanceDataError::Provider(
+            "World Bank returned an API status error".into(),
+        ));
+    }
+
+    let date = query.date_range();
+    let parameter = key
+        .strip_prefix(r#"Parameter ""#)
+        .and_then(|name| name.strip_suffix(r#"" has an invalid value."#));
+    let named_value = match parameter {
+        Some(name @ "indicator") => Some((name, query.indicator.as_str())),
+        Some(name @ "country") => Some((name, query.economy.as_str())),
+        Some(name @ "date") => Some((name, date.as_str())),
+        _ => None,
+    };
+    let detail = match (id, key, value) {
+        (
+            "120",
+            "Invalid value",
+            "The provided parameter value is not valid"
+            | "The provided parameter value is not valid.",
+        )
+        | (
+            "115",
+            "Missing required parameter",
+            "Parameters which are required have not been sent.",
+        ) => {
+            format!(" {key}: {value}")
+        }
+        (
+            "120",
+            _,
+            "The provided parameter value is not valid"
+            | "The provided parameter value is not valid.",
+        ) if named_value.is_some() => format!(" {key} {value}"),
+        _ => String::new(),
+    };
+    let diagnostic = match named_value {
+        Some((field, sent)) => format!("World Bank rejected the {field} sent ({sent}).{detail}"),
+        None => format!(
+            "World Bank rejected one of the values sent (series {}, country {}, date {date}) and did not say which.{detail}",
+            query.indicator, query.economy,
+        ),
+    };
+    Some(FinanceDataError::RejectedArguments {
+        diagnostic,
+        next: "Check the series code and the ISO country code before reading again; web_search finds World Bank indicator codes.",
+    })
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct MacroDataQuery {
@@ -268,68 +333,100 @@ pub(super) struct ValidatedMacroDataQuery {
     pub(super) end_year: i32,
 }
 
+impl ValidatedMacroDataQuery {
+    fn date_range(&self) -> String {
+        format!("{}:{}", self.start_year, self.end_year)
+    }
+}
+
 impl FinanceDataService {
     pub async fn macro_data(&self, params: Value) -> Result<Value, FinanceDataError> {
         let query = validate_macro_query(params)?;
         let url = world_bank_url(&query)?;
-        #[cfg(all(feature = "eval-harness", debug_assertions))]
-        if crate::eval_harness::replay::enabled() {
-            let raw = self
-                .fetch_provider(
-                    self.client.get(url.clone()),
-                    WORLD_BANK_SOURCE_ID,
-                    url.to_string(),
-                    MAX_PROVIDER_BYTES,
-                )
-                .await?;
-            return normalize_world_bank_response(
-                &query,
-                &raw.source_url,
-                &raw.retrieved_at,
-                &raw.bytes,
-            );
-        }
-        let retrieved_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-        let mut response = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(|error| FinanceDataError::from_send(&error, WORLD_BANK_SOURCE_ID))?;
-        let source_url = response.url().to_string();
-        if !response.status().is_success() {
-            return Err(FinanceDataError::Provider(format!(
-                "World Bank HTTP {}",
-                response.status().as_u16()
-            )));
-        }
-        if response
-            .content_length()
-            .is_some_and(|length| length > MAX_PROVIDER_BYTES as u64)
+        let (status, raw) = self
+            .send_provider_bounded(
+                self.client.get(url.clone()),
+                WORLD_BANK_SOURCE_ID,
+                url.to_string(),
+                MAX_PROVIDER_BYTES,
+            )
+            .await?;
+        decode_world_bank_read(&query, status, &raw)
+    }
+}
+
+fn decode_world_bank_read(
+    query: &ValidatedMacroDataQuery,
+    status: StatusCode,
+    raw: &RawProviderResponse,
+) -> Result<Value, FinanceDataError> {
+    if status.is_client_error() {
+        if let Some(error) = serde_json::from_slice(&raw.bytes)
+            .ok()
+            .and_then(|root| world_bank_error(query, &root))
         {
-            return Err(FinanceDataError::Provider(
-                "World Bank response exceeded the bounded size".to_owned(),
-            ));
+            return Err(error);
         }
-        let mut bytes = Vec::with_capacity(
-            response
-                .content_length()
-                .unwrap_or(64 * 1024)
-                .min(MAX_PROVIDER_BYTES as u64) as usize,
+    }
+    if !status.is_success() {
+        return Err(FinanceDataError::Provider(format!(
+            "World Bank HTTP {}",
+            status.as_u16()
+        )));
+    }
+    normalize_world_bank_response(query, &raw.source_url, &raw.retrieved_at, &raw.bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn world_bank_invalid_parameter_is_typed_for_success_and_client_error_status() {
+        // Recorded C-013 response for a nonexistent World Bank series.
+        let recorded = br#"[{"message":[{"id":"120","key":"Invalid value","value":"The provided parameter value is not valid"}]}]"#;
+        let query = ValidatedMacroDataQuery {
+            indicator: "SP.POP.AUDITNOEXIST".into(),
+            economy: "JPN".into(),
+            start_year: 2024,
+            end_year: 2024,
+        };
+        let mut raw = RawProviderResponse {
+            bytes: recorded.to_vec(),
+            source_url: "https://api.worldbank.org/v2/country/JPN/indicator/SP.POP.AUDITNOEXIST"
+                .into(),
+            retrieved_at: "2026-11-21T00:00:00Z".into(),
+            continuation: None,
+        };
+        for status in [StatusCode::OK, StatusCode::NOT_FOUND] {
+            let error = decode_world_bank_read(&query, status, &raw).unwrap_err();
+            assert!(matches!(error, FinanceDataError::RejectedArguments {
+                diagnostic, next,
+            } if diagnostic == "World Bank rejected one of the values sent (series SP.POP.AUDITNOEXIST, country JPN, date 2024:2024) and did not say which. Invalid value: The provided parameter value is not valid"
+                && next == "Check the series code and the ISO country code before reading again; web_search finds World Bank indicator codes."));
+        }
+        raw.bytes = serde_json::to_vec(&json!([{"message": [{
+            "id": "120",
+            "key": r#"Parameter "date" has an invalid value."#,
+            "value": "The provided parameter value is not valid.",
+        }]}]))
+        .unwrap();
+        assert!(matches!(
+            decode_world_bank_read(&query, StatusCode::NOT_FOUND, &raw),
+            Err(FinanceDataError::RejectedArguments { diagnostic, .. })
+                if diagnostic == r#"World Bank rejected the date sent (2024:2024). Parameter "date" has an invalid value. The provided parameter value is not valid."#
+        ));
+        raw.bytes =
+            br#"[{"message":[{"id":"120","key":"private-reply","value":"private-reply"}]}]"#
+                .to_vec();
+        assert!(
+            matches!(decode_world_bank_read(&query, StatusCode::OK, &raw),
+            Err(FinanceDataError::RejectedArguments { diagnostic, .. }) if !diagnostic.contains("private-reply"))
         );
-        while let Some(chunk) = response.chunk().await? {
-            if bytes
-                .len()
-                .checked_add(chunk.len())
-                .is_none_or(|length| length > MAX_PROVIDER_BYTES)
-            {
-                return Err(FinanceDataError::Provider(
-                    "World Bank response exceeded the bounded size".to_owned(),
-                ));
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        let normalized = normalize_world_bank_response(&query, &source_url, &retrieved_at, &bytes)?;
-        Ok(normalized)
+        raw.bytes = br#"{"unexpected":true}"#.to_vec();
+        assert!(matches!(
+            decode_world_bank_read(&query, StatusCode::OK, &raw),
+            Err(FinanceDataError::InvalidResponse)
+        ));
     }
 }

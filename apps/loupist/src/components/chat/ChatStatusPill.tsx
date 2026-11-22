@@ -2,6 +2,7 @@ import i18n, { useTranslation } from "@/i18n";
 import { ArrowDownIcon } from "lucide-react";
 import type { ChatMessage } from "../../types";
 import { useConversationScroll, useConversationState } from "../ai-elements/conversation";
+import { useExtensionAvailability } from "../../app/extensionAvailability";
 import { clockLabel, useNow } from "../../chat/runStatus";
 import { deriveTurnStatus, useLastActivity } from "../../chat/turnView";
 
@@ -22,12 +23,14 @@ type Props = {
 /** What the pill says beside its button, by the state of the latest turn (DIRECTION 4.4). */
 function PillLabel({ message, run }: { message: ChatMessage; run?: ChatRunStatus }) {
   useTranslation("chat");
-  const streaming = message.status === "streaming";
+  const { customConnections } = useExtensionAvailability();
+  const streaming = message.status === "streaming" && !message.memorySaving;
   const now = useNow(streaming);
   const lastActivityAt = useLastActivity(message);
   if (message.status === "error") return <span className="chat-status-pill-label" aria-hidden="true">{t("chatStatusPill.failed")}</span>;
+  if (message.memorySaving) return <span className="chat-status-pill-label" aria-hidden="true">{t("memorySaving.label")}</span>;
   if (!streaming) return null;
-  const { footer } = deriveTurnStatus({ message, now, lastActivityAt, stopping: Boolean(run?.stopping), retry: { attempt: 1, offered: false } });
+  const { footer } = deriveTurnStatus({ message, customConnections, now, lastActivityAt, stopping: Boolean(run?.stopping), retry: { attempt: 1, offered: false } });
   if (footer.kind !== "live") return null;
   const waiting = footer.line.kind === "waiting";
   return <span className="chat-status-pill-label" data-tone={waiting ? "you" : undefined} aria-hidden="true">

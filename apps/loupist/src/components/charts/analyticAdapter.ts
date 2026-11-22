@@ -1,4 +1,5 @@
 import type { ChartAssemblyInput } from "flint-chart/core";
+import type { Spec } from "vega";
 import { readChartTokens } from "./chartTokens";
 import { assembleVegaLite } from "flint-chart/vegalite";
 import type { ChartColumn, ChartDocument } from "../../types";
@@ -17,13 +18,47 @@ const UNSCALED = /percent|ratio|rate|price|temperature|sentiment|correlation|sco
 const LABEL_TYPES = /date|time|year|quarter|month|week|day|hour|decade|period|fiscal|^id$|identifier|code|category|name|rank/iu;
 // Semantic types that say a value is a quantity, so even integers in 1800–2200 are counted, not read as years.
 const QUANTITY_TYPES = /amount|price|profit|quantity|count|percent|revenue|sales|income|value|volume/iu;
+const FOLDED_SERIES = "__flint_series_key";
+const GROUP_PADDING = 0.25;
 
-const flintType = (chartType: AnalyticView["kind"]) => ({
+const flintType = {
   line: "Line Chart",
   area: "Area Chart",
   bar: "Bar Chart",
+  grouped: "Grouped Bar Chart",
   scatter: "Scatter Plot",
-})[chartType];
+};
+
+const markRoles = {
+  bar: "chartAxis.barMark",
+  line: "chartAxis.lineMark",
+  area: "chartAxis.areaMark",
+  point: "chartAxis.pointMark",
+  circle: "chartAxis.pointMark",
+} as const;
+
+/** Vega-Lite handles static guide descriptions. Vega's axis encoding can also read the final scale domain. */
+export function describeAnalyticAxes(spec: Spec): Spec {
+  for (const axis of spec.axes ?? []) {
+    if (axis.aria === false || !axis.description) continue;
+    const title = axis.description;
+    const scale = spec.scales?.find(candidate => candidate.name === axis.scale)?.type;
+    if (scale === "band" || scale === "point" || scale === "ordinal") {
+      axis.description = t("chartAxis.namedAxis", { title });
+      continue;
+    }
+    delete axis.description;
+    axis.encode ??= {};
+    axis.encode.axis ??= {};
+    axis.encode.axis.update ??= {};
+    axis.encode.axis.update.description = {
+      signal: `loupistAxisDescription(${JSON.stringify(title)}, domain(${JSON.stringify(axis.scale)}), ${scale === "time" || scale === "utc"}, ${scale === "utc"})`,
+    };
+    // The outer guide uses this label. Hide its inner item's duplicate announcement.
+    axis.encode.axis.update.aria = { value: false };
+  }
+  return spec;
+}
 
 const analyticTheme = (theme: "light" | "dark"): ChartAssemblyInput["theme_spec"] => {
   const colors = readChartTokens();
@@ -83,10 +118,13 @@ const finalizeAnalyticSpec = (
   view: AnalyticView,
   rows: Array<Record<string, unknown>>,
   columns: ChartColumn[],
+  grouped: boolean,
+  overlaid: boolean,
 ) => {
   spec.width = frame.width;
   spec.height = frame.height;
   spec.autosize = { type: "fit", contains: "padding" };
+  spec.description = t("chartAxis.chart");
 
   const config = spec.config;
   if (config && typeof config === "object") {
@@ -98,10 +136,6 @@ const finalizeAnalyticSpec = (
   }
 
   const labels = new Map(columns.map((column) => [column.id, column.label]));
-  const seriesLabels = Object.fromEntries(view.y.map((field) => [
-    field, labels.get(field) || humanizeFieldLabel(field),
-  ]));
-
   const showEveryPoint =
     (view.kind === "line" || view.kind === "area") &&
     uniqueXCount(view, rows) <= 16;
@@ -110,7 +144,15 @@ const finalizeAnalyticSpec = (
   spec.config = { ...(spec.config as VegaNode | undefined), customFormatTypes: true };
   const semantic = (field: string) => view.semantic_types[field] ?? "";
   const kinds = new Map(columns.map((column) => [column.id, column.kind]));
-  const abbreviates = (fields: readonly string[]) => fields.every((field) => !UNSCALED.test(semantic(field)) && !/%|percent|퍼센트|비율/iu.test(labels.get(field) ?? ""));
+  const fieldTitle = (field: string) => labels.get(field) || humanizeFieldLabel(field);
+  const unitOf = (field: string) => columnUnit(field, labels.get(field) ?? "", semantic(field));
+  const titleWithUnit = (field: string, unit: ReturnType<typeof columnUnit>) => {
+    const label = fieldTitle(field);
+    const text = unitText(unit);
+    return text && !unit.named ? t("chartAxis.titleWithUnit", { label, unit: text }) : label;
+  };
+  const abbreviates = (fields: readonly string[]) => fields.every((field) => !unitOf(field).scale &&
+    !UNSCALED.test(semantic(field)) && !/%|percent|퍼센트|비율/iu.test(labels.get(field) ?? ""));
   const extentOf = (fields: readonly string[], zero: boolean, sums = false) => {
     let [lo, hi] = zero ? [0, 0] : [Infinity, -Infinity];
     const stacks = new Map<unknown, [number, number]>();
@@ -129,17 +171,25 @@ const finalizeAnalyticSpec = (
   // Stacked bars and areas reach the sum of a category's values, which sets the axis's unit.
   const valueExtent = (channels: VegaNode, zero: boolean) => {
     const yEnc = channels.y as VegaNode;
-    const stacked = (view.kind === "bar" || view.kind === "area") && Boolean(channels.color) && !channels.xOffset && yEnc.stack !== null && yEnc.stack !== false;
+    const stacked = view.stack === true && Boolean(channels.color) && yEnc.stack !== null;
     return extentOf(view.y, zero, stacked);
   };
   // The value axis says the unit once: the column's label with its currency, or the shared unit of folded series.
-  const units = view.y.map((field) => columnUnit(field, labels.get(field) ?? ""));
+  const seriesLabels = Object.fromEntries(view.y.map(field => {
+    const unit = unitOf(field);
+    return [field, unit.scale ? titleWithUnit(field, unit) : fieldTitle(field)];
+  }));
+  const units = view.y.map(unitOf);
   const sharedUnit = units.every((unit) => unitText(unit) === unitText(units[0]!)) ? unitText(units[0]!) : "";
-  const onlyLabel = labels.get(view.y[0]!) ?? "";
+  const onlyField = view.y[0]!;
+  const onlyTitle = titleWithUnit(onlyField, units[0]!);
   const valueTitle = view.y.length === 1
-    ? { axis: !sharedUnit ? undefined : units[0]!.named ? onlyLabel : t("chartAxis.titleWithUnit", { label: onlyLabel || humanizeFieldLabel(view.y[0]!), unit: sharedUnit }), tooltip: onlyLabel || humanizeFieldLabel(view.y[0]!) }
-    : { axis: sharedUnit && !units.every((unit) => unit.named) ? t("chartAxis.unitOnly", { unit: sharedUnit }) : null, tooltip: t("chartAxis.value") };
+    ? { axis: sharedUnit ? onlyTitle : undefined, tooltip: units[0]!.scale ? onlyTitle : fieldTitle(onlyField) }
+    : { axis: sharedUnit && !units.every((unit) => unit.named) ? t("chartAxis.unitOnly", { unit: sharedUnit }) : null,
+      tooltip: sharedUnit && units[0]!.scale ? t("chartAxis.titleWithUnit", { label: t("chartAxis.value"), unit: sharedUnit }) : t("chartAxis.value") };
   const currency = units.every((unit) => unit.currency === units[0]!.currency && !unit.scale) ? units[0]!.currency ?? "" : "";
+  const xUnit = unitOf(view.x);
+  const xValueTitle = titleWithUnit(view.x, xUnit);
   const xValues = rows.map((row) => row[view.x]).filter((value) => value != null);
   // How the chart knows the x axis holds periods or identifiers: its semantic type or column kind says so, or,
   // with no type saying it is a quantity, every value is an integer in 1800–2200 (a year).
@@ -158,8 +208,9 @@ const finalizeAnalyticSpec = (
   };
   const dateGrain = (format: unknown): DateGrain => typeof format !== "string" ? "day" : /%-?[de]/u.test(format) ? "day" : /%[bBm]/u.test(format) ? "month" : "year";
   // The grain flint chose for a time axis (its first layer carries the format), used by every layer and the tooltip.
+  const groupedDate = grouped && (["date", "datetime"].includes(kinds.get(view.x) ?? "") || /^date(?:time)?$/iu.test(semantic(view.x)));
   let timeFormat: unknown;
-  let utc = false;
+  let utc = groupedDate;
   visitVega(spec, (node) => {
     const x = (node.encoding as VegaNode | undefined)?.x as VegaNode | undefined;
     if (timeFormat !== undefined || x?.type !== "temporal") return;
@@ -173,6 +224,11 @@ const finalizeAnalyticSpec = (
     if (axis.labelExpr) return;
     axis.labelExpr = `loupistDate(datum.value, ${JSON.stringify({ grain, utc })})`;
     delete axis.format;
+  };
+  const describeAxis = (channel: VegaNode, title: string) => {
+    if (!channel.axis || typeof channel.axis !== "object") return;
+    const axis = channel.axis as VegaNode;
+    axis.description = typeof axis.title === "string" ? axis.title : title;
   };
   // A value printed on its bar: the answer's amount, not an SI suffix ("302조", not "302T").
   const formatDataLabel = (node: VegaNode, channels: VegaNode) => {
@@ -189,16 +245,25 @@ const finalizeAnalyticSpec = (
     const x = channels.x as VegaNode | undefined;
     const y = channels.y as VegaNode | undefined;
     if (!x || !y || typeof x.field !== "string" || typeof y.field !== "string") return;
-    const xTitle = labels.get(view.x) || humanizeFieldLabel(view.x);
-    const xTip: VegaNode = x.type === "temporal"
-      ? { field: x.field, type: "temporal", title: xTitle, format: { grain, utc }, formatType: "loupistDate" }
-      : x.type === "quantitative" && !xIsLabel ? { field: x.field, type: "quantitative", title: xTitle, format: "", formatType: "loupistExact" }
+    const xTitle = x.type === "quantitative" && !xIsLabel ? xValueTitle : fieldTitle(view.x);
+    const xTip: VegaNode = x.type === "temporal" || groupedDate
+      ? { field: x.field, type: x.type, title: xTitle, format: { grain, utc }, formatType: "loupistDate" }
+      : x.type === "quantitative" && !xIsLabel ? { field: x.field, type: "quantitative", title: xTitle, format: xUnit.scale ? "" : xUnit.currency ?? "", formatType: "loupistExact" }
       : { field: x.field, type: x.type, title: xTitle };
     const color = channels.color as VegaNode | undefined;
     const series: VegaNode[] = !color || typeof color.field !== "string" ? []
-      : color.field === "__flint_series_key" ? [{ field: color.field, type: "nominal", title: t("chartAxis.series"), format: seriesLabels, formatType: "loupistSeries" }]
+      : color.field === FOLDED_SERIES ? [{ field: color.field, type: "nominal", title: t("chartAxis.series"), format: seriesLabels, formatType: "loupistSeries" }]
       : [{ field: color.field, type: "nominal", title: labels.get(color.field) || humanizeFieldLabel(color.field) }];
-    channels.tooltip = [xTip, ...series, { field: y.field, type: "quantitative", title: valueTitle.tooltip, format: currency, formatType: "loupistExact" }];
+    const fields = [xTip, ...series, { field: y.field, type: "quantitative", title: valueTitle.tooltip, format: currency, formatType: "loupistExact" }];
+    channels.tooltip = fields;
+    // Use the tooltip's readable fields for each mark. Vega-Lite's default also reads
+    // internal grouping and stack channels, which can repeat values and speak raw field names.
+    const clauses = fields.map(({ field, title, formatType, format }) => {
+      const value = `datum[${JSON.stringify(field)}]`;
+      const printed = formatType ? `${formatType}(${value}, ${JSON.stringify(format)})` : value;
+      return `${JSON.stringify(`${title}: `)} + (${printed})`;
+    });
+    channels.description = { value: { expr: clauses.join(' + ", " + ') } };
   };
 
   visitVega(spec, (node) => {
@@ -217,11 +282,12 @@ const finalizeAnalyticSpec = (
       if (color && typeof color === "object" && color.legend !== null) {
         color.legend = {
           ...(color.legend as VegaNode | undefined),
+          description: t("chartAxis.legend", { title: labels.get(String(color.field)) || t("chartAxis.series") }),
           orient: "bottom",
           direction: "horizontal",
           columns: { expr: "max(1, floor(width / 260))" },
           labelLimit: { expr: "max(80, min(240, width - 24))" },
-          ...(color.field === "__flint_series_key" ? {
+          ...(color.field === FOLDED_SERIES ? {
             // Labels are presentation only: equal labels must not merge series.
             labelExpr: `(${JSON.stringify(seriesLabels)})[datum.label] || datum.label`,
           } : {}),
@@ -235,9 +301,11 @@ const finalizeAnalyticSpec = (
         // A unit the dataset names is shown even where the theme would leave the value axis untitled.
         if (valueTitle.axis && yEnc.axis && typeof yEnc.axis === "object" && (yEnc.axis as VegaNode).title === null) delete (yEnc.axis as VegaNode).title;
         if (yEnc.type === "quantitative") {
+          if ((view.kind === "bar" || view.kind === "area") && view.stack !== true) yEnc.stack = null;
           yEnc.scale = { ...(yEnc.scale as VegaNode | undefined), zero: true };
           formatValueAxis(yEnc, valueExtent(channels, true), "height", abbreviates(view.y));
         }
+        describeAxis(yEnc, valueTitle.axis || valueTitle.tooltip);
       }
       const x = channels.x;
       if (x && typeof x === "object" && !Array.isArray(x)) {
@@ -248,11 +316,11 @@ const finalizeAnalyticSpec = (
               ? (xEnc.axis as VegaNode)
               : {};
           axis.labelAngle = 0;
-          axis.labelOverlap = false;
+          axis.labelOverlap = grouped ? "greedy" : false;
           axis.labelLimit = 160;
           xEnc.axis = axis;
         }
-        if (xEnc.type === "temporal") formatDateAxis(xEnc);
+        if (xEnc.type === "temporal" || groupedDate) formatDateAxis(xEnc);
         else if (xEnc.type === "quantitative" && xIsLabel) {
           // A year, a period or an identifier is a category: one band each, in order, printed as given
           // ("2023", never "2,023"), and never a quantity whose bars squeeze against a zero-based domain.
@@ -260,14 +328,15 @@ const finalizeAnalyticSpec = (
           delete xEnc.scale;
           if (xEnc.axis) for (const key of ["format", "labelExpr", "values", "tickMinStep"]) delete (xEnc.axis as VegaNode)[key];
         } else if (xEnc.type === "quantitative") {
+          if (unitText(xUnit)) xEnc.title = xValueTitle;
           formatValueAxis(xEnc, extentOf([view.x], false), "width", abbreviates([view.x]));
         }
+        describeAxis(xEnc, fieldTitle(view.x));
       }
       formatDataLabel(node, channels);
       addTooltip(node, channels);
     }
 
-    if (!showEveryPoint) return;
     const mark = node.mark;
     const markType =
       typeof mark === "string"
@@ -275,7 +344,14 @@ const finalizeAnalyticSpec = (
         : mark && typeof mark === "object"
           ? (mark as VegaNode).type
           : undefined;
-    if (markType !== "point" || !Array.isArray(node.transform)) return;
+    if (typeof markType === "string") {
+      const properties = typeof mark === "object" ? mark : {};
+      const role = markRoles[markType as keyof typeof markRoles];
+      if (node.__themeSynthetic || markType === "text") node.mark = { type: markType, ...properties, aria: false };
+      else if (role) node.mark = { type: markType, ...properties, ariaRoleDescription: t(role),
+        ...(overlaid && markType === "area" ? { line: { opacity: 1 } } : {}) };
+    }
+    if (!showEveryPoint || markType !== "point" || !Array.isArray(node.transform)) return;
     node.transform = node.transform.filter((step) => {
       if (!step || typeof step !== "object") return true;
       return (step as VegaNode).filter !== "datum.__peLast === 1";
@@ -294,23 +370,37 @@ export const assembleAnalyticSpec = (
   columns: ChartColumn[] = [],
 ): Record<string, unknown> => {
   const frame = fitAnalyticFrame(width, height);
+  const { color } = view;
+  const seriesCount = color ? new Set(rows.map((row) => row[color])).size : view.y.length;
+  const grouped = view.kind === "bar" && view.stack !== true && seriesCount > 1;
+  const overlaid = view.kind === "area" && view.stack !== true && seriesCount > 1;
   const encodings: ChartAssemblyInput["chart_spec"]["encodings"] = {
     x: { field: view.x },
     y: view.y.length === 1
       ? { field: view.y[0] }
       : view.y.map((field) => ({ field })),
   };
-  if (view.color) encodings.color = { field: view.color };
+  if (grouped) encodings.group = { field: color ?? FOLDED_SERIES, type: "nominal" };
+  else if (color) encodings.color = { field: color, ...(view.kind === "bar" || view.kind === "area" ? { type: "nominal" } : {}) };
+  // Flint can drop categories before Vega draws them. Budget for its 3px group gutter,
+  // 2px per series, and 60px for chart padding, then draw in the actual frame.
+  const canvasWidth = grouped
+    ? Math.max(frame.width, uniqueXCount(view, rows) * Math.max(3 / GROUP_PADDING, 2 * seriesCount) + 60)
+    : frame.width;
   const input: ChartAssemblyInput = {
     data: { values: rows },
     semantic_types: view.semantic_types,
     chart_spec: {
-      chartType: flintType(view.kind),
+      chartType: flintType[grouped ? "grouped" : view.kind],
       encodings,
+      chartProperties: grouped ? { dodge: "global", ...(canvasWidth > frame.width ? { showValueLabels: "off" } : {}) }
+        : overlaid ? { stackMode: "layered", opacity: 0.24 }
+        : undefined,
       baseSize: frame,
-      canvasSize: frame,
+      canvasSize: { ...frame, width: canvasWidth },
     },
+    options: grouped ? { stepPadding: GROUP_PADDING } : undefined,
     theme_spec: analyticTheme(theme),
   };
-  return finalizeAnalyticSpec(assembleVegaLite(input) as VegaNode, frame, view, rows, columns);
+  return finalizeAnalyticSpec(assembleVegaLite(input) as VegaNode, frame, view, rows, columns, grouped, overlaid);
 };

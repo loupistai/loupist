@@ -12,7 +12,8 @@ import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control"
 import { Input } from "../ui/input";
 import { NativeSelect } from "../ui/native-select";
 import { Switch } from "../ui/switch";
-import { thinkingLabel, runControlLabel, runChoiceLabel, visibleCatalogModels } from "../../lib/modelSelection";
+import { modelRunSelection, thinkingLabel, runControlLabel, runChoiceLabel, visibleCatalogModels } from "../../lib/modelSelection";
+import { ModelSelectionMenu } from "../models/ModelSelectionMenu";
 import { ProviderPlanLine } from "../models/ProviderPlanLine";
 
 /** Conversation context presets: how much recent conversation stays before older turns are summarized. */
@@ -58,7 +59,8 @@ export function ConfigurationDiagnostics({ snapshot }: { snapshot: ConfigSnapsho
   return <div className="inline-error config-diagnostics" role="alert"><strong>{i18n.t("settings:agentSettings.newResponsesStayPausedUntilThisIsFixed")}</strong>{snapshot.diagnostics.map((diagnostic, index) => <p key={index}>{diagnostic.line !== null ? i18n.t("settings:agentSettings.diagnosticLine", { line: formatNumber(diagnostic.line), message: diagnostic.message }) : i18n.t("settings:agentSettings.diagnostic", { message: diagnostic.message })}</p>)}</div>;
 }
 
-export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange }: {
+export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange, onConnectAccount }: {
+  onConnectAccount?: () => void;
   bridge: LoupistBridge; loupists: LoupistSummary[]; catalog: ModelCatalog | null; scope: ConfigScope; onScopeChange?: (scope: ConfigScope) => void;
 }) {
   useTranslation("settings");
@@ -89,13 +91,12 @@ export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange 
   const reset = (path: string) => { void update({}, [path.split(".")]); };
   const field = (path: string, label: string, description?: string): FieldProps => ({ snapshot: snapshot!, path, label, description, disabled, onReset: reset });
   const models = visibleCatalogModels(catalog);
-  const profileId = snapshot?.effective.chat.model_profile_id ?? "";
-  const currentModel = models.find((model) => model.id === profileId);
-  const fallbackId = scope.kind === "project" ? loupists.find((loupist) => loupist.id === scope.loupistId)?.last_model_profile_id : undefined;
-  const optionModel = profileId ? currentModel : models.find((model) => model.id === fallbackId) ?? models[0];
+  const resolved = snapshot?.modelSelection;
+  const selection = modelRunSelection(resolved);
+  const optionModel = models.find((model) => model.id === selection.model_profile_id);
   const unavailableOptions = Object.entries(snapshot?.effective.chat.run_options ?? {}).filter(([key, value]) => !optionModel?.run_controls.some((control) => control.id === key && control.choices.some((choice) => choice.id === value)));
   const thinking = snapshot?.effective.chat.thinking_level;
-  const thinkingLevels = currentModel?.thinking_levels ?? [...new Set(models.flatMap((model) => model.thinking_levels))];
+  const thinkingLevels = optionModel?.thinking_levels ?? [...new Set(models.flatMap((model) => model.thinking_levels))];
   return <>
     {onScopeChange ? <div className="agent-config-scope">
       <div className="agent-config-scope-copy"><label htmlFor="config-scope">{i18n.t("settings:agentSettings.settingsApplyTo")}</label><p>{scope.kind === "global" ? i18n.t("settings:agentSettings.setTheDefaultsEveryLoupistStartsWith") : i18n.t("settings:agentSettings.customizeThisLoupistOtherSettingsFollowYourGlobal")}</p></div>
@@ -106,7 +107,18 @@ export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange 
     <ConfigurationDiagnostics snapshot={snapshot} />
     {snapshot ? <>
       <section className="settings-section"><div className="agent-config-fields">
-        <SettingField {...field("chat.model_profile_id", i18n.t("settings:agentSettings.defaultModel"), i18n.t("settings:agentSettings.theModelToUseWhenStartingAChat"))}><NativeSelect id="config-chat.model_profile_id" aria-describedby="config-description-chat.model_profile_id" disabled={disabled} value={profileId} onChange={(event) => event.target.value ? void save("chat.model_profile_id", event.target.value) : reset("chat.model_profile_id")}><option value="">{scope.kind === "project" ? i18n.t("settings:agentSettings.useGlobalDefaultModel") : i18n.t("settings:agentSettings.automaticRecommendedModel")}</option>{profileId && !currentModel ? <option value={profileId}>{i18n.t("settings:agentSettings.unavailableModel")}</option> : null}{models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}</NativeSelect></SettingField>
+        <SettingField {...field("chat.model_profile_id", i18n.t("settings:agentSettings.defaultModel"), i18n.t("settings:agentSettings.theModelToUseWhenStartingAChat"))}>
+          {resolved?.unavailable_reason === "no_connected_account" ? <Button id="config-chat.model_profile_id" variant="outline" onClick={onConnectAccount}>{i18n.t("chat:chatModelMenu.noAccount")}</Button>
+            : <ModelSelectionMenu triggerId="config-chat.model_profile_id" ariaLabel={i18n.t("settings:agentSettings.defaultModel")} disabled={disabled}
+                models={models} providers={catalog?.providers ?? []} selection={selection} modelName={resolved?.model?.name} isDefault={resolved?.is_default}
+                onChooseDefault={() => reset("chat.model_profile_id")}
+                onSelectionChange={next => {
+                  if (next.model_profile_id !== selection.model_profile_id) void save("chat.model_profile_id", next.model_profile_id);
+                  else if (next.thinking_level !== selection.thinking_level) void save("chat.thinking_level", next.thinking_level);
+                  else if (next.run_options !== selection.run_options) void update({ chat: { run_options: next.run_options } });
+                  else void save("chat.model_profile_id", next.model_profile_id);
+                }} />}
+        </SettingField>
         <ProviderPlanLine className="agent-config-plan-line" provider={catalog?.providers.find((provider) => provider.id === optionModel?.provider)} onOpenUsage={(provider) => { void bridge.providerOpenUsage({ provider }).catch(() => {}); }} />
         <SettingField {...field("chat.thinking_level", i18n.t("settings:agentSettings.reasoningLevel"), i18n.t("settings:agentSettings.howMuchTimeTheModelSpendsThinkingBefore"))}><NativeSelect id="config-chat.thinking_level" aria-describedby="config-description-chat.thinking_level" disabled={disabled} value={thinking ?? "__automatic__"} onChange={(event) => event.target.value === "__automatic__" ? reset("chat.thinking_level") : void save("chat.thinking_level", event.target.value)}><option value="__automatic__">{scope.kind === "project" ? i18n.t("settings:agentSettings.useGlobalDefaultReasoningLevel") : i18n.t("settings:agentSettings.modelDefault")}</option>{thinking !== null && thinking !== undefined && !thinkingLevels.includes(thinking) ? <option value={thinking}>{i18n.t("settings:agentSettings.unavailableThinking", { level: thinking })}</option> : null}{thinkingLevels.map((level) => <option value={level} key={level}>{thinkingLabel(level) || i18n.t("settings:agentSettings.none")}</option>)}</NativeSelect></SettingField>
         <SettingField

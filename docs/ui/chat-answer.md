@@ -9,6 +9,12 @@ open policy either: `TurnProvider` wraps it, and a step's page, a source row or 
 citation opens through the one `ChatDestination` path
 ([opening from chat](evidence-browser.md#opening-from-chat)).
 
+Research answers use the full conversation column for paragraphs, headings, lists, charts,
+cards and the footer. Tables fill that column and scroll horizontally inside their frame
+when they need more room. In Lens pages and scheduled answers the same Markdown fills
+the reader. The first numbered citation stays with the word it follows, including its
+punctuation. A further citation can wrap to the next line.
+
 For a bundled connection read, the answer’s Sources summary and source chips use the
 catalog display name for the recorded provider. A World Bank Indicators read appears
 as an external source alongside other connection reads.
@@ -86,7 +92,7 @@ Context above the thread (a notice or the working note arriving) moves the threa
 edge; the scroll position
 moves with that edge (`keepContentStill`, `conversation.tsx`), so the transcript stays
 where the reader sees it, while a thread kept at its end stays at its end. Behind the
-full-page Map or Lens the thread has no box (`display: none`): nothing is measured,
+full-page World or Lens the thread has no box (`display: none`): nothing is measured,
 reserved or moved then, a lazy page's Suspense fallback showing it again does not reopen
 it, and it shows where the reader left it; a question sent meanwhile goes to the top once
 it shows. The card, the status pill and the ledger read the view alone; the pill
@@ -129,6 +135,10 @@ their height; next steps and the as-of note render below the footer. The commit 
 waits until the answer's last received word is shown, at most 400 ms after the host's
 `completed`, and changes no wrapping and no position of anything already read. On
 older answers only Copy and feedback wait for hover; Sources and a failure stay visible.
+While a turn is active, feedback on earlier answers and Edit explain that they
+will be available when the current reply finishes. The answer being written has
+its own completion hint. Copy, sources, receipts, figures and Activity remain
+available on finished answers throughout the run.
 Copy takes every piece of prose the page shows, in page order: each note that stayed on
 the page, then the answer, each as written, so indentation that makes code or a nested
 list survives. A short note that gave its place is in the timeline only and is not copied.
@@ -236,7 +246,7 @@ is never retried automatically; it offers Manage usage, Try again and Use anothe
 account. An ineligible plan offers an API key, needs reconnect offers Reconnect, and a context that is too long has no
 retry. The account kinds also set the [provider status](../runtime/providers.md#shared-providers-and-world-processing).
 A `model_gone` failure (404 `model_not_found`) before any text, tool call or
-accepted steer prunes the model and asks once more on Auto, in the same turn on a
+accepted steer prunes the model and asks once more using the current default, in the same turn on a
 fresh cold Pi (`commands/chat_runtime/model_gone.rs`); the answer stores
 `replaced_model` and names the model that answered instead. While offline a banner
 shows and sent messages wait in the ordinary queue, sending on reconnect. Otherwise, when a data read in
@@ -247,7 +257,7 @@ or the network couldn't be reached.
 ## Learned line
 
 Under every finished answer one line says what it learned, in this order:
-"Read your principle · Learned n things · n names added to the map · n relationships · n ideas · Used n pages". Sources are
+"Read your principle · Learned n things · n names added to World · n relationships · n ideas · Used n pages". Sources are
 not repeated here: the ledger's receipt says "n sources" and the footer's Sources (n)
 toggle opens the numbered list. Only the parts that are not zero appear. Learned counts the sections the answer added,
 replaced or retired, read by message id from `memory_learned`; ideas counts filed pages
@@ -256,6 +266,12 @@ other Lens page it delivered (methods, topics, ideas and a perspective), so no
 page is counted twice, and both open the same quoted list. A private chat, where saving is
 off, shows no Learned part and does not ask Rust for one, and a running or failed answer
 shows no line.
+
+When Memory saving is skipped, the receipt gives the reason and the retained
+answer stays as written. If the host recorded staged items it discarded, the
+next line says that the answer's claimed saves were not kept. The receipt lists
+their kinds and titles under Not kept. Bot's scheduled and hand-off posts and the Schedule
+run reader show the same notice.
 
 Choosing Learned or ideas opens the card under the answer: each filed page, with every
 added, replaced or retired section. Fix opens the Bot composer with the page pinned

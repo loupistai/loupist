@@ -54,10 +54,154 @@ function renderAnswer(message: ChatMessage, extra: Partial<ComponentProps<typeof
   return { ...props, view, open, onOpenEvidence: open };
 }
 
+it("opens the number evidence of a finished answer while it saves", async () => {
+  renderAnswer(answer({ status: "streaming", memorySaving: { run_id: "run", waiting_for_other_chat: false } }));
+  const mark = await chip("9.1 percent");
+  await userEvent.click(mark);
+  expect(await screen.findByRole("dialog")).toHaveTextContent("February guidance call");
+  expect(screen.queryByTestId("memory-row")).toBeNull();
+});
+
 const chip = async (text: string) => {
   const found = await screen.findAllByRole("button", { name: new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}`) });
   return found.find(element => element.classList.contains("number-chip"))!;
 };
+
+it("explains a matched scale conversion in both languages while keeping real rounding distinct", async () => {
+  const source = evidenceFixture({ id: "ev_sec", title: "Annual revenue", excerpt: `${"Prior comparative rows. ".repeat(14)}FY2023 value 383285000000 dollars` });
+  const exact = "383285000000";
+  const start = source.excerpt.indexOf(exact);
+  const check = { evidence_id: source.id, kind: "passage", status: "matched", text: "383,285", link_index: 0, exact,
+    span: { start, end: start + exact.length }, scale_conversion: { source_scale: 0, answer_scale: 6, currency: "USD" } } satisfies NumberCheck;
+  const rounded = { ...check, status: "rounded", text: "383.3 billion", link_index: 1, scale_conversion: undefined } satisfies NumberCheck;
+  const { view } = renderAnswer(answer({
+    content: "[383,285](#evidence-ev_sec) million. [383.3 billion](#evidence-ev_sec).",
+    evidence_refs: [source], number_checks: [check, rounded],
+  }));
+  const user = userEvent.setup();
+  try {
+    const mark = await chip("383,285");
+    const description = "Matches the source: 383,285,000,000 USD, shown in millions.";
+    expect(mark).toHaveAccessibleDescription(description);
+    await user.click(mark);
+    const popover = await screen.findByRole("dialog");
+    expect(within(popover).getByText(description)).toBeVisible();
+    expect(popover.querySelector("mark")).toHaveTextContent(exact);
+    await act(async () => { await i18n.changeLanguage("ko"); });
+    expect(popover).toHaveTextContent("자료와 일치: 383,285,000,000 USD (백만 단위로 표시)");
+    await user.keyboard("{Escape}");
+    await act(async () => { await i18n.changeLanguage("en"); });
+    await user.click(await chip("383.3"));
+    expect(await screen.findByRole("dialog")).toHaveTextContent(/Rounded from .*383,285,000,000/);
+  } finally {
+    view.unmount();
+    await i18n.changeLanguage("en");
+  }
+});
+
+it.each([
+  ["source", "en", "Matches the source’s number; the source’s unit is not stated in this passage."],
+  ["answer", "en", "Matches the source’s number; the answer does not state a unit."],
+  ["source", "ko", "자료의 숫자와 일치합니다. 이 구간에는 자료의 단위가 적혀 있지 않습니다."],
+  ["answer", "ko", "자료의 숫자와 일치합니다. 답변에는 단위가 적혀 있지 않습니다."],
+] as const)("explains the unstated %s scale as a verified match (%s)", async (unstatedScale, language, detail) => {
+  await i18n.changeLanguage(language);
+  const source = evidenceFixture({ id: "ev_filing", title: "Annual revenue", excerpt: unstatedScale === "source" ? "Revenue was 383,285." : "Revenue was 383,285 million." });
+  const value = unstatedScale === "answer" ? "383,285" : "383,285 million";
+  const { view } = renderAnswer(answer({
+    content: `[${value}](#evidence-${source.id}).`, evidence_refs: [source],
+    number_checks: [{ evidence_id: source.id, kind: "passage", status: "matched", text: value, link_index: 0, unstated_scale: unstatedScale }],
+    memory_update: { status: "no_change", commitId: null, changes: [] },
+  }));
+  try {
+    const mark = await chip(value);
+    expect(mark).toHaveAttribute("data-status", "matched");
+    expect(mark).toHaveAccessibleDescription(detail);
+    expect(within(screen.getByTestId("memory-row")).queryByRole("button", { name: /number.*check|확인할 숫자/iu })).not.toBeInTheDocument();
+    await userEvent.click(mark);
+    const status = within(await screen.findByRole("dialog")).getByText(detail);
+    expect(status).toBeVisible();
+    expect(status).toHaveAttribute("data-status", "matched");
+  } finally {
+    view.unmount();
+    await i18n.changeLanguage("en");
+  }
+});
+
+it.each(["en", "ko"])("shows the retained World Bank observation without internal fields (%s)", async language => {
+  const value = "123,975,371";
+  const line = `Population, total · Japan · 2024 · ${value}`;
+  const source = evidenceFixture({ id: "ev_pop", title: "World Bank population", tool_name: "world_bank_series",
+    excerpt: '{"dataset_id":"private-row-id","observations":[{"date":"2024","value":"123975371"}]}' });
+  const start = new TextEncoder().encode(line.slice(0, line.indexOf(value))).length;
+  await i18n.changeLanguage(language);
+  const { view, open } = renderAnswer(answer({ content: `[${value}](#evidence-ev_pop)`, evidence_refs: [source],
+    number_checks: [{ evidence_id: source.id, kind: "data", status: "matched", text: value, link_index: 0,
+      context: { text: line, start, end: start + value.length } }] }));
+  try {
+    await userEvent.click(await chip(value));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent(line);
+    expect(dialog.querySelector("mark")).toHaveTextContent(value);
+    expect(dialog).not.toHaveTextContent(/dataset_id|private-row-id|2,024/);
+    await userEvent.click(within(dialog).getByRole("button", { name: i18n.t("chat:numberChip.openEvidence") }));
+    expect(destinations(open).at(-1)).toMatchObject({ kind: "evidence", evidence: source });
+  } finally {
+    view.unmount();
+    await i18n.changeLanguage("en");
+  }
+});
+
+it("uses the matched market-data observation and leaves legacy dates and codes as written", async () => {
+  const value = "162.85";
+  const line = `Close · NVDA · 2020 · ${value} USD`;
+  const source = evidenceFixture({ id: "ev_quote", title: "NVIDIA prices", excerpt: "raw provider payload" });
+  const start = new TextEncoder().encode(line.slice(0, line.indexOf(value))).length;
+  const base = { evidence_id: source.id, kind: "data", status: "matched", text: value, link_index: 0 } satisfies NumberCheck;
+  const legacy = { ...base, link_index: 1, fields: [{ key: "close", value, matched: true }, { key: "date", value: "2020" }, { key: "exchange_code", value: "005930" }] };
+  renderAnswer(answer({ content: `[${value}](#evidence-ev_quote) and [${value}](#evidence-ev_quote).`, evidence_refs: [source],
+    number_checks: [{ ...base, context: { text: line, start, end: start + value.length } }, legacy] }));
+  const user = userEvent.setup();
+  const [newMark, oldMark] = await screen.findAllByTestId("number-chip");
+  await user.click(newMark!);
+  const observation = await screen.findByRole("dialog");
+  expect(observation).toHaveTextContent(line);
+  expect(observation.querySelector("mark")).toHaveTextContent(value);
+  await user.keyboard("{Escape}");
+  await user.click(oldMark!);
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText("2020")).toBeVisible();
+  expect(within(dialog).getByText("005930")).toBeVisible();
+});
+
+it.each([
+  ["en", "123,975,371", "2024"], ["en", "126,261,000 people", "2020"], ["ko", "126,261,000명", "2020"],
+])("uses the saved Source observation for %s figure %s", async (language, text, period) => {
+  await act(() => i18n.changeLanguage(language));
+  try {
+    const value = text.match(/^[\d,]+/u)![0];
+    const lead = `Population, total · Japan · ${period} · `;
+    const start = new TextEncoder().encode(lead).length;
+    const source = evidenceFixture({ id: "ev_retained", title: "World Bank population", kind: "saved_context", tool_name: "world_read", read_ref: "rdg_retained", url: undefined,
+      excerpt: '{"dataset_id":"private-row-id","observations":[{"date":"2024","value":"123975371"}]}' });
+    const check: NumberCheck = { text, evidence_id: source.id, kind: "passage", status: "matched", link_index: 0,
+      context: { text: lead + value, start, end: start + value.length } };
+    const { open } = renderAnswer(answer({ content: `[${text}](#evidence-${source.id})`, evidence_refs: [source], number_checks: [check],
+      memory_refs: [{ kind: "source", read_ref: "rdg_retained", title: source.title, excerpt: source.excerpt, as_of: null, section: null, access: "exact_read",
+        knowledge: { kind: "source", recordId: "population-record", revisionId: "population-revision", objectId: "population-source", spanId: "population-span" } }],
+    }));
+    await userEvent.click(await screen.findByTestId("number-chip"));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent(lead + value);
+    expect(dialog.querySelector("mark")).toHaveTextContent(value);
+    expect(dialog).not.toHaveTextContent(/dataset_id|private-row-id/);
+    await userEvent.click(within(dialog).getByRole("button", { name: i18n.t("chat:numberChip.openEvidence") }));
+    expect(destinations(open).at(-1)).toMatchObject({ kind: "memory", location: { recordId: "population-record", revisionId: "population-revision", selection: { spanId: "population-span" } },
+      figure: { messageId: "answer", evidenceId: source.id, linkIndex: 0 } });
+  } finally {
+    await act(() => i18n.changeLanguage("en"));
+  }
+});
 
 it("keeps copy feedback across snapshots of the same number check", async () => {
   const user = userEvent.setup();
@@ -346,7 +490,7 @@ it("names a market-data figure by its field and its provider, never a runtime id
   await user.click(await chip("$160.00"));
   const dialog = await screen.findByRole("dialog", { name: "NVDA · Quote" });
   expect(within(dialog).getByRole("rowheader", { name: "Last price" })).toBeVisible();
-  expect(dialog).toHaveTextContent(/Yahoo Finance · \w{3}\s\d{1,2}/u);
+  expect(dialog).toHaveTextContent(/Yahoo Finance · fetched \w{3}\s\d{1,2}/u);
   expect(dialog).not.toHaveTextContent("yfinance");
 });
 
@@ -401,15 +545,18 @@ it("marks a calculation that differs, says so in the popover and counts it in th
   expect(margin).toHaveAccessibleDescription("The calculation gave 8.42%. The answer says 8.5%.");
   const segment = screen.getByRole("button", { name: "1 number to check" });
   await user.click(segment);
-  expect(await screen.findByRole("dialog")).toHaveTextContent("The calculation gave 8.42%. The answer says 8.5%.");
-  // The thread stays at the number: a chat opened at its end no longer returns there.
+  const list = await screen.findByRole("dialog");
+  expect(list).toHaveTextContent("Loupist compared each cited figure with its source. These could not be confirmed.");
+  expect(list).toHaveTextContent("8.5%");
+  expect(list).toHaveTextContent("Different numbers");
+  await user.click(within(list).getByRole("button", { name: "Open the step" }));
   expect(scroll.holdScrollPosition).toHaveBeenCalled();
   // Matched and rounded numbers never reach the receipt.
   expect(chatReceipt(answer()).numbersToCheck).toBe(0);
   expect(chatReceipt(answer({ number_checks: differs })).numbersToCheck).toBe(1);
 });
 
-it("never draws a number its source does not hold as a sourced one, and the receipt opens it", async () => {
+it("keeps a legacy figure flagged and shows it in the receipt list", async () => {
   const user = userEvent.setup();
   const unmatched = checks().map((item) => item.link_index === 2 ? { ...item, status: "not_found" as const, span: undefined } : item);
   renderAnswer(answer({ number_checks: unmatched, memory_update: { status: "no_change", commitId: null, changes: [] } }));
@@ -423,8 +570,14 @@ it("never draws a number its source does not hold as a sourced one, and the rece
   // A matched number carries no such mark.
   expect((await chip("₩452.3bn")).querySelector(".number-chip-unmatched")).toBeNull();
   await user.click(screen.getByRole("button", { name: "1 number to check" }));
-  expect(await screen.findByRole("dialog")).toHaveTextContent("This number isn't in the cited source as written.");
-  expect(guided).toHaveAttribute("aria-expanded", "true");
+  const list = await screen.findByRole("dialog");
+  expect(list).toHaveTextContent("9.1%");
+  expect(list).toHaveTextContent("Unconfirmed");
+  expect(within(list).getByRole("button", { name: "Open the source" })).toBeVisible();
+  expect(guided).toHaveAttribute("aria-expanded", "false");
+  await user.keyboard("{Escape}");
+  await user.click(guided);
+  expect(screen.getByRole("dialog")).toHaveTextContent("This number isn't in the cited source as written.");
 });
 
 it("keeps number links pending while streaming and plain numbered citations without a check", async () => {
@@ -564,4 +717,212 @@ describe("a retained currency conversion", () => {
     expect(opened.row("Amount")).toBeUndefined();
     expect(opened.row("Rate")).toHaveTextContent("1,334.87 KRW per USD");
   });
+});
+
+const diagnosticExamples: [NumberCheck, string][] = [
+  [{
+    evidence_id: "ev", link_index: 0, kind: "passage", status: "not_found",
+    text: "575.38억 달러", comparedValue: "$ 57,583", nearest: "$ 57,583",
+    nearestSourceScale: 6, nearestSourceUnit: "$", comparisonReason: "digits_differ",
+    context: {"end": 124, "start": 116, "text": "pt number of shares, which are reflected in thousands, and per-share amounts) \n \n\n(1) Net sales by category:\niPhone $ 57,583 $ 49,025 $ 254,098 $ 209,586\nMac 10,792 8,726 37,929 33,708\niPad 6,229 6,952 27,929 28,023\nWearables, Home and Acce"},
+  }, "The numbers differ."],
+  [{
+    evidence_id: "ev", link_index: 0, kind: "step", status: "not_found",
+    text: "50.4억 달러", comparedValue: "50368.7433", nearest: "50368.7433",
+    nearestSourceScale: 6, nearestSourceUnit: "USD", comparisonReason: "scale_conflict",
+    pointer: "/stdout",
+  }, "The digits agree but the scale does not."],
+  [{
+    evidence_id: "ev", link_index: 0, kind: "passage", status: "not_found",
+    text: "-342.56달러", comparedValue: "342.56", nearest: "342.56",
+    nearestSourceScale: 0, nearestSourceUnit: "USD", comparisonReason: "sign_conflict",
+    span: {"end": 46, "start": 40},
+  }, "The sign differs."],
+  [{
+    evidence_id: "ev", link_index: 0, kind: "passage", status: "not_found",
+    text: "14,570,195달러", comparedValue: "14,570,195", nearest: "14,570,195",
+    nearestSourceScale: 3, nearestSourceUnit: "shares", comparisonReason: "incompatible_unit",
+    context: {"end": 125, "start": 115, "text": " 33,696\nTotal net sales $ 114,477 $ 102,466 $ 478,834 $ 416,161\nShares used in computing earnings per share:\nBasic 14,570,195 14,815,307 14,661,935 14,948,500\nDiluted 14,630,318 14,863,609 14,720,306 15,004,697\nEarnings per share:\nBasic $ 2"},
+  }, "The source's number is a different kind of quantity."],
+  [{
+    evidence_id: "ev", link_index: 0, kind: "passage", status: "not_found",
+    text: "8,761.43달러",
+    comparisonReason: "no_candidate",
+  }, "This value was not found in the source."],
+];
+
+it.each(diagnosticExamples)("explains the host comparison %#", async (check, reason) => {
+  const evidence = { ...guide, id: "ev", title: "Annual filing", tool_name: check.kind === "step" ? "run_python" : "web_fetch" };
+  renderWithOpen(<NumberChip check={check} evidence={evidence} evidenceRefs={[evidence]}>{check.text}</NumberChip>);
+  fireEvent.click(screen.getByTestId("number-chip"));
+  const dialog = within(await screen.findByRole("dialog"));
+  expect(dialog.getByText(check.kind === "step" ? "Calculation result" : "Annual filing")).toBeVisible();
+  expect(dialog.getByText("In the answer")).toBeVisible();
+  expect(dialog.getByText(check.text)).toBeVisible();
+  expect(dialog.getByText(reason)).toBeVisible();
+  if (check.comparedValue) {
+    expect(dialog.getByText(check.kind === "step" ? "In the result" : "In the source")).toBeVisible();
+    expect(dialog.getByText(check.comparedValue)).toBeVisible();
+  } else expect(dialog.queryByText("In the source")).toBeNull();
+  if (check.nearestSourceScale === 6) expect(dialog.getByText(/in millions/)).toBeVisible();
+  if (check.nearestSourceScale === 3) expect(dialog.getByText("shares · in thousands")).toBeVisible();
+  expect(dialog.getAllByRole("button")).toHaveLength(1);
+});
+
+it("names the calculation result for a missing step figure, including a legacy check", async () => {
+  const check = { ...diagnosticExamples[4]![0], kind: "step" as const };
+  const evidence = { ...calc, tool_name: "run_python" };
+  const content = (record: NumberCheck) => <NumberChip check={record} evidence={evidence} evidenceRefs={[evidence]}>{record.text}</NumberChip>;
+  const view = renderWithOpen(content(check));
+  fireEvent.click(screen.getByTestId("number-chip"));
+  expect(await screen.findByRole("dialog")).toHaveTextContent("The calculation did not print this value.");
+  view.rerender(content({ ...check, comparisonReason: undefined }));
+  expect(screen.getByRole("dialog")).toHaveTextContent("Calculation result");
+  expect(screen.getByRole("dialog")).toHaveTextContent("This value could not be confirmed in the calculation result.");
+});
+
+it("opens each comparison in the receipt at its own passage or calculation output", async () => {
+  const user = userEvent.setup();
+  const sourceCheck = { ...diagnosticExamples[2]![0], evidence_id: guide.id };
+  const resultCheck = { ...diagnosticExamples[1]![0], link_index: 1, evidence_id: calc.id };
+  const result = { ...calc, tool_name: "run_python", excerpt: JSON.stringify({ input: "50368.7433", stdout: "Result: 50368.7433 million USD" }) };
+  const { onOpenEvidence } = renderAnswer(answer({
+    content: `[${sourceCheck.text}](#evidence-${guide.id}), [${resultCheck.text}](#evidence-${result.id})`,
+    evidence_refs: [guide, result], number_checks: [sourceCheck, resultCheck],
+  }));
+  const trigger = await screen.findByRole("button", { name: "2 numbers to check" });
+  await user.click(trigger);
+  const rows = within(await screen.findByRole("dialog")).getAllByRole("listitem");
+  expect(rows).toHaveLength(2);
+  expect(rows[0]).toHaveTextContent(guide.title);
+  expect(rows[1]).toHaveTextContent("Calculation result");
+  await user.click(within(rows[0]!).getByRole("button", { name: "Open the source" }));
+  expect(destinations(onOpenEvidence).at(-1)).toMatchObject({ evidence: guide, step: { comparison: sourceCheck } });
+  await user.click(trigger);
+  await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Open the step" }));
+  const field = await screen.findByLabelText("In the result");
+  expect(field).toHaveTextContent("Result: 50368.7433 million USD");
+  expect(field.querySelector("mark")).toHaveTextContent("50368.7433");
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("explains a Korean filing warning using the stated scale and keeps the printed value", async () => {
+  const language = i18n.language;
+  try {
+    await i18n.changeLanguage("ko");
+    const check = diagnosticExamples[0]![0];
+    renderWithOpen(<NumberChip check={check} evidence={guide} evidenceRefs={[guide]}>{check.text}</NumberChip>);
+    fireEvent.click(screen.getByTestId("number-chip"));
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(dialog.getByText("자료의 값")).toBeVisible();
+    expect(dialog.getByText("$ 57,583")).toBeVisible();
+    expect(dialog.getByText("달러 · 백만 단위")).toBeVisible();
+    expect(dialog.getByText("두 수치가 다릅니다.")).toBeVisible();
+    expect(dialog.getByRole("button", { name: "자료 열기" })).toBeVisible();
+  } finally { await i18n.changeLanguage(language); }
+});
+
+it.each([
+  ["Apple FY2024 Form 10-K · Net sales", "Apple FY2024 Form 10-K · Net sales"],
+  ["  ", "data.sec.gov"],
+])("names the SEC comparison source in the popover and receipt for %j", async (title, expected) => {
+  const user = userEvent.setup();
+  const evidence = evidenceFixture({ id: "ev_sec", title, tool_name: "sec_company_concept", provider: "sec",
+    url: "https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax.json" });
+  const check: NumberCheck = { evidence_id: evidence.id, link_index: 0, kind: "data", status: "not_found", text: "383,285", comparisonReason: "no_candidate" };
+  renderAnswer(answer({ content: `[${check.text}](#evidence-${evidence.id})`, evidence_refs: [evidence], number_checks: [check] }));
+  const figure = await chip(check.text);
+  expect(figure).toHaveAccessibleName(`383,285, not found in ${expected}`);
+  fireEvent.click(figure);
+  expect(await screen.findByRole("dialog", { name: expected })).toBeVisible();
+  await user.keyboard("{Escape}");
+  await user.click(screen.getByRole("button", { name: "1 number to check" }));
+  expect(within(await screen.findByRole("dialog")).getByRole("listitem")).toHaveTextContent(expected);
+});
+
+it.each(["KRW 372", "372원", "NT$1,385", "US$ 3.2 billion", "372円", "1,385 TWD"])(
+  "keeps the entire streamed currency figure %s pending",
+  async text => {
+    renderAnswer(answer({ status: "streaming", content: `[${text}](#evidence-${guide.id})`, evidence_refs: [guide], number_checks: undefined }));
+    const chip = await screen.findByTestId("number-chip");
+    expect(chip).toHaveAttribute("data-status", "pending");
+    expect(chip.textContent).toBe(text);
+  },
+);
+
+it.each([
+  ["en", "372원", "The source states this amount in USD, the answer in KRW."],
+  ["ko", "372원", "자료는 이 금액을 달러로, 답변은 원으로 적었습니다."],
+  ["en", "372", "The source's number is a different kind of quantity."],
+])("explains a recorded currency mismatch in %s for %s", async (language, text, expected) => {
+  await i18n.changeLanguage(language);
+  try {
+    const check: NumberCheck = { evidence_id: guide.id, link_index: 0, kind: "passage", status: "not_found", text,
+      comparedValue: "US$372", nearestSourceUnit: "USD", comparisonReason: "incompatible_unit" };
+    renderWithOpen(<NumberChip check={check} evidence={guide} evidenceRefs={[guide]}>{text}</NumberChip>);
+    const chip = screen.getByTestId("number-chip");
+    expect(chip).toHaveAccessibleDescription(expected);
+    fireEvent.click(chip);
+    expect(within(await screen.findByRole("dialog")).getByText(expected)).toBeVisible();
+  } finally {
+    await i18n.changeLanguage("en");
+  }
+});
+
+const worldBankSaved = {
+  route: "source" as const,
+  publisher: "world-bank.indicators",
+  publication: { kind: "updated" as const, time: { precision: "date" as const, value: "2026-11-11" } },
+  saved_at: "2026-11-21T12:00:00Z",
+};
+
+it.each([
+  { name: "the saved World Bank update", origin: worldBankSaved, main: "World Bank Indicators · updated Nov 11, 2026", route: "from your Sources · saved Nov 21, 2026" },
+  { name: "a World fact with no publisher date", origin: { route: "world" as const, publisher: "sec", saved_at: "2026-11-21T12:00:00Z" }, main: "SEC EDGAR", route: "from your World · saved Nov 21, 2026" },
+  { name: "a read with multiple backing Sources", origin: { route: "source" as const, saved_at: "2026-11-21T12:00:00Z" }, main: null, route: "from your Sources · saved Nov 21, 2026" },
+  { name: "a direct read without a publication date", origin: undefined, main: "data.example.com · fetched Nov 21, 2026", route: null },
+])("presents provenance for $name", async ({ origin, main, route }) => {
+  const evidence = evidenceFixture({ id: "ev_population", title: "Japan's population figures", url: "https://data.example.com/population", kind: origin ? "saved_context" : "original",
+    tool_name: origin ? "world_read" : "web_fetch", provider: "stale_runtime", retrieved_at: "2026-11-21T12:00:00Z",
+    published_at: origin ? "2026-11-21" : undefined, excerpt: "The population was 124,516,650.", memory_origin: origin });
+  const check: NumberCheck = { evidence_id: evidence.id, link_index: 0, kind: "passage", status: "matched", text: "124,516,650" };
+  renderWithOpen(<NumberChip check={check} evidence={evidence} evidenceRefs={[evidence]}>{check.text}</NumberChip>);
+  fireEvent.click(screen.getByTestId("number-chip"));
+  const dialog = await screen.findByRole("dialog", { name: evidence.title });
+  if (main) expect(within(dialog).getByText(main)).toBeVisible();
+  if (route) expect(within(dialog).getByText(route)).toBeVisible();
+  if (!main) expect(dialog.querySelectorAll(".number-chip-meta")).toHaveLength(1);
+  expect(dialog).not.toHaveTextContent(/published Nov 21|stale_runtime/);
+});
+
+it("keeps the publisher update and local save separate for each calculated input", async () => {
+  const remembered = { ...dart, kind: "saved_context" as const, tool_name: "world_read", memory_origin: worldBankSaved };
+  const [calculation, ...rest] = checks();
+  const calculationDetail = calculation!.calc!;
+  const checked = { ...calculation!, calc: { ...calculationDetail, inputs: calculationDetail.inputs.map(input => ({ ...input, evidence_id: remembered.id })) } };
+  renderAnswer(answer({ evidence_refs: [remembered, guide, calc], number_checks: [checked, ...rest] }));
+  fireEvent.click(await chip("8.4 percent"));
+  const dialog = within(await screen.findByRole("dialog", { name: "Operating margin" }));
+  expect(dialog.getAllByText("World Bank Indicators", { exact: false })).toHaveLength(2);
+  expect(dialog.getAllByText(/updated\s+Nov\s+11,\s+2026/)).toHaveLength(2);
+  expect(dialog.getAllByText("from your Sources · saved Nov 21, 2026")).toHaveLength(2);
+});
+
+it("names attachment inputs in copied formulas and exported footnotes", async () => {
+  const user = userEvent.setup();
+  const file = evidenceFixture({ id: "ev_ledger", kind: "local_file", title: "Supplier ledger.xlsx", tool_name: "workspace_capture",
+    provider: undefined, url: undefined, published_at: undefined, retrieved_at: "2026-03-18T06:00:00Z" });
+  const unnamed = { ...file, id: "ev_unnamed", title: "" };
+  const check = checks()[0]!;
+  const numberChecks = [{ ...check, calc: { ...check.calc!, inputs: check.calc!.inputs.map((input, index) => ({
+    ...input, evidence_id: index === 0 ? file.id : unnamed.id,
+  })) } }];
+  const message = answer({ content: "Margin was [8.4%](#evidence-ev_calc).", evidence_refs: [calc, file, unnamed], number_checks: numberChecks });
+  renderAnswer(message);
+  await user.click(await chip("8.4 percent"));
+  await user.click(screen.getByRole("button", { name: "Copy formula" }));
+  expect(await navigator.clipboard.readText()).toContain("inputs: Supplier ledger.xlsx, 2026-03-18; Files, 2026-03-18");
+  const markdown = chatMarkdown({ id: "chat", loupist_id: "l", title: "Margin", updated_at: "", use_memory: true, update_memory: true,
+    messages: [message] }, "Quality", Date.parse("2026-03-20"));
+  expect(markdown).toContain("inputs: Supplier ledger.xlsx, 2026-03-18; Files, 2026-03-18");
 });

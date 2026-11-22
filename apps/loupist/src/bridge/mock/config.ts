@@ -17,14 +17,17 @@ function merge(target: ObjectValue, patch: ObjectValue, source?: ConfigSource, s
   }
 }
 
-const defaults = (): EffectiveConfig => ({
+const defaults = (userSkills: boolean): EffectiveConfig => ({
   appearance: { theme: "system", language: "system", price_colors: "auto" }, models: { hidden_model_profile_ids: [] }, connectors: {},
   chat: { model_profile_id: null, thinking_level: null, run_options: {}, use_memory: true, update_memory: true },
-  skills: Object.fromEntries(DEFAULT_AGENT_SKILL_IDS.map((id) => [id, { enabled: id !== "skill-creator" }])),
+  skills: Object.fromEntries([...DEFAULT_AGENT_SKILL_IDS, ...(userSkills ? ["skill-creator"] : [])].map(id => [id, { enabled: id !== "skill-creator" }])),
   pi: { compaction: { reserve_tokens: 16384, keep_recent_tokens: 20000 }, retry: { enabled: true, max_retries: 3, base_delay_ms: 2000, max_agent_delay_ms: 60000 } },
 });
 
+export type MockExtensionFlags = Pick<ConfigSnapshot, "userSkillsAvailable" | "customConnectionsAvailable">;
+
 export class MockConfig {
+  constructor(private readonly extensions: MockExtensionFlags) {}
   private documents = new Map<string, ConfigDocument>();
   private revisions = new Map<string, number>();
 
@@ -32,13 +35,13 @@ export class MockConfig {
     const key = scope.kind === "global" ? "global" : scope.loupistId;
     const effective = {} as EffectiveConfig;
     const sources: Record<string, ConfigSource> = {};
-    merge(effective, defaults(), "default", sources);
+    merge(effective, defaults(this.extensions.userSkillsAvailable === true), "default", sources);
     merge(effective, this.documents.get("global") ?? {}, "global", sources);
     if (scope.kind === "project") merge(effective, this.documents.get(key) ?? {}, "project", sources);
     for (const [id, skill] of Object.entries(effective.skills)) {
       if (skill.enabled === undefined) { skill.enabled = true; sources[`skills.${id}.enabled`] = "default"; }
     }
-    return { scope, path: scope.kind === "global" ? "/Users/preview/.loupist/config.toml" : `${workspace}/.loupist/config.toml`, revision: String(this.revisions.get(key) ?? 0), explicit: structuredClone(this.documents.get(key) ?? {}), effective, sources, diagnostics: [] };
+    return { ...this.extensions, scope, path: scope.kind === "global" ? "/Users/preview/.loupist/config.toml" : `${workspace}/.loupist/config.toml`, revision: String(this.revisions.get(key) ?? 0), explicit: structuredClone(this.documents.get(key) ?? {}), effective, sources, diagnostics: [] };
   }
 
   update(request: ConfigUpdateRequest, workspace?: string) {

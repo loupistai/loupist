@@ -3,7 +3,7 @@ mod unix {
     use super::super::*;
     use std::{
         os::unix::{fs::OpenOptionsExt, process::CommandExt},
-        process::{Command, Stdio},
+        process::{Child, Command, ExitStatus, Stdio},
     };
 
     const HELPER_DIRECTORY_ENV: &str = "LOUPIST_LEASE_HELPER_DIRECTORY";
@@ -24,9 +24,22 @@ mod unix {
         command.spawn().unwrap()
     }
 
-    fn kill_and_reap(child: &mut std::process::Child, process_group_id: i32) {
+    fn wait_for_exit(child: &mut Child) -> Option<ExitStatus> {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                return Some(status);
+            }
+            if Instant::now() >= deadline {
+                return None;
+            }
+            std::thread::sleep(POLL_INTERVAL);
+        }
+    }
+
+    fn kill_and_reap(child: &mut Child, process_group_id: i32) {
         signal_process_group(process_group_id, libc::SIGKILL).unwrap();
-        child.wait().unwrap();
+        wait_for_exit(child).expect("test child did not exit after SIGKILL");
         assert!(wait_for_group_exit_blocking(process_group_id, Duration::from_secs(2)).unwrap());
     }
 
@@ -352,11 +365,17 @@ mod unix {
     }
 
     #[test]
-    fn an_unlinked_executable_does_not_block_startup_or_forget_the_same_process() {
+    fn an_unavailable_executable_does_not_block_startup_or_forget_the_same_process() {
         for reused in [false, true] {
             let temporary = tempfile::tempdir().unwrap();
-            let executable = temporary.path().join("sleep");
-            fs::copy("/bin/sleep", &executable).unwrap();
+            #[cfg(target_os = "linux")]
+            let executable = {
+                let path = temporary.path().join("sleep");
+                fs::copy("/bin/sleep", &path).unwrap();
+                path
+            };
+            #[cfg(target_os = "macos")]
+            let executable = PathBuf::from("/bin/sleep");
             let leases = temporary.path().join("leases");
             let mut child = spawn_sleep_at(&executable);
             let pid = child.id() as i32;
@@ -370,9 +389,21 @@ mod unix {
                 record.start.primary = record.start.primary.saturating_add(1);
                 fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
             }
-            fs::remove_file(&executable).unwrap();
-
-            recover_orphaned_processes(&leases).unwrap();
+            #[cfg(target_os = "linux")]
+            {
+                fs::remove_file(&executable).unwrap();
+                recover_orphaned_processes(&leases).unwrap();
+            }
+            #[cfg(target_os = "macos")]
+            TEST_UNAVAILABLE_IMAGE.with(|image| {
+                // A removed copy of the signed image can remain stuck in
+                // the kernel after SIGKILL. Substitute the unavailable-image
+                // observation for this PID and keep real start and group checks.
+                let previous = image.replace(Some(pid));
+                let result = recover_orphaned_processes(&leases);
+                image.set(previous);
+                result.unwrap();
+            });
             assert_eq!(path.exists(), !reused);
             assert!(child.try_wait().unwrap().is_none());
             kill_and_reap(&mut child, pid);
@@ -466,9 +497,10 @@ mod unix {
         }
         assert!(ready.exists(), "crash helper did not register its lease");
         let process_group_id: i32 = fs::read_to_string(&ready).unwrap().parse().unwrap();
-        assert!(!helper.wait().unwrap().success());
+        let helper_exit = wait_for_exit(&mut helper);
 
         recover_orphaned_processes(&lease_directory).unwrap();
+        assert!(!helper_exit.expect("crash helper did not exit").success());
         assert_ne!(
             process_group_state(process_group_id).unwrap(),
             GroupState::Live
@@ -525,6 +557,10 @@ mod unix {
         ) else {
             return;
         };
+        #[allow(
+            clippy::zombie_processes,
+            reason = "the crash fixture leaves the child for orphan recovery"
+        )]
         let child = spawn_sleep();
         let pid = child.id() as i32;
         let _lease = ChildProcessLease::register(
@@ -548,10 +584,17 @@ mod unix {
         drop(marker);
         fs::rename(pending_marker, ready).unwrap();
 
-        // SAFETY: this helper is a disposable subprocess created specifically
-        // to emulate an ungraceful parent crash.
-        unsafe { libc::kill(libc::getpid(), libc::SIGKILL) };
-        std::process::abort();
+        // The helper must exit without dropping the lease or reaping the child.
+        // SAFETY: these calls terminate only this dedicated crash subprocess.
+        #[cfg(target_os = "macos")]
+        unsafe {
+            libc::_exit(1);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            unsafe { libc::kill(libc::getpid(), libc::SIGKILL) };
+            std::process::abort();
+        }
     }
 }
 

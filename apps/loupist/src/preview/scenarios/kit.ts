@@ -3,8 +3,6 @@ import type { ReactElement } from "react";
 import { prepareFixture, PreviewBridge, previewKo } from "../fixtures";
 import type { ChatApproval, ChatProgressItem } from "../../contracts/chat";
 import type { GrowthEvent, KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
-import type { MapScope } from "../../components/map/localView";
-import { rememberFocal, rememberLegendOpen, rememberScope } from "../../components/map/mapVisit";
 
 export type PreviewScenario = {
   id: string;
@@ -37,6 +35,20 @@ export const select = (selector: string, root: ParentNode = document) => [...roo
 
 // jsdom has no layout: the Map canvas never mounts and every box measures zero.
 export const hasLayout = () => document.documentElement.clientWidth > 0;
+
+/** At minimum size the context fits and only the title may overflow its own box. */
+export function contextTitleLandmark(selector: string) {
+  const line = select(`${selector} .context-title`);
+  if (!line || !hasLayout() || innerWidth !== 700 || innerHeight !== 560) return line;
+  const surface = line.closest(selector)!.getBoundingClientRect();
+  const context = [...line.querySelectorAll<HTMLElement>(".context-title-label")];
+  const inside = context.every(label => {
+    const box = label.getBoundingClientRect();
+    return box.left >= surface.left - 1 && box.right <= surface.right + 1 && box.bottom <= surface.bottom + 1;
+  });
+  const name = line.querySelector<HTMLElement>(".context-title-name")!;
+  return inside && name.scrollWidth > name.clientWidth && getComputedStyle(name).textOverflow === "ellipsis" && line.title ? line : null;
+}
 
 // A mounted message can still be the lazy Markdown fallback. Gate interactions
 // and landmarks so scrolling and measurements use the final rendered answer.
@@ -180,6 +192,7 @@ export const approvalFor = (state: ChatApproval["state"], at: number): ChatAppro
 
 /** A reply paused on a read-only connection until the user decides. */
 export function approvalRun(bridge: PreviewBridge) {
+  bridge.extensionFlags.customConnectionsAvailable = true;
   bridge.chatSend = async (request, observer) => {
     const run_id = request.run_id;
     const at = Date.now();
@@ -202,6 +215,8 @@ export async function inlineChartFixture(bridge: PreviewBridge) {
   const storedId = (id: string) => id === "preview-chat" ? stored.id : id;
   const send = bridge.chatSend.bind(bridge);
   bridge.chatSend = (request, observer) => send({ ...request, thread_id: storedId(request.thread_id) }, observer);
+  const list = bridge.chatArtifactList.bind(bridge);
+  bridge.chatArtifactList = (loupistId, chatId) => list(loupistId, storedId(chatId));
   const read = bridge.chatArtifactRead.bind(bridge);
   bridge.chatArtifactRead = (loupistId, chatId, artifactId, revisionId) => read(loupistId, storedId(chatId), artifactId, revisionId);
 }
@@ -258,6 +273,7 @@ export const chatGrowth = (index: number, originMessageId: string, atMs: number)
 
 /** What waits for the user, as Rust's `attention_list` reports it: an approval, an answer that asked a question, briefing conflicts and a check due soon. */
 export function prepareAttention(bridge: PreviewBridge) {
+  bridge.extensionFlags.customConnectionsAvailable = true;
   const ko = previewKo();
   bridge.attentionItems = [
     { kind: "approval", loupistId: "loupist-quality", loupistName: "Quality Compounder", chatId: "preview-chat", title: ko ? "기업 공시 · read_filing" : "Company filings · read_filing", atMs: Date.now() },
@@ -308,17 +324,11 @@ export function localViewMap(bridge: PreviewBridge, { lens = false } = {}) {
   };
 }
 
-export function rememberPreviewMap({ focalId, scope, legendOpen }: { focalId?: string; scope?: MapScope; legendOpen?: boolean }) {
-  if (focalId) rememberFocal("loupist-quality", focalId);
-  if (scope) rememberScope("loupist-quality", scope);
-  if (legendOpen !== undefined) rememberLegendOpen(legendOpen);
-}
-
 export async function enterMap(root: HTMLElement) {
   await navigate(root, "map");
-  const map = await until(() => select(".map-view"), "Map did not load");
+  const map = await until(() => select(".map-view"), "World did not load");
   if (map.clientWidth > 0) {
-    await until(() => map.querySelector("canvas"), "Map canvas did not mount");
+    await until(() => map.querySelector("canvas"), "World canvas did not mount");
     for (let frame = 0; frame < 3; frame++) await new Promise(requestAnimationFrame);
     await clickMapAction("[data-map-fit]", map);
   }

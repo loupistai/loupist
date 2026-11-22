@@ -11,6 +11,7 @@ import shutil
 import ssl
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 
@@ -154,6 +155,10 @@ subjectKeyIdentifier=hash
         )
         signing.verify_runtime(pi, worker, "self-signed", sha1)
         signing.require_flags(main, True, {})
+        archive = root / "Loupist.app.tar.gz"
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(app, arcname=app.name)
+        signing.verify_updater(archive, app, notarized=False)
         signing.run("/usr/bin/codesign", "--verify", "--deep", "--strict", str(app))
         dmg = root / "fixture.dmg"
         credentials.run(

@@ -492,6 +492,7 @@ pub async fn provider_connect(
     request: ProviderConnectionRequest,
     on_event: Channel<ProviderConnectionEvent>,
     state: State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<ModelCatalogView, CommandError> {
     let provider = sign_in_option(&request.provider)?;
     let admission = state.provider_support.acquire_oauth().await?;
@@ -507,9 +508,15 @@ pub async fn provider_connect(
         answers,
         failure: std::sync::Mutex::new(None),
     };
+    let mut language = crate::scoped_config::resolve(&state.artifacts.app_data_dir, None)
+        .unwrap_or_default()
+        .appearance
+        .language;
+    crate::agent_harness::interface::resolve_language(&mut language);
+    let language = if language == "ko" { "ko" } else { "en" };
     let result = run_support_command(
         &state,
-        format!("/loupist-provider-login {}", request.provider),
+        format!("/loupist-provider-login {} {language}", request.provider),
         Some(&session),
         None,
         None,
@@ -517,6 +524,12 @@ pub async fn provider_connect(
         Some(pasted),
     )
     .await;
+    // Only take focus back after a browser handoff. Escape/Cancel stays quiet.
+    if state.provider_support.oauth_authorization_url().is_some()
+        && !matches!(&result, Err(error) if error.code == "cancelled")
+    {
+        crate::briefings::desktop::open(&app, None);
+    }
     let reported = *session
         .failure
         .lock()
@@ -1681,6 +1694,8 @@ enum ExtensionProviderEvent {
     },
     Failed {
         reason: String,
+        token_error: Option<String>,
+        http_status: Option<u16>,
     },
 }
 
@@ -1699,6 +1714,25 @@ fn provider_event(payload: &Value) -> Result<Option<ExtensionProviderEvent>, Com
     serde_json::from_str(encoded)
         .map(Some)
         .map_err(|_| CommandError::internal("Pi provider event is invalid"))
+}
+
+// The extension protocol is untrusted. Never interpolate its raw strings into logs.
+fn token_error_for_log(code: &str) -> &str {
+    match code {
+        "invalid_grant"
+        | "invalid_client"
+        | "invalid_request"
+        | "invalid_scope"
+        | "access_denied"
+        | "unauthorized_client"
+        | "unsupported_grant_type"
+        | "invalid_target"
+        | "server_error"
+        | "temporarily_unavailable"
+        | "subscription_sharing_user_not_eligible"
+        | "not_eligible" => code,
+        _ => "unknown",
+    }
 }
 
 fn valid_user_code(code: &str) -> bool {
@@ -1759,7 +1793,17 @@ fn handle_provider_event(
                 },
             )
         }
-        ExtensionProviderEvent::Failed { reason } => {
+        ExtensionProviderEvent::Failed {
+            reason,
+            token_error,
+            http_status,
+        } => {
+            if let (Some(code), Some(status @ 100..=599)) = (token_error, http_status) {
+                eprintln!(
+                    "Loupist ChatGPT token exchange failed: HTTP {status}, error={}",
+                    token_error_for_log(&code)
+                );
+            }
             let reason = ConnectFailure::from_extension(&reason);
             if let Some(session) = oauth {
                 *session
@@ -1969,6 +2013,15 @@ mod tests {
     }
 
     #[test]
+    fn token_exchange_log_accepts_only_known_provider_codes() {
+        assert_eq!(token_error_for_log("invalid_grant"), "invalid_grant");
+        assert_eq!(
+            token_error_for_log("private detail\ninvalid_grant"),
+            "unknown"
+        );
+    }
+
+    #[test]
     fn only_providers_with_a_cataloged_sign_in_can_start_one() {
         for provider in ["openai", "xai"] {
             assert!(sign_in_option(provider).is_ok(), "{provider}");
@@ -2110,11 +2163,12 @@ mod tests {
             ),
             ("some provider text", ConnectFailure::Other),
         ] {
-            let failed = provider_event(&notify(
-                serde_json::json!({"type": "failed", "reason": reason}),
-            ))
-            .unwrap()
-            .unwrap();
+            let mut payload = serde_json::json!({"type": "failed", "reason": reason});
+            if expected == ConnectFailure::ChatgptConnectionRejected {
+                payload["token_error"] = "invalid_grant".into();
+                payload["http_status"] = 400.into();
+            }
+            let failed = provider_event(&notify(payload)).unwrap().unwrap();
             let error = handle_provider_event(failed, Some(&session), &admission).unwrap_err();
             assert_eq!(error.code, "provider_connect_failed");
             assert_eq!(error.message, expected.code());

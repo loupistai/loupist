@@ -23,6 +23,7 @@ export type LensLogEntryView = {
   op: "put" | "retire" | "summary" | "idea_status";
   outcome: string;
   key?: string;
+  sectionHeading?: string;
   origin: "turn" | "user" | "learning" | "import";
   chatId?: string;
   messageId?: string;

@@ -1,6 +1,6 @@
 import type { ScheduleReceipt } from "./scheduled";
 import type { LoupistSummary } from "./loupist";
-import type { MemoryRef, MemoryUpdateResult } from "./memory";
+import type { MemoryRef, MemorySaveSkipReason, MemoryUpdateResult } from "./memory";
 import type { AgentHarnessSnapshot, ExecutionModelLock } from "./model";
 import type { LearnedDigest } from "./lens";
 import type * as Wire from "./generated";
@@ -37,6 +37,7 @@ export type ChatProgressItem =
       source?: ChatProgressSource;
       summary?: string;
       resultIds?: string[];
+      writtenPaths?: string[];
       /** World names this step read, attributed by the host. */
       entityIds?: string[];
       outputRevision?: number;
@@ -81,6 +82,7 @@ export type ChatProgress = {
   plan?: ChatPlan;
   approvals?: ChatApproval[];
   questions?: ChatQuestion[];
+  saveActivity?: ChatSaveActivity;
 };
 
 export type ChatProgressPatch = {
@@ -212,7 +214,7 @@ export type ChatArtifactView = {
 };
 
 /** Immutable, host-issued excerpt from an acknowledged tool result. */
-export type ChatEvidenceRef = Wire.ChatEvidenceRef;
+export type ChatEvidenceRef = Wire.ChatEvidenceViewDto;
 
 export type ChatFeedback = Wire.ChatFeedback;
 export type ChatFeedbackRequest = { loupist_id: string; thread_id: string; message_id: string; rating: ChatFeedback["rating"]; correction: string | null };
@@ -289,6 +291,10 @@ export type HostPostRecords = {
 export type HandoffNote = Wire.HandoffNoteDto;
 export type HandoffAction = Wire.HandoffAction;
 export type ScheduledTurn = Wire.ScheduledTurn;
+export type ChatMemorySaving = Pick<Extract<Wire.ChatStreamEvent, { type: "saving" }>, "run_id" | "waiting_for_other_chat"> & {
+  blocking_chat_id?: string | null;
+};
+export type ChatSaveActivity = Wire.ChatSaveActivity;
 
 export type ChatMessage = HostPostRecords & Pick<Wire.ChatMessageDto,
   "id" | "role" | "content" | "created_at" | "research_session_id" | "handoff_note" | "handoff_action" | "scheduled" |
@@ -310,6 +316,7 @@ export type ChatMessage = HostPostRecords & Pick<Wire.ChatMessageDto,
   progress?: ChatProgress;
   /** Live run phase. Not stored with the Chat message. */
   phase?: ChatRunPhase;
+  memorySaving?: ChatMemorySaving;
   /**
    * The commentary the host is writing now, how long the answer was when it
    * began, and whether its settled text is on its way into the answer. Not
@@ -469,6 +476,7 @@ export type ChatStreamEvent =
     }
   | { type: "progress_patch"; run_id: string; patch: ChatProgressPatch }
   | { type: "phase"; run_id: string; phase: ChatRunPhase }
+  | Extract<Wire.ChatStreamEvent, { type: "saving" }>
   | {
       type: "memory_update";
       run_id: string;
@@ -483,6 +491,9 @@ export type ChatStreamEvent =
     }
   | {
       type: "completed";
+      memory_save_skip?: MemorySaveSkipReason;
+      discarded_memory_items?: Wire.DiscardedMemoryItem[];
+      save_activity?: ChatSaveActivity;
       research_session_id?: string;
       lens_receipts: import("./memory").LensReceipt[];
       tool_refusals: ChatToolRefusal[];

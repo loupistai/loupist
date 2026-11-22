@@ -1,5 +1,6 @@
+import i18n from "@/i18n";
 import { evidenceFixture } from "../test/evidenceFixtures";
-import { citationLabel, citationPageUrl, citationSources, evidenceExcerptParts, evidencePresentation, evidenceTitle, sourceIdentityLabel, webEvidenceUrl } from "./evidence";
+import { citationLabel, citationPageUrl, citationSources, evidenceExcerptParts, evidencePresentation, evidenceProvenance, evidenceTitle, sourceIdentityLabel, webEvidenceUrl } from "./evidence";
 import { isInlineWorkEvidence, memoryReadForEvidence } from "./memoryActivity";
 
 it("opens a host website address and ignores titles, finance, files and search previews", () => {
@@ -21,6 +22,37 @@ it("opens a host website address and ignores titles, finance, files and search p
 it("uses the actual filename for URL-only titles without changing human titles", () => {
   expect(evidenceTitle(evidenceFixture({ title: "https://issuer.example/long/path/Annual%20Report.pdf" }))).toBe("Annual Report.pdf");
   expect(evidenceTitle(evidenceFixture({ title: "Issuer annual report" }))).toBe("Issuer annual report");
+});
+
+it("localizes generic chart and artifact result titles without changing supplied titles", async () => {
+  const language = i18n.language;
+  await i18n.changeLanguage("ko");
+  try {
+    const tools = {
+      chart_query: "차트 데이터", chart_publish: "차트 만듦", grid_publish: "표를 만들었습니다",
+      artifact_read: "대화 문서", artifact_list: "대화 문서 목록", artifact_publish: "대화 문서 저장함",
+    };
+    for (const [tool_name, title] of Object.entries(tools)) {
+      expect(evidenceTitle(evidenceFixture({ kind: "derived", tool_name, title: tool_name.replaceAll("_", " ") }))).toBe(title);
+      expect(evidenceTitle(evidenceFixture({ kind: "derived", tool_name, title: "Quarterly shipment data" }))).toBe("Quarterly shipment data");
+    }
+  } finally {
+    await i18n.changeLanguage(language);
+  }
+});
+
+it("uses the localized World route for evidence saved under either store title", async () => {
+  const language = i18n.language;
+  await i18n.changeLanguage("ko");
+  try {
+    for (const title of ["Map", "World"]) {
+      const evidence = evidenceFixture({ title, kind: "saved_context", tool_name: "world_read",
+        url: "https://issuer.example/annual", memory_origin: { route: "world" } });
+      expect(evidenceProvenance(evidence)).toMatchObject({ name: "issuer.example", route: "월드에서 가져옴" });
+    }
+  } finally {
+    await i18n.changeLanguage(language);
+  }
 });
 
 it("maps host byte offsets into exact Unicode text without changing the excerpt", () => {
@@ -48,7 +80,7 @@ it("numbers retrieved sources and leaves search, Memory and execution unnumbered
   expect(isInlineWorkEvidence(preview, [])).toBe(true);
   expect(citationLabel(preview, all)).toBe("Result: Search preview");
   expect(citationLabel(read, all, "Margin method")).toBe("Memory: Margin method");
-  expect(citationLabel(search, all)).toBe("Result: Map search");
+  expect(citationLabel(search, all)).toBe("Result: World search");
   expect(citationLabel(calculated, all)).toBe("Result: Margin calculation");
 });
 
@@ -62,7 +94,7 @@ it("pairs a Memory receipt with the exact read that shares its readRef", () => {
     { read_ref: "journal-1", kind: "journal" as const, title: "Capacity review", excerpt: "", as_of: null, section: null, access: "exact_read" as const, knowledge: { kind: "journal" as const, recordId: "d1", revisionId: "r", objectId: "d1" } },
     { read_ref: "filing", kind: "source" as const, title: "Filing", excerpt: "", as_of: null, section: null, access: "exact_read" as const, knowledge: { kind: "source" as const, recordId: "s1", revisionId: "r", objectId: "o1" } },
     { read_ref: "filing-again", kind: "source" as const, title: "Filing", excerpt: "", as_of: null, section: null, access: "exact_read" as const, knowledge: { kind: "source" as const, recordId: "s1", revisionId: "r", objectId: "o1" } },
-    { read_ref: "map", kind: "world" as const, title: "Map", excerpt: "", as_of: null, section: null, access: "exact_read" as const, knowledge: { kind: "world" as const, recordId: "w1", revisionId: "r", objectId: "w1" } },
+    { read_ref: "map", kind: "world" as const, title: "World", excerpt: "", as_of: null, section: null, access: "exact_read" as const, knowledge: { kind: "world" as const, recordId: "w1", revisionId: "r", objectId: "w1" } },
   ];
   expect(memoryReadForEvidence(search, reads)).toBeNull();
   expect(memoryReadForEvidence(journal, reads)?.title).toBe("Capacity review");
@@ -92,7 +124,7 @@ it("labels pasted material as user-provided, in this reply and when a saved one 
   expect(citationLabel(other, [pasted, other])).toBe("Source 2: Pasted text");
   expect(sourceIdentityLabel(saved)).toBe("User-provided");
   expect(evidencePresentation(saved).label).toBe("User-provided");
-  expect(sourceIdentityLabel(map)).toBe("Map");
+  expect(sourceIdentityLabel(map)).toBe("World");
 });
 
 it.each([

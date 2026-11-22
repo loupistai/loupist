@@ -4,6 +4,8 @@
 //! the host registers the delivered result. Empty text-layer PDFs fail closed
 //! so the agent cannot treat a scan as an empty document.
 
+mod tables;
+
 use std::io::Cursor;
 
 use office_oxide::{Document, DocumentFormat};
@@ -146,7 +148,7 @@ pub fn extract_html_page(html: &str, fallback_title: &str) -> HtmlPage {
             None => (fallback_title.to_owned(), html.to_owned(), None),
         };
     let content_html = strip_inert_html(&content_html);
-    let markdown = htmd::convert(&content_html).unwrap_or_else(|_| {
+    let markdown = htmd::convert(&tables::preserve_tables(&content_html)).unwrap_or_else(|_| {
         content_html
             .split_whitespace()
             .collect::<Vec<_>>()
@@ -358,7 +360,11 @@ fn office_kind_from_zip(bytes: &[u8]) -> Result<Option<DocumentKind>, DocumentEr
     })
 }
 
-fn archive_budget_allows(entry_count: usize, total_uncompressed: u64, entry_size: u64) -> bool {
+pub(crate) fn archive_budget_allows(
+    entry_count: usize,
+    total_uncompressed: u64,
+    entry_size: u64,
+) -> bool {
     entry_count <= MAX_ARCHIVE_ENTRIES
         && entry_size <= MAX_ARCHIVE_ENTRY_BYTES
         && total_uncompressed <= MAX_ARCHIVE_UNCOMPRESSED_BYTES
@@ -425,11 +431,7 @@ fn extract_pdf(bytes: &[u8]) -> Result<ExtractedDocument, DocumentError> {
     let extracted_pages = page_count.min(MAX_PDF_PAGES);
     let mut pages = Vec::with_capacity(extracted_pages);
     for index in 0..extracted_pages {
-        pages.push(
-            document
-                .extract_text(index)
-                .map_err(|_| DocumentError::Parse)?,
-        );
+        pages.push(tables::pdf_page(&document, index).map_err(|_| DocumentError::Parse)?);
     }
     let markdown = pages.join("\n\n");
     if markdown.trim().is_empty() {
@@ -580,6 +582,10 @@ mod tests {
         } else {
             format!("BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET")
         };
+        pdf_with_stream(&stream)
+    }
+
+    fn pdf_with_stream(stream: &str) -> Vec<u8> {
         let objects = [
             "1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n".to_string(),
             "2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n".to_string(),
@@ -801,6 +807,78 @@ mod tests {
         for hidden in ["attack", "secret", "hidden prompt"] {
             assert!(!markdown.contains(hidden), "{hidden}");
         }
+    }
+
+    #[test]
+    fn captured_sec_segment_table_keeps_years_changes_and_currency_on_their_rows() {
+        let html = include_str!("document/fixtures/apple-segment-sales.html");
+        let page = extract_html_page(html, "Apple 10-K");
+        let rows: Vec<_> = page
+            .markdown
+            .lines()
+            .filter(|line| line.starts_with('|'))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                "|  | 2024 | Change | 2023 | Change | 2022 |",
+                "| --- | --- | --- | --- | --- | --- |",
+                "| Americas | $167,045 | 3% | $162,560 | (4)% | $169,658 |",
+                "| Europe | 101,328 | 7% | 94,294 | (1)% | 95,118 |",
+            ],
+            "{}",
+            page.markdown
+        );
+    }
+
+    #[test]
+    fn irregular_headers_keep_spans_and_data_rows_keep_missing_cells() {
+        let html = "<table><caption>Results (millions)</caption><thead><tr><th rowspan='2'>Unit</th><th colspan='3'>Amounts</th></tr><tr><th>A</th><th>B</th><th>C</th></tr></thead><tbody><tr><td>Net sales</td><td></td><td>(</td><td>15</td><td>)</td></tr></tbody></table>";
+        let text = extract_html_page(html, "results").markdown;
+        assert!(text.contains("Results (millions)"), "{text}");
+        assert!(
+            text.contains("| Unit [merged rows] | Amounts [merged columns] |"),
+            "{text}"
+        );
+        assert!(text.contains("| Net sales |  | (15) |"), "{text}");
+        assert!(!text.contains("---"), "{text}");
+        let no_header = extract_html_page(
+            "<table><tr><td>Apple</td><td>3</td></tr><tr><td>Pear</td><td>4</td></tr></table>",
+            "plain",
+        )
+        .markdown;
+        assert_eq!(no_header, "| Apple | 3 |\n| Pear | 4 |");
+    }
+
+    #[test]
+    fn captured_pdf_preserves_a_ruled_segment_table_and_surrounding_text() {
+        let mut stream =
+            String::from("BT /F1 12 Tf 48 760 Td (Segment net sales in millions) Tj ET\n");
+        for x in [48, 200, 300, 400] {
+            stream.push_str(&format!("{x} 600 m {x} 690 l S\n"));
+        }
+        for y in [600, 630, 660, 690] {
+            stream.push_str(&format!("48 {y} m 400 {y} l S\n"));
+        }
+        for (y, cells) in [
+            (670, ["Region", "2024", "2023"]),
+            (640, ["Americas", "$167,045", "$162,560"]),
+            (610, ["Europe", "101,328", "94,294"]),
+        ] {
+            for (x, cell) in [53, 205, 305].into_iter().zip(cells) {
+                stream.push_str(&format!("BT /F1 11 Tf {x} {y} Td ({cell}) Tj ET\n"));
+            }
+        }
+        let result = extract(&pdf_with_stream(&stream), "application/pdf", 10_000).unwrap();
+        assert!(result.markdown.contains("Segment net sales in millions"));
+        assert!(
+            result.markdown.lines().any(|line| line.contains("Americas")
+                && line.contains('|')
+                && line.contains("$167,045")
+                && line.contains("$162,560")),
+            "{}",
+            result.markdown
+        );
     }
 
     #[test]

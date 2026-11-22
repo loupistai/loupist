@@ -19,7 +19,7 @@ it.each(["created", "refined"] as const)("announces a %s event, highlights its W
   const { bridge, review, node, appliedIds } = await fixture();
   render(<App bridge={bridge} />);
   await screen.findByRole("button", { name: "Activity" });
-  await userEvent.click(await mainTab(/Map/));
+  await userEvent.click(await mainTab(/World/));
   await screen.findByTestId("learning-canvas");
   act(() => bridge.emitLearningReview({ ...review, status }));
   await screen.findByText(`${status === "created" ? "Your Loupist learned" : "Your Loupist refined"} a method: ${node.label}`);
@@ -27,14 +27,14 @@ it.each(["created", "refined"] as const)("announces a %s event, highlights its W
   expect(screen.getByTestId("learning-canvas")).toHaveAttribute("data-glow", appliedIds.join(","));
   await userEvent.click(screen.getByRole("button", { name: "View" }));
   expect(await screen.findByRole("heading", { name: node.label })).toBeVisible();
-  expect(await screen.findByRole("region", { name: /What .* knows/ })).toBeVisible();
+  expect(await screen.findByRole("region", { name: /’s Lens$/ })).toBeVisible();
   expect(await screen.findByRole("complementary", { name: node.label })).toBeVisible();
   const provenance = await screen.findByRole("region", { name: "How your Loupist learned this" });
   expect(provenance).toHaveTextContent(review.rationale!);
   expect(await screen.findByRole("region", { name: "Then vs now" })).toBeVisible();
 });
 
-it("announces learning away from Map without starting a hidden glow", async () => {
+it("announces learning away from World without starting a hidden glow", async () => {
   const { bridge, review, node } = await fixture();
   function State() { const state = useLearningState(bridge, "loupist-quality"); return <output data-testid="glow-state">{state.glow?.recordId ?? "none"}</output>; }
   render(<><App bridge={bridge} /><State /></>);

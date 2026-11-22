@@ -4,7 +4,7 @@ import { MockLoupistBridge } from "../../../bridge/mockBridge";
 import { ConnectionAuth } from "./ConnectionAuth";
 
 it("submits pre-registered client details as write-only fields and clears the masked secret", async () => {
-  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const bridge = new MockLoupistBridge({ delay_ms: 0, customConnectionsAvailable: true });
   const record = await bridge.customConnectionAddUrl({ url: "https://research.example" });
   record.auth_state = "sign_in_needed";
   const authorize = vi.spyOn(bridge, "customConnectionAuthorize").mockResolvedValue({ ...record, auth_state: "signed_in", pending: false });
@@ -23,7 +23,7 @@ it("submits pre-registered client details as write-only fields and clears the ma
 });
 
 it("cancels the host browser flow when the auth surface closes", async () => {
-  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const bridge = new MockLoupistBridge({ delay_ms: 0, customConnectionsAvailable: true });
   const record = await bridge.customConnectionAddUrl({ url: "https://research.example" }); record.auth_state = "sign_in_needed";
   const signIn = vi.spyOn(bridge, "customConnectionSignIn").mockImplementation(() => new Promise(() => {}));
   const cancel = vi.spyOn(bridge, "customConnectionSignInCancel");

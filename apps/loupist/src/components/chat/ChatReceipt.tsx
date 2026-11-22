@@ -1,7 +1,8 @@
 import { formatNumber } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
-import type { ReactNode } from "react";
-import type { MapKind, SetupChange } from "../../types";
+import { useId, type ReactNode } from "react";
+import { FigureWarnings } from "./FigureWarnings";
+import type { ChatMessage, MapKind, MemorySaveSkipReason, MemoryUpdateResult, SetupChange } from "../../types";
 import type { ChatReceiptData, SavedReceiptGroup, ThesisMove } from "../../chat/receipt";
 import { verdictLabel } from "../assets/assetText";
 import { CircleCheckIcon, TriangleAlertIcon } from "lucide-react";
@@ -54,19 +55,34 @@ type Props = {
   onSaved: (group: SavedReceiptGroup) => void;
   /** Opens the asset page at its thesis history. */
   onOpenThesis?: (move: ThesisMove) => void;
-  /** Scrolls to the first number to check and pins its popover. */
-  onCheckNumbers?: () => void;
+  message?: ChatMessage;
 };
 
 type Segment = { key: string; node: ReactNode };
 
+export function MemorySaveWarning({ reason, items }: { reason?: MemorySaveSkipReason; items?: MemoryUpdateResult["discardedMemoryItems"] }) {
+  useTranslation("chat");
+  const listLabelId = useId();
+  if (!reason) return null;
+  return <div className="memory-save-warning">
+    <p>{t(`memorySaving.skipped.${reason}`)}</p>
+    {items?.length ? <>
+      <p>{t("memorySaving.claimNotKept")}</p>
+      <p id={listLabelId}>{t("memorySaving.notKept")}</p>
+      <ul aria-labelledby={listLabelId}>{items.map((item, index) => <li key={`${item.kind}:${item.title}:${index}`}>
+        {t(`memorySaving.discardedKind.${item.kind}`)} · {item.title}
+      </li>)}</ul>
+    </> : null}
+  </div>;
+}
+
 /**
  * Bot's one line under an answer: how many figures were checked against their source
  * and how many sources it used. It opens the activity sheet at the sources; figures that
- * did not match have their own button, which shows the first of them. Nothing at all when
+ * did not match have their own button, which lists the comparisons. Nothing at all when
  * the answer used no source and cited no figure.
  */
-export function AnswerTrace({ figures, sources, toCheck, onOpen, onCheck }: { figures: number; sources: number; toCheck: number; onOpen: () => void; onCheck: () => void }) {
+export function AnswerTrace({ figures, sources, toCheck, onOpen, message }: { figures: number; sources: number; toCheck: number; onOpen: () => void; message: ChatMessage }) {
   useTranslation("chat");
   const parts = [
     figures ? t("bot.figuresChecked", { count: figures, formattedCount: formatNumber(figures) }) : null,
@@ -77,18 +93,19 @@ export function AnswerTrace({ figures, sources, toCheck, onOpen, onCheck }: { fi
     {parts.length ? <button type="button" className="bot-trace-open" data-trace="sources" onClick={onOpen}>
       <CircleCheckIcon aria-hidden="true" />{parts.join(" · ")}
     </button> : null}
-    {toCheck ? <button type="button" className="bot-trace-check" data-trace="check" onClick={onCheck}>
+    {toCheck ? <FigureWarnings message={message} label={t("bot.toCheck", { count: toCheck, formattedCount: formatNumber(toCheck) })}><button type="button" className="bot-trace-check" data-trace="check">
       <TriangleAlertIcon aria-hidden="true" />{t("bot.toCheck", { count: toCheck, formattedCount: formatNumber(toCheck) })}
-    </button> : null}
+    </button></FigureWarnings> : null}
   </div>;
 }
 
 /** What this answer used and saved: one line of links in a fixed order. Bot shows it only with the pointer or focus on the answer. */
-export function ChatReceipt({ receipt: given, showNothingNew, listId, listExpanded, onShowOnMap, usedListId, usedExpanded, onToggleUsed, learnedListId, learnedExpanded, onToggleLearned, onSaved, onOpenThesis, onCheckNumbers }: Props) {
+export function ChatReceipt({ receipt: given, showNothingNew, listId, listExpanded, onShowOnMap, usedListId, usedExpanded, onToggleUsed, learnedListId, learnedExpanded, onToggleLearned, onSaved, onOpenThesis, message }: Props) {
   useTranslation("chat");
   const bot = useChatSurface().kind === "bot";
   // Bot's trace line already counts figures to check; the receipt does not repeat it there.
   const receipt = bot && given.numbersToCheck ? { ...given, numbersToCheck: 0 } : given;
+  const skipped = message?.memory_update?.skipReason;
   const segments: Segment[] = [];
   const usedToggle = (key: string, label: string) => <button type="button" className="chat-receipt-segment" data-receipt-used={key}
     aria-expanded={usedExpanded} aria-controls={usedExpanded ? usedListId : undefined} onClick={onToggleUsed}>{label}</button>;
@@ -147,22 +164,23 @@ export function ChatReceipt({ receipt: given, showNothingNew, listId, listExpand
   // Shown only when a number did not match its source; always after the other segments.
   if (receipt.numbersToCheck) {
     const label = count("chatReceipt.numbersToCheck", receipt.numbersToCheck);
-    segments.push({ key: "numbers", node: onCheckNumbers
-      ? <button type="button" className="chat-receipt-segment chat-receipt-check" onClick={onCheckNumbers}><TriangleAlertIcon aria-hidden="true" />{label}</button>
+    segments.push({ key: "numbers", node: message
+      ? <FigureWarnings message={message} label={label}><button type="button" className="chat-receipt-segment chat-receipt-check"><TriangleAlertIcon aria-hidden="true" />{label}</button></FigureWarnings>
       : <span className="chat-receipt-text chat-receipt-check"><TriangleAlertIcon aria-hidden="true" />{label}</span> });
   }
 
   if (!segments.length) {
-    if (!showNothingNew) return null;
-    return <nav className="chat-receipt" aria-label={t("chatReceipt.label")}><div className="chat-receipt-line"><span className="chat-receipt-item" data-receipt="nothing-new"><span className="chat-receipt-separator" aria-hidden="true">·</span><span className="chat-receipt-text">{t("chatReceipt.nothingNew")}</span></span></div></nav>;
+    if (!skipped && !showNothingNew) return null;
+    if (!skipped) segments.push({ key: "nothing-new", node: <span className="chat-receipt-text">{t("chatReceipt.nothingNew")}</span> });
   }
   // Every item carries its leading separator; the line clips the one that starts each row.
-  return <nav className="chat-receipt" aria-label={t("chatReceipt.label")}>
-    <div className="chat-receipt-line">
+  return <nav className="chat-receipt" data-save-skipped={skipped || undefined} aria-label={t("chatReceipt.label")}>
+    <MemorySaveWarning reason={skipped} items={message?.memory_update?.discardedMemoryItems} />
+    {segments.length ? <div className="chat-receipt-line">
       {segments.map((segment) => <span className="chat-receipt-item" data-receipt={segment.key} key={segment.key}>
         <span className="chat-receipt-separator" aria-hidden="true">·</span>
         {segment.node}
       </span>)}
-    </div>
+    </div> : null}
   </nav>;
 }

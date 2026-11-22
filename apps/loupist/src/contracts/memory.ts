@@ -53,8 +53,12 @@ export type MapKind = Wire.MapKind;
 /** One applied `loupist_setup` change. A market the user did not give is absent. */
 export type SetupChange = Wire.SetupChange;
 
+export type MemorySaveSkipReason = Wire.MemorySaveSkipReason;
+
 export type MemoryUpdateResult = {
   status: "applied" | "no_change";
+  skipReason?: MemorySaveSkipReason;
+  discardedMemoryItems?: Wire.DiscardedMemoryItem[];
   commitId: string | null;
   changes: MemoryUpdateChange[];
   /** Kinds the answer asked the map to track that its commit could not add. */

@@ -26,7 +26,7 @@ never 해요체: a casual-polite ending lowers trust in financial research.
 - No …요 ending of any kind (…해요, …예요, …세요, …주세요, …까요, …죠), no exclamation
   marks, emoji or softeners ("살짝", "잠깐만요"), and no bureaucratese
   (…하시기 바랍니다, stacked honorifics). Keep it short, exact and calm, about as
-  long as the English, with product terms (봇, 리서치 세션, 관심 자산, 지도, 렌즈, 예약,
+  long as the English, with product terms (봇, 리서치 세션, 관심 자산, 월드, 렌즈, 예약,
   자료함, 루피스트) unchanged.
 - Text the user sends to their Loupist (a suggested prompt, an inserted draft) is
   the user's own plain request: "…해 줘".

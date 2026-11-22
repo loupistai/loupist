@@ -45,6 +45,7 @@ export type ChatSessionHandlers = {
     status: ChatStatus,
   ) => void;
   onTitle: (loupistId: string, threadId: string, title: string) => void;
+  onSaving?: (loupistId: string, threadId: string) => void;
   onAttachedThread?: (thread: ChatThread) => void;
 };
 
@@ -98,6 +99,9 @@ export class ChatSessionRegistry {
         if (!this.#disposed) {
           this.handlers.onArtifact(loupistId, threadId, artifact);
         }
+      },
+      (loupistId, threadId) => {
+        if (!this.#disposed) this.handlers.onSaving?.(loupistId, threadId);
       },
     );
   }

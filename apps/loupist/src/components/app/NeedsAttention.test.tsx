@@ -72,3 +72,23 @@ it("localizes a briefing question by its Loupist and scheduled chat and preserve
     await i18n.changeLanguage("en");
   }
 });
+
+it.each([
+  ["en", "Allow Loupist to use your saved keys (5)"],
+  ["ko", "저장된 키(5개)를 Loupist가 사용하도록 허용"],
+])("shows one global saved-key action and removes it when cleared in %s", async (language, text) => {
+  await i18n.changeLanguage(language);
+  try {
+    const row = item({ kind: "savedKeyPermission", loupistId: "", loupistName: "", count: 5 });
+    const onOpen = vi.fn();
+    const content = (items: AttentionItem[]) => <SidebarProvider><NeedsAttention items={items} onOpen={onOpen} /></SidebarProvider>;
+    const view = render(content([row]));
+    const action = screen.getByRole("button", { name: text });
+    await userEvent.setup().click(action);
+    expect(onOpen).toHaveBeenCalledExactlyOnceWith(row);
+    view.rerender(content([]));
+    expect(screen.queryByRole("button", { name: text })).toBeNull();
+  } finally {
+    await i18n.changeLanguage("en");
+  }
+});

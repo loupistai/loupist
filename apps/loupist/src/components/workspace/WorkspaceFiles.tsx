@@ -8,6 +8,9 @@ import { OpenProvider, useOpenLayer, type OpenLayer } from "../navigation/Open";
 import { errorMessage } from "../../lib/errors";
 import type { LoupistBridge, WorkspaceDirectory, WorkspaceFile } from "../../types";
 import { delimitedPreview, PREVIEW_COLUMNS, PREVIEW_ROWS } from "./delimitedPreview";
+import { FilePreviewTable } from "./FilePreviewTable";
+import { WorkspaceFileActions } from "./WorkspaceFileActions";
+import { WorkspaceWorkbookPreview } from "./WorkspaceWorkbookPreview";
 import { workspaceRasterPreview, workspaceSvgPreview } from "./WorkspaceFileContext";
 
 const t = i18n.getFixedT(null, "chat");
@@ -19,10 +22,11 @@ type Props = {
 };
 const parentPath = (path: string) => path.split("/").slice(0, -1).join("/");
 const bytes = (size: number) => size < 1024 ? t("workspaceFiles.bytes", { size: size }) : size < 1048576 ? t("workspaceFiles.kilobytes", { value1: formatNumber(size / 1024, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }) : t("workspaceFiles.megabytes", { value1: formatNumber(size / 1048576, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) });
+const isWorkbookPath = (path: string) => /\.(xlsx?|xlsm|xlsb)$/i.test(path);
 const isDelimited = (file: WorkspaceFile) => /\.(csv|tsv)$/i.test(file.path) || /^(text\/(csv|tab-separated-values)|application\/csv)(;|$)/i.test(file.media_type);
 const fileType = (file: WorkspaceFile) => file.path.split("/").at(-1)?.match(/\.([^.]+)$/)?.[1].toUpperCase() ?? t("workspaceFiles.file");
 
-type LoadedItem = { key: string; value: WorkspaceDirectory | WorkspaceFile };
+type LoadedItem = { key: string; revision: number; value: WorkspaceDirectory | WorkspaceFile };
 
 export function WorkspaceFiles({ bridge, loupistId, rootPath, path, filePath, onNavigate, onAsk }: Props) {
   useTranslation("chat");
@@ -57,7 +61,7 @@ export function WorkspaceFiles({ bridge, loupistId, rootPath, path, filePath, on
     setLoadingKey(selection); setFailure(null);
     const read = filePath ? bridge.workspaceRead({ loupist_id: loupistId, path: filePath }) : bridge.workspaceList({ loupist_id: loupistId, path });
     void read.then((next) => {
-      if (request === requestRef.current) setLoaded({ key: selection, value: next });
+      if (request === requestRef.current) setLoaded({ key: selection, revision, value: next });
     }).catch((cause) => {
       if (request === requestRef.current) setFailure({ key: selection, message: errorMessage(cause, t("workspaceFiles.couldNotReadThisWorkspaceItem")) });
     }).finally(() => { if (request === requestRef.current) setLoadingKey(null); });
@@ -89,6 +93,10 @@ export function WorkspaceFiles({ bridge, loupistId, rootPath, path, filePath, on
   const svgImage = file ? workspaceSvgPreview(file) : null;
   const browserFile = file && !file.binary && !svgImage && /\.(html?|svg)$/i.test(file.path);
   const tabular = file && isDelimited(file);
+  const workbook = Boolean(file && isWorkbookPath(file.path));
+  const rasterImage = file ? workspaceRasterPreview(file) : null;
+  const noPreview = Boolean(file && !rasterImage && !svgImage && (file.binary || file.content === null));
+  const tablePreview = workbook || (tabular && !source);
   const entries = directory?.entries.filter((entry) => entry.name.toLowerCase().includes(filter.toLowerCase())) ?? [];
   const crumbs = (filePath ?? path).split("/").filter((part) => part && part !== ".");
 
@@ -102,7 +110,7 @@ export function WorkspaceFiles({ bridge, loupistId, rootPath, path, filePath, on
         </span>)}
       </nav>
       {/* The file's type and size share the location row (chat design change 23). */}
-      {file ? <span className="workspace-file-meta">{fileType(file)} · {bytes(file.size_bytes)}{file.truncated ? t("workspaceFiles.previewTruncated") : ""}</span> : null}
+      {file ? <span className="workspace-file-meta">{fileType(file)} · {bytes(file.size_bytes)}{file.truncated && !workbook ? t("workspaceFiles.previewTruncated") : ""}</span> : null}
       <Button type="button" variant="ghost" size="icon-sm" aria-label={t("workspaceFiles.refreshFiles")} title={t("workspaceFiles.refreshFiles")} disabled={loading} onClick={() => setRevision((current) => current + 1)}><RefreshCwIcon className={loading ? "reader-refreshing" : undefined} /></Button>
       {/* The workspace folder's path is in the reveal button's tooltip rather than its own row. */}
       <Button type="button" variant="ghost" size="icon-sm" aria-label={t("workspaceFiles.showInFileManager")} title={rootPath ? `${t("workspaceFiles.showInFileManager")} · ${rootPath}` : t("workspaceFiles.showInFileManager")} onClick={() => void reveal()}><FolderOpenIcon /></Button>
@@ -115,27 +123,27 @@ export function WorkspaceFiles({ bridge, loupistId, rootPath, path, filePath, on
         onKeyDown={(event) => { if (event.key === "Escape" && filter && !event.nativeEvent.isComposing) { event.preventDefault(); setFilters((current) => ({ ...current, [selection]: "" })); } }} />{filter && <Button type="button" variant="ghost" size="icon-sm" aria-label={t("workspaceFiles.clearFileFilter")} title={t("workspaceFiles.clearFileFilter")} onClick={() => setFilters((current) => ({ ...current, [selection]: "" }))}><XIcon /></Button>}<span>{t("workspaceFiles.items", { count: entries.length, formattedCount: formatNumber(entries.length) })}</span></div> : null}
       <div className="workspace-file-list" ref={contentRef} onScroll={rememberScroll}>
         {entries.length ? entries.map((entry) => <button type="button" key={entry.path} data-file-path={entry.path} className="workspace-file-entry" onClick={() => { returnEntries.current.set(selection, entry.path); if (returnEntries.current.size > 50) returnEntries.current.delete(returnEntries.current.keys().next().value!); entry.kind === "directory" ? onNavigate(entry.path) : onNavigate(path, entry.path); }}>
-          {entry.kind === "directory" ? <FolderIcon /> : /\.(csv|tsv|xlsx)$/i.test(entry.name) ? <FileSpreadsheetIcon /> : <FileIcon />}<span>{entry.name}</span><small>{entry.size_bytes == null ? "" : bytes(entry.size_bytes)}</small>{entry.kind === "directory" ? <ChevronRightIcon className="reader-directory-arrow" /> : null}
+          {entry.kind === "directory" ? <FolderIcon /> : (isWorkbookPath(entry.name) || /\.(csv|tsv)$/i.test(entry.name)) ? <FileSpreadsheetIcon /> : <FileIcon />}<span>{entry.name}</span><small>{entry.size_bytes == null ? "" : bytes(entry.size_bytes)}</small>{entry.kind === "directory" ? <ChevronRightIcon className="reader-directory-arrow" /> : null}
         </button>) : <div className="workspace-file-state reader-empty"><p>{filter ? t("workspaceFiles.noFilesMatchThisSearch") : t("workspaceFiles.thisFolderIsEmpty")}</p>{filter ? <Button type="button" variant="ghost" size="sm" onClick={() => setFilters((current) => ({ ...current, [selection]: "" }))}>{t("workspaceFiles.clearSearch")}</Button> : <p>{t("workspaceFiles.researchFilesSavedInThisWorkspaceWillAppearHere")}</p>}</div>}
         {directory.truncated ? <p className="workspace-file-state">{t("workspaceFiles.showingALimitedListOpenASubfolderToSee")}</p> : null}
       </div>
     </> : null}
     {file ? <>
-      <div className="workspace-file-actions">
-        {(markdown || tabular || svgImage) && !file.binary ? <div className="reader-view-switch" role="group" aria-label={t("workspaceFiles.fileView")}>
+      <WorkspaceFileActions key={selection} bridge={bridge} loupistId={loupistId} path={file.path} workbook={workbook} noPreview={noPreview} loading={loading} onAsk={() => onAsk(file)} onReveal={() => void reveal()}>
+        {!workbook && (markdown || tabular || svgImage) && !file.binary ? <div className="reader-view-switch" role="group" aria-label={t("workspaceFiles.fileView")}>
           <button type="button" aria-pressed={!source} onClick={() => setSourceViews((current) => ({ ...current, [selection]: false }))}>{tabular ? t("workspaceFiles.table") : t("workspaceFiles.preview")}</button>
           <button type="button" aria-pressed={source} onClick={() => setSourceViews((current) => ({ ...current, [selection]: true }))}>{t("workspaceFiles.source")}</button>
         </div> : null}
-        <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => onAsk(file)}>{t("workspaceFiles.askAboutThis")}</Button>
-      </div>
+      </WorkspaceFileActions>
       {browserFile ? <div className="reader-browser-file-note" role="note">
         <div><strong>{t("workspaceFiles.sourceType", { type: fileType(file) })}</strong><p>{fileType(file) === "SVG" ? t("workspaceFiles.viewImage") : t("workspaceFiles.viewPage")}</p></div>
         <Button type="button" variant="outline" size="sm" onClick={() => void reveal()}>{t("workspaceFiles.showFile")}</Button>
       </div> : null}
-      <div className={`workspace-file-content${tabular && !source ? " reader-table-content" : ""}`} ref={contentRef} onScroll={rememberScroll}>
-        {workspaceRasterPreview(file) ? <WorkspaceImage key={`${selection}:${file.content_sha256}`} file={file} src={workspaceRasterPreview(file)!} onReveal={() => void reveal()} />
+      <div className={`workspace-file-content${tablePreview ? " reader-table-content" : ""}${workbook ? " reader-workbook-content" : ""}`} ref={contentRef} onScroll={rememberScroll}>
+        {workbook ? <WorkspaceWorkbookPreview key={selection} bridge={bridge} loupistId={loupistId} path={file.path} format={fileType(file)} revision={loaded?.revision ?? 0} />
+          : rasterImage ? <WorkspaceImage key={`${selection}:${file.content_sha256}`} file={file} src={rasterImage} onReveal={() => void reveal()} />
           : svgImage && !source ? <WorkspaceImage key={`${selection}:${file.content_sha256}`} file={file} src={svgImage} onReveal={() => void reveal()} />
-          : file.binary || file.content === null ? <div className="reader-empty"><p>{t("workspaceFiles.noTextPreviewForThisFileUseShowIn")}</p><Button type="button" variant="outline" size="sm" onClick={() => void reveal()}>{t("workspaceFiles.openInFileManager")}</Button></div>
+          : file.binary || file.content === null ? <div className="reader-empty"><p>{t("workspaceFiles.noPreviewForThisKindOfFile")}</p></div>
           : tabular && !source ? <DelimitedFilePreview file={file} header={headerViews[selection] ?? !/header=absent/i.test(file.media_type)} onHeaderChange={(header) => setHeaderViews((current) => ({ ...current, [selection]: header }))} />
           : markdown && !source ? <OpenProvider open={open}><SafeMessageResponse text={file.content} isAnimating={false} workspacePath={rootPath} workspaceBasePath={parentPath(file.path)} /></OpenProvider>
           : <pre className="reader-source" data-quote-source={`file:${file.path}`}><code>{file.content}</code></pre>}
@@ -168,9 +176,8 @@ function DelimitedFilePreview({ file, header, onHeaderChange }: { file: Workspac
   return <div className="reader-csv-preview">
     <div className="reader-table-summary"><span>{t(file.truncated ? "workspaceFiles.truncatedTableSummary" : "workspaceFiles.tableSummary", { rows: t("workspaceFiles.rows", { count: rowCount, formattedCount: formatNumber(rowCount) }), columns: t("workspaceFiles.columns", { count: data.columnCount, formattedCount: formatNumber(data.columnCount) }) })}</span><label><input type="checkbox" checked={header} onChange={(event) => onHeaderChange(event.target.checked)} />{t("workspaceFiles.firstRowIsHeader")}</label></div>
     {(rowCount > PREVIEW_ROWS || data.columnCount > PREVIEW_COLUMNS || data.incompleteLastRow) ? <p className="reader-table-notice">{rowCount > PREVIEW_ROWS || data.columnCount > PREVIEW_COLUMNS ? t("workspaceFiles.previewLimit", { value1: PREVIEW_ROWS, value2: PREVIEW_COLUMNS }) : ""}{data.incompleteLastRow ? t("workspaceFiles.theUnfinishedFinalRecordIsOmittedFromThisPreview") : ""}{t("workspaceFiles.openSourceToInspectTheLoadedText")}</p> : null}
-    <div className="reader-data-scroll"><table className="reader-data-table" aria-label={t("workspaceFiles.dataPreviewLabel", { value1: file.path.split("/").at(-1) })}><thead><tr><th scope="col" className="reader-row-number">#</th>{columns.map((column, index) => <th scope="col" key={index} title={column}>{column}</th>)}</tr></thead>
-      <tbody>{rows.map((row, index) => <tr key={index}><th scope="row" className="reader-row-number">{index + 1}</th>{columns.map((_, column) => <td key={column} title={row[column] ?? ""} className={/^-?\d[\d.,eE+%-]*$/.test(row[column] ?? "") ? "is-numeric" : undefined}>{row[column] ?? ""}</td>)}</tr>)}</tbody>
-    </table></div>
+    <FilePreviewTable label={t("workspaceFiles.dataPreviewLabel", { value1: file.path.split("/").at(-1) })} columns={columns}
+      rows={rows.map(row => row.map(text => ({ text, numeric: /^-?\d[\d.,eE+%-]*$/.test(text) })))} />
     {!rows.length ? <p className="workspace-file-state">{t("workspaceFiles.onlyColumnNamesArePresentThisFileHasNo")}</p> : null}
   </div>;
 }

@@ -1,13 +1,14 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
-import type { ChatEvidenceRef, ChatMessage, MemoryRef } from "../../types";
-import { evidenceTarget } from "../../chat/navigation";
+import type { ChatEvidenceRef, ChatMessage, NumberCheck, MemoryRef } from "../../types";
+import { calculationCheck } from "../../chat/numberChecks";
+import { evidenceTarget, savedSourceFigure } from "../../chat/navigation";
 import type { EvidenceStepLink } from "../../chat/workspace";
 import { OpenProvider, useOpenLayer, type OpenLayer } from "../navigation/Open";
 import { useConversationScroll } from "../ai-elements/conversation";
 import { QuoteEvidencePopover } from "./QuoteEvidence";
 import { actionLabel } from "../../chat/runStatus";
 
-type RevealedResult = { id: string; request: number };
+export type RevealedResult = { id: string; request: number; comparison?: NumberCheck };
 
 type Turn = {
   evidenceRefs: ChatEvidenceRef[];
@@ -46,7 +47,15 @@ export function TurnProvider({ message, loupistId, children }: { message: ChatMe
   const open = useOpenLayer(useCallback<OpenLayer>((to, how) => {
     if (to.kind !== "evidence") return undefined;
     const current = latest.current;
-    const target = evidenceTarget(to.evidence, current.memory_refs, loupistId);
+    const comparison = to.step?.comparison;
+    const check = to.figureCheck ?? comparison;
+    if (check) {
+      const figure = savedSourceFigure(loupistId, current, to.evidence, check);
+      if (figure) return figure;
+    }
+    const target = comparison
+      ? { kind: calculationCheck(comparison, to.evidence) ? "step" as const : "reader" as const }
+      : evidenceTarget(to.evidence, current.memory_refs, loupistId);
     switch (target.kind) {
       case "artifact": return { kind: "artifact-link", artifactId: target.artifactId };
       case "memory": return { kind: "memory", location: target.location, title: target.title };
@@ -54,7 +63,7 @@ export function TurnProvider({ message, loupistId, children }: { message: ChatMe
       case "asset": return { kind: "asset", target: target.target };
       case "step": return () => {
         conversation?.holdScrollPosition();
-        setRevealedResult((previous) => ({ id: to.evidence.id, request: (previous?.request ?? 0) + 1 }));
+        setRevealedResult((previous) => ({ id: to.evidence.id, request: (previous?.request ?? 0) + 1, comparison }));
       };
       case "quote": return () => {
         // The clicked control, not document.activeElement: a mouse click in WKWebView
@@ -65,7 +74,10 @@ export function TurnProvider({ message, loupistId, children }: { message: ChatMe
         setQuote({ evidence: to.evidence, anchor: how.anchor, pointer: to.cell?.pointer });
       };
       case "browser":
-      case "reader": return { ...to, step: to.step ?? stepFor(current, to.evidence, to.cell) };
+      case "reader": {
+        const step = stepFor(current, to.evidence, to.cell);
+        return { ...to, step: comparison ? { ...step, label: step?.label ?? "", comparison } : to.step ?? step };
+      }
     }
   }, [conversation, loupistId]));
 

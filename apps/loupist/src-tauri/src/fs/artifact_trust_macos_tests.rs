@@ -83,7 +83,7 @@ impl SignedFixture {
 
     fn certificate(&self, name: &str) -> String {
         let config = self.root.path().join(format!("{name}.cnf"));
-        std::fs::write(&config, format!("[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=Loupist Fixture {name}\n[ext]\nbasicConstraints=critical,CA:false\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=critical,codeSigning\n")).unwrap();
+        std::fs::write(&config, format!("[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=Loupist Fixture {name}\nOU=ABCDE12345\n[ext]\nbasicConstraints=critical,CA:false\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=critical,codeSigning\n")).unwrap();
         let key = self.root.path().join(format!("{name}.key"));
         let cert = self.root.path().join(format!("{name}.pem"));
         let p12 = self.root.path().join(format!("{name}.p12"));
@@ -245,7 +245,7 @@ fn real_signatures_accept_only_the_apps_signer_and_sealed_bundle() {
 
     fixture.sign(&helper, &second);
     fixture.sign(&app, &first);
-    verify_codesign(&app, true).unwrap();
+    verify_codesign(&app, true, None).unwrap();
     assert!(
         verify_macos_identity_for_app(&current, &helper).is_err(),
         "different certificate in an otherwise valid sealed app"
@@ -302,4 +302,23 @@ fn real_signatures_accept_only_the_apps_signer_and_sealed_bundle() {
         verify_macos_identity_for_app(&current, &helper).is_err(),
         "unsigned running app"
     );
+}
+
+#[test]
+fn development_helper_with_the_same_team_lacks_the_developer_id_application_oid() {
+    let Some(fixture) = SignedFixture::new() else {
+        return;
+    };
+    let identity = fixture.certificate("development");
+    let helper = fixture.root.path().join("helper");
+    fixture.binary(&helper);
+    fixture.sign(&helper, &identity);
+    // Substitute the fixture's root only. This exercises Security.framework's
+    // OU and certificate-class evaluation without an Apple private key.
+    let anchor = format!(r#"certificate leaf = H"{identity}""#);
+    let team_only = format!(r#"={anchor} and certificate leaf[subject.OU] = "ABCDE12345""#);
+    verify_codesign(&helper, false, Some(&team_only)).unwrap();
+    let requirement =
+        developer_id_requirement("ABCDE12345").replace("anchor apple generic", &anchor);
+    assert!(verify_codesign(&helper, false, Some(&requirement)).is_err());
 }

@@ -222,6 +222,7 @@ mod tests {
             provider.credential_source = CredentialSource::Saved;
         }
         ModelCatalogView {
+            default_selection: None,
             models,
             providers,
             custom_providers: vec![],

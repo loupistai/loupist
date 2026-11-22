@@ -380,7 +380,7 @@ async fn interface_labels_follow_turn_origin_and_freeze_the_admitted_appearance(
                 Some(ChatAdmission::new(&state, &run, &profile.id, thread).unwrap()),
                 "Write the answer in French.".into(),
             ),
-            _ => (None, "Where is the map?".into()),
+            _ => (None, "Where is World?".into()),
         };
         let mut request = send_request(&run, &profile.id, thread, &prompt);
         request.use_memory = memory;
@@ -411,7 +411,7 @@ async fn interface_labels_follow_turn_origin_and_freeze_the_admitted_appearance(
             assert!(envelope.get("interface").is_none());
         } else {
             assert_eq!(envelope["interface"]["language"], "ko");
-            assert_eq!(envelope["interface"]["names"]["map"], "지도");
+            assert_eq!(envelope["interface"]["names"]["world"], "월드");
             assert!(seed.current_prompt.contains("Write the answer in French."));
         }
 
@@ -427,12 +427,12 @@ async fn interface_labels_follow_turn_origin_and_freeze_the_admitted_appearance(
             .execute(
                 &policy,
                 ToolMethod::InterfaceLabels,
-                json!({"keys": ["map"]}),
+                json!({"keys": ["world"]}),
             )
             .await;
         match expected {
-            ChatSurface::Bot => assert_eq!(result.unwrap(), json!({"map": "지도"})),
-            ChatSurface::Session => assert_eq!(result.unwrap(), json!({"map": "Map"})),
+            ChatSurface::Bot => assert_eq!(result.unwrap(), json!({"world": "월드"})),
+            ChatSurface::Session => assert_eq!(result.unwrap(), json!({"world": "World"})),
             _ => assert!(result.is_err()),
         }
         let streamed = stream::stream_chat_turn(&mut launched).await;
@@ -867,6 +867,12 @@ fn classify_turn_failure_keeps_host_categories_and_precedence() {
             ChatFailureKind::CancelledByConflict,
         ),
         (
+            "memory_busy",
+            "Waiting for Memory",
+            ChatFailureKind::Other,
+            ChatFailureKind::CancelledByConflict,
+        ),
+        (
             "internal",
             "Pi provider turn failed",
             ChatFailureKind::StoreFailed,
@@ -972,68 +978,372 @@ fn classify_turn_failure_keeps_host_categories_and_precedence() {
     }
 }
 
-#[tokio::test]
-async fn failed_writer_handoff_stays_active_until_the_failed_assistant_is_persisted() {
-    use crate::{
-        chat::execution_session::ChatExecutionSession, chat::turn::ChatTurnResources,
-        runs::scratch::RunScratch,
+#[tokio::test(start_paused = true)]
+async fn a_settled_reply_keeps_its_answer_when_an_older_reader_does_not_drain() {
+    assert_pending_reply_is_kept(Some(crate::domain::MemorySaveSkipReason::Deadline), true).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn stop_while_saving_skips_memory_and_keeps_the_settled_reply() {
+    assert_pending_reply_is_kept(Some(crate::domain::MemorySaveSkipReason::User), true).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_memory_reset_while_waiting_leaves_staged_changes_behind() {
+    assert_pending_reply_is_kept(
+        Some(crate::domain::MemorySaveSkipReason::PolicyChanged),
+        true,
+    )
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_failed_commit_names_the_memory_it_rolled_back() {
+    assert_pending_reply_is_kept(Some(crate::domain::MemorySaveSkipReason::Failed), true).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn quitting_after_the_answer_checkpoint_keeps_the_discarded_item_titles() {
+    assert_pending_reply_is_kept(Some(crate::domain::MemorySaveSkipReason::Interrupted), true)
+        .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn skipping_a_save_without_staged_writes_omits_the_item_list() {
+    assert_pending_reply_is_kept(Some(crate::domain::MemorySaveSkipReason::User), false).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn saving_memory_clears_the_checkpoint_discarded_item_list() {
+    assert_pending_reply_is_kept(None, true).await;
+}
+
+async fn assert_pending_reply_is_kept(
+    expected_skip: Option<crate::domain::MemorySaveSkipReason>,
+    stage_memory: bool,
+) {
+    use crate::chat::{
+        artifacts::{
+            ArtifactCommit, ChatArtifact, ChatArtifactKind, ChatArtifactPayload,
+            ChatArtifactRevision,
+        },
+        chart::{ChartColumn, ChartColumnKind, ChartDataset, ChartDatasetLineage, ChartDocument},
     };
+    use crate::domain::{DiscardedMemoryItem, DiscardedMemoryKind, MemorySaveSkipReason};
     let root = tempfile::tempdir().unwrap();
     let state = AppState::for_test(root.path().join("app"));
-    crate::commands::tests::seed_profile(
-        state.store.as_ref(),
-        &crate::commands::tests::profile("loupist-handoff", &root.path().join("workspace"), 1),
-    );
-    let chat = crate::commands::tests::chat("chat-handoff", "loupist-handoff", 1);
+    let earlier =
+        crate::commands::tests::profile("loupist-finalization", &root.path().join("workspace"), 1);
+    crate::commands::tests::seed_profile(state.store.as_ref(), &earlier);
+    let chat = crate::commands::tests::chat("chat-finalization", &earlier.id, 1);
     state.store.create_chat(&chat).unwrap();
     let (control, _) = chat_control_channel();
-    let reader = state
+    let older = state
         .register_chat_run(
-            "run-handoff".into(),
-            chat.loupist_id.clone(),
+            "older".into(),
+            earlier.id.clone(),
+            "older-chat".into(),
+            control,
+        )
+        .unwrap();
+    let (control, _) = chat_control_channel();
+    let settled = state
+        .register_chat_run(
+            "settled".into(),
+            earlier.id.clone(),
             chat.id.clone(),
             control,
         )
         .unwrap();
-    let deletion = state.artifacts.deletion_root.clone();
-    let scratch = RunScratch::create(deletion.clone(), &chat.loupist_id, "run-handoff").unwrap();
-    let session = ChatExecutionSession::prepare(deletion, &chat).unwrap();
-    let mut resources = ChatTurnResources::new(reader.lease, scratch, session);
-    let (_, mut pending) =
-        memory_updates::reserve_chat_memory_finalization(&state, &chat.loupist_id).unwrap();
-    pending.wait_error = Some(CommandError::internal("queue unavailable"));
-    let (writer, ready) = resources.handoff_to_memory_write(pending).await;
-    assert!(ready.is_err());
-    assert_eq!(state.run_coordinator.active_count(), 1);
     assert!(state
-        .store
-        .get_chat(&chat.id)
-        .unwrap()
-        .unwrap()
-        .messages
-        .is_empty());
-    let sink = ChatEventSink::new(|_| Ok(()));
-    sink.set_failure_kind(ChatFailureKind::StoreFailed);
-    persist_and_emit_failed_chat(
-        state.store.as_ref(),
-        &sink,
-        "run-handoff",
-        &chat.id,
-        "failed-handoff",
-        None,
-        execution_model(),
-        crate::agent_harness::snapshot("chat", &[], &[]).unwrap(),
-        None,
+        .claim_run_completion("settled", RunKind::Chat)
+        .unwrap());
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let observed = events.clone();
+    let pending = Arc::new(tokio::sync::Notify::new());
+    let queued = pending.clone();
+    let sink = ChatEventSink::new(move |event| {
+        if matches!(
+            event,
+            ChatStreamEvent::Saving {
+                waiting_for_other_chat: true,
+                ..
+            }
+        ) {
+            queued.notify_one();
+        }
+        observed.lock().unwrap().push(event);
+        Ok(())
+    });
+    let reply = TerminalReply {
+        state: &state,
+        on_event: &sink,
+        run_id: "settled",
+        loupist_id: &earlier.id,
+        thread_id: &chat.id,
+        message_id: "settled-reply",
+        memory_revision: &None,
+        harness: &crate::agent_harness::snapshot("chat", &[], &[]).unwrap(),
+    };
+    let mut progress = ChatProgressProjection::new(now_ms());
+    let mut failure = None;
+    let model = execution_model();
+    let capture = ToolCapture::default();
+    let staged_id = format!("rec_{}", uuid::Uuid::new_v4().simple());
+    let expected_items = stage_memory.then(|| {
+        vec![
+            DiscardedMemoryItem {
+                kind: DiscardedMemoryKind::Note,
+                title: "Short overlap check".into(),
+            },
+            DiscardedMemoryItem {
+                kind: DiscardedMemoryKind::Principle,
+                title: "Check cash flow in both years".into(),
+            },
+        ]
+    });
+    if stage_memory {
+        *capture.staged_research.lock().await =
+            Some(crate::commands::tool_executor::StagedResearch {
+                thesis_pair: None,
+                observations: String::new(),
+                interpretation: String::new(),
+                assumptions: String::new(),
+                evaluation: String::new(),
+                journal: None,
+                working_note: Some(crate::knowledge::WorkingNoteDraft {
+                    title: "Short overlap check".into(),
+                    markdown: "The body is never copied into the skip receipt.".into(),
+                    change_summary: "An overlap check".into(),
+                    expected_research_id: None,
+                }),
+                source_reads: vec![],
+                world_reads: vec![],
+                lens_reads: vec![],
+                previous_note_ids: vec![],
+            });
+        capture.staged_principles.lock().await.push(
+            crate::commands::tool_executor::StagedPrinciple {
+                record_id: staged_id.clone(),
+                expected_revision_id: (expected_skip == Some(MemorySaveSkipReason::Failed))
+                    .then(|| format!("rev_{}", uuid::Uuid::new_v4().simple())),
+                input: crate::knowledge::PrincipleInput {
+                    statement: "Check cash flow in both years".into(),
+                    why: None,
+                    example: None,
+                    origin: "settings".into(),
+                    origin_chat_id: None,
+                    origin_message_id: None,
+                },
+            },
+        );
+    }
+    let data = ChartDataset::new(
+        "comparison-dataset".into(),
+        vec![
+            ChartColumn {
+                id: "year".into(),
+                label: "Year".into(),
+                kind: ChartColumnKind::String,
+            },
+            ChartColumn {
+                id: "services".into(),
+                label: "Services".into(),
+                kind: ChartColumnKind::Number,
+            },
+            ChartColumn {
+                id: "products".into(),
+                label: "Products".into(),
+                kind: ChartColumnKind::Number,
+            },
+        ],
+        vec![
+            vec![json!("2022"), json!(78_129), json!(316_199)],
+            vec![json!("2024"), json!(96_169), json!(294_866)],
+        ],
+        ChartDatasetLineage::AgentAuthored {
+            upstream_receipts: vec![],
+        },
     )
     .unwrap();
-    assert_eq!(state.run_coordinator.active_count(), 1);
-    drop(writer);
-    state.run_coordinator.drain().await.unwrap();
-    let persisted = state.store.get_chat(&chat.id).unwrap().unwrap();
-    assert_eq!(persisted.messages[0].status, ChatMessageStatus::Error);
+    let chart: ChartDocument = serde_json::from_value(json!({
+        "dataset_id": data.id, "dataset_digest": data.digest,
+        "view": {"kind":"bar", "x":"year", "y":["services","products"], "stack":false, "semantic_types":{}},
+        "studies": [], "drawings": []
+    })).unwrap();
+    let artifact_at = now_ms();
+    capture.artifacts.lock().await.push(ArtifactCommit {
+        artifact: ChatArtifact {
+            id: "comparison-chart".into(),
+            chat_session_id: chat.id.clone(),
+            kind: ChatArtifactKind::Chart,
+            title: "Annual comparison".into(),
+            current_revision: 1,
+            created_at_ms: artifact_at,
+            updated_at_ms: artifact_at,
+        },
+        revision: ChatArtifactRevision::new(
+            "comparison-chart".into(),
+            1,
+            ChatArtifactPayload::Chart {
+                schema: "loupist-chart/1".into(),
+                chart: Box::new(chart),
+            },
+            "settled-reply".into(),
+            artifact_at,
+        )
+        .unwrap(),
+        datasets: vec![data],
+    });
+    let title = String::new();
+    let mut turn = Box::pin(tokio::time::timeout(
+        Duration::from_secs(660),
+        completion::commit_completed_turn(completion::CompletedTurn {
+            reply: &reply,
+            task_loupist_id: &earlier.id,
+            execution_model: &model,
+            capture: &capture,
+            runtime_settled: true,
+            save_started_at_ms: now_ms(),
+            progress: &mut progress,
+            failure: &mut failure,
+            content: "The chart compares both years.".into(),
+            sealed_cache: None,
+            task_pins: &[],
+            task_update_memory: true,
+            should_generate_title: false,
+            fallback_title: &title,
+            chat_started_at: Instant::now(),
+            setup_ms: 0,
+            first_text_ms: None,
+            answer_text_ms: None,
+            generation_ms: None,
+            resumed: false,
+            token_usage: AssistantTokenUsage::default(),
+        }),
+    ));
+    tokio::select! {
+        _ = pending.notified() => {}
+        _ = &mut turn => panic!("save finished before the older reader was drained"),
+    }
+    let checkpoint = state.store.get_chat(&chat.id).unwrap().unwrap();
+    let kept = checkpoint.messages.last().unwrap();
     assert_eq!(
-        persisted.messages[0].failure_kind,
-        Some(ChatFailureKind::StoreFailed)
+        kept.memory_update.as_ref().unwrap().skip_reason,
+        Some(MemorySaveSkipReason::Interrupted)
+    );
+    assert_eq!(
+        kept.memory_update.as_ref().unwrap().discarded_memory_items,
+        expected_items
+    );
+    let pending_activity = kept
+        .progress
+        .as_ref()
+        .unwrap()
+        .save_activity
+        .as_ref()
+        .unwrap();
+    assert_eq!(
+        pending_activity.blocking_chat_id.as_deref(),
+        Some("older-chat")
+    );
+    assert_eq!(pending_activity.finished_at_ms, None);
+    assert_eq!(state.store.list_chat_artifacts(&chat.id).unwrap().len(), 1);
+    let (control, _) = chat_control_channel();
+    let later = state
+        .register_chat_run(
+            "later".into(),
+            earlier.id.clone(),
+            "later-chat".into(),
+            control,
+        )
+        .unwrap();
+    drop(later);
+    let mut older = Some(older);
+    match expected_skip {
+        Some(MemorySaveSkipReason::User) => {
+            state.cancel_run("settled", RunKind::Chat).await.unwrap();
+        }
+        Some(MemorySaveSkipReason::PolicyChanged) => {
+            use crate::knowledge::memory_reset;
+            let blobs =
+                crate::commands::knowledge::knowledge_blobs_for_loupist(&state, &earlier.id)
+                    .unwrap();
+            let mut connection = state.store.lock_loupist(&earlier.id).unwrap();
+            let tx = connection.transaction().unwrap();
+            let plan = memory_reset::preview(&tx, &earlier.id).unwrap();
+            memory_reset::reset(&tx, &blobs, &earlier.id, &plan, now_ms()).unwrap();
+            tx.commit().unwrap();
+            drop(older.take());
+        }
+        Some(MemorySaveSkipReason::Failed) | None => drop(older.take()),
+        Some(MemorySaveSkipReason::Deadline | MemorySaveSkipReason::Interrupted) => {}
+    }
+    if expected_skip == Some(MemorySaveSkipReason::Interrupted) {
+        drop(turn);
+    } else {
+        assert!(
+            turn.await.is_ok(),
+            "finalization is waiting on an older reader"
+        );
+    }
+    let persisted = state.store.get_chat(&chat.id).unwrap().unwrap();
+    let answer = persisted.messages.last().unwrap();
+    assert_eq!(answer.content, "The chart compares both years.");
+    let expected_items = expected_items.filter(|_| expected_skip.is_some());
+    {
+        let mut connection = state.store.lock_loupist(&earlier.id).unwrap();
+        let tx = connection.transaction().unwrap();
+        assert_eq!(
+            crate::knowledge::principles::principle_read(&tx, &earlier.id, &staged_id).is_err(),
+            expected_skip.is_some()
+        );
+    }
+    assert_eq!(
+        answer.memory_update.as_ref().unwrap().skip_reason,
+        expected_skip,
+    );
+    assert_eq!(
+        answer
+            .memory_update
+            .as_ref()
+            .unwrap()
+            .discarded_memory_items,
+        expected_items
+    );
+    let dto = crate::commands::types::chat_dto(&persisted).unwrap();
+    assert_eq!(
+        dto.messages
+            .last()
+            .unwrap()
+            .memory_update
+            .as_ref()
+            .unwrap()
+            .discarded_memory_items,
+        expected_items
+    );
+    let activity = answer
+        .progress
+        .as_ref()
+        .unwrap()
+        .save_activity
+        .as_ref()
+        .unwrap();
+    assert_eq!(
+        activity.finished_at_ms.is_some(),
+        expected_skip != Some(MemorySaveSkipReason::Interrupted)
+    );
+    if expected_skip == Some(MemorySaveSkipReason::Deadline) {
+        assert_eq!(activity.waited_ms, 600_000);
+    }
+    assert_eq!(activity.blocking_chat_id.as_deref(), Some("older-chat"));
+    assert_eq!(events.lock().unwrap().iter().any(|event| matches!(
+        event, ChatStreamEvent::Completed { memory_save_skip: reason, save_activity: Some(live), discarded_memory_items, .. } if live == activity && *reason == expected_skip && discarded_memory_items == &expected_items
+    )), expected_skip != Some(MemorySaveSkipReason::Interrupted));
+    drop(settled);
+    assert_eq!(
+        state.run_coordinator.active_count(),
+        usize::from(older.is_some())
     );
 }
 
@@ -1125,7 +1435,7 @@ fn terminal_replies_keep_acknowledged_records_across_reopen_without_a_renderer()
         for _ in 0..2 {
             let _ = sink.send(ChatStreamEvent::Evidence {
                 run_id: "run-terminal".into(),
-                evidence: Box::new(evidence.clone()),
+                evidence: Box::new(evidence.clone().into()),
             });
             let _ = sink.send(ChatStreamEvent::Schedule {
                 run_id: "run-terminal".into(),
@@ -1440,4 +1750,102 @@ async fn replacing_an_acknowledged_setup_keeps_the_reply_and_skips_its_orphaned_
             .unwrap(),
         1
     );
+}
+
+#[test]
+fn saved_key_permission_is_in_run_context_and_scheduled_delivery_without_a_secret_read() {
+    use crate::{
+        commands::tests::{profile, seed_profile},
+        finance_credentials::{self, test_store},
+        scheduled_tasks::types::{
+            Schedule, TaskDraft, TaskStatus, TaskTarget, SAVED_KEY_PERMISSION_SKIP,
+        },
+    };
+    let temporary = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(temporary.path().join("app"));
+    let workspace = temporary.path().join("workspace");
+    seed_profile(state.store.as_ref(), &profile("loupist-a", &workspace, 1));
+    let entry = crate::finance_data::openfigi::SOURCE_ID;
+    let environment = &state.credential_environment;
+    finance_credentials::save_lookup_key(environment, "test-legacy-key").unwrap();
+    test_store::restart(environment, entry);
+    state
+        .store
+        .set_connector_credential_status(entry, r#""PresentUnread""#)
+        .unwrap();
+    let reads = test_store::secret_reads(environment, entry);
+
+    let authority = capture_chat_connector_authority(&state, "loupist-a").unwrap();
+    assert!(!authority.capability_ids.iter().any(|id| id == entry));
+    assert_eq!(
+        authority.saved_keys_needing_permission,
+        std::collections::BTreeSet::from([entry.to_owned()])
+    );
+    let mut runtime =
+        agent_harness::AgentRuntimeProfile::new("chat", false, false, &authority.capability_ids)
+            .unwrap();
+    runtime
+        .mark_saved_keys_needing_permission(&authority.saved_keys_needing_permission)
+        .unwrap();
+    let connection = runtime
+        .unavailable_connections
+        .iter()
+        .find(|item| item.id == entry)
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(connection).unwrap()["reason"],
+        "its saved key needs the user's permission in macOS"
+    );
+
+    let task = state
+        .store
+        .scheduled_task_create(
+            "loupist-a",
+            TaskDraft {
+                title: "Daily research".into(),
+                prompt: "Summarize company updates.".into(),
+                schedule: Schedule::Interval { every_minutes: 5 },
+                target: TaskTarget::NewChat,
+                model_profile_id: "fixture/model".into(),
+                thinking_level: "off".into(),
+                run_options: Default::default(),
+                use_memory: false,
+                update_memory: false,
+                status: TaskStatus::Active,
+            },
+            100,
+        )
+        .unwrap();
+    let run = state
+        .store
+        .scheduled_task_claim_with("loupist-a", &task.id, 200, true, |_| Ok(()))
+        .unwrap()
+        .unwrap()
+        .0
+        .run;
+    let sink = ChatEventSink::new(|_| Ok(()));
+    setup::record_saved_key_skips(&state, "loupist-a", Some(&run.run_id), &runtime, &sink).unwrap();
+    let run = state
+        .store
+        .scheduled_task_run_get("loupist-a", &run.run_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(run.skipped_tools.len(), 1);
+    assert_eq!(run.skipped_tools[0].reason, SAVED_KEY_PERMISSION_SKIP);
+    assert_eq!(run.skipped_tools[0].name, connection.name);
+    let delivery = crate::chat::home::delivery_message(&state, &run)
+        .unwrap()
+        .delivery
+        .unwrap();
+    assert_eq!(
+        delivery.skipped_saved_keys,
+        Some(vec![connection.name.clone()])
+    );
+
+    setup::record_saved_key_skips(&state, "loupist-a", None, &runtime, &sink).unwrap();
+    assert_eq!(
+        sink.tool_refusals()[0].reason,
+        crate::domain::ChatToolRefusalReason::SavedKeyPermission
+    );
+    assert_eq!(test_store::secret_reads(environment, entry), reads);
 }

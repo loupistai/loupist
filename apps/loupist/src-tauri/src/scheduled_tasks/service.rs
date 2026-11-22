@@ -32,24 +32,50 @@ fn saved_task(state: &AppState, task: Task) -> Result<Task, CommandError> {
     if task.status == TaskStatus::Active {
         crate::briefings::desktop::enable(state)?;
     }
-    Ok(task)
+    Ok(present(state, task))
+}
+
+pub(crate) fn present(state: &AppState, mut task: Task) -> Task {
+    let level = if task.thinking_level.is_empty() {
+        preferred_level(state, &task.loupist_id)
+    } else {
+        None
+    };
+    task.resolve_selection(state.selection_catalog().ok().as_ref(), level.as_deref());
+    task
+}
+
+// The run inherits this setting when its task has no saved thinking level.
+fn preferred_level(state: &AppState, loupist_id: &str) -> Option<String> {
+    crate::commands::loupist_configuration(state, loupist_id)
+        .ok()?
+        .chat
+        .thinking_level
 }
 
 pub(crate) fn list(state: &AppState, loupist_id: &str) -> Result<Vec<TaskListItem>, CommandError> {
     ensure_visible(state, loupist_id)?;
-    state
+    let mut items = state
         .store
         .scheduled_tasks_list_with_latest(loupist_id)
-        .map_err(map_store)
+        .map_err(map_store)?;
+    if !items.is_empty() {
+        let catalog = state.selection_catalog().ok();
+        let level = if items.iter().any(|item| item.task.thinking_level.is_empty()) {
+            preferred_level(state, loupist_id)
+        } else {
+            None
+        };
+        for item in &mut items {
+            item.task
+                .resolve_selection(catalog.as_ref(), level.as_deref());
+        }
+    }
+    Ok(items)
 }
 
 pub(crate) fn get(state: &AppState, loupist_id: &str, id: &str) -> Result<Task, CommandError> {
-    ensure_visible(state, loupist_id)?;
-    state
-        .store
-        .scheduled_task_get(loupist_id, id)
-        .map_err(map_store)?
-        .ok_or_else(|| CommandError::not_found("scheduled task"))
+    find(state, loupist_id, id)?.ok_or_else(|| CommandError::not_found("scheduled task"))
 }
 
 pub(crate) fn create(
@@ -167,6 +193,7 @@ pub(crate) fn find(
         .store
         .scheduled_task_get(loupist_id, id)
         .map_err(map_store)
+        .map(|task| task.map(|task| present(state, task)))
 }
 
 pub(crate) fn delete(

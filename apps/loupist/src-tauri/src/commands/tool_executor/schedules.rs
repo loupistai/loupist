@@ -130,6 +130,13 @@ fn decode<T: serde::de::DeserializeOwned>(params: Value) -> Result<T, BrokerErro
     serde_json::from_value(params).map_err(|_| BrokerError::Malformed)
 }
 fn error(error: crate::app::CommandError) -> BrokerError {
+    if error.code == crate::app::CommandErrorCode::ProviderUnavailable {
+        return BrokerError::Execution(format!(
+            "{}: the scheduled task's AI account or model is not available",
+            error.code
+        ))
+        .with_next("The task was not changed and cannot run until an AI account that offers its model is connected. Tell the user it needs a connected AI account.");
+    }
     command_error(error)
 }
 
@@ -167,6 +174,9 @@ fn normalized_title(title: &str) -> String {
 
 fn compact(task: &Task) -> Value {
     json!({"task_id":task.id,"title":task.title,"kind":task.kind.as_str(),"revision":task.revision,"status":task.status,
+        "model_profile_id": task.model_selection.as_ref().and_then(|s|s.model.as_ref()).map(|m|&m.id),
+        "model_selection":task.model_selection,
+        "thinking_level":task.model_selection.as_ref().and_then(|s|s.thinking_level.as_ref()),
         "schedule":task.schedule,"session_mode": match task.target { TaskTarget::NewChat=>"fresh", TaskTarget::Dedicated=>"continue", TaskTarget::ExistingChat{..}=>"existing_chat" },
         "next_run_at":task.next_run_at_ms.and_then(DateTime::from_timestamp_millis).map(|t|t.to_rfc3339()),
         "last_error":task.last_error.as_ref().map(|_| RUN_FAILED),"awaiting_confirmation":task.awaiting_confirmation})
@@ -597,10 +607,8 @@ impl AppToolExecutor {
         result["saved"] = json!(action != ScheduleAction::Viewed);
         result["execution"] = json!("local_app_open");
         result["prompt"] = json!(task.prompt);
-        result["model_profile_id"] = json!(task.model_profile_id);
-        result["thinking_level"] = json!(task.thinking_level);
         result["memory"] = json!({"use_memory":task.use_memory,"update_memory":task.update_memory});
-        result["notice"]=json!("Runs while Loupist is open. This saved action remains if the reply later stops. Fresh runs have new Chat history; continue runs reuse only this task’s dedicated Chat. Both use the saved Memory settings.");
+        result["notice"]=json!("Runs while Loupist is open; on a Mac the user can have it open at login under Settings > General. This saved action remains if the reply later stops. Fresh runs have new Chat history; continue runs reuse only this task’s dedicated Chat. Both use the saved Memory settings.");
         if task.awaiting_confirmation {
             result["notice"] = json!("Saved paused, waiting for the user's OK in the card under your reply; nothing runs until they turn it on there. Tell the user this in their language without naming the button, and do not turn it on yourself in this reply.");
         }
@@ -684,6 +692,67 @@ mod tests {
     }
     fn create(key: &str, mode: &str) -> Value {
         json!({"request_key":key,"title":format!("Review {key}"),"prompt":"Summarize the local report.","schedule":{"kind":"weekly","days":[1,2,3,4,5],"hour":9,"minute":0,"timezone":"Asia/Seoul"},"session_mode":mode,"status":"active"})
+    }
+
+    #[tokio::test]
+    async fn schedule_read_and_list_name_the_live_model_without_pinning_the_task() {
+        let temp = tempfile::tempdir().unwrap();
+        let (mut executor, policy) = fixture(&temp, true, "home-loupist-a");
+        let auth = executor.state.artifacts.app_data_dir.join("pi/auth.json");
+        crate::fs::artifact_trust::ensure_private_regular_file(&auth).unwrap();
+        std::fs::write(auth, br#"{"openai":{"type":"api_key","key":"fixture"}}"#).unwrap();
+        let context = Arc::get_mut(&mut executor.capture)
+            .unwrap()
+            .schedule_context
+            .as_mut()
+            .unwrap();
+        context.model_profile_id.clear();
+        context.thinking_level.clear();
+        let directory =
+            crate::commands::loupist_config_directory(&executor.state, "loupist-a").unwrap();
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            directory.join("config.toml"),
+            "[chat]\nthinking_level = \"high\"\n",
+        )
+        .unwrap();
+        let created = executor
+            .execute(
+                &policy,
+                ToolMethod::ScheduleCreate,
+                create("named", "fresh"),
+            )
+            .await
+            .unwrap();
+        let read = executor
+            .execute(
+                &policy,
+                ToolMethod::ScheduleRead,
+                json!({"task_id": created["task_id"]}),
+            )
+            .await
+            .unwrap();
+        let list = executor
+            .execute(&policy, ToolMethod::ScheduleList, json!({}))
+            .await
+            .unwrap();
+        for result in [&created, &read, &list["tasks"][0]] {
+            assert_eq!(result["model_profile_id"], "fixture");
+            assert_eq!(result["thinking_level"], "high");
+            assert_eq!(result["model_selection"]["model"]["name"], "Fixture");
+            assert_eq!(result["model_selection"]["is_default"], true);
+        }
+        let saved = executor
+            .state
+            .store
+            .scheduled_task_get("loupist-a", created["task_id"].as_str().unwrap())
+            .unwrap()
+            .unwrap();
+        assert!(saved.model_profile_id.is_empty());
+        assert!(serde_json::to_value(saved)
+            .unwrap()
+            .get("model_selection")
+            .is_none());
     }
 
     #[tokio::test]
@@ -780,6 +849,17 @@ mod tests {
             &claim.run.run_id
         )
         .is_err());
+    }
+
+    #[test]
+    fn account_admission_tool_errors_keep_ui_instructions_out_of_model_results() {
+        let message = error(crate::app::CommandError::new(
+            "provider_unavailable",
+            "UI-only account instructions",
+        ))
+        .to_string();
+        assert!(message.contains("provider_unavailable"));
+        assert!(!message.contains("UI-only"));
     }
 
     #[test]
@@ -890,6 +970,8 @@ mod tests {
         assert_eq!(receipt["task_id"], task.id);
         assert_eq!(receipt["last_error"], RUN_FAILED);
         let run = Run {
+            discarded_memory_items: None,
+            memory_save_skip: None,
             briefing_context: None,
             kind: TaskKind::Custom,
             read_at_ms: None,

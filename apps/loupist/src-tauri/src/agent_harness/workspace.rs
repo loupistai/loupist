@@ -159,6 +159,9 @@ fn collect_roots(
     workspace: Option<&Path>,
     bytes: &mut u64,
 ) -> Result<Vec<WorkspaceResource>, AgentHarnessError> {
+    if !crate::extension_availability::user_skills() {
+        return Ok(Vec::new());
+    }
     let mut roots = Vec::new();
     if let Some(root) = workspace {
         roots.extend([

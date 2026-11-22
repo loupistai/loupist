@@ -233,15 +233,20 @@ pub(in crate::commands) fn persist_principles(
     Ok(changes)
 }
 
+pub(in crate::commands) struct CitationInputs<'a> {
+    pub reads: &'a [crate::commands::tool_executor::StagedKnowledgeRead],
+    pub lens_deliveries: &'a [crate::domain::LensReceipt],
+}
+
 pub(in crate::commands) fn persist_citations(
     tx: &rusqlite::Transaction<'_>,
     blobs: &BlobStore,
     loupist: &str,
     turn: &str,
     answer: &str,
-    reads: &[crate::commands::tool_executor::StagedKnowledgeRead],
+    inputs: CitationInputs<'_>,
     at_ms: i64,
-) -> crate::knowledge::KnowledgeResult<()> {
+) -> crate::knowledge::KnowledgeResult<usize> {
     use pulldown_cmark::{Event, Parser, Tag};
     let ids = Parser::new(answer)
         .filter_map(|event| match event {
@@ -252,7 +257,7 @@ pub(in crate::commands) fn persist_citations(
         })
         .collect::<std::collections::BTreeSet<_>>();
     let mut entities = std::collections::BTreeSet::new();
-    for read in reads {
+    for read in inputs.reads {
         if let crate::commands::tool_executor::AckedPayload::World { view_json, .. } = &read.payload
         {
             let value: serde_json::Value = serde_json::from_str(view_json)?;
@@ -264,22 +269,27 @@ pub(in crate::commands) fn persist_citations(
         }
     }
     let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
+    let controls = crate::knowledge::memory_controls::load(tx, loupist)?;
+    let mut skipped = 0;
     for id in ids {
+        let mut delivered = inputs
+            .lens_deliveries
+            .iter()
+            .filter(|receipt| receipt.record_id == id);
         let Ok(page) = write.read_page(loupist, &id) else {
+            skipped += usize::from(delivered.next().is_some());
             continue;
         };
-        if page.archived {
-            continue;
-        }
-        if reads
-            .iter()
-            .any(|r| r.scope == "lens" && r.record_id == id && r.revision_id != page.revision_id)
+        if page.archived
+            || controls.paused.contains(&id)
+            || delivered.any(|receipt| receipt.revision_id != page.revision_id)
         {
+            skipped += 1;
             continue;
         }
         write.record_applied(loupist, turn, &id, &entities, at_ms)?;
     }
-    Ok(())
+    Ok(skipped)
 }
 
 #[cfg(test)]
@@ -413,6 +423,7 @@ mod tests {
             revision_id: "rev-world".into(),
             object_id: "world".into(),
             title: "World".into(),
+            evidence_origin: None,
             payload: crate::commands::tool_executor::AckedPayload::World {
                 revision_digest: "digest".into(),
                 view_json: serde_json::json!({"nodes":[{"id":"entity-a"},{"id":"entity-b"}]})
@@ -427,7 +438,10 @@ mod tests {
                 "loupist-a",
                 "turn-1",
                 "Plain answer",
-                std::slice::from_ref(&read),
+                CitationInputs {
+                    reads: std::slice::from_ref(&read),
+                    lens_deliveries: &[],
+                },
                 10,
             )?;
             let n: i64 = tx.query_row(
@@ -442,7 +456,10 @@ mod tests {
                 "loupist-a",
                 "turn-2",
                 &format!("[Cash flow](lens:{})", p.record_id),
-                std::slice::from_ref(&read),
+                CitationInputs {
+                    reads: std::slice::from_ref(&read),
+                    lens_deliveries: &[],
+                },
                 11,
             )?;
             persist_citations(
@@ -451,7 +468,10 @@ mod tests {
                 "loupist-a",
                 "turn-2",
                 &format!("[Cash flow](lens:{})", p.record_id),
-                std::slice::from_ref(&read),
+                CitationInputs {
+                    reads: std::slice::from_ref(&read),
+                    lens_deliveries: &[],
+                },
                 11,
             )?;
             let n: i64 = tx.query_row(
@@ -466,7 +486,10 @@ mod tests {
                 "other",
                 "turn-3",
                 &format!("[Cash flow](lens:{})", p.record_id),
-                &[read],
+                CitationInputs {
+                    reads: &[read],
+                    lens_deliveries: &[],
+                },
                 12,
             )?;
             let n: i64 = tx.query_row(
@@ -479,6 +502,51 @@ mod tests {
         })
         .unwrap();
     }
+    #[test]
+    fn a_new_lens_head_preserves_the_receipt_for_the_old_revision() {
+        let (_temp, state) = state();
+        let page = create(&state, request("Check operating cash flow")).unwrap();
+        let receipt = host_memory_context_for_turn(&state, "loupist-a", "", true, &[], None)
+            .unwrap()
+            .unwrap()
+            .principle_receipts
+            .remove(0);
+        let newer = update(
+            &state,
+            PrincipleUpdateRequest {
+                loupist_id: page.loupist_id.clone(),
+                record_id: page.record_id.clone(),
+                expected_revision_id: page.revision_id.clone(),
+                statement: Some("Compare cash flow with reported profit".into()),
+                why: None,
+                example: None,
+            },
+        )
+        .unwrap();
+        assert_ne!(receipt.revision_id, newer.revision_id);
+        with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
+            crate::commands::knowledge::memory_usage::persist_deliveries(
+                tx, blobs, "loupist-a", "chat-a", "turn-after-pause", std::slice::from_ref(&receipt), 3,
+            )?;
+            assert_eq!(persist_citations(
+                tx, blobs, "loupist-a", "turn-after-pause",
+                &format!("[Check cash flow](lens:{})", page.record_id),
+                CitationInputs { reads: &[], lens_deliveries: std::slice::from_ref(&receipt) }, 3,
+            )?, 1);
+            let saved: String = tx.query_row(
+                "SELECT revision_id FROM knowledge_lens_deliveries WHERE turn_id='turn-after-pause'",
+                [], |row| row.get(0),
+            )?;
+            assert_eq!(saved, receipt.revision_id);
+            let applied: i64 = tx.query_row(
+                "SELECT count(*) FROM knowledge_lens_anchors WHERE turn_id='turn-after-pause' AND role='applied'",
+                [], |row| row.get(0),
+            )?;
+            assert_eq!(applied, 0);
+            Ok(())
+        }).unwrap();
+    }
+
     #[tokio::test]
     async fn principle_folder_portability_preserves_identity_origins_and_archive() {
         fn copy_dir(from: &std::path::Path, to: &std::path::Path) {

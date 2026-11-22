@@ -20,6 +20,7 @@ const [command = "help", ...args] = explicitSession ? cliArgs.slice(2) : cliArgs
 const usage = `Usage:
   node apps/loupist/e2e/agent-driver.mjs [--session <absolute receipt>] <command> [arguments]
   node apps/loupist/e2e/agent-driver.mjs native-snapshot
+  node apps/loupist/e2e/agent-driver.mjs --session <absolute e2e receipt> native-menu-snapshot
   node apps/loupist/e2e/agent-driver.mjs inspect
   node apps/loupist/e2e/agent-driver.mjs window-default
   node apps/loupist/e2e/agent-driver.mjs window-size <700..2400> <560..1600>
@@ -189,7 +190,8 @@ async function clickVisibleMenuItem(browser, role, exactText) {
       if (!container) continue;
     }
     for (const item of items) {
-      const label = (await item.getText()).trim();
+      const modelName = await item.$(".model-menu-name");
+      const label = (await (await modelName.isExisting() ? modelName : item).getText()).trim();
       if (!label) continue;
       const isVisible = await visible(item);
       if (isVisible) visibleLabels.push(label);
@@ -457,10 +459,16 @@ if (command === "native-snapshot") {
 
 let browser;
 try {
+  if (command === "native-menu-snapshot" && (!explicitSession || args.length || process.platform !== "darwin")) {
+    throw new Error("native-menu-snapshot requires an explicit macOS E2E session and takes no arguments");
+  }
   const requestedSize = command === "window-size" ? parseWindowSize(args) : null;
   browser = await attach();
   if (command === "inspect") {
     await inspect(browser);
+  } else if (command === "native-menu-snapshot") {
+    const menu = await browser.execute(() => window.__TAURI_INTERNALS__.invoke("e2e_native_menu_snapshot"));
+    console.log(JSON.stringify(menu, null, 2));
   } else if (command === "window-default" || command === "window-size") {
     const before = await browser.getWindowSize();
     const geometry = await setWindowSize(browser, requestedSize ?? undefined);

@@ -4,7 +4,7 @@
 
 A Loupist keeps one page per catalog asset ID. The page shows the user's name
 and reference fields, the price and chart, Journal reasons and lines, the
-current read and its moves, and its link to the Map. The page, its research
+current read and its moves, and its link to World. The page, its research
 and its saved price read belong to that Loupist; another Loupist that follows
 the same asset keeps its own ([What you follow](follow.md#what-you-follow)).
 The page's Follow reflects and changes this Loupist's follow only.
@@ -84,21 +84,21 @@ generates a short message in the app language naming the assets still missing
 a ready read. A busy Bot receives the message through its normal delivery
 pass. Setup sends no desktop notification.
 `asset_page_get` and `asset_price_series` accept `storedOnly` for renderer
-updates after `assets-changed`. The Map inspector supplies `entityId` to
+updates after `assets-changed`. World inspector supplies `entityId` to
 `asset_page_get` for a stored thesis read.
 
-## Thesis and Map
+## Thesis and World
 
 Reasons and lines are Journal entries. `thesis_update` cites dated evidence
 from the reply. The host checks the allowed step and verifies a line's
 reported number against the cited result. A crossed line records a move and
 can reach Bot as a host post. The user can undo the latest move and unlink a
-Map entity. See [Thesis](thesis.md).
+World entity. See [Thesis](thesis.md).
 
 ## Reading the page
 
 The header shows the monogram tile, the name in the interface language (`useAssetNames`:
-the saved name, or a Korean listing's Hangul name from the Map; the page hands that name to
+the saved name, or a Korean listing's Hangul name from World; the page hands that name to
 the app header, and the palette lists a followed asset by it, so one name stands for the
 asset on the screen), then the reference ticker
 and exchange (its supplied name, otherwise its code) when the asset has them, and Following or a Follow action (`asset_follow` by
@@ -112,8 +112,8 @@ placeholder leaves the name out (its accessible name keeps it).
 The headline, price receipt, Following rows and chart values use the same locale-aware
 price formatter. A stated currency uses its standard fraction digits. Without a currency,
 values of magnitude one or more show up to two decimal places and smaller values
-show up to six significant digits. When rounding changes the value, the receipt also
-shows the exact stored number under “Stored value”. A stated quote kind appears before the date on the headline
+show up to six significant digits. The receipt
+names the quote dataset by instrument, provider, available read and observation day. Its Details disclosure contains the selectable dataset ID and revision. When rounding changes the value, it shows the exact stored number under “Stored value”. A stated quote kind appears before the date on the headline
 and in the receipt, for example “Close · Nov 19”. A quote without a kind
 reads “As of Nov 19”. A stated time adds the viewer's local clock. The provider
 and source chip follow the date in the headline. The display currency adds
@@ -121,14 +121,16 @@ one "≈" line when the price has a currency (currency design §5). The saved re
 one line, each with one action: `failed` keeps the last price with its date and says the
 latest read failed (Try again); `needs_connection` says the read's connection is off for
 this Loupist (Open Connections); with no saved read or price for a followed asset the page
-offers Check now and Find a price and says Bot explains an unsuccessful setup. Opening a
+offers Check now and Find a price. Opening a
 page lets the host replay with 15-minute
 reuse; the renderer sends only the asset id. Check now calls `asset_price_check`: a replay
 without reuse, with delegated setup for a missing read or a retry that still
 fails. The page shows when setup is running, with no action on that line, and Check
 now stays unavailable (still focusable) until it settles. When the action pressed in
 the price line gives way to a new line, focus moves to that line. An unfollowed asset asks the user to follow it first.
-A setup refused for want of an AI account says to connect one.
+If Check now cannot start setup because there is no AI account, the asset page directs
+the user to Settings → AI accounts. Bot offers to connect an account. Only a setup
+run that starts can post a missing-price report in Bot.
 
 The chart reads `asset_price_series`: the optional history read's points, else the points
 replays stored. It offers the ranges the points can fill (1W to 1Y, opening at three months
@@ -139,7 +141,7 @@ The main column then holds the thesis history: the Loupist's moves, newest first
 its date and sources, and the day the user wrote the thesis (ten rows, then Show all). The
 side column holds the ask box (a question goes into Bot's composer with the asset's name and
 listing; nothing is sent from here), the thesis card (`AssetThesis.tsx`: the read on its
-four-step ladder with Undo for the Loupist's latest move, `asset_verdict_undo` by move id;
-the user's reasons and lines as Journal entries) and the Map line when the page matched an
+four-step ladder after a recorded verdict move, otherwise “Not reviewed yet”, with Undo for the Loupist's latest move, `asset_verdict_undo` by move id;
+the user's reasons and lines as Journal entries) and World line when the page matched an
 entity: its supplier and customer counts, Open, and "Not this company", which unlinks it
 (`asset_entity_set` with `entityId: null`).

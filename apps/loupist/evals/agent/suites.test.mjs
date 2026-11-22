@@ -1260,7 +1260,7 @@ test('navigation labels come from the screen; the ordinary Source follow-up has 
       assert.equal(score(index, answer).find(row => row.assert === 'visible_labels').pass, true, answer);
     }
     if (!english) {
-      assert.equal(score(0, attached[0].replace('Map이고', 'Maple이고')).find(row => row.assert === 'visible_labels').pass, false);
+      assert.equal(score(0, attached[0].replace('World이고', 'Worldwide이고')).find(row => row.assert === 'visible_labels').pass, false);
     }
     for (const [index, answer] of answers.entries()) {
       assert.ok(score(index, answer).every(row => row.pass === true), answer);

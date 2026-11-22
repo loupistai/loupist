@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import i18n from "@/i18n";
+import type { ElementContent } from "hast";
 import type { ChatEvidenceRef, NumberCheck } from "../types";
 import { evidenceFixture } from "../test/evidenceFixtures";
 import { keepNumberParticles } from "./keepParticles";
@@ -98,6 +99,35 @@ describe("number popover words", () => {
     expect(dataRows({ ...revenue, fields: [{ key: "net_change_ratio", value: "0.5" }] }, dart, checks, "x")[0]!.label).toBe("Net change ratio");
   });
 
+  it("groups matched and named amounts while preserving periods, dates and identifiers as printed", () => {
+    const source = evidenceFixture({ id: "ev_world_bank", title: "Population, total" });
+    const check: NumberCheck = {
+      link_index: 0, text: "126,261,000", evidence_id: source.id, kind: "data", status: "matched",
+      fields: [
+        { key: "period", value: "2020" }, { key: "date", value: "2020" },
+        { key: "provider_code", value: "0012345", matched: true }, { key: "series", value: "67890" },
+        { key: "population", value: "126261000", matched: true }, { key: "amount", value: "3500" },
+      ],
+    };
+    expect(dataRows(check, source, [], source.title).map(({ value }) => value))
+      .toEqual(["2020", "2020", "0012345", "67890", "126,261,000", "3,500"]);
+  });
+
+  it.each([
+    ["en", "Period", "Date", "Value", "Amount", "$40"],
+    ["ko", "기간", "날짜", "값", "금액", "40달러"],
+  ])("labels structured observations by their record unit in %s", async (language, period, date, value, amount, dollars) => {
+    await i18n.changeLanguage(language);
+    const source = evidenceFixture({ id: "ev_series", title: "Observations" });
+    const check: NumberCheck = { link_index: 0, text: "126,261,000", evidence_id: source.id, kind: "data", status: "matched" };
+    const fields = [{ key: "period", value: "2020" }, { key: "date", value: "2020" }];
+    const rows = (number: string, unit: string) => dataRows({ ...check, fields: [
+      ...fields, { key: "value", value: number, matched: true }, { key: "unit", value: unit },
+    ] }, source, [], source.title).map(row => [row.label, row.value]);
+    expect(rows("126261000", "people")).toEqual([[period, "2020"], [date, "2020"], [value, "126,261,000 people"]]);
+    expect(rows("40", "USD")).toEqual(expect.arrayContaining([[amount, dollars]]));
+  });
+
   it("words a calculation by Rust's operation id, and an older answer by the title it saved", () => {
     expect(operationName("reverse_dcf")).toBe(i18n.t("chat:numberChip.operation.reverseDcf"));
     expect(operationName(undefined)).toBeUndefined();
@@ -165,7 +195,7 @@ describe("number popover words", () => {
     keepNumberParticles()(tree);
     const paragraph = tree.children[0]!;
     const shown = (child: (typeof paragraph.children)[number]): string => child.type === "text" ? child.value : `[${(child.children as typeof paragraph.children).map(shown).join("")}]`;
-    expect(paragraph.children.map(shown)).toEqual(["The saved quotes are the ", "[[price quote].]", " The filing says so ", "[([2]).]"]);
+    expect(paragraph.children.map(shown)).toEqual(["The saved quotes are the ", "[[price quote].]", " The filing says ", "[so [([2]).]]"]);
   });
 
   it("groups a link before its period arrives, so the period joins it without moving the link", () => {
@@ -173,10 +203,11 @@ describe("number popover words", () => {
     const streamed = (tail: string) => {
       const tree = { type: "root" as const, children: [{ type: "element" as const, tagName: "p", properties: {}, children: [{ type: "text" as const, value: "The margin fell " }, structuredClone(link), ...(tail ? [{ type: "text" as const, value: tail }] : [])] }] };
       keepNumberParticles()(tree);
-      return tree.children[0]!.children.map((child) => child.type === "text" ? "text" : `${child.tagName}>${(child.children as { type: string; tagName?: string }[]).map((inner) => inner.tagName ?? inner.type).join(",")}`);
+      const shape = (node: ElementContent): string => node.type === "element" ? `${node.tagName}(${node.children.map(shape).join(",")})` : node.type;
+      return tree.children[0]!.children.map(shape);
     };
-    expect(streamed("")).toEqual(["text", "span>a"]);
-    expect(streamed(".")).toEqual(["text", "span>a,text"]);
+    expect(streamed("")).toEqual(["text", "span(text,span(a(text)))"]);
+    expect(streamed(".")).toEqual(["text", "span(text,span(a(text),text))"]);
   });
 });
 

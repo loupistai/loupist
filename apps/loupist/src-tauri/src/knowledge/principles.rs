@@ -143,6 +143,16 @@ pub fn principle_read(tx: &Transaction<'_>, loupist: &str, id: &str) -> Knowledg
 }
 
 /// Caller owns the transaction, so creation, revision, metadata, and growth publish together.
+pub(crate) fn principle_title(statement: &str) -> String {
+    statement
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(80)
+        .collect()
+}
+
 pub fn principle_save(
     tx: &Transaction<'_>,
     loupist: &str,
@@ -153,14 +163,7 @@ pub fn principle_save(
 ) -> KnowledgeResult<Principle> {
     validate_principle(&mut input)?;
     super::model::validate_time(at_ms)?;
-    let title: String = input
-        .statement
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .chars()
-        .take(80)
-        .collect();
+    let title = principle_title(&input.statement);
     let creating = expected.is_none();
     require_unique_statement(tx, loupist, &input.statement, id)?;
     let record_id = if creating {

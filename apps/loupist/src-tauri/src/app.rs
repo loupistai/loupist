@@ -29,9 +29,7 @@ use crate::{
     },
     providers::connection::ProviderModelDiscoveryCache,
     providers::support::ProviderSupportCoordinator,
-    runs::coordinator::{
-        PendingMemoryWrite, RunCoordinator, RunKind, RunRegistration, RunSpec, RunTarget,
-    },
+    runs::coordinator::{RunCoordinator, RunKind, RunRegistration, RunSpec, RunTarget},
     runs::maintenance::MaintenanceCoordinator,
     store::deletion,
     store::SqliteStore,
@@ -274,6 +272,10 @@ pub struct AppState {
     pub(crate) scheduled: crate::scheduled_tasks::ScheduledSupervisor,
     pub store: Arc<SqliteStore>,
     pub(crate) credential_environment: Arc<str>,
+    pub(crate) credential_presence: crate::finance_credentials::PresencePass,
+    pub(crate) key_permission_batch: crate::marketplace::key_permission::PermissionBatch,
+    pub(crate) custom_services:
+        Arc<std::sync::Mutex<Option<crate::custom_connections::service::SharedService>>>,
     pub artifacts: Arc<AppArtifacts>,
     pub(crate) mcp_pool: crate::mcp::pool::McpProcessPool,
     pub finance_data: Arc<FinanceDataService>,
@@ -285,6 +287,8 @@ pub struct AppState {
     pub maintenance: MaintenanceCoordinator,
     pub updates: UpdateCoordinator,
     pub browser: BrowserManager,
+    pub(crate) number_replay_cache: crate::commands::ReplayCache,
+    pub(crate) workbook_cache: crate::python_run::workbook::WorkbookCache,
     quarantined_loupists: Arc<RwLock<HashMap<String, HashMap<QuarantineSource, String>>>>,
     _instance_lock: Arc<AppInstanceLock>,
     model_catalog: Arc<RwLock<ModelCatalog>>,
@@ -299,10 +303,9 @@ pub struct AppState {
 
 /// Runs a command body that may read the keychain on a blocking thread.
 ///
-/// A synchronous Tauri command runs on the main thread, and a keychain read
-/// can wait minutes on the macOS access prompt; on the main thread that
-/// freezes the whole window. Commands that can reach a saved secret are
-/// `async` and hand their work to this.
+/// A synchronous Tauri command runs on the main thread. Commands that can
+/// wait for a native keychain response are async and hand work to this helper.
+/// The native operation separately bounds the wait for its own item.
 pub(crate) async fn off_main_thread<T: Send + 'static>(
     state: &AppState,
     work: impl FnOnce(&AppState) -> Result<T, CommandError> + Send + 'static,
@@ -474,6 +477,9 @@ impl AppState {
             scheduled: crate::scheduled_tasks::ScheduledSupervisor::default(),
             store: store.clone(),
             credential_environment: credential_environment.into(),
+            credential_presence: Default::default(),
+            key_permission_batch: Default::default(),
+            custom_services: Default::default(),
             artifacts,
             mcp_pool,
             fx_reference: Arc::new(crate::finance_data::fx::FxService::with_cache(
@@ -500,6 +506,8 @@ impl AppState {
             ),
             followed: Default::default(),
             price_setup: Default::default(),
+            number_replay_cache: Default::default(),
+            workbook_cache: Default::default(),
             sharing: Default::default(),
         };
         // Invalid editable configuration must leave Settings available. Every
@@ -569,13 +577,33 @@ impl AppState {
     }
 
     pub fn model_catalog_view(&self) -> Result<ModelCatalogView, CommandError> {
+        let mut snapshot = self.selection_catalog()?;
+        snapshot.view.default_selection = Some(snapshot.selection("", "", &Default::default()));
+        Ok(snapshot.view)
+    }
+
+    pub(crate) fn selection_catalog(
+        &self,
+    ) -> Result<crate::providers::selection::SelectionCatalog, CommandError> {
+        self.selection_catalog_for(self.model_catalog()?)
+    }
+
+    pub(crate) fn selection_catalog_for(
+        &self,
+        catalog: ModelCatalog,
+    ) -> Result<crate::providers::selection::SelectionCatalog, CommandError> {
         let mut view = catalog_view(
-            &self.model_catalog()?,
+            &catalog,
             &self.pi_agent_data_dir()?,
             &self.model_visibility()?,
         )?;
-        crate::providers::status::decorate(self, &mut view)?;
-        Ok(view)
+        let statuses = crate::providers::status::decorate(self, &mut view)?;
+        let default = crate::providers::auto::resolve(&view, &catalog, &statuses);
+        Ok(crate::providers::selection::SelectionCatalog {
+            catalog,
+            view,
+            default,
+        })
     }
 
     pub fn set_model_visible(
@@ -707,24 +735,6 @@ impl AppState {
                 run_id,
                 loupist_id: loupist_id.clone(),
                 kind,
-                target,
-            },
-            || self.ensure_loupist_available(&loupist_id),
-        )
-    }
-
-    pub fn reserve_memory_write(
-        &self,
-        run_id: String,
-        loupist_id: String,
-        target: RunTarget,
-    ) -> Result<PendingMemoryWrite, CommandError> {
-        self.ensure_loupist_available(&loupist_id)?;
-        self.run_coordinator.reserve_memory_write(
-            RunSpec {
-                run_id,
-                loupist_id: loupist_id.clone(),
-                kind: RunKind::MemoryWrite,
                 target,
             },
             || self.ensure_loupist_available(&loupist_id),
@@ -943,6 +953,9 @@ impl AppState {
             scheduled: crate::scheduled_tasks::ScheduledSupervisor::default(),
             store: store.clone(),
             credential_environment: credential_environment.into(),
+            credential_presence: Default::default(),
+            key_permission_batch: Default::default(),
+            custom_services: Default::default(),
             artifacts,
             mcp_pool,
             fx_reference: Arc::new(crate::finance_data::fx::FxService::with_cache(
@@ -969,6 +982,8 @@ impl AppState {
             ),
             followed: Default::default(),
             price_setup: Default::default(),
+            number_replay_cache: Default::default(),
+            workbook_cache: Default::default(),
             sharing: Default::default(),
         };
         // Tests rank with the embedding model from their first search; the

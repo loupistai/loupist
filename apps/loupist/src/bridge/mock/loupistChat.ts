@@ -258,7 +258,7 @@ export const researchHandoffStart = async (
     id: makeId("thread"), loupist_id: loupistId, title, updated_at: created,
     use_memory: useMemory ?? defaults.use_memory, update_memory: updateMemory ?? defaults.update_memory,
     messages: [
-      { id: makeId("message"), role: "user", content: "The user chose “Look into it” on this Map link.",
+      { id: makeId("message"), role: "user", content: "The user chose “Look into it” on this World link.",
         handoff_action: { kind: "link", connectionId }, handoff_note: { title, linkPath },
         status: "complete", created_at: created },
     ],

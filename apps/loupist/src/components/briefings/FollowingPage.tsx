@@ -3,7 +3,7 @@ import { formatNumber } from "@/i18n/format";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { SearchIcon, XIcon } from "lucide-react";
 import type { LoupistBridge, LoupistSummary } from "../../types";
-import { assetExchangeLabel, assetTicker, type AssetLookupCandidate, type AssetReferenceFields, type AssetRow, type AssetStoredPrice } from "../../contracts/assets";
+import { assetTicker, type AssetLookupCandidate, type AssetRow, type AssetStoredPrice } from "../../contracts/assets";
 import { useOnline } from "../../app/useOnline";
 import { commandErrorCode } from "../../lib/errors";
 import { Button } from "../ui/button";
@@ -14,15 +14,12 @@ import { EmptyState } from "../ui/empty-state";
 import { useAssetPageOpener } from "../assets/assetOpener";
 import { PriceText } from "../market/PriceText";
 import { useAssetNames } from "../assets/assetName";
+import { listingLabel } from "./assetListing";
 import "@/styles/following.css";
 
 /** The host refuses longer queries and names (`asset_lookup`, `asset_follow_name`). */
 const QUERY_MAX = 128;
 const NAME_MAX = 200;
-
-/** "NVDA · US · Common Stock": the listing fields a candidate or a reference has, in that order. */
-const listing = (fields: AssetReferenceFields) =>
-  [fields.ticker, assetExchangeLabel(fields), fields.securityType].map(item => item?.trim()).filter(Boolean).join(" · ") || null;
 
 /** A followed asset as the list shows it: its name, and its reference fields or that it has none. */
 type Row = { asset: AssetRow; name: string; identity: string };
@@ -106,13 +103,14 @@ export function FollowingPage({ bridge, loupist, onOpenConnections, onAskInChat,
   }, [bridge, loupistId, listRevision]);
 
   const collator = useMemo(() => new Intl.Collator(language), [language]);
+  const listing = useMemo(() => listingLabel(language), [language]);
   const rows = useMemo((): Row[] => (assets ?? [])
     .map(asset => {
       const ticker = assetTicker(asset);
       const name = names({ name: asset.name, assetId: asset.assetId, symbol: ticker ?? undefined, market: asset.reference?.exchange });
       return { asset, name, identity: (asset.reference ? listing(asset.reference) : null) ?? t("following.nameOnly") };
     })
-    .sort((a, b) => collator.compare(a.name, b.name) || collator.compare(a.asset.assetId, b.asset.assetId)), [assets, collator, names, t]);
+    .sort((a, b) => collator.compare(a.name, b.name) || collator.compare(a.asset.assetId, b.asset.assetId)), [assets, collator, listing, names, t]);
 
   const trimmed = query.trim();
   const submitted = lookup?.query === trimmed ? lookup : null;

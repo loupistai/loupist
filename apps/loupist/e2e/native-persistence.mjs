@@ -7,7 +7,7 @@
  *            then unfollowed, the other with a reason on its page), a Journal
  *            entry, Loupist instructions and global/project settings. Bot's
  *            pre-update hand-off is stopped with its reason, the hand-off sessions
- *            show the request whole with the note closed, and Look into it on
+ *            show Bot’s brief and the quoted request, and Look into it on
  *            the retained link is pressed once.
  *   restart  The same app data in a new process shows all of it; the other
  *            Loupist follows none of the folder Loupist's assets.
@@ -40,6 +40,7 @@ import {
   scrub,
   selectedLoupistTitle,
   switcherLoupists,
+  waitForLoupistSwitcherClosed,
   waitForShell,
 } from "./native-shell.mjs";
 
@@ -150,6 +151,7 @@ async function selectLoupist(name) {
   if ((await browser.$(current).getAttribute("data-loupist-id")) !== target.id) {
     await openLoupistSwitcher(browser);
     await (await displayed(`[data-loupist-option=${JSON.stringify(target.id)}]`)).click();
+    await waitForLoupistSwitcherClosed(browser);
   }
   await browser.waitUntil(async () => (await browser.$(current).getAttribute("data-loupist-id")) === target.id
     && (await selectedLoupistTitle(browser)) === name, {
@@ -173,23 +175,15 @@ async function createLoupist() {
   await selectLoupist(NEW_LOUPIST);
 }
 
-// A saved Chat with no messages is listed as "Untitled research session"; "New research" names the command.
-const EMPTY_CHAT = "Untitled research session";
-
-/** The composer's /new command creates and opens a saved, empty Chat. */
-async function createChatFromComposer() {
-  await openMainTab(browser, "chat");
-  const before = await chatTitles();
-  const composer = await displayed("#main-panel-chat textarea[data-chat-composer]");
-  await composer.click();
-  await composer.setValue("/new");
-  await (await displayed('[role="listbox"] [role="option"][aria-label="New research"]')).click();
-  await browser.waitUntil(async () => (await chatTitles()).filter((title) => title === EMPTY_CHAT).length === before.filter((title) => title === EMPTY_CHAT).length + 1, {
-    timeout: 15_000, timeoutMsg: "The /new command did not save a Chat",
-  });
-  await browser.waitUntil(async () => (await browser.$(chatRow(EMPTY_CHAT)).getAttribute("aria-current")) === "page", {
-    timeout: 10_000, timeoutMsg: "The new Chat did not open",
-  });
+/** Journal's Look back creates a saved session without sending a model request. */
+async function createJournalChat() {
+  await openLibrary("Journal");
+  await (await visibleWithText("[data-testid=map-view] button[data-testid=journal-library-row]", FIXTURE.journal)).click();
+  const reader = await displayed("[data-testid=knowledge-journal]");
+  await clickButton("Look back with only what was known then", reader);
+  const title = `Looking back: ${FIXTURE.journal}`;
+  await displayed(`${chatRow(title)}[aria-current="page"]`);
+  return title;
 }
 
 async function renameChat(from, to) {
@@ -268,29 +262,26 @@ async function openSession(title) {
   await browser.waitUntil(async () => (await browser.$(chatRow(title)).getAttribute("aria-current")) === "page", {
     timeout: 10_000, timeoutMsg: `The session did not open: ${title}`,
   });
-  return displayed("#main-panel-chat .message.user");
+  return displayed("#main-panel-chat [data-message-id]");
 }
 
 const isOpen = async (details) => (await details.getAttribute("open")) !== null;
 
-/** The Bot-origin session: the whole request with its last sentence, the note closed until Enter on its summary. */
+/** Bot's brief opens the session. The closed details preserve the original request in full. */
 async function verifyBotHandoffSession() {
   const first = await openSession(HANDOFF.botSession.title);
-  const request = (await (await first.$(".message-user-text")).getText()).trim();
-  assert.ok(request.length > 2_000 && request.endsWith(HANDOFF.botSession.lastSentence), "The request is not shown whole");
+  await waitForText(first, "From Bot");
+  await waitForText(first, "Compare retained evidence and dated filings.");
+  assert.equal(await (await first.$("button=Edit")).isExisting(), false);
   const note = await first.$("details.message-handoff-note");
-  assert.equal(await (await note.$("summary")).getText(), "From Bot");
-  assert.equal(await isOpen(note), false, "The Bot's note was not closed");
-  // The note is never a question from the user.
-  const questions = await browser.execute((text) => [...document.querySelectorAll("#main-panel-chat .message.user .message-user-text")].filter((node) => node.textContent?.includes(text)).length, HANDOFF.botSession.noteQuestion);
-  assert.equal(questions, 0, "The Bot's note became a user message");
-  // WebDriver key events are synthesized and do not run a summary's default action, so the
-  // suite toggles it by pointer; the keyboard path is a hand check on the Mac.
+  assert.equal(await isOpen(note), false);
   await (await note.$("summary")).click();
-  await browser.waitUntil(() => isOpen(note), { timeout: 5_000, timeoutMsg: "The Bot's note did not open" });
   await waitForText(note, HANDOFF.botSession.noteQuestion);
+  await waitForText(note, "You said in Bot");
+  const quote = await (await note.$("blockquote")).getText();
+  assert.ok(quote.length > 2_000 && quote.endsWith(HANDOFF.botSession.lastSentence), "The quoted request is incomplete");
   await (await note.$("summary")).click();
-  await browser.waitUntil(async () => !(await isOpen(note)), { timeout: 5_000, timeoutMsg: "The Bot's note did not close" });
+  await browser.waitUntil(async () => !(await isOpen(note)), { timeout: 5_000, timeoutMsg: "The hand-off details did not close" });
 }
 
 /** The link-origin session: the chosen action instead of the host's caption, and the link's details closed. */
@@ -344,8 +335,8 @@ async function mapStats() {
     await closeMapReader();
     await closeLibrary();
     text = await readVisibleMapStats(browser);
-    return /^[\d,]+ on the map · [\d,]+ relationships$/.test(text);
-  }, { timeout: 30_000, interval: 200, timeoutMsg: `The Map did not report its size (${text})` });
+    return /^[\d,]+ in World · [\d,]+ relationships$/.test(text);
+  }, { timeout: 30_000, interval: 200, timeoutMsg: `World did not report its size (${text})` });
   return text;
 }
 
@@ -359,7 +350,7 @@ async function settledMapStats() {
     if (current === previous) return current;
     previous = current;
   }
-  throw new Error(`The Map size did not settle (${previous})`);
+  throw new Error(`World size did not settle (${previous})`);
 }
 
 async function closeMapReader() {
@@ -367,7 +358,7 @@ async function closeMapReader() {
   if (!await browser.$(selector).isDisplayed().catch(() => false)) return;
   await clickControl(browser, `${selector} [data-testid=map-reader-actions] button[aria-label]`);
   await browser.waitUntil(async () => !await browser.$(selector).isDisplayed().catch(() => false), {
-    timeout: 10_000, timeoutMsg: "The Map reader did not close",
+    timeout: 10_000, timeoutMsg: "World reader did not close",
   });
 }
 
@@ -377,7 +368,7 @@ async function closeLibrary() {
   if (!await browser.$(selector).isDisplayed().catch(() => false)) return;
   await clickControl(browser, `${selector} > header button[aria-label="Close Library"]`);
   await browser.waitUntil(async () => !await browser.$(selector).isDisplayed().catch(() => false), {
-    timeout: 10_000, timeoutMsg: "The Map Library did not close",
+    timeout: 10_000, timeoutMsg: "World Library did not close",
   });
 }
 
@@ -403,10 +394,10 @@ async function openMemorySegment(segment) {
   await openMainTab(browser, "lens");
   const page = await displayed('section[data-testid=memory-page]');
   const tabIndex = { pages: 1, history: 2 }[segment];
-  assert.ok(tabIndex, `Unknown What it knows segment: ${segment}`);
+  assert.ok(tabIndex, `Unknown Lens segment: ${segment}`);
   await (await displayed(`section[data-testid=memory-page] [role="tablist"] [role="tab"]:nth-child(${tabIndex})`)).click();
   await browser.waitUntil(async () => (await page.getAttribute('data-segment')) === segment, {
-    timeout: 5_000, timeoutMsg: `What it knows did not open ${segment}`,
+    timeout: 5_000, timeoutMsg: `Lens did not open ${segment}`,
   });
   return page;
 }
@@ -812,17 +803,16 @@ async function seed() {
     record.newLoupistId = (await sidebarLoupists()).find((loupist) => loupist.name === NEW_LOUPIST)?.id;
     assert.ok(record.newLoupistId, "The new Loupist has no identity in the sidebar");
   });
-  await step("create a Chat with /new and rename it", async () => {
+  await step("create a Chat from the Journal and rename it", async () => {
     await selectLoupist(FOLDER_LOUPIST);
-    await createChatFromComposer();
-    await renameChat(EMPTY_CHAT, CHAT);
+    await renameChat(await createJournalChat(), CHAT);
   });
-  await step("Bot stops the pre-update hand-off with its reason; hand-off sessions show the request whole with the note closed", () => verifyHandoffs(record));
+  await step("Bot stops the pre-update hand-off with its reason; hand-off sessions show Bot’s brief and the quoted request", () => verifyHandoffs(record));
   await step("Look into it on the retained link opens exactly one session", async () => {
     record.linkLookInto = await lookIntoSeededLink();
     report.linkLookInto = record.linkLookInto;
   });
-  await step("save a Source from the Map Library", async () => {
+  await step("save a Source from World Library", async () => {
     record.sourceId = await addSource();
   });
   await step("save a principle in Lens", addPrinciple);
@@ -835,11 +825,11 @@ async function seed() {
   });
   await step("save Loupist instructions", saveInstructions);
   await step("save global and Loupist Chat defaults, the theme and the display currency", seedSettings);
-  await step("record the Map with the World and the new Journal entry", async () => {
+  await step("record World with the new Journal entry", async () => {
     await selectLoupist(FOLDER_LOUPIST);
     record.mapStats = await settledMapStats();
   });
-  await step("replay the saved Map, pause, scrub, change speed and exit", replayMap);
+  await step("replay the saved World, pause, scrub, change speed and exit", replayMap);
   await browser.saveScreenshot(resolve(artifactRoot, "seed.png"));
   await writeFile(recordPath, `${JSON.stringify(record, null, 2)}\n`);
   report.record = record;
@@ -870,7 +860,7 @@ async function verify(record, { copied }) {
   });
   // The launch stops nothing again and starts nothing in its place.
   await step("the stopped hand-off, the hand-off sessions' first messages and the link's session after the launch", () => verifyHandoffs(record));
-  await step("the Map keeps its World and Journal nodes", async () => {
+  await step("World keeps its World and Journal nodes", async () => {
     assert.equal(await settledMapStats(), record.mapStats);
   });
   await step("the Library keeps the Source", () => verifySource(record.sourceId));

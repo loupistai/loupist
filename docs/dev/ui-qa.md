@@ -56,7 +56,7 @@ Loupist switch is timed with a `MutationObserver` inside the page. A budget miss
 A missing control or a timeout fails the run. Chat time to first token is provider-bound
 and is recorded only.
 
-The map target is a frame p95 of 33 ms for the 1,000-node overview and the bounded
+World target is a frame p95 of 33 ms for the 1,000-node overview and the bounded
 150-name two-hop view. An unfocused WebView throttles `requestAnimationFrame`, so
 that suite does not wait on frame cadence. It times 200 consecutive canvas draws
 and reports p50 and p95 draw cost as a proxy for the frame budget. A budget miss is
@@ -78,7 +78,7 @@ computed once per mark. Each pass gets fresh geometry for its zoom and priority
 state, including while the camera moves.
 
 `src/styles/tokens.css` owns the semantic token set: surfaces, text, borders,
-accents, status/Map colors, typography, spacing, radii and motion. Primitive palette
+accents, status/World colors, typography, spacing, radii and motion. Primitive palette
 values stay private to that file; feature styles use semantic tokens. Do not add
 decorative icons above headings/empty states, in feature lists, as card avatars or
 as icon tiles. Icons belong in controls and inline status at 16 px. Two identity
@@ -128,9 +128,9 @@ and fetch nothing. The `market-primitives` preview scenario shows them in both p
 is an asset's identity, not a decorative icon tile.
 
 The shell's implemented destinations and reader behavior are described in
-[Sidebar](../ui/sidebar.md#sidebar), [Map and Library](../ui/map-lens.md#map-and-library)
+[Sidebar](../ui/sidebar.md#sidebar), [World and Library](../ui/map-lens.md#world-and-library)
 and [item surfaces](../analysis/surfaces.md#where-each-item-appears). Review those flows rather
-than assuming a separate Map, Lens or Growth page exists.
+than assuming a separate World, Lens or Growth page exists.
 For graph work, preserve camera/selection through navigation and use Fit for
 explicit reframing. For Chat work, inspect intermediate text and tools as well as
 the final reply. Keep provider recovery, source inspection and return paths reachable.

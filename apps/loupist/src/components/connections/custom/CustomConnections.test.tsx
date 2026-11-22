@@ -7,11 +7,23 @@ import { ConnectionDetail } from "./ConnectionDetail";
 import { ToolReview } from "./ToolReview";
 import { CustomConnections } from "./CustomConnections";
 
-function setup() { return new MockLoupistBridge({ delay_ms: 0 }); }
+function setup() { return new MockLoupistBridge({ delay_ms: 0, customConnectionsAvailable: true }); }
 async function connection(bridge: MockLoupistBridge) {
   const pending = await bridge.customConnectionAddUrl({ url: "https://research.example/mcp", name: "Research" });
   return bridge.customConnectionConfirm({ connection_id: pending.id });
 }
+it("offers an explicit saved-key check for a blocked custom connection", async () => {
+  const bridge = setup();
+  const saved = await connection(bridge);
+  const confirm = vi.spyOn(bridge, "customConnectionConfirm").mockResolvedValue(saved);
+  const onChanged = vi.fn();
+  render(<ConnectionDetail bridge={bridge} connection={{ ...saved, last_error: "credential_access_unavailable" }} loupistId="loupist-one" onChanged={onChanged} onClose={() => {}} onRemoved={() => {}} />);
+  expect(screen.getByText("macOS has not allowed Loupist to use this saved key yet. Choose Always Allow when macOS asks, then check again.")).toBeVisible();
+  expect(confirm).not.toHaveBeenCalled();
+  await userEvent.setup().click(screen.getByRole("button", { name: "Check saved key" }));
+  expect(confirm).toHaveBeenCalledExactlyOnceWith({ connection_id: saved.id });
+  expect(onChanged).toHaveBeenCalledWith(saved);
+});
 it("connects then requires a choice for every eligible tool before Done", async () => {
   const bridge = setup();
   const confirmed = await connection(bridge);
@@ -211,4 +223,30 @@ it("offers Show more only for a tool description the clamp cuts short", async ()
   } finally {
     scroll.mockRestore(); client.mockRestore();
   }
+});
+
+it("locates malformed JSON under the field and submits only after syntax is corrected", async () => {
+  const bridge = setup();
+  const add = vi.spyOn(bridge, "customConnectionAddJson").mockRejectedValue({ message: "No server entries were found." });
+  render(<AddConnectionDialog bridge={bridge} loupistId="loupist-one" onClose={() => {}} onChanged={() => {}} />);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("radio", { name: "Paste JSON" }));
+  const input = screen.getByRole("textbox", { name: "Paste JSON" });
+  const submit = screen.getByRole("button", { name: "Review" });
+  for (const [text, column] of [["{", 2], ["{ broken", 3]] as const) {
+    await user.clear(input);
+    await user.click(input);
+    await user.paste(text);
+    expect(input).toHaveValue(text);
+    expect(input).toHaveAccessibleDescription(new RegExp(`Line 1, column ${column}`));
+    expect(submit).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  }
+  expect(add).not.toHaveBeenCalled();
+  await user.clear(input);
+  await user.paste("{}");
+  expect(input).not.toHaveAttribute("aria-invalid", "true");
+  await user.click(submit);
+  expect(await screen.findByRole("alert")).toHaveTextContent("No server entries were found.");
+  expect(add).toHaveBeenCalledExactlyOnceWith({ json: "{}" });
 });

@@ -1,5 +1,6 @@
 //! Current Loupist-scoped data shared by connectors, local files and charts.
 mod persistence;
+pub(crate) mod saved_rows;
 #[cfg(test)]
 mod tests;
 use crate::app::CommandError;

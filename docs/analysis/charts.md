@@ -35,7 +35,10 @@ all display as zero. The currency a value column names (its id, "revenue_krw", o
 its label, "매출(원)") appears once, in the value axis title ("Revenue (KRW)",
 "매출 (원)"), or for folded series as "In KRW" / "단위: 원" when their labels do not
 say it. Bar labels use the same units ("302.2조"), and hovering a mark gives the
-exact stored value ("302조 2,312억 원", "₩302,231,360,000,000"). A category or time
+exact stored value ("302조 2,312억 원", "₩302,231,360,000,000"). An explicitly
+scaled currency column keeps its own unit across ticks, value labels, tooltips and
+spoken mark descriptions. For example, a plotted 40 is read as
+"Revenue (USD millions): 40". A category or time
 axis never formats a period as a quantity: a date prints in the app's date format
 ("Jan 31", "1월 31일"), a string such as "2024Q3" or "FY2025" as given, and a numeric
 x column is a category (one band per value, printed as given) when its semantic type
@@ -45,6 +48,15 @@ or, with no type saying it is a quantity, every value is an integer from 1800 to
 view, so they agree, and a language change draws the chart again. Legends
 wrap below the plot as the panel changes width, keeping room for the data;
 display labels do not change series identity or stored values.
+The accessible SVG describes axes and data marks in the interface language, using
+the same readable column labels and values. A continuous axis describes its displayed range.
+Multi-series bar charts group bars side by side at each x value with a shared
+zero baseline. Multi-series area charts overlay translucent fills and solid
+lines. The value axis fits the individual values. For parts of a total, set
+`view.stack` to `true` on a bar or area view to stack the series and fit their
+sum. Saved charts that omit the field use grouped bars or overlaid areas.
+When grouped bars get crowded, the chart keeps the bars and tooltips while
+skipping overlapping category labels and omitting numbers that cannot fit.
 Financial charts can attach a selected date range to a follow-up question. Theme changes restyle the open chart while retaining local drawings and zoom.
 Position, entry, stop and target overlays name their source or analytical basis.
 A chart's caption, like a table's notes, may name its sources by `#evidence-…`

@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
+import { ExtensionAvailabilityProvider } from "../../app/extensionAvailability";
 import { LoupistSettings } from "./LoupistSettings";
 
 it("offers global Retry when a focus reload fails after a failed capability toggle", async () => {
@@ -57,7 +58,7 @@ it("searches the selected Loupist’s capabilities and reveals that Loupist’s 
     { id: "filing", name: "Filing comparison", description: "Compare financial statements", enabled: true, fixed: false },
     { id: "valuation", name: "Valuation", description: "Model cash flows", enabled: false, fixed: false },
   ]);
-  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={selectedAgent} mutationBusy={false} mutationError={null} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
+  render(<ExtensionAvailabilityProvider value={{ userSkills: true, customConnections: false }}><LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={selectedAgent} mutationBusy={false} mutationError={null} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} /></ExtensionAvailabilityProvider>);
   const user = userEvent.setup();
   await user.click(document.querySelector('[data-loupist-section="capabilities"] > summary')!);
   expect(await screen.findByRole("switch", { name: "Filing comparison: enabled" })).toBeChecked();
@@ -74,9 +75,9 @@ it("searches the selected Loupist’s capabilities and reveals that Loupist’s 
 });
 
 it("lists Skill Creator last under Advanced, as Settings › Skills does", async () => {
-  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const bridge = new MockLoupistBridge({ delay_ms: 0, userSkillsAvailable: true });
   const agents = await bridge.loupistList();
-  render(<LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={agents[0]} mutationBusy={false} mutationError={null} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} />);
+  render(<ExtensionAvailabilityProvider value={{ userSkills: true, customConnections: false }}><LoupistSettings catalog={null} onChanged={vi.fn()} onBack={vi.fn()} onManageProviders={vi.fn()} bridge={bridge} selectedAgent={agents[0]} mutationBusy={false} mutationError={null} onOpenMarketplace={vi.fn()} onDelete={vi.fn()} onAgentUpdated={vi.fn()} /></ExtensionAvailabilityProvider>);
   const user = userEvent.setup();
   await user.click(document.querySelector('[data-loupist-section="capabilities"] > summary')!);
   const creator = await screen.findByRole("switch", { name: /^Skill Creator:/ });

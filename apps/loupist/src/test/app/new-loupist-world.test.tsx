@@ -11,7 +11,7 @@ it("uses shared templates and editable profile fields without a folder or World 
   await openApp(bridge); await user.click(headerAction("New Loupist"));
   const dialog = screen.getByRole("dialog", { name: "New Loupist" });
   // The background-reading notice is in the fixed footer with Create, not in the scrolling form.
-  const notice = within(dialog).getByText(/reads it in the background to build its Map/);
+  const notice = within(dialog).getByText(/reads it in the background to build its World/);
   expect(notice.parentElement).toBe(within(dialog).getByRole("button", { name: "Create Loupist" }).parentElement);
   expect(notice.closest("[data-slot=dialog-body]")).toBeNull();
   await user.click(within(dialog).getByRole("button", { name: /Dividend income Dividend payers/ }));

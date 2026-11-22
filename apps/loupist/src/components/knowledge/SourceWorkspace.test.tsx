@@ -1,3 +1,5 @@
+import { citedFiling } from "../../test/citedFiling";
+import { filingPassage } from "../../test/filingPassage";
 import i18n from "../../i18n";
 import { useState } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -26,6 +28,7 @@ it("shows a readable web passage without showing the raw envelope and preserves 
   render(<SourceWorkspace {...props} />);
   const passage = await screen.findByRole("region", { name: "Saved passage" });
   expect(passage).toHaveTextContent("Readable original passage.");
+  expect(screen.queryByRole("button", { name: "Show the whole saved text" })).toBeNull();
   expect(passage).not.toHaveTextContent("untrusted_web");
   const user = userEvent.setup();
   await user.click(screen.getByText("Source details"));
@@ -33,6 +36,49 @@ it("shows a readable web passage without showing the raw envelope and preserves 
   expect(screen.getByText("Passage retained from the original response.")).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Add to question" }));
   expect(props.onAsk).toHaveBeenCalledWith(expect.objectContaining({ recordId: props.location.recordId, revisionId: props.location.revisionId, spanId: "web-span" }));
+});
+
+it.each([
+  ["en", "Saved data", "Showing 2 of 5 rows", "Show original record", "Hide original record", "True"],
+  ["ko", "저장된 데이터", "5개 행 중 2개 표시", "원본 레코드 보기", "원본 레코드 숨기기", "참"],
+])("reads saved data in %s and reveals the raw payload only on request", async (language, heading, caption, show, hide, trueLabel) => {
+  await act(() => i18n.changeLanguage(language));
+  try {
+    const props = await fixture();
+    const originalRead = props.bridge.knowledgeSourceRead.bind(props.bridge);
+    const raw = '{"dataset_id":"internal-id","rows":[{"period":"2024","value":"123975371"}]}';
+    const figure = { threadId: "chat", messageId: "answer", evidenceId: "population", linkIndex: 0 };
+    const read = vi.spyOn(props.bridge, "knowledgeSourceRead").mockImplementation(async request => ({
+      ...await originalRead(request), sourceClass: "tool_result", selectedSpanId: "data-span",
+      spans: [{ spanId: "data-span", mediaType: "application/json", selector: "", contextNote: "", text: raw,
+        presentation: { text: raw, sourcePointer: "", extractionMethod: "structured_data", contentOffset: 0, nextOffset: null, extractionTruncated: false,
+          table: { columns: ["Economy", "Period", "Population, total", "Reported"], rowOffset: 3, totalRows: 5, focusedCell: { row: 1, column: 2 }, rows: [
+            [{ kind: "text", value: "Japan" }, { kind: "text", value: "2023" }, { kind: "number", value: "124516650" }, { kind: "empty" }],
+            [{ kind: "text", value: "Japan" }, { kind: "text", value: "2024" }, { kind: "number", value: "123975371" }, { kind: "boolean", value: true }],
+          ] },
+        },
+      }],
+    }));
+    render(<SourceWorkspace {...props} readerOnly sourceOpen={{ figure }} />);
+    const section = await screen.findByRole("region", { name: heading });
+    const table = within(section).getByRole("table", { name: caption });
+    expect(within(table).getByRole("columnheader", { name: "Population, total" })).toBeVisible();
+    expect(within(table).getByRole("cell", { name: "2024" })).toBeVisible();
+    expect(within(table).getByRole("cell", { name: trueLabel })).toBeVisible();
+    const value = within(table).getByRole("cell", { name: "123,975,371" });
+    expect(value.querySelector("mark")).toHaveAttribute("aria-current", "true");
+    expect(read).toHaveBeenCalledWith(expect.objectContaining({ figure }));
+    expect(screen.queryByText(/internal-id/)).toBeNull();
+
+    const user = userEvent.setup();
+    await user.click(within(section).getByText(show));
+    expect(await within(section).findByText(raw, { selector: "pre" })).toBeVisible();
+    await user.click(within(section).getByText(hide));
+    await waitFor(() => expect(screen.queryByText(/internal-id/)).toBeNull());
+    expect(table).toBeVisible();
+  } finally {
+    await act(() => i18n.changeLanguage("en"));
+  }
 });
 
 it("retries the same exact source and focuses the restored reader", async () => {
@@ -50,9 +96,10 @@ it("retries the same exact source and focuses the restored reader", async () => 
 it("lists and searches all Loupist sources without choosing a destination", async () => {
   const props = await fixture();
   const source = props.catalog.sources[0];
-  const catalog = { ...props.catalog, sources: [...props.catalog.sources, { ...source, recordId: "another-source-record", title: "Another source", objects: [{ id: "another-source", title: "Unique annual filing" }] }] };
+  const summary = "The filing reports segment sales for the Americas and Europe. The comparative figures cover three fiscal years, including the year preceding the current reporting period.";
+  const catalog = { ...props.catalog, sources: [...props.catalog.sources, { ...source, recordId: "another-source-record", title: "Another source", objects: [{ id: "another-source", title: "Unique annual filing", summary }] }] };
   const view = render(<SourceWorkspace {...props} catalog={catalog} location={{ loupistId: props.location.loupistId, surface: "source" }} />);
-  expect(screen.getByRole("button", { name: /Unique annual filing/ })).toBeVisible();
+  expect(within(screen.getByRole("button", { name: /Unique annual filing/ })).getByText(summary)).toBeVisible();
   expect(screen.queryByRole("article", { name: "Source reader" })).toBeNull();
   view.rerender(<SourceWorkspace {...props} catalog={catalog} query="Unique annual" />);
   await userEvent.setup().click(screen.getByRole("button", { name: /Unique annual filing/ }));
@@ -117,19 +164,58 @@ it("refreshes exact source relationships and processing errors without losing th
     scroller.scrollTop = 85;
     screen.getByRole("button", { name: "Add to question" }).focus();
     expect(reader).toHaveTextContent("Earlier processing issue");
-    expect(screen.queryByRole("group", { name: "Related relationships" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Relationships" })).toBeNull();
     await act(async () => vi.advanceTimersByTimeAsync(2500));
-    expect(screen.getByRole("status")).toHaveTextContent("Map updated");
+    expect(screen.getByRole("status")).toHaveTextContent("World updated");
     expect(screen.getByRole("article", { name: "Source reader" })).toBe(reader);
     expect(reader).toHaveTextContent("The status-code element is a three-digit integer code.");
     expect(reader).not.toHaveTextContent("Earlier processing issue");
-    expect(within(screen.getByRole("group", { name: "Related relationships" })).getByText(/Relationships using this source/)).toBeVisible();
+    expect(within(screen.getByRole("group", { name: "Relationships" })).getByText("Relationships")).toBeVisible();
+    expect(screen.queryByRole("group", { name: "Facts from this Source" })).toBeNull();
     expect(screen.getByRole("button", { name: "Add to question" })).toHaveFocus();
     expect(scroller.scrollTop).toBe(85);
     expect(read).toHaveBeenCalledTimes(2);
     expect(read.mock.calls[1][0]).toEqual(read.mock.calls[0][0]);
     expect(props.onChanged).toHaveBeenCalledOnce();
   } finally { vi.useRealTimers(); }
+});
+
+it.each([
+  ["en", false, "Facts from this Source", "Relationships"],
+  ["ko", true, "이 출처에서 추출한 사실", "관계"],
+] as const)("counts facts and distinct-name links separately in the %s Source reader", async (language, readerOnly, facts, relationships) => {
+  const props = await fixture();
+  const originalRead = props.bridge.knowledgeSourceRead.bind(props.bridge);
+  const world = { worldRecordId: "shipment-world", worldRevisionId: "latest" };
+  vi.spyOn(props.bridge, "knowledgeSourceRead").mockImplementation(async (request) => ({
+    ...await originalRead(request),
+    relatedClaims: [
+      { ...world, claimId: "january", proposition: "Ginkgo Rail reported 18 units", relation: "reports", isRelationship: false },
+      { ...world, claimId: "february", proposition: "Ginkgo Rail reported 22 units", relation: "reports", isRelationship: false },
+      { ...world, claimId: "supplies", proposition: "Ginkgo Rail supplies North Line", relation: "supplies", isRelationship: true },
+    ],
+  }));
+  const previousLanguage = i18n.language;
+  await i18n.changeLanguage(language);
+  const view = render(<SourceWorkspace {...props} readerOnly={readerOnly} />);
+  try {
+    const factGroup = await screen.findByRole("group", { name: facts });
+    const relationshipGroup = screen.getByRole("group", { name: relationships });
+    expect(factGroup.querySelector("summary span")).toHaveTextContent("2");
+    expect(relationshipGroup.querySelector("summary span")).toHaveTextContent("1");
+    const user = userEvent.setup();
+    await user.click(within(factGroup).getByText(facts));
+    expect(within(factGroup).getAllByRole("listitem")).toHaveLength(2);
+    await user.click(within(relationshipGroup).getByText(relationships));
+    expect(within(relationshipGroup).getAllByRole("listitem")).toHaveLength(1);
+    await user.click(within(relationshipGroup).getByRole("button", { name: /Ginkgo Rail supplies North Line/u }));
+    expect(props.onOpen).toHaveBeenCalledWith(expect.objectContaining({
+      surface: "world", recordId: world.worldRecordId, revisionId: world.worldRevisionId, selection: { kind: "claim", id: "supplies" },
+    }));
+  } finally {
+    view.unmount();
+    await i18n.changeLanguage(previousLanguage);
+  }
 });
 
 it("reuses the exact Reader in a side panel and passes its exact passage to Chat", async () => {
@@ -156,10 +242,10 @@ it("filters source processing independently of successful source storage", async
   expect(screen.getAllByRole("button", { name: /Report \d/ })).toHaveLength(4);
   await user.click(screen.getByRole("radio", { name: /Processing/ }));
   expect(screen.getAllByRole("button", { name: /Report \d/ })).toHaveLength(1);
-  expect(screen.getByRole("button", { name: /Report 0/ })).toHaveTextContent("Map is updating");
+  expect(screen.getByRole("button", { name: /Report 0/ })).toHaveTextContent("World is updating");
   await user.click(screen.getByRole("radio", { name: "Needs attention" }));
   expect(screen.getAllByRole("button", { name: /Report \d/ })).toHaveLength(2);
-  expect(screen.getByRole("button", { name: /Report 2/ })).toHaveTextContent("No text for map building");
+  expect(screen.getByRole("button", { name: /Report 2/ })).toHaveTextContent("No text for World building");
   await user.click(screen.getByRole("radio", { name: "All" }));
   expect(screen.getAllByRole("button", { name: /Report \d/ })).toHaveLength(4);
 });
@@ -172,24 +258,24 @@ it("leaves the default Source saved status off a library row and shows any other
   const rows = await screen.findAllByRole("button", { name: /Report \d/ });
   expect(rows).toHaveLength(3);
   for (const row of rows) expect(row).not.toHaveTextContent("Source saved");
-  expect(screen.getByRole("button", { name: /Report 2/ })).toHaveTextContent("Map is updating");
+  expect(screen.getByRole("button", { name: /Report 2/ })).toHaveTextContent("World is updating");
 });
 
-it("says Map building is paused only for the user's pause, and names a source that stopped by itself", async () => {
+it("says World building is paused only for the user's pause, and names a source that stopped by itself", async () => {
   const props = await fixture();
   const catalog = { ...props.catalog, sources: ["paused", "paused_budget"].map((status, index) => ({ ...props.catalog.sources[0], recordId: `source-${index}`, objects: [{ id: `source-${index}`, title: `Report ${index}`, processing: { jobId: "job", status, error: null } }] })) };
   render(<SourceWorkspace {...props} catalog={catalog} location={{ loupistId: props.location.loupistId, surface: "source" }} />);
-  expect(await screen.findByRole("button", { name: /Report 0/ })).toHaveTextContent("Map building paused");
+  expect(await screen.findByRole("button", { name: /Report 0/ })).toHaveTextContent("World building paused");
   const stopped = screen.getByRole("button", { name: /Report 1/ });
-  expect(stopped).toHaveTextContent("Map building stopped for this source");
-  expect(stopped).not.toHaveTextContent("Map building paused");
+  expect(stopped).toHaveTextContent("World building stopped for this source");
+  expect(stopped).not.toHaveTextContent("World building paused");
 });
 
 it("opens an exact World relationship from its original source", async () => {
   const props = await fixture();
   render(<SourceWorkspace {...props} />);
-  const relationships = await screen.findByRole("group", { name: "Related relationships" });
-  await userEvent.setup().click(within(relationships).getByText(/Relationships using this source/));
+  const relationships = await screen.findByRole("group", { name: "Relationships" });
+  await userEvent.setup().click(within(relationships).getByText("Relationships"));
   const claim = relationships.querySelector("button")!;
   expect(claim).toBeTruthy();
   await userEvent.setup().click(claim);
@@ -229,8 +315,10 @@ it("opens the original source in the supplied workspace reader without losing it
   vi.spyOn(props.bridge, "knowledgeSourceRead").mockImplementation(async (request) => ({ ...await read(request), originLabel: "https://issuer.example/filings/2025-q3.pdf" }));
   const onOpenLink = vi.fn();
   const external = vi.spyOn(props.bridge, "openExternalUrl");
-  render(<SourceWorkspace {...props} onOpenLink={onOpenLink} readerOnly />);
-  await userEvent.setup().click(await screen.findByRole("button", { name: /Open original/ }));
+  render(<SourceWorkspace {...props} onOpenLink={onOpenLink} opensLinksInPanel readerOnly />);
+  const original = await screen.findByRole("button", { name: /Open original/ });
+  expect(original.querySelector(".lucide-external-link")).not.toBeInTheDocument();
+  await userEvent.setup().click(original);
   await waitFor(() => expect(onOpenLink).toHaveBeenCalledWith("https://issuer.example/filings/2025-q3.pdf"));
   expect(external).not.toHaveBeenCalled();
   await userEvent.setup().click(screen.getByRole("button", { name: "Add to question" }));
@@ -322,7 +410,7 @@ it("shows the What you follow Source in the interface language whatever title it
   }
 });
 
-describe("Try again for a Source whose Map building stopped", () => {
+describe("Try again for a Source whose World building stopped", () => {
   const stoppedCatalog = (props: Awaited<ReturnType<typeof fixture>>, statuses: string[]) => ({ ...props.catalog, sources: statuses.map((status, index) => ({ ...props.catalog.sources[0], recordId: `source-${index}`, objects: [{ id: `source-${index}`, title: `Report ${index}`, processing: { jobId: `job-${index}`, status, error: null } }] })) });
   const graphJob = (status: string) => ({ jobId: "job-1", loupistId: "loupist-quality", worldRecordId: "world-protocols", worldRevisionId: "rev-owned-1", status, payloadDigest: "digest", createdAtMs: 0, hostMayRedrive: false });
 
@@ -333,7 +421,7 @@ describe("Try again for a Source whose Map building stopped", () => {
     expect(screen.getAllByRole("button", { name: "Try again" })).toHaveLength(1);
     const item = screen.getByRole("button", { name: /Report 1/ }).closest("li")!;
     expect(within(item).getByRole("button", { name: "Try again" })).toBeVisible();
-    expect(item).toHaveTextContent("Uses one more allowance of model requests per source, as set in Map building.");
+    expect(item).toHaveTextContent("Uses one more allowance of model requests per source, as set in World building.");
   });
 
   it("disables while the host decides, shows its refusal inline, and lets the user try again", async () => {
@@ -344,8 +432,8 @@ describe("Try again for a Source whose Map building stopped", () => {
     await userEvent.setup().click(await screen.findByRole("button", { name: "Try again" }));
     expect(retry).toHaveBeenCalledWith({ loupistId: props.location.loupistId, recordId: "source-1" });
     expect(screen.getByRole("button", { name: "Trying again…" })).toBeDisabled();
-    await act(async () => refuse(new Error("enable Map building with a sufficient allowance before retrying")));
-    expect(screen.getByRole("alert")).toHaveTextContent("enable Map building with a sufficient allowance before retrying");
+    await act(async () => refuse(new Error("enable World building with a sufficient allowance before retrying")));
+    expect(screen.getByRole("alert")).toHaveTextContent("enable World building with a sufficient allowance before retrying");
     expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled();
     expect(props.onChanged).not.toHaveBeenCalled();
   });
@@ -369,7 +457,7 @@ describe("Try again for a Source whose Map building stopped", () => {
     } finally { vi.useRealTimers(); }
   });
 
-  it("offers the action in the reader and refreshes it to the Map building progress", async () => {
+  it("offers the action in the reader and refreshes it to World building progress", async () => {
     const props = await fixture();
     const originalRead = props.bridge.knowledgeSourceRead.bind(props.bridge);
     vi.spyOn(props.bridge, "knowledgeSourceRead")
@@ -378,10 +466,10 @@ describe("Try again for a Source whose Map building stopped", () => {
     const retry = vi.spyOn(props.bridge, "knowledgeGraphRetrySource").mockResolvedValue(graphJob("queued"));
     render(<SourceWorkspace {...props} readerOnly />);
     const reader = await screen.findByRole("article", { name: "Source reader" });
-    expect(within(reader).getByRole("status")).toHaveTextContent("Map building stopped for this source");
+    expect(within(reader).getByRole("status")).toHaveTextContent("World building stopped for this source");
     await userEvent.setup().click(within(reader).getByRole("button", { name: "Try again" }));
     expect(retry).toHaveBeenCalledWith({ loupistId: props.location.loupistId, recordId: props.location.recordId });
-    expect(await within(reader).findByText("Map is updating")).toBeVisible();
+    expect(await within(reader).findByText("World is updating")).toBeVisible();
     expect(within(reader).queryByRole("button", { name: "Try again" })).toBeNull();
     expect(props.onChanged).toHaveBeenCalled();
   });
@@ -409,4 +497,122 @@ it("shows neutral metadata for source details saved by a newer app", async () =>
   await userEvent.setup().click(await screen.findByText("Source details"));
   expect(screen.getAllByText("Unspecified", { selector: "dd" })).toHaveLength(2);
   expect(screen.getByText("Unspecified", { selector: ".memory-meta-row > [data-slot=badge]" })).toBeVisible();
+});
+
+it.each([["web_fetch", "Read a web source"], ["unknown_custom_read", "Source saved"]])("names the %s activity in library metadata", async (tool, label) => {
+  const props = await fixture();
+  const read = props.bridge.knowledgeSourceRead.bind(props.bridge);
+  vi.spyOn(props.bridge, "knowledgeSourceRead").mockImplementation(async request => ({
+    ...await read(request), sourceClass: "tool_result", originLabel: `tool:${tool}`,
+  }));
+  render(<SourceWorkspace {...props} />);
+  await waitFor(() => expect(document.querySelector(".memory-meta-row")).toHaveTextContent(label));
+  expect(document.querySelector(".memory-meta-row")).not.toHaveTextContent(/Tool result|tool:/);
+});
+
+it("renders saved filing rows as a table while retaining the exact selection offsets", async () => {
+  const props = await fixture();
+  const read = props.bridge.knowledgeSourceRead.bind(props.bridge);
+  vi.spyOn(props.bridge, "knowledgeSourceRead").mockImplementation(async request => ({
+    ...await read(request), spans: [{ spanId: "filing", mediaType: "text/plain", selector: "lines:1-5", contextNote: "", text: filingPassage }],
+  }));
+  render(<SourceWorkspace {...props} readerOnly />);
+  const amount = await screen.findByRole("cell", { name: "$162,560" });
+  const passage = screen.getByTestId("knowledge-passage");
+  expect(passage.textContent).toBe(filingPassage);
+  const range = document.createRange();
+  range.selectNodeContents(passage);
+  const amountText = Array.from(amount.childNodes).find(node => node.nodeType === Node.TEXT_NODE)!;
+  range.setEnd(amountText, amountText.textContent!.indexOf("$"));
+  expect(range.toString().length).toBe(filingPassage.indexOf("$162,560"));
+  expect(screen.getByRole("columnheader", { name: "2023" })).toBeVisible();
+});
+
+async function citedFilingFixture() {
+  const props = await fixture();
+  const read = props.bridge.knowledgeSourceRead.bind(props.bridge);
+  vi.spyOn(props.bridge, "knowledgeSourceRead").mockImplementation(async request => ({
+    ...await read(request.spanId === citedFiling.spanId ? { ...request, spanId: undefined } : request),
+    material: "provider_payload", selectedSpanId: citedFiling.spanId, spans: [citedFiling],
+  }));
+  return props;
+}
+
+it("opens the cited table with its headers and figures, then steps to a distant passage", async () => {
+  const props = await citedFilingFixture();
+  const user = userEvent.setup();
+  const scrolled: number[] = [];
+  const originalRect = HTMLElement.prototype.getBoundingClientRect;
+  const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    if (this.dataset.citedPassage !== undefined) {
+      const index = Number(this.dataset.citedPassage);
+      scrolled.push(index);
+      return new DOMRect(0, (index + 1) * 100, 400, 80);
+    }
+    return originalRect.call(this);
+  });
+  try {
+    render(<SourceWorkspace {...props} readerOnly />);
+    const passages = await screen.findAllByTestId("knowledge-passage");
+    expect(passages).toHaveLength(2);
+    expect(passages[0]).not.toHaveTextContent("Clipped policy text");
+    expect(within(passages[0]).getByRole("columnheader", { name: "2024" })).toBeVisible();
+    expect([...passages[0].querySelectorAll("mark.evidence-match")].map(mark => mark.textContent)).toEqual(["96,169", "78,129", "391,035", "394,328"]);
+    expect(passages[1].querySelector("mark.evidence-match")).toHaveTextContent("$700");
+    expect(screen.getByRole("img", { name: "Text between the cited passages is not shown here" })).toHaveTextContent("…");
+    const previous = screen.getByRole("button", { name: "Previous cited passage" });
+    const next = screen.getByRole("button", { name: "Next cited passage" });
+    expect(previous).toBeDisabled();
+    expect(screen.getByText("1 of 2")).toBeVisible();
+    expect(scrolled).toEqual([0]);
+    await user.click(next);
+    expect(next).toBeDisabled();
+    expect(screen.getByText("2 of 2")).toBeVisible();
+    expect(scrolled).toEqual([0, 1]);
+    await user.click(previous);
+    expect(scrolled).toEqual([0, 1, 0]);
+    await user.click(screen.getByRole("button", { name: "Show the whole saved text" }));
+    expect(screen.getByTestId("knowledge-passage").textContent).toBe(citedFiling.presentation!.text);
+    await user.click(screen.getByRole("button", { name: "Next cited passage" }));
+    expect(screen.getAllByTestId("knowledge-passage")).toHaveLength(2);
+    expect(screen.getByText("2 of 2")).toBeVisible();
+  } finally { rect.mockRestore(); }
+});
+
+it("adds a library selection using offsets into the complete saved text", async () => {
+  const props = await citedFilingFixture();
+  const resolve = vi.spyOn(props.bridge, "knowledgeSourceSelectionResolve");
+  render(<SourceWorkspace {...props} readerOnly quoteCitedSelections />);
+  const [, second] = await screen.findAllByTestId("knowledge-passage");
+  const range = document.createRange();
+  range.selectNodeContents(second!);
+  const selection = document.getSelection()!;
+  selection.removeAllRanges();
+  selection.addRange(range);
+  fireEvent.mouseUp(second!);
+  const action = await waitFor(() => {
+    const button = document.querySelector<HTMLButtonElement>(".quote-ask");
+    expect(button).toHaveTextContent("Add to question");
+    return button!;
+  });
+  fireEvent.click(action);
+  const text = "Restricted cash was $700 million.";
+  const startUtf16 = citedFiling.presentation!.text.indexOf(text);
+  const offsets = { startUtf16, endUtf16: startUtf16 + text.length, text };
+  expect(resolve).toHaveBeenCalledWith({ source: expect.objectContaining({ spanId: citedFiling.spanId }), selection: offsets });
+  await waitFor(() => expect(props.onAsk).toHaveBeenCalledWith(expect.objectContaining({ spanId: citedFiling.spanId, selection: offsets })));
+});
+
+it("opens the first cited passage quietly when the host cannot focus a requested figure", async () => {
+  const props = await citedFilingFixture();
+  const read = vi.mocked(props.bridge.knowledgeSourceRead);
+  const fixtureRead = read.getMockImplementation()!;
+  read.mockImplementation(async request => ({ ...await fixtureRead(request), figureFailure: "mark_unavailable" }));
+  const figure = { threadId: "chat", messageId: "answer", evidenceId: "citation", linkIndex: 1 };
+  render(<SourceWorkspace {...props} readerOnly sourceOpen={{ figure }} />);
+
+  expect(await screen.findByText("1 of 2")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Previous cited passage" })).toBeDisabled();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(read).toHaveBeenCalledWith(expect.objectContaining({ figure }));
 });

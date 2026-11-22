@@ -12,4 +12,5 @@ export type ResidentSettings = {
   notificationPermissionAsked: boolean,
   /** None follows the automatic default; Some preserves the user's choice. */
   keepRunningChoice: boolean | null,
+  loginHintDismissed?: boolean,
 };

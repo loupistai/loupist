@@ -10,7 +10,7 @@ import type { CustomConnectionsBridge } from "../contracts/customConnections";
 import { MockSharing } from "./mock/sharing";
 import type { SharingBridge } from "../contracts/sharing";
 import { workspaceFolderName } from "../lib/loupistFolder";
-import { AGENT_SKILLS, DEFAULT_AGENT_SKILL_IDS, FIXED_AGENT_SKILLS } from "../lib/agentSkills";
+import { AGENT_SKILLS, FIXED_AGENT_SKILLS, visibleSkill } from "../lib/agentSkills";
 import type * as Contract from "../types";
 import {
   ASSET_LOOKUP_SOURCE_ID,
@@ -24,10 +24,10 @@ import * as knowledge from "./mock/knowledge";
 import { curatedSeedView, MockWorldSchema } from "./mock/worldSchema";
 import { createMockBridgeState, type MockBridgeState } from "./mock/state";
 import { MockScheduledTasks } from "./mock/scheduled";
-import { MockConfig } from "./mock/config";
+import { MockConfig, type MockExtensionFlags } from "./mock/config";
 import worldDefaults from "../../world-model-defaults.json";
 import { defaultRunOptions } from "../lib/modelSelection";
-import { executionModelLock, initialModelCatalog, listProviderModels, mockProviderStatus } from "./mock/models";
+import { executionModelLock, initialModelCatalog, listProviderModels, mockModelSelection, mockProviderStatus } from "./mock/models";
 import { commandError } from "./mock/commandError";
 
 /** The bundled Skills' own files, loaded on demand when a detail opens. */
@@ -89,6 +89,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   deepLinkDismiss() { return this.sharing.deepLinkDismiss(); }
   onDeepLinkImport(handler: Parameters<SharingBridge["onDeepLinkImport"]>[0]) { return this.sharing.onDeepLinkImport(handler); }
   private menuHandlers = new Set<(action: string) => void>();
+  async appMenuUpdate(_request: Parameters<Contract.LoupistBridge["appMenuUpdate"]>[0]) {}
   onMenuAction(handler: (action: string) => void): () => void {
     this.menuHandlers.add(handler);
     return () => { this.menuHandlers.delete(handler); };
@@ -148,11 +149,14 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     return this.fxDisplayControl.subscribe(handler, onListening);
   }
 
-  private readonly configuration = new MockConfig();
-  async configRead({ scope }: { scope: Contract.ConfigScope }) {
+  readonly extensionFlags: MockExtensionFlags;
+  private readonly configuration: MockConfig;
+  async configRead({ scope }: { scope: Contract.ConfigScope }): Promise<Contract.ConfigSnapshot> {
     const workspace = scope.kind === "project" ? this.state.loupists.find((loupist) => loupist.id === scope.loupistId)?.workspace_path : undefined;
     if (scope.kind === "project" && !workspace) throw new Error("Loupist not found.");
-    return this.configuration.read(scope, workspace);
+    const snapshot = this.configuration.read(scope, workspace);
+    return { ...snapshot, modelSelection: mockModelSelection(this.modelCatalog, snapshot.effective.chat),
+      defaultModelChange: scope.kind === "project" ? this.modelChanges.get(scope.loupistId) : undefined };
   }
   async configUpdate(request: Contract.ConfigUpdateRequest) {
     const scope = request.scope;
@@ -166,12 +170,12 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     this.modelCatalog.hidden_model_profile_ids = result.effective.models.hidden_model_profile_ids;
     for (const loupist of this.state.loupists) {
       const config = this.configuration.read({ kind: "project", loupistId: loupist.id }, loupist.workspace_path).effective;
-      loupist.enabled_skill_ids = DEFAULT_AGENT_SKILL_IDS.filter((id) => config.skills[id]?.enabled ?? true);
+      loupist.enabled_skill_ids = AGENT_SKILLS.filter(skill => visibleSkill(skill, this.extensionFlags.userSkillsAvailable === true) && config.skills[skill.id]?.enabled).map(({ id }) => id);
     }
     if (request.scope.kind === "global" && (request.set.connectors || request.unset.some((path) => path[0] === "connectors"))) {
       for (const [entry_id, config] of Object.entries(result.effective.connectors)) await this.applyConnectorConfiguration({ entry_id, config });
     }
-    return result;
+    return this.configRead({ scope });
   }
   async runLogsReveal(_request: { loupist_id: string | null }) {}
   async runLogsLastError(_request: { loupist_id: string | null }): Promise<string | null> { return null; }
@@ -182,9 +186,20 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   briefingSettingsGet(request: { loupistId: string }) { return this.scheduled.briefingSettingsGet(request); }
   briefingSettingsSet(request: Contract.BriefingSettingsRequest) { return this.scheduled.briefingSettingsSet(request); }
   // The fixture already has a briefing, so the automatic default has turned menu-bar residence on.
-  private resident: Contract.BriefingResidentSettings = { keepRunning: true, notificationPermissionAsked: false, keepRunningChoice: null };
-  async briefingResidentSettingsGet() { return { ...this.resident }; }
-  async briefingResidentSettingsSet({ keepRunning }: { keepRunning: boolean }) { this.resident = { ...this.resident, keepRunning, keepRunningChoice: keepRunning }; return { ...this.resident }; }
+  resident: Contract.BriefingResidentSettings = { keepRunning: true, notificationPermissionAsked: false, keepRunningChoice: null, loginItem: "unavailable", loginItemTurnedOff: false };
+  async briefingResidentSettingsGet() { return { ...this.resident, loginItemTurnedOff: false }; }
+  async briefingResidentSettingsSet({ keepRunning }: { keepRunning: boolean }) {
+    const turnedOff = !keepRunning && this.resident.loginItem === "on";
+    this.resident = { ...this.resident, keepRunning, keepRunningChoice: keepRunning, loginItem: turnedOff ? "off" : this.resident.loginItem };
+    return { ...this.resident, loginItemTurnedOff: turnedOff };
+  }
+  async loginItemSet({ enabled }: { enabled: boolean }) {
+    if (this.resident.loginItem === "unavailable") throw commandError("login_item_unavailable", "Login items require an installed release bundle");
+    this.resident = { ...this.resident, loginItem: enabled ? "on" : "off", ...(enabled && { keepRunning: true, keepRunningChoice: true, loginHintDismissed: true }) };
+    return { ...this.resident };
+  }
+  async loginItemHintDismiss() { this.resident.loginHintDismissed = true; return { ...this.resident }; }
+  async loginItemOpenSettings() {}
   inboxList(request: Contract.InboxRequest) { return this.scheduled.inboxList(request); }
   inboxMarkRead(request: { loupistId: string; runIds: string[] }) { return this.scheduled.inboxMarkRead(request); }
   inboxUnreadCounts() { return this.scheduled.inboxUnreadCounts(); }
@@ -194,7 +209,9 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   notifications: AttentionNotifyRequest[] = [];
   async attentionNotify(request: AttentionNotifyRequest) { this.notifications.push(request); return true; }
   private readonly scheduled: MockScheduledTasks;
-  scheduledTasksList(request: { loupist_id: string }) { return this.scheduled.list(request); }
+  async scheduledTasksList(request: { loupist_id: string }): Promise<Contract.ScheduledTaskListItem[]> {
+    return (await this.scheduled.list(request)).map(task => ({ ...task, model_selection: mockModelSelection(this.modelCatalog, task) }));
+  }
   scheduledTaskSetStatus(request: Contract.ScheduledTaskIdentity & { expected_revision: number; status: "active" | "paused" }) { return this.scheduled.setStatus(request); }
   scheduledTaskDelete(request: Contract.ScheduledTaskIdentity & { expected_revision: number }) { return this.scheduled.delete(request); }
   scheduledTaskRuns(request: Contract.ScheduledTaskIdentity) { return this.scheduled.taskRuns(request); }
@@ -226,9 +243,12 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   >();
   private readonly browserTabs = new MockBrowserTabs();
 
-  constructor(options: { delay_ms?: number; notice_acknowledged_version?: number } = {}) {
-    this.noticeVersion = options.notice_acknowledged_version ?? CURRENT_NOTICE_VERSION;
-    this.state = createMockBridgeState(options.delay_ms ?? 110);
+  constructor(options: { delay_ms?: number; notice_acknowledged_version?: number } & MockExtensionFlags = {}) {
+    const { delay_ms, notice_acknowledged_version, ...extensions } = options;
+    this.extensionFlags = extensions;
+    this.configuration = new MockConfig(this.extensionFlags);
+    this.noticeVersion = notice_acknowledged_version ?? CURRENT_NOTICE_VERSION;
+    this.state = createMockBridgeState(delay_ms ?? 110);
     this.scheduled = new MockScheduledTasks(this.state, loupistId => { for (const handler of this.inboxListeners) handler({ loupistId }); });
   }
 
@@ -250,7 +270,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   }
 
   async modelCatalogGet(): Promise<Contract.ModelCatalog> {
-    return structuredClone(this.modelCatalog);
+    return { ...structuredClone(this.modelCatalog), default_selection: mockModelSelection(this.modelCatalog) };
   }
 
   async modelVisibilityUpdate(
@@ -288,9 +308,9 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     for (const handler of this.providerStatusListeners) handler({ provider, status: structuredClone(next) });
   }
 
-  /** Preview and test helper: the "Now using …" line Rust records when Auto or a saved choice changes. */
-  setModelNotice(notice: Contract.ModelNotice | null) {
-    this.modelCatalog.model_notice = notice;
+  private readonly modelChanges = new Map<string, NonNullable<Contract.ConfigSnapshot["defaultModelChange"]>>();
+  setDefaultModelChange(loupistId: string, change: NonNullable<Contract.ConfigSnapshot["defaultModelChange"]>) {
+    this.modelChanges.set(loupistId, change);
   }
 
   private readonly providerStatusListeners = new Set<(event: Contract.ProviderStatusEvent) => void>();
@@ -389,6 +409,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   }
 
   async modelNoticeAck(request: { id: string }) {
+    for (const [id, change] of this.modelChanges) if (change.id === request.id) this.modelChanges.delete(id);
     if (this.modelCatalog.model_notice?.id === request.id) this.modelCatalog.model_notice = null;
     return structuredClone(this.modelCatalog);
   }
@@ -451,10 +472,10 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   async skillsList({ scope }: { scope: Contract.ConfigScope }): Promise<Contract.SkillCatalog> {
     const configuration = await this.configRead({ scope });
     const owner = scope.kind === "global" ? "global" : scope.loupistId;
-    const skills: Contract.ManagedSkill[] = [...FIXED_AGENT_SKILLS, ...AGENT_SKILLS].map((skill) => ({ ...skill, path: null, source: "bundled", fixed: Boolean(skill.fixed), editable: false, shadowed: false, revision: `bundled-${skill.id}`, error: null, enabled: Boolean(skill.fixed) || (configuration.effective.skills[skill.id]?.enabled ?? true) }));
+    const skills: Contract.ManagedSkill[] = [...FIXED_AGENT_SKILLS, ...AGENT_SKILLS].filter(skill => visibleSkill(skill, this.extensionFlags.userSkillsAvailable === true)).map((skill) => ({ ...skill, path: null, source: "bundled", fixed: Boolean(skill.fixed), editable: false, shadowed: false, revision: `bundled-${skill.id}`, error: null, enabled: Boolean(skill.fixed) || (configuration.effective.skills[skill.id]?.enabled ?? true) }));
     const names = new Set(skills.map((s) => s.id));
     const custom = [...this.customSkills.values()].filter((s) => s.owner === "global" || s.owner === owner).sort((a, b) => Number(a.owner === "global") - Number(b.owner === "global"));
-    for (const entry of custom) {
+    for (const entry of this.extensionFlags.userSkillsAvailable ? custom : []) {
       const skill = structuredClone(entry.document.skill);
       skill.shadowed = names.has(skill.id); names.add(skill.id);
       skill.editable = entry.owner === owner && !skill.shadowed;
@@ -681,6 +702,12 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
       .credentials;
   }
 
+  async marketplaceCredentialsAllowAccess(
+    _request: string,
+    _observer: Parameters<Contract.LoupistBridge["marketplaceCredentialsAllowAccess"]>[1],
+  ) {}
+  async marketplaceCredentialsCancelAccess(_request: string) {}
+
   async marketplaceCredentialDelete(
     request: Contract.MarketplaceCredentialRequest,
   ) {
@@ -765,6 +792,9 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     return { path: request.path ?? "", entries: [], truncated: false };
   }
   async workspaceRead(_request: Contract.WorkspacePathRequest & { path: string }): Promise<Contract.WorkspaceFile> { throw new Error("File not found."); }
+  async workspaceWorkbookRead(_request: Contract.WorkbookRequest, _observer: Contract.StreamObserver<Contract.WorkbookProgress>): Promise<Contract.WorkbookRead> { return { status: "worker_unavailable" }; }
+  async workspaceDocumentHandler(): Promise<Contract.WorkspaceDocumentHandler> { return { status: "allowed", application_name: null }; }
+  async workspaceDocumentOpen(): Promise<Contract.WorkspaceDocumentOpen> { return { status: "handler_unavailable" }; }
   async workspaceReveal(_request: Contract.WorkspacePathRequest) {}
   async chatActivityRead(_request: Contract.ChatActivityRequest): Promise<Contract.ChatActivityDetail> { throw new Error("Activity not found."); }
   private draftFiles = new Map<string, import("../contracts/workspace").DraftAttachment[]>();

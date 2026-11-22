@@ -130,7 +130,7 @@ describe("the What's new drawer", () => {
     ]);
   });
 
-  it("speaks Korean through the names on the Map", async () => {
+  it("speaks Korean through the names in World", async () => {
     const labels = await open("ko");
     expect(labels[0]).toBe("KRW-BTC에 관한 새 사실 6건");
     expect(labels[1]).toBe("비트코인에 관한 새 사실 2건");

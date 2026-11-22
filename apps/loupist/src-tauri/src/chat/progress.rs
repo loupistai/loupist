@@ -7,6 +7,7 @@ use serde_json::Value;
 use crate::domain::DomainError;
 
 const MAX_PROGRESS_TEXT_BYTES: usize = 512 * 1024;
+const MAX_WRITTEN_PATHS: usize = 32;
 const MAX_PROGRESS_LABEL_BYTES: usize = 512;
 const MAX_PROGRESS_HREF_BYTES: usize = 8 * 1024;
 
@@ -142,6 +143,12 @@ pub enum ChatProgressItem {
         summary: Option<String>,
         #[serde(default, rename = "resultIds", skip_serializing_if = "Vec::is_empty")]
         result_ids: Vec<String>,
+        #[serde(
+            default,
+            rename = "writtenPaths",
+            skip_serializing_if = "Vec::is_empty"
+        )]
+        written_paths: Vec<String>,
         /// World names this step's acknowledged reads delivered. Host-attributed, never model input.
         #[serde(default, rename = "entityIds", skip_serializing_if = "Vec::is_empty")]
         entity_ids: Vec<String>,
@@ -218,6 +225,7 @@ impl ChatProgressItem {
             summary,
             source,
             result_ids,
+            written_paths,
             entity_ids,
             ..
         } = self
@@ -241,6 +249,14 @@ impl ChatProgressItem {
                     || path == "."
             }) {
                 return Err(DomainError::Invalid("chat workspace path is invalid"));
+            }
+            if (!written_paths.is_empty() && tool_name.as_deref() != Some("run_python"))
+                || written_paths.len() > MAX_WRITTEN_PATHS
+                || written_paths.iter().any(|path| !valid_written_path(path))
+            {
+                return Err(DomainError::Invalid(
+                    "chat progress written paths are invalid",
+                ));
             }
             if let Some(running) = running {
                 validate_text(
@@ -424,11 +440,26 @@ fn validate_progress_href(
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
+pub struct ChatSaveActivity {
+    pub started_at_ms: i64,
+    pub finished_at_ms: Option<i64>,
+    pub waited_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub blocking_chat_id: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
 pub struct ChatProgress {
     pub started_at_ms: i64,
     #[serde(deserialize_with = "crate::domain::required_option")]
     pub finished_at_ms: Option<i64>,
     pub items: Vec<ChatProgressItem>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub save_activity: Option<ChatSaveActivity>,
     /// The agent's short checklist for multi-step work (`plan_update`); absent for ordinary runs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
@@ -570,6 +601,18 @@ impl ChatProgress {
             || (durable && self.finished_at_ms.is_none())
         {
             return Err(DomainError::Invalid("chat progress timestamps are invalid"));
+        }
+        if let Some(activity) = &self.save_activity {
+            if activity.started_at_ms < 0
+                || activity
+                    .finished_at_ms
+                    .is_some_and(|at| at < activity.started_at_ms)
+            {
+                return Err(DomainError::Invalid("chat saving timestamps are invalid"));
+            }
+            if let Some(id) = &activity.blocking_chat_id {
+                validate_text(id, 512, "chat saving blocker is invalid")?;
+            }
         }
         let mut ids = std::collections::BTreeSet::new();
         for item in &self.items {
@@ -770,6 +813,7 @@ impl ChatProgressProjection {
     pub fn new(started_at_ms: i64) -> Self {
         Self {
             progress: ChatProgress {
+                save_activity: None,
                 started_at_ms,
                 finished_at_ms: None,
                 items: Vec::new(),
@@ -886,6 +930,7 @@ impl ChatProgressProjection {
             source: presentation.source,
             summary: None,
             result_ids: Vec::new(),
+            written_paths: Vec::new(),
             entity_ids: Vec::new(),
             output_revision: None,
             detail_id: None,
@@ -899,6 +944,20 @@ impl ChatProgressProjection {
         self.item_indices.insert(id.clone(), index);
         self.tool_items.insert(tool_call_id.to_owned(), id.clone());
         self.mark_dirty(&id);
+    }
+
+    pub(crate) fn show_file_target(&mut self, tool_call_id: &str, title: Option<&str>) {
+        let Some(id) = self.tool_items.get(tool_call_id) else {
+            return;
+        };
+        if let ChatProgressItem::Tool { target, .. } =
+            &mut self.progress.items[self.item_indices[id]]
+        {
+            *target = title
+                .map(|title| truncate_utf8(title, MAX_PROGRESS_LABEL_BYTES))
+                .filter(|title| !title.trim().is_empty())
+                .map(str::to_owned);
+        }
     }
 
     /// A failed step the host refused under a security rule says which rule,
@@ -956,6 +1015,7 @@ impl ChatProgressProjection {
         let Some(ChatProgressItem::Tool {
             tool_name,
             file_path,
+            written_paths,
             ..
         }) = self.progress.items.get_mut(index)
         else {
@@ -968,7 +1028,25 @@ impl ChatProgressProjection {
             return false;
         };
         *file_path = super::activity::python_artifact_path(&value);
-        !super::activity::python_completed(&value)
+        written_paths.clear();
+        if !super::activity::python_completed(&value) {
+            return true;
+        }
+        // Artifacts are emitted after successful copy-back. changed_files also includes deletions.
+        if let Some(artifacts) = value.get("artifacts").and_then(Value::as_array) {
+            for path in artifacts
+                .iter()
+                .filter_map(|artifact| artifact.get("path")?.as_str())
+            {
+                if valid_written_path(path) && !written_paths.iter().any(|saved| saved == path) {
+                    written_paths.push(path.to_owned());
+                    if written_paths.len() == MAX_WRITTEN_PATHS {
+                        break;
+                    }
+                }
+            }
+        }
+        false
     }
 
     pub fn finish_tool(
@@ -1288,6 +1366,10 @@ impl ChatProgressProjection {
                 self.approvals_dirty = true;
             }
         }
+    }
+
+    pub(crate) fn started_at_ms(&self) -> i64 {
+        self.progress.started_at_ms
     }
 
     pub fn snapshot(&self) -> ChatProgress {
@@ -2022,6 +2104,15 @@ fn safe_value(value: &str) -> Option<String> {
     Some(truncate_utf8(value, 160).to_owned())
 }
 
+fn valid_written_path(path: &str) -> bool {
+    path.len() <= MAX_PROGRESS_LABEL_BYTES
+        && path != "."
+        && crate::fs::workspace_files::relative_path(path)
+            .ok()
+            .as_deref()
+            == Some(path)
+}
+
 fn safe_relative_path(value: &str) -> Option<String> {
     let value = value.trim();
     let path = Path::new(value);
@@ -2318,13 +2409,14 @@ mod tests {
             tool_name: Some("world_read".into()),
             category: ChatProgressCategory::Memory,
             operation: ChatProgressOperation::Read,
-            action: "Read the map".into(),
+            action: "Read World".into(),
             running: None,
             target: None,
             href: None,
             source: None,
             summary: None,
             result_ids: Vec::new(),
+            written_paths: Vec::new(),
             entity_ids: ids,
             output_revision: None,
             detail_id: None,
@@ -2645,6 +2737,49 @@ mod tests {
 mod dataset_export_progress_tests {
     use super::*;
     #[test]
+    fn python_progress_lists_only_written_workspace_files() {
+        let mut progress = ChatProgressProjection::new(1);
+        progress.start_tool("py", "run_python", &serde_json::json!({}), None, 2);
+        let data = serde_json::json!({"status":"completed","exit_code":0,
+            "changed_files":["outputs/a.csv","outputs/gone.txt","reports/b.md"],
+            "artifacts":[{"path":"outputs/a.csv"},{"path":"reports/b.md"},{"path":"/tmp/private"},{"path":"../secret"},{"path":"outputs/a.csv"}]});
+        let result = serde_json::json!({"content":[{"type":"text","text":data.to_string()}]});
+        assert!(!progress.attach_python_result("py", &result));
+        progress.finish_tool("py", false, 3, None);
+        let item = serde_json::to_value(&progress.take_patch().unwrap().upsert_items[0]).unwrap();
+        assert_eq!(
+            item["writtenPaths"],
+            serde_json::json!(["outputs/a.csv", "reports/b.md"])
+        );
+    }
+
+    #[test]
+    fn a_python_step_bounds_and_round_trips_its_written_paths() {
+        let mut progress = ChatProgressProjection::new(1);
+        progress.start_tool("py", "run_python", &Value::Null, None, 2);
+        let artifacts: Vec<_> = (0..40)
+            .map(|n| serde_json::json!({"path":format!("outputs/{n}.txt")}))
+            .collect();
+        let payload =
+            serde_json::json!({"status":"completed", "exit_code":0, "artifacts":artifacts});
+        let result = serde_json::json!({"content":[{"text": payload.to_string()}]});
+        assert!(!progress.attach_python_result("py", &result));
+        progress.finish_tool("py", false, 3, None);
+        let item = &progress.take_patch().unwrap().upsert_items[0];
+        let mut json = serde_json::to_value(item).unwrap();
+        assert_eq!(
+            json["writtenPaths"].as_array().unwrap().len(),
+            MAX_WRITTEN_PATHS
+        );
+        assert_eq!(
+            &serde_json::from_value::<ChatProgressItem>(json.clone()).unwrap(),
+            item
+        );
+        json.as_object_mut().unwrap().remove("writtenPaths");
+        assert!(serde_json::from_value::<ChatProgressItem>(json).is_ok());
+    }
+
+    #[test]
     fn python_results_link_retained_files_and_report_program_failure() {
         let mut projection = ChatProgressProjection::new(1);
         projection.start_tool(
@@ -2662,8 +2797,8 @@ mod dataset_export_progress_tests {
         projection.finish_tool("python", failed, 3, None);
         let patch = projection.take_patch().unwrap();
         assert!(matches!(&patch.upsert_items[0], ChatProgressItem::Tool {
-            file_path: Some(path), status: ChatProgressStatus::Failed, ..
-        } if path == "outputs/chart.png"));
+            file_path: Some(path), written_paths, status: ChatProgressStatus::Failed, ..
+        } if path == "outputs/chart.png" && written_paths.is_empty()));
         projection.start_tool("web", "web_fetch", &serde_json::json!({}), None, 4);
         assert!(!projection.attach_python_result("web", &result));
     }
@@ -2747,6 +2882,7 @@ mod plan_tests {
             activated_at_ms: None,
         };
         let progress = |items| ChatProgress {
+            save_activity: None,
             started_at_ms: 1,
             finished_at_ms: Some(2),
             items: vec![],

@@ -1,9 +1,10 @@
 /** Preview scenarios, in the capture order `src/preview/scenarios.ts` assembles. */
 import { prepareFixture, PreviewBridge } from "../fixtures";
-import { rememberScope } from "../../components/map/mapVisit";
+import { prepareLensSources } from "../fixtures/lensSources";
+import { rememberLegendOpen } from "../../components/map/mapVisit";
 import type { GrowthEvent, KnowledgeMapNode } from "../../contracts/knowledge";
 import { MIN_VISIT_MS, recordVisit } from "../../app/loupistVisit";
-import { base, click, clickMapAction, enterMap, localViewMap, mapCanvas, navigate, pressMenu, rememberPreviewMap, select, selectPanel, until, type PreviewScenario } from "./kit";
+import { base, click, clickMapAction, enterMap, localViewMap, mapCanvas, navigate, pressMenu, select, selectPanel, until, type PreviewScenario } from "./kit";
 
 /** Last visit two days ago and five changes since: two names, a relationship, conflicting evidence and a learned method. */
 function whatsNewFixture(bridge: PreviewBridge, withChanges: boolean) {
@@ -49,7 +50,6 @@ function reportedValuesFixture(bridge: PreviewBridge) {
  */
 function mapFromChatFixture(bridge: PreviewBridge) {
   localViewMap(bridge);
-  rememberPreviewMap({ scope: "1" });
   const read = bridge.knowledgeMap.bind(bridge);
   let reads = 0;
   bridge.knowledgeMap = async request => {
@@ -67,6 +67,21 @@ function mapFromChatFixture(bridge: PreviewBridge) {
   bridge.knowledgeGrowthEvents = async () => ({ events: ["local-tsmc", "local-ring-6", "local-ring-5"].map((subjectId, index): GrowthEvent => ({ eventId: `map-from-chat-${index}`, loupistId: "loupist-quality", originChatId: "preview-chat", originMessageId: "preview-answer", atMs: Date.now() - 60_000, kind: "entity_added", subjectId, recordId: "preview-world", actor: "loupist", summary: "", beforeSummary: null, afterSummary: null })), nextCursor: null });
 }
 
+async function openLocalMap(root: HTMLElement, twoHops = false) {
+  const map = await enterMap(root);
+  await click("[data-map-around]", map);
+  const tsmc = await until(() => [...document.querySelectorAll<HTMLButtonElement>(".map-around-menu section button")].find(button => button.textContent === "TSMC"), "TSMC is missing from Following");
+  tsmc.click();
+  await until(() => select('[data-map-around][title*="TSMC"]', map), "World did not center on TSMC");
+  if (twoHops) {
+    if (select('[data-scope="2"]', map)) await click('[data-scope="2"]', map);
+    else {
+      await click("[data-map-around]", map);
+      await click('[data-around-scope="2"]');
+    }
+  }
+}
+
 /** On a first visit the key strip is open at every size. */
 function legendAtFirstVisit() {
   const legend = select("details.map-legend");
@@ -76,15 +91,15 @@ function legendAtFirstVisit() {
 /** The Map: overview, selection, local views, what's new, sources and Lens pages. */
 export const mapScenarios: PreviewScenario[] = [
   ...["map-overview", "map-1000", "map-empty", "map-selected", "map-filtered", "map-lens-overlay", "map-lens-on-world", "map-library-sources", "map-replay-paused", "map-export-menu"].map((id): PreviewScenario => ({
-    ...base(id, "Research map", () => {
+    ...base(id, "World", () => {
       if (id === "map-export-menu") return select(".map-more-menu [data-map-export]");
       const map = select(".map-view");
       return map?.querySelector("canvas, .map-empty, .map-list") ?? (map?.clientWidth === 0 ? map : null);
     }, async (root) => {
       await navigate(root, "map");
-      const map = await until(() => select(".map-view"), "Map did not load");
+      const map = await until(() => select(".map-view"), "World did not load");
       if (id === "map-selected") {
-        const input = await until(() => map.querySelector<HTMLInputElement>('[role="combobox"]'), "Map search did not load");
+        const input = await until(() => map.querySelector<HTMLInputElement>('[role="combobox"]'), "World search did not load");
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Apple");
         input.dispatchEvent(new Event("input", { bubbles: true }));
         await click('[role="option"]', map);
@@ -118,7 +133,7 @@ export const mapScenarios: PreviewScenario[] = [
         product.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
       }
       if (map.clientWidth > 0 && id !== "map-empty") {
-        await until(() => map.querySelector("canvas"), "Map canvas did not mount");
+        await until(() => map.querySelector("canvas"), "World canvas did not mount");
         for (let frame = 0; frame < 3; frame++) await new Promise(requestAnimationFrame);
         if (id !== "map-replay-paused" && id !== "map-selected") await clickMapAction("[data-map-fit]", map);
       }
@@ -129,8 +144,6 @@ export const mapScenarios: PreviewScenario[] = [
     }),
     setup: async (bridge) => {
       await prepareFixture(bridge);
-      // The draw budget is measured on all 1,000 names, not the local view a large Map opens on.
-      if (id === "map-1000") rememberScope("loupist-quality", "all");
       if (id === "map-export-menu") bridge.exportSave = async request => {
         window.dispatchEvent(new CustomEvent("map-preview-export", { detail: request }));
         return `/preview/${request.suggestedName}`;
@@ -160,22 +173,28 @@ export const mapScenarios: PreviewScenario[] = [
       };
     },
   })),
-  { ...base("map-local-1hop", "A large Map opens around one company, with the key strip open on a first visit", () => select("[data-map-around]") && mapCanvas() && legendAtFirstVisit() ? select(".map-stats") : null, async root => { await enterMap(root); }),
-    setup: async bridge => { await prepareFixture(bridge); localViewMap(bridge); rememberPreviewMap({ scope: "1" }); } },
-  { ...base("map-from-chat", "A chat opens the full Map on a name while the Map updates: the drawing is framed beside the inspector", () => mapCanvas() && select(".map-view .map-inspector") ? select(".map-view .map-canvas") : null, async root => {
+  { ...base("map-local-1hop", "World centered on a followed company, with the key strip open on a first visit", () => select("[data-map-around]") && mapCanvas() && legendAtFirstVisit() ? select(".map-stats") : null, async root => { await openLocalMap(root); }),
+    setup: async bridge => { await prepareFixture(bridge); localViewMap(bridge); } },
+  { ...base("map-from-chat", "A chat opens the full World on a name while World updates: the drawing is framed beside the inspector", () => mapCanvas() && select(".map-view .map-inspector") ? select(".map-view .map-canvas") : null, async root => {
     await selectPanel("materials");
     await click("#workspace-tab-chat-map", root);
-    const mini = await until(() => select(".chat-mini-map"), "Chat map did not open");
+    const mini = await until(() => select(".chat-mini-map"), "World for this chat did not open");
     // The mini map's list view names this chat's companies; a name opens the full Map on it.
     await click(".chat-mini-map-header button[aria-pressed]", mini);
     const tsmc = await until(() => [...mini.querySelectorAll<HTMLButtonElement>(".map-list button")].find(button => button.textContent === "TSMC"), "TSMC is not in the chat's list");
     tsmc.click();
-    await until(() => select(".map-view .map-inspector"), "The full Map did not open on TSMC");
+    await until(() => select(".map-view .map-inspector"), "The full World did not open on TSMC");
   }), setup: async bridge => { await prepareFixture(bridge, "answer"); mapFromChatFixture(bridge); } },
-  { ...base("map-local-2hops-bounded", "Two hops stop at 150 names around the company", () => select("[data-map-around]") && mapCanvas() ? select(".map-stats") : null, async root => { await enterMap(root); }),
-    setup: async bridge => { await prepareFixture(bridge); localViewMap(bridge); rememberPreviewMap({ scope: "2" }); } },
-  { ...base("map-local-no-neighbors", "A company with no relationships yet", () => mapCanvas() ? select(".map-no-neighbors") : null, async root => { await enterMap(root); }),
-    setup: async bridge => { await prepareFixture(bridge); localViewMap(bridge); rememberPreviewMap({ focalId: "local-kioxia", scope: "1" }); } },
+  { ...base("map-local-2hops-bounded", "Two hops stop at 150 names around the company", () => select("[data-map-around]") && mapCanvas() ? select(".map-stats") : null, async root => { await openLocalMap(root, true); }),
+    setup: async bridge => { await prepareFixture(bridge); localViewMap(bridge); } },
+  { ...base("map-local-no-neighbors", "A company with no relationships yet", () => mapCanvas() ? select(".map-no-neighbors") : null, async root => {
+    const map = await enterMap(root);
+    const field = await until(() => map.querySelector<HTMLInputElement>('[role="combobox"]'), "World search did not load");
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, "Kioxia");
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    await click('[role="option"]', map);
+    await click(".map-inspector-close", map);
+  }), setup: async bridge => { await prepareFixture(bridge); localViewMap(bridge); } },
   ...(["map-whats-new", "map-whats-new-empty"] as const).map((id): PreviewScenario => ({
     ...base(id, id === "map-whats-new" ? "What changed since the last visit" : "Nothing new since the last visit", () => mapCanvas() ? select(id === "map-whats-new" ? ".map-whats-new .map-whats-new-row" : ".map-whats-new .map-whats-new-state") : null, async root => {
       const map = await enterMap(root);
@@ -190,7 +209,7 @@ export const mapScenarios: PreviewScenario[] = [
   { ...base("map-legend-compact", "Legend with at most six rows", () => mapCanvas() ? select("details.map-legend[open] .map-legend-more") : null, async root => { await enterMap(root); }),
     setup: async bridge => {
       await prepareFixture(bridge);
-      rememberPreviewMap({ legendOpen: true });
+      rememberLegendOpen(true);
       // The World canvas draws no Lens nodes, so overflow needs the World categories the seed omits.
       const read = bridge.knowledgeMap.bind(bridge);
       bridge.knowledgeMap = async request => {
@@ -213,6 +232,11 @@ export const mapScenarios: PreviewScenario[] = [
     method.click();
     await until(() => select(".lens-page .page-reader .page-section"), "Method did not open");
   }), setup: prepareFixture },
+  { ...base("lens-section-sources", "A topic with one, eight and thirty sources and an unsourced section", () => select('.lens-page .page-reader[data-page-kind="subject"]'), async root => {
+    await navigate(root, "lens");
+    await click(".memory-row:has(.memory-marker.is-subject)", root);
+    await until(() => select(".lens-page .page-reader .page-section"), "Topic did not open");
+  }), setup: prepareLensSources },
   { ...base("lens-reader-many", "A long page list keeps its page readable on the Lens page", () => select('.lens-page .page-reader'), async root => {
     await navigate(root, "lens");
     const method = await until(() => [...document.querySelectorAll<HTMLButtonElement>(".memory-row")].find(row => row.querySelector(".memory-marker.is-method")), "Method did not list");

@@ -32,6 +32,8 @@ import assert from "node:assert/strict";
 const args = process.argv.slice(2);
 const config = JSON.parse(args[args.indexOf("--config") + 1]);
 assert.equal(config.build.beforeDevCommand, "");
+assert.equal(process.env.LOUPIST_DEV_USER_SKILLS, "1");
+assert.equal(process.env.LOUPIST_DEV_CUSTOM_CONNECTIONS, "1");
 assert.match(await (await fetch(config.build.devUrl)).text(), /isolated Vite fixture/);
 writeFileSync(${JSON.stringify(evidence)}, JSON.stringify(config.build));
 `);
@@ -39,6 +41,7 @@ writeFileSync(${JSON.stringify(evidence)}, JSON.stringify(config.build));
   const child = spawn("/bin/sh", ["-c", 'export LOUPIST_GUI_LEASE_ENTRY="$$:$1"; exec "$1"', "fixture", script], {
     env: { ...process.env, LOUPIST_E2E_STATE_DIR: join(root, "state"),
       LOUPIST_E2E_DEV_PORT: "0", LOUPIST_E2E_PORT: "", LOUPIST_E2E_REUSE_DEV_SERVER: "",
+      LOUPIST_DEV_USER_SKILLS: "1", LOUPIST_DEV_CUSTOM_CONNECTIONS: "1",
       LOUPIST_LIVE_PI_AGENT_DATA_DIR: "", LOUPIST_E2E_PICK_FILE: "", LOUPIST_E2E_WORKSPACE_DIR: "" },
     stdio: ["ignore", "pipe", "pipe"],
   });

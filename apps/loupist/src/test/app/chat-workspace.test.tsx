@@ -24,6 +24,30 @@ async function requestDocument(user: User, bridge: MockLoupistBridge) {
 }
 
 describe("Loupist · Chat workspace", () => {
+  it("restores the one-line composer after the first reply with a docked panel", async () => {
+    const measure = vi.spyOn(HTMLTextAreaElement.prototype, "scrollHeight", "get").mockImplementation(function (this: HTMLTextAreaElement) {
+      // A narrow WebKit textarea can report its previous extent after its text clears.
+      return this.value ? 14 + 22 * this.value.split("\n").length : 200;
+    });
+    try {
+      const user = userEvent.setup();
+      await openApp();
+      await user.click(newChatButton());
+      await user.click(screen.getByRole("button", { name: "Split left and right" }));
+      expect(await screen.findByLabelText("Side panel")).toHaveAttribute("data-placement", "side");
+      const composer = () => screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message Loupist" });
+      await user.type(composer(), "Summarize the results{Shift>}{Enter}{/Shift}Focus on revenue");
+      expect(parseFloat(composer().style.height)).toBeGreaterThan(36);
+      await user.click(screen.getByRole("button", { name: "Send" }));
+      await waitFor(() => expect(document.querySelector("article.message.assistant.complete")).toBeInTheDocument());
+      expect(screen.getByLabelText("Side panel")).toHaveAttribute("data-placement", "side");
+      expect(composer()).toHaveValue("");
+      expect(composer().style.height).toBe("");
+    } finally {
+      measure.mockRestore();
+    }
+  });
+
   it("restores a saved reader through initial Loupist selection", async () => {
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const source = (await bridge.knowledgeCatalog({ loupistId: "loupist-quality" })).sources[0];
@@ -44,7 +68,7 @@ describe("Loupist · Chat workspace", () => {
     await waitFor(() => expect(sourceRead).toHaveBeenCalledWith(expect.objectContaining({ recordId: source.recordId, revisionId: source.revisionId, sourceId: source.objects[0].id })));
   });
 
-  it("opens Map and Lens as pages from the sidebar and the chat's materials from the activity sheet, keeping the draft", async () => {
+  it("opens World and Lens as pages from the sidebar and the chat's materials from the activity sheet, keeping the draft", async () => {
     const user = userEvent.setup();
     await openApp();
     const composer = screen.getByRole("textbox", { name: "Message Loupist" });
@@ -53,7 +77,7 @@ describe("Loupist · Chat workspace", () => {
     await user.click(headerAction("Lens"));
     expect(await screen.findByTestId("memory-page")).toBeVisible();
     expect(screen.queryByLabelText("Side panel")).not.toBeInTheDocument();
-    await user.click(headerAction("Map"));
+    await user.click(headerAction("World"));
     expect(await screen.findByTestId("map-view")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Back to chat" }));
     expect(composer).toHaveValue("A question I am still writing");
@@ -177,6 +201,11 @@ describe("Loupist · Chat workspace", () => {
     await user.click(answerLink);
     const workspace = await screen.findByLabelText("Side panel");
     await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+    const back = within(workspace).getByRole("button", { name: "Go back" });
+    const forward = within(workspace).getByRole("button", { name: "Go forward" });
+    await waitFor(() => expect(within(workspace).getByRole("button", { name: "Reload page" })).toBeEnabled());
+    expect(back).toBeDisabled();
+    expect(forward).toBeDisabled();
     await user.click(await screen.findByRole("link", { name: "Second source" }));
     await waitFor(() => expect(open).toHaveBeenCalledTimes(2));
     expect(within(workspace).getAllByRole("tab", { name: "example.com" })).toHaveLength(2);
@@ -191,13 +220,24 @@ describe("Loupist · Chat workspace", () => {
     await user.type(address, "example.org/next");
     await user.click(within(workspace).getByRole("button", { name: "Open" }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith(expect.any(String), "https://example.org/next"));
-    await user.click(within(workspace).getByRole("button", { name: "Go back" }));
+    expect(back).toBeEnabled();
+    expect(forward).toBeDisabled();
+    await user.click(back);
     expect(history).toHaveBeenCalledWith(expect.any(String), "back");
+    expect(back).toBeDisabled();
+    expect(forward).toBeEnabled();
+    await user.clear(address);
+    await user.type(address, "example.org/different{Enter}");
+    await waitFor(() => expect(back).toBeEnabled());
+    expect(forward).toBeDisabled();
+    await user.click(within(workspace).getByRole("tab", { name: "example.com" }));
+    expect(back).toBeDisabled();
+    expect(forward).toBeDisabled();
     await user.clear(address);
     await user.type(address, "quarterly margin research");
     await user.click(within(workspace).getByRole("button", { name: "Open" }));
     expect(await within(workspace).findByRole("alert")).toHaveTextContent(/web address, not a search query/i);
-    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledTimes(2);
 
     await send(user, "Summarize the conversation without the open page");
     await waitFor(() => expect(chatSend).toHaveBeenCalledTimes(2));

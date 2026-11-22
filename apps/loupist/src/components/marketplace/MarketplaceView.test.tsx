@@ -1,7 +1,8 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import i18n from "@/i18n";
+import { ExtensionAvailabilityProvider } from "../../app/extensionAvailability";
 import { MarketplaceView } from "./MarketplaceView";
 
 it("filters connection readiness using the host’s verified state and combines it with search", async () => {
@@ -34,12 +35,12 @@ it("clears the connection search with the app's own button, which shows only whi
   expect(screen.queryByRole("button", { name: "Clear search" })).toBeNull();
 });
 
-async function renderView(patch?:(snapshot: Awaited<ReturnType<MockLoupistBridge["marketplaceSnapshot"]>>) => void) {
+async function renderView(patch?: (snapshot: Awaited<ReturnType<MockLoupistBridge["marketplaceSnapshot"]>>) => void, customConnections = false) {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const snapshot = await bridge.marketplaceSnapshot();
   patch?.(snapshot);
   vi.spyOn(bridge, "marketplaceSnapshot").mockResolvedValue(snapshot);
-  render(<MarketplaceView bridge={bridge} loupists={await bridge.loupistList()} currentLoupistId="loupist-quality" />);
+  render(<ExtensionAvailabilityProvider value={{ userSkills: false, customConnections }}><MarketplaceView bridge={bridge} loupists={await bridge.loupistList()} currentLoupistId="loupist-quality" /></ExtensionAvailabilityProvider>);
   await screen.findByRole("heading", { name: "FRED", level: 4 });
   return { bridge, user: userEvent.setup() };
 }
@@ -60,15 +61,60 @@ describe("connection states", () => {
     expect(screen.getByText("1 of 24 connections")).toBeVisible();
   });
 
-  it("shows a key macOS refused as locked on its own card, explains the prompt before Try again, and asks again", async () => {
+  it.each([
+    { language: "en", setUp: "Set up Alpha Vantage", hint: "This connection has a saved key. macOS may ask for permission.", check: "Check the saved key for FRED", ready: "Ready", failure: "Could not check whether this connection has a saved key.", retry: "Try again for Financial Modeling Prep" },
+    { language: "ko", setUp: "Alpha Vantage 설정", hint: "이 연결에 저장된 키가 있습니다. macOS가 접근 허용을 요청할 수 있습니다.", check: "FRED의 저장된 키 확인", ready: "준비됨", failure: "이 연결에 저장된 키가 있는지 확인하지 못했습니다.", retry: "Financial Modeling Prep 다시 시도" },
+  ])("renders saved-key presence and recovery in $language", async ({ language, setUp, hint, check, ready, failure, retry }) => {
+    await i18n.changeLanguage(language);
+    try {
+      const { bridge, user } = await renderView((snapshot) => {
+        for (const [id, last_error] of [
+          ["fred.macro", "credential_saved_unread"],
+          ["fmp.market-data", "credential_presence_unavailable"],
+        ]) {
+          const connector = snapshot.connectors.find((item) => item.entry_id === id)!;
+          connector.credentials = connector.credentials.map((credential) => ({ ...credential, last_error }));
+        }
+      });
+      const unlock = vi.spyOn(bridge, "marketplaceCredentialUnlock").mockResolvedValue([]);
+      const next = await new MockLoupistBridge({ delay_ms: 0 }).marketplaceSnapshot();
+      const fred = next.connectors.find((connector) => connector.entry_id === "fred.macro")!;
+      fred.credentials = fred.credentials.map((credential) => ({ ...credential, last_error: "credential_saved_unread" }));
+      vi.mocked(bridge.marketplaceSnapshot).mockResolvedValue(next);
+      expect(cardOf("Alpha Vantage").getByRole("button", { name: setUp })).toBeVisible();
+      expect(cardOf("FRED").getByText(hint)).toBeVisible();
+      expect(screen.getAllByText(hint)).toHaveLength(1);
+      expect(cardOf("Financial Modeling Prep").getByText(failure)).toBeVisible();
+      expect(unlock).not.toHaveBeenCalled();
+      await user.click(cardOf("Financial Modeling Prep").getByRole("button", { name: retry }));
+      expect(unlock).toHaveBeenCalledExactlyOnceWith({ entry_id: "fmp.market-data" }, true);
+      await waitFor(() => expect(cardOf("Financial Modeling Prep").queryByText(failure)).toBeNull());
+      expect(cardOf("FRED").getByText(hint)).toBeVisible();
+
+      const checked = await new MockLoupistBridge({ delay_ms: 0 }).marketplaceSnapshot();
+      const checkedFred = checked.connectors.find((connector) => connector.entry_id === "fred.macro")!;
+      checkedFred.readiness = "ready";
+      checkedFred.credentials = checkedFred.credentials.map((credential) => ({ ...credential, stored: true, active: true }));
+      vi.mocked(bridge.marketplaceSnapshot).mockResolvedValue(checked);
+      await user.click(cardOf("FRED").getByRole("button", { name: check }));
+      expect(unlock).toHaveBeenLastCalledWith({ entry_id: "fred.macro" });
+      expect(await cardOf("FRED").findByText(ready)).toBeVisible();
+      expect(cardOf("FRED").queryByRole("button", { name: check })).toBeNull();
+    } finally {
+      await i18n.changeLanguage("en");
+    }
+  });
+
+  it.each(["ready", "needs_configuration"] as const)("shows a blocked key and an explicit recheck even when readiness is %s", async (readiness) => {
     const lock = (snapshot: Awaited<ReturnType<MockLoupistBridge["marketplaceSnapshot"]>>) => {
       const fred = snapshot.connectors.find((connector) => connector.entry_id === "fred.macro")!;
       fred.credentials = fred.credentials.map((credential) => ({ ...credential, stored: true, active: false, locked: true }));
-      fred.readiness = "needs_configuration";
+      fred.readiness = readiness;
     };
-    const { bridge, user } = await renderView(lock);
+    const { bridge, user } = await renderView(lock, false);
+    expect(document.querySelector("[data-custom-connections]")).toBeNull();
     expect(cardOf("FRED").getByText("Locked until you allow access in macOS")).toBeVisible();
-    expect(cardOf("FRED").getByText(/macOS asks once for your login password .* not signed with an Apple Developer ID\. Choose “Always Allow”/)).toBeVisible();
+    expect(cardOf("FRED").getByText("macOS has not allowed Loupist to use this saved key yet. Choose Always Allow when macOS asks, then check again.")).toBeVisible();
     // Every other connection still lists and none of them is locked.
     expect(cardOf("SEC EDGAR").queryByText("Locked until you allow access in macOS")).toBeNull();
     expect(screen.getAllByText("Locked until you allow access in macOS")).toHaveLength(1);
@@ -80,7 +126,7 @@ describe("connection states", () => {
     });
     await user.click(cardOf("FRED").getByRole("button", { name: "Try again for FRED" }));
     expect(unlock).toHaveBeenCalledWith({ entry_id: "fred.macro" });
-    expect(await cardOf("FRED").findByText("macOS did not allow access. Try again and enter your login password.")).toBeVisible();
+    expect(await cardOf("FRED").findByText("macOS has not allowed Loupist to use this saved key yet. Choose Always Allow when macOS asks, then check again.")).toBeVisible();
 
     // Allowed: the card is no longer locked.
     unlock.mockResolvedValueOnce([]);
@@ -137,7 +183,7 @@ describe("connection list", () => {
   });
 
   it("keeps your own connections in a closed advanced disclosure below Available connections, without a Loupist picker until one exists", async () => {
-    await renderView();
+    await renderView(undefined, true);
     const available = screen.getByRole("heading", { name: "Available connections", level: 2 });
     const custom = document.querySelector<HTMLDetailsElement>("[data-custom-connections]")!;
     expect(custom.querySelector("summary")).toHaveTextContent("Add your own connection (advanced)");
@@ -167,4 +213,76 @@ describe("connection list", () => {
     render(<MarketplaceView bridge={bridge} />);
     expect(screen.getByRole("status", { name: "Loading connections" })).toBeVisible();
   });
+});
+
+it("leaves the bundled catalog visible and makes no custom connection request when the switch is off", async () => {
+  const bridge = new MockLoupistBridge();
+  const list = vi.spyOn(bridge, "customConnectionList");
+  render(<MarketplaceView bridge={bridge} loupists={await bridge.loupistList()} currentLoupistId="loupist-quality" />);
+  expect(await screen.findByRole("heading", { name: "FRED", level: 4 })).toBeVisible();
+  expect(document.querySelector("[data-custom-connections]")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Add a connection" })).toBeNull();
+  expect(list).not.toHaveBeenCalled();
+});
+
+it.each([
+  {
+    language: "en", allow: "Allow access", progress: "2 of 5", ready: "Ready",
+    notice: "Loupist was updated and needs macOS permission to use your 5 saved keys. macOS asks once for each: choose Always Allow.",
+    denied: "macOS did not allow this key.", retry: "Try again for Financial Modeling Prep",
+    cancel: "Cancel", closing: "Close the open macOS prompt to finish cancelling.",
+  },
+  {
+    language: "ko", allow: "접근 허용", progress: "5개 중 2개", ready: "준비됨",
+    notice: "Loupist가 업데이트되어 저장된 키 5개를 사용하려면 macOS 권한이 필요합니다. macOS가 키마다 한 번씩 묻습니다. '항상 허용'을 선택하십시오.",
+    denied: "macOS가 이 키에 대한 접근을 허용하지 않았습니다.", retry: "Financial Modeling Prep 다시 시도",
+    cancel: "취소", closing: "취소를 완료하려면 열려 있는 macOS 권한 창을 닫으십시오.",
+  },
+])("shows permission progress, settled rows and cancellation in $language", async ({ language, allow, progress, ready, notice, denied, retry, cancel, closing }) => {
+  await i18n.changeLanguage(language);
+  try {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const snapshot = await bridge.marketplaceSnapshot();
+    const setStatus = (id: string, last_error: string | null) => {
+      const connector = snapshot.connectors.find((item) => item.entry_id === id)!;
+      connector.readiness = last_error ? "needs_configuration" : "ready";
+      connector.credentials = connector.credentials.map((field) => ({
+        ...field, stored: !last_error, active: !last_error, last_error,
+      }));
+    };
+    for (const id of ["fred.macro", "fmp.market-data", "alpha-vantage.market-data", "krx.market-data", "opendart.disclosures"]) {
+      setStatus(id, "credential_saved_unread");
+    }
+    vi.spyOn(bridge, "marketplaceSnapshot").mockImplementation(async () => structuredClone(snapshot));
+    let next!: Parameters<MockLoupistBridge["marketplaceCredentialsAllowAccess"]>[1];
+    let finish!: () => void;
+    const grant = vi.spyOn(bridge, "marketplaceCredentialsAllowAccess").mockImplementation(async (_, observer) => {
+      next = observer;
+      await new Promise<void>((resolve) => { finish = resolve; });
+    });
+    const cancelGrant = vi.spyOn(bridge, "marketplaceCredentialsCancelAccess");
+    render(<MarketplaceView bridge={bridge} permissionNoticeRequest={1} />);
+    const noticeText = await screen.findByText(notice);
+    expect(noticeText).toBeVisible();
+    expect(document.activeElement).toContainElement(noticeText);
+    expect(grant).not.toHaveBeenCalled();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: allow }));
+    setStatus("fred.macro", null);
+    setStatus("fmp.market-data", "credential_saved_denied");
+    act(() => next({ settled: 2, total: 5 }));
+    expect(await screen.findByText(progress)).toBeVisible();
+    expect(await cardOf("FRED").findByText(ready)).toBeVisible();
+    expect(cardOf("Financial Modeling Prep").getByText(denied)).toBeVisible();
+    expect(cardOf("Financial Modeling Prep").getByRole("button", { name: retry })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: cancel }));
+    expect(cancelGrant).toHaveBeenCalledExactlyOnceWith(grant.mock.calls[0]![0]);
+    expect(screen.getByText(closing)).toBeVisible();
+    act(finish);
+    expect(await screen.findByRole("button", { name: allow })).toBeEnabled();
+    expect(cardOf("Financial Modeling Prep").getByRole("button", { name: retry })).toBeEnabled();
+  } finally {
+    await i18n.changeLanguage("en");
+  }
 });

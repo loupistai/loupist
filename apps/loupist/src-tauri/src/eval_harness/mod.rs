@@ -38,7 +38,7 @@ use crate::{
         chat_runtime::{send_chat, ChatEventSink},
         ChatSendRequest,
     },
-    domain::{ChatSession, LoupistCapabilityBinding, MemoryPolicy},
+    domain::{ChatSession, LoupistCapabilityBinding, MemoryPolicy, MemorySaveSkipReason},
     knowledge::*,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -640,20 +640,23 @@ fn enable_connections(state: &AppState, loupist: &str, connections: &[String]) -
         {
             return Err(format!("connection has no native replay boundary: {id}").into());
         }
-        if !catalog
+        let Some(catalog_entry) = catalog
             .entries
             .iter()
-            .any(|candidate| candidate.id == entry)
-        {
+            .find(|candidate| candidate.id == entry)
+        else {
             return Err(format!("unknown connection: {id}").into());
-        }
+        };
         if entry == "koreainvestment.market-data" {
             crate::scoped_config::write_global_connector_settings(
                 &state.artifacts.app_data_dir,
                 entry,
                 &BTreeMap::from([("environment".into(), "demo".into())]),
             )?;
-            crate::marketplace::connector_config::reconcile_connector_configs(state)?;
+            crate::marketplace::connector_config::apply_pending_credential_scope(
+                state,
+                catalog_entry,
+            )?;
         }
         let previous = state.store.get_loupist_capability(loupist, entry)?;
         let timestamp = chrono::Utc::now()
@@ -821,7 +824,14 @@ async fn run_turn(
         result["status"] = json!("failed");
         result["error"] = trace::bounded_json(&json!(error));
     }
-    if message.is_some_and(|message| message.status == crate::domain::ChatMessageStatus::Error) {
+    if message.is_some_and(|message| {
+        message.status == crate::domain::ChatMessageStatus::Error
+            || message
+                .memory_update
+                .as_ref()
+                .and_then(|update| update.skip_reason)
+                == Some(MemorySaveSkipReason::Failed)
+    }) {
         let profile = state
             .store
             .get_loupist(&chat.loupist_id)?

@@ -40,6 +40,36 @@ pub enum NumberCheckStatus {
     Differs,
 }
 
+/// Why a numeric citation did not verify against its retained evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum ComparisonReason {
+    DigitsDiffer,
+    ScaleConflict,
+    SignConflict,
+    IncompatibleUnit,
+    NoCandidate,
+}
+
+/// Read-time diagnostic for an unresolved check. The saved comparison
+/// remains compatible with readers that know the earlier reason values.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(tag = "reason", rename_all = "snake_case")]
+pub enum ComparisonReplay {
+    NoCandidate { searched: ComparisonScope },
+    EvidenceUnavailable,
+}
+
+/// Material that the host searched while replaying a saved comparison.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ComparisonScope {
+    RetainedPassage { title: String },
+}
+
 /// One field of a matched data row, as the provider printed it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -153,14 +183,36 @@ pub struct NumberCheckCalc {
     pub grid: Option<[u32; 2]>,
 }
 
-/// A bounded part of the retained content that held a fallback passage match.
+/// A bounded part of retained content containing the matched or compared figure.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct NumberCheckContext {
     pub text: String,
-    /// End-exclusive UTF-8 byte offsets of the matched number inside `text`.
+    /// End-exclusive UTF-8 byte offsets of that number inside `text`.
     pub start: usize,
     pub end: usize,
+}
+
+/// Powers of ten in an exact conversion from the source to the answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct NumberCheckScaleConversion {
+    pub source_scale: i16,
+    pub answer_scale: i16,
+    /// Currency from the evidence, or from the answer's stated unit when
+    /// the retained source window has only the base-unit values.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub currency: Option<String>,
+}
+
+/// The side that leaves the scale of an exact digit match unstated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum UnstatedScale {
+    Source,
+    Answer,
 }
 
 /// One number link in an answer, checked against the evidence it links.
@@ -173,23 +225,69 @@ pub struct NumberCheck {
     pub evidence_id: String,
     pub kind: NumberCheckKind,
     pub status: NumberCheckStatus,
-    /// For `differs`: the calculated value nearest to the printed number.
+    /// Nearest calculation result or plausible source figure for an unmatched citation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub nearest: Option<String>,
-    /// For `rounded`: the value as the evidence prints it.
+    /// The unmatched candidate exactly as printed in the evidence.
+    #[serde(
+        rename = "comparedValue",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[cfg_attr(test, ts(optional))]
+    pub compared_value: Option<String>,
+    /// Unit of the unmatched candidate when the source identifies it.
+    #[serde(
+        rename = "nearestSourceUnit",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[cfg_attr(test, ts(optional))]
+    pub nearest_source_unit: Option<String>,
+    /// Power of ten of the stated source scale (6 for millions).
+    #[serde(
+        rename = "nearestSourceScale",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[cfg_attr(test, ts(optional))]
+    pub nearest_source_scale: Option<i16>,
+    /// Why a numeric citation did not verify, including on historical replay.
+    #[serde(
+        rename = "comparisonReason",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[cfg_attr(test, ts(optional))]
+    pub comparison_reason: Option<ComparisonReason>,
+    #[serde(
+        rename = "comparisonReplay",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[cfg_attr(test, ts(optional))]
+    pub comparison_replay: Option<ComparisonReplay>,
+    /// For a rounded or rescaled match: the value as the evidence prints it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub exact: Option<String>,
-    /// The matched data cell (JSON Pointer into the retained result).
+    /// Present on a matched citation that changes monetary scale exactly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub scale_conversion: Option<NumberCheckScaleConversion>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub unstated_scale: Option<UnstatedScale>,
+    /// The matched or compared cell (JSON Pointer into the retained result).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub pointer: Option<String>,
-    /// The matched passage text (UTF-8 byte offsets into the evidence excerpt).
+    /// The matched or compared figure (UTF-8 byte offsets into the excerpt).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub span: Option<ChatEvidenceMatch>,
-    /// The fallback match in retained content when the excerpt has no span.
+    /// The location in retained content when the excerpt has no span.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub context: Option<NumberCheckContext>,
@@ -259,10 +357,24 @@ pub(crate) fn validate_number_checks(checks: &[NumberCheck]) -> Result<(), Domai
             !bounded(&check.text, MAX_CHECK_TEXT_BYTES)
                 || check.text.trim().is_empty()
                 || !bounded(&check.evidence_id, 128)
-                || [&check.nearest, &check.exact]
-                    .into_iter()
-                    .flatten()
-                    .any(|text| !bounded(text, MAX_CHECK_TEXT_BYTES))
+                || [
+                    &check.nearest,
+                    &check.exact,
+                    &check.compared_value,
+                    &check.nearest_source_unit,
+                ]
+                .into_iter()
+                .flatten()
+                .any(|text| !bounded(text, MAX_CHECK_TEXT_BYTES))
+                || check
+                    .comparison_replay
+                    .as_ref()
+                    .is_some_and(|scope| match scope {
+                        ComparisonReplay::NoCandidate {
+                            searched: ComparisonScope::RetainedPassage { title },
+                        } => !bounded(title, 512),
+                        ComparisonReplay::EvidenceUnavailable => false,
+                    })
                 || check
                     .pointer
                     .as_ref()
@@ -271,6 +383,20 @@ pub(crate) fn validate_number_checks(checks: &[NumberCheck]) -> Result<(), Domai
                     .span
                     .as_ref()
                     .is_some_and(|span| span.start >= span.end)
+                || (check.unstated_scale.is_some()
+                    && (check.scale_conversion.is_some()
+                        || check.status != NumberCheckStatus::Matched))
+                || check.scale_conversion.as_ref().is_some_and(|conversion| {
+                    check.status != NumberCheckStatus::Matched
+                        || check.exact.is_none()
+                        || conversion.source_scale == conversion.answer_scale
+                        || !(0..=18).contains(&conversion.source_scale)
+                        || !(0..=18).contains(&conversion.answer_scale)
+                        || conversion
+                            .currency
+                            .as_ref()
+                            .is_some_and(|currency| !bounded(currency, 8))
+                })
                 || check.context.as_ref().is_some_and(|context| {
                     context.text.chars().count() > MAX_NUMBER_CHECK_CONTEXT_CHARS
                         || context.start >= context.end

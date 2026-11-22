@@ -16,11 +16,11 @@ use super::{
     attachments::{chat_attachment_message_dir, read_chat_attachment_file},
     map_store, new_id, now_ms, require_text,
     types::{
-        chat_dto, ChatArtifactListRequest, ChatArtifactReadRequest, ChatArtifactRestoreRequest,
-        ChatArtifactViewDto, ChatAttachmentReadDto, ChatAttachmentReadRequest, ChatBranchRequest,
-        ChatCreateRequest, ChatDeleteRequest, ChatFeedbackRequest, ChatMemorySetAsideRequest,
-        ChatRenameRequest, ChatThreadDto, ChatVersionSwitchRequest, LoupistArtifactItemDto,
-        LoupistArtifactListRequest,
+        chat_dto_with_memory, ChatArtifactListRequest, ChatArtifactReadRequest,
+        ChatArtifactRestoreRequest, ChatArtifactViewDto, ChatAttachmentReadDto,
+        ChatAttachmentReadRequest, ChatBranchRequest, ChatCreateRequest, ChatDeleteRequest,
+        ChatFeedbackRequest, ChatMemorySetAsideRequest, ChatRenameRequest, ChatThreadDto,
+        ChatVersionSwitchRequest, LoupistArtifactItemDto, LoupistArtifactListRequest,
     },
     MAX_CHAT_TITLE_BYTES,
 };
@@ -64,7 +64,7 @@ pub async fn chat_create(
         bot_memory: Default::default(),
     };
     state.store.create_chat(&chat).map_err(map_store)?;
-    chat_dto(&chat)
+    chat_dto_with_memory(&state, &chat)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -89,7 +89,7 @@ pub async fn chat_rename(
         .store
         .replace_chat(&expected, &chat)
         .map_err(map_store)?;
-    chat_dto(&chat)
+    chat_dto_with_memory(&state, &chat)
 }
 
 /// Edit forks (X18): editing a sent user message keeps everything before it and
@@ -130,7 +130,11 @@ pub(super) fn branch_chat(
         .position(|message| message.id == request.message_id)
         .or_else(by_place)
         .ok_or_else(|| CommandError::not_found("message"))?;
-    if expected.messages[position].role != ChatRole::User {
+    let target = &expected.messages[position];
+    if target.role != ChatRole::User
+        || target.handoff_note.is_some()
+        || target.handoff_action.is_some()
+    {
         return Err(CommandError::invalid(
             "only a message you sent can be edited",
         ));
@@ -144,7 +148,7 @@ pub(super) fn branch_chat(
         .store
         .replace_chat(&expected, &chat)
         .map_err(map_store)?;
-    chat_dto(&chat)
+    chat_dto_with_memory(state, &chat)
 }
 
 /// Shows another version of the chat's tail ("Earlier version" / "Later
@@ -198,7 +202,7 @@ pub(super) fn switch_version(
         .store
         .replace_chat(&expected, &chat)
         .map_err(map_store)?;
-    chat_dto(&chat)
+    chat_dto_with_memory(state, &chat)
 }
 
 /// Keeps a set-aside tail as a version, dropping the oldest beyond the limit.
@@ -272,14 +276,14 @@ pub(super) fn set_aside_memory(
     } else if !request.set_aside && present {
         chat.set_aside_memory.retain(|id| id != &request.record_id);
     } else {
-        return chat_dto(&chat);
+        return chat_dto_with_memory(state, &chat);
     }
     chat.updated_at_ms = now_ms().max(chat.updated_at_ms.saturating_add(1));
     state
         .store
         .replace_chat(&expected, &chat)
         .map_err(map_store)?;
-    chat_dto(&chat)
+    chat_dto_with_memory(state, &chat)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -529,14 +533,17 @@ fn read_artifact(
     state: &AppState,
     request: ChatArtifactReadRequest,
 ) -> Result<ChatArtifactViewDto, CommandError> {
-    artifact_chat(state, &request.loupist_id, &request.thread_id)?;
+    let chat = artifact_chat(state, &request.loupist_id, &request.thread_id)?;
     owned_artifact(state, &request.thread_id, &request.artifact_id)?;
     let snapshot = state
         .store
         .read_chat_artifact(&request.artifact_id, request.revision_id)
         .map_err(map_store)?
         .ok_or_else(|| CommandError::not_found("artifact revision"))?;
-    Ok(ChatArtifactViewDto::from(snapshot))
+    let mut dto = ChatArtifactViewDto::from(snapshot);
+    crate::commands::knowledge::project_artifact_memory(state, &chat, &mut dto);
+    super::tool_executor::number_checks::replay::project_grid(state, &chat, &mut dto);
+    Ok(dto)
 }
 
 fn owned_artifact(
@@ -593,5 +600,8 @@ pub fn artifact_restore(
             now_ms(),
         )
         .map_err(map_store)?;
-    Ok(ChatArtifactViewDto::from(snapshot))
+    let mut dto = ChatArtifactViewDto::from(snapshot);
+    crate::commands::knowledge::project_artifact_memory(&state, &chat, &mut dto);
+    super::tool_executor::number_checks::replay::project_grid(&state, &chat, &mut dto);
+    Ok(dto)
 }

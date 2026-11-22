@@ -21,7 +21,7 @@
     "challenged": "흔들림",
     "broken": "깨짐",
     "since": "{{date}}부터 {{verdict}}",
-    "started": "{{date}}에 작성한 뒤로 아직 유효",
+    "unreviewed": "아직 검토하지 않았습니다",
     "undo": "되돌리기",
     "undone": "{{verdict}}(으)로 되돌림 · {{date}} 변경 취소",
     "chipLabel": "{{loupist}}의 판단: {{verdict}}, 4단계 중 {{step}}단계",
@@ -64,7 +64,7 @@
     "undo": "이 변경을 되돌리지 못했습니다. 다시 시도하십시오.",
     "undoStale": "더 최근 변경이 있어 이 변경은 되돌릴 수 없습니다. 페이지에 최신 내용을 표시합니다.",
     "follow": "{{name}}을(를) 관심 자산에 추가하지 못했습니다. 다시 시도하십시오.",
-    "unlink": "이 페이지를 지도와 분리하지 못했습니다. 다시 시도하십시오."
+    "unlink": "이 페이지를 월드와 분리하지 못했습니다. 다시 시도하십시오."
   },
   "offline": "오프라인 상태입니다. 저장된 가격을 표시하며, 지금 확인은 다시 온라인이 되면 사용할 수 있습니다.",
   "offlineTooltip": "오프라인 상태",
@@ -114,7 +114,7 @@
     },
     "open": "열기",
     "map": {
-      "label": "지도",
+      "label": "월드",
       "suppliers_one": "공급사 {{formattedCount}}",
       "suppliers_other": "공급사 {{formattedCount}}",
       "customers_one": "고객사 {{formattedCount}}",

@@ -90,7 +90,7 @@ it.each([.6, 2])("keeps ring-aware labels outside every drawn ring at scale %s",
   }
 });
 it("truncates a long lens label to the pixel cap and keeps the full title", () => {
-  const label = "A very long lens title that should not paint across the whole map";
+  const label = "A very long lens title that should not paint across the whole World";
   const lens = node("lens", 0, 0, { kind: "lens_method", label, degree: 1 });
   const width = (text: string) => text.length * 8;
   const wide = placeLabels([lens], [lens], width, 1, {}, Infinity, () => true, 180);

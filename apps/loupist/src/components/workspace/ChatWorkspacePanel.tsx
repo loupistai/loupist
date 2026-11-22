@@ -14,12 +14,13 @@ import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, Maximize2Icon, MoreHo
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import { formatDate, formatNumber } from "@/i18n/format";
+import { formatNumber } from "@/i18n/format";
 import { citationPageUrl } from "../../chat/evidence";
 import { parseCredentialFreeHttpUrl } from "../../lib/credentialFreeUrl";
 import type {
   ChatArtifactRef,
   ChatArtifactView,
+  ChatMessage,
   LoupistBridge,
   KnowledgeLocation,
   KnowledgePin,
@@ -44,7 +45,7 @@ import {
 import type { DockKind } from "../../app/workspaceUiState";
 import { WorkspaceWorkList, type BuildingWork } from "./WorkspaceWorkList";
 import { WorkVersionBar, WorkVersionMenu } from "./WorkspaceWorkVersions";
-import { sourceIdentityLabel } from "../../chat/evidence";
+import { evidenceProvenance } from "../../chat/evidence";
 import { errorMessage } from "../../lib/errors";
 import { focusForKeyboard } from "../../lib/inputModality";
 import { ArtifactContent, ArtifactStatus, chatArtifactRef } from "../artifacts/ArtifactContent";
@@ -88,6 +89,7 @@ type Props = {
   open: boolean;
   /** Charts the visible chat is still building, shown on top of the Work list. */
   buildingWork?: readonly BuildingWork[];
+  workMessages?: readonly ChatMessage[];
   /** Changes when the visible chat publishes work, so the Work list re-reads. */
   workRefreshKey?: string | number;
   session: ChatWorkspaceSession;
@@ -133,13 +135,13 @@ const knowledgeKindLabel = (location: KnowledgeLocation) => {
   return location.surface === "world" ? t("workspaceEvidence.kind.world") : t("workspaceEvidence.kind.source");
 };
 
-/** "{kind} · {hostname or Loupist} · {retrieved date}" for the Evidence reader. */
+/** The Evidence reader header identifies the source and its date when known. */
 const evidenceStatus = (entry: EvidenceEntry, loupistName?: string) => {
   if (entry.kind === "knowledge") return [knowledgeKindLabel(entry.location), loupistName].filter(Boolean).join(" · ");
   const evidence = entry.evidence;
   const kind = evidence.kind === "local_file" ? t("workspaceEvidence.kind.file") : t("workspaceEvidence.kind.source");
-  const retrieved = new Date(evidence.retrieved_at);
-  return [kind, sourceIdentityLabel(evidence), Number.isNaN(retrieved.getTime()) ? null : formatDate(retrieved)].filter(Boolean).join(" · ");
+  const origin = evidenceProvenance(evidence);
+  return [kind, origin.attribution, evidence.memory_origin ? origin.publication?.label : origin.fetchLabel].filter(Boolean).join(" · ");
 };
 
 const isTextEntry = (target: EventTarget | null) =>
@@ -160,6 +162,7 @@ function ScopedChatWorkspacePanel({
   onAskFile,
   open,
   buildingWork = [],
+  workMessages,
   workRefreshKey = 0,
   session,
   theme,
@@ -527,7 +530,7 @@ function ScopedChatWorkspacePanel({
       </div> : null}
       {!evidenceEntryShown ? <div className="artifact-empty workspace-empty"><p>{t("chatWorkspacePanel.evidenceEmpty")}</p></div>
       : evidenceEntryShown.kind === "evidence" ? <WorkspaceEvidence key={evidenceEntryShown.key} evidence={evidenceEntryShown.evidence} step={evidenceEntryShown.step} onRevealStep={onRevealProgress} />
-      : <WorkspaceKnowledgeReader key={`${loupistId}:${evidenceEntryShown.key}`} bridge={bridge} location={evidenceEntryShown.location} onOpen={onOpenKnowledge} onOpenPage={onOpenKnowledgePage} onAsk={onAskKnowledge} onOpenLink={onOpenLink}
+      : <WorkspaceKnowledgeReader key={`${loupistId}:${evidenceEntryShown.key}`} bridge={bridge} location={evidenceEntryShown.location} sourceOpen={evidenceEntryShown.sourceOpen} onOpen={onOpenKnowledge} onOpenPage={onOpenKnowledgePage} onAsk={onAskKnowledge} onOpenLink={onOpenLink}
         onPatch={(location) => onUpdateTab(EVIDENCE_TAB_ID, (tab) => tab.kind === "evidence" ? updateCurrentEvidenceEntry(tab, (entry) => entry.kind === "knowledge" && entry.key === evidenceEntryShown.key ? { ...entry, location } : entry) : tab)} />}
     </div>
   ) : null;
@@ -576,12 +579,12 @@ function ScopedChatWorkspacePanel({
         ) : view ? (
           <ArtifactContent view={view} theme={theme} workspacePath={workspacePath} loupistId={loupistId} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} onExport={(request) => bridge.exportSave(titledExport(request))} toolbarTarget={statusSlot} />
         ) : null}
-      </> : <WorkspaceWorkList bridge={bridge} loupistId={loupistId} refreshKey={workRefreshKey} building={buildingWork} returnTo={returnToWork} onReturned={workReturned}
-        onOpen={async (item) => {
+      </> : <WorkspaceWorkList bridge={bridge} loupistId={loupistId} threadId={threadId} messages={workMessages} onOpenFile={onOpenFiles} refreshKey={workRefreshKey} building={buildingWork} returnTo={returnToWork} onReturned={workReturned}
+        onOpen={async (artifact) => {
           // Read first: the reference the panel keeps carries the revision's digest.
-          const opened = await bridge.chatArtifactRead(loupistId, item.artifact.chat_session_id, item.artifact.id);
+          const opened = await bridge.chatArtifactRead(loupistId, artifact.chat_session_id, artifact.id);
           if (!scopeLive.current) return;
-          onOpenArtifact(chatArtifactRef(opened), item.artifact.chat_session_id);
+          onOpenArtifact(chatArtifactRef(opened), artifact.chat_session_id);
           // The pressed row gives way to the item; keyboard focus moves to the way back.
           requestAnimationFrame(() => focusForKeyboard(allWorkRef.current));
         }} />}

@@ -23,26 +23,65 @@ keys in release builds use the OS keyring under the catalog's environment identi
 debug builds keep them in process memory. Secrets are not returned to the renderer or placed in
 TOML, tool arguments or receipts.
 
-The self-signed Beta has no Apple Team ID, so macOS ties each keychain item to the
-build that saved it and asks for the login password the first time an updated build
-reads it ("Always Allow" adds the new build until the next update). Keychain reads
-and writes never run on the main thread: every command that can reach a saved
-secret is `async` and runs its body on a blocking thread (`off_main_thread`), so a
-waiting prompt never freezes the window. `finance_credentials` serializes reads behind
-one gate and keeps, for the session and without the secret, what each read learned:
-the connection's status (so listing connections, Bot, Following, asset pages and run
-authority read nothing more) or a refusal. A refused key is `locked`: its connection
-alone shows "Locked until you allow access in macOS" with the one-sentence reason and
-**Try again** (`marketplace_credential_unlock`, which asks macOS once more); passive
-callers, tool calls included, are refused without asking again. The list and every
-other connection keep loading. Saving, a
-check the user starts and Try again set a remembered refusal aside. Custom
-connections and the GitHub sharing token use the same gate and session refusal; the
-GitHub account in Settings shows the login recorded at sign-in without reading the
-token. Status still lives inside the secret blob, so the first status read of each
-saved key after a restart reads the keychain once (after an update, that is the one
-prompt per key); recording status outside the keychain would remove it and needs a
-store record that does not exist yet.
+Moving from the self-signed 0.1.2 Beta to Developer ID changes the app’s
+identity. Settings > Data connections can ask macOS for access to the saved
+items. An item's **Always Allow** decision is for the app's designated
+requirement and applies to later versions that meet that requirement.
+
+Host initialization makes zero Keychain calls. The first request for bundled
+connection status in a macOS profile that predates credential status records
+checks each missing record on a background thread, with one 30-second budget.
+It searches the user-domain file Keychain for item references. The search does
+not request password data or require permission to decrypt the item. Settings
+shows its loading state during the check. It then shows **Set up** on
+unconfigured rows, **Check saved key** for a found item that Loupist has yet to
+read, and **Try again** when presence could not be determined. That last
+action retries the metadata search. A completed presence result is saved, so
+later status requests use it directly. A fresh credential namespace needs
+no presence search.
+
+The catalog records bundled credentials’ presence, field names, active and
+pending state, verification kind and time, and random revisions. Custom
+connections keep their own connection records. Sharing displays the saved
+GitHub login. No key, token, fragment or hash of a secret goes in these
+records. An explicit read or verification updates the record from the saved
+item. Windows still checks older credentials only on request. Linux release
+builds have no native credential store. AI accounts use their own provider
+records, including the account check at onboarding.
+
+The **Allow access** action reads the legacy items in sequence on a dedicated
+background thread. Each reserves its own item until macOS answers, without a
+30-second deadline. Cancel stops the sequence and discards the result of an
+unsettled read. The user closes any open macOS dialog and can retry later. A
+denied legacy item remains in the permission notice until an explicit check
+succeeds or the item is removed.
+
+Other native operations reserve only the item they touch and wait up to 30 seconds.
+A second request for that item reports that the operation is still pending.
+While macOS is still answering a timed-out read, the connection shows its
+permission message and an explicit check action in Settings. The native call
+continues, and a late success refreshes the status so the next use can read
+the item normally. A denial blocks automatic attempts for the rest of the
+session. The user can ask for one new read from Connections. An unresolved
+prompt leaves other runs, Settings, the scheduler and World building free.
+The updater returns its existing
+blocked result while a native write or delete is pending. The OS call keeps
+that exclusion after a caller timeout and publishes its eventual outcome.
+If the app quits during mutation, a pending record cannot grant new access.
+The next explicit check or needed read reconciles the item.
+
+A scope change closes execution independently of Keychain. Launch records
+the change without reading or deleting the credential. An explicit connection
+operation completes revocation and deletes the old item outside shared guards
+before attesting the new scope. An unavailable Loupist leaves only that
+connection pending. Explicit configuration changes attempt the same cleanup.
+
+Secret values live only inside the operation that uses them. A tool can reuse
+its credential for inventory and dispatch. Verification drops its capture
+after the provider check and rechecks the durable revision before publishing.
+Asset lookup rechecks the actual item before releasing a response, so a key
+removed outside Loupist cannot authorize an in-flight result. A sharing scan has its own private context. There is no
+process-lifetime cache of raw credentials.
 
 FRED checks the published GDP observation for January 1, 2024. The earliest GDP
 row contains a missing-value marker.
@@ -74,7 +113,18 @@ dialog, never in the conversation, and the connection works from the next messag
 
 ## Custom connections
 
-In Settings → Data connections, expand **Add your own connection (advanced)** and choose **Add a connection**.
+User-added MCP connections remain in the code and are off in shipped builds. Updating
+from 0.1.2 keeps existing connection records, credentials, approvals and results. The
+app hides the controls, leaves credentials unopened and excludes their tools from runs.
+Bundled connections retain their saved-key check in Data connections.
+Previously saved answers and records keep the name of their source. Recorded approval
+decisions are read-only. Launch a local debug build with
+`LOUPIST_DEV_CUSTOM_CONNECTIONS=1` to restore the custom connection controls and
+runtime.
+
+With the debug switch enabled, expand **Add your own connection (advanced)** in Settings → Data connections and choose **Add a connection**.
+
+Paste JSON keeps the draft and points to the first syntax problem by line and column. Review becomes available when the text parses. The host checks the configuration itself.
 
 - **Adding:** by URL (Streamable HTTP; HTTPS, or loopback for local servers), by pasting `mcpServers` JSON, or, under
   Advanced, as a local command with a pinned package version. Nothing runs until the user confirms an entry, and the
@@ -89,7 +139,7 @@ In Settings → Data connections, expand **Add your own connection (advanced)** 
   Header and environment values shorter than eight characters are ordinary settings unless their name contains
   token, key, secret, password, auth, cookie or credential (case-insensitive). OAuth tokens and client secrets
   remain protected at every length. Numeric and boolean echoes in structured results are checked too.
-  Sharing must load every connection record and its saved credentials before scanning;
+  When custom connections are enabled, sharing must load each custom record and its saved credentials before scanning;
   a file or Keychain read failure blocks sharing with an unlock-or-reconnect retry message.
   Remote connections cannot discover loopback or unspecified-address OAuth URLs; explicitly local connections may use local authorization.
   A supplied client ID takes precedence over dynamic registration, and browser preconnects or unrelated callback
@@ -112,7 +162,7 @@ In Settings → Data connections, expand **Add your own connection (advanced)** 
   DefiLlama included, and schedule changes) are refused for the rest of that turn. `run_python` stays allowed.
 - **Memory.** Each new connection starts with **Save results to Memory** off. When a result from that connection
   enters a turn, the host blocks Memory writes for that turn. Turning the switch on allows saves when Chat’s
-  Memory settings permit them. Saved Sources and Map nodes carry their connection origin.
+  Memory settings permit them. Saved Sources and World nodes carry their connection origin.
   A refused save names that connection policy as its cause, even when Chat saving is also off; it never suggests
   enabling saving to bypass the connection's choice. Tool refusals distinguish a declined approval card, an
   unanswered card and missing standing approval in an unattended run. Outside-text pauses invite the user to ask
@@ -134,10 +184,7 @@ Alpha Vantage verification and the default daily history read request the latest
 100 unadjusted daily prices. Explicitly adjusted prices use the provider’s
 premium feed. A plan refusal leaves a working credential available.
 
-Available connections come first, then "Add your own connection (advanced)", a disclosure
-that stays closed until the user has a connection of their own and then opens on its rows.
-With none it holds one line and "Add a connection"; its Loupist picker appears once a
-connection exists. The search box matches only what a card shows (name,
+Shipped builds show Available connections with the bundled catalogue. The custom connection disclosure is off, including for people updating from 0.1.2 with existing custom connections. With `LOUPIST_DEV_CUSTOM_CONNECTIONS=1` in a local debug launch, "Add your own connection (advanced)" follows Available connections. It stays closed until the user has a connection of their own and then opens on its rows. With none it holds one line and "Add a connection". Its Loupist picker appears once a connection exists. The search box matches only what a card shows (name,
 summary, access label and markets), never plugin or provider ids, so the runtime that
 serves an entry stays invisible.
 
@@ -160,6 +207,12 @@ a saved setting that no longer validates, or a candidate key not yet verified. A
 entry the user never set up is Not connected. The Needs attention filter and its count
 use that flag only. A keyless entry that still asks for a contact email (SEC EDGAR) is
 labelled "Contact email only" instead of "No API key required".
+
+A notice above the catalog counts connections whose saved keys still need
+macOS permission. **Allow access** checks them one at a time and updates the
+progress and each row as it settles. A denied key has a row-level retry.
+The sidebar's **Needs attention** entry opens this notice and disappears
+after the last key is resolved.
 
 The page reads the current Loupist's bindings (`loupist_capability_list`) with the
 catalog. A Ready card whose connection is off for that Loupist adds "Off for {Loupist}",

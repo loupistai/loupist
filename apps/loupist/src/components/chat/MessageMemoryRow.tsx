@@ -14,7 +14,6 @@ import { savedAssetTarget } from "../../chat/navigation";
 import { useAssetNames } from "../assets/assetName";
 import { declinedSensitiveMemory, useChatSetAside } from "../../chat/chatSetAside";
 import { ChatReceipt } from "./ChatReceipt";
-import { useRevealNumberToCheck } from "./NumberChip";
 import { useChatMap } from "../workspace/ChatMapContext";
 import { addedMapItems } from "../../chat/chatMapData";
 import { SavedPrinciple } from "./SavedPrinciple";
@@ -45,7 +44,6 @@ export function MessageMemoryRow({
 }: Props) {
   useTranslation("chat");
   const go = useGo();
-  const revealNumberToCheck = useRevealNumberToCheck();
   const chatMap = useChatMap();
   const additions = chatMap?.map && chatMap.loupistId === loupistId && chatMap.chatId === chatId
     ? addedMapItems(chatMap.map, chatMap.events.filter(event => event.originChatId === chatId && event.originMessageId === message.id)) : undefined;
@@ -61,7 +59,8 @@ export function MessageMemoryRow({
     target: entityLabel(target, i18n.language),
   }) : null;
   const update = message.memory_update;
-  const changes = update?.status === "applied" ? update.changes : [];
+  const skipped = Boolean(update?.skipReason);
+  const changes = update?.status === "applied" && !skipped ? update.changes : [];
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
   const [dismissError, setDismissError] = useState<{ recordId: string; message: string } | null>(null);
@@ -85,7 +84,7 @@ export function MessageMemoryRow({
   const receipt = chatReceipt(message, additions, { saveOff, thesisMoves, learned: digest });
   const declined = declinedSensitiveMemory(message) && memoryContext?.firstDeclinedMessageId === message.id
     ? <p className="memory-declined" role="note">{t("saveProof.declined")}</p> : null;
-  if (!showsReceipt(message) || receipt.empty && !savesMemory(message, saveOff)) return declined;
+  if (!showsReceipt(message) || receipt.empty && !skipped && !savesMemory(message, saveOff)) return declined;
 
   // A principle has no page for the Evidence reader to show; it opens on "What {Loupist} knows".
   const viewPrinciple = (recordId: string) => go?.({ kind: "page", location: { loupistId, surface: "lens", recordId } });
@@ -111,7 +110,7 @@ export function MessageMemoryRow({
   };
   return (
     <div className="memory-row" data-testid="memory-row" data-expanded={expanded || usedExpanded || learnedExpanded}>
-      {go && edge && source && target && relation ? <button type="button" className="answer-map-preview" aria-label={relation} title={relation} onClick={() => go({ kind: "page", location: {
+      {!skipped && go && edge && source && target && relation ? <button type="button" className="answer-map-preview" aria-label={relation} title={relation} onClick={() => go({ kind: "page", location: {
         loupistId, surface: "world", view: { followCurrent: true }, selection: { kind: "claim", id: claimIdForEdge(edge) },
       } })}>
         {/* The Map's own glyph: the pill opens this relation there. */}
@@ -136,7 +135,7 @@ export function MessageMemoryRow({
           const target = savedAssetTarget(loupistId, { assetId: move.assetId, name: move.name }, { section: "history" });
           if (target) go({ kind: "asset", target });
         } : undefined}
-        onCheckNumbers={() => revealNumberToCheck(message.id)}
+        message={message}
       />
       {learnedExpanded && digest ? <LearnedCard id={learnedId} bridge={bridge} loupistId={loupistId} digest={digest}
         onChanged={onWorldChanged} /> : null}

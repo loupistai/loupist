@@ -34,7 +34,7 @@ export const useChatSurface = () => useContext(SurfaceContext);
 export type ActivityTab = "steps" | "sources" | "learned" | "connections";
 
 /** Asks the activity sheet to open, at one answer and tab when given. Nothing here imports the sheet. */
-export function openActivitySheet(detail: { messageId?: string; tab?: ActivityTab } = {}) {
+export function openActivitySheet(detail: { messageId?: string; tab?: ActivityTab; figureIndex?: number } = {}) {
   window.dispatchEvent(new CustomEvent("loupist:open-activity", { detail }));
 }
 

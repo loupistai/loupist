@@ -533,11 +533,7 @@ async fn eval_memory_write_without_reply_commits_receipts_but_provider_failure_d
         ("EMPTY_REPLY_EVAL", "completed", None),
         ("PROVIDER_ERROR_EVAL", "failed", Some("provider_error")),
         ("EXIT_AFTER_WRITE_EVAL", "failed", Some("pi_exited")),
-        (
-            "COMMIT_FAILURE_EVAL",
-            "failed",
-            Some("memory_commit_failed"),
-        ),
+        ("COMMIT_FAILURE_EVAL", "completed", None),
         ("STORE_FAILURE_EVAL", "failed", Some("store_failed")),
         ("EMPTY_NO_WRITE_EVAL", "failed", Some("empty_reply")),
     ] {
@@ -584,12 +580,29 @@ async fn eval_memory_write_without_reply_commits_receipts_but_provider_failure_d
         )
         .await
         .unwrap();
+        let save_committed = mode == "EMPTY_REPLY_EVAL";
+        let save_failed = mode == "COMMIT_FAILURE_EVAL";
+        let answer_unsaved = mode == "STORE_FAILURE_EVAL";
         assert_eq!(result["status"], expected, "{mode}: {result}");
         assert_eq!(result["failureKind"], json!(failure), "{result}");
-        if mode == "COMMIT_FAILURE_EVAL" {
+        assert_eq!(
+            result["memory_save_skip"],
+            json!(save_failed.then_some("failed"))
+        );
+        if save_failed {
+            assert_eq!(result["answer"], "Saved the rule.");
             assert_eq!(
                 result["memory_commit_failure"],
                 json!({"stage":"lens","reason":"storage"}),
+                "{result}"
+            );
+        }
+        if answer_unsaved {
+            assert_eq!(result["answer"], "Response could not be completed.");
+            assert_eq!(result["terminal_event"]["failure_kind"], "store_failed");
+            assert_eq!(
+                result["memory_commit_failure"],
+                json!({"stage":"chat","reason":"storage"}),
                 "{result}"
             );
         }
@@ -616,6 +629,7 @@ async fn eval_memory_write_without_reply_commits_receipts_but_provider_failure_d
             local_chat["memoryCommitFailure"],
             result["memory_commit_failure"]
         );
+        assert_eq!(local_chat["memorySaveSkip"], result["memory_save_skip"]);
         let serialized = format!("{result} {local_chat}");
         assert!(!serialized.contains("private fixture commit detail"));
         assert!(!serialized.contains("private fixture store detail"));
@@ -630,9 +644,17 @@ async fn eval_memory_write_without_reply_commits_receipts_but_provider_failure_d
             );
         }
         let persisted = state.store.get_chat(&chat.id).unwrap().unwrap();
-        let message = persisted.messages.last().unwrap();
-        assert_eq!(message.host_composed, failure.is_none());
-        assert_eq!(result["hostComposed"], failure.is_none());
+        let message = persisted
+            .messages
+            .last()
+            .filter(|message| message.role == crate::domain::ChatRole::Assistant)
+            .expect("the terminal assistant record was saved");
+        assert_eq!(message.host_composed, save_committed);
+        assert_eq!(result["hostComposed"], save_committed);
+        if answer_unsaved {
+            assert_eq!(message.status, crate::domain::ChatMessageStatus::Error);
+            assert_eq!(message.content, "Response could not be completed.");
+        }
         let records = KnowledgeStore::for_loupist(state.store.clone(), &loupist.id)
             .unwrap()
             .read(|read| read.list_records(&loupist.id))
@@ -641,23 +663,44 @@ async fn eval_memory_write_without_reply_commits_receipts_but_provider_failure_d
             records
                 .iter()
                 .any(|record| record.title == "Hanbit diluted-share rule"),
-            failure.is_none()
+            save_committed
         );
-        if failure.is_none() {
-            assert_eq!(result["memory_commits"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            result["memory_commits"].as_array().unwrap().len(),
+            usize::from(save_committed)
+        );
+        if save_committed {
             assert_eq!(message.content, result["answer"].as_str().unwrap());
             assert!(
                 persisted.pi_session_cache.is_none(),
                 "host-composed replies must rebuild canonical history"
             );
         } else {
-            assert!(message.memory_update.is_none());
+            if save_failed {
+                let update = message
+                    .memory_update
+                    .as_ref()
+                    .expect("skipped save receipt");
+                assert_eq!(update.skip_reason, Some(MemorySaveSkipReason::Failed));
+                assert!(update.commit_id.is_none());
+                assert_eq!(message.content, result["answer"].as_str().unwrap());
+            } else {
+                assert!(message.memory_update.is_none());
+            }
             let saved = serde_json::to_string(message).unwrap();
             assert!(!saved.contains("private provider body"));
             assert!(!saved.contains("private fixture commit detail"));
             assert!(!saved.contains("private fixture store detail"));
         }
         state.shutdown().await.unwrap();
+        if answer_unsaved {
+            drop(state);
+            let reopened = AppState::for_eval(root.path().join("app"));
+            let restored = reopened.store.get_chat(&chat.id).unwrap().unwrap();
+            assert_eq!(restored.messages, persisted.messages);
+            assert_eq!(restored.messages.len(), 2);
+            reopened.shutdown().await.unwrap();
+        }
     }
 }
 
@@ -749,6 +792,8 @@ async fn eval_journal_commits_include_optional_check_and_factual_outcome() {
         .collect();
     let message = ChatMessage {
         memory_update: Some(MemoryUpdateResult {
+            discarded_memory_items: None,
+            skip_reason: None,
             status: MemoryUpdateStatus::Applied,
             commit_id: None,
             changes,

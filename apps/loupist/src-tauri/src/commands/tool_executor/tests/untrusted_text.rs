@@ -1217,9 +1217,25 @@ async fn a_saved_user_provided_source_comes_back_delimited_and_pauses_commands()
     );
     assert!(source["provided"].get("messageId").is_none());
     // The citation from this read says the material was user-provided.
-    let result_ref = read["result"]["result_ref"].as_str().unwrap();
-    let evidence = super::super::evidence::project(&later.run_result(result_ref).await.unwrap());
+    let citation = read["result"]["citation_url"].as_str().unwrap();
+    let refs = later.evidence_refs.lock().await;
+    let evidence = refs
+        .iter()
+        .find(|evidence| citation.strip_prefix("#evidence-") == Some(&evidence.id))
+        .unwrap();
     assert!(evidence.user_provided);
+    assert_eq!(evidence.kind, crate::domain::ChatEvidenceKind::SavedContext);
+    let memories = later.memories.lock().await;
+    let source_read = memories.get(evidence.read_ref.as_deref().unwrap()).unwrap();
+    assert_eq!(source_read.access, crate::domain::MemoryAccess::ExactRead);
+    assert!(source_read.kind.eq_ignore_ascii_case("source"));
+    assert_eq!(
+        Some(source_read.record_id.as_str()),
+        hit["recordId"].as_str()
+    );
+    assert_eq!(source_read.span_id.as_deref(), hit["spanId"].as_str());
+    drop(memories);
+    drop(refs);
     let refused = broker_request(&socket, broker.token(), "native.authorize", instructions).await;
     refused_with(&refused, INSTRUCTION_WRITE_REFUSAL);
     broker.shutdown().await.unwrap();

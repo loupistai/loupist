@@ -92,6 +92,7 @@ button.activity-step-target { padding: 0; border: 0; background: none; font: inh
 
 .activity-link { min-width: 0; padding: 0; border: 0; background: none; color: var(--gg-color-accent-ink); font: inherit; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
 .activity-link:hover { text-decoration: underline; }
+.activity-evidence-meta { display: block; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); overflow-wrap: anywhere; }
 .activity-more { display: inline-flex; align-items: center; gap: var(--gg-space-1); align-self: flex-start; font-size: var(--gg-text-meta); }
 .activity-more svg { width: 12px; height: 12px; }
 

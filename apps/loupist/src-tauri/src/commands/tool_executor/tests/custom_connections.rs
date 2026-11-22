@@ -6,6 +6,44 @@ use crate::custom_connections::{
     service,
 };
 
+#[test]
+fn a_stale_custom_capability_cannot_start_or_call_a_dormant_server() {
+    let temporary = tempfile::tempdir().unwrap();
+    let mut executor = bare_executor(&temporary);
+    let server = format!("custom-{}", "1".repeat(32));
+    executor.capability_ids.insert(server.clone());
+    crate::extension_availability::with_test_flags(true, false, || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            assert!(matches!(
+                executor.mcp_connect(json!({"server_id":server})).await,
+                Err(BrokerError::MethodDenied)
+            ));
+            assert!(matches!(
+                executor
+                    .mcp_call(
+                        &policy(true, true),
+                        json!({
+                            "server_id":server, "tool_name":"read_prices", "arguments":{}
+                        }),
+                        "dormant"
+                    )
+                    .await,
+                Err(BrokerError::MethodDenied)
+            ));
+        });
+        assert!(!executor
+            .state
+            .artifacts
+            .app_data_dir
+            .join("custom-connections")
+            .exists());
+    });
+}
+
 type ApprovalCards =
     tokio::sync::mpsc::UnboundedReceiver<(Option<String>, crate::chat::approvals::ChatApproval)>;
 
@@ -40,7 +78,7 @@ async fn an_interactive_call_waits_for_the_users_approval_card() {
     let state = seeded_state(&temporary);
     let manager = service::for_state(&state).unwrap();
     let connection = {
-        let mut service = manager.lock().await;
+        let mut service = manager.for_new_connection().unwrap();
         let pending = service
             .add_pending(ParsedConnection {
                 name: "Company research".into(),
@@ -174,8 +212,8 @@ async fn an_interactive_call_waits_for_the_users_approval_card() {
         ApprovalState::AlwaysAllowed
     );
     let stored = manager
-        .lock()
-        .await
+        .for_connection(&connection.id)
+        .unwrap()
         .get(&connection.id, Some("loupist-a"))
         .unwrap();
     assert_eq!(stored.tools[0].approval, Some(ApprovalChoice::Always));
@@ -200,7 +238,7 @@ async fn custom_connection_broker_records_refusals_blocks_injection_and_captures
     let state = seeded_state(&temporary);
     let manager = service::for_state(&state).unwrap();
     let connection = {
-        let mut service = manager.lock().await;
+        let mut service = manager.for_new_connection().unwrap();
         let pending = service
             .add_pending(ParsedConnection {
                 name: "Company research".into(),
@@ -240,8 +278,8 @@ async fn custom_connection_broker_records_refusals_blocks_injection_and_captures
         .all(|component| preload.contains(&component.id)));
     for dont_save in [true, false] {
         manager
-            .lock()
-            .await
+            .for_connection(&connection.id)
+            .unwrap()
             .set_memory(&connection.id, dont_save)
             .unwrap();
         let capture = Arc::new(ToolCapture::default());
@@ -266,8 +304,8 @@ async fn custom_connection_broker_records_refusals_blocks_injection_and_captures
             );
             assert_eq!(calls.load(Ordering::SeqCst), 0);
             manager
-                .lock()
-                .await
+                .for_connection(&connection.id)
+                .unwrap()
                 .approve(
                     "loupist-a",
                     &connection.id,
@@ -377,7 +415,7 @@ async fn empty_custom_reads_stay_unlisted_but_still_pause_outbound_calls() {
     let state = seeded_state(&temporary);
     let manager = service::for_state(&state).unwrap();
     let connection = {
-        let mut service = manager.lock().await;
+        let mut service = manager.for_new_connection().unwrap();
         let pending = service
             .add_pending(ParsedConnection {
                 name: "Empty reads".into(),

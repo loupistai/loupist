@@ -7,7 +7,7 @@ use crate::domain::{
 const MAX_EXCERPT: usize = crate::domain::MAX_CHAT_EVIDENCE_EXCERPT_BYTES;
 const MAX_TOTAL_EXCERPTS: usize = crate::domain::MAX_CHAT_EVIDENCE_TOTAL_EXCERPT_BYTES;
 
-pub(super) fn evidence_id(result_ref: &str) -> String {
+pub(in crate::commands) fn evidence_id(result_ref: &str) -> String {
     format!("ev_{}", &sha256(result_ref.as_bytes())[..32])
 }
 
@@ -152,7 +152,13 @@ fn excerpt_match(result: &RunResult, excerpt: &str) -> Option<ChatEvidenceMatch>
 pub(super) fn project(result: &RunResult) -> ChatEvidenceRef {
     let payload = &result.payload;
     let fx = result.producer.tool_name == "fx_rate";
-    let title = if fx {
+    let title = if result.producer.tool_name == "workspace_capture" {
+        payload["path"]
+            .as_str()
+            .and_then(crate::chat::local_files::ordinary_title)
+            .map(|title| bounded(&title, 512))
+            .unwrap_or_else(|| "Local file".into())
+    } else if fx {
         format!(
             "{}/{} · European Central Bank reference rates",
             payload["from"].as_str().unwrap_or_default(),
@@ -294,7 +300,7 @@ pub(super) fn project(result: &RunResult) -> ChatEvidenceRef {
 impl ToolCapture {
     pub(super) async fn publish_evidence(
         &self,
-        items: Vec<ChatEvidenceRef>,
+        items: Vec<crate::commands::types::ChatEvidenceViewDto>,
         call_id: Option<String>,
     ) {
         let mut retained = self.evidence_refs.lock().await;
@@ -310,7 +316,8 @@ impl ToolCapture {
                 })
                 .sum::<usize>(),
         );
-        for mut evidence in items {
+        for mut item in items {
+            let evidence = &mut item.snapshot;
             if retained.len() >= MAX_RUN_RESULTS
                 || retained.iter().any(|item| item.id == evidence.id)
             {
@@ -337,10 +344,8 @@ impl ToolCapture {
             }
             retained.push(evidence.clone());
             if let Some(sink) = &self.evidence_sink {
-                sink(
-                    evidence,
-                    call_id.clone().or_else(super::current_tool_call_id),
-                );
+                self.file_labels.project_evidence(&mut item.snapshot);
+                sink(item, call_id.clone().or_else(super::current_tool_call_id));
             }
         }
     }
@@ -497,7 +502,7 @@ mod tests {
     #[tokio::test]
     async fn evidence_total_excerpt_budget_preserves_all_receipts() {
         let capture = ToolCapture::default();
-        let items = (0..MAX_RUN_RESULTS)
+        let items: Vec<ChatEvidenceRef> = (0..MAX_RUN_RESULTS)
             .map(|index| {
                 let mut result = source(
                     RunResultOrigin::Derived,
@@ -509,7 +514,9 @@ mod tests {
                 project(&result)
             })
             .collect();
-        capture.publish_evidence(items, None).await;
+        capture
+            .publish_evidence(items.into_iter().map(Into::into).collect(), None)
+            .await;
         let retained = capture.evidence_refs.lock().await;
         assert_eq!(retained.len(), MAX_RUN_RESULTS);
         assert_eq!(

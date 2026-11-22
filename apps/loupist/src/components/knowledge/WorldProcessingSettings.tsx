@@ -227,8 +227,8 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
       setLoaded((previous) => previous?.loupistId === captured ? { ...previous, view: next } : previous);
       if (next.readiness.status !== "recovering") {
         setNote(next.readiness.status === "reconciliation_required" ? null : recoveryComplete());
-        onChanged();
       }
+      onChanged();
     }).catch((cause: unknown) => {
       if (loupistRef.current !== captured || serial.current !== ticket) return;
       setError(errorMessage(cause, t("worldProcessingSettings.couldNotRecoverWorldProcessing")));
@@ -237,7 +237,7 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
 
   const form = <form className="knowledge-processing-form" aria-label={t("worldProcessingSettings.worldProcessingSettings")} onSubmit={(event) => { event.preventDefault(); save(); }}>
     <p className="knowledge-hint">{t("worldProcessingSettings.processingSendsSavedSourceTextToYourSelectedProviderAnd")}</p>
-    {/* "Map building is off" would repeat the opt-in checkbox right below it, so that state shows no badge. */}
+    {/* "World building is off" would repeat the opt-in checkbox right below it, so that state shows no badge. */}
     {view.readiness.status !== "disabled" || view.readiness.modelName || readinessMessage ? <div className="world-processing-status" aria-label={t("worldProcessingSettings.worldProcessingReadiness")}>
       {view.readiness.status === "disabled" ? null : <Badge variant={view.readiness.status === "ready" ? "secondary" : "outline"}>{readinessLabel}</Badge>}
       {view.readiness.modelName ? <span>{view.readiness.providerName ? `${view.readiness.providerName} · ` : ""}{view.readiness.modelName}</span> : null}

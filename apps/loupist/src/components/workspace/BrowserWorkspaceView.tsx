@@ -48,7 +48,7 @@ export function BrowserWorkspaceView({
             variant="ghost"
             aria-label={t("browserWorkspaceView.goBack")}
             title={t("browserWorkspaceView.goBack")}
-            disabled={!tab.native_id}
+            disabled={!tab.native_id || !tab.can_go_back}
             onClick={() => onAction("back")}
           >
             <ArrowLeftIcon />
@@ -59,7 +59,7 @@ export function BrowserWorkspaceView({
             variant="ghost"
             aria-label={t("browserWorkspaceView.goForward")}
             title={t("browserWorkspaceView.goForward")}
-            disabled={!tab.native_id}
+            disabled={!tab.native_id || !tab.can_go_forward}
             onClick={() => onAction("forward")}
           >
             <ArrowRightIcon />

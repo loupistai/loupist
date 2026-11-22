@@ -2,6 +2,7 @@ import { useState } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
+import { useMapCatalog } from "../../app/useMapCatalog";
 import { initialKnowledgeNavigation, openKnowledgeLocation, patchKnowledgeLocation } from "../../knowledge/location";
 import { MemoryWorkspace } from "../knowledge/MemoryWorkspace";
 import { MapLibrary } from "./MapLibrary";
@@ -20,13 +21,14 @@ async function setup() {
   const read = vi.spyOn(bridge, 'knowledgeSourceRead');
   function Harness() {
     const [navigation, setNavigation] = useState(() => initialKnowledgeNavigation(loupist.id));
-    return <MemoryWorkspace bridge={bridge} loupist={loupist} navigation={navigation} onPatch={next => setNavigation(n => patchKnowledgeLocation(n, next))} onOpen={next => setNavigation(n => openKnowledgeLocation(n, next))} onBack={vi.fn()} onAsk={vi.fn()} />;
+    const catalogState = useMapCatalog(bridge, loupist.id);
+    return <MemoryWorkspace bridge={bridge} loupist={loupist} navigation={navigation} catalogState={catalogState} onPatch={next => setNavigation(n => patchKnowledgeLocation(n, next))} onOpen={next => setNavigation(n => openKnowledgeLocation(n, next))} onBack={vi.fn()} onAsk={vi.fn()} />;
   }
   const view = render(<Harness />);
-  await screen.findByText('1 on the map · 0 relationships');
+  await screen.findByText('1 in World · 0 relationships');
   return { user: userEvent.setup(), method, perspective, read, remount: () => { view.rerender(<></>); view.rerender(<Harness />); } };
 }
-it('opens a compact Source library and reads an exact source in the map inspector', async () => {
+it('opens a compact Source library and reads an exact source in World inspector', async () => {
   const { user, read } = await setup();
   await user.click(screen.getByRole('button', { name: 'Library' }));
   const library = screen.getByRole('complementary', { name: 'Library' });
@@ -54,7 +56,7 @@ it('applies only application neighbors, reports an unused Lens and exits with Es
   expect(screen.getByRole('button', { name: 'Ask in Chat' })).toBeVisible();
   expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-overlay', '');
 });
-it('restores the Library tab and query after the map is remounted', async () => {
+it('restores the Library tab and query after World is remounted', async () => {
   const { user, remount } = await setup();
   await user.click(screen.getByRole('button', { name: 'Library' }));
   await user.type(screen.getByRole('textbox', { name: 'Search sources' }), 'RFC');

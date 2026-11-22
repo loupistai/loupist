@@ -1,5 +1,7 @@
 pub(crate) mod as_of;
 mod chat_reads;
+mod evidence_origin;
+pub(in crate::commands) use evidence_origin::{project_artifact_memory, project_chat_memory};
 pub(crate) mod followed;
 pub(crate) mod journal;
 pub(crate) mod lens_archive;
@@ -126,6 +128,27 @@ pub struct KnowledgeSourceReadRequest {
     pub purpose: String,
     pub world_record_id: Option<String>,
     pub world_revision_id: Option<String>,
+    pub figure: Option<SourceFigureRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SourceFigureRequest {
+    pub thread_id: String,
+    pub message_id: String,
+    pub evidence_id: String,
+    /// Zero-based index among the answer's evidence links.
+    pub link_index: u32,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum SourceFigureFailure {
+    AnswerUnavailable,
+    EvidenceMismatch,
+    MarkUnavailable,
 }
 
 #[derive(Debug, Serialize)]
@@ -146,6 +169,9 @@ pub struct SourceSpanViewDto {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct SourceDetailDto {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub figure_failure: Option<SourceFigureFailure>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub origin: Option<crate::custom_connections::taint::CustomOrigin>,
@@ -892,7 +918,7 @@ pub fn knowledge_graph_retry_source(
 ) -> Result<crate::knowledge::GraphJobView, CommandError> {
     let _activity = admit_mutation(state.inner(), &request.loupist_id)?;
     if !state.graph.runtime_available() {
-        return Err(CommandError::invalid("Map building is unavailable"));
+        return Err(CommandError::invalid("World building is unavailable"));
     }
     let job = with_loupist_knowledge(state.inner(), &request.loupist_id.clone(), |tx, _| {
         let settings = crate::knowledge::load_settings(tx, &request.loupist_id)?;
@@ -1200,6 +1226,8 @@ pub(crate) fn source_read(
             return Err(KnowledgeError::NotFound);
         }
         let mut spans = Vec::new();
+        let mut figure_failure = None;
+        let mut figure_found = false;
         let mut publication_time = None;
         let mut acquired_at = None;
         let mut coverage = String::new();
@@ -1276,7 +1304,7 @@ pub(crate) fn source_read(
                             None
                         }
                     });
-                    let presentation = text.as_deref().and_then(|text| {
+                    let mut presentation = text.as_deref().and_then(|text| {
                         source_presentation::source_presentation(
                             source.source_class,
                             representation.role,
@@ -1284,6 +1312,26 @@ pub(crate) fn source_read(
                             text,
                         )
                     });
+                    if let (Some(view), Some(exact_text)) = (&mut presentation, text.as_deref()) {
+                        let failure = source_presentation::for_capture(
+                            tx,
+                            source_presentation::CitationScope {
+                                request: &request,
+                                source_id: &source.source_id,
+                                capture,
+                                span,
+                                revision_created_at: revision.created_at_ms,
+                                exact_text,
+                            },
+                            view,
+                        )?;
+                        figure_failure = figure_failure.max(failure);
+                        figure_found |= view.focused_mark.is_some()
+                            || view
+                                .table
+                                .as_ref()
+                                .is_some_and(|table| table.focused_cell.is_some());
+                    }
                     spans.push(SourceSpanViewDto {
                         span_id: span.span_id.clone(),
                         selector: serde_json::to_string(&span.selector)
@@ -1297,6 +1345,8 @@ pub(crate) fn source_read(
             }
         }
         Ok(SourceDetailDto {
+            figure_failure: (request.figure.is_some() && !figure_found)
+                .then(|| figure_failure.unwrap_or(SourceFigureFailure::MarkUnavailable)),
             origin: source.origin.clone(),
             related_claims: write.source_related_claims(
                 &request.loupist_id,
@@ -1311,7 +1361,11 @@ pub(crate) fn source_read(
             revision_id: request.revision_id.clone(),
             title: source.title,
             source_class: source.source_class.as_str().to_string(),
-            origin_label: source.origin_locator.unwrap_or_default(),
+            origin_label: source
+                .origin_locator
+                .as_deref()
+                .and_then(crate::chat::local_files::origin_label)
+                .unwrap_or_default(),
             coverage,
             material,
             verification,
@@ -1513,41 +1567,42 @@ fn summarize(
                 if !rep.media_type.starts_with("text/") && rep.media_type != "application/json" {
                     return None;
                 }
-                rep.spans
-                    .first()
-                    .and_then(|span| {
-                        write
-                            .source_catalog_text(
-                                loupist_id,
-                                &module.record_id,
-                                &revision_id,
-                                &span.span_id,
-                            )
-                            .ok()
-                            .flatten()
-                    })
-                    .map(|text| {
-                        let readable = if crate::knowledge::title_key(&source.provider_identity)
-                            == Some("followed")
-                        {
-                            // The lead belongs to the model. A Library preview
-                            // shows only the assets this immutable addition holds.
-                            text.lines()
-                                .filter(|line| line.starts_with("- "))
-                                .collect::<Vec<_>>()
-                                .join("\n")
-                        } else {
-                            source_presentation::source_presentation(
-                                source.source_class,
-                                rep.role,
-                                &rep.media_type,
-                                &text,
-                            )
-                            .map(|presentation| presentation.text)
-                            .unwrap_or(text)
-                        };
-                        crate::util::shorten(&readable, 240)
-                    })
+                let span = rep.spans.first()?;
+                let text = write
+                    .source_catalog_text(loupist_id, &module.record_id, &revision_id, &span.span_id)
+                    .ok()??;
+                if crate::knowledge::title_key(&source.provider_identity) == Some("followed") {
+                    // Following previews list the assets in this immutable addition.
+                    let assets = text
+                        .lines()
+                        .filter(|line| line.starts_with("- "))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    return Some(crate::util::shorten(&assets, 240));
+                }
+                if let Some(web) = source_presentation::source_presentation(
+                    source.source_class,
+                    rep.role,
+                    &rep.media_type,
+                    &text,
+                ) {
+                    if let Some(table) = web.table {
+                        return Some(crate::util::shorten(&table.columns.join(" · "), 240));
+                    }
+                    source_presentation::catalog_preview(
+                        &web.text,
+                        web.content_offset > 0,
+                        web.next_offset.is_some() || web.extraction_truncated,
+                    )
+                } else {
+                    use crate::knowledge::Selector;
+                    let start = match span.selector {
+                        Selector::ByteRange { start, .. } | Selector::Part { start, .. } => start,
+                        _ => 0,
+                    };
+                    let truncated_end = start.saturating_add(text.len() as u64) < rep.byte_length;
+                    source_presentation::catalog_preview(&text, start > 0, truncated_end)
+                }
             })
         });
         vec![KnowledgeObjectRefDto {
@@ -1557,7 +1612,10 @@ fn summarize(
             id: source.source_id,
             title: source.title,
             summary,
-            origin_label: source.origin_locator,
+            origin_label: source
+                .origin_locator
+                .as_deref()
+                .and_then(crate::chat::local_files::origin_label),
             acquired_at: capture.map(|capture| crate::knowledge::TimePoint {
                 precision: crate::knowledge::TimePrecision::Instant,
                 value: Some(recorded_at_rfc3339(capture.received_at_ms)),
@@ -1669,7 +1727,7 @@ fn map_knowledge(error: KnowledgeError) -> CommandError {
     if matches!(error, KnowledgeError::Invalid("world processing is busy")) {
         return CommandError::new(
             "world_busy",
-            "The map is being updated. Try again in a minute.",
+            "World is being updated. Try again in a minute.",
         );
     }
     let code = error.code();

@@ -205,12 +205,13 @@ export class PreviewBridge extends MockLoupistBridge {
     }));
   }
   override async scheduledTasksList({ loupist_id }: { loupist_id: string }): Promise<ScheduledTaskListItem[]> {
-    if (this.scheduleTasks === "none") return [];
+    if (this.scheduleTasks === "none") return super.scheduledTasksList({ loupist_id });
     const runs = this.previewRuns();
+    const { default_selection } = await this.modelCatalogGet();
     const weekly = { kind: "weekly" as const, days: [1, 2, 3, 4, 5], hour: 8, minute: 0, timezone: "Asia/Seoul" };
     const task = (id: string, kind: "briefing" | "custom", title: string, schedule: ScheduledTask["schedule"], status: ScheduledTask["status"]): ScheduledTaskListItem => ({
       kind, id, loupist_id, revision: 1, title, prompt: title, schedule, target: kind === "briefing" ? { kind: "dedicated_chat" } : { kind: "new_chat" },
-      model_profile_id: "preview", thinking_level: "medium", run_options: {}, use_memory: true, update_memory: kind === "briefing", status,
+      model_selection: default_selection, model_profile_id: "", thinking_level: "", run_options: {}, use_memory: true, update_memory: kind === "briefing", status,
       next_run_at_ms: status === "active" ? nextSeoulRun(schedule) : null, last_run_at_ms: runs.find(run => run.task_id === id)?.started_at_ms ?? null,
       created_at_ms: FIXTURE_TIME - 30 * 86_400_000, updated_at_ms: FIXTURE_TIME, latest_run: runs.find(run => run.task_id === id) ?? null,
       last_error: null,
@@ -288,7 +289,7 @@ export class PreviewBridge extends MockLoupistBridge {
     if (!page || page.body.kind === "principle") throw new Error("Page not found.");
     const before = page.body.sections.find(section => section.key === key);
     page.body.sections = page.body.sections.filter(section => section.key !== key);
-    this.pageLog.push({ recordId, before, entry: { opId: `preview-forget-${this.pageLog.length}`, op: "retire", outcome: "retired", key, origin: "user", createdAtMs: FIXTURE_TIME } });
+    this.pageLog.push({ recordId, before, entry: { opId: `preview-forget-${this.pageLog.length}`, op: "retire", outcome: "retired", key, sectionHeading: before?.heading, origin: "user", createdAtMs: FIXTURE_TIME } });
     return this.pageView(page);
   }
   override async memoryOpUndo({ opId }: { loupistId: string; opId: string }): Promise<PageView> {
@@ -298,7 +299,7 @@ export class PreviewBridge extends MockLoupistBridge {
     page.body.sections.push(row.before);
     const order = ["overview", "value-chain", "goals", "views", "risks", "claim", "use-when", "steps", "beliefs"];
     page.body.sections.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
-    this.pageLog.push({ recordId: row.recordId, entry: { opId: `preview-undo-${this.pageLog.length}`, op: "put", outcome: "added", key: row.entry.key, origin: "user", createdAtMs: FIXTURE_TIME + 1, undoesOpId: opId } });
+    this.pageLog.push({ recordId: row.recordId, entry: { opId: `preview-undo-${this.pageLog.length}`, op: "put", outcome: "added", key: row.entry.key, sectionHeading: row.entry.sectionHeading, origin: "user", createdAtMs: FIXTURE_TIME + 1, undoesOpId: opId } });
     return this.pageView(page);
   }
   override async chatSend(request: ChatSendRequest, observer: StreamObserver<ChatStreamEvent>) {

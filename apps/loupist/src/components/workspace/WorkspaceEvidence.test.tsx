@@ -1,3 +1,4 @@
+import { filingPassage } from "../../test/filingPassage";
 import i18n from "../../i18n";
 import { fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -33,7 +34,7 @@ it("says a retained source is gone and still offers the live page", () => {
 it("distinguishes discovery from reading and never executes source markup or unsafe URLs", () => {
   renderWithOpen(<WorkspaceEvidence evidence={evidenceFixture({ kind: "discovery", url: "https://user:secret@example.com", excerpt: '<script>alert(1)</script><button>Fake control</button>', excerpt_truncated: true, warnings: ["Snippet only"] })} />);
   expect(screen.getByText("Search result")).toBeVisible();
-  expect(screen.getByText("Snippet only")).toBeVisible();
+  expect(screen.getByRole("note")).toHaveTextContent("Check the original page");
   expect(screen.queryByRole("button")).toBeNull();
   expect(document.querySelector("script")).toBeNull();
 });
@@ -97,4 +98,65 @@ it.each([
     view.unmount();
     await i18n.changeLanguage("en");
   }
+});
+
+it.each([
+  ["en", "menus and navigation", "Check the original page"],
+  ["ko", "페이지 메뉴와 탐색 링크", "원문을 확인하십시오"],
+])("explains extraction warnings and unknown values in %s", async (locale, navigation, unknown) => {
+  await i18n.changeLanguage(locale);
+  const view = renderWithOpen(<Reader evidence={evidenceFixture({ warnings: ["navigation_heavy", "new_warning"] })} />);
+  try {
+    expect(screen.getByRole("note")).toHaveTextContent(navigation);
+    expect(screen.getByRole("note")).toHaveTextContent(unknown);
+    expect(screen.getByRole("note")).not.toHaveTextContent(/navigation_heavy|new_warning/);
+  } finally {
+    view.unmount();
+    await i18n.changeLanguage("en");
+  }
+});
+
+it("opens successive warnings on one source at their byte span, retained context or exact field", () => {
+  const excerpt = "한울 reported 123 and 345.";
+  const evidence = evidenceFixture({ title: "Filing", excerpt, excerpt_match: { start: 0, end: 6 } });
+  const start = new TextEncoder().encode("한울 reported ").length;
+  const check = { link_index: 1, text: "124", evidence_id: evidence.id, kind: "passage" as const, status: "not_found" as const, comparisonReason: "digits_differ" as const };
+  const view = renderWithOpen(<WorkspaceEvidence evidence={evidence} step={{ label: "", comparison: { ...check, span: { start, end: start + 3 } } }} />);
+  expect(view.container.querySelector("mark")).toHaveTextContent("123");
+  view.rerender(<WorkspaceEvidence evidence={evidence} step={{ label: "", comparison: { ...check, context: { text: "Outside excerpt: 243", start: 17, end: 20 } } }} />);
+  expect(view.container.querySelector("mark")).toHaveTextContent("243");
+  const structured = { ...evidence, excerpt: JSON.stringify({ rows: [{ v: "first 123" }, { v: "second 123" }] }) };
+  view.rerender(<WorkspaceEvidence evidence={structured} step={{ label: "", comparison: { ...check, pointer: "/rows/1/v", comparedValue: "123" } }} />);
+  expect(view.container.querySelector("mark")?.parentElement).toHaveTextContent("second 123");
+});
+
+it("keeps the recorded field and printed precision when the saved JSON excerpt ends before the cell", () => {
+  const evidence = evidenceFixture({ excerpt: '{"rows": [', excerpt_truncated: true });
+  renderWithOpen(<WorkspaceEvidence evidence={evidence} step={{ label: "", comparison: { evidence_id: evidence.id,
+    link_index: 0, kind: "data", status: "not_found", text: "30.1", comparisonReason: "digits_differ",
+    pointer: "/rows/1/total", comparedValue: "30.0200" } }} />);
+  const selected = screen.getByText("In the source").closest("section")!;
+  expect(selected).toHaveTextContent("/rows/1/total");
+  expect(selected.querySelector("mark")).toHaveTextContent("30.0200");
+});
+
+it("renders the retained filing table with its cited cell still marked", () => {
+  const start = filingPassage.indexOf("$167,045");
+  renderWithOpen(<WorkspaceEvidence evidence={evidenceFixture({ excerpt: filingPassage, excerpt_match: { start, end: start + 8 } })} />);
+  expect(screen.getByRole("columnheader", { name: "2024" })).toBeVisible();
+  const amount = screen.getByRole("cell", { name: "$167,045" });
+  expect(amount.querySelector("mark")).toHaveTextContent("$167,045");
+});
+
+it("shows the original publisher update and a separate saved date in Evidence", () => {
+  const evidence = evidenceFixture({ title: "Japan's population figures", kind: "saved_context", tool_name: "world_read", provider: "stale_runtime",
+    retrieved_at: "2026-11-21T12:00:00Z", published_at: "2026-11-21",
+    memory_origin: { route: "source", publisher: "world-bank.indicators", publication: { kind: "updated", time: { precision: "date", value: "2026-11-11" } }, saved_at: "2026-11-21T12:00:00Z" },
+  });
+  renderWithOpen(<WorkspaceEvidence evidence={evidence} />);
+  expect(screen.getByText("World Bank Indicators")).toBeVisible();
+  expect(screen.getByText("Updated").nextElementSibling).toHaveTextContent("Nov 11, 2026");
+  expect(screen.getByText("from your Sources · saved Nov 21, 2026")).toBeVisible();
+  expect(screen.queryByText("Published")).toBeNull();
+  expect(screen.queryByText("Retrieved")).toBeNull();
 });

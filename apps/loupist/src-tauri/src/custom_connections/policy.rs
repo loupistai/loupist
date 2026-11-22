@@ -331,6 +331,18 @@ impl Approvals {
         true
     }
 
+    pub(super) fn replace_connection(&mut self, id: &str, source: &Self) {
+        self.remove_connection(id);
+        for (loupist, connections) in &source.entries {
+            if let Some(tools) = connections.get(id) {
+                self.entries
+                    .entry(loupist.clone())
+                    .or_default()
+                    .insert(id.to_owned(), tools.clone());
+            }
+        }
+    }
+
     pub fn remove_connection(&mut self, connection: &str) {
         for connections in self.entries.values_mut() {
             connections.remove(connection);

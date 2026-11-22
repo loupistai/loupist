@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { TooltipProvider } from "../ui/tooltip";
+import { RequestTurnProvider } from "./requestTurn";
 import { PageReader } from "./PageReader";
 
 async function open(recordId = "lens-subject-tcp", tweak?: (bridge: MockLoupistBridge) => void, pageName = "Page") {
@@ -13,14 +14,24 @@ async function open(recordId = "lens-subject-tcp", tweak?: (bridge: MockLoupistB
   return { bridge, loupistId, handlers, user: userEvent.setup(), page: await screen.findByRole("article", { name: pageName }) };
 }
 
-it("reads sections in order, each with its basis chip, and marks a contested one", async () => {
+it("reads sections in order, with their sources and other basis, and marks a contested one", async () => {
   const { page, handlers, loupistId, user } = await open();
   expect(within(page).getAllByRole("heading", { level: 3 }).slice(0, 4).map(heading => heading.textContent)).toEqual(["Overview", "Facts you told me", "Where it is heading", "Risks"]);
   const section = (key: string) => page.querySelector<HTMLElement>(`[data-section-key="${key}"]`)!;
   expect(within(section("overview")).getByRole("button", { name: "Claim" })).toBeVisible();
-  await user.click(within(section("overview")).getByRole("button", { name: /^Source · / }));
+  const overview = section("overview");
+  const summary = within(overview).getByText("Sources 1").closest("summary")!;
+  const text = within(overview).getByText(/^TCP carries most web traffic/);
+  expect(within(overview).getByRole("heading").compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(text.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(summary.parentElement).not.toHaveAttribute("open");
+  expect(section("facts").querySelector("details")).toBeNull();
+  await user.click(summary);
+  const source = within(overview).getByRole("link", { name: /RFC 9110 HTTP semantics/ });
+  expect(source).toHaveTextContent("IETF RFC 9110");
+  await user.click(source);
   expect(handlers.onOpen).toHaveBeenCalledWith(expect.objectContaining({ loupistId, surface: "source", recordId: "source-pack", selection: expect.objectContaining({ kind: "source", spanId: "span-status-codes" }) }));
-  expect(within(section("facts")).getByText("You said")).toBeVisible();
+  expect(within(section("facts")).getByText(/Written at your request/)).toBeVisible();
   expect(within(section("views")).getByText("Loupist’s view")).toBeVisible();
   expect(within(section("views")).getByText(/Not sure: Based on one analyst report/)).toBeVisible();
   // A page chip may be shortened on screen; its name and tooltip keep the whole title.
@@ -32,6 +43,44 @@ it("reads sections in order, each with its basis chip, and marks a contested one
   await user.click(contested);
   expect(handlers.onOpen).toHaveBeenLastCalledWith(expect.objectContaining({ surface: "world", selection: { kind: "claim", id: "claim-quic-blocked" } }));
   expect(section("overview")).not.toHaveAttribute("data-contested");
+});
+
+it("links a method's request to the dated user turn without attributing the method to the user", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const loupistId = (await bridge.loupistList())[0].id;
+  const view = await bridge.knowledgeLensRead({ loupistId, recordId: "lens-subject-tcp" });
+  if (view.body.kind === "principle") throw new Error("Expected a sectioned page");
+  vi.spyOn(bridge, "knowledgeLensRead").mockResolvedValue({ ...view, kind: "method", body: { ...view.body, kind: "method" } });
+  const jump = vi.fn();
+  render(<TooltipProvider><RequestTurnProvider value={id => id === "mock-user-message" ? { date: "2026-11-19T12:00:00Z", open: jump } : undefined}>
+    <PageReader bridge={bridge} loupistId={loupistId} recordId={view.recordId} onOpen={vi.fn()} onOpenPage={vi.fn()} />
+  </RequestTurnProvider></TooltipProvider>);
+  await userEvent.click(await screen.findByRole("link", { name: "Written at your request · Nov 19" }));
+  expect(jump).toHaveBeenCalledOnce();
+  expect(screen.queryByText("You said")).toBeNull();
+});
+
+it("lists complete, similar titles in citation order", async () => {
+  const titles = ["Net sales by segment", "Cash flow from operations"].map(part => `Annual report and consolidated financial statements — ${part}`);
+  const { page, user } = await open(undefined, bridge => {
+    const catalog = bridge.knowledgeCatalog.bind(bridge);
+    vi.spyOn(bridge, "knowledgeCatalog").mockImplementation(async request => {
+      const result = await catalog(request);
+      result.sources = titles.map((title, i) => ({ ...result.sources[0]!, recordId: `report-${i}`, title, objects: [{ id: `source-${i}`, title }] }));
+      return result;
+    });
+    const read = bridge.knowledgeLensRead.bind(bridge);
+    vi.spyOn(bridge, "knowledgeLensRead").mockImplementation(async request => {
+      const view = await read(request);
+      if (view.body.kind !== "principle") view.body.sections[0]!.basis.refs = titles.map((_, i) => ({
+        kind: "span", recordId: `report-${i}`, spanId: `span-${i}`, revisionDigest: "revision",
+      }));
+      return view;
+    });
+  });
+  const overview = within(page).getByRole("region", { name: "Overview" });
+  await user.click(within(overview).getByText("Sources 2"));
+  expect(within(overview).getAllByRole("link").map(link => link.querySelector("strong")?.textContent)).toEqual(titles);
 });
 
 it("forgets a section through the bridge and brings it back with Undo", async () => {
@@ -47,23 +96,26 @@ it("forgets a section through the bridge and brings it back with Undo", async ()
   expect(handlers.onChanged).toHaveBeenCalledTimes(2);
 });
 
-it("opens a linked page and a Map name, and lists a short history", async () => {
+it("opens a linked page and a World name, and lists a short history", async () => {
   const { page, handlers, user } = await open("lens-subject-tcp", bridge => {
     const read = bridge.knowledgeLensRead.bind(bridge);
     vi.spyOn(bridge, "knowledgeLensRead").mockImplementation(async request => {
       const view = await read(request);
       if (view.body.kind === "principle") return view;
       view.body.sections[0] = { ...view.body.sections[0]!, markdown: "Compared with [QUIC](world:node-quic) and [the idea](lens:lens-idea-quic)." };
+      view.body.sections[1] = { ...view.body.sections[1]!, heading: "   " };
+      view.history[0] = { ...view.history[0]!, sectionHeading: "Original risk assessment" };
       return view;
     });
   });
+  expect(page.querySelector('[data-section-key="facts"] h3')).toBeNull();
   await user.click(within(page).getByRole("link", { name: "QUIC" }));
   expect(handlers.onOpen).toHaveBeenCalledWith(expect.objectContaining({ surface: "world", selection: { kind: "node", id: "node-quic" } }));
   await user.click(within(page).getByRole("link", { name: "the idea" }));
   expect(handlers.onOpenPage).toHaveBeenCalledWith("lens-idea-quic");
-  await user.click(within(within(page).getByRole("region", { name: "On the map" })).getByRole("button", { name: "TCP" }));
+  await user.click(within(within(page).getByRole("region", { name: "In World" })).getByRole("button", { name: "TCP" }));
   expect(handlers.onOpen).toHaveBeenLastCalledWith(expect.objectContaining({ selection: { kind: "node", id: "node-tcp" } }));
-  expect(within(within(page).getByRole("region", { name: "History" })).getAllByRole("listitem").map(item => item.textContent)).toEqual([expect.stringContaining("Added “Risks”"), expect.stringContaining("Added “Overview”")]);
+  expect(within(within(page).getByRole("region", { name: "History" })).getAllByRole("listitem").map(item => item.textContent)).toEqual([expect.stringContaining("Added “Original risk assessment”"), expect.stringContaining("Added “Overview”")]);
 });
 
 it("keeps an idea's status and a principle's own fields", async () => {

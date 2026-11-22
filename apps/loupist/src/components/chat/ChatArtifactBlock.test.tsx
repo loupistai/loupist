@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import type { ChartDataset, ChatArtifactRef, ChatArtifactView, LoupistBridge } from "../../types";
 import { ChatArtifactBlock } from "./ChatArtifactBlock";
 import { ChatExecutionProvider } from "./ChatExecutionContext";
+import { ChatMessageCard } from "./ChatMessageCard";
 
 // The stand-in chart leaves a snapshot the way the real engines do: a 320 × 160 CSS-pixel drawing.
 vi.mock("../artifacts/ArtifactChart", async () => {
@@ -70,6 +71,18 @@ it("fills the same card in place with the compact chart, copy and ask", async ()
   expect(screen.getByRole("button", { name: "Copied" })).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Ask about Operating margin" }));
   expect(onAsk).toHaveBeenCalledWith({ artifact_id: "chart-1", revision: 2, kind: "chart", title: "Operating margin", digest: "b".repeat(64) });
+});
+
+it("keeps a staged chart available in a finished answer while Memory saves", async () => {
+  const read = vi.fn();
+  render(withScope(<ChatMessageCard loupistName="Research" loupistId="loupist" onReadAttachment={vi.fn()} message={{
+    id: "answer", role: "assistant", status: "streaming", created_at: new Date().toISOString(),
+    content: "The chart compares operating margins.", staged_artifacts: [view], memorySaving: { run_id: "run", waiting_for_other_chat: true },
+  }} />, read));
+  const card = await screen.findByRole("region", { name: "Chart: Operating margin" });
+  expect(card).toHaveAttribute("data-state", "ready");
+  expect(screen.getByRole("button", { name: "Copy data" })).toBeEnabled();
+  expect(read).not.toHaveBeenCalled();
 });
 
 it("offers Expand in a wide window and names the button by what a press does next", async () => {

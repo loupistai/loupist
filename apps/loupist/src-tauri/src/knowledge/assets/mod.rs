@@ -570,12 +570,22 @@ fn last_loupist_undone(moves: &[MoveView]) -> Option<(Verdict, Verdict, NaiveDat
 
 /// Checks an update against the page as it is now, without writing. Shared by
 /// the tool (at call time) and the commit (against the committed state).
-pub fn check_update(
+pub(crate) struct CheckedThesisUpdate {
+    pub name: String,
+    pub to: Option<Verdict>,
+    pub reading: Option<LineCrossing>,
+}
+
+pub(crate) fn check_update(
     tx: &Transaction<'_>,
     loupist_id: &str,
     update: &ThesisUpdate,
-) -> KnowledgeResult<(Option<Verdict>, Option<LineCrossing>)> {
-    plan_update(tx, loupist_id, update).map(|planned| (planned.to, planned.reading))
+) -> KnowledgeResult<CheckedThesisUpdate> {
+    plan_update(tx, loupist_id, update).map(|planned| CheckedThesisUpdate {
+        name: planned.page.name,
+        to: planned.to,
+        reading: planned.reading,
+    })
 }
 
 struct PlannedUpdate {

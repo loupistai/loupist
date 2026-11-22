@@ -14,7 +14,7 @@ Trace UI through the bridge before adding a command. `src/bridge/tauriBridge.ts`
 
 - [Sidebar](ui/sidebar.md), [Schedule](ui/schedule.md), [Bot](ui/home-thread.md), [Workspace panel](ui/workspace-panel.md)
 - [Chat composer](ui/chat-composer.md), [Evidence and the browser](ui/evidence-browser.md), [Answer failures](ui/chat-answer.md)
-- [Map and Lens](ui/map-lens.md), [Memory](knowledge/memory.md), [Asset pages](knowledge/asset-pages.md)
+- [World and Lens](ui/map-lens.md), [Memory](knowledge/memory.md), [Asset pages](knowledge/asset-pages.md)
 - [Chat turns](runtime/chat-turns.md), [Model providers](runtime/providers.md), [Storage and authority](runtime/storage-authority.md)
 - [UI review](dev/ui-qa.md), [Tests](dev/tests.md), [Checks and setup](dev/checks.md), [CI and releases](ci-cd.md)
 

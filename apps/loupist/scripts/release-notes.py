@@ -70,4 +70,4 @@ if __name__ == "__main__":
     parser.add_argument("--version", required=True)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
-    args.output.write_text(render(args.version, load_profile()))
+    args.output.write_text(render(args.version, load_profile(rehearsal=True)))

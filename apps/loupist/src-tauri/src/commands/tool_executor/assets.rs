@@ -182,9 +182,7 @@ impl AppToolExecutor {
         }
         let input: Input = serde_json::from_value(params).map_err(|_| BrokerError::Malformed)?;
         let source = crate::finance_data::openfigi::SOURCE_ID;
-        if !self.capability_ids.contains(source) {
-            return Err(BrokerError::MethodDenied);
-        }
+        self.require_capability(source)?;
         let candidates =
             crate::finance_data::openfigi::search(&self.state, &self.loupist_id, &input.query)
                 .await
@@ -309,7 +307,7 @@ impl AppToolExecutor {
         let checked = self
             .checked_thesis_update(policy, asset_id.clone(), to, reason, reason_id, line, urls)
             .await;
-        let (update, (moved_to, reading)) = match checked {
+        let (update, checked) = match checked {
             Ok(checked) => checked,
             Err(error) => {
                 // A refused update frees the asset for a corrected call.
@@ -317,15 +315,15 @@ impl AppToolExecutor {
                 return Err(error);
             }
         };
-        let staged = update.clone();
+        let staged = (checked.name, update.clone());
         self.capture
             .stage(delivery_id, move |pending| pending.theses.push(staged))
             .await;
         Ok(json!({
             "status": "staged",
             "assetId": update.asset_id,
-            "read": moved_to.map(Verdict::label),
-            "lineCrossed": reading.as_ref().map(|reading| reading.crossed),
+            "read": checked.to.map(Verdict::label),
+            "lineCrossed": checked.reading.as_ref().map(|reading| reading.crossed),
             "factDate": update.fact_date.to_string(),
             "note": "Checked against the page now; it is saved when this reply finishes. If the page changes before then (for example the user undoes a change), it is not saved and the reply's receipt says so. Tell the user what changed and cite the evidence."
         }))
@@ -342,13 +340,7 @@ impl AppToolExecutor {
         reason_id: Option<String>,
         line: Option<(String, f64)>,
         urls: Vec<String>,
-    ) -> Result<
-        (
-            ThesisUpdate,
-            (Option<Verdict>, Option<assets::LineCrossing>),
-        ),
-        BrokerError,
-    > {
+    ) -> Result<(ThesisUpdate, assets::CheckedThesisUpdate), BrokerError> {
         let loupist = policy.loupist_id.clone();
         // The observed number is read in the unit the user wrote the line in.
         let line_unit = match &line {

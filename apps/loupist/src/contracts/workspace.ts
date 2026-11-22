@@ -6,6 +6,8 @@ export type WorkspacePathRequest = { loupist_id: string; path?: string };
 export type WorkspaceEntry = { path: string; name: string; kind: "file" | "directory"; size_bytes: number | null };
 export type WorkspaceDirectory = { path: string; entries: WorkspaceEntry[]; truncated: boolean };
 export type WorkspaceFile = { path: string; size_bytes: number; content: string | null; media_type: string; truncated: boolean; binary: boolean; content_sha256: string | null; image_data_url?: string | null };
+export type { WorkbookRequest, WorkbookProgress, WorkbookRead, WorkbookProjection, WorkbookSheet, WorkbookCell, WorkbookCellKind, WorkbookOmission } from "./generated";
+export type { WorkspaceDocumentRequest, WorkspaceDocumentHandler, WorkspaceDocumentOpen, DocumentRefusal } from "./generated";
 export type ChatActivityRequest = Wire.ChatActivityRequest;
 export type ChatActivityDetail = Wire.ChatActivityDetail;
 

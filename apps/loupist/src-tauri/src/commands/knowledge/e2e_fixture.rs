@@ -258,6 +258,7 @@ pub(crate) fn seed_e2e_knowledge_fixture(state: &AppState) -> Result<(), Command
         revision_id: revision_id.clone(),
         object_id: source_id,
         title: "Sealed note".into(),
+        evidence_origin: None,
         payload: crate::commands::tool_executor::AckedPayload::Source {
             revision_digest,
             capture_id,
@@ -364,7 +365,7 @@ fn seed_handoff_fixture(state: &AppState, loupist_id: &str) -> Result<(), Comman
     user.role = ChatRole::User;
     user.host_composed = false;
     updated.messages.push(user.clone());
-    let mut post = host_message("fixture-link", "A retained Map link.".into(), now)?;
+    let mut post = host_message("fixture-link", "A retained World link.".into(), now)?;
     let path = vec![
         HomeLinkHop {
             name: "Sealed Hub".into(),

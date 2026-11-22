@@ -1,6 +1,7 @@
 import { connectionText } from "@/lib/connectionCopy";
 import i18n, { useTranslation } from "@/i18n";
 import { Disclosure } from "../ui/disclosure";
+import { ExternalLinkError, useExternalLink } from "../navigation/ExternalLinkError";
 import { ExternalLinkIcon, ShieldCheckIcon, LoaderCircleIcon, SlidersHorizontalIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { notifyConfigurationChanged } from "../../app/useConfiguration";
@@ -128,6 +129,7 @@ export function MarketplaceSetupDialog({
   const [refreshNeeded, setRefreshNeeded] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [setupMessage, setSetupMessage] = useState<SetupMessage | null>(null);
+  const browser = useExternalLink(url => bridge.openExternalUrl(url));
   const [credentialToDelete, setCredentialToDelete] = useState<string | null>(
     null,
   );
@@ -163,6 +165,7 @@ export function MarketplaceSetupDialog({
 
   useEffect(() => {
     operationRef.current += 1;
+    browser.clear();
     activeOperationRef.current = null;
     setSetupBusy(null);
     setSetupProgress("");
@@ -417,19 +420,9 @@ export function MarketplaceSetupDialog({
     && Boolean(connector?.credentials.some((credential) => credential.stored))
     && (entry?.setup?.config_fields ?? []).every((field) => (connector?.config[field.id] ?? "") === (configDraft[field.id] ?? "").trim());
 
-  async function openSetupHelp(url: string) {
-    const helpEntryId = selectedEntryId;
+  function openSetupHelp(url: string) {
     setSetupMessage(null);
-    try {
-      await bridge.openExternalUrl(url);
-    } catch (cause: unknown) {
-      if (selectedEntryIdRef.current !== helpEntryId) return;
-      setSetupMessage({
-        tone: "error",
-        title: i18n.t("connections:marketplaceSetupDialog.couldNotOpenSetupGuide"),
-        detail: errorMessage(cause, i18n.t("connections:marketplaceSetupDialog.couldNotOpenTheSetupGuide")),
-      });
-    }
+    return browser.open(url);
   }
 
   return (
@@ -635,6 +628,7 @@ export function MarketplaceSetupDialog({
               </fieldset>
 
               {/* What saving did, beside the key it was about rather than under the dialog's other sections. */}
+              <ExternalLinkError url={browser.failedUrl} />
               {setupMessage && (
                 <div
                   ref={messageRef}
@@ -681,7 +675,7 @@ export function MarketplaceSetupDialog({
                 </div>
               )}
 
-              {entry.id === "community.web-research" && onOpenModelSettings ? <Button type="button" variant="link" className="marketplace-inline-action" onClick={() => leave(onOpenModelSettings)}>{i18n.t("connections:marketplaceSetupDialog.modelsProviders")}<ExternalLinkIcon /></Button> : null}
+              {entry.id === "community.web-research" && onOpenModelSettings ? <Button type="button" variant="link" className="marketplace-inline-action" onClick={() => leave(onOpenModelSettings)}>{i18n.t("connections:marketplaceSetupDialog.modelsProviders")}</Button> : null}
 
               <Disclosure className="marketplace-details" title={i18n.t("connections:marketplaceSetupDialog.aboutThisConnection")}>
                 <dl>

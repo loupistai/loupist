@@ -19,6 +19,19 @@ and preserves each Loupist's access setting.
 
 ## Agent-facing data services
 
+The World Bank adapter reads Indicators API errors in both successful and
+client-error HTTP responses. A rejected parameter uses the tool contract's
+argument-error class with the query's series, country and date, and a hint to
+look up the series. A parameter name appears only when the provider identifies
+one. Only recognized provider diagnostic text reaches the tool error.
+
+OpenDART and KRX recognize structured input refusals in success and client-error
+responses. The bundled OpenBB sidecar sends a fixed argument-refusal marker for
+FRED, SEC and REST schema rejections. The MCP host preserves that broker error
+after tool activation. Custom MCP connections recognize JSON-RPC Invalid params
+and structured bad-request tool errors without exposing remote error prose.
+
+
 The model loads an enabled connection by exact ID with `capability_load`; `@`
 mentions preload it. Entry IDs remain credential/binding keys, while plugin names
 are agent-facing capability IDs. Each component carries the enabled entry IDs it
@@ -31,7 +44,7 @@ market data. Static contracts are in `agent/tool-catalog.json`.
 | `datasets` | `dataset_describe`, `dataset_query`, `dataset_export`, `dataset_import` |
 | `calculations` | `calculate` |
 | `charts` | `chart_query`, `chart_publish`, `grid_publish` ([grid cells](../analysis/grids.md#grid-cells)) |
-| `openbb` | `mcp__openbb__*` reads; nine common price, fundamentals, dividend and filing tools are active on load, the curated rest by name through `activate_tools`, others after discovery; a warm Chat gets back exactly the set its last turn ended with |
+| `openbb` | `mcp__openbb__*` reads; the first load activates common price, fundamentals, dividend and filing tools. A FRED grant also activates `economy_fred_series`. Other reads use `activate_tools`. A warm Chat restores its previous set |
 | `world-bank` | `worldbank_series` |
 | `onchain` | `defillama_read` |
 | `krx` | `krx_daily_quote` |
@@ -59,8 +72,10 @@ OpenDART start disabled in the optional Korea group. Rust filters read-only tool
 and provider choices against the Loupist's active bindings and rejects provider
 mismatches. The host sends saved provider settings only for providers in that
 run's grant. A failed platform connect marks its Settings row unavailable until
-a connect succeeds. A price setup that could not connect names the platform in
-its Bot report for assets still missing a price.
+a connect succeeds. If a price setup run could not connect to the market data platform, its Bot report
+names the platform and the assets still missing a price.
+
+Keep the OpenBB wrapper thin. It owns the grant, network, credential, failure and result boundaries. Each provider-behavior exception needs a regression test and an upstream change that would let us remove it, recorded in [What the wrapper changes](../../apps/loupist/openbb/README.md#what-the-wrapper-changes).
 
 Congress.gov bill and amendment lookups accept a congressional identifier or its
 official HTTPS API URL. The sidecar extracts the identifier before the provider

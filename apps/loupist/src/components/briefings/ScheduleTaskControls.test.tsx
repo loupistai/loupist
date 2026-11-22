@@ -1,7 +1,8 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ScheduleTaskControls } from "./ScheduleTaskControls";
 import type { LoupistBridge, ScheduledTask } from "@/types";
+import i18n from "@/i18n";
 
 const task = (patch: Partial<ScheduledTask> = {}) => ({
   id: "task-1", loupist_id: "loupist", kind: "custom", title: "Chip news", revision: 3, status: "active", awaiting_confirmation: false,
@@ -28,10 +29,24 @@ it("pauses, runs once and deletes a task with the host commands, without a model
   await user.click(screen.getByRole("button", { name: "More actions for Chip news" }));
   await user.click(await screen.findByRole("menuitem", { name: "Delete…" }));
   const dialog = await screen.findByRole("dialog", { name: "Delete “Chip news”?" });
+  expect(dialog).toHaveAccessibleDescription(/Its run history .* are deleted with it.*Summaries already delivered to Bot stay, without a link to the run\./);
   expect(calls.scheduledTaskDelete).not.toHaveBeenCalled();
   await user.click(within(dialog).getByRole("button", { name: "Delete" }));
   expect(calls.scheduledTaskDelete).toHaveBeenCalledWith({ loupist_id: "loupist", task_id: "task-1", expected_revision: 3 });
   expect(onDeleted).toHaveBeenCalledOnce();
+});
+
+it("explains what happens to run history and Bot summaries in Korean", async () => {
+  await i18n.changeLanguage("ko");
+  try {
+    const { user } = setup(task());
+    await user.click(screen.getByRole("button", { name: "Chip news 더보기" }));
+    await user.click(await screen.findByRole("menuitem", { name: "삭제…" }));
+    const dialog = await screen.findByRole("dialog", { name: "“Chip news” 작업을 삭제하시겠습니까?" });
+    expect(dialog).toHaveAccessibleDescription(/실행 기록과 .* 함께 삭제됩니다.*이미 봇에 전달된 요약은 남지만 실행으로 가는 링크는 없어집니다\./);
+  } finally {
+    await act(async () => { await i18n.changeLanguage("en"); });
+  }
 });
 
 it("resumes a paused task, keeps the briefing undeletable, and shows a failure with retry", async () => {

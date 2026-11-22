@@ -27,6 +27,7 @@ pub async fn site_favicon(url: String) -> Option<String> {
             Duration::from_secs(5),
             MAX_BYTES,
             "image/x-icon, image/vnd.microsoft.icon, image/png, image/webp, image/jpeg, image/gif",
+            None,
         )
         .await
         .ok()?;

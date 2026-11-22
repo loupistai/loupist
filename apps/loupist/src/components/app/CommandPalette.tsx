@@ -11,9 +11,11 @@ import { nodeColorKey } from "../../knowledge/mapKinds";
 import { entityLabel } from "../../knowledge/mapItems";
 import { readKnowledgeMap } from "../../knowledge/mapRead";
 import { attentionNamesLoupist, attentionWhat } from "./NeedsAttention";
-import { assetExchangeLabel, type AssetRow } from "../../contracts/assets";
+import type { AssetRow } from "../../contracts/assets";
+import { listingExchange } from "../assets/listingExchange";
 import { useAssetPageOpener } from "../assets/assetOpener";
 import { useAssetNames } from "../assets/assetName";
+import { loupistOptionLabel } from "../../lib/loupistFolder";
 import { tickerLabel } from "@/lib/market";
 
 const t = i18n.getFixedT(null, "app");
@@ -25,10 +27,12 @@ export const SEARCH_LOUPISTS = 8;
 /** A Loupist whose reads take longer than this is left out of this opening of the palette. */
 const READ_BUDGET_MS = 2_000;
 
-export type PaletteGroup = "attention" | "chats" | "following" | "map" | "principles" | "briefings" | "actions";
-const GROUP_ORDER: readonly PaletteGroup[] = ["attention", "chats", "following", "map", "principles", "briefings", "actions"];
+export type PaletteGroup = "attention" | "bot" | "chats" | "following" | "map" | "principles" | "briefings" | "actions";
+const GROUP_ORDER: readonly PaletteGroup[] = ["attention", "bot", "chats", "following", "map", "principles", "briefings", "actions"];
 
-export type PaletteAction = { id: string; label: string; keys?: string; run: () => void };
+const groupLabel = (group: PaletteGroup) => group === "bot" ? t("thread.title") : t(`palette.groups.${group}`);
+
+export type PaletteAction = { id: string; label: string; keys?: string; aliases?: readonly string[]; run: () => void };
 
 type Row = { key: string; group: PaletteGroup; label: string; caption?: string; marker?: string; run: () => void };
 type LoupistIndex = { nodes: KnowledgeMapNode[]; principles: { recordId: string; statement: string }[]; briefings: { runId: string; title: string; atMs: number }[] };
@@ -88,7 +92,7 @@ const matchesLoupist = (query: string, name: string) => [...query].length >= LOU
 
 /**
  * The ⌘K palette (shell spec X7): one search across what needs attention,
- * chats, names on the Map, principles, briefings and app actions, over every
+ * chats, names in World, principles, briefings and app actions, over every
  * Loupist. Inside each group the active Loupist's results come first, then each
  * other Loupist's in sidebar order, captioned with its name; Enter runs the
  * highlighted row.
@@ -136,20 +140,22 @@ export function CommandPalette({ open, onOpenChange, bridge, loupists, selectedL
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     const all: Row[] = [];
+    const labels = new Map(loupists.map(loupist => [loupist.id, loupistOptionLabel(loupist, loupists)]));
     for (const item of attention) {
-      const what = attentionWhat(item, threadsByLoupist);
-      if (matches(q, what) || matchesLoupist(q, item.loupistName)) all.push({ key: `attention:${item.kind}:${item.loupistId}:${item.chatId ?? item.recordId ?? ""}`, group: "attention", label: what, caption: attentionNamesLoupist(item) ? undefined : item.loupistName, run: () => onOpenAttention(item) });
+      const label = labels.get(item.loupistId) ?? item.loupistName;
+      const what = attentionWhat({ ...item, loupistName: label }, threadsByLoupist);
+      if (matches(q, what) || matchesLoupist(q, label)) all.push({ key: `attention:${item.kind}:${item.loupistId}:${item.chatId ?? item.recordId ?? ""}`, group: "attention", label: what, caption: attentionNamesLoupist(item) ? undefined : label, run: () => onOpenAttention(item) });
     }
     if (focusGroup !== "attention") {
       const chats = loupists.flatMap((loupist) => (threadsByLoupist[loupist.id] ?? []).map((thread) => ({ thread, loupist, byTitle: matches(q, chatTitle(thread)) })))
-        .filter(({ loupist, byTitle }) => byTitle || matchesLoupist(q, loupist.name))
+        .filter(({ loupist, byTitle }) => byTitle || matchesLoupist(q, labels.get(loupist.id)!))
         // Chats found by their title first, then the active Loupist's, then the most recent.
         .sort((a, b) => Number(b.byTitle) - Number(a.byTitle) || Number(b.loupist.id === selectedLoupistId) - Number(a.loupist.id === selectedLoupistId) || Date.parse(b.thread.updated_at) - Date.parse(a.thread.updated_at));
       // Before typing it lists recent sessions as the sidebar does; a typed search also finds the ones kept out of it.
       for (const { thread, loupist } of q ? chats : chats.filter(({ thread }) => !thread.hide_from_recent).slice(0, RECENT_CHATS)) {
         const date = Date.parse(thread.updated_at);
-        all.push({ key: `chat:${loupist.id}:${thread.id}`, group: "chats", label: chatTitle(thread),
-          caption: [loupist.name, Number.isFinite(date) ? formatDate(date, { year: undefined, month: "short", day: "numeric" }) : ""].filter(Boolean).join(" · "),
+        all.push({ key: `chat:${loupist.id}:${thread.id}`, group: thread.home ? "bot" : "chats", label: chatTitle(thread),
+          caption: [labels.get(loupist.id), Number.isFinite(date) ? formatDate(date, { year: undefined, month: "short", day: "numeric" }) : ""].filter(Boolean).join(" · "),
           run: () => onOpenThread(loupist.id, thread.id) });
       }
       if (q && selectedLoupistId && openAsset) {
@@ -158,12 +164,13 @@ export function CommandPalette({ open, onOpenChange, bridge, loupists, selectedL
           const ticker = asset.reference?.ticker?.trim() ?? "";
           const label = assetName({ name: asset.name, assetId: asset.assetId, symbol: ticker || undefined, market: asset.reference?.exchange });
           if (matches(q, label, asset.name, ticker)) all.push({ key: `following:${asset.assetId}`, group: "following", label,
-            caption: ticker ? tickerLabel(ticker, assetExchangeLabel(asset.reference)) : undefined,
+            caption: ticker ? tickerLabel(ticker, listingExchange(asset.reference, instance.language).exchange) : undefined,
             run: () => openAsset({ loupistId: selectedLoupistId, assetId: asset.assetId, name: label }) });
         }
       }
       // Grouped by kind, then by Loupist: the active one first, each row captioned with its Loupist.
-      for (const { id: loupistId, name } of q ? searchOrder(loupists, selectedLoupistId) : []) {
+      for (const { id: loupistId } of q ? searchOrder(loupists, selectedLoupistId) : []) {
+        const name = labels.get(loupistId)!;
         const index = loaded.byLoupist[loupistId];
         if (!index) continue;
         for (const node of index.nodes) {
@@ -180,7 +187,7 @@ export function CommandPalette({ open, onOpenChange, bridge, loupists, selectedL
         }
       }
       for (const action of actions) {
-        if (matches(q, action.label)) all.push({ key: `action:${action.id}`, group: "actions", label: action.label, caption: action.keys, run: action.run });
+        if (matches(q, action.label, ...(action.aliases ?? []))) all.push({ key: `action:${action.id}`, group: "actions", label: action.label, caption: action.keys, run: action.run });
       }
     }
     return all;
@@ -194,7 +201,7 @@ export function CommandPalette({ open, onOpenChange, bridge, loupists, selectedL
     const open = expanded.has(group) || group === "actions";
     const shown = open ? inGroup : inGroup.slice(0, ROWS_PER_GROUP);
     const more: Row | null = !open && inGroup.length > ROWS_PER_GROUP
-      ? { key: `more:${group}`, group, label: t("palette.moreIn", { group: t(`palette.groups.${group}`) }), run: () => setExpanded((current) => new Set([...current, group])) }
+      ? { key: `more:${group}`, group, label: t("palette.moreIn", { group: groupLabel(group) }), run: () => setExpanded((current) => new Set([...current, group])) }
       : null;
     return [{ group, rows: more ? [...shown, more] : shown }];
   });
@@ -233,8 +240,8 @@ export function CommandPalette({ open, onOpenChange, bridge, loupists, selectedL
         }} onKeyDown={onKeyDown} />
       <ul ref={listRef} id={listId} className="command-palette-list" role="listbox" aria-label={t("palette.results")} hidden={!flat.length}>
         {sections.map((section) => <li key={section.group} role="presentation">
-          <p className="command-palette-group" aria-hidden="true">{t(`palette.groups.${section.group}`)}</p>
-          <ul role="group" aria-label={t(`palette.groups.${section.group}`)}>
+          <p className="command-palette-group" aria-hidden="true">{groupLabel(section.group)}</p>
+          <ul role="group" aria-label={groupLabel(section.group)}>
             {section.rows.map((row) => {
               index += 1;
               const rowIndex = index;

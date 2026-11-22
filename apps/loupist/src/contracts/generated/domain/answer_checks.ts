@@ -45,6 +45,25 @@ export type CalcInputUnitKind =
   | "amount"
   | "price";
 
+/** Why a numeric citation did not verify against its retained evidence. */
+export type ComparisonReason =
+  | "digits_differ"
+  | "scale_conflict"
+  | "sign_conflict"
+  | "incompatible_unit"
+  | "no_candidate";
+
+/**
+ * Read-time diagnostic for an unresolved check. The saved comparison
+ * remains compatible with readers that know the earlier reason values.
+ */
+export type ComparisonReplay =
+  | { "reason": "no_candidate", searched: ComparisonScope }
+  | { "reason": "evidence_unavailable" };
+
+/** Material that the host searched while replaying a saved comparison. */
+export type ComparisonScope = { "kind": "retained_passage", title: string };
+
 /** One number link in an answer, checked against the evidence it links. */
 export type NumberCheck = {
   /** Index among the answer's `[text](#evidence-…)` links, in order. */
@@ -53,15 +72,27 @@ export type NumberCheck = {
   evidence_id: string,
   kind: NumberCheckKind,
   status: NumberCheckStatus,
-  /** For `differs`: the calculated value nearest to the printed number. */
+  /** Nearest calculation result or plausible source figure for an unmatched citation. */
   nearest?: string,
-  /** For `rounded`: the value as the evidence prints it. */
+  /** The unmatched candidate exactly as printed in the evidence. */
+  comparedValue?: string,
+  /** Unit of the unmatched candidate when the source identifies it. */
+  nearestSourceUnit?: string,
+  /** Power of ten of the stated source scale (6 for millions). */
+  nearestSourceScale?: number,
+  /** Why a numeric citation did not verify, including on historical replay. */
+  comparisonReason?: ComparisonReason,
+  comparisonReplay?: ComparisonReplay,
+  /** For a rounded or rescaled match: the value as the evidence prints it. */
   exact?: string,
-  /** The matched data cell (JSON Pointer into the retained result). */
+  /** Present on a matched citation that changes monetary scale exactly. */
+  scale_conversion?: NumberCheckScaleConversion,
+  unstated_scale?: UnstatedScale,
+  /** The matched or compared cell (JSON Pointer into the retained result). */
   pointer?: string,
-  /** The matched passage text (UTF-8 byte offsets into the evidence excerpt). */
+  /** The matched or compared figure (UTF-8 byte offsets into the excerpt). */
   span?: ChatEvidenceMatch,
-  /** The fallback match in retained content when the excerpt has no span. */
+  /** The location in retained content when the excerpt has no span. */
   context?: NumberCheckContext,
   /** Up to four fields of the matched data row. */
   fields?: Array<NumberCheckField>,
@@ -79,10 +110,10 @@ export type NumberCheckCalc = {
   grid?: [number, number],
 };
 
-/** A bounded part of the retained content that held a fallback passage match. */
+/** A bounded part of retained content containing the matched or compared figure. */
 export type NumberCheckContext = {
   text: string,
-  /** End-exclusive UTF-8 byte offsets of the matched number inside `text`. */
+  /** End-exclusive UTF-8 byte offsets of that number inside `text`. */
   start: number,
   end: number,
 };
@@ -110,4 +141,18 @@ export type NumberCheckInput = {
 
 export type NumberCheckKind = "calculated" | "passage" | "data" | "step";
 
+/** Powers of ten in an exact conversion from the source to the answer. */
+export type NumberCheckScaleConversion = {
+  source_scale: number,
+  answer_scale: number,
+  /**
+   * Currency from the evidence, or from the answer's stated unit when
+   * the retained source window has only the base-unit values.
+   */
+  currency?: string,
+};
+
 export type NumberCheckStatus = "matched" | "rounded" | "not_found" | "differs";
+
+/** The side that leaves the scale of an exact digit match unstated. */
+export type UnstatedScale = "source" | "answer";

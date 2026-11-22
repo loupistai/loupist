@@ -54,7 +54,7 @@ export function moveSentence(move: Pick<AssetMove, "from" | "to" | "reason" | "l
  */
 export function readSentence(read: AssetRead): { text: string; move?: AssetMove } {
   const latest = read.latestMove;
-  if (read.started || !latest) return { text: t("verdict.started", { date: shortDay(read.since) }) };
+  if (!latest) return { text: t("verdict.unreviewed") };
   if (latest.actor === "user" && latest.undoesMoveId) return { text: t("verdict.undone", { verdict: verdictLabel(read.verdict), date: shortDay(latest.factDate) }) };
   const reason = latest.line?.crossed ? crossedReason(latest.line, latest.factDate) : midSentence(latest.reason);
   return { text: `${t("verdict.since", { verdict: verdictLabel(read.verdict), date: shortDay(read.since) })} — ${reason}`, move: latest };

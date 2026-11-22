@@ -39,7 +39,7 @@ it("switches the Bot greeting language without changing the Loupist name", async
 
 it("resolves status and evidence labels from the current language", async () => {
   render(<WorldProcessingStatus initialStatus="queued" />);
-  expect(screen.getByRole("status")).toHaveTextContent("Map: queued");
+  expect(screen.getByRole("status")).toHaveTextContent("World: queued");
   const evidence = { kind: "original", tool_name: "web_fetch" } as ChatEvidenceRef;
   expect(evidencePresentation(evidence).label).toBe("Retrieved source");
   await act(async () => { await i18n.changeLanguage("en-XA"); });
@@ -50,7 +50,7 @@ it("resolves status and evidence labels from the current language", async () => 
 it("distinguishes a Source allowance stop from a user pause in Korean", async () => {
   await act(async () => { await i18n.changeLanguage("ko"); });
   const view = render(<WorldProcessingStatus initialStatus="paused_budget" />);
-  expect(screen.getByRole("status")).toHaveTextContent("지도: 이 자료의 지도 구성 멈춤");
+  expect(screen.getByRole("status")).toHaveTextContent("월드: 이 자료의 월드 구성 멈춤");
   view.rerender(<WorldProcessingStatus initialStatus="paused" />);
-  expect(screen.getByRole("status")).toHaveTextContent("지도: 구성 일시정지");
+  expect(screen.getByRole("status")).toHaveTextContent("월드: 구성 일시정지");
 });

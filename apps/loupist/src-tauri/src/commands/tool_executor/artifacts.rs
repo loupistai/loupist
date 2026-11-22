@@ -29,7 +29,11 @@ fn validate_view_input(view: &Value) -> Result<(), BrokerError> {
             &["symbol", "interval", "time", "open", "high", "low", "close"],
             &["volume", "turnover", "price_precision"],
         ),
-        Some("line" | "area" | "bar" | "scatter") => (
+        Some("area" | "bar") => (
+            &["x", "y"],
+            &["color", "semantic_types", "title", "subtitle", "stack"],
+        ),
+        Some("line" | "scatter") => (
             &["x", "y"],
             &["color", "semantic_types", "title", "subtitle"],
         ),
@@ -81,6 +85,8 @@ fn validate_view_input(view: &Value) -> Result<(), BrokerError> {
                 }
                 "expected an integer from 0 to 12"
             }
+            "stack" if value.is_boolean() => continue,
+            "stack" => "expected a boolean",
             "semantic_types" => {
                 if value
                     .as_object()
@@ -634,7 +640,17 @@ impl AppToolExecutor {
         let end = request.offset + count;
         let columns = indexes
             .iter()
-            .map(|index| &dataset.columns[*index])
+            .map(|index| {
+                let column = &dataset.columns[*index];
+                let mut description = json!(column);
+                if let crate::chat::chart::ChartView::Analytic { semantic_types, .. } = &chart.view
+                {
+                    if let Some(semantic) = semantic_types.get(&column.id) {
+                        description["semantic_type"] = json!(semantic);
+                    }
+                }
+                description
+            })
             .collect::<Vec<_>>();
         Ok(json!({
             "artifact_id": artifact.id,
@@ -981,12 +997,17 @@ impl ToolCapture {
             let evidence_refs = match &commit.revision.payload {
                 ChatArtifactPayload::Grid { grid, .. } => {
                     let cited = grid.evidence_ids();
+                    let reads = self.staged_reads.lock().await;
                     self.evidence_refs
                         .lock()
                         .await
                         .iter()
                         .filter(|evidence| cited.contains(&evidence.id))
                         .cloned()
+                        .map(|mut snapshot| {
+                            self.file_labels.project_evidence(&mut snapshot);
+                            project_memory_evidence(snapshot, &reads)
+                        })
                         .collect()
                 }
                 ChatArtifactPayload::Chart { .. } => Vec::new(),

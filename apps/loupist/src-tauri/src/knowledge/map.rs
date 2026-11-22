@@ -162,7 +162,7 @@ pub(super) fn query(
     let limit = request.max_nodes.unwrap_or(1000);
     if !(1..=1500).contains(&limit) {
         return Err(KnowledgeError::Invalid(
-            "map maxNodes must be between 1 and 1500",
+            "World maxNodes must be between 1 and 1500",
         ));
     }
     let loupist = &request.loupist_id;

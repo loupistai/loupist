@@ -34,7 +34,7 @@ pub(super) async fn finalize_chat_turn(turn: LaunchedChatTurn, streamed: Streame
         loupist_id: task_loupist_id,
         app_state,
         capture,
-        mut activity_recorder,
+        activity_recorder,
         mut pi_events,
         chat_controls: _chat_controls,
         pi,
@@ -64,7 +64,23 @@ pub(super) async fn finalize_chat_turn(turn: LaunchedChatTurn, streamed: Streame
         mut commentary,
         envelope_compacted,
     } = streamed;
-    let sealed_cache = settle_turn_runtime(SettleTurn {
+    let save_started_at_ms = now_ms();
+    if completed && !aborted {
+        let _ = on_event.send(ChatStreamEvent::Saving {
+            run_id: task_run_id.clone(),
+            waiting_for_other_chat: false,
+            blocking_chat_id: None,
+            final_text: None,
+            number_checks: None,
+            save_activity: Some(crate::chat::progress::ChatSaveActivity {
+                started_at_ms: save_started_at_ms,
+                finished_at_ms: None,
+                waited_ms: 0,
+                blocking_chat_id: None,
+            }),
+        });
+    }
+    let (sealed_cache, runtime_settled) = settle_turn_runtime(SettleTurn {
         on_event: &on_event,
         task_run_id: &task_run_id,
         app_state: &app_state,
@@ -72,7 +88,7 @@ pub(super) async fn finalize_chat_turn(turn: LaunchedChatTurn, streamed: Streame
         progress: &mut progress,
         commentary: &mut commentary,
         token_usage,
-        activity_recorder: &mut activity_recorder,
+        activity_recorder,
         aborted,
         completed: &mut completed,
         failure: &mut failure,
@@ -95,25 +111,21 @@ pub(super) async fn finalize_chat_turn(turn: LaunchedChatTurn, streamed: Streame
         state: &app_state,
         on_event: &on_event,
         run_id: &task_run_id,
+        loupist_id: &task_loupist_id,
         thread_id: &thread_id,
         message_id: &task_message_id,
         memory_revision: &memory_revision,
         harness: &harness,
     };
 
-    // Keep the writer lease until terminal persistence/emission has finished,
-    // including the error path after a rolled-back Memory transaction.
-    let mut memory_finalization_writer = None;
     if aborted {
         let progress_snapshot =
             finish_chat_progress(&on_event, &task_run_id, &mut progress, now_ms(), true);
         let memories = capture
             .memories
-            .lock()
-            .await
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
+            .try_lock()
+            .map(|memories| memories.values().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
         let aborted_content = if content.trim().is_empty() {
             "Response stopped.".to_owned()
         } else {
@@ -140,8 +152,8 @@ pub(super) async fn finalize_chat_turn(turn: LaunchedChatTurn, streamed: Streame
             task_loupist_id: &task_loupist_id,
             execution_model: &execution_model,
             capture: capture.as_ref(),
-            turn_resources: &mut turn_resources,
-            memory_finalization_writer: &mut memory_finalization_writer,
+            runtime_settled,
+            save_started_at_ms,
             progress: &mut progress,
             failure: &mut failure,
             content,
@@ -179,7 +191,6 @@ pub(super) async fn finalize_chat_turn(turn: LaunchedChatTurn, streamed: Streame
             let _ = reply.failed_with_stop_precedence(execution_model, progress_snapshot);
         }
     }
-    drop(memory_finalization_writer);
 }
 
 /// Borrowed view of a streamed turn while its processes stop.
@@ -191,7 +202,7 @@ struct SettleTurn<'a> {
     progress: &'a mut ChatProgressProjection,
     commentary: &'a mut CommentaryCoalescer,
     token_usage: AssistantTokenUsage,
-    activity_recorder: &'a mut ActivityRecorder,
+    activity_recorder: ActivityRecorder,
     aborted: bool,
     completed: &'a mut bool,
     failure: &'a mut Option<String>,
@@ -212,7 +223,7 @@ struct SettleTurn<'a> {
 
 /// Publishes pending narration, records usage and unfinished activity, then
 /// stops Pi, the broker and MCP. Returns the Pi cache this turn may seal.
-async fn settle_turn_runtime(turn: SettleTurn<'_>) -> Option<PiSessionCache> {
+async fn settle_turn_runtime(turn: SettleTurn<'_>) -> (Option<PiSessionCache>, bool) {
     let SettleTurn {
         on_event,
         task_run_id,
@@ -221,7 +232,7 @@ async fn settle_turn_runtime(turn: SettleTurn<'_>) -> Option<PiSessionCache> {
         progress,
         commentary,
         token_usage,
-        activity_recorder,
+        mut activity_recorder,
         aborted,
         completed,
         failure,
@@ -265,20 +276,30 @@ async fn settle_turn_runtime(turn: SettleTurn<'_>) -> Option<PiSessionCache> {
             });
         }
     }
-    match activity_recorder.finish_remaining(aborted, now_ms()) {
-        Ok(call_ids) => {
+    let activity_settled = match tokio::time::timeout(
+        Duration::from_secs(5),
+        tokio::task::spawn_blocking(move || activity_recorder.finish_remaining(aborted, now_ms())),
+    )
+    .await
+    {
+        Ok(Ok(Ok(call_ids))) => {
             if !call_ids.is_empty() {
                 for call_id in &call_ids {
                     progress.note_output(call_id);
                 }
                 publish_progress(on_event, task_run_id, progress, commentary);
             }
+            true
         }
-        Err(error) => {
+        Ok(Ok(Err(error))) => {
             *failure = Some(error.message);
-            *completed = false;
+            false
         }
-    }
+        _ => {
+            *failure = Some("Chat activity did not finish saving".into());
+            false
+        }
+    };
     #[cfg(feature = "eval-harness")]
     if let (Some(capture), Some(reason)) = (&on_event.eval_pi_event, failure.as_deref()) {
         capture(
@@ -318,10 +339,14 @@ async fn settle_turn_runtime(turn: SettleTurn<'_>) -> Option<PiSessionCache> {
     // could append after the cursor is sealed.
     let connector_authority_unchanged = *completed
         && !aborted
+        && pi_stopped
         && task_connector_authority_cacheable
-        && capture_chat_connector_authority(app_state, task_loupist_id)
-            .map(|current| current.cacheable && current.sha256 == task_connector_authority_sha256)
-            .unwrap_or(false);
+        && connector_authority_still_current(
+            app_state,
+            task_loupist_id,
+            &task_connector_authority_sha256,
+        )
+        .await;
     let sealed_cache = (pi_stopped && connector_authority_unchanged)
         .then(|| {
             cache_entries.and_then(|entries| {
@@ -344,12 +369,46 @@ async fn settle_turn_runtime(turn: SettleTurn<'_>) -> Option<PiSessionCache> {
             })
         })
         .flatten();
-    let _ = broker.shutdown().await;
-    capture.shutdown_mcp().await;
+    let broker_settled = broker.shutdown().await.is_ok();
+    let mcp_settled = tokio::time::timeout(Duration::from_secs(10), capture.shutdown_mcp())
+        .await
+        .is_ok();
     // Pi owns the JSONL session file. Stop it before wiping an incomplete
     // run so a still-draining child cannot recreate a cache we just removed.
     if (aborted || !*completed) && pi_stopped {
         let _ = turn_resources.pi_session_mut().wipe();
     }
-    sealed_cache
+    let runtime_settled = activity_settled && broker_settled && mcp_settled && pi_stopped;
+    (sealed_cache.filter(|_| runtime_settled), runtime_settled)
+}
+
+async fn connector_authority_still_current(state: &AppState, loupist_id: &str, seal: &str) -> bool {
+    let state = state.clone();
+    let loupist_id = loupist_id.to_owned();
+    let seal = seal.to_owned();
+    // Brief connector activity should leave a warm cache usable. A cold
+    // cache is sufficient if the stamp cannot be confirmed in time.
+    let budget = Duration::from_secs(2);
+    let deadline = std::time::Instant::now() + budget;
+    tokio::time::timeout(
+        budget,
+        tokio::task::spawn_blocking(move || {
+            let _guard = loop {
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                if remaining.is_zero() {
+                    return false;
+                }
+                if let Some(guard) = crate::marketplace::try_connector_lifecycle_lock() {
+                    break guard;
+                }
+                std::thread::sleep(remaining.min(Duration::from_millis(10)));
+            };
+            crate::store::bounded_chat_save(|| {
+                crate::commands::read_chat_connector_authority(&state, &loupist_id)
+            })
+            .is_ok_and(|current| current.cacheable && current.sha256 == seal)
+        }),
+    )
+    .await
+    .is_ok_and(|result| result.unwrap_or(false))
 }

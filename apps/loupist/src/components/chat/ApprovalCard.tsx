@@ -1,5 +1,6 @@
 import { clockLabel, useNow } from "../../chat/runStatus";
 import i18n, { useTranslation } from "@/i18n";
+import { useExtensionAvailability } from "../../app/extensionAvailability";
 import { useRef, useState } from "react";
 import type { LoupistBridge } from "../../types";
 import type { ChatApproval, ChatApprovalDecision, ChatToolRefusal } from "../../contracts/chat";
@@ -92,34 +93,38 @@ export function ApprovalCards({ approvals, refusals, bridge, loupistId }: {
   loupistId: string;
 }) {
   useTranslation("chat");
+  const { customConnections } = useExtensionAvailability();
   const detail = useConnectionDetail(bridge, loupistId);
-  const settingsOnly = refusals.filter((refusal) => refusal.reason === "needs_approval" || refusal.reason === "blocked_unattended");
-  if (!approvals.length && !settingsOnly.length) return null;
+  const shownApprovals = customConnections ? approvals : approvals.filter(approval => approval.state !== "waiting");
+  const settingsOnly = customConnections ? refusals.filter((refusal) => refusal.reason === "needs_approval" || refusal.reason === "blocked_unattended") : [];
+  if (!shownApprovals.length && !settingsOnly.length) return null;
   const decide = (approval: ChatApproval) => (decision: ChatApprovalDecision) =>
     bridge.chatApprovalDecide({ loupist_id: loupistId, request_id: approval.requestId, decision });
   return <div className="approval-cards">
-    {approvals.map((approval) => {
+    {shownApprovals.map((approval) => {
       const tool = humanizeToolName(approval.toolName);
       if (approval.state === "waiting") return <WaitingCard key={approval.requestId} approval={approval} onDecide={decide(approval)} />;
-      return <ApprovalLine key={approval.requestId} approval={approval} tool={tool} onOpenSettings={() => void detail.open(approval.connectionId)} />;
+      return <ApprovalLine key={approval.requestId} approval={approval} tool={tool} onOpenSettings={customConnections ? () => void detail.open(approval.connectionId) : undefined} />;
     })}
     {settingsOnly.map((refusal, index) => <p key={`${refusal.connection_id}:${refusal.tool_name}:${index}`} className="approval-line" data-state="settings" tabIndex={-1}>
       <span title={refusal.tool_name}>{t("approvalCard.needsSettings", { connection: refusal.connection_name, tool: humanizeToolName(refusal.tool_name) })}</span>
       {" "}<Button type="button" variant="link" onClick={() => void detail.open(refusal.connection_id)}>{t("approvalCard.review")}</Button>
     </p>)}
-    {detail.failed ? <p role="alert" className="approval-card-error">{i18n.t("settings:custom.error")}</p> : null}
-    {detail.sheet}
+    {customConnections && detail.failed ? <p role="alert" className="approval-card-error">{i18n.t("settings:custom.error")}</p> : null}
+    {customConnections ? detail.sheet : null}
   </div>;
 }
 
 /** A decided approval's one line; it takes focus when the user decided from the focused card. */
-function ApprovalLine({ approval, tool, onOpenSettings }: { approval: ChatApproval; tool: string; onOpenSettings: () => void }) {
+function ApprovalLine({ approval, tool, onOpenSettings }: { approval: ChatApproval; tool: string; onOpenSettings?: () => void }) {
   useTranslation("chat");
   const ref = useSettledFocus<HTMLParagraphElement>(approval.requestId);
   return <p ref={ref} tabIndex={-1} className="approval-line" data-state={approval.state}>
     {approval.state === "allowed_once" ? t("approvalCard.allowedOnce", { tool })
-      : approval.state === "always_allowed" ? <>{t("approvalCard.alwaysAllowed", { tool, connection: approval.connectionName })} · <Button type="button" variant="link" onClick={onOpenSettings}>{t("approvalCard.changeInSettings")}</Button></>
+      : approval.state === "always_allowed" ? <>{t("approvalCard.alwaysAllowed", { tool, connection: approval.connectionName })}{onOpenSettings
+        ? <> · <Button type="button" variant="link" onClick={onOpenSettings}>{t("approvalCard.changeInSettings")}</Button></> : null}</>
         : approval.state === "declined" ? t("approvalCard.declined", { tool })
           : t("approvalCard.expired", { tool })}
+    {!onOpenSettings && approval.state !== "always_allowed" ? <> · {approval.connectionName}</> : null}
   </p>;
 }

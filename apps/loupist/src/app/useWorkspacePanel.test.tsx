@@ -181,7 +181,7 @@ describe("panel opening rules", () => {
     expect(result.current.sessions[chatSessionKey("loupist", "chat")]).toBeUndefined();
   });
 
-  it("opens the Map beside a wide, visible chat for its first names, and marks it while the user works in the panel", async () => {
+  it("opens World beside a wide, visible chat for its first names, and marks it while the user works in the panel", async () => {
     const width = vi.spyOn(window, "innerWidth", "get").mockReturnValue(1100);
     try {
       const { result } = renderHook(() => useWorkspacePanel(new MockLoupistBridge({ delay_ms: 0 })));
@@ -454,4 +454,21 @@ describe("header splits", () => {
     expect(result.current.open).toBe(false);
     await waitFor(async () => expect((await bridge.workspaceUiRead())?.dock_by_kind).toEqual({ chart: "bottom", reading: "bottom" }));
   });
+});
+
+it("opens successive flagged figures in one web source at their own saved locations", async () => {
+  const { evidenceFixture } = await import("../test/evidenceFixtures");
+  const evidence = evidenceFixture({ tool_name: "web_fetch", url: "https://example.com/filing" });
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const { result } = renderHook(() => useWorkspacePanel(bridge));
+  await waitFor(() => expect(result.current.hydrated).toBe(true));
+  const key = chatSessionKey("loupist", "thread");
+  const comparison = { link_index: 0, text: "7.3", evidence_id: evidence.id, kind: "passage" as const, status: "not_found" as const, span: { start: 2, end: 5 } };
+  for (const start of [2, 13]) {
+    act(() => result.current.openEvidence("loupist", "thread", evidence, { label: "", comparison: { ...comparison, span: { start, end: start + 3 } } }));
+    const session = result.current.sessions[key];
+    expect(session.active_tab_id).toBe("evidence");
+    expect(session.tabs).toHaveLength(1);
+    expect(session.tabs[0]).toMatchObject({ entries: [{ step: { comparison: { span: { start } } } }] });
+  }
 });

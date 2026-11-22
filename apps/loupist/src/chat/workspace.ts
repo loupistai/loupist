@@ -1,5 +1,7 @@
 import i18n from "@/i18n";
-import type { ChatArtifactRef, ChatEvidenceRef, KnowledgeLocation } from "../types";
+import type { ChatArtifactRef, ChatEvidenceRef, NumberCheck, KnowledgeLocation } from "../types";
+import type { SourceFigureRequest } from "../contracts/knowledge";
+import type { SourceOpen } from "../knowledge/location";
 import { evidenceTitle } from "./evidence";
 import type { EvidenceCell } from "./numberChecks";
 
@@ -8,7 +10,7 @@ const t = i18n.getFixedT(null, "chat");
 export type WorkspacePlacement = "side" | "bottom";
 
 /**
- * The Work tab: the Loupist's charts and documents across its chats. With an item
+ * The Work tab lists the conversation’s published items and written files. With an item
  * open it shows that item in place; `artifactThreadId` is the chat that made it,
  * which may differ from the chat the panel belongs to.
  */
@@ -24,6 +26,8 @@ export type BrowserWorkspaceTab = {
   id: string;
   kind: "browser";
   native_id?: string;
+  can_go_back?: boolean;
+  can_go_forward?: boolean;
   url: string;
   title: string;
   loading: boolean;
@@ -36,12 +40,12 @@ export type FilesWorkspaceTab = { id: string; kind: "files"; title: string; path
 export const filesWorkspaceTab = (filePath?: string): FilesWorkspaceTab => ({ id: "files", kind: "files", title: t("workspace.files"), path: filePath?.split("/").slice(0, -1).join("/") ?? "", filePath });
 
 /** Where an Evidence entry came from: its step, and for a data number the matched cell to mark. */
-export type EvidenceStepLink = { label: string; itemId?: string; cell?: EvidenceCell };
+export type EvidenceStepLink = { label: string; itemId?: string; cell?: EvidenceCell; comparison?: NumberCheck };
 
 /** One thing a person reads in the Evidence tab: a retained citation or a saved Memory reader. */
 export type EvidenceEntry =
   | { key: string; kind: "evidence"; title: string; evidence: ChatEvidenceRef; step?: EvidenceStepLink }
-  | { key: string; kind: "knowledge"; title: string; location: KnowledgeLocation };
+  | { key: string; kind: "knowledge"; title: string; location: KnowledgeLocation; sourceOpen?: SourceOpen };
 
 /** The single reader per chat. History lives in memory; evidence bytes are never persisted. */
 export type EvidenceWorkspaceTab = { id: typeof EVIDENCE_TAB_ID; kind: "evidence"; entries: EvidenceEntry[]; index: number };
@@ -59,16 +63,18 @@ export const evidenceEntry = (evidence: ChatEvidenceRef, step?: EvidenceStepLink
   step,
 });
 
-const knowledgeEntryKey = (location: KnowledgeLocation) => {
+const knowledgeEntryKey = (location: KnowledgeLocation, figure?: SourceFigureRequest) => {
   const objectId = location.objectId ?? location.recordId ?? location.surface;
-  return `knowledge:${JSON.stringify([location.loupistId, location.surface, location.recordId, location.revisionId, objectId, location.selection])}`;
+  const fields = [location.loupistId, location.surface, location.recordId, location.revisionId, objectId, location.selection];
+  return `knowledge:${JSON.stringify(figure ? [...fields, figure.threadId, figure.messageId, figure.evidenceId, figure.linkIndex] : fields)}`;
 };
 
-export const knowledgeEntry = (location: KnowledgeLocation, title: string): EvidenceEntry => ({
-  key: knowledgeEntryKey(location),
+export const knowledgeEntry = (location: KnowledgeLocation, title: string, figure?: SourceFigureRequest): EvidenceEntry => ({
+  key: knowledgeEntryKey(location, figure),
   kind: "knowledge",
   title,
   location,
+  ...(location.surface === "source" ? { sourceOpen: { figure } } : {}),
 });
 
 export const emptyEvidenceTab = (): EvidenceWorkspaceTab => ({ id: EVIDENCE_TAB_ID, kind: "evidence", entries: [], index: -1 });
@@ -86,10 +92,11 @@ export function shownEvidenceId(session: ChatWorkspaceSession): string | undefin
 /** A reopened entry keeps its reader state and adopts new view requests such as a proposal review. */
 const refreshEntry = (previous: EvidenceEntry, next: EvidenceEntry): EvidenceEntry => {
   if (previous.kind === "knowledge" && next.kind === "knowledge") {
-    if (!next.location.view) return previous;
-    return { ...previous, title: next.title, location: { ...next.location, view: { ...previous.location.view, ...next.location.view } } };
+    if (!next.location.view && !next.sourceOpen) return previous;
+    const location = next.location.view ? { ...next.location, view: { ...previous.location.view, ...next.location.view } } : previous.location;
+    return { ...previous, title: next.title, location, sourceOpen: next.sourceOpen };
   }
-  return next.kind === "evidence" && previous.kind === "evidence" && !previous.step && next.step ? next : previous;
+  return next.kind === "evidence" && previous.kind === "evidence" && (next.step?.comparison || previous.step?.comparison || (!previous.step && next.step)) ? next : previous;
 };
 
 /**

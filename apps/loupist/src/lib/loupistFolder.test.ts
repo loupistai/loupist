@@ -10,17 +10,19 @@ it.each([
   expect(workspaceFolderName(path)).toBe(expected);
 });
 
-it("keeps renamed profiles in the same parent folder distinguishable", () => {
-  const first = { ...MOCK_LOUPISTS[0], name: "Research", workspace_path: "/home/research/one" };
-  const second = { ...MOCK_LOUPISTS[1], name: "Research", workspace_path: "/home/research/two" };
-  expect(loupistOptionLabel(first, [first, second])).toBe("Research · /home/research/one");
-  expect(loupistOptionLabel(second, [first, second])).toBe("Research · /home/research/two");
+it("uses a short focus to distinguish duplicate names and leaves a unique name alone", () => {
+  const first = { ...MOCK_LOUPISTS[0], name: "Research", philosophy: "Oil demand", workspace_path: "/home/research/one" };
+  const second = { ...MOCK_LOUPISTS[1], name: "Research", philosophy: "Chip prices", workspace_path: "/home/research/two" };
+  expect(loupistOptionLabel(first, [first])).toBe("Research");
+  expect(loupistOptionLabel(first, [first, second])).toBe("Research · Oil demand");
+  expect(loupistOptionLabel(second, [second, first])).toBe("Research · Chip prices");
 });
 
-it("disambiguates settings options without changing the folder name", () => {
-  const first = { ...MOCK_LOUPISTS[0], name: "research", workspace_path: "/home/personal/research" };
-  const second = { ...MOCK_LOUPISTS[1], name: "research", workspace_path: "/home/work/research" };
-  expect(loupistOptionLabel(first, [first])).toBe("research");
-  expect(loupistOptionLabel(first, [first, second])).toBe("research · /home/personal");
-  expect(loupistOptionLabel(second, [first, second])).toBe("research · /home/work");
-});
+it.each(["", "Companies I follow", "One deliberately long focus with the same opening text ".repeat(3)])(
+  "numbers identical focus excerpts consistently even when the list is reordered", (focus) => {
+    const first = { ...MOCK_LOUPISTS[0], id: "a", name: "Research", philosophy: focus };
+    const second = { ...first, id: "b", philosophy: focus.length > 40 ? focus + "elsewhere" : focus };
+    expect(loupistOptionLabel(first, [first, second])).toBe("Research · Profile 1");
+    expect(loupistOptionLabel(second, [second, first])).toBe("Research · Profile 2");
+  },
+);

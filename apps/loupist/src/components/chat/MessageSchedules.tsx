@@ -21,7 +21,7 @@ export function MessageSchedules({ receipts }: {
 }) {
   useTranslation("chat");
   const go = useGo();
-  const onOpen = go ? (taskId: string) => go({ kind: "schedule", taskId }) : undefined;
+  const onOpen = go ? (taskId: string) => go({ kind: "schedule", taskId, ...(taskId.startsWith("bot-handoff-") && { handoffReceipt: true }) }) : undefined;
   const scope = useChatExecution();
   const { tasks: botTasks, refresh } = useContext(BotScheduleTasks);
   const status = (receipt: TaskReceipt) => scope?.surface === "session" && receipt.action === "created" && receipt.task_id.startsWith("bot-handoff-")

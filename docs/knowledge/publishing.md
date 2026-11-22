@@ -23,7 +23,7 @@ The community index (`sharing/gallery.rs`) is fetched over https, at most 4 MiB,
 in app data (`gallery-cache/`) for offline use and refreshed after six hours or on
 Refresh; a failed fetch keeps a fallback marked offline without renewing its freshness, so the next check retries; the fallback remains in memory so its cards and cached images can still open offline. An entry that does not validate is left out on its own, and anything else wrong
 rejects the document. Entries on its `blocked` list never appear, and `pack_list` marks
-added packs it names. Map images come only from `raw.githubusercontent.com` at the
+added packs it names. World images come only from `raw.githubusercontent.com` at the
 listed commit: PNG, signature checked, at most 1 MiB each, 64 MiB kept. A Gallery
 listing request requires configured terms and explicit acceptance of that exact URL.
 `github_account` exposes `galleryTermsUrl` (or null). Rust reads the manifest at the
@@ -57,7 +57,7 @@ pending takes the newer text; a changed accepted item shows yours beside theirs 
 the author's text only when chosen, and a chosen change with a scan finding waits as a
 "Changed" suggestion to be accepted on its own. Whatever was not chosen in that version
 is declined, and a version with nothing to offer moves the import forward silently. The
-map gains the new relationships (reusing the pack's existing Sources) through the same
+World gains the new relationships (reusing the pack's existing Sources) through the same
 merge, and relationships the author withdrew are marked withdrawn; an update never
 grants anything, and a blocked version cannot be applied.
 
@@ -66,7 +66,7 @@ pack, author and version) into the new pack's manifest.
 
 **Gallery** (`sharing/gallery.rs`). When the build names a community index
 (`LOUPIST_COMMUNITY_INDEX_URL`) and the user app is showing pack sharing, New Loupist offers Browse the Gallery: listed packs with
-name, author, focus, counts, license and an optional map image, sortable and searchable,
+name, author, focus, counts, license and an optional World image, sortable and searchable,
 kept for offline use. The list scrolls in the page, including below 1060px, and focusing a card below the fold scrolls it into the page. Preview opens the ordinary review and Use adds it as above; the
 renderer never sees a pack's location, which Rust resolves from the listing id. The Share
 sheet offers List it in the Gallery only when the build names HTTPS listing terms: the user

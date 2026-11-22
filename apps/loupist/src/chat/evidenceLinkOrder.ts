@@ -4,7 +4,7 @@ import { fromMarkdown } from "mdast-util-from-markdown";
  * An evidence target as Rust reads it (`number_checks.rs::evidence_id`), after it
  * restores a target written with its result-field name (`citation_url=#evidence-…`).
  */
-const EVIDENCE_TARGET = /^(?:citation_url[=:])?#evidence-[A-Za-z0-9_]{1,128}$/u;
+const EVIDENCE_TARGET = /^(?:citation_url[=:])?#evidence-([A-Za-z0-9_]{1,128})$/u;
 
 type Node = { type: string; url?: string; identifier?: string; children?: Node[]; position?: { start: { offset?: number } } };
 
@@ -14,7 +14,7 @@ type Node = { type: string; url?: string; identifier?: string; children?: Node[]
  * `link_index` n is the link at the n-th start here. Links in code are not
  * links; a reference link counts where it is written.
  */
-export function evidenceLinkStarts(markdown: string): number[] {
+export function evidenceLinks(markdown: string) {
   const tree = fromMarkdown(markdown) as Node;
   const definitions = new Map<string, string>();
   const define = (node: Node) => {
@@ -23,14 +23,19 @@ export function evidenceLinkStarts(markdown: string): number[] {
     node.children?.forEach(define);
   };
   define(tree);
-  const starts: number[] = [];
+  const links: { start: number; id: string }[] = [];
   const visit = (node: Node) => {
     const target = node.type === "link" ? node.url
       : node.type === "linkReference" && node.identifier ? definitions.get(node.identifier) : undefined;
     const start = node.position?.start.offset;
-    if (target && EVIDENCE_TARGET.test(target) && start !== undefined) starts.push(start);
+    const id = target && EVIDENCE_TARGET.exec(target)?.[1];
+    if (id && start !== undefined) links.push({ start, id });
     node.children?.forEach(visit);
   };
   visit(tree);
-  return starts;
+  return links;
+}
+
+export function evidenceLinkStarts(markdown: string): number[] {
+  return evidenceLinks(markdown).map(link => link.start);
 }

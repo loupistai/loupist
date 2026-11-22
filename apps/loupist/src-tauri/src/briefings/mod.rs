@@ -2,6 +2,7 @@
 pub(crate) mod commands;
 mod conflicts;
 pub(crate) mod desktop;
+pub(crate) mod login_item;
 pub(crate) mod policy;
 
 use crate::{

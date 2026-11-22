@@ -1,6 +1,7 @@
 // Generated from Rust by ts-rs; do not edit. Regenerate with:
 // LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract
 
+import type { ResolvedModelSelection } from "../providers/selection";
 import type { ProviderStatusView } from "../providers/status";
 
 export type BillingNote = "chatgpt_plan";
@@ -43,6 +44,7 @@ export type ExecutionModelLock = {
 };
 
 export type ModelCatalogView = {
+  default_selection?: ResolvedModelSelection,
   models: Array<ConfiguredModelView>,
   providers: Array<ModelProviderOption>,
   custom_providers: Array<CustomProviderView>,

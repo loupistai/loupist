@@ -59,6 +59,7 @@
 .evidence-actions:empty { padding-block: 0; }
 /* The cited passage: accent tint with a 2 px accent rule; it pulses once after the scroll settles. */
 .evidence-match { background: var(--gg-color-accent-soft); color: var(--gg-color-text-primary); box-shadow: inset 2px 0 0 var(--gg-color-accent); padding: 2px 2px 2px 6px; border-radius: 0 var(--gg-radius-xs) var(--gg-radius-xs) 0; -webkit-box-decoration-break: clone; box-decoration-break: clone; scroll-margin-block: 80px; }
+.evidence-match[data-cited-focus] { outline: 2px solid var(--gg-color-accent); outline-offset: -1px; }
 @keyframes evidence-match-pulse { 50% { background: color-mix(in srgb, var(--gg-color-accent) 25%, var(--gg-color-accent-soft)); } }
 @media (prefers-reduced-motion: no-preference) { .evidence-match { animation: evidence-match-pulse 600ms var(--gg-ease-out) 240ms 1; } }
 .evidence-truncation { font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); line-height: 1.6; }

@@ -178,7 +178,10 @@ export type WorldGraphView = {
   scan: Wire.QueryScan;
 };
 
+export type SourceFigureRequest = Wire.SourceFigureRequest;
+
 export type KnowledgeSourceReadRequest = {
+  figure?: SourceFigureRequest;
   loupistId: string;
   recordId: string;
   revisionId: string;
@@ -189,13 +192,17 @@ export type KnowledgeSourceReadRequest = {
   purpose: "renderer_inspection";
 };
 
-/** Selection offsets address the displayed retained passage in DOM UTF-16 units. */
+/** Selection offsets address the complete saved text projection in UTF-16 units. */
 export type KnowledgeSourceSelectionRequest = {
   source: KnowledgeSourceReadRequest;
   selection: SourceTextSelection;
 };
 
 export type SourceTextSelection = Wire.SourceTextSelection;
+
+export type CitedPassage = Wire.CitedPassage;
+export type SourceDataCell = Wire.SourceDataCell;
+export type SourceDataTable = Wire.SourceDataTable;
 
 export type SourceSpanView = {
   spanId: string;
@@ -204,19 +211,13 @@ export type SourceSpanView = {
   mediaType: string;
   text: string | null;
   /** Readable field projection only; text remains the exact retained span. */
-  presentation?: {
-    text: string;
-    sourcePointer: "/content";
-    extractionMethod: string;
-    contentOffset: number;
-    nextOffset: number | null;
-    extractionTruncated: boolean;
-  };
+  presentation?: Wire.SourcePresentationDto;
 };
 
 export type SourceRelatedClaim = Wire.SourceWorldClaim;
 
 export type SourceDetail = {
+  figureFailure?: Wire.SourceFigureFailure;
   origin?: CustomConnectionOrigin;
   relatedClaims: SourceRelatedClaim[];
   processing: SourceProcessing | null;

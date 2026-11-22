@@ -219,7 +219,7 @@ describe("Sidebar · Bot's row", () => {
       release();
       await running("Bot", false);
       // The reply finished out of sight: the unread dot takes the slot back.
-      await waitFor(() => expect(sidebarRow("Bot")).toHaveAccessibleDescription("Chat, briefings, and alerts Finished while you were away"));
+      await waitFor(() => expect(sidebarRow("Bot")).toHaveAccessibleDescription("Chat and scheduled task results Finished while you were away"));
     } finally {
       release();
     }
@@ -240,12 +240,71 @@ describe("Sidebar · Bot's row", () => {
       await waitFor(() => expect(sidebarRow("Bot")).toHaveAccessibleDescription(/Finished while you were away$/));
       await host.card({ status: "running" });
       await running("Bot");
-      expect(sidebarRow("Bot")).toHaveAccessibleDescription("Chat, briefings, and alerts Running");
+      expect(sidebarRow("Bot")).toHaveAccessibleDescription("Chat and scheduled task results Running");
       await host.card({ status: "done" });
       await running("Bot", false);
-      expect(sidebarRow("Bot")).toHaveAccessibleDescription("Chat, briefings, and alerts Finished while you were away");
+      expect(sidebarRow("Bot")).toHaveAccessibleDescription("Chat and scheduled task results Finished while you were away");
     } finally {
       release();
     }
+  });
+});
+
+describe("Sidebar · Schedule's row", () => {
+  it("names one running task in its tooltip and accessible name", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    vi.spyOn(bridge, "scheduledTasksActivity").mockResolvedValue([scheduledRunFixture()]);
+    await openApp(bridge);
+    const row = await screen.findByRole("button", { name: "Schedule · running Daily source review" });
+    expect(row).toHaveAttribute("title", "Schedule · running Daily source review");
+    expect(row.querySelector(".thread-running")).toBeInTheDocument();
+  });
+
+  it("takes the unread badge's place and restores the updated badge when the run finishes", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const run = scheduledRunFixture();
+    const activity = vi.spyOn(bridge, "scheduledTasksActivity").mockResolvedValue([]);
+    const unread = vi.spyOn(bridge, "inboxUnreadCounts").mockResolvedValue([{ loupistId: run.loupist_id, count: 2 }]);
+    const listeners = new Set<(event: InboxChangedEvent) => void>();
+    vi.spyOn(bridge, "onInboxChanged").mockImplementation(handler => { listeners.add(handler); return () => { listeners.delete(handler); }; });
+    await openApp(bridge);
+    expect(sidebarRow("Schedule")).toHaveAccessibleDescription("2 unread scheduled results");
+
+    activity.mockResolvedValue([run]);
+    act(() => window.dispatchEvent(new Event("focus")));
+    const row = await screen.findByRole("button", { name: "Schedule · running Daily source review" }, { timeout: 3000 });
+    expect(row.querySelector(".thread-running")).toBeInTheDocument();
+    expect(row.querySelector(".shell-unread")).toBeNull();
+    expect(row).not.toHaveAttribute("aria-describedby");
+
+    activity.mockResolvedValue([{ ...run, status: "succeeded" }]);
+    unread.mockResolvedValue([{ loupistId: run.loupist_id, count: 3 }]);
+    await act(async () => {
+      for (const listener of listeners) listener({ loupistId: run.loupist_id });
+      window.dispatchEvent(new Event("focus"));
+    });
+    const finished = await screen.findByRole("button", { name: "Schedule", description: "3 unread scheduled results" }, { timeout: 3000 });
+    expect(finished.querySelector(".thread-running")).toBeNull();
+    expect(finished.querySelector(".shell-unread")).toHaveTextContent("3");
+  });
+
+  it("shows how many runs are in progress when two tasks run", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    vi.spyOn(bridge, "scheduledTasksActivity").mockResolvedValue([
+      scheduledRunFixture(),
+      scheduledRunFixture({ id: "scheduled-run-two", task_id: "schedule-two", run_id: "chat-scheduled-two", task_title: "Weekly review" }),
+    ]);
+    await openApp(bridge);
+    const row = await screen.findByRole("button", { name: "Schedule · 2 runs in progress" });
+    expect(row).toHaveAttribute("title", "Schedule · 2 runs in progress");
+    expect(row.querySelectorAll(".thread-running")).toHaveLength(1);
+  });
+
+  it("shows no spinner when the selected Loupist has no running task", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const activity = vi.spyOn(bridge, "scheduledTasksActivity").mockResolvedValue([scheduledRunFixture({ status: "failed" })]);
+    await openApp(bridge);
+    expect(activity).toHaveBeenCalledWith({ loupist_id: "loupist-quality" });
+    expect(sidebarRow("Schedule").querySelector(".thread-running")).toBeNull();
   });
 });

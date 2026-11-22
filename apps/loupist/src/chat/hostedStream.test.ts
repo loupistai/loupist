@@ -8,8 +8,8 @@ import { completedRun } from "../test/streamFixtures";
 const RUN = "handoff-1a2b3c4d";
 const session = (extra: ChatThread["messages"] = []): ChatThread => ({
   id: "chat-hbm", loupist_id: "loupist-quality", title: "Hynix HBM supply", updated_at: "2026-11-18T09:00:00Z", use_memory: true, update_memory: true,
-  messages: [{ id: "request", role: "user", content: "How tight is HBM4 supply into 2027?", created_at: "2026-11-18T09:00:00Z", status: "complete",
-    handoff_note: { title: "Hynix HBM supply", brief: "Check the 2027 capacity plans." } }, ...extra],
+  messages: [{ id: "request", role: "bot_handoff", content: "Check the 2027 capacity plans.", created_at: "2026-11-18T09:00:00Z", status: "complete",
+    handoff_note: { title: "Hynix HBM supply", userMessageInBot: "How tight is HBM4 supply into 2027?" } }, ...extra],
 });
 const progress = (action: string, sequence: number): ChatStreamEvent => ({ type: "progress", run_id: RUN, sequence, progress: { startedAtMs: 1_000, finishedAtMs: null,
   items: [{ id: `step-${sequence}`, kind: "tool", category: "web", operation: "search", action, status: "running", detailId: `detail-${sequence}`, target: null, href: null, startedAtMs: 1_000, finishedAtMs: null }] } });
@@ -48,8 +48,8 @@ it("joins the host's run from its replay, streams its live work into the same Ch
   await waitFor(() => expect(chat.status).toBe("streaming"));
   expect(host.requests[0]).toMatchObject({ loupist_id: "loupist-quality", thread_id: "chat-hbm", subscription_id: expect.any(String) });
   expect(callbacks.onAttachedThread).toHaveBeenCalledWith(session());
-  expect(shown(registry).map((message) => message.role)).toEqual(["user", "assistant"]);
-  expect(shown(registry)[0]!.handoff_note).toEqual({ title: "Hynix HBM supply", brief: "Check the 2027 capacity plans." });
+  expect(shown(registry).map((message) => message.role)).toEqual(["bot_handoff", "assistant"]);
+  expect(shown(registry)[0]!.handoff_note).toEqual({ title: "Hynix HBM supply", userMessageInBot: "How tight is HBM4 supply into 2027?" });
   expect(shown(registry).at(-1)).toMatchObject({ content: "SK hynix ", status: "streaming" });
 
   host.live()(progress("Reading the capacity filing", 2));

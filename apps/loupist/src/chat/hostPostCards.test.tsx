@@ -23,7 +23,7 @@ const posted: ChatMessage[] = [
     },
   },
   {
-    ...base, id: "vocab-1", content: "Your map now also tracks Process node.",
+    ...base, id: "vocab-1", content: "Your World now also tracks Process node.",
     vocabulary: { changeId: "change-7", producer: "preset", labels: ["Process node"], labelsKo: ["공정 노드"] },
   },
   {
@@ -58,12 +58,12 @@ it("shows the link, vocabulary and hand-off cards a host post carries in the con
   const seen = {
     lookInto: screen.queryByRole("button", { name: "Look into it" }) !== null,
     notUseful: screen.queryByRole("button", { name: "Not useful" }) !== null,
-    showPath: screen.queryByRole("button", { name: "Show on the map" }) !== null,
+    showPath: screen.queryByRole("button", { name: "Show in World" }) !== null,
     undo: screen.queryByRole("button", { name: "Undo" }) !== null,
     open: screen.queryAllByRole("button", { name: "Open" }).length,
-    researching: screen.queryByText("Researched: Hynix HBM supply") !== null,
+    sessionEnded: screen.queryByText("Session ended: Hynix HBM supply") !== null,
   };
-  expect(seen).toEqual({ lookInto: true, notUseful: true, showPath: true, undo: true, open: 2, researching: true });
+  expect(seen).toEqual({ lookInto: true, notUseful: true, showPath: true, undo: true, open: 2, sessionEnded: true });
 });
 
 it("sits each host post in Bot beside the Loupist's face and name, as an answer does", () => {
@@ -72,7 +72,7 @@ it("sits each host post in Bot beside the Loupist's face and name, as an answer 
     bridge={bridge} home messages={posted} messageKeys={posted.map((message) => message.id)} loupistId="loupist-a" loupistName="Chip desk"
     loupistAvatar="loupist-03" onSuggestion={vi.fn()} onReadAttachment={vi.fn()}
   />);
-  for (const name of ["New link: Alpha and Gamma", "New on the map: Process node", "Research: Hynix HBM supply", "Result from Briefing"]) {
+  for (const name of ["New link: Alpha and Gamma", "New in World: Process node", "Research: Hynix HBM supply", "Result from Briefing"]) {
     const post = screen.getByRole("article", { name });
     // The face is identity, not a control: it is hidden from the accessibility tree and not focusable.
     const face = post.querySelector(".bot-face")!;

@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import { openApp, privateChatOn, togglePrivateChat } from "../renderApp";
+import { newChatButton, openApp, privateChatOn, togglePrivateChat } from "../renderApp";
 
 type User = ReturnType<typeof userEvent.setup>;
 const composer = () => screen.getByRole("textbox", { name: "Message Loupist" });
@@ -154,11 +154,11 @@ describe("Loupist · Chat composer", () => {
     await user.type(composer(), "@sec");
     await user.click(await screen.findByRole("option", { name: /SEC EDGAR/ }));
     await user.type(composer(), "/world");
-    expect(await screen.findByRole("option", { name: /^Map\b/ })).toBeVisible();
+    expect(await screen.findByRole("option", { name: /^World\b/ })).toBeVisible();
     await user.keyboard("{Enter}");
     const added = screen.getByRole("list", { name: "Added to this message" });
     expect(added).toHaveTextContent("SEC EDGAR");
-    expect(screen.getByRole("list", { name: "Message modes" })).toHaveTextContent("Map");
+    expect(screen.getByRole("list", { name: "Message modes" })).toHaveTextContent("World");
     expect(chatSend).not.toHaveBeenCalled();
 
     fireEvent.change(composer(), { target: { value: "$research $world @sec.edgar Samsung Electronics" } });
@@ -252,8 +252,7 @@ describe("Loupist · Chat composer", () => {
   it("shows the generated title for a new Chat", async () => {
     const user = userEvent.setup();
     await openApp();
-    await user.type(composer(), "/new");
-    await user.click(await screen.findByRole("option", { name: "New research" }));
+    await user.click(newChatButton());
     await screen.findByRole("heading", { name: "Untitled research session" });
     await send(user, "삼성전자 실적 분석해봐");
     expect(await screen.findByRole("heading", { name: "삼성전자 실적 분석해봐" }, { timeout: 15_000 })).toBeVisible();

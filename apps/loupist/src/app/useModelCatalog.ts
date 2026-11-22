@@ -98,10 +98,10 @@ export function useModelCatalog(bridge: LoupistBridge) {
     });
   }), [bridge]);
 
-  /** The "Now using …" line was shown: on send or ×, Rust forgets it. */
   const acknowledgeModelNotice = useCallback((id: string) => {
-    setCatalog((current) => (current?.model_notice?.id === id ? { ...current, model_notice: null } : current));
-    void bridge.modelNoticeAck({ id }).then(setCatalog).catch(() => {});
+    void bridge.modelNoticeAck({ id }).then(() => notifyConfigurationChanged()).catch((cause) => {
+      setSettingsError(errorMessage(cause, i18n.t("app:useModelCatalog.couldNotReloadModelSettings")));
+    });
   }, [bridge]);
 
   const changeSelection = useCallback(
@@ -114,7 +114,7 @@ export function useModelCatalog(bridge: LoupistBridge) {
     [],
   );
 
-  /** Back to "Auto": the Loupist follows the app's default run profile again. */
+  /** Keep the host default unpinned when its tagged row is chosen. */
   const resetSelection = useCallback((loupistId: string) => {
     setSelections((current) => {
       const { [loupistId]: _removed, ...rest } = current;
@@ -128,14 +128,15 @@ export function useModelCatalog(bridge: LoupistBridge) {
       const next = await pending;
       setCatalog(next);
       setSettingsError(null);
+      notifyConfigurationChanged();
       return next;
     };
     return {
       onLoadModels: (provider) => apply(bridge.providerModels(provider)),
-      onUpdateModelVisibility: async (request) => { const next = await apply(bridge.modelVisibilityUpdate(request)); notifyConfigurationChanged(); return next; },
+      onUpdateModelVisibility: (request) => apply(bridge.modelVisibilityUpdate(request)),
       onDisconnect: (provider) => apply(bridge.providerDisconnect(provider)),
       onRemoveCustomProvider: (provider) => apply(bridge.providerCustomRemove(provider)),
-      onCatalogChange: (next) => { setCatalog(next); setSettingsError(null); },
+      onCatalogChange: (next) => { setCatalog(next); setSettingsError(null); notifyConfigurationChanged(); },
     };
   }, [bridge]);
 

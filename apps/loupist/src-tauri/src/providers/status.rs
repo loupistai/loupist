@@ -485,7 +485,7 @@ pub fn record_chat_outcome(
 pub fn decorate(
     state: &AppState,
     catalog: &mut crate::providers::catalog::ModelCatalogView,
-) -> Result<(), CommandError> {
+) -> Result<BTreeMap<String, ProviderStatusRow>, CommandError> {
     let mut rows = load_all(state)?;
     let now = crate::commands::now_ms();
     let unsettled = |row: Option<&ProviderStatusRow>| {
@@ -532,7 +532,7 @@ pub fn decorate(
             kind: notice.kind,
             model: notice.model,
         });
-    Ok(())
+    Ok(rows)
 }
 
 /// One background attempt per this window while an account is held, so a plan

@@ -105,7 +105,7 @@ fn enum_at<T: serde::de::DeserializeOwned>(
 /// percent or multiple column is that unit; a small integer the answer parser
 /// leaves to numbered citations is still a value in a grid. Dates and words
 /// are not numbers.
-fn read_value(value: &str, unit: GridUnit) -> Option<Printed> {
+pub(super) fn read_value(value: &str, unit: GridUnit) -> Option<Printed> {
     if unit == GridUnit::Date {
         return None;
     }
@@ -138,6 +138,7 @@ fn read_value(value: &str, unit: GridUnit) -> Option<Printed> {
     Some(Printed {
         value: number,
         unit: column(Unit::Plain),
+        currency: None,
         precision: 0.5 * 10f64.powi(-(decimals as i32)),
         signed: trimmed.starts_with(['+', '-']),
     })
@@ -188,8 +189,15 @@ fn literal_check(
         } else {
             NumberCheckStatus::NotFound
         },
+        compared_value: None,
+        nearest_source_unit: None,
+        nearest_source_scale: None,
+        comparison_reason: None,
+        comparison_replay: None,
         nearest: None,
         exact: None,
+        scale_conversion: None,
+        unstated_scale: None,
         pointer: None,
         span: span.filter(|_| kind == NumberCheckKind::Passage),
         context: None,
@@ -245,14 +253,15 @@ fn evidence_date(
 
 /// Normalized quantity of a printed number: a comparable class, its value and
 /// its rounding.
-fn quantity(printed: &Printed) -> (u8, f64, f64) {
-    match printed.unit {
+fn quantity(printed: &Printed) -> (u8, f64, f64, Option<numbers::Currency>) {
+    let (class, value, precision) = match printed.unit {
         Unit::Amount(scale) => (0, printed.value * scale, printed.precision * scale),
         Unit::Percent => (1, printed.value, printed.precision),
         Unit::Points => (2, printed.value, printed.precision),
         Unit::BasisPoints => (2, printed.value / 100.0, printed.precision / 100.0),
         Unit::Multiple | Unit::Plain | Unit::Raw => (3, printed.value, printed.precision),
-    }
+    };
+    (class, value, precision, printed.currency)
 }
 
 /// Reports that say the same thing after normalization: one quantity within
@@ -264,16 +273,19 @@ fn reports_agree(says: &[String]) -> bool {
         .collect();
     if printed.iter().all(Option::is_some) {
         let quantities: Vec<_> = printed.iter().flatten().map(quantity).collect();
-        return quantities.iter().all(|(class, value, precision)| {
-            quantities
-                .iter()
-                .all(|(other_class, other, other_precision)| {
-                    class == other_class
-                        && (value - other).abs()
-                            <= precision.max(*other_precision)
-                                + 1e-9 * value.abs().max(other.abs()).max(1.0)
-                })
-        });
+        return quantities
+            .iter()
+            .all(|(class, value, precision, currency)| {
+                quantities
+                    .iter()
+                    .all(|(other_class, other, other_precision, other_currency)| {
+                        class == other_class
+                            && numbers::currencies_agree(*currency, *other_currency)
+                            && (value - other).abs()
+                                <= precision.max(*other_precision)
+                                    + 1e-9 * value.abs().max(other.abs()).max(1.0)
+                    })
+            });
     }
     if printed.iter().any(Option::is_some) {
         return false;

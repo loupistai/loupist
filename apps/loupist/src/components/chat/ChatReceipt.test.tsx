@@ -15,7 +15,7 @@ function renderReceipt(receipt: Partial<ChatReceiptData>, showNothingNew = false
   return handlers;
 }
 
-it("lists what the answer learned, put on the map and used in a fixed order, each segment a link", async () => {
+it("lists what the answer learned, put in World and used in a fixed order, each segment a link", async () => {
   const highlight = new Set(["a", "b"]);
   const learned = { sections: 3, ideas: 1, pages: [] };
   const handlers = renderReceipt({
@@ -24,10 +24,10 @@ it("lists what the answer learned, put on the map and used in a fixed order, eac
     saved: [{ kind: "Source", items: [saved("Source", "s")] }],
   });
   const receipt = screen.getByRole("navigation", { name: "What this answer used and saved" });
-  expect(receipt).toHaveTextContent("Learned 3 things·3 names added to the map·1 relationship updated·1 idea·Used 2 pages·Saved 1 source");
+  expect(receipt).toHaveTextContent("Learned 3 things·3 names added to World·1 relationship updated·1 idea·Used 2 pages·Saved 1 source");
   const user = userEvent.setup();
-  await user.click(within(receipt).getByRole("button", { name: /Show 3 new on the map/ }));
-  await user.click(within(receipt).getByRole("button", { name: "1 relationship updated on the map" }));
+  await user.click(within(receipt).getByRole("button", { name: /Show 3 new in World/ }));
+  await user.click(within(receipt).getByRole("button", { name: "1 relationship updated in World" }));
   expect(handlers.onShowOnMap).toHaveBeenNthCalledWith(2, highlight);
   const used = within(receipt).getByRole("button", { name: "Used 2 pages" });
   expect(used).toHaveAttribute("aria-expanded", "false");
@@ -64,7 +64,7 @@ it("says nothing new was saved only when the turn could save", () => {
 it("keeps map growth as plain text where no map is available", () => {
   render(<ChatReceipt receipt={{ ...empty, names: 2, empty: false }} showNothingNew={false} listId="list" listExpanded={false} usedListId="used" usedExpanded={false} onToggleUsed={vi.fn()} onSaved={vi.fn()} {...panels} />);
   expect(screen.queryByRole("button")).toBeNull();
-  expect(screen.getByRole("navigation")).toHaveTextContent("·2 names added to the map");
+  expect(screen.getByRole("navigation")).toHaveTextContent("·2 names added to World");
 });
 
 it("says a read the answer changed was not saved when Rust could not keep it", () => {
@@ -77,13 +77,13 @@ it("says a read the answer changed was not saved when Rust could not keep it", (
   expect(screen.getByRole("navigation", { name: "What this answer used and saved" })).toHaveTextContent("Hanul Precision: read not changed (the page changed first)");
 });
 
-it("says a kind the answer asked for was not added when the map gained that name first", () => {
-  const message = { id: "answer", role: "assistant", content: "Your map now also tracks Process step.", created_at: "2026-10-28T00:00:00Z", status: "complete",
+it("says a kind the answer asked for was not added when World gained that name first", () => {
+  const message = { id: "answer", role: "assistant", content: "Your World now also tracks Process step.", created_at: "2026-10-28T00:00:00Z", status: "complete",
     memory_update: { status: "no_change", commitId: null, changes: [], skippedKinds: [{ name: "ProcessStep", label: "Process step", labelKo: "공정 단계" }] } } as unknown as import("../../types").ChatMessage;
   const receipt = chatReceipt(message);
   expect(receipt.empty).toBe(false);
   render(<ChatReceipt receipt={receipt} showNothingNew listId="list" listExpanded={false} usedListId="used" usedExpanded={false} onToggleUsed={vi.fn()} onSaved={vi.fn()} {...panels} />);
-  expect(screen.getByRole("navigation", { name: "What this answer used and saved" })).toHaveTextContent("Process step: not added to the map");
+  expect(screen.getByRole("navigation", { name: "What this answer used and saved" })).toHaveTextContent("Process step: not added to World");
 });
 
 it("reports a skipped Journal save beside the completed setup", () => {
@@ -98,7 +98,7 @@ it("reports a skipped Journal save beside the completed setup", () => {
   expect(line).toHaveTextContent("Journal entry not saved");
 });
 
-it("says what a setup reply now follows, its new focus and what the map now also tracks, in the reader's language", async () => {
+it("says what a setup reply now follows, its new focus and what World now also tracks, in the reader's language", async () => {
   // The memory update as Rust commits it for a Bot reply that called loupist_setup.
   const message = { id: "answer", role: "assistant", content: "Done.", created_at: "2026-11-07T00:00:00Z", status: "complete",
     memory_update: { status: "applied", commitId: "answer", changes: [], setup: [
@@ -113,11 +113,11 @@ it("says what a setup reply now follows, its new focus and what the map now also
   expect(chatReceipt(message, undefined, { saveOff: true }).setup).toEqual([]);
   render(<ChatReceipt receipt={receipt} showNothingNew listId="list" listExpanded={false} usedListId="used" usedExpanded={false} onToggleUsed={vi.fn()} onSaved={vi.fn()} {...panels} />);
   const line = screen.getByRole("navigation", { name: "What this answer used and saved" });
-  expect(line).toHaveTextContent("·Following Nvidia·Following 000660·Stopped following AAPL·Focus updated·Map now also tracks Process node, Fab");
+  expect(line).toHaveTextContent("·Following Nvidia·Following 000660·Stopped following AAPL·Focus updated·The World now also tracks Process node, Fab");
   expect(line).not.toHaveTextContent("Nothing new saved");
   await act(async () => { await i18n.changeLanguage("ko"); });
   try {
-    expect(line).toHaveTextContent("·Nvidia 관심 자산에 추가·000660 관심 자산에 추가·AAPL 관심 자산에서 제외·리서치 주제 변경·이제 지도가 공정 노드, Fab도 추적합니다");
+    expect(line).toHaveTextContent("·Nvidia 관심 자산에 추가·000660 관심 자산에 추가·AAPL 관심 자산에서 제외·리서치 주제 변경·이제 월드가 공정 노드, Fab도 추적합니다");
   } finally {
     await act(async () => { await i18n.changeLanguage("en"); });
   }

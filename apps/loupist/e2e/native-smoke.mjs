@@ -6,7 +6,7 @@ import { remote } from "webdriverio";
 import { createWebdriverHelpers } from "./webdriver-helpers.mjs";
 import { minimumWindowSize, setWindowSize, withWindowSize } from "./window-geometry.mjs";
 import { focusNativeWindow } from "./native-window-focus.mjs";
-import { assertComposerGrows, assertFormLegendsFit, assertNewLoupistPreviewShows } from "./native-forms.mjs";
+import { assertComposerGrows, assertFormLegendsFit, assertNewLoupistPreviewShows, composerMessageLayout } from "./native-forms.mjs";
 import { verifyNativeBrowserNavigation } from "./native-browser.mjs";
 import { assertShellLayout, measureShellLayout } from "./shell-layout.mjs";
 import { assertMapOverlays, measureMapOverlays } from "./map-layout.mjs";
@@ -190,7 +190,7 @@ async function runSlowHandoffJourney() {
   await openBot();
   // Look into it sends the Bot composer's choices; the fixture's model runs the scripted child.
   await openComposerModelMenu();
-  await (await childWithText(browser, '[role="menuitemradio"]', "Fixture research model")).click();
+  await (await childWithText(browser, '[role="menuitemradio"] .model-menu-name', "Fixture research model")).click();
   await browser.keys("Escape");
   await browser.waitUntil(async () => (await browser.$("[data-testid=composer-model-menu]").getAttribute("aria-label"))?.startsWith("Fixture research model"), {
     timeout: 5_000, timeoutMsg: "The Bot composer did not keep the fixture model",
@@ -410,8 +410,13 @@ try {
     const panel = await displayed("#main-panel-settings");
     // The page header names the section; the page opens with its description and the list.
     await waitForText(panel, "Available connections");
-    await openCustomConnections(browser);
-    await displayed("[data-custom-connections] [data-custom-add]");
+    if (process.env.LOUPIST_DEV_CUSTOM_CONNECTIONS === "1") {
+      await openCustomConnections(browser);
+      await displayed("[data-custom-connections] [data-custom-add]");
+    } else {
+      assert.equal(await browser.$("[data-custom-connections]").isExisting(), false);
+      assert.equal(await browser.$("[data-custom-add]").isExisting(), false);
+    }
     await displayed('input[aria-label="Search connections"]');
     await waitForText(panel, "Market data platform");
     const unsupported = await browser.execute(() =>
@@ -438,7 +443,7 @@ try {
     await waitForShell(browser);
   }));
 
-  await step("Map tab", async () => {
+  await step("World tab", async () => {
     await openMainTab(browser, "map");
     const panel = await displayed("[data-testid=map-view]");
     let count = await mapNameCount(browser);
@@ -456,10 +461,10 @@ try {
       return surface === "canvas" || surface === "empty";
     }, {
       timeout: 20_000,
-      timeoutMsg: `Map did not render a canvas or an empty state (${count?.text ?? "no status"})`,
+      timeoutMsg: `World did not render a canvas or an empty state (${count?.text ?? "no status"})`,
     });
     if (surface === "canvas") {
-      assert.ok(count?.text, "Map status did not render beside the canvas");
+      assert.ok(count?.text, "World status did not render beside the canvas");
       // WKWebView: the opening camera frames the drawing, never in a corner of the canvas.
       let framing = null;
       await browser.waitUntil(async () => {
@@ -481,7 +486,7 @@ try {
           return maxX < 0 ? null : { x: (minX + maxX) / 2 / width, y: (minY + maxY) / 2 / height };
         });
         return Boolean(framing && framing.x > .2 && framing.x < .8 && framing.y > .15 && framing.y < .85);
-      }, { timeout: 10_000, timeoutMsg: `The Map drawing was not framed in its canvas: ${JSON.stringify(framing)}` });
+      }, { timeout: 10_000, timeoutMsg: `World drawing was not framed in its canvas: ${JSON.stringify(framing)}` });
       // WKWebView, motion on: once What's new or the Library has slid in, the controls over the canvas sit beside it.
       for (const control of ["data-map-whats-new", "data-map-library"]) {
         const button = `[data-testid=map-view] button[${control}]`;
@@ -492,7 +497,7 @@ try {
           maps = await browser.execute(measureMapOverlays);
           try { assertMapOverlays(maps, { label: control }); } catch { return false; }
           return maps.some((map) => map.covers.length > 0);
-        }, { timeout: 5_000, timeoutMsg: `Map controls stayed under the panel ${button} opened: ${JSON.stringify(maps)}` });
+        }, { timeout: 5_000, timeoutMsg: `World controls stayed under the panel ${button} opened: ${JSON.stringify(maps)}` });
         await clickControl(browser, button);
         await browser.waitUntil(async () => !await browser.$("[data-testid=map-view] aside[data-testid=map-library]").isDisplayed().catch(() => false), {
           timeout: 5_000, timeoutMsg: `The panel ${button} opened did not close`,
@@ -500,8 +505,8 @@ try {
       }
       performanceReport.mapTab = { surface: "canvas", stats: count.text, framing };
     } else {
-      assert.equal(count, null, "An empty Map should show guidance without a zero-count status");
-      await waitForText(panel, "Your Loupist's map grows as you research");
+      assert.equal(count, null, "An empty World should show guidance without a zero-count status");
+      await waitForText(panel, "Your World grows as you research");
       await waitForText(panel, "Ask in Chat");
       performanceReport.mapTab = {
         surface: "empty",
@@ -654,7 +659,7 @@ try {
   });
 
   await step("1,000-node map probe", async () => {
-    assert.ok(session.devUrl, "The launcher did not record devUrl, so the map probe cannot stay on this dev server");
+    assert.ok(session.devUrl, "The launcher did not record devUrl, so World probe cannot stay on this dev server");
     const unfocused = process.env.LOUPIST_E2E_ALLOW_UNFOCUSED === "1";
     const probe = unfocused
       ? await measureMapDrawProbe(browser, session.devUrl)
@@ -713,6 +718,31 @@ try {
       if (size) await withWindowSize(browser, size, check);
       else await check();
     }
+  });
+
+  await step("the first research reply leaves a one-line composer beside a docked panel", async () => {
+    await withWindowSize(browser, { width: 1280, height: 820 }, async () => {
+      await browser.url(`${String(session.devUrl).replace(/\/$/, "")}/preview.html?scenario=composer-compact`);
+      await browser.waitUntil(() => browser.execute(() => document.documentElement.dataset.previewReady === "true"),
+        { timeout: 60_000, interval: 250, timeoutMsg: "The composer preview did not become ready" });
+      await clickControl(browser, '[data-testid="navigation-new"]');
+      await displayed('[data-thread-id="__empty-chat__"][aria-current="page"]');
+      await clickControl(browser, '[data-workspace-split="side"]');
+      await displayed('#workspace-panel[role="complementary"][data-placement="side"]');
+      const empty = await browser.execute(composerMessageLayout);
+      assert.ok(await browser.execute(() => {
+        document.querySelector('textarea[data-chat-composer="true"]')?.focus();
+        return document.execCommand("insertText", false, "Summarize the results.\nFocus on revenue.\nState the comparison period.");
+      }), "The composer refused multiline input");
+      const multiline = await browser.execute(composerMessageLayout);
+      assert.ok(multiline.height > empty.height, "The multiline first question must grow the composer");
+      await clickControl(browser, '.composer button[type="submit"]');
+      await displayed('article.message.assistant.complete');
+      await displayed('#workspace-panel[role="complementary"][data-placement="side"]');
+      assert.equal(await (await displayed('textarea[data-chat-composer="true"]')).getValue(), "");
+      const cleared = await browser.execute(composerMessageLayout);
+      assert.ok(Math.abs(cleared.height - cleared.minHeight) <= 1.5, `The cleared composer is still tall: ${JSON.stringify(cleared)}`);
+    });
   });
 
   await step("native browser preserves the article while blocking unsafe navigation", async () => {
