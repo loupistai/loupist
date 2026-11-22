@@ -863,8 +863,136 @@ def openbb_smoke(
     startup_only: bool = False,
     stderr=subprocess.PIPE,
 ) -> None:
-    """Verify the frozen OpenBB control surface and full provider inventory."""
+    """Verify the frozen OpenBB control surface and provider inventory."""
     manifest = validate_openbb_bundle(executable, runtime_dir)
+    providers = manifest.get("providers")
+    categories = manifest.get("allowed_categories")
+    if not isinstance(providers, list) or not isinstance(categories, list):
+        raise RuntimeError("OpenBB packaged capability inventory is invalid")
+
+    provider_hosts: dict[str, set[str]] = {}
+    credentials: dict[str, str] = {}
+    unconfigured_ids: set[str] = set()
+    keyless_ids: set[str] = set()
+    for provider in providers:
+        if not isinstance(provider, dict):
+            raise RuntimeError("OpenBB packaged provider inventory is invalid")
+        provider_id = provider.get("id")
+        hosts = provider.get("network_hosts")
+        if (
+            not isinstance(provider_id, str)
+            or not provider_id
+            or not isinstance(hosts, list)
+            or not all(isinstance(host, str) and host for host in hosts)
+        ):
+            raise RuntimeError("OpenBB packaged provider inventory is invalid")
+        if provider_id in provider_hosts:
+            raise RuntimeError("OpenBB packaged provider inventory has duplicates")
+        provider_hosts[provider_id] = set(hosts)
+        for field in provider["credential_mapping"].values():
+            credentials[field] = "loupist-package-smoke-fake-credential"
+        # The host omits providers whose required non-secret setup is missing.
+        # Keep grants that require only credentials to exercise sidecar filtering.
+        if not provider.get("config_mapping"):
+            unconfigured_ids.add(provider_id)
+            if provider["keyless"]:
+                keyless_ids.add(provider_id)
+
+    def settings(ids: set[str], config: dict[str, dict[str, str]]) -> dict[str, Any]:
+        return {
+            "allowed_categories": categories,
+            "enabled_provider_ids": sorted(ids),
+            "allowed_network_hosts": sorted(
+                set().union(*(provider_hosts[p] for p in ids))
+            ),
+            "provider_config": config,
+        }
+
+    if startup_only:
+        _openbb_discovery(
+            executable,
+            runtime_dir,
+            {},
+            settings(set(), {}),
+            startup_only=True,
+            stderr=stderr,
+        )
+        return
+
+    provider_ids = set(provider_hosts)
+    configured = _openbb_discovery(
+        executable,
+        runtime_dir,
+        credentials,
+        settings(
+            provider_ids,
+            {
+                "sec": {"contact_email": "package-smoke@example.invalid"},
+                "tradier": {"account_type": "sandbox"},
+            },
+        ),
+        expected_categories=set(categories),
+        stderr=stderr,
+    )
+    discovered_provider_ids = set().union(*configured.values())
+    if discovered_provider_ids != provider_ids:
+        missing = sorted(provider_ids - discovered_provider_ids)
+        extra = sorted(discovered_provider_ids - provider_ids)
+        raise RuntimeError(
+            "packaged OpenBB MCP provider discovery is incomplete: "
+            f"missing={missing}, extra={extra}"
+        )
+
+    unconfigured = _openbb_discovery(
+        executable, runtime_dir, {}, settings(unconfigured_ids, {}), stderr=stderr
+    )
+    discovered_unconfigured_ids = set().union(*unconfigured.values())
+    if discovered_unconfigured_ids != keyless_ids:
+        missing = sorted(keyless_ids - discovered_unconfigured_ids)
+        extra = sorted(discovered_unconfigured_ids - keyless_ids)
+        raise RuntimeError(
+            "packaged OpenBB MCP keyless provider discovery differs: "
+            f"missing={missing}, extra={extra}"
+        )
+    sec_only = {name for name, ids in configured.items() if ids == {"sec"}}
+    if found := sorted(sec_only & unconfigured.keys()):
+        raise RuntimeError(
+            f"packaged OpenBB MCP exposed SEC-only Tools without setup: {found}"
+        )
+    print(
+        f"OpenBB inventory smoke passed ({len(provider_ids)} configured providers, "
+        f"{len(keyless_ids)} keyless providers, {len(sec_only)} SEC-only Tools hidden without setup)."
+    )
+
+
+def _schema_provider_ids(value: object) -> set[str]:
+    ids: set[str] = set()
+    if isinstance(value, dict):
+        for key in ("const", "default"):
+            if isinstance(provider := value.get(key), str):
+                ids.add(provider)
+        if isinstance(choices := value.get("enum"), list):
+            ids.update(provider for provider in choices if isinstance(provider, str))
+        for nested in value.values():
+            ids.update(_schema_provider_ids(nested))
+    elif isinstance(value, list):
+        for nested in value:
+            ids.update(_schema_provider_ids(nested))
+    return ids
+
+
+def _openbb_discovery(
+    executable: Path,
+    runtime_dir: Path,
+    credentials: dict[str, str],
+    settings: dict[str, Any],
+    *,
+    expected_categories: set[str] | None = None,
+    startup_only: bool = False,
+    stderr=subprocess.PIPE,
+) -> dict[str, set[str]]:
+    # Ask only for local discovery and activation. Activation exposes schemas,
+    # and no request here executes an OpenAPI data tool with the fake setup.
     with tempfile.TemporaryDirectory(prefix="loupist-openbb-smoke-") as name:
         scratch = Path(name).resolve(strict=True)
         if not WINDOWS:
@@ -892,28 +1020,6 @@ def openbb_smoke(
                 args=(process.stdout, lines),
                 daemon=True,
             ).start()
-            providers = manifest.get("providers")
-            categories = manifest.get("allowed_categories")
-            if not isinstance(providers, list) or not isinstance(categories, list):
-                raise RuntimeError("OpenBB packaged capability inventory is invalid")
-            provider_ids: list[str] = []
-            network_hosts: set[str] = set()
-            for provider in providers:
-                if not isinstance(provider, dict):
-                    raise RuntimeError("OpenBB packaged provider inventory is invalid")
-                provider_id = provider.get("id")
-                hosts = provider.get("network_hosts")
-                if (
-                    not isinstance(provider_id, str)
-                    or not provider_id
-                    or not isinstance(hosts, list)
-                    or not all(isinstance(host, str) and host for host in hosts)
-                ):
-                    raise RuntimeError("OpenBB packaged provider inventory is invalid")
-                provider_ids.append(provider_id)
-                network_hosts.update(hosts)
-            if len(set(provider_ids)) != len(provider_ids):
-                raise RuntimeError("OpenBB packaged provider inventory has duplicates")
             send_json(
                 process,
                 {
@@ -921,17 +1027,8 @@ def openbb_smoke(
                     "protocol_version": 1,
                     "run_id": "package-openbb-smoke",
                     "scratch_dir": str(scratch),
-                    "credentials": {},
-                    "settings": {
-                        "allowed_categories": categories,
-                        "enabled_provider_ids": []
-                        if startup_only
-                        else sorted(provider_ids),
-                        "allowed_network_hosts": []
-                        if startup_only
-                        else sorted(network_hosts),
-                        "provider_config": {},
-                    },
+                    "credentials": credentials,
+                    "settings": settings,
                 },
             )
             send_json(
@@ -1002,23 +1099,24 @@ def openbb_smoke(
             category_rows = (
                 available.get("result", {}).get("structuredContent", {}).get("result")
             )
+            if (
+                available.get("error")
+                or available.get("result", {}).get("isError")
+                or not isinstance(category_rows, list)
+            ):
+                raise RuntimeError("OpenBB available_categories failed")
             if startup_only:
-                if (
-                    available.get("error")
-                    or available.get("result", {}).get("isError")
-                    or not isinstance(category_rows, list)
-                ):
-                    raise RuntimeError("OpenBB available_categories failed")
                 stop_root_process(process)
                 completed = True
-                return
+                return {}
             discovered_categories = {
                 row.get("name")
-                for row in category_rows or []
+                for row in category_rows
                 if isinstance(row, dict) and isinstance(row.get("name"), str)
             }
-            if not isinstance(category_rows, list) or discovered_categories != set(
-                categories
+            if (
+                expected_categories is not None
+                and discovered_categories != expected_categories
             ):
                 raise RuntimeError(
                     "packaged OpenBB MCP router/category discovery is incomplete"
@@ -1086,42 +1184,17 @@ def openbb_smoke(
                     "packaged OpenBB MCP Tool pagination exceeded its limit"
                 )
 
-            discovered_provider_ids: set[str] = set()
-
-            def collect_provider_ids(value: object) -> None:
-                if isinstance(value, dict):
-                    constant = value.get("const")
-                    default = value.get("default")
-                    enum = value.get("enum")
-                    if isinstance(constant, str):
-                        discovered_provider_ids.add(constant)
-                    if isinstance(default, str):
-                        discovered_provider_ids.add(default)
-                    if isinstance(enum, list):
-                        discovered_provider_ids.update(
-                            item for item in enum if isinstance(item, str)
-                        )
-                    for nested in value.values():
-                        collect_provider_ids(nested)
-                elif isinstance(value, list):
-                    for nested in value:
-                        collect_provider_ids(nested)
-
-            for tool in inventory:
-                properties = tool.get("inputSchema", {}).get("properties", {})
-                if isinstance(properties, dict):
-                    collect_provider_ids(properties.get("provider", {}))
-            if discovered_provider_ids != set(provider_ids):
-                missing = sorted(set(provider_ids) - discovered_provider_ids)
-                extra = sorted(discovered_provider_ids - set(provider_ids))
-                raise RuntimeError(
-                    "packaged OpenBB MCP provider discovery is incomplete: "
-                    f"missing={missing}, extra={extra}"
-                )
             if len(inventory) <= len(OPENBB_CONTROL_TOOLS):
                 raise RuntimeError("packaged OpenBB MCP exposed no data Tools")
+            tool_providers = {
+                tool["name"]: _schema_provider_ids(
+                    tool["inputSchema"].get("properties", {}).get("provider", {})
+                )
+                for tool in inventory
+            }
             stop_root_process(process)
             completed = True
+            return tool_providers
         finally:
             finish_smoke_process(process, process_group, job, completed=completed)
 

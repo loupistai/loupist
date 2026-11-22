@@ -277,6 +277,13 @@ and `apps/loupist/python-worker/Entitlements.plist`. The app bundle does not
 receive that entitlement. `check-macos-app-bundle.sh` runs the signed worker
 and checks the app binary.
 
+The staged and mounted-bundle checks share the OpenBB discovery smoke. One boot
+uses fake credentials and provider settings to require exact agreement with the
+manifest's category and provider inventories. A second boot uses empty setup
+with the host's grant for unconfigured providers. It checks that only providers
+with keyless routes are available and that SEC-only tools are absent. Both boots
+use local discovery, activation and schema reads exclusively.
+
 For a runtime change, measure both the staged tree and the rebuilt app bundle,
 and include the comparison and measurement method in the PR. Runtime file bytes,
 Tauri's app-size report and a compressed installer are different measurements.
