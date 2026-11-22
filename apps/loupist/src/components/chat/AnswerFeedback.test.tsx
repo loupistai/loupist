@@ -1,19 +1,16 @@
-import { act, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { renderWithOpen } from "../../test/open";
 import userEvent from "@testing-library/user-event";
 import { AnswerFeedback } from "./AnswerFeedback";
 import { ChatMessageCard } from "./ChatMessageCard";
-import { TooltipProvider } from "../ui/tooltip";
 import type { ChatMessage } from "../../types";
-import type { ReactElement } from "react";
 
 const message: ChatMessage = { id: "answer", role: "assistant", content: "Profit rose 12%.", status: "complete", created_at: "2026-10-18T00:00:00Z" };
-const renderFeedback = (element: ReactElement) => render(element, { wrapper: TooltipProvider });
 it("toggles ratings, saves and clears corrections, and teaches only on explicit click", async () => {
   const user = userEvent.setup();
   const onSave = vi.fn(async (_id, value) => ({ ...value, correction: value.correction?.trim() || null, updatedAt: 1 }));
   const onTeach = vi.fn();
-  renderFeedback(<AnswerFeedback message={message} onSave={onSave} onTeach={onTeach} />);
+  render(<AnswerFeedback message={message} onSave={onSave} onTeach={onTeach} />);
   await user.click(screen.getByRole("button", { name: "Helpful" }));
   expect(screen.getByRole("button", { name: "Helpful" })).toHaveAttribute("aria-pressed", "true");
   await user.click(screen.getByRole("button", { name: "Helpful" }));
@@ -35,7 +32,7 @@ it("toggles ratings, saves and clears corrections, and teaches only on explicit 
 it("returns focus to Suggest a correction when the editor closes by Cancel, Escape, Save or its own button", async () => {
   const user = userEvent.setup();
   const onSave = vi.fn(async (_id, value) => ({ ...value, correction: value.correction?.trim() || null, updatedAt: 1 }));
-  renderFeedback(<AnswerFeedback message={message} onSave={onSave} onTeach={vi.fn()} />);
+  render(<AnswerFeedback message={message} onSave={onSave} onTeach={vi.fn()} />);
   const correct = screen.getByRole("button", { name: "Suggest a correction" });
   await user.click(correct);
   expect(correct).toHaveAttribute("aria-expanded", "true");
@@ -61,7 +58,7 @@ it("returns focus to Suggest a correction when the editor closes by Cancel, Esca
 it("disables feedback while a reply is in progress and restores it when the reply finishes", async () => {
   const user = userEvent.setup();
   const onSave = vi.fn(async (_id, value) => ({ ...value, correction: value.correction ?? null, updatedAt: 1 }));
-  const view = renderFeedback(<AnswerFeedback message={{ ...message, status: "streaming" }} onSave={onSave} onTeach={vi.fn()} />);
+  const view = render(<AnswerFeedback message={{ ...message, status: "streaming" }} onSave={onSave} onTeach={vi.fn()} />);
   expect(screen.getByRole("button", { name: "Helpful" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Suggest a correction" })).toBeDisabled();
   screen.getByRole("button", { name: "Helpful" }).click();
@@ -74,7 +71,7 @@ it("disables feedback while a reply is in progress and restores it when the repl
 it("keeps the previous rating when a later save conflicts", async () => {
   const user = userEvent.setup();
   const rated: ChatMessage = { ...message, feedback: { rating: "up", correction: null, updatedAt: 1 } };
-  renderFeedback(<AnswerFeedback message={rated} onSave={vi.fn().mockRejectedValue(new Error("this Loupist target already has an active run"))} onTeach={vi.fn()} />);
+  render(<AnswerFeedback message={rated} onSave={vi.fn().mockRejectedValue(new Error("this Loupist target already has an active run"))} onTeach={vi.fn()} />);
   await user.click(screen.getByRole("button", { name: "Not helpful" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("active run");
   expect(screen.getByRole("button", { name: "Helpful" })).toHaveAttribute("aria-pressed", "true");
@@ -83,7 +80,7 @@ it("keeps the previous rating when a later save conflicts", async () => {
 
 it("keeps the correction editable after a failed save", async () => {
   const user = userEvent.setup();
-  renderFeedback(<AnswerFeedback message={message} onSave={vi.fn().mockRejectedValue(new Error("Store unavailable"))} onTeach={vi.fn()} />);
+  render(<AnswerFeedback message={message} onSave={vi.fn().mockRejectedValue(new Error("Store unavailable"))} onTeach={vi.fn()} />);
   await user.click(screen.getByRole("button", { name: "Suggest a correction" }));
   await user.type(screen.getByRole("textbox"), "Correction draft");
   await user.click(screen.getByRole("button", { name: "Save correction" }));
@@ -93,7 +90,7 @@ it("keeps the correction editable after a failed save", async () => {
 
 it.each(["aborted", "error", "user"] as const)("hides feedback for %s messages", (state) => {
   const item = state === "user" ? { ...message, role: "user" as const } : { ...message, status: state };
-  renderFeedback(<ChatMessageCard message={item} loupistId="loupist" loupistName="Loupist" onReadAttachment={vi.fn()} onSaveFeedback={vi.fn()} onTeachFeedback={vi.fn()} />);
+  render(<ChatMessageCard message={item} loupistId="loupist" loupistName="Loupist" onReadAttachment={vi.fn()} onSaveFeedback={vi.fn()} onTeachFeedback={vi.fn()} />);
   expect(screen.queryByRole("button", { name: "Helpful" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Suggest a correction" })).toBeNull();
 });
@@ -104,7 +101,7 @@ it("saves a correction as a user principle, opens it and undoes it", async () =>
   const loupistId = (await bridge.loupistList())[0].id;
   const create = vi.spyOn(bridge, "principleCreate"), archive = vi.spyOn(bridge, "principleArchive");
   const user = userEvent.setup();
-  const { open } = renderWithOpen(<TooltipProvider><AnswerFeedback message={{ ...message, feedback: { rating: "down", correction: "Always distinguish operating cash flow from profit.", updatedAt: 1 } }} bridge={bridge} loupistId={loupistId} chatId="original-chat" onSave={vi.fn()} onTeach={vi.fn()} /></TooltipProvider>);
+  const { open } = renderWithOpen(<AnswerFeedback message={{ ...message, feedback: { rating: "down", correction: "Always distinguish operating cash flow from profit.", updatedAt: 1 } }} bridge={bridge} loupistId={loupistId} chatId="original-chat" onSave={vi.fn()} onTeach={vi.fn()} />);
   await user.click(screen.getByRole("button", { name: "Save as a principle" }));
   expect(screen.getByRole("textbox", { name: "Statement" })).toHaveValue("Always distinguish operating cash flow from profit.");
   await user.click(screen.getByRole("button", { name: "Save" }));
@@ -124,7 +121,7 @@ it("offers a new principle after the saved correction changes", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const loupistId = (await bridge.loupistList())[0].id;
   const user = userEvent.setup();
-  renderFeedback(<AnswerFeedback bridge={bridge} loupistId={loupistId} chatId="chat" message={{ ...message, feedback: { rating: "down", correction: "Check leverage.", updatedAt: 1 } }} onSave={async (_id, value) => ({ ...value, updatedAt: 2 })} onTeach={vi.fn()} />);
+  render(<AnswerFeedback bridge={bridge} loupistId={loupistId} chatId="chat" message={{ ...message, feedback: { rating: "down", correction: "Check leverage.", updatedAt: 1 } }} onSave={async (_id, value) => ({ ...value, updatedAt: 2 })} onTeach={vi.fn()} />);
   await user.click(screen.getByRole("button", { name: "Save as a principle" }));
   await user.click(screen.getByRole("button", { name: "Save" }));
   await screen.findByText("Saved to your principles");
@@ -133,17 +130,4 @@ it("offers a new principle after the saved correction changes", async () => {
   await user.type(screen.getByRole("textbox", { name: "Your correction" }), "Check liquidity.");
   await user.click(screen.getByRole("button", { name: "Save correction" }));
   expect(await screen.findByRole("button", { name: "Save as a principle" })).toBeVisible();
-});
-
-it("attaches the localized feedback tooltip to the focused action and dismisses it on Escape", async () => {
-  renderFeedback(<AnswerFeedback message={message} onSave={vi.fn()} onTeach={vi.fn()} />);
-  const correct = screen.getByRole("button", { name: "Suggest a correction" });
-  expect(correct).not.toHaveAttribute("title");
-  await act(async () => correct.focus());
-  // jsdom has no boxes. Radix keeps detached tooltips hidden there.
-  expect(await screen.findByRole("tooltip", { hidden: true })).toHaveTextContent("Suggest a correction");
-  expect(correct).toHaveAccessibleDescription("Suggest a correction");
-  await userEvent.setup().keyboard("{Escape}");
-  expect(screen.queryByRole("tooltip", { hidden: true })).toBeNull();
-  expect(correct).toHaveFocus();
 });

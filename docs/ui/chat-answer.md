@@ -88,11 +88,10 @@ an answer that says "the chart below" can be wrong until the prompt says otherwi
 question or approval is a block where it was asked, and settles into its one line in
 the same place; answering a question holds the turn at its height (`--turn-hold`) while
 the reply runs, so the shorter line never shrinks the scroll range and the page stays put.
-The thread keeps its reading block at the same position when the window or side panel
-rewraps the answers, context above the thread changes height, or a reply or its artifacts
-finish rendering. The scroll position follows the block's layout, even if the browser
-has already reset the scroll position or clamped it to the new range. A thread following
-its end keeps the end in view through saving, completion and late content. Behind the
+Context above the thread (a notice or the working note arriving) moves the thread's top
+edge; the scroll position
+moves with that edge (`keepContentStill`, `conversation.tsx`), so the transcript stays
+where the reader sees it, while a thread kept at its end stays at its end. Behind the
 full-page World or Lens the thread has no box (`display: none`): nothing is measured,
 reserved or moved then, a lazy page's Suspense fallback showing it again does not reopen
 it, and it shows where the reader left it; a question sent meanwhile goes to the top once
@@ -155,8 +154,8 @@ send the question glides to 16 px under the top of the viewport (a question tall
 40% of it aligns its bottom there) and the reply writes beneath it. The page then moves
 by itself only when a block is appended and the reader has not scrolled during the
 turn: prose gets the lower 60% of the viewport, a card or question is shown whole with
-room for the live line. An anchored reader keeps their place during growth, commit and
-when opening the ledger or a disclosure. "Jump to latest", End, or scrolling to the very end
+room for the live line. Growth never scrolls, commit never scrolls, and opening the
+ledger or a disclosure never scrolls. "Jump to latest", End, or scrolling to the very end
 while the reply runs follows the end of the turn (18% of the remaining distance per
 frame, at least one whole pixel, since WKWebView drops smaller scroll steps) until any
 upward input. A chat opened with a reply in flight puts its latest

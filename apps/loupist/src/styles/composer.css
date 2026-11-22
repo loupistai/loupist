@@ -247,3 +247,8 @@
 /* Under the row: the run help while a reply runs, then the one-line notice under the pill. */
 .composer-run-help { margin: 0; padding: var(--gg-space-1) var(--gg-space-2) 2px; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); line-height: 1.5; }
 .composer-disclosure { display: flex; align-items: center; justify-content: center; min-height: var(--gg-space-5); margin: 6px 0 0; text-align: center; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); }
+
+/* token-exception: breakpoint; vars unsupported in query conditions */
+@container chat-reading (max-width: 760px) {
+  .composer-shell { margin-bottom: var(--gg-space-3); }
+}

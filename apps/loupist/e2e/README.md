@@ -280,14 +280,6 @@ boundary as skipped;
 it is not a pass. Fixture rendering uses the mock bridge; the browser-policy
 step in `test:native` exercises the real child WebView and Rust commands.
 
-The native geometry suite also checks that the Bot answer's Activity action keeps
-the end or the current reading element in place while docking, switching tabs,
-resizing through the overlay breakpoint and closing. It checks both reading positions
-in a research session through streaming, saving, completion with a checked figure and
-table, and a late chart. It measures the composer's bottom and empty editor height and
-checks answer action tooltip positions in English and Korean. Use `--transitions-only`
-to run these cases without the static geometry matrix.
-
 Linux runs the same commands; see [Run native suites on Linux](#run-native-suites-on-linux).
 
 | Variable | Effect |

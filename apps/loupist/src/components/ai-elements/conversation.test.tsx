@@ -51,7 +51,7 @@ function Blocks({ onReady }: { onReady: (append: (kind: "prose" | "card") => voi
   return null;
 }
 
-function thread({ running = false, wholePixels = false, readingAnchor = false }: { running?: boolean; wholePixels?: boolean; readingAnchor?: boolean } = {}) {
+function thread({ running = false, wholePixels = false }: { running?: boolean; wholePixels?: boolean } = {}) {
   const actions = { append: (_kind: "prose" | "card") => {}, hold: () => {}, jump: () => {} };
   // The app opens its lazy pages inside one Suspense boundary that also holds the thread.
   const content = (prompt: string, live = running, extra?: ReactNode) => <Suspense fallback={null}><Conversation aria-label="Conversation" scrollResetKey={prompt} running={live} footer={<ChatStatusPill />}>
@@ -65,7 +65,7 @@ function thread({ running = false, wholePixels = false, readingAnchor = false }:
   let top = 0;
   // Where the scroller's top edge sits: context above the thread moves it.
   let edgeAt = 0;
-  let questionAt = readingAnchor ? 100 : 900;
+  let questionAt = 900;
   let blockAt = 950;
   // A full-page view covers the thread (`display: none`): no box, every measure zero, writes ignored.
   let hidden = false;
@@ -80,12 +80,7 @@ function thread({ running = false, wholePixels = false, readingAnchor = false }:
   // jsdom has no layout: give the scroller, the question and the appended block their geometry before the first layout effect.
   const original = HTMLElement.prototype.getBoundingClientRect;
   Object.defineProperty(HTMLElement.prototype, "offsetTop", { configurable: true, get() { return hidden ? 0 : (this as HTMLElement).id === "block" ? blockAt : (this as HTMLElement).classList.contains("user") ? questionAt : 0; } });
-  Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get() {
-    if (hidden) return 0;
-    const element = this as HTMLElement;
-    if (readingAnchor && element.hasAttribute("data-turn")) return height;
-    return element.id === "block" ? 26 : 40;
-  } });
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get() { return hidden ? 0 : (this as HTMLElement).id === "block" ? 26 : 40; } });
   HTMLElement.prototype.getBoundingClientRect = function () {
     if (hidden) return original.call(this);
     if ((this as HTMLElement).getAttribute("role") === "log") return { top: edgeAt, bottom: edgeAt + viewport, height: viewport, left: 0, right: 600, width: 600, x: 0, y: 0, toJSON() {} } as DOMRect;
@@ -156,57 +151,6 @@ describe("anchored reading", () => {
       t.grow(2800);
       act(() => { vi.advanceTimersByTime(50); });
       expect(t.element.scrollTop).toBe(2200);
-    } finally { t.restore(); }
-  });
-
-  it("keeps following through a saving resize that WebKit scrolls before reporting", () => {
-    const t = thread();
-    try {
-      t.sendPrompt();
-      t.grow(2400);
-      fireEvent.wheel(t.element, { deltaY: 200 });
-      t.element.scrollTop = 2000;
-      fireEvent.scroll(t.element);
-      act(() => { vi.advanceTimersByTime(500); });
-      // The scroll viewport shifts to an earlier position as the saving footer appears.
-      t.element.scrollTop = 1972;
-      t.grow(2500);
-      fireEvent.scroll(t.element);
-      expect(t.element.scrollTop).toBe(2100);
-      t.rerender(false);
-      t.grow(2800);
-      expect(t.element.scrollTop).toBe(2400);
-    } finally { t.restore(); }
-  });
-
-  it("pins an idle chat at the end again after the reader returns there", () => {
-    const t = thread();
-    try {
-      act(() => resize());
-      fireEvent.wheel(t.element, { deltaY: -200 });
-      t.element.scrollTop = 400;
-      fireEvent.scroll(t.element);
-      fireEvent.wheel(t.element, { deltaY: 200 });
-      t.element.scrollTop = 600;
-      fireEvent.scroll(t.element);
-      t.grow(1300);
-      expect(t.element.scrollTop).toBe(900);
-    } finally { t.restore(); }
-  });
-
-  it("holds the same reading block when earlier content rewraps and WebKit resets the scroll position", () => {
-    const t = thread({ readingAnchor: true });
-    try {
-      t.moveBlock(700);
-      t.grow(1800);
-      fireEvent.wheel(t.element, { deltaY: -700 });
-      t.element.scrollTop = 694;
-      fireEvent.scroll(t.element);
-      t.moveBlock(944);
-      t.element.scrollTop = 0;
-      t.grow(2044);
-      fireEvent.scroll(t.element);
-      expect(t.element.scrollTop).toBe(938);
     } finally { t.restore(); }
   });
 

@@ -27,7 +27,6 @@ import { worldReadinessLabels } from "../../knowledge/worldReadiness";
 import { modalDialogOpen } from "../../app/shortcuts";
 import { chatTitle } from "../../app/chatTitle";
 import type { ChatEvidenceRef, ChatMessage, ChatThread, LoupistBridge, LoupistSummary, ChatSaveActivity, MemoryUpdateChange } from "../../types";
-import { focusWouldScroll } from "../../lib/revealFocused";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -177,10 +176,7 @@ function OpenSheet({ sheet, loupist, messages, threads, running, rail, bridge, e
     const element = root.current;
     const from = opener;
     return () => {
-      if (!element?.contains(document.activeElement) && document.activeElement !== document.body) return;
-      const button = from.current;
-      const target = button?.isConnected && !focusWouldScroll(button) ? button : document.querySelector<HTMLElement>("[data-header-activity]");
-      target?.focus({ preventScroll: true });
+      if (element?.contains(document.activeElement) || document.activeElement === document.body) from.current?.isConnected && from.current.focus({ preventScroll: true });
     };
   }, [opener]);
   useEffect(() => {

@@ -5,7 +5,7 @@
  */
 import type { ChatEvidenceRef, ChatMessage, NumberCheck } from "../../contracts/chat";
 import { FIXTURE_TIME, prepareFixture, previewKo } from "../fixtures";
-import { asSession, base, longThread, select, type PreviewScenario } from "./kit";
+import { asSession, base, select, type PreviewScenario } from "./kit";
 
 /** One cited figure: the text the answer prints, the read it came from, and the field it matched. */
 type Figure = { text: string; read: number; field?: string; value: string };
@@ -158,22 +158,6 @@ export const botCardScenarios: PreviewScenario[] = [
     setup: withAnswer(() => previewKo() ? "엔비디아 종가, PER, 다음 실적일을 표로" : "NVIDIA's price, P/E and next results date in a table", tableAnswer) },
   { ...base("bot-answer-long", "Bot: one reply with headings, a list and a wide table", () => trace() && select('[data-bot-message] h3')),
     setup: withAnswer(() => previewKo() ? "엔비디아 현황을 제목을 붙여 자세히" : "Explain where NVIDIA stands properly, with headings", longAnswer) },
-  { ...base("bot-activity-layout", "The activity sheet docks beside a Bot thread with several turns", trace),
-    setup: async bridge => {
-      await withAnswer(() => previewKo() ? "엔비디아 현황을 제목을 붙여 자세히" : "Explain where NVIDIA stands properly, with headings", longAnswer)(bridge);
-      longThread(bridge);
-      const load = bridge.loupistSelect.bind(bridge);
-      bridge.loupistSelect = async id => {
-        const workspace = await load(id);
-        const home = workspace.threads[0]!;
-        const created_at = new Date(FIXTURE_TIME).toISOString();
-        home.messages.push(
-          { id: "quick-question", role: "user", status: "complete", created_at, content: "Summarize the situation briefly." },
-          { id: "quick-answer", role: "assistant", status: "complete", created_at, ...quickAnswer() },
-        );
-        return workspace;
-      };
-    } },
   // The same reply in a research session, which shares the Markdown and number-chip styles with the Bot.
   { ...base("session-answer-long", "Research session: the headed reply with a list and a wide table of number chips", () => select('.message-content [data-streamdown="table"] [data-testid="number-chip"]')),
     setup: async (bridge) => {

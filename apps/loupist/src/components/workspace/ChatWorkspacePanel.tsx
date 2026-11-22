@@ -62,7 +62,6 @@ import { ChatMiniMap } from "./ChatMiniMap";
 import { useChatMap } from "./ChatMapContext";
 import { WorkspaceTabBar } from "./WorkspaceTabBar";
 import { titledExport } from "../../lib/exportTitle";
-import { focusWouldScroll } from "../../lib/revealFocused";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -698,7 +697,7 @@ function ScopedChatWorkspacePanel({
 
 /** Close returns to the opener when it is still in this chat, otherwise the Panel button now on screen. */
 function restoreWorkspaceOpener(opener: HTMLElement | null) {
-  if (opener?.isConnected && isWorkspaceFocusable(opener, document.body) && !focusWouldScroll(opener)) {
+  if (opener?.isConnected && isWorkspaceFocusable(opener, document.body)) {
     opener.focus({ preventScroll: true });
     return;
   }

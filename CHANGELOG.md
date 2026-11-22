@@ -24,7 +24,6 @@
 - Understand a data provider's refusal: a mistyped series or code is reported as an input to correct.
 - Read a company's statements without an SEC contact: Loupist uses the other providers it has and says when SEC data needs your contact.
 - Follow an asset and see its price at once: a price saved in the reply that follows it is kept, and the receipt names it.
-- Keep your place in a conversation when the side panel opens and when an answer finishes.
 - Let Loupist follow a page's own link to the filing or release it reports on.
 - Open a name in World while World is being updated, and find facts about one name under Key facts instead of among its relationships.
 - Find Loupist in the Dock by its face: the app icon is now the Loupist character.

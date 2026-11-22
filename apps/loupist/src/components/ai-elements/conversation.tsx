@@ -16,9 +16,9 @@ import {
 /**
  * Anchored reading (DIRECTION 10.1). On send the new question glides to the
  * top of the viewport. While the reply runs, the page moves by itself only
- * when a block is appended (once, to make room for it), and only until the
- * reader scrolls. Reflow keeps the current reading block in place. "Jump to
- * latest", End, or scrolling to the very end keeps the end in view instead.
+ * when a block is appended (once, to make room for it), never while a block
+ * grows and never at commit, and only until the reader scrolls. "Jump to
+ * latest", End, or scrolling to the very end follows the reply instead.
  */
 type ConversationActions = {
   /** Follow the end of the thread until the reader scrolls up. */
@@ -60,8 +60,6 @@ const INPUT_WINDOW_MS = 300;
 const reducedMotion = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 type Box = { top: number; bottom: number; height: number };
-type ReadingAnchor = { block: HTMLElement; top: number };
-type Viewport = { top: number; width: number; height: number; extent: number };
 
 /** Where the scroll position goes on send: the question 16 px under the top, or a tall one's bottom at 40%. */
 export function anchorDelta(question: Box, view: Box): number {
@@ -131,27 +129,6 @@ function layoutBox(block: HTMLElement, scroller: HTMLElement): Box {
   return { top: at, bottom: at + height, height };
 }
 
-/**
- * Find a reading block within the first visible message. The enclosing boxes
- * can hold the place if a streaming block is replaced when the answer settles.
- */
-function readingAnchors(scroller: HTMLElement): ReadingAnchor[] {
-  const edge = scroller.getBoundingClientRect().top;
-  const first = (nodes: Iterable<Element>) => {
-    for (const node of nodes) {
-      if (!(node instanceof HTMLElement) || node.matches(".thread-selection-end")) continue;
-      const box = layoutBox(node, scroller);
-      if (box.height > 0 && box.bottom > edge + 1) return node;
-    }
-  };
-  const turn = first(scroller.firstElementChild?.children ?? []);
-  const message = turn?.hasAttribute("data-turn") ? first(turn.children) : undefined;
-  const block = message && first(message.querySelectorAll(
-    ".message-content :is(p,h1,h2,h3,h4,h5,h6,li,pre,tr), [data-turn-item]:not([data-turn-item=prose]), .turn-footer",
-  ));
-  return [block, message, turn].flatMap(node => node ? [{ block: node, top: layoutBox(node, scroller).top }] : []);
-}
-
 export const Conversation = ({
   className,
   children,
@@ -170,8 +147,8 @@ export const Conversation = ({
   const following = useRef(false);
   const lastInput = useRef(-Infinity);
   const lastTop = useRef(0);
-  const viewport = useRef<Viewport | null>(null);
-  const anchors = useRef<ReadingAnchor[]>([]);
+  /** The scroller's top edge in the window when last seen. */
+  const edge = useRef<number | null>(null);
   const glide = useRef<number | undefined>(undefined);
   /** Where the running glide ends. */
   const glideTarget = useRef(0);
@@ -189,12 +166,6 @@ export const Conversation = ({
   runningRef.current = running;
   const [state, setState] = useState<ConversationState>({ away: false, moreBelow: false });
   const stateRef = useRef(state);
-
-  const rememberPosition = useCallback((element: HTMLElement) => {
-    lastTop.current = element.scrollTop;
-    anchors.current = mode.current === "anchored" && !following.current ? readingAnchors(element) : [];
-    markScrolled(element);
-  }, []);
 
   const measure = useCallback(() => {
     const element = scrollRef.current;
@@ -224,7 +195,8 @@ export const Conversation = ({
     glideTarget.current = to;
     if (reducedMotion() || typeof requestAnimationFrame !== "function") {
       element.scrollTop = to;
-      rememberPosition(element);
+      lastTop.current = element.scrollTop;
+      markScrolled(element);
       return;
     }
     const start = performance.now();
@@ -234,11 +206,12 @@ export const Conversation = ({
       const progress = Math.min(1, (now - start) / GLIDE_MS);
       const eased = 1 - (1 - progress) ** 3;
       element.scrollTop = from + (to - from) * eased;
-      rememberPosition(element);
+      lastTop.current = element.scrollTop;
+      markScrolled(element);
       glide.current = progress < 1 ? requestAnimationFrame(step) : undefined;
     };
     glide.current = requestAnimationFrame(step);
-  }, [rememberPosition, stopGlide]);
+  }, [stopGlide]);
 
   const glideBy = useCallback((delta: number) => {
     const element = scrollRef.current;
@@ -272,8 +245,9 @@ export const Conversation = ({
     const element = scrollRef.current;
     if (!element) return;
     element.scrollTop = element.scrollHeight;
-    rememberPosition(element);
-  }, [rememberPosition]);
+    lastTop.current = element.scrollTop;
+    markScrolled(element);
+  }, []);
 
   /**
    * True while the thread has no box, and on the first frame it has one again, once the reader is back where they
@@ -287,10 +261,13 @@ export const Conversation = ({
     seen.current = true;
     if (!unseen.current) return false;
     unseen.current = false;
+    edge.current = element.getBoundingClientRect().top;
     writeViewport(element);
     if (mode.current === "bottom" || following.current) toBottom();
     else {
       element.scrollTop = lastTop.current;
+      lastTop.current = element.scrollTop;
+      markScrolled(element);
       if (anchorWhenShown.current) anchorQuestion();
     }
     anchorWhenShown.current = false;
@@ -298,54 +275,33 @@ export const Conversation = ({
   }, [anchorQuestion, toBottom]);
 
   /**
-   * Rewrap, context above the thread and late answer content all change the
-   * reading block's position. Use its layout coordinates even if WebKit has
-   * already clamped or reset scrollTop. The old pixel position is the fallback
-   * when the reader's block and its enclosing boxes have all gone away.
+   * Context above the thread (the inline rail's rows) grows or shrinks and moves the thread's top edge,
+   * for example when a question is answered or the reply commits. The scroll position moves with that
+   * edge, so what the reader sees stays where it was; the browser would otherwise keep the position,
+   * or clamp it to the new range, and shift the whole transcript. A thread kept at its end or following
+   * the reply stays at the end instead.
    */
   const keepContentStill = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return false;
-    const openingQuestion = anchorWhenShown.current;
-    const returned = keepPlaceWhileHidden();
-    if (!laidOut(element)) return true;
-    const before = viewport.current;
-    const view = element.getBoundingClientRect();
-    const { clientWidth: width, clientHeight: height } = element;
-    if (!returned && before?.height !== height) writeViewport(element);
-    const extent = element.scrollHeight;
-    const resized = !before || before.width !== width || before.height !== height;
-    viewport.current = { top: view.top, width, height, extent };
-
-    const anchor = anchors.current.find(({ block }) => element.contains(block) && block.offsetHeight > 0);
-    const box = anchor && layoutBox(anchor.block, element);
-    const delta = anchor && box
-      ? box.top + element.scrollTop - (anchor.top + lastTop.current)
-      : view.top - (before?.top ?? view.top);
-    const changed = resized || extent !== before?.extent || Math.abs(delta) >= 1;
-    if (!changed && !returned) return false;
-    const wasAtEnd = before && before.extent - before.height - lastTop.current <= BOTTOM_TOLERANCE_PX;
-    // WebKit can move the scroll position before it delivers the scroll
-    // event. Correct that during layout so it isn't mistaken for a reader.
-    const displaced = element.scrollTop < lastTop.current - BOTTOM_TOLERANCE_PX;
-    if (mode.current === "bottom" || following.current && (wasAtEnd || displaced || resized || !runningRef.current || returned)) {
-      toBottom();
-    } else if (!following.current && !openingQuestion && (before || returned)) {
-      // If the block itself got shorter, keep at least its last line in the viewport.
-      const anchorTop = anchor && box ? Math.max(anchor.top, view.top + 2 - box.height) : null;
-      const target = Math.max(0, lastTop.current + delta + (anchor && anchorTop !== null ? anchor.top - anchorTop : 0));
-      if (Math.abs(target - element.scrollTop) >= 1) {
-        reserve(target - element.scrollTop);
-        const gliding = glide.current !== undefined ? glideTarget.current : null;
-        stopGlide();
-        element.scrollTop = target;
-        if (gliding !== null && gliding > target) glideTo(gliding);
-      }
-      rememberPosition(element);
-    }
-    viewport.current.extent = element.scrollHeight;
+    if (keepPlaceWhileHidden()) return true;
+    const top = element.getBoundingClientRect().top;
+    const before = edge.current;
+    edge.current = top;
+    if (before === null || Math.abs(top - before) < 1 || mode.current === "bottom" || following.current) return false;
+    const to = Math.max(0, lastTop.current + top - before);
+    // The latest turn's room follows the viewport: size it now, so the reserve below sees the range the frame will have.
+    writeViewport(element);
+    reserve(to - element.scrollTop);
+    // A glide making room for a block keeps its target, which already counts the new edge, and starts from here.
+    const gliding = glide.current !== undefined ? glideTarget.current : null;
+    stopGlide();
+    element.scrollTop = to;
+    lastTop.current = element.scrollTop;
+    markScrolled(element);
+    if (gliding !== null && gliding > to) glideTo(gliding);
     return true;
-  }, [glideTo, keepPlaceWhileHidden, rememberPosition, reserve, stopGlide, toBottom]);
+  }, [glideTo, keepPlaceWhileHidden, reserve, stopGlide]);
 
   const followFrame = useCallback(() => {
     follow.current = undefined;
@@ -381,9 +337,7 @@ export const Conversation = ({
   const holdScrollPosition = useCallback(() => {
     if (mode.current === "bottom") mode.current = "anchored";
     stopFollowing();
-    const element = scrollRef.current;
-    if (element && laidOut(element)) rememberPosition(element);
-  }, [rememberPosition, stopFollowing]);
+  }, [stopFollowing]);
   const blockAppended = useCallback((block: HTMLElement, kind: "prose" | "card") => {
     const element = scrollRef.current;
     if (!element || mode.current !== "anchored" || touched.current || following.current) return;
@@ -395,9 +349,20 @@ export const Conversation = ({
 
   // Context above the thread usually changes in the same commit as the thread (an answer, the reply's commit):
   // correct before that frame is drawn, not a frame later when the resize is observed.
+  useLayoutEffect(() => { keepContentStill(); });
+
+  // The viewport's height, for the latest turn's reserve: one write per resize.
   useLayoutEffect(() => {
-    if (autoScroll && keepContentStill()) measure();
-  });
+    const element = scrollRef.current;
+    if (!element) return;
+    // Hidden, the thread keeps the room it had, so it shows again with the same layout.
+    const write = () => { if (laidOut(element)) writeViewport(element); };
+    write();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(write);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   // Opening: a settled chat opens at its end; a chat whose reply is in flight opens with the latest question at the top.
   // A Suspense boundary that showed its fallback (a lazy page opening) re-runs layout effects when it shows this
@@ -406,6 +371,7 @@ export const Conversation = ({
     const element = scrollRef.current;
     if (!element || openedFor.current === autoScroll) return;
     openedFor.current = autoScroll;
+    edge.current = element.getBoundingClientRect().top;
     if (!autoScroll) {
       element.scrollTop = 0;
       markScrolled(element);
@@ -420,7 +386,8 @@ export const Conversation = ({
       if (turn && question) {
         turn.style.setProperty("--turn-lead", `${layoutBox(question, element).top - layoutBox(turn, element).top}px`);
         element.scrollTop += anchorDelta(layoutBox(question, element), element.getBoundingClientRect());
-        rememberPosition(element);
+        lastTop.current = element.scrollTop;
+        markScrolled(element);
       }
     } else if (laidOut(element)) toBottom();
     measure();
@@ -449,7 +416,8 @@ export const Conversation = ({
     const changed = () => {
       keepContentStill();
       if (!laidOut(element)) return;
-      if (following.current && follow.current === undefined && typeof requestAnimationFrame === "function") follow.current = requestAnimationFrame(followFrame);
+      if (mode.current === "bottom") toBottom();
+      else if (following.current && follow.current === undefined && typeof requestAnimationFrame === "function") follow.current = requestAnimationFrame(followFrame);
       measure();
     };
     const observer = new ResizeObserver(changed);
@@ -458,7 +426,7 @@ export const Conversation = ({
     // WKWebView can deliver the viewport resize without a ResizeObserver callback for this flex child.
     window.addEventListener("resize", changed);
     return () => { observer.disconnect(); window.removeEventListener("resize", changed); };
-  }, [autoScroll, followFrame, keepContentStill, measure]);
+  }, [autoScroll, followFrame, keepContentStill, measure, toBottom]);
 
   useEffect(() => () => {
     if (glide.current !== undefined) cancelAnimationFrame(glide.current);
@@ -467,38 +435,36 @@ export const Conversation = ({
 
   /** Any wheel, touch, key or scrollbar drag on the thread is the reader's. Upward input stops following. */
   const noteInput = useCallback((upward: boolean) => {
-    if (!autoScroll) return;
     lastInput.current = performance.now();
     touched.current = true;
     stopGlide();
-    if (upward && (following.current || mode.current === "bottom")) holdScrollPosition();
-  }, [autoScroll, holdScrollPosition, stopGlide]);
+    if (upward && following.current) stopFollowing();
+  }, [stopFollowing, stopGlide]);
 
   const handleScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
     const element = event.currentTarget;
     // The browser moved or clamped the position because the thread's top edge moved: put it back, not the reader's scroll.
-    if (autoScroll && keepContentStill()) { measure(); onScroll?.(event); return; }
+    if (keepContentStill()) { measure(); onScroll?.(event); return; }
     const movedUp = element.scrollTop < lastTop.current - 1;
-    // A scrollbar drag can report movement without a DOM pointer event.
-    const moved = Math.abs(element.scrollTop - lastTop.current) > 1;
-    const reader = performance.now() - lastInput.current < INPUT_WINDOW_MS
-      || moved && glide.current === undefined && follow.current === undefined;
-    if (reader && moved) touched.current = true;
+    // Movement no glide or follow made (a scrollbar drag reports no other input) is the reader's too.
+    if (Math.abs(element.scrollTop - lastTop.current) > 1 && glide.current === undefined && follow.current === undefined && mode.current === "anchored") {
+      touched.current = true;
+      if (movedUp) lastInput.current = performance.now();
+    }
+    lastTop.current = element.scrollTop;
+    markScrolled(element);
     const atBottom = element.scrollHeight - element.clientHeight - element.scrollTop <= BOTTOM_TOLERANCE_PX;
+    const reader = performance.now() - lastInput.current < INPUT_WINDOW_MS;
     if (reader && movedUp) {
       if (following.current) stopFollowing();
       if (mode.current === "bottom") mode.current = "anchored";
     }
-    if (reader && atBottom && !following.current && !movedUp) {
-      if (runningRef.current) startFollowing();
-      else mode.current = "bottom";
-    }
+    if (reader && atBottom && runningRef.current && !following.current) startFollowing();
     // A reader who leaves the end of a thread opened there is no longer pinned to it.
     if (mode.current === "bottom" && !atBottom && reader) mode.current = "anchored";
-    rememberPosition(element);
     measure();
     onScroll?.(event);
-  }, [autoScroll, keepContentStill, measure, onScroll, rememberPosition, startFollowing, stopFollowing]);
+  }, [keepContentStill, measure, onScroll, startFollowing, stopFollowing]);
 
   const actions = useMemo(() => ({ jumpToLatest, holdScrollPosition, blockAppended }), [jumpToLatest, holdScrollPosition, blockAppended]);
 

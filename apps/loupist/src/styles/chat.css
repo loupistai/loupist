@@ -4,11 +4,9 @@
 }
 
 /* One reading column shared by answers, queued messages and the composer. */
-.chat-layout { position: relative; display: flex; height: 100%; }
+.chat-layout { display: block; height: 100%; }
 .chat-workspace {
   position: relative;
-  flex: 1 1 0;
-  width: 0;
   min-width: 0;
   min-height: 0;
   height: 100%;

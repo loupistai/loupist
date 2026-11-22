@@ -3,7 +3,6 @@ import i18n, { useTranslation } from "@/i18n";
 import { useEffect, useId, useRef, useState } from "react";
 import { ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
 import { SavedPrinciple } from "./SavedPrinciple";
-import { AnswerActionTooltip } from "./AnswerActionTooltip";
 import { PrincipleForm } from "../map/PrincipleForm";
 import type { LoupistBridge, Principle, ChatFeedback, ChatMessage } from "../../types";
 import { useGo } from "../navigation/Open";
@@ -86,17 +85,11 @@ export function AnswerFeedback({ message, onSave, onTeach, threadRunning = false
     <div className="answer-feedback">
       <div className="message-actions" aria-describedby={feedbackBusy ? busyReasonId : undefined}>
         {feedbackBusy ? <span id={busyReasonId} className="sr-only">{busyReason}</span> : null}
-        <AnswerActionTooltip label={feedbackBusy ? busyReason : t("answerFeedback.helpful")}>
-          <button type="button" aria-label={t("answerFeedback.helpful")} aria-pressed={feedback?.rating === "up"} {...(feedbackBusy ? { "aria-describedby": busyReasonId } : {})} disabled={unavailable} onClick={() => void save(feedback?.rating === "up" ? null : "up", feedback?.correction ?? null)}><ThumbsUpIcon /></button>
-        </AnswerActionTooltip>
-        <AnswerActionTooltip label={feedbackBusy ? busyReason : t("answerFeedback.notHelpful")}>
-          <button type="button" aria-label={t("answerFeedback.notHelpful")} aria-pressed={feedback?.rating === "down"} {...(feedbackBusy ? { "aria-describedby": busyReasonId } : {})} disabled={unavailable} onClick={() => void save(feedback?.rating === "down" ? null : "down", feedback?.correction ?? null)}><ThumbsDownIcon /></button>
-        </AnswerActionTooltip>
-        <AnswerActionTooltip label={feedbackBusy ? busyReason : t("answerFeedback.correct")}>
-          <button ref={correctButton} type="button" aria-expanded={editing} {...(feedbackBusy ? { "aria-describedby": busyReasonId } : {})} {...(editing ? { "aria-controls": editorId } : {})} disabled={unavailable}
+        <button type="button" aria-label={t("answerFeedback.helpful")} title={feedbackBusy ? busyReason : t("answerFeedback.helpful")} aria-pressed={feedback?.rating === "up"} aria-describedby={feedbackBusy ? busyReasonId : undefined} disabled={unavailable} onClick={() => void save(feedback?.rating === "up" ? null : "up", feedback?.correction ?? null)}><ThumbsUpIcon /></button>
+        <button type="button" aria-label={t("answerFeedback.notHelpful")} title={feedbackBusy ? busyReason : t("answerFeedback.notHelpful")} aria-pressed={feedback?.rating === "down"} aria-describedby={feedbackBusy ? busyReasonId : undefined} disabled={unavailable} onClick={() => void save(feedback?.rating === "down" ? null : "down", feedback?.correction ?? null)}><ThumbsDownIcon /></button>
+        <button ref={correctButton} type="button" aria-expanded={editing} aria-describedby={feedbackBusy ? busyReasonId : undefined} title={feedbackBusy ? busyReason : t("answerFeedback.correct")} {...(editing ? { "aria-controls": editorId } : {})} disabled={unavailable}
           // It opens and closes the editor it controls; closing keeps nothing that was not saved.
           onClick={() => { if (editing) { setEditing(false); return; } setDraft(feedback?.correction ?? ""); setEditing(true); }}>{t("answerFeedback.correct")}</button>
-        </AnswerActionTooltip>
       </div>
     </div>
     {showCorrection ? <div className="answer-correction" data-testid="answer-correction" id={editing ? editorId : undefined}>

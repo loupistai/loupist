@@ -705,12 +705,20 @@ try {
     await capture("number-chip-underline");
   });
 
+  // A preview opened from another preview: the old document still says it is ready until the
+  // navigation commits, so mark it stale first. Otherwise the readiness wait can pass on the old
+  // page and the next action lands on a blank one (seen on a slow CI runner).
+  const openPreview = async url => {
+    await browser.execute(() => { document.documentElement.dataset.previewReady = "stale"; });
+    await browser.url(url);
+  };
+
   // WKWebView has no `field-sizing: content`; the composer sizes its message itself.
   await step("the composer grows with its text, then scrolls with the caret in view", async () => {
     for (const size of [null, minimumWindowSize]) {
       const check = async () => {
         const url = `${String(session.devUrl).replace(/\/$/, "")}/preview.html?scenario=composer-compact&composerProbe=${size ? "minimum" : "default"}`;
-        await browser.url(url);
+        await openPreview(url);
         await browser.waitUntil(() => browser.execute(() => document.documentElement.dataset.previewReady === "true"),
           { timeout: 60_000, interval: 250, timeoutMsg: "The composer preview did not become ready" });
         await assertComposerGrows(browser, { onCapped: () => capture(`composer-capped${size ? "-minimum" : ""}`) });
@@ -722,7 +730,7 @@ try {
 
   await step("the first research reply leaves a one-line composer beside a docked panel", async () => {
     await withWindowSize(browser, { width: 1280, height: 820 }, async () => {
-      await browser.url(`${String(session.devUrl).replace(/\/$/, "")}/preview.html?scenario=composer-compact`);
+      await openPreview(`${String(session.devUrl).replace(/\/$/, "")}/preview.html?scenario=composer-compact`);
       await browser.waitUntil(() => browser.execute(() => document.documentElement.dataset.previewReady === "true"),
         { timeout: 60_000, interval: 250, timeoutMsg: "The composer preview did not become ready" });
       await clickControl(browser, '[data-testid="navigation-new"]');
