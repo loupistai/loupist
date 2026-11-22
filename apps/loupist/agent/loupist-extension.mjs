@@ -672,6 +672,7 @@ function registerLoupistExtension(originalPi) {
   }
 
   const pi = {
+    on: (name, handler) => originalPi.on(name, handler),
     registerTool(tool) {
       if (!hostContext.allowedTools.has(tool.name)) return;
       registeredToolCards.set(tool.name, {
@@ -689,7 +690,7 @@ function registerLoupistExtension(originalPi) {
   // keep private app data and instruction files out of reach.
   registerWorkspaceTools(pi, hostContext.workspace.root,
     (name, request, signal, id) => requestBroker("native.authorize", { name, ...request }, signal, id),
-    (parts, signal) => requestBroker("native.delivered_text", { parts }, signal));
+    (parts, signal, id) => requestBroker("native.delivered_text", { parts }, signal, id));
   async function loadCapabilityComponent(component, signal, activateToolNames = []) {
     if ((component.kind === "mcp" && component.loaded === true) ||
         (component.kind !== "mcp" && component.tool_names.every((name) => activeTools.has(name)))) {

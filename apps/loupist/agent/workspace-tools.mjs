@@ -275,6 +275,25 @@ export function nativeRequest(workspaceRoot, name, input) {
  * canonical target (`resolved`) a read, write or edit is pinned to and the
  * `identity` a read must find. Analysis runs through the broker tool `run_python`. */
 export function registerWorkspaceTools(pi, workspaceRoot, authorize, reportUntrustedText) {
+  const awaitingDelivery = new Map();
+  if (reportUntrustedText) {
+    // Pi has added the final tool result to its transcript at message_end.
+    // It awaits the hook before continuing to the next model request.
+    pi.on("message_end", async ({ message }) => {
+      if (message.role !== "toolResult") return;
+      const delivery = awaitingDelivery.get(message.toolCallId);
+      if (!delivery) return;
+      awaitingDelivery.delete(message.toolCallId);
+      const { boundary, signal } = delivery;
+      if (message.isError || signal?.aborted) return;
+      const parts = message.content
+        .filter((part) => part.type === "text" &&
+          part.text.startsWith(boundary.prefix) && part.text.endsWith(boundary.suffix))
+        .map((part) => part.text.slice(boundary.prefix.length, -boundary.suffix.length));
+      if (parts.length) await reportUntrustedText(parts, signal, message.toolCallId);
+    });
+    pi.on("agent_end", () => awaitingDelivery.clear());
+  }
   const definitions = [
     createReadToolDefinition(workspaceRoot),
     createWriteToolDefinition(workspaceRoot),
@@ -292,17 +311,17 @@ export function registerWorkspaceTools(pi, workspaceRoot, authorize, reportUntru
         const request = nativeRequest(workspaceRoot, definition.name, input);
         const permission = authorize ? await authorize(definition.name, { ...request, input }, signal, id) : undefined;
         const boundary = permission?.untrusted_text;
-        const deliver = (result) => boundary ? {
+        const wrapResult = (result) => boundary ? {
           ...result,
           content: result.content.map((part) => part.type === "text"
             ? { ...part, text: `${boundary.prefix}${part.text}${boundary.suffix}` } : part),
         } : result;
-        const finish = async (result) => {
+        const finish = (result) => {
           if (boundary && reportUntrustedText) {
-            const parts = result.content.filter((part) => part.type === "text").map((part) => part.text);
-            if (parts.length) await reportUntrustedText(parts, signal);
+            if (signal?.aborted) throw new Error("Tool call aborted");
+            awaitingDelivery.set(id, { boundary, signal });
           }
-          return deliver(result);
+          return wrapResult(result);
         };
         const expected = typeof permission?.resolved === "string"
           ? permission.resolved : request.path === undefined ? undefined : canonicalTargetPath(request.path);
@@ -322,7 +341,7 @@ export function registerWorkspaceTools(pi, workspaceRoot, authorize, reportUntru
             : definition;
         const target = writer && expected !== undefined ? { ...input, path: expected } : input;
         const result = await run.execute(id, target, signal,
-          onUpdate ? (update) => onUpdate(deliver(update)) : undefined, {
+          onUpdate ? (update) => onUpdate(wrapResult(update)) : undefined, {
           ...ctx,
           cwd: workspaceRoot,
         });

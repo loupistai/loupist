@@ -10,7 +10,7 @@ use std::process::Command;
 pub(crate) fn open(url: &str) -> io::Result<()> {
     #[cfg(target_os = "macos")]
     {
-        let status = macos_open_command(url).status()?;
+        let status = crate::process_lease::macos_commands::status(&mut macos_open_command(url))?;
         if !status.success() {
             return Err(io::Error::other(format!(
                 "macOS open exited with status {status}"

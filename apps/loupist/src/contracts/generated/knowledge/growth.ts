@@ -23,6 +23,8 @@ export type GrowthEvent = {
    * is the stored English title, and the interface shows this key instead.
    */
   titleKey?: string,
+  /** Immutable identity of the World publication that wrote this change. */
+  publication?: WorldGrowthPublication,
 };
 
 export type GrowthEventsPage = { events: Array<GrowthEvent>, nextCursor: string | null };
@@ -35,4 +37,18 @@ export type GrowthEventsQuery = {
   worldRevisionId?: string | null,
   limit?: number | null,
   cursor?: string | null,
+};
+
+export type WorldGrowthPublication = {
+  revisionId: string,
+  source?: WorldGrowthSource,
+  /** Subject of a fact, including when it is outside the bounded Map projection. */
+  factSubjectId?: string,
+};
+
+export type WorldGrowthSource = {
+  recordId: string,
+  revisionId: string,
+  sourceId: string,
+  title: string,
 };

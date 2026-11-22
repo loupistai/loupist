@@ -948,6 +948,11 @@ pub async fn update_install(
         }
         state.updates.restarting();
         std::mem::forget(maintenance);
+        // Tauri can bypass the exit callback if it cannot request a restart
+        // through the event loop. Settle workers before asking it to restart.
+        if state.shutdown().await.is_err() {
+            eprintln!("Loupist shutdown did not finish draining work");
+        }
         app.restart();
     }
 

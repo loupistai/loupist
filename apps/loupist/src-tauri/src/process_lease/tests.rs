@@ -101,7 +101,7 @@ mod unix {
         let leases = temporary.path().join("leases");
         let mut child = spawn_sleep();
         let group = child.id() as i32;
-        let lease = ChildProcessLease::register(
+        let _lease = ChildProcessLease::register(
             &leases,
             ProcessKind::Pi,
             group,
@@ -130,7 +130,6 @@ mod unix {
         recover_orphaned_processes(&leases).unwrap();
         assert_eq!(fs::read_dir(&leases).unwrap().count(), 0);
         child.wait().unwrap();
-        lease.complete().unwrap();
     }
 
     #[cfg(target_os = "linux")]
@@ -158,7 +157,6 @@ mod unix {
         recover_orphaned_processes(&leases).unwrap();
         assert!(child.try_wait().unwrap().is_none());
         kill_and_reap(&mut child, pid);
-        lease.complete().unwrap();
     }
 
     #[cfg(target_os = "linux")]
@@ -218,7 +216,8 @@ mod unix {
         ));
         assert!(leases.join(&lease.file_name).is_file());
         kill_and_reap(&mut child, group);
-        lease.complete().unwrap();
+        recover_orphaned_processes(&leases).unwrap();
+        assert!(!leases.join(&lease.file_name).exists());
     }
 
     #[cfg(target_os = "linux")]
@@ -327,7 +326,6 @@ mod unix {
         recover_orphaned_processes(&lease_directory).unwrap();
         assert!(child.try_wait().unwrap().is_none());
         kill_and_reap(&mut child, pid);
-        lease.complete().unwrap();
     }
 
     #[test]
@@ -361,7 +359,6 @@ mod unix {
         recover_orphaned_processes(&leases).unwrap();
         assert!(!path.exists());
         child.wait().unwrap();
-        lease.complete().unwrap();
     }
 
     #[test]
@@ -409,7 +406,6 @@ mod unix {
             kill_and_reap(&mut child, pid);
             recover_orphaned_processes(&leases).unwrap();
             assert!(!path.exists());
-            lease.complete().unwrap();
         }
     }
 
@@ -418,17 +414,13 @@ mod unix {
         let temporary = tempfile::tempdir().unwrap();
         let lease_directory = temporary.path().join("leases");
         for _ in 0..(MAX_LEASE_ENTRIES + 4) {
-            let mut child = spawn_sleep();
-            let process_group_id = child.id() as i32;
-            let lease = ChildProcessLease::register(
-                &lease_directory,
-                ProcessKind::Pi,
-                process_group_id,
-                process_group_id,
-                Path::new("/bin/sleep"),
-            )
-            .unwrap();
-            terminate_and_reap_process_group(process_group_id, lease);
+            let mut command = std::process::Command::new("/bin/sleep");
+            command.arg("30").process_group(0);
+            let (mut child, owned) = OwnedProcessGroup::spawn_std(&mut command).unwrap();
+            owned
+                .register_lease(&lease_directory, ProcessKind::Pi, Path::new("/bin/sleep"))
+                .unwrap();
+            drop(owned);
             let _ = child.wait();
             tokio::time::timeout(Duration::from_secs(3), async {
                 loop {
@@ -476,7 +468,7 @@ mod unix {
     }
 
     #[test]
-    fn forced_parent_crash_is_recovered_on_the_next_start() {
+    fn startup_recovers_an_orphaned_mcp_group_after_a_host_crash() {
         let temporary = tempfile::tempdir().unwrap();
         let lease_directory = temporary.path().join("leases");
         let ready = temporary.path().join("ready");
@@ -498,6 +490,11 @@ mod unix {
         assert!(ready.exists(), "crash helper did not register its lease");
         let process_group_id: i32 = fs::read_to_string(&ready).unwrap().parse().unwrap();
         let helper_exit = wait_for_exit(&mut helper);
+        assert_eq!(
+            process_group_state(process_group_id).unwrap(),
+            GroupState::Live
+        );
+        assert_eq!(fs::read_dir(&lease_directory).unwrap().count(), 1);
 
         recover_orphaned_processes(&lease_directory).unwrap();
         assert!(!helper_exit.expect("crash helper did not exit").success());
@@ -521,24 +518,26 @@ mod unix {
                     let temporary = tempfile::tempdir().unwrap();
                     let lease_directory = temporary.path().join("leases");
                     for _ in 0..ITERATIONS {
-                        let mut child = spawn_sleep();
-                        let process_group_id = child.id() as i32;
-                        let lease = ChildProcessLease::register(
-                            &lease_directory,
-                            ProcessKind::Pi,
-                            process_group_id,
-                            process_group_id,
-                            Path::new("/bin/sleep"),
-                        )
-                        .unwrap();
-                        signal_process_group(process_group_id, libc::SIGTERM).unwrap();
-                        child.wait().unwrap();
+                        let mut command = Command::new("/bin/sleep");
+                        command.arg("30").process_group(0);
+                        let (mut child, owner) =
+                            OwnedProcessGroup::spawn_std(&mut command).unwrap();
+                        let group = child.id() as i32;
+                        owner
+                            .register_lease(
+                                &lease_directory,
+                                ProcessKind::Pi,
+                                Path::new("/bin/sleep"),
+                            )
+                            .unwrap();
+                        signal_process_group(group, libc::SIGTERM).unwrap();
                         assert!(
-                            wait_for_group_exit_blocking(process_group_id, Duration::from_secs(2),)
-                                .unwrap(),
-                            "process group {process_group_id} did not exit"
+                            wait_for_group_exit_blocking(group, Duration::from_secs(2)).unwrap(),
+                            "process group {group} did not exit"
                         );
-                        lease.complete().unwrap();
+                        owner.disarm();
+                        child.wait().unwrap();
+                        owner.complete().unwrap();
                     }
                     assert_eq!(fs::read_dir(&lease_directory).unwrap().count(), 0);
                 }));

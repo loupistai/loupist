@@ -1,7 +1,9 @@
 /** Preview scenarios, in the capture order `src/preview/scenarios.ts` assembles. */
 import { advancePreviewClock, prepareFixture, PreviewBridge, previewKo } from "../fixtures";
 import i18n from "../../i18n";
-import type { ChatRunPhase } from "../../contracts/chat";
+import { CHART_SCHEMA, type ChatRunPhase } from "../../contracts/chat";
+import { executionModelLock } from "../../bridge/mock/models";
+import type { ChartDataset, ChatArtifactRef, ChatEvidenceRef, NumberCheck } from "../../types";
 import { approvalFor, approvalRun, approvalSteps, asSession, base, centerOn, click, contextTitleLandmark, hasLayout, longThread, openNavigation, prepareAttention, pressMenu, runningHeader, select, submitPrompt, until, visible, type PreviewScenario } from "./kit";
 
 /** A reply that stays in flight on a running step; `phase: "tool"` sends no answer text. */
@@ -120,6 +122,72 @@ async function scrollThreadUp() {
   await new Promise((resolve) => setTimeout(resolve, 300));
 }
 
+/** The native layout suite advances each phase after recording the current reading position. */
+async function completionLayout(bridge: PreviewBridge) {
+  await prepareFixture(bridge, "answer");
+  asSession(bridge);
+  longThread(bridge);
+  const started = Date.now();
+  const paragraph = "The reported deliveries rose in the last quarter. The filing counts confirmed orders on the same basis as the preceding period.";
+  const text = Array.from({ length: 7 }, (_, index) => `### Reporting period ${index + 1}\n\n${paragraph} ${paragraph}`).join("\n\n");
+  const source: ChatEvidenceRef = {
+    id: "ev_layout_deliveries", title: "Filed deliveries", kind: "original", provider: "fixture", tool_name: "web_fetch",
+    retrieved_at: new Date(started).toISOString(), excerpt: "2027 deliveries 140",
+    content_sha256: "c".repeat(64), excerpt_truncated: false, warnings: [],
+  };
+  const chart: ChatArtifactRef = { artifact_id: "layout-chart", kind: "chart", revision: 1, title: "Deliveries by year", digest: "e".repeat(64) };
+  const dataset: ChartDataset = {
+    id: "layout-dataset", digest: "d".repeat(64), lineage: { kind: "agent_authored", upstream_receipts: [] },
+    columns: [{ id: "year", label: "Year", kind: "number" }, { id: "orders", label: "Orders", kind: "number" }],
+    rows: [[2026, 125], [2027, 140]],
+  };
+  const read = bridge.chatArtifactRead.bind(bridge);
+  bridge.chatArtifactRead = async (loupistId, chatId, artifactId, revision) => {
+    if (artifactId !== chart.artifact_id) return read(loupistId, chatId, artifactId, revision);
+    await new Promise<void>(resolve => window.addEventListener("preview:read-layout-chart", () => resolve(), { once: true }));
+    return {
+      artifact: { id: artifactId, chat_session_id: chatId, kind: "chart", title: chart.title, current_revision: 1, created_at_ms: started, updated_at_ms: started },
+      revision: { artifact_id: artifactId, revision: 1, digest: chart.digest, created_at_ms: started, source_message_id: "layout-complete",
+        payload: { kind: "chart", schema: CHART_SCHEMA, chart: {
+          dataset_id: dataset.id, dataset_digest: dataset.digest, studies: [], drawings: [], custom_series: [], note: null,
+          view: { kind: "bar", x: "year", y: ["orders"], color: null, semantic_types: {}, title: null, subtitle: null },
+        } } },
+      chart_dataset: dataset,
+    };
+  };
+  bridge.chatSend = async (request, observer) => {
+    const { run_id } = request;
+    const execution_model = executionModelLock(await bridge.modelCatalogGet(), request.model_profile_id, request.thinking_level, request.run_options);
+    const number_checks: NumberCheck[] = [{ link_index: 0, text: "140", evidence_id: source.id, kind: "passage", status: "matched" }];
+    observer({ type: "started", run_id });
+    observer({ type: "progress", run_id, sequence: 1, progress: { startedAtMs: started, finishedAtMs: null, items: approvalSteps(started, "succeeded") } });
+    observer({ type: "evidence", run_id, evidence: source });
+    observer({ type: "delta", run_id, text });
+    window.addEventListener("preview:save-layout-answer", () => {
+      observer({ type: "saving", run_id, waiting_for_other_chat: false });
+    }, { once: true });
+    window.addEventListener("preview:complete-layout-answer", () => {
+      observer({ type: "artifact", run_id, artifact: chart });
+      observer({ type: "memory_update", run_id, result: {
+        status: "applied", commitId: "layout-save", changes: [{
+          recordId: "layout-method", kind: "Lens", operation: "revise", title: "Delivery comparison",
+          knowledge: { kind: "lens", recordId: "layout-method", revisionId: "layout-revision", objectId: "layout-method" },
+          basis: "Filed orders", lesson: "Compare the same periods.", futureUse: "Review the next filing.",
+        }],
+      } });
+      observer({
+        type: "completed", run_id, message_id: "layout-complete", created_at: new Date().toISOString(),
+        final_text: `${text}\n\nConfirmed orders were [140](#evidence-${source.id}).\n\n| Year | Orders |\n| --- | --- |\n| 2026 | 125 |\n| 2027 | 140 |`,
+        number_checks, host_composed: false, lens_receipts: [], tool_refusals: [], execution_model,
+        save_activity: { startedAtMs: started, finishedAtMs: Date.now(), waitedMs: 0 },
+        agent_harness: { schema: "loupist-harness/1", mode: "chat", skill_ids: [], capability_ids: [], digest: "e".repeat(64) },
+        performance: { setupMs: 0, generationMs: 0, totalMs: 0, sessionCache: "warm", inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      });
+    }, { once: true });
+    return { run_id };
+  };
+}
+
 /** A reply in flight: status, plans, approvals, questions and the composer's menus. */
 export const chatRunScenarios: PreviewScenario[] = [
   { ...base("chat-saving-waiting", "A finished answer waits for another conversation before saving", () => contextTitleLandmark('.turn-live[data-kind="saving"]'), root => submitPrompt(root, "Summarize the quarter.")), setup: async bridge => {
@@ -164,6 +232,9 @@ export const chatRunScenarios: PreviewScenario[] = [
     await scrollThreadUp();
   }), setup: async (bridge) => { await prepareFixture(bridge, "answer"); longThread(bridge); liveRun(bridge, "writing"); } },
   { ...base("chat-status-pill-idle", "Scrolled up after the reply", () => select(".chat-status-pill:not([data-running])") ?? (hasLayout() ? null : select(".message-scroll .message.assistant")), scrollThreadUp), setup: async (bridge) => { await prepareFixture(bridge, "answer"); longThread(bridge); } },
+  { ...base("chat-completion-layout", "A research reply waits for the layout suite to advance it from writing to saving and completion",
+    () => select('[data-turn-latest] .message.assistant.streaming h3:last-of-type'),
+    root => submitPrompt(root, "Compare the most recent deliveries with the prior periods.")), setup: completionLayout },
   { ...base("chat-chart-building", "A chart reserves its card while it is built", () => select('.chat-artifact-block[data-state="building"]'), root => submitPrompt(root, "Chart Hanul Precision’s margin against utilization.")), setup: async (bridge) => { await prepareFixture(bridge, "answer"); chartRun(bridge); } },
   { ...base("chat-chart-failed", "A failed chart leaves a compact explanation below the answer", () => select('.chat-artifact-block[data-state="failed"] [role="alert"]'), centerOn('.chat-artifact-block[data-state="failed"]')), setup: async bridge => {
     await prepareFixture(bridge, "answer");

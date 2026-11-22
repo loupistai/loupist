@@ -158,10 +158,9 @@ pub(crate) fn system_language() -> String {
     // GUI launches on macOS need not inherit LANG. Read only the OS language
     // preference; no user workspace command or shell is involved.
     #[cfg(target_os = "macos")]
-    if let Ok(output) = std::process::Command::new("/usr/bin/defaults")
-        .args(["read", "-g", "AppleLanguages"])
-        .output()
-    {
+    if let Ok(output) = crate::process_lease::macos_commands::output(
+        std::process::Command::new("/usr/bin/defaults").args(["read", "-g", "AppleLanguages"]),
+    ) {
         if output.status.success() && output.stdout.len() < 4096 {
             if let Some(language) = String::from_utf8_lossy(&output.stdout)
                 .lines()

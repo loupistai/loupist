@@ -1,12 +1,14 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { TriangleAlertIcon, XIcon, PlayIcon } from "lucide-react";
-import type { KnowledgeMap } from "../../contracts/knowledge";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChevronDownIcon, FileTextIcon, TriangleAlertIcon, XIcon, PlayIcon } from "lucide-react";
+import type { KnowledgeCatalog, KnowledgeMap, WorldGrowthSource } from "../../contracts/knowledge";
 import type { LoupistBridge } from "../../types";
 import { useTranslation } from "../../i18n";
 import { formatDate, formatNumber, formatTime } from "../../i18n/format";
 import { AppDateField } from "../ui/app-date-field";
 import { Button } from "../ui/button";
-import { groupByDay, sinceMs, useGrowthSince, whatsNewCounts, whatsNewLinkText, whatsNewRows, type WhatsNewRow, type WhatsNewSince } from "./whatsNew";
+import { compactOrigin, sourceOrigin, sourceTitle } from "../../knowledge/hostSource";
+import { extensionKindLabel } from "../../knowledge/mapKinds";
+import { groupByDay, sinceMs, useGrowthSince, whatsNewCounts, whatsNewEntries, whatsNewLinkText, whatsNewRows, type WhatsNewRow, type WhatsNewSince, type WhatsNewSourceGroup } from "./whatsNew";
 
 const shortDate = (ms: number) => formatDate(ms, { year: undefined, month: "short", day: "numeric" });
 const DAY_MS = 86_400_000;
@@ -19,9 +21,11 @@ const localDay = (value: string) => { const match = /^(\d{4})-(\d{2})-(\d{2})$/.
  * conflicting evidence and Lens entries, newest day first. Rows focus the name
  * on the Map, open the relationship or the Lens entry.
  */
-export function MapWhatsNew({ bridge, loupistId, map, onRevisionChange, lastSeenAtMs, nowMs, onOpenRow, onReplay, onClose }: {
+export function MapWhatsNew({ bridge, loupistId, map, onRevisionChange, lastSeenAtMs, nowMs, sources, onOpenRow, onOpenSource, onReplay, onClose }: {
   bridge: LoupistBridge; loupistId: string; map: KnowledgeMap | undefined; lastSeenAtMs: number | undefined; nowMs: number;
   onRevisionChange?: () => void;
+  sources?: KnowledgeCatalog["sources"];
+  onOpenSource?: (source: WorldGrowthSource) => void;
   onOpenRow: (row: WhatsNewRow) => void; onReplay: (sinceMs: number) => void; onClose: () => void;
 }) {
   const { t, i18n } = useTranslation("knowledge");
@@ -29,8 +33,17 @@ export function MapWhatsNew({ bridge, loupistId, map, onRevisionChange, lastSeen
   const since = sinceMs(choice, lastSeenAtMs, nowMs);
   const load = useGrowthSince(bridge, loupistId, since, !!map, map?.generatedAtMs, map?.worldRevisionId, onRevisionChange);
   const rows = useMemo(() => whatsNewRows(load.events, map, i18n.language), [load.events, map, i18n.language]);
-  const groups = useMemo(() => groupByDay(rows, nowMs), [rows, nowMs]);
-  const counts = whatsNewCounts(rows);
+  const entries = useMemo(() => whatsNewEntries(rows, i18n.language), [rows, i18n.language]);
+  const groups = useMemo(() => groupByDay(entries, nowMs), [entries, nowMs]);
+  const [expandedSources, setExpandedSources] = useState<ReadonlySet<string>>(() => new Set());
+  const counts = whatsNewCounts(entries);
+  const savedSources = useMemo(() => new Map(sources?.map(record => [record.recordId, record.objects])), [sources]);
+  const titleFor = (source: WorldGrowthSource) => {
+    const saved = savedSources.get(source.recordId)?.find(item => item.id === source.sourceId);
+    const origin = compactOrigin(saved && sourceOrigin(saved));
+    return (saved && sourceTitle(saved).trim()) || source.title.trim()
+      || origin.split(/[/\\]/).filter(Boolean).at(-1) || t("sourceWorkspace.sourceSaved");
+  };
   const from = since ?? rows.at(-1)?.atMs ?? nowMs;
   const heading = useRef<HTMLHeadingElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -52,10 +65,11 @@ export function MapWhatsNew({ bridge, loupistId, map, onRevisionChange, lastSeen
     { key: "date", label: t("map.sinceDate"), value: { kind: "date", dayMs: choice.kind === "date" ? choice.dayMs : new Date(nowMs - 30 * DAY_MS).setHours(0, 0, 0, 0) } },
   ];
   const active = (value: WhatsNewSince) => value.kind === choice.kind && (value.kind !== "days" || choice.kind !== "days" || value.days === choice.days);
+  const displayedCount = (count: number) => count > 99 ? "99+" : formatNumber(count);
   const summaryParts = [
-    counts.names ? t("map.newNames", { count: counts.names, formattedCount: formatNumber(counts.names) }) : "",
-    counts.links ? t("map.newLinks", { count: counts.links, formattedCount: formatNumber(counts.links) }) : "",
-    counts.conflicts ? t("map.newConflicts", { count: counts.conflicts, formattedCount: formatNumber(counts.conflicts) }) : "",
+    counts.names ? t("map.newNames", { count: counts.names, formattedCount: displayedCount(counts.names) }) : "",
+    counts.links ? t("map.newLinks", { count: counts.links, formattedCount: displayedCount(counts.links) }) : "",
+    counts.conflicts ? t("map.newConflicts", { count: counts.conflicts, formattedCount: displayedCount(counts.conflicts) }) : "",
   ].filter(Boolean);
   const dayLabel = (group: { dayMs: number; daysAgo: number }) => group.daysAgo === 0 ? t("map.today") : group.daysAgo === 1 ? t("map.yesterday") : formatDate(group.dayMs, { year: undefined, month: "short", day: "numeric", weekday: "short" });
   return <aside className="map-library map-whats-new" data-testid="map-library" role="dialog" aria-labelledby="map-whats-new-title" onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } }}>
@@ -82,14 +96,56 @@ export function MapWhatsNew({ bridge, loupistId, map, onRevisionChange, lastSeen
           : !rows.length ? <p className="map-whats-new-state" role="status">{t("map.newEmpty", { date: shortDate(from) })}</p>
             : groups.map((group) => <section key={group.dayMs} aria-labelledby={`map-whats-new-day-${group.dayMs}`}>
               <h3 id={`map-whats-new-day-${group.dayMs}`}>{dayLabel(group)}</h3>
-              <ul>{group.rows.map((row) => <li key={row.id} data-growth-row={row.id}><WhatsNewRowButton row={row} onOpen={onOpenRow} /></li>)}</ul>
+              <ul>{group.rows.map(row => row.kind === "source"
+                ? <WhatsNewGroup key={row.id} group={row} title={titleFor(row.source)} expanded={expandedSources.has(row.id)}
+                  onOpenSource={onOpenSource} onOpenRow={onOpenRow} titleFor={titleFor}
+                  onToggle={() => setExpandedSources(previous => {
+                    const next = new Set(previous);
+                    if (!next.delete(row.id)) next.add(row.id);
+                    return next;
+                  })} />
+                : <li key={row.id} data-growth-row={row.id}><WhatsNewRowButton row={row} onOpen={onOpenRow} origin={row.source ? titleFor(row.source) : row.origin} /></li>)}</ul>
             </section>)}
     </div>
   </aside>;
 }
 
-function WhatsNewRowButton({ row, onOpen }: { row: WhatsNewRow; onOpen: (row: WhatsNewRow) => void }) {
+function WhatsNewGroup({ group, title, expanded, onToggle, onOpenSource, onOpenRow, titleFor }: {
+  group: WhatsNewSourceGroup; title: string; expanded: boolean; onToggle: () => void;
+  onOpenSource?: (source: WorldGrowthSource) => void; onOpenRow: (row: WhatsNewRow) => void; titleFor: (source: WorldGrowthSource) => string;
+}) {
   const { t } = useTranslation("knowledge");
+  const id = useId();
+  const titleId = `${id}-title`;
+  const parts = [
+    group.names ? t("map.newSourceNames", { count: group.names, formattedCount: formatNumber(group.names) }) : "",
+    group.facts ? t("map.newFactCount", { count: group.facts, formattedCount: formatNumber(group.facts) }) : "",
+  ].filter(Boolean);
+  return <li>
+    <div className="map-whats-new-group" data-growth-row={group.id}>
+      <button type="button" className="map-whats-new-row" data-kind="source" onClick={() => onOpenSource?.(group.source)}>
+        <span className="map-whats-new-glyph"><FileTextIcon size={14} aria-hidden="true" /></span>
+        <span className="map-whats-new-text">
+          <span className="map-whats-new-label" id={titleId}>{title}</span>
+          {parts.length ? <small>{parts.join(" · ")}</small> : null}
+        </span>
+        <span className="map-whats-new-meta"><small className="gg-num">{formatTime(group.atMs)}</small></span>
+      </button>
+      <Button type="button" variant="ghost" size="icon-sm" aria-expanded={expanded} aria-controls={id}
+        aria-label={expanded ? t("map.hideSourceChanges") : t("map.showSourceChanges", { formattedCount: formatNumber(group.rows.length) })} onClick={onToggle}>
+        <ChevronDownIcon aria-hidden="true" />
+      </Button>
+    </div>
+    <ul className="map-whats-new-children" id={id} aria-labelledby={titleId} hidden={!expanded}>
+      {expanded ? group.rows.map(row => <li key={row.id} data-growth-row={row.id}>
+        <WhatsNewRowButton row={row} onOpen={onOpenRow} origin={row.source ? titleFor(row.source) : row.origin} />
+      </li>) : null}
+    </ul>
+  </li>;
+}
+
+function WhatsNewRowButton({ row, onOpen, origin }: { row: WhatsNewRow; onOpen: (row: WhatsNewRow) => void; origin?: string }) {
+  const { t, i18n } = useTranslation("knowledge");
   const glyph = row.kind === "name" || row.kind === "fact" ? <i className={`map-swatch is-${row.category ?? "other"}`} aria-hidden="true" />
     : row.kind === "relationship" ? <i className="map-swatch is-claim-line" aria-hidden="true" />
       : row.kind === "conflict" ? <TriangleAlertIcon className="map-whats-new-warning" aria-hidden="true" />
@@ -102,14 +158,18 @@ function WhatsNewRowButton({ row, onOpen }: { row: WhatsNewRow; onOpen: (row: Wh
       : row.kind === "principle" ? t("map.newPrinciple", { title: row.label })
         : row.kind === "subject" ? t("map.newSubject", { title: row.label })
           : row.kind === "idea" ? t("map.newIdea", { title: row.label }) : row.label;
-  const kindLabel = row.kind === "name" ? t(`map.kind.${(row.category ?? "other") as "other"}`) : undefined;
+  const kindLabel = row.kind === "name"
+    ? extensionKindLabel(row.node?.kindLabels, i18n.language, t(`map.kind.${(row.category ?? "other") as "other"}`)) : undefined;
+  const facts = kindLabel && row.facts
+    ? t("map.newNameWithFacts", { kind: kindLabel, facts: t("map.newFactCount", { count: row.facts, formattedCount: formatNumber(row.facts) }) }) : undefined;
   return <button type="button" className="map-whats-new-row" data-kind={row.kind} aria-disabled={row.gone || undefined} title={row.gone ? t("map.goneFromMap") : undefined}
     onClick={() => { if (!row.gone) onOpen(row); }}>
     <span className="map-whats-new-glyph">{glyph}</span>
     <span className="map-whats-new-text">
       <span className="map-whats-new-label">{text}</span>
-      {row.origin ? <small>{t("map.newFromSource", { title: row.origin })}</small> : null}
+      {facts ? <small>{facts}</small> : null}
+      {origin ? <small>{t("map.newFromSource", { title: origin })}</small> : null}
     </span>
-    <span className="map-whats-new-meta">{kindLabel ? <small>{kindLabel}</small> : null}<small className="gg-num">{formatTime(row.atMs)}</small></span>
+    <span className="map-whats-new-meta">{kindLabel && !facts ? <small>{kindLabel}</small> : null}<small className="gg-num">{formatTime(row.atMs)}</small></span>
   </button>;
 }

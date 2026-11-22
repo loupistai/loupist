@@ -9,7 +9,7 @@ use super::error::KnowledgeResult;
 #[cfg(test)]
 use crate::fs::artifact_trust::ensure_private_directory;
 
-pub const KNOWLEDGE_SCHEMA_VERSION: i64 = 10;
+pub const KNOWLEDGE_SCHEMA_VERSION: i64 = 11;
 pub const KNOWLEDGE_FORMAT_VERSION: u32 = 1;
 
 const EXPECTED_TABLES: &[&str] = &[
@@ -171,7 +171,8 @@ fn schema_sql() -> String {
             actor TEXT NOT NULL,
             summary TEXT NOT NULL CHECK (length(summary) <= 240 AND instr(summary, char(10)) = 0 AND instr(summary, char(13)) = 0),
             before_summary TEXT,
-            after_summary TEXT
+            after_summary TEXT,
+            publication_json TEXT
         ) STRICT;
         CREATE INDEX knowledge_growth_events_loupist_time ON knowledge_growth_events (loupist_id, at_ms, event_id);
         CREATE TABLE knowledge_learning_settings (

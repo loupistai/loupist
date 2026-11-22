@@ -208,7 +208,13 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     loop {
                         match learning_events.recv().await {
-                            Ok(event) => { let _ = tauri::Emitter::emit(&learning_app, events::LEARNING_REVIEW_FINISHED, event); }
+                            Ok(event) => {
+                                let _ = tauri::Emitter::emit(
+                                    &learning_app,
+                                    events::LEARNING_REVIEW_FINISHED,
+                                    event,
+                                );
+                            }
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                             Err(_) => break,
                         }
@@ -219,13 +225,22 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     loop {
                         match schema_events.recv().await {
-                            Ok(event) => { let _ = tauri::Emitter::emit(&schema_app, events::WORLD_SCHEMA_CHANGED, event); }
+                            Ok(event) => {
+                                let _ = tauri::Emitter::emit(
+                                    &schema_app,
+                                    events::WORLD_SCHEMA_CHANGED,
+                                    event,
+                                );
+                            }
                             Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                             Err(_) => break,
                         }
                     }
                 });
-                state.graph.start().map_err(|error| app::CommandError::internal(error.to_string()))?;
+                state
+                    .graph
+                    .start()
+                    .map_err(|error| app::CommandError::internal(error.to_string()))?;
                 Ok::<(), app::CommandError>(())
             }) {
                 eprintln!("Loupist failed to start: {error}");
@@ -245,7 +260,8 @@ pub fn run() {
                 let state = catalog_app.state::<app::AppState>();
                 providers::connection::refresh_upgraded_models(&state, || {
                     let _ = tauri::Emitter::emit(&catalog_app, events::MODEL_CATALOG_CHANGED, ());
-                }).await;
+                })
+                .await;
             });
             pi::shell_path::prewarm();
             // The market-data runtime takes tens of seconds to start on a busy
@@ -412,7 +428,6 @@ pub fn run() {
             commands::knowledge::memory_controls::knowledge_lens_pause,
             commands::knowledge::memory_controls::knowledge_memory_reset_preview,
             commands::knowledge::memory_controls::knowledge_memory_reset,
-
             commands::knowledge::knowledge_lens_read,
             commands::knowledge::knowledge_lens_search,
             commands::knowledge::knowledge_lens_pages_for_node,
@@ -541,17 +556,8 @@ pub fn run() {
                 if let Some(state) = handle.try_state::<app::AppState>() {
                     // Tauri exits the process directly after this callback;
                     // owned sidecars must stop before that boundary.
-                    let stopped = tauri::async_runtime::block_on(async {
-                        tokio::time::timeout(
-                            std::time::Duration::from_secs(30),
-                            state.shutdown(),
-                        )
-                        .await
-                    });
-                    if !matches!(stopped, Ok(Ok(()))) {
-                        eprintln!(
-                            "Loupist sidecar shutdown did not complete; process leases were kept for recovery"
-                        );
+                    if tauri::async_runtime::block_on(state.shutdown()).is_err() {
+                        eprintln!("Loupist shutdown did not finish draining work");
                     }
                 }
             }

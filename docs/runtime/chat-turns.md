@@ -26,6 +26,17 @@ historical images share the turn's 5 MiB image budget with current images.
 Extracted Markdown is labelled separately
 from digest-verified original content.
 
+On the host's first locked open of a Loupist folder, Rust settles an admitted
+request that still lacks a terminal reply. This happens during startup for
+available folders and when an unavailable folder is opened again. The
+transcript gets one stopped reply and keeps the request and accepted guidance.
+A saved draft or other terminal reply stays as written. Live chunks and pending
+question or approval controls are process-local. The session, history and export
+all use the stored status. An independent Bot post can arrive after the stop and
+the stopped turn still offers **Try again**. A scheduled request runs again
+through its task's **Run now**. A completed answer waiting for Memory keeps its
+answer and interrupted-save receipt.
+
 Brokered reads become usable evidence only after client acknowledgment. The
 turn-local `result_ref` records payload and provenance; it expires with the turn.
 Persisted `ChatEvidenceRef` snapshots remain inspectable even when Memory is off
@@ -224,7 +235,8 @@ user's current composer choices, including Auto. Rust records the opened
 status with the target. While the request is queued or running, identical
 retries return the same receipt and different settings conflict. After it
 finishes, fails or stops, the next click starts a fresh session and keeps the
-earlier one in history. An unavailable link leaves storage unchanged.
+earlier one in history. **Try again** on a stopped link session uses the same
+scoped action and opens its new session. An unavailable link leaves storage unchanged.
 
 Bot posts nothing while the run works. While this app holds the run, the session's
 thread carries `handoff_run`, and showing the session attaches to the same Chat

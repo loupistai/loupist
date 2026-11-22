@@ -1414,7 +1414,55 @@ fn recovered_inbox_retains_tool_refusals_and_is_unread_once() {
 }
 
 #[test]
-fn recovery_completes_scheduled_answers_with_interrupted_memory() {
+fn crash_recovery_stops_the_session_and_the_receipt_of_an_interrupted_scheduled_run() {
+    use crate::{
+        app::AppState,
+        domain::{ChatMessageStatus, ChatRole, ScheduledTurn},
+    };
+    let root = tempfile::tempdir().unwrap();
+    let app_data = root.path().join("app");
+    let state = AppState::for_folder_test(app_data.clone());
+    let id = "loupist-a";
+    crate::test_fixtures::create_folder_loupist(&state.store, id, &root.path().join("workspace"));
+    let task = state.store.scheduled_task_create(id, draft(), 100).unwrap();
+    let run = claim_task(&state.store, id, &task.id, 200, true)
+        .unwrap()
+        .unwrap()
+        .run;
+    let thread_id = run.thread_id.unwrap();
+    let expected = state.store.get_chat(&thread_id).unwrap().unwrap();
+    let mut chat = expected.clone();
+    let mut request = crate::test_fixtures::chat_message("opening", ChatRole::User, &task.prompt);
+    request.scheduled = Some(ScheduledTurn {
+        task_id: task.id,
+        run_id: run.run_id.clone(),
+        task_title: task.title,
+        task_kind: TaskKind::Custom,
+    });
+    chat.messages.push(request.clone());
+    state.store.replace_chat(&expected, &chat).unwrap();
+    state.close_for_restart_test();
+
+    let state = AppState::for_folder_test(app_data);
+    assert_eq!(state.store.scheduled_tasks_recover_running(300).unwrap(), 1);
+    assert_eq!(state.store.scheduled_tasks_recover_running(400).unwrap(), 0);
+    let recovered = state.store.get_chat(&thread_id).unwrap().unwrap();
+    assert_eq!(recovered.messages.len(), 2);
+    assert_eq!(recovered.messages[0], request);
+    assert_eq!(recovered.messages[1].status, ChatMessageStatus::Aborted);
+    assert!(crate::domain::prepare_chat_retry(&recovered, 400).is_err());
+    let receipt = state
+        .store
+        .scheduled_task_run_get(id, &run.run_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(receipt.status, RunStatus::Interrupted);
+    assert_eq!(receipt.message_id, None);
+    assert_eq!(state.store.inbox_unread_count(id).unwrap(), 1);
+}
+
+#[test]
+fn crash_recovery_completes_scheduled_answers_with_interrupted_memory() {
     use crate::domain::{
         ChatRole, DiscardedMemoryItem, DiscardedMemoryKind, MemorySaveSkipReason,
         MemoryUpdateResult, MemoryUpdateStatus, ScheduledTurn,

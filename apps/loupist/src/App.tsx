@@ -911,7 +911,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
           onLoupistSettings={() => { if (selectedLoupistId) void openLoupistSettingsFor(selectedLoupistId); }}
           scheduleUnread={selectedLoupist ? inboxCounts[selectedLoupist.id] ?? 0 : 0}
           scheduleRunning={scheduled.runningTitles}
-          mapBuild={mapCatalog.build}
+          mapProcessing={mapCatalog.processing.activity}
           onDestination={navigate}
           selectedLoupist={selectedLoupist}
           loading={loupist.loading}

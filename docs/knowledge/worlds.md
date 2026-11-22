@@ -9,8 +9,8 @@ claims, ordered endpoint roles and Source support/opposition/context. World cont
 in World is read-only; questions or correction requests attach the relevant claim to
 Chat. A correction retains its exact Source basis.
 
-Detail reads resolve the exact Loupist/revision and do not invoke inference. Graph
-camera/selection state survives source visits; Fit explicitly reframes the displayed graph.
+Detail reads use the owned World record and do not invoke inference. Graph camera
+and selection state survive Source visits. Fit reframes the displayed graph.
 
 Rust extracts and reconciles in-process (`knowledge/world_extract/`, prompts
 adapted from Graphiti 0.30.1). A derived index in the folder database (entity and
@@ -26,12 +26,13 @@ completion atomically, then discards the extraction JSON. Superseded World revis
 are also removed; these receipts are provenance and deduplication records, not a
 World history or restore feature. The renderer resolves a first-page World query
 against the owned record's current head in the same read transaction. Cursors
-and model reads keep their revision pins. A Source opened through World checks
-the exact span and Source identity against the current head before reading it.
-Job polling returns the receipt fields without
-the internal extraction document or retained Source text. Recovery rebuilds the derived index from the
+and model reads keep their revision pins. Reads, passage pins and exports for a
+Source opened through World check the exact Source revision and span against
+the current World head, even when the request names an older World revision.
+Job polling returns the receipt fields without the internal extraction
+document or retained Source text. Recovery rebuilds the derived index from the
 current canonical World and retained Source evidence. An uncertain publication
-instead keeps its extraction JSON while quarantined for reconciliation.
+keeps its extraction JSON while quarantined for reconciliation.
 Publication bounds extracted node names and descriptions, drops unreadable nodes
 and claims, and drops claims whose endpoints were discarded, so a malformed item
 does not block otherwise valid extraction. It also drops a relationship whose ends
@@ -261,7 +262,11 @@ the retained Source and its evidence spans. Research focus, preferred relationsh
 names and anchor entities add emphasis on top of the core schema. Editing this guidance retains saved anchor identifiers as identifiers. Publication time,
 observation period and validity remain distinct. Extraction preserves quantitative
 units and basis, directed roles and conflicting attributed reports; source content
-is data, not extraction instructions. Temporal bounds require explicit effective
+is data, not extraction instructions. A peer table, screen or ranking is evidence
+about its topic. The extraction prompt keeps the rows discussed in surrounding
+text, named in the research focus, or stating a relationship to another name.
+It requires evidence beyond a name's row of figures to add it to World. The
+other rows remain searchable in the retained Source. Temporal bounds require explicit effective
 instants; date-only precision is retained in the fact text. A replacement needs
 ordered start instants on both claims, so a date-only correction can be retained
 without structurally ending the earlier claim. An explicit termination can instead

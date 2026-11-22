@@ -353,7 +353,12 @@ const EXTRACTION_INSTRUCTIONS: &str = concat!(
     "calculate missing values. Include explicit identifying codes in entity names; ",
     "different codes identify different entities even when their display names ",
     "match. Preserve the distinction between a reported measurement, a forecast, ",
-    "an attributed allegation and an analyst's scenario."
+    "an attributed allegation and an analyst's scenario.",
+    " A table, screen or ranking that lists many companies or instruments with the same few figures ",
+    "is evidence about its topic, not a reason to add every row. From such a list keep the rows that ",
+    "the text around it discusses, that the research focus names, or that state a relationship to ",
+    "another name; leave the remaining rows in the Source, which stays searchable. A name enters ",
+    "only when the Source says something about it beyond its row of figures."
 );
 const MAX_INSTRUCTION_CHARS: usize = 4000;
 
@@ -480,4 +485,27 @@ pub(crate) fn extraction_instructions(hints: &Hints) -> String {
         );
     }
     text.chars().take(MAX_INSTRUCTION_CHARS).collect()
+}
+
+#[cfg(test)]
+mod instruction_tests {
+    use super::*;
+
+    #[test]
+    fn the_table_policy_survives_the_instruction_budget_with_full_hints() {
+        let hints = Hints {
+            focus: "가".repeat(1_000),
+            relations: (0..32)
+                .map(|n| format!("{n:02}{}", "R".repeat(62)))
+                .collect(),
+            followed: vec![("Followed name".into(), "CODE".into())],
+            ..Hints::default()
+        };
+        let instructions = extraction_instructions(&hints);
+        assert_eq!(instructions.chars().count(), MAX_INSTRUCTION_CHARS);
+        assert!(instructions.starts_with(EXTRACTION_INSTRUCTIONS));
+        assert!(instructions
+            .contains("only when the Source says something about it beyond its row of figures."));
+        assert!(instructions.contains(&hints.focus));
+    }
 }

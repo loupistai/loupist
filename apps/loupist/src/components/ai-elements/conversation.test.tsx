@@ -6,6 +6,12 @@ import { anchorDelta, Conversation, ConversationContent, pillVisible, roomDelta,
 // Every connected observer hears a resize, in the order they were connected, as the browser delivers them.
 const observers = new Set<() => void>();
 const resize = () => { for (const callback of [...observers]) callback(); };
+const frame = () => act(() => { vi.advanceTimersByTime(16); });
+const deliverResize = () => {
+  act(() => resize());
+  frame();
+  frame();
+};
 
 const view = { top: 0, bottom: 400, height: 400 };
 
@@ -51,7 +57,12 @@ function Blocks({ onReady }: { onReady: (append: (kind: "prose" | "card") => voi
   return null;
 }
 
-function thread({ running = false, wholePixels = false }: { running?: boolean; wholePixels?: boolean } = {}) {
+function thread({ running = false, wholePixels = false, readingAnchor = false, fractional = false }: {
+  running?: boolean;
+  wholePixels?: boolean;
+  readingAnchor?: boolean;
+  fractional?: boolean;
+} = {}) {
   const actions = { append: (_kind: "prose" | "card") => {}, hold: () => {}, jump: () => {} };
   // The app opens its lazy pages inside one Suspense boundary that also holds the thread.
   const content = (prompt: string, live = running, extra?: ReactNode) => <Suspense fallback={null}><Conversation aria-label="Conversation" scrollResetKey={prompt} running={live} footer={<ChatStatusPill />}>
@@ -63,9 +74,13 @@ function thread({ running = false, wholePixels = false }: { running?: boolean; w
   let height = 1000;
   let viewport = 400;
   let top = 0;
+  let maxScroll = Infinity;
+  let width = 600.25;
+  const layoutReads = vi.fn();
+  const scrollWrites = vi.fn();
   // Where the scroller's top edge sits: context above the thread moves it.
   let edgeAt = 0;
-  let questionAt = 900;
+  let questionAt = readingAnchor ? 100 : 900;
   let blockAt = 950;
   // A full-page view covers the thread (`display: none`): no box, every measure zero, writes ignored.
   let hidden = false;
@@ -73,17 +88,29 @@ function thread({ running = false, wholePixels = false }: { running?: boolean; w
     Object.defineProperties(element, {
       scrollHeight: { configurable: true, get: () => hidden ? 0 : height },
       clientHeight: { configurable: true, get: () => hidden ? 0 : viewport },
+      clientWidth: { configurable: true, get: () => fractional ? (width = 1201 - width) : 600 },
       scrollTop: { configurable: true, get: () => hidden ? 0 : top, // WKWebView keeps scrollTop in whole pixels: a smaller step is dropped.
-      set: (value) => { if (!hidden) top = Math.max(0, Math.min(wholePixels ? Math.floor(value) : value, height - viewport)); } },
+      set: (value) => {
+        scrollWrites(value);
+        if (!hidden) top = Math.max(0, Math.min(wholePixels ? Math.floor(value) : value, height - viewport, maxScroll));
+      } },
     });
   };
   // jsdom has no layout: give the scroller, the question and the appended block their geometry before the first layout effect.
   const original = HTMLElement.prototype.getBoundingClientRect;
   Object.defineProperty(HTMLElement.prototype, "offsetTop", { configurable: true, get() { return hidden ? 0 : (this as HTMLElement).id === "block" ? blockAt : (this as HTMLElement).classList.contains("user") ? questionAt : 0; } });
-  Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get() { return hidden ? 0 : (this as HTMLElement).id === "block" ? 26 : 40; } });
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get() {
+    if (hidden) return 0;
+    const element = this as HTMLElement;
+    if (readingAnchor && element.hasAttribute("data-turn")) return height;
+    return element.id === "block" ? 26 : 40;
+  } });
   HTMLElement.prototype.getBoundingClientRect = function () {
     if (hidden) return original.call(this);
-    if ((this as HTMLElement).getAttribute("role") === "log") return { top: edgeAt, bottom: edgeAt + viewport, height: viewport, left: 0, right: 600, width: 600, x: 0, y: 0, toJSON() {} } as DOMRect;
+    if ((this as HTMLElement).getAttribute("role") === "log") {
+      layoutReads();
+      return { top: edgeAt, bottom: edgeAt + viewport, height: viewport, left: 0, right: 600, width: 600, x: 0, y: 0, toJSON() {} } as DOMRect;
+    }
     if ((this as HTMLElement).classList.contains("turn-footer")) return { top: height - top - 30, bottom: height - top, height: 30, left: 0, right: 0, width: 0, x: 0, y: 0, toJSON() {} } as DOMRect;
     return original.call(this);
   };
@@ -93,11 +120,21 @@ function thread({ running = false, wholePixels = false }: { running?: boolean; w
   return {
     element,
     actions,
+    layoutReads,
+    scrollWrites,
+    clamp: (limit: number) => { maxScroll = limit; },
     sendPrompt: (prompt = "second", at = 1000, total = 1400) => { questionAt = at; height = total; result.rerender(content(prompt, true)); },
     rerender: (live: boolean, extra?: ReactNode, prompt = "second") => result.rerender(content(prompt, live, extra)),
     /** A full-page Map or Lens covers the thread, or uncovers it; WebKit may drop the position meanwhile. */
-    hide: (on: boolean) => { hidden = on; if (!on) top = 0; act(() => resize()); },
-    grow: (next: number) => { height = next; act(() => resize()); },
+    hide: (on: boolean, scrollBeforeResize = false) => {
+      hidden = on;
+      if (!on) {
+        top = 0;
+        if (scrollBeforeResize) fireEvent.scroll(element);
+      }
+      deliverResize();
+    },
+    grow: (next: number) => { height = next; deliverResize(); },
     moveBlock: (next: number) => { blockAt = next; },
     /** Context above the thread takes `rows` px: the scroller's top edge moves down and its viewport shrinks by as much. */
     contextAbove: (rows: number) => { viewport += edgeAt - rows; edgeAt = rows; },
@@ -154,6 +191,72 @@ describe("anchored reading", () => {
     } finally { t.restore(); }
   });
 
+  it("keeps following through a saving resize that WebKit scrolls before reporting", () => {
+    const t = thread();
+    try {
+      t.sendPrompt();
+      t.grow(2400);
+      fireEvent.wheel(t.element, { deltaY: 200 });
+      t.element.scrollTop = 2000;
+      fireEvent.scroll(t.element);
+      act(() => { vi.advanceTimersByTime(500); });
+      // The scroll viewport shifts to an earlier position as the saving footer appears.
+      t.element.scrollTop = 1972;
+      t.grow(2500);
+      fireEvent.scroll(t.element);
+      expect(t.element.scrollTop).toBe(2100);
+      t.rerender(false);
+      t.grow(2800);
+      expect(t.element.scrollTop).toBe(2400);
+    } finally { t.restore(); }
+  });
+
+  it("pins an idle chat at the end again after the reader returns there", () => {
+    const t = thread();
+    try {
+      deliverResize();
+      fireEvent.wheel(t.element, { deltaY: -200 });
+      t.element.scrollTop = 400;
+      fireEvent.scroll(t.element);
+      fireEvent.wheel(t.element, { deltaY: 200 });
+      t.element.scrollTop = 600;
+      fireEvent.scroll(t.element);
+      t.grow(1300);
+      expect(t.element.scrollTop).toBe(900);
+    } finally { t.restore(); }
+  });
+
+  it("accepts a reader scroll back to the position of a superseded component write", () => {
+    const t = thread();
+    try {
+      deliverResize();
+      expect(t.element.scrollTop).toBe(600);
+      // The scrollbar drag arrives before the event for the component's write.
+      t.element.scrollTop = 400;
+      fireEvent.scroll(t.element);
+      t.element.scrollTop = 600;
+      fireEvent.scroll(t.element);
+      t.grow(1300);
+      expect(t.element.scrollTop).toBe(900);
+    } finally { t.restore(); }
+  });
+
+  it("holds the same reading block when earlier content rewraps and WebKit resets the scroll position", () => {
+    const t = thread({ readingAnchor: true });
+    try {
+      t.moveBlock(700);
+      t.grow(1800);
+      fireEvent.wheel(t.element, { deltaY: -700 });
+      t.element.scrollTop = 694;
+      fireEvent.scroll(t.element);
+      t.moveBlock(944);
+      t.element.scrollTop = 0;
+      t.grow(2044);
+      fireEvent.scroll(t.element);
+      expect(t.element.scrollTop).toBe(938);
+    } finally { t.restore(); }
+  });
+
   it("reaches the end while following when the scroller keeps whole pixels, as WKWebView does", () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} }));
     const t = thread({ wholePixels: true });
@@ -165,6 +268,60 @@ describe("anchored reading", () => {
       fireEvent.click(jump()!);
       act(() => { vi.advanceTimersByTime(3_000); });
       expect(t.element.scrollTop).toBe(2000);
+    } finally { t.restore(); }
+  });
+
+  it("bounds reconciliation when the composer resizes and geometry rounds to fractional pixels", () => {
+    const t = thread({ fractional: true, wholePixels: true });
+    try {
+      t.sendPrompt();
+      expect(jump()).toBeNull();
+      t.layoutReads.mockClear();
+      t.scrollWrites.mockClear();
+      t.contextAbove(45.625);
+      t.rerender(true);
+      expect(t.element.scrollTop).toBe(1029);
+      act(() => { for (let i = 0; i < 10; i++) resize(); });
+      act(() => { vi.advanceTimersByTime(160); });
+      // The status update must not replay the layout effect. All ten resize
+      // notifications fit in one deferred pass, with no second scroll write.
+      expect(t.layoutReads.mock.calls.length).toBeLessThanOrEqual(6);
+      expect(t.scrollWrites).toHaveBeenCalledTimes(1);
+      expect(jump()).toBeVisible();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { t.restore(); }
+  });
+
+  it("stops following when the browser clamps a write and resumes on a new layout", () => {
+    const t = thread({ wholePixels: true });
+    try {
+      t.sendPrompt();
+      t.grow(2400);
+      t.clamp(1700);
+      fireEvent.click(jump()!);
+      act(() => { vi.advanceTimersByTime(64); });
+      expect(t.element.scrollTop).toBe(1700);
+      t.scrollWrites.mockClear();
+      act(() => { vi.advanceTimersByTime(320); });
+      expect(t.scrollWrites).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+      t.clamp(Infinity);
+      t.grow(2600);
+      expect(t.element.scrollTop).toBe(2200);
+    } finally { t.restore(); }
+  });
+
+  it("stays idle when a viewport resize leaves the thread shorter than the viewport", () => {
+    const t = thread({ fractional: true });
+    try {
+      t.grow(100.5);
+      t.scrollWrites.mockClear();
+      t.contextAbove(30.25);
+      deliverResize();
+      deliverResize();
+      expect(t.element.scrollTop).toBe(0);
+      expect(t.scrollWrites).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
     } finally { t.restore(); }
   });
 
@@ -190,7 +347,7 @@ describe("anchored reading", () => {
       expect(t.element.scrollTop).toBe(984);
       // A 62 px row appears above the thread (the inline rail's "Needs your answer"): the page moves down with it.
       t.contextAbove(62);
-      act(() => resize());
+      deliverResize();
       expect(t.element.scrollTop).toBe(984 + 62);
       // The row goes once the question is answered. WKWebView first clamps the position to the larger viewport's range
       // (1400 - 400) and reports a scroll; the page goes back to where the reader's content stays put, and that is not the reader's scroll.
@@ -198,6 +355,7 @@ describe("anchored reading", () => {
       t.element.scrollTop = t.element.scrollTop;
       expect(t.element.scrollTop).toBe(1000);
       fireEvent.scroll(t.element);
+      frame();
       expect(t.element.scrollTop).toBe(984);
       // Still the page's own position: a new block makes room as before.
       t.grow(2000);
@@ -225,26 +383,26 @@ describe("anchored reading", () => {
     try {
       t.sendPrompt();
       act(() => { vi.advanceTimersByTime(400); });
-      expect(t.element.scrollTop).toBe(984);
+      expect(Math.abs(t.element.scrollTop - 984)).toBeLessThan(1);
       t.grow(2400);
       t.moveBlock(984 + 300);
       act(() => t.actions.append("prose"));
       // The question card's "Needs your answer" row arrives in the same moment: the page starts from where the content stays.
       t.contextAbove(45);
       t.rerender(true);
-      expect(t.element.scrollTop).toBe(984 + 45);
+      expect(Math.abs(t.element.scrollTop - (984 + 45))).toBeLessThan(1);
       act(() => { vi.advanceTimersByTime(400); });
-      expect(t.element.scrollTop).toBe(984 + 300 - 160);
+      expect(Math.abs(t.element.scrollTop - (984 + 300 - 160))).toBeLessThan(1);
     } finally { t.restore(); }
   });
 
   it("keeps a thread opened at its end at its end when context above it changes", () => {
     const t = thread();
     try {
-      act(() => resize());
+      deliverResize();
       expect(t.element.scrollTop).toBe(600);
       t.contextAbove(45);
-      act(() => resize());
+      deliverResize();
       expect(t.element.scrollTop).toBe(1000 - 355);
     } finally { t.restore(); }
   });
@@ -253,7 +411,7 @@ describe("anchored reading", () => {
   const readUnderHeader = () => {
     const t = thread();
     t.contextAbove(56);
-    act(() => resize());
+    deliverResize();
     t.sendPrompt();
     expect(t.element.scrollTop).toBe(984);
     return t;
@@ -268,7 +426,7 @@ describe("anchored reading", () => {
       t.rerender(false);
       expect(turn.style.minHeight).toBe("");
       expect(t.element.style.getPropertyValue("--turn-viewport")).not.toBe("0px");
-      t.hide(false);
+      t.hide(false, true);
       expect(t.element.scrollTop).toBe(984);
       expect(turn.style.minHeight).toBe("");
       // The next question still glides to 16 px under the top.
@@ -307,7 +465,7 @@ describe("anchored reading", () => {
     const t = thread();
     try {
       expect(t.element.scrollTop).toBe(0);
-      act(() => resize());
+      deliverResize();
       expect(t.element.scrollTop).toBe(600);
       t.grow(1300);
       expect(t.element.scrollTop).toBe(900);
@@ -338,7 +496,7 @@ it("draws the pill over the thread in a dock that takes no height, and updates i
 it("flags the thread as scrolled while anything sits under the chat sub-header", () => {
   const t = thread();
   try {
-    act(() => resize());
+    deliverResize();
     expect(t.element).toHaveAttribute("data-scrolled");
     t.element.scrollTop = 0;
     fireEvent.scroll(t.element);

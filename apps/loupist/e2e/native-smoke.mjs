@@ -6,7 +6,7 @@ import { remote } from "webdriverio";
 import { createWebdriverHelpers } from "./webdriver-helpers.mjs";
 import { minimumWindowSize, setWindowSize, withWindowSize } from "./window-geometry.mjs";
 import { focusNativeWindow } from "./native-window-focus.mjs";
-import { assertComposerGrows, assertFormLegendsFit, assertNewLoupistPreviewShows, composerMessageLayout } from "./native-forms.mjs";
+import { assertComposerGrows, assertFormLegendsFit, assertNewLoupistPreviewShows, ComposerPreviewUnresponsive, composerMessageLayout, openComposerPreview } from "./native-forms.mjs";
 import { verifyNativeBrowserNavigation } from "./native-browser.mjs";
 import { assertShellLayout, measureShellLayout } from "./shell-layout.mjs";
 import { assertMapOverlays, measureMapOverlays } from "./map-layout.mjs";
@@ -264,6 +264,7 @@ async function selectOption(triggerSelector, optionText) {
   });
 }
 
+let previewUnresponsive = false;
 try {
   await focusNativeWindow(browser, session);
   await step("desktop window and CSS viewport", async () => {
@@ -705,52 +706,39 @@ try {
     await capture("number-chip-underline");
   });
 
-  // A preview opened from another preview: the old document still says it is ready until the
-  // navigation commits, so mark it stale first. Otherwise the readiness wait can pass on the old
-  // page and the next action lands on a blank one (seen on a slow CI runner).
-  const openPreview = async url => {
-    await browser.execute(() => { document.documentElement.dataset.previewReady = "stale"; });
-    await browser.url(url);
-  };
+  const composerPreview = `${String(session.devUrl).replace(/\/$/, "")}/preview.html?scenario=composer-compact`;
+  const composerWindow = await browser.getWindowSize();
 
   // WKWebView has no `field-sizing: content`; the composer sizes its message itself.
   await step("the composer grows with its text, then scrolls with the caret in view", async () => {
     for (const size of [null, minimumWindowSize]) {
-      const check = async () => {
-        const url = `${String(session.devUrl).replace(/\/$/, "")}/preview.html?scenario=composer-compact&composerProbe=${size ? "minimum" : "default"}`;
-        await openPreview(url);
-        await browser.waitUntil(() => browser.execute(() => document.documentElement.dataset.previewReady === "true"),
-          { timeout: 60_000, interval: 250, timeoutMsg: "The composer preview did not become ready" });
-        await assertComposerGrows(browser, { onCapped: () => capture(`composer-capped${size ? "-minimum" : ""}`) });
-      };
-      if (size) await withWindowSize(browser, size, check);
-      else await check();
+      if (size) await setWindowSize(browser, size);
+      await openComposerPreview(browser, `${composerPreview}&composerProbe=${size ? "minimum" : "default"}`);
+      await assertComposerGrows(browser, { onCapped: () => capture(`composer-capped${size ? "-minimum" : ""}`) });
     }
   });
 
   await step("the first research reply leaves a one-line composer beside a docked panel", async () => {
-    await withWindowSize(browser, { width: 1280, height: 820 }, async () => {
-      await openPreview(`${String(session.devUrl).replace(/\/$/, "")}/preview.html?scenario=composer-compact`);
-      await browser.waitUntil(() => browser.execute(() => document.documentElement.dataset.previewReady === "true"),
-        { timeout: 60_000, interval: 250, timeoutMsg: "The composer preview did not become ready" });
-      await clickControl(browser, '[data-testid="navigation-new"]');
-      await displayed('[data-thread-id="__empty-chat__"][aria-current="page"]');
-      await clickControl(browser, '[data-workspace-split="side"]');
-      await displayed('#workspace-panel[role="complementary"][data-placement="side"]');
-      const empty = await browser.execute(composerMessageLayout);
-      assert.ok(await browser.execute(() => {
-        document.querySelector('textarea[data-chat-composer="true"]')?.focus();
-        return document.execCommand("insertText", false, "Summarize the results.\nFocus on revenue.\nState the comparison period.");
-      }), "The composer refused multiline input");
-      const multiline = await browser.execute(composerMessageLayout);
-      assert.ok(multiline.height > empty.height, "The multiline first question must grow the composer");
-      await clickControl(browser, '.composer button[type="submit"]');
-      await displayed('article.message.assistant.complete');
-      await displayed('#workspace-panel[role="complementary"][data-placement="side"]');
-      assert.equal(await (await displayed('textarea[data-chat-composer="true"]')).getValue(), "");
-      const cleared = await browser.execute(composerMessageLayout);
-      assert.ok(Math.abs(cleared.height - cleared.minHeight) <= 1.5, `The cleared composer is still tall: ${JSON.stringify(cleared)}`);
-    });
+    await setWindowSize(browser, { width: 1280, height: 820 });
+    await openComposerPreview(browser, composerPreview);
+    await clickControl(browser, '[data-testid="navigation-new"]');
+    await displayed('[data-thread-id="__empty-chat__"][aria-current="page"]');
+    await clickControl(browser, '[data-workspace-split="side"]');
+    await displayed('#workspace-panel[role="complementary"][data-placement="side"]');
+    const empty = await browser.execute(composerMessageLayout);
+    assert.ok(await browser.execute(() => {
+      document.querySelector('textarea[data-chat-composer="true"]')?.focus();
+      return document.execCommand("insertText", false, "Summarize the results.\nFocus on revenue.\nState the comparison period.");
+    }), "The composer refused multiline input");
+    const multiline = await browser.execute(composerMessageLayout);
+    assert.ok(multiline.height > empty.height, "The multiline first question must grow the composer");
+    await clickControl(browser, '.composer button[type="submit"]');
+    await displayed('article.message.assistant.complete');
+    await displayed('#workspace-panel[role="complementary"][data-placement="side"]');
+    assert.equal(await (await displayed('textarea[data-chat-composer="true"]')).getValue(), "");
+    const cleared = await browser.execute(composerMessageLayout);
+    assert.ok(Math.abs(cleared.height - cleared.minHeight) <= 1.5, `The cleared composer is still tall: ${JSON.stringify(cleared)}`);
+    await setWindowSize(browser, composerWindow);
   });
 
   await step("native browser preserves the article while blocking unsafe navigation", async () => {
@@ -772,6 +760,12 @@ try {
   await browser.saveScreenshot(resolve(artifactRoot, "native-release-smoke.png"));
   console.log(full ? "Loupist native release smoke passed." : "Loupist native core smoke passed.");
 } catch (error) {
+  // A renderer that missed its script deadline cannot provide page diagnostics.
+  if (error instanceof ComposerPreviewUnresponsive) {
+    previewUnresponsive = true;
+    console.error(error.message);
+    throw error;
+  }
   const state = await browser.execute(() => ({
     onboarding: document.querySelector("main[data-onboarding]")?.getAttribute("data-onboarding") ?? null,
     current: [...document.querySelectorAll('[aria-current="page"]')].map((element) => ({
@@ -785,5 +779,7 @@ try {
   await browser.saveScreenshot(resolve(artifactRoot, "native-release-smoke-failure.png")).catch(() => {});
   throw error;
 } finally {
-  await browser.deleteSession();
+  await browser.deleteSession().catch((error) => {
+    if (!previewUnresponsive) throw error;
+  });
 }

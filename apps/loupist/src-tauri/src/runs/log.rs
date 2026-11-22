@@ -597,11 +597,12 @@ pub fn run_logs_reveal(
 ) -> Result<(), CommandError> {
     let (path, _guard) = directory(&diagnostics_root(&state, request.loupist_id.as_deref())?)?;
     #[cfg(target_os = "macos")]
-    std::process::Command::new("/usr/bin/open")
-        .arg("-R")
-        .arg(&path)
-        .spawn()
-        .map_err(io_error)?;
+    crate::process_lease::macos_commands::spawn(
+        std::process::Command::new("/usr/bin/open")
+            .arg("-R")
+            .arg(&path),
+    )
+    .map_err(io_error)?;
     #[cfg(windows)]
     std::process::Command::new("explorer.exe")
         .arg(format!("/select,{}", path.display()))

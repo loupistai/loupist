@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { openSpy } from "../../test/open";
 import { OpenProvider } from "../navigation/Open";
+import { TooltipProvider } from "../ui/tooltip";
 import type { ReactNode } from "react";
 import type { ChartDataset, ChatArtifactRef, ChatArtifactView, LoupistBridge } from "../../types";
 import { ChatArtifactBlock } from "./ChatArtifactBlock";
@@ -78,7 +79,7 @@ it("keeps a staged chart available in a finished answer while Memory saves", asy
   render(withScope(<ChatMessageCard loupistName="Research" loupistId="loupist" onReadAttachment={vi.fn()} message={{
     id: "answer", role: "assistant", status: "streaming", created_at: new Date().toISOString(),
     content: "The chart compares operating margins.", staged_artifacts: [view], memorySaving: { run_id: "run", waiting_for_other_chat: true },
-  }} />, read));
+  }} />, read), { wrapper: TooltipProvider });
   const card = await screen.findByRole("region", { name: "Chart: Operating margin" });
   expect(card).toHaveAttribute("data-state", "ready");
   expect(screen.getByRole("button", { name: "Copy data" })).toBeEnabled();

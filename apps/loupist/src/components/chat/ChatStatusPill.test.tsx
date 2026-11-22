@@ -9,20 +9,34 @@ const streaming: ChatMessage = {
   progress: { startedAtMs: start, items: [{ id: "compare", kind: "tool", category: "compute", operation: "calculate", action: "Compared utilization", running: "Comparing utilization", status: "running", target: null, href: null, startedAtMs: 0, finishedAtMs: null }], finishedAtMs: null },
 };
 
-/** A thread whose end is `below` px under the fold once the reader scrolls. */
+/** A laid-out thread that opens at the end and lets the reader scroll away. */
 function renderPill(message: ChatMessage | undefined, run?: ChatRunStatus) {
   const view = render(<Conversation aria-label="Conversation" footer={<ChatStatusPill message={message} run={run} />}><ConversationContent>Thread</ConversationContent></Conversation>);
   const element = screen.getByRole("log");
-  let top = 600;
+  let top = 0;
   Object.defineProperties(element, {
     scrollHeight: { configurable: true, get: () => 1000 },
     clientHeight: { configurable: true, get: () => 400 },
-    scrollTop: { configurable: true, get: () => top, set: (value) => { top = value; } },
+    scrollTop: { configurable: true, get: () => top, set: (value) => { top = Math.max(0, Math.min(600, value)); } },
   });
-  return { ...view, scrollAway: () => { fireEvent.wheel(element, { deltaY: -200 }); top = 200; fireEvent.scroll(element); } };
+  // jsdom had no layout at mount. Deliver the initial resize and let the thread settle before input.
+  fireEvent.resize(window);
+  act(() => {
+    vi.advanceTimersToNextFrame();
+    vi.advanceTimersToNextFrame();
+  });
+  return { ...view, scrollAway: () => {
+    fireEvent.wheel(element, { deltaY: -400 });
+    element.scrollTop = 200;
+    fireEvent.scroll(element);
+    act(() => { vi.advanceTimersToNextFrame(); });
+  } };
 }
 
-beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(start + 42_000); });
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date", "requestAnimationFrame", "cancelAnimationFrame", "setInterval", "clearInterval"] });
+  vi.setSystemTime(start + 42_000);
+});
 afterEach(() => vi.useRealTimers());
 
 it("stays hidden while the end of the thread is in view", () => {

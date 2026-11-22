@@ -225,6 +225,10 @@ and stated link and publisher of a
 [user-provided Source](../knowledge/sources-notes.md#user-provided-sources). Existing
 captures keep none.
 
+Knowledge 11 records the World revision and, where a Source job published it,
+the Source's identity on growth events. Existing events keep their original
+rows and have no recorded publication.
+
 After initialization and window setup, a background host task exports the catalog's
 retired rows to `<app data directory>/legacy-holdings/holdings-export.json` (or a
 numbered name when an existing file cannot be verified). The directory is private

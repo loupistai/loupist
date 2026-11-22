@@ -25,7 +25,7 @@ import type { LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin, 
 import { errorMessage } from "../../lib/errors";
 import { pinForSource, type SourceOpen } from "../../knowledge/location";
 import { compactOrigin, sourceOrigin, sourceTitle } from "../../knowledge/hostSource";
-import { isMapProcessing, processingSourceCount } from "../../knowledge/mapProcessing";
+import { isMapProcessing, processingSourceCount, sourceDisplayStatus, sourceProcessingLabel, type WorldProcessing } from "../../knowledge/mapProcessing";
 import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
 import { relationName } from "../map/relations";
 import { SourceRetry } from "./SourceRetry";
@@ -47,22 +47,6 @@ const sourceDate = (value: string | undefined) => {
 };
 const textMedia = (value: string) => value.startsWith("text/") || value === "application/json";
 
-const sourceProcessingLabel = (status?: string) => {
-  switch (status) {
-    case "queued": case "running": return i18n.t("knowledge:sourceWorkspace.worldIsUpdating");
-    case "completed": return i18n.t("knowledge:sourceWorkspace.worldUpdated");
-    case "paused": return i18n.t("knowledge:sourceWorkspace.worldProcessingPaused");
-    // Map building is on; this Source's chunks stopped by themselves (its allowance ran out).
-    case "paused_budget": return i18n.t("knowledge:sourceWorkspace.worldProcessingStoppedForThisSource");
-    case "failed_before_mutation": return i18n.t("knowledge:sourceWorkspace.worldProcessingFailed");
-    case "reconcile_required": return i18n.t("knowledge:sourceWorkspace.worldUpdateNeedsReview");
-    case "reconciled_without_retry": return i18n.t("knowledge:sourceWorkspace.sourceRetainedInterruptedProcessingWasNotRetried");
-    case "cancelled_before_start": return i18n.t("knowledge:sourceWorkspace.worldProcessingCancelled");
-    case "unsupported": case "no_text": return i18n.t("knowledge:sourceWorkspace.noTextForWorldProcessing");
-    case "disabled": case "not_configured": return i18n.t("knowledge:sourceWorkspace.worldProcessingIsOff");
-    default: return i18n.t("knowledge:sourceWorkspace.sourceSaved");
-  }
-};
 /** A row shows its Map status only when it says more than "Source saved": a finished or unprocessed source stays quiet. */
 const quietStatus = (status?: string) => status === "completed" || sourceProcessingLabel(status) === sourceProcessingLabel();
 
@@ -77,9 +61,9 @@ function ProvidedNote({ provided }: { provided: NonNullable<SourceDetail["provid
   </p>;
 }
 
-type Props = { bridge: LoupistBridge; catalog: KnowledgeCatalog; location: KnowledgeLocation; sourceOpen?: SourceOpen; query?: string; onQueryChange?: (query: string) => void; onManageProcessing?: () => void; onAddSource?: () => void; readerOnly?: boolean; compact?: boolean; onOpen: (location: KnowledgeLocation) => void; onPatch?: (location: KnowledgeLocation) => void; onAsk: (pin: KnowledgePin) => void; onChanged: () => void; onOpenLink?: (url: string) => void | Promise<void>; opensLinksInPanel?: boolean; quoteCitedSelections?: boolean };
+type Props = { bridge: LoupistBridge; catalog: KnowledgeCatalog; worldProcessing?: WorldProcessing; location: KnowledgeLocation; sourceOpen?: SourceOpen; query?: string; onQueryChange?: (query: string) => void; onManageProcessing?: () => void; onAddSource?: () => void; readerOnly?: boolean; compact?: boolean; onOpen: (location: KnowledgeLocation) => void; onPatch?: (location: KnowledgeLocation) => void; onAsk: (pin: KnowledgePin) => void; onChanged: () => void; onOpenLink?: (url: string) => void | Promise<void>; opensLinksInPanel?: boolean; quoteCitedSelections?: boolean };
 
-export function SourceWorkspace({ bridge, catalog, location, sourceOpen, query = "", onQueryChange, onManageProcessing, onAddSource, readerOnly = false, compact = false, onOpen, onPatch = onOpen, onAsk, onChanged, onOpenLink, opensLinksInPanel, quoteCitedSelections }: Props) {
+export function SourceWorkspace({ bridge, catalog, worldProcessing, location, sourceOpen, query = "", onQueryChange, onManageProcessing, onAddSource, readerOnly = false, compact = false, onOpen, onPatch = onOpen, onAsk, onChanged, onOpenLink, opensLinksInPanel, quoteCitedSelections }: Props) {
   const { t } = useTranslation("knowledge");
   const selected = location.selection?.kind === "source" ? location.selection : undefined;
   const sourceRecord = catalog.sources.find((item) => item.recordId === location.recordId);
@@ -248,11 +232,21 @@ export function SourceWorkspace({ bridge, catalog, location, sourceOpen, query =
   };
 
   const search = query.normalize("NFKC").trim().toLowerCase();
-  const matching = catalog.sources.flatMap((record) => record.objects.map((item) => ({ record, item })))
-    .filter(({ item }) => !search || `${sourceTitle(item)} ${item.summary ?? ""} ${sourceOrigin(item) ?? ""}`.normalize("NFKC").toLowerCase().includes(search));
-  const processingCount = processingSourceCount(catalog);
-  const needsAttention = (status?: string) => ["paused", "paused_budget", "failed_before_mutation", "reconcile_required", "cancelled_before_start", "unsupported", "no_text"].includes(status ?? "");
-  const sources = matching.filter(({ item }) => filter === "all" || (filter === "processing" ? isMapProcessing(item.processing?.status) : needsAttention(item.processing?.status)));
+  const readiness = worldProcessing?.readiness;
+  const activity = worldProcessing?.activity;
+  const waiting = activity?.kind === "waiting" ? activity.reason : undefined;
+  const buildingWithoutSources = activity?.kind === "building" && activity.sourceCount === 0;
+  const showQueueStatus = waiting || buildingWithoutSources;
+  const queuedStatus = sourceDisplayStatus("queued", readiness);
+  const matching = catalog.sources.flatMap(record => record.objects.map(item => ({
+    record, item, status: sourceDisplayStatus(item.processing?.status, readiness),
+  }))).filter(({ item }) => !search || `${sourceTitle(item)} ${item.summary ?? ""} ${sourceOrigin(item) ?? ""}`.normalize("NFKC").toLowerCase().includes(search));
+  const processingCount = processingSourceCount(catalog, readiness);
+  const needsAttention = (status?: string) => (status !== undefined && status === queuedStatus && !isMapProcessing(status))
+    || ["paused", "paused_budget", "failed_before_mutation", "reconcile_required", "cancelled_before_start", "unsupported", "no_text"].includes(status ?? "");
+  const sources = matching.filter(({ status }) => filter === "all" || (filter === "processing" ? isMapProcessing(status) : needsAttention(status)));
+  const readerProcessing = sourceDisplayStatus(processing, readiness);
+  const processingSettings = onManageProcessing ? <Button variant="ghost" size="icon-sm" aria-label={t("sourceWorkspace.worldProcessingSettings")} title={t("sourceWorkspace.worldProcessingSettings")} onClick={onManageProcessing}><Settings2Icon /></Button> : null;
   const originalUrl = (() => { try { const url = new URL(detail?.originLabel ?? ""); return url.protocol === "https:" || url.protocol === "http:" ? url.href : null; } catch { return null; } })();
   const retainedSource = readerOnly && detail && span ? {
     loupistId: location.loupistId, recordId: detail.recordId, revisionId: detail.revisionId,
@@ -294,13 +288,17 @@ export function SourceWorkspace({ bridge, catalog, location, sourceOpen, query =
       {onQueryChange ? <div className="memory-search source-search"><SearchIcon aria-hidden="true" /><Input aria-label={t("sourceWorkspace.searchSources")} placeholder={t("sourceWorkspace.companyFilingOrSource")} value={query} onChange={(event) => onQueryChange(event.target.value)} />{query ? <Button variant="ghost" size="icon-sm" aria-label={t("sourceWorkspace.clearSearch")} onClick={() => onQueryChange("")}><XIcon /></Button> : null}</div> : null}
       <SegmentedControl value={filter} onValueChange={(value) => patchView({ sourceFilter: value as "all" | "processing" | "attention", sourceScrollTop: 0 })} aria-label={t("sourceWorkspace.sourceProcessingFilters")}><SegmentedControlItem value="all">{t("sourceWorkspace.all")}</SegmentedControlItem><SegmentedControlItem value="processing">{processingCount ? t("sourceWorkspace.processingCount", { countText: formatNumber(processingCount) }) : t("sourceWorkspace.processing")}</SegmentedControlItem><SegmentedControlItem value="attention">{t("sourceWorkspace.needsAttention")}</SegmentedControlItem></SegmentedControl></div>
       {compact ? <div className="source-library-heading library-section-label"><h2>{t("sourceWorkspace.savedSources")}</h2><span>{formatNumber(sources.length)}</span>{onAddSource ? <Button variant="outline" size="sm" className="library-add" onClick={onAddSource}>{t("map.addInLibrary")}</Button> : null}</div> : null}
+      {showQueueStatus ? <div className="source-processing-status">
+        <p role="status">{buildingWithoutSources ? <Spinner /> : null}{sourceProcessingLabel(waiting ?? "running")}</p>
+        {waiting ? processingSettings : null}
+      </div> : null}
       {!sources.length ? <EmptyState title={search || filter !== "all" ? t("sourceWorkspace.noMatchingSources") : t("sourceWorkspace.noSourcesYet")} description={search || filter !== "all" ? t("sourceWorkspace.tryAnotherSearchOrChooseAll") : t("sourceWorkspace.addTextAFileOrALinkToUseIn")} /> : null}
       <ul ref={listRef} aria-label={t("sourceWorkspace.sources")}>
-        {sources.map(({ record, item }) => <li key={`${record.recordId}:${item.id}`}>
+        {sources.map(({ record, item, status }) => <li key={`${record.recordId}:${item.id}`}>
           <Button variant="ghost" className="source-library-row" data-testid="source-library-row" data-source-id={item.id} aria-current={item.id === selected?.sourceId} onClick={() => onOpen({ loupistId: location.loupistId, surface: "source", recordId: record.recordId, revisionId: record.revisionId, objectId: item.id, view: { ...location.view, readerScrollTop: 0, focusSourceId: item.id }, selection: { kind: "source", sourceId: item.id } })}>
             <span className="memory-rail-copy"><strong>{sourceTitle(item)}</strong>{item.summary ? <span className="source-summary">{item.summary}</span> : null}
               <small className="source-row-meta"><ConnectionOrigin origin={item.origin} />{item.userProvided ? <span className="source-row-provided">{t("sourceWorkspace.userProvided")}</span> : null}<span className="source-row-origin" title={sourceOrigin(item)}>{compactOrigin(sourceOrigin(item))}</span>{item.publicationTime?.value ?? item.acquiredAt?.value ? <time title={item.publicationTime?.value ?? item.acquiredAt?.value}>{sourceDate(item.publicationTime?.value ?? item.acquiredAt?.value)}</time> : null}
-              {quietStatus(item.processing?.status) ? null : <span className="source-row-status" data-attention={needsAttention(item.processing?.status) || undefined}>{isMapProcessing(item.processing?.status) ? <Spinner /> : item.processing?.status === "completed" ? <CheckIcon aria-hidden="true" /> : null}{sourceProcessingLabel(item.processing?.status)}</span>}</small>
+              {quietStatus(status) || (status === waiting && status !== item.processing?.status) ? null : <span className="source-row-status" data-attention={needsAttention(status) || undefined}>{isMapProcessing(status) ? <Spinner /> : status === "completed" ? <CheckIcon aria-hidden="true" /> : null}{sourceProcessingLabel(status)}</span>}</small>
             </span>
           </Button>
           {item.processing?.status === "paused_budget" ? <SourceRetry key={item.processing.jobId ?? "retry"} retry={retrySource(record.recordId)} onRetried={rowRetried} /> : null}
@@ -351,7 +349,7 @@ export function SourceWorkspace({ bridge, catalog, location, sourceOpen, query =
         </section> : <p>{t("sourceWorkspace.onlyTheSourceDetailsWereSavedNoPassageIsAvailable")}</p>}
         {span && !textMedia(span.mediaType) ? <div className="knowledge-inspector-actions"><Button variant="outline" disabled={exporting} onClick={() => void exportFile()}>{exporting ? t("sourceWorkspace.exporting") : detail.material === "original" ? t("sourceWorkspace.exportOriginalFile") : t("sourceWorkspace.exportSavedFile")}</Button>{exported ? <span role="status">{t("sourceWorkspace.fileExported")}</span> : null}{exportError ? <p role="alert">{exportError}</p> : null}</div> : null}
         {detail.spans.length > 1 ? <div className="knowledge-inspector-actions" aria-label={t("sourceWorkspace.sourcePassages")}>{detail.spans.map((item, index) => <Button key={item.spanId} variant={item.spanId === span?.spanId ? "secondary" : "ghost"} onClick={() => onOpen({ ...location, selection: { ...selected, kind: "source", sourceId: detail.sourceId, spanId: item.spanId } })}>{t("sourceWorkspace.passage", { index: formatNumber(index + 1) })}</Button>)}</div> : null}
-        <div className="source-processing-status" data-attention={needsAttention(processing) || undefined}><div><span className="source-reader-eyebrow">{t("sourceWorkspace.worldProcessing")}</span><p role="status">{isMapProcessing(processing) ? <Spinner /> : null}{sourceProcessingLabel(processing)}</p>{detail.processing?.error ? <p className="knowledge-hint">{detail.processing.error}</p> : null}{processing === "paused_budget" ? <SourceRetry retry={retrySource(detail.recordId)} onRetried={readerRetried} /> : null}</div>{onManageProcessing ? <Button variant="ghost" size="icon-sm" aria-label={t("sourceWorkspace.worldProcessingSettings")} title={t("sourceWorkspace.worldProcessingSettings")} onClick={onManageProcessing}><Settings2Icon /></Button> : null}</div>
+        <div className="source-processing-status" data-attention={needsAttention(readerProcessing) || undefined}><div><span className="source-reader-eyebrow">{t("sourceWorkspace.worldProcessing")}</span><p role="status">{isMapProcessing(readerProcessing) ? <Spinner /> : null}{sourceProcessingLabel(readerProcessing)}</p>{detail.processing?.error ? <p className="knowledge-hint">{detail.processing.error}</p> : null}{processing === "paused_budget" ? <SourceRetry retry={retrySource(detail.recordId)} onRetried={readerRetried} /> : null}</div>{processingSettings}</div>
         {detailRefreshError ? <div className="knowledge-inspector-actions"><p role="alert">{detailRefreshError}</p><Button variant="outline" disabled={detailRefreshing} onClick={() => void refreshDetail()}>{detailRefreshing ? t("sourceWorkspace.refreshingSource") : t("sourceWorkspace.refreshSourceDetails")}</Button></div> : null}
         {claimGroups.map(({ kind, label, claims }) => claims.length ? <details key={kind} className="source-related-claims" aria-label={label}>
           <summary>{label}<span>{formatNumber(claims.length)}</span></summary>

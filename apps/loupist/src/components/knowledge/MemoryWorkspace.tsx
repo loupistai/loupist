@@ -27,7 +27,7 @@ export type MemoryWorkspaceProps = {
 
 export function MemoryWorkspace({ bridge, loupist, active = true, mapVisit, navigation, onPatch, onOpen, onBack, onAsk, catalogState, onAskInChat, onManageProcessing, onOpenLink, onOpenChat, onExplainDisagreement }: MemoryWorkspaceProps) {
   const { t } = useTranslation("knowledge");
-  const { catalog: current, build, error, reload: changed, refreshKey } = catalogState;
+  const { catalog: current, processing, error, reload: changed, refreshKey } = catalogState;
   const [adding, setAdding] = useState(false);
   const location = navigation.current;
   useEffect(() => { setAdding(false); }, [loupist.id]);
@@ -42,7 +42,7 @@ export function MemoryWorkspace({ bridge, loupist, active = true, mapVisit, navi
   return <section className="memory-workspace map-workspace" aria-label={t("map.title")}>
     {error ? <div role="alert">{error}<Button variant="outline" onClick={changed}>{t("map.retry")}</Button></div> : null}
     {!current && !error ? <p role="status">{t("map.loading")}</p> : null}
-    {current ? <MapView key={mapVisit?.key} initialAnchor={mapVisit?.anchor} onOpenChat={onOpenChat} bridge={bridge} catalog={current} building={Boolean(build)} location={resolvedMap} readerLocation={["source", "note"].includes(location.surface) ? location : undefined} active={active} refreshKey={refreshKey} onPatch={onPatch} onReaderPatch={onPatch} onOpen={onOpen} onBack={navigation.past.length ? onBack : undefined} onAsk={onAsk} onAskInChat={onAskInChat} onAddSource={() => setAdding(true)} onChanged={changed} onManageProcessing={onManageProcessing} onOpenLink={onOpenLink} onExplainDisagreement={onExplainDisagreement} /> : null}
+    {current ? <MapView key={mapVisit?.key} initialAnchor={mapVisit?.anchor} onOpenChat={onOpenChat} bridge={bridge} catalog={current} worldProcessing={processing} location={resolvedMap} readerLocation={["source", "note"].includes(location.surface) ? location : undefined} active={active} refreshKey={refreshKey} onPatch={onPatch} onReaderPatch={onPatch} onOpen={onOpen} onBack={navigation.past.length ? onBack : undefined} onAsk={onAsk} onAskInChat={onAskInChat} onAddSource={() => setAdding(true)} onChanged={changed} onManageProcessing={onManageProcessing} onOpenLink={onOpenLink} onExplainDisagreement={onExplainDisagreement} /> : null}
     <AddSourceDialog key={loupist.id} bridge={bridge} loupistId={loupist.id} open={adding} onOpenChange={setAdding} onSaved={next => { setAdding(false); changed(); onOpen(next); }} />
   </section>;
 }

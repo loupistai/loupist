@@ -49,6 +49,23 @@ pub(crate) fn chat_session(id: &str, loupist_id: &str) -> ChatSession {
     }
 }
 
+pub(crate) fn create_folder_loupist(
+    store: &crate::store::SqliteStore,
+    id: &str,
+    workspace: &std::path::Path,
+) {
+    std::fs::create_dir_all(workspace).unwrap();
+    let workspace = workspace.canonicalize().unwrap();
+    let bound = crate::fs::loupist_root::BoundLoupistRoot::open_unbound(workspace.clone()).unwrap();
+    store
+        .create_loupist(&LoupistProfile {
+            workspace_root: workspace.to_str().unwrap().into(),
+            root_filesystem_identity: bound.identity(),
+            ..loupist_profile(id)
+        })
+        .unwrap();
+}
+
 pub(crate) fn chat_message(id: &str, role: ChatRole, content: &str) -> ChatMessage {
     ChatMessage {
         tool_refusals: Vec::new(),

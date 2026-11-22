@@ -27,8 +27,8 @@ use uuid::Uuid;
 use crate::process_lease::ChildProcessJob;
 #[cfg(unix)]
 use crate::process_lease::{
-    process_group_has_exited, signal_process_group, terminate_and_reap_process_group,
-    wait_for_process_group_exit, ChildProcessLease, ProcessKind,
+    process_group_has_exited, signal_process_group, wait_for_process_group_exit, OwnedProcessGroup,
+    ProcessKind,
 };
 use crate::{
     fs::artifact_trust::{digest_bounded_regular_file, verify_executable},
@@ -632,19 +632,19 @@ struct McpProcessGroup {
     #[cfg(unix)]
     process_group_id: i32,
     #[cfg(unix)]
-    lease: Option<ChildProcessLease>,
+    owned: OwnedProcessGroup,
     #[cfg(windows)]
     job: Option<ChildProcessJob>,
     armed: bool,
 }
 
 impl McpProcessGroup {
-    fn own(child: &Child) -> Result<Self, McpError> {
+    fn own(child: &Child, #[cfg(unix)] owned: OwnedProcessGroup) -> Result<Self, McpError> {
         let mut group = Self {
             #[cfg(unix)]
             process_group_id: child.id().ok_or(McpError::Protocol)? as i32,
             #[cfg(unix)]
-            lease: None,
+            owned,
             #[cfg(windows)]
             job: None,
             armed: true,
@@ -666,6 +666,7 @@ impl McpProcessGroup {
                 .await
                 .map_err(|_| McpError::Timeout)??;
             self.armed = false;
+            self.owned.disarm();
         }
         Ok(())
     }
@@ -686,20 +687,12 @@ impl McpProcessGroup {
     }
 }
 
+#[cfg(windows)]
 impl Drop for McpProcessGroup {
     fn drop(&mut self) {
         if !self.armed {
             return;
         }
-        #[cfg(unix)]
-        {
-            if let Some(lease) = self.lease.take() {
-                terminate_and_reap_process_group(self.process_group_id, lease);
-            } else {
-                let _ = signal_process_group(self.process_group_id, libc::SIGKILL);
-            }
-        }
-        #[cfg(windows)]
         if let Some(job) = &self.job {
             let _ = job.terminate();
         }
@@ -783,22 +776,19 @@ impl McpSession {
         #[cfg(windows)]
         ChildProcessJob::configure_command(&mut command);
 
+        #[cfg(unix)]
+        let (mut child, owned) = OwnedProcessGroup::spawn(&mut command)?;
+        #[cfg(not(unix))]
         let mut child = command.spawn()?;
-        let mut group = McpProcessGroup::own(&child)?;
-        let _ = &mut group;
+        let group = McpProcessGroup::own(
+            &child,
+            #[cfg(unix)]
+            owned,
+        )?;
         let stdin = child.stdin.take().ok_or(McpError::Protocol)?;
         let stdout = child.stdout.take().ok_or(McpError::Protocol)?;
         #[cfg(unix)]
-        {
-            group.lease = Some(
-                register_process_lease(
-                    &config.lease_dir,
-                    group.process_group_id,
-                    &config.executable,
-                )
-                .await?,
-            );
-        }
+        register_process_lease(&group.owned, &config.lease_dir, &config.executable).await?;
 
         let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
         let reader_pending = pending.clone();
@@ -1098,28 +1088,20 @@ impl McpSession {
         #[cfg(windows)]
         self.group.job.take();
         #[cfg(unix)]
-        if let Some(lease) = self.group.lease.take() {
-            lease.complete()?;
-        }
+        self.group.owned.complete()?;
         Ok(())
     }
 }
 
 #[cfg(unix)]
 async fn register_process_lease(
+    owned: &OwnedProcessGroup,
     lease_dir: &Path,
-    process_group_id: i32,
     executable: &Path,
-) -> Result<ChildProcessLease, ProcessLeaseError> {
+) -> Result<(), ProcessLeaseError> {
     let started = Instant::now();
     loop {
-        match ChildProcessLease::register(
-            lease_dir,
-            ProcessKind::Mcp,
-            process_group_id,
-            process_group_id,
-            executable,
-        ) {
+        match owned.register_lease(lease_dir, ProcessKind::Mcp, executable) {
             Err(ProcessLeaseError::IdentityMismatch)
                 if started.elapsed() < PROCESS_IDENTITY_SETTLE_TIMEOUT =>
             {
@@ -1802,8 +1784,8 @@ for line in sys.stdin:
 
         let mut command = Command::new("/bin/sleep");
         command.arg("30").kill_on_drop(true).process_group(0);
-        let mut sentinel = command.spawn().unwrap();
-        let mut sentinel_group = McpProcessGroup::own(&sentinel).unwrap();
+        let (mut sentinel, owned) = OwnedProcessGroup::spawn(&mut command).unwrap();
+        let mut sentinel_group = McpProcessGroup::own(&sentinel, owned).unwrap();
         // Simulate reuse without waiting for the kernel to recycle a PID.
         session.group.process_group_id = sentinel_group.process_group_id;
         session.shutdown(Duration::ZERO).await.unwrap();

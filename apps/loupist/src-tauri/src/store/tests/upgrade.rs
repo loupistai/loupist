@@ -1,5 +1,6 @@
 //! The upgrade ladder from the frozen baseline (store 4, Knowledge 6).
 use super::*;
+use crate::knowledge::KNOWLEDGE_SCHEMA_VERSION;
 use crate::store::upgrade::{normalize_sql, BASELINE_FIXTURE};
 use crate::store::STORE_SCHEMA_VERSION;
 use rusqlite::{types::Value, Connection};
@@ -219,6 +220,9 @@ fn a_baseline_database_upgrades_to_the_fresh_schema_with_its_data_intact() {
     }
     // The app-wide followed list had no Loupist, so no Loupist follows it.
     assert_eq!(actual.remove("asset_follows"), Some(Vec::new()));
+    for event in data_before.get_mut("knowledge_growth_events").unwrap() {
+        event.push(Value::Null); // Earlier events did not record their publication.
+    }
     assert_eq!(actual, data_before, "unrelated rows and rowids are kept");
     let id = crate::knowledge::assets::asset_id("ETH", "CRYPTO");
     assert_eq!(
@@ -895,9 +899,12 @@ fn card_retirement_preserves_message_bytes_across_catalog_folder_and_admission()
             let bytes = std::fs::read(&path).unwrap();
             crate::knowledge::validate_folder(&directory).unwrap();
             let copy = crate::store::upgraded_copy(&db).unwrap();
-            assert_eq!(versions(&copy), (12, 10));
+            assert_eq!(
+                versions(&copy),
+                (STORE_SCHEMA_VERSION, KNOWLEDGE_SCHEMA_VERSION)
+            );
             assert_eq!(chat_card_rows(&copy), expected);
-            assert_eq!(versions(&db), (10, 10));
+            assert_eq!(versions(&db), (10, KNOWLEDGE_SCHEMA_VERSION));
             assert_eq!(std::fs::read(&path).unwrap(), bytes);
             assert!(backups(root.path()).is_empty());
         }
@@ -913,12 +920,15 @@ fn card_retirement_preserves_message_bytes_across_catalog_folder_and_admission()
         for _ in 0..2 {
             let store = open();
             let db = store.lock().unwrap();
-            assert_eq!(versions(&db), (12, 10));
+            assert_eq!(
+                versions(&db),
+                (STORE_SCHEMA_VERSION, KNOWLEDGE_SCHEMA_VERSION)
+            );
             assert_eq!(chat_card_rows(&db), expected);
             assert_eq!(backups(root.path()).len(), 1);
         }
         let backup = Connection::open(&backups(root.path())[0]).unwrap();
-        assert_eq!(versions(&backup), (10, 10));
+        assert_eq!(versions(&backup), (10, KNOWLEDGE_SCHEMA_VERSION));
         assert_eq!(chat_card_rows(&backup), original);
     }
 }
@@ -938,7 +948,7 @@ fn a_failed_card_removal_leaves_store_ten_and_the_original_answer_in_the_backup(
     let error = SqliteStore::open_catalog(&path).err().unwrap();
     assert!(matches!(error, StoreError::Upgrade(_)));
     assert!(error.to_string().contains("fixture failure after writing"));
-    assert_eq!(versions(&db), (10, 10));
+    assert_eq!(versions(&db), (10, KNOWLEDGE_SCHEMA_VERSION));
     assert_eq!(chat_card_rows(&db), original);
     let backup_path = &backups(root.path())[0];
     assert!(error.to_string().contains(backup_path.to_str().unwrap()));
@@ -951,7 +961,7 @@ fn a_failed_card_removal_leaves_store_ten_and_the_original_answer_in_the_backup(
         );
     }
     let backup = Connection::open(backup_path).unwrap();
-    assert_eq!(versions(&backup), (10, 10));
+    assert_eq!(versions(&backup), (10, KNOWLEDGE_SCHEMA_VERSION));
     assert_eq!(chat_card_rows(&backup), original);
 }
 

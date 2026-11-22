@@ -174,8 +174,8 @@ while True:
             .stderr(Stdio::null())
             .kill_on_drop(true)
             .process_group(0);
-        let mut child = command.spawn().unwrap();
-        let group = PiProcessGroup::own(&child).unwrap();
+        let (mut child, owned) = OwnedProcessGroup::spawn(&mut command).unwrap();
+        let group = PiProcessGroup::own(&child, owned).unwrap();
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
         let (events, _) = broadcast::channel(8);
@@ -188,7 +188,7 @@ while True:
             {}
             let _ = event_writer.send(PiEvent::Exited);
         });
-        let mut process = PiProcess {
+        let process = PiProcess {
             group,
             child,
             stdin: Arc::new(Mutex::new(BufWriter::new(stdin))),
@@ -206,16 +206,11 @@ while True:
         .await
         .expect("owned descendant ready");
         if leased {
-            process.group.lease = Some(
-                ChildProcessLease::register(
-                    &root.join("leases"),
-                    ProcessKind::Pi,
-                    process.group.process_group_id,
-                    process.group.process_group_id,
-                    &python(),
-                )
-                .unwrap(),
-            );
+            process
+                .group
+                .owned
+                .register_lease(&root.join("leases"), ProcessKind::Pi, &python())
+                .unwrap();
         }
         process
     }
@@ -301,8 +296,8 @@ while True:
 
         let mut command = Command::new("/bin/sleep");
         command.arg("30").kill_on_drop(true).process_group(0);
-        let mut sentinel = command.spawn().unwrap();
-        let mut sentinel_group = PiProcessGroup::own(&sentinel).unwrap();
+        let (mut sentinel, owned) = OwnedProcessGroup::spawn(&mut command).unwrap();
+        let mut sentinel_group = PiProcessGroup::own(&sentinel, owned).unwrap();
         // Model PID reuse without relying on the kernel recycling a PID.
         process.group.process_group_id = sentinel_group.process_group_id;
         drop(process);

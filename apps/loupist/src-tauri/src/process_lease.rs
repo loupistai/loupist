@@ -5,6 +5,15 @@
 //! group is the exact group it created before signaling it. The lease is not a
 //! lock: the app-wide instance lock must already be held during recovery.
 
+#[cfg(target_os = "macos")]
+pub(crate) mod macos_commands;
+#[cfg(unix)]
+mod owned;
+#[cfg(all(unix, not(test)))]
+pub(crate) use owned::HOST_PROCESS_GROUPS;
+#[cfg(unix)]
+pub(crate) use owned::{OwnedProcessGroup, ProcessGroups};
+
 use serde::{Deserialize, Serialize};
 #[cfg(unix)]
 use sha2::{Digest, Sha256};
@@ -157,16 +166,13 @@ struct ObservedProcess {
 
 /// A durable record for one child-led process group.
 ///
-/// Dropping this value deliberately leaves the lease on disk. Call
-/// [`ChildProcessLease::complete`] only after the whole group is confirmed
-/// exited.
+/// Dropping this value leaves the lease on disk. The owner or startup
+/// recovery removes it after the whole group is confirmed exited.
 pub struct ChildProcessLease {
     #[cfg(unix)]
     directory: PathBuf,
     #[cfg(unix)]
     file_name: String,
-    #[cfg(unix)]
-    process_group_id: i32,
 }
 
 /// Owns a Windows child tree with `KILL_ON_JOB_CLOSE` semantics.
@@ -410,7 +416,6 @@ impl ChildProcessLease {
             Ok(Self {
                 directory: directory.to_path_buf(),
                 file_name,
-                process_group_id,
             })
         }
 
@@ -423,22 +428,6 @@ impl ChildProcessLease {
                 process_group_id,
                 expected_executable,
             );
-            Err(ProcessLeaseError::UnsupportedPlatform)
-        }
-    }
-
-    /// Removes the durable lease only if no live member remains in the group.
-    pub fn complete(self) -> Result<(), ProcessLeaseError> {
-        #[cfg(unix)]
-        {
-            if process_group_state(self.process_group_id)? == GroupState::Live {
-                return Err(ProcessLeaseError::StopTimeout);
-            }
-            remove_record(&self.directory, &self.file_name)
-        }
-
-        #[cfg(not(unix))]
-        {
             Err(ProcessLeaseError::UnsupportedPlatform)
         }
     }
@@ -604,29 +593,6 @@ pub(crate) async fn confirm_process_group_exit(
         Ok(Ok(())) => ProcessGroupTermination::Confirmed,
         Ok(Err(_)) | Err(_) => ProcessGroupTermination::Unconfirmed,
     }
-}
-
-/// Drop-path fallback for a sidecar whose owning async operation was
-/// cancelled. The durable lease is removed only after the whole process group
-/// is observed exited; if the runtime is already gone or observation fails,
-/// the lease deliberately remains for next-start recovery.
-#[cfg(unix)]
-pub fn terminate_and_reap_process_group(process_group_id: i32, lease: ChildProcessLease) {
-    // An already-exited zombie group can reject a signal on macOS. Observing
-    // that it is exited still permits completion; live or unverifiable groups
-    // keep their durable records when signaling fails.
-    let _ = signal_process_group(process_group_id, libc::SIGKILL);
-    let Ok(runtime) = tokio::runtime::Handle::try_current() else {
-        return;
-    };
-    runtime.spawn(async move {
-        if confirm_process_group_exit(process_group_id, Duration::from_secs(2))
-            .await
-            .is_confirmed()
-        {
-            let _ = lease.complete();
-        }
-    });
 }
 
 #[cfg(unix)]

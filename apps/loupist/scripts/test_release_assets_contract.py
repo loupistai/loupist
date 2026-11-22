@@ -287,13 +287,14 @@ class ReleaseAssetsContractTest(unittest.TestCase):
         acceptance = "https://evidence.example.test/macos-product-acceptance"
         self.script(
             qualification,
-            *["write", *QUALIFY, *metadata, "--previous-tag", "v0.0.1-rc.1"],
+            *["write", *QUALIFY, *metadata, "--previous-tag", "v0.0.0"],
             *["--macos-evidence-url", "https://evidence.example.test/macos"],
             *["--macos-candidate-set-sha256", digest],
             *["--macos-product-acceptance-evidence-url", acceptance],
             *["--output", receipt],
         )
         sealed = json.loads(receipt.read_text())
+        self.assertEqual(sealed["qualified_predecessor_tag"], "v0.0.0")
         self.assertEqual(set(sealed["platforms"]), {"macos-aarch64"})
         self.assertEqual(
             sealed["product_acceptance"],
@@ -337,6 +338,9 @@ class ReleaseAssetsContractTest(unittest.TestCase):
 
         self.script(*sequence("v0.0.1-rc.1", ""))
         self.script(*sequence("v0.0.0", "v0.0.0"))
+        self.refused(
+            "must qualify from its matching published RC", *sequence("v0.0.0", "")
+        )
         message = "must start from the current Latest release"
         self.refused(message, *sequence("v0.0.1-rc.1", "v0.0.0"))
         self.refused("must be strictly newer", *sequence("v0.0.0", "v0.0.1"))

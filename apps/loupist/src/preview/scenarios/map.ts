@@ -1,8 +1,8 @@
 /** Preview scenarios, in the capture order `src/preview/scenarios.ts` assembles. */
-import { prepareFixture, PreviewBridge } from "../fixtures";
+import { prepareFixture, PreviewBridge, previewKo } from "../fixtures";
 import { prepareLensSources } from "../fixtures/lensSources";
 import { rememberLegendOpen } from "../../components/map/mapVisit";
-import type { GrowthEvent, KnowledgeMapNode } from "../../contracts/knowledge";
+import type { GrowthEvent, KnowledgeMapEdge, KnowledgeMapNode, WorldGrowthSource } from "../../contracts/knowledge";
 import { MIN_VISIT_MS, recordVisit } from "../../app/loupistVisit";
 import { base, click, clickMapAction, enterMap, localViewMap, mapCanvas, navigate, pressMenu, select, selectPanel, until, type PreviewScenario } from "./kit";
 
@@ -53,6 +53,65 @@ function reportedValuesFixture(bridge: PreviewBridge) {
     const reported = ids.map((id, index): GrowthEvent => ({ eventId: `reported-${index}`, loupistId: "loupist-quality", atMs, kind: "claim_added", subjectId: id, recordId: "map-world", originChatId: null, originMessageId: "preview-answer", actor: "loupist", summary: `NVIDIA reported data center revenue for week ${index + 1}`, beforeSummary: null, afterSummary: null }));
     return { ...page, events: [...page.events, ...reported.filter(item => item.atMs >= (request.sinceMs ?? -Infinity) && item.atMs <= (request.untilMs ?? Infinity))] };
   };
+}
+
+/** A large valuation table and a short report published at the same time from the same turn. */
+async function groupedSourcesFixture(bridge: PreviewBridge) {
+  const loupistId = "loupist-quality";
+  await prepareFixture(bridge);
+  const atMs = Date.now() - 3_600_000;
+  recordVisit(loupistId, atMs - 3_600_000, atMs - 3_600_000 + MIN_VISIT_MS);
+  const ko = previewKo();
+  const catalog = await bridge.knowledgeCatalog({ loupistId });
+  const readCatalog = bridge.knowledgeCatalog.bind(bridge);
+  const readMap = bridge.knowledgeMap.bind(bridge);
+  const events: GrowthEvent[] = [], nodes: KnowledgeMapNode[] = [], edges: KnowledgeMapEdge[] = [];
+  for (const [title, count, tag] of [
+    [ko ? "자동차 기업 가치평가 배수" : "Automaker valuation multiples", 40, "table"],
+    [ko ? "이륜차 기업 보고서" : "Motorcycle report", 2, "report"],
+  ] as const) {
+    const names = Array.from({ length: count }, (_, index) => `${tag === "table" ? "Automaker" : "Motorcycle company"} ${String(index + 1).padStart(2, "0")}`);
+    const { recordId, revisionId, sourceId } = await bridge.knowledgeSourceRetain({
+      loupistId, title, originLocator: "Pasted text", coverage: "included_full",
+      text: ["Company | Revenue | Market cap", ...names.map((name, index) => `${name} | $${20 + index}B | $${30 + index}B`)].join("\n"),
+    });
+    catalog.sources.push({ ...catalog.sources[0]!, recordId, revisionId, title, objects: [{ id: sourceId, title }] });
+    const source: WorldGrowthSource = { recordId, revisionId, sourceId, title };
+    const add = (kind: GrowthEvent["kind"], subjectId: string, summary: string, factSubjectId?: string) => {
+      events.push({
+        eventId: subjectId, loupistId, atMs, kind, subjectId, summary,
+        publication: { revisionId: `publication-${tag}`, source, factSubjectId },
+        recordId: "map-world", actor: "processing", originChatId: null, originMessageId: "valuation-report",
+        beforeSummary: null, afterSummary: null,
+      });
+    };
+    names.forEach((label, index) => {
+      const id = `${tag}-name-${index}`;
+      nodes.push({ id, label, kind: "entity", entityKind: "Organization", degree: 0, watched: false, firstSeenAtMs: atMs });
+      add("entity_added", id, label);
+      if (tag === "table") for (const measure of ["revenue", "cap"]) {
+        const claim = `${id}-${measure}`;
+        edges.push({ id: claim, kind: "fact", source: id, target: id, relation: "REPORTS", status: "active", firstSeenAtMs: atMs });
+        add("claim_added", claim, `${label} reported ${measure}`, id);
+      }
+    });
+  }
+  bridge.knowledgeCatalog = async request => request.loupistId === loupistId ? structuredClone(catalog) : readCatalog(request);
+  bridge.knowledgeMap = async request => {
+    const base = await readMap(request);
+    base.nodes.push(...nodes);
+    base.edges.push(...edges);
+    base.counts.entity.total += nodes.length;
+    base.counts.entity.shown += nodes.length;
+    base.counts.fact.total += edges.length;
+    base.counts.fact.shown += edges.length;
+    base.generatedAtMs = Math.max(base.generatedAtMs, atMs);
+    return base;
+  };
+  bridge.knowledgeGrowthEvents = async request => ({
+    events: events.filter(event => event.atMs >= (request.sinceMs ?? -Infinity) && event.atMs <= (request.untilMs ?? Infinity)),
+    nextCursor: null,
+  });
 }
 
 /**
@@ -217,6 +276,10 @@ export const mapScenarios: PreviewScenario[] = [
     const map = await enterMap(root);
     await click("[data-map-whats-new]", map);
   }), setup: async bridge => { await prepareFixture(bridge); reportedValuesFixture(bridge); } },
+  { ...base("map-whats-new-sources", "One valuation table group and a two-name report", () => select('.map-whats-new-row[data-kind="source"]'), async root => {
+    const map = await enterMap(root);
+    await click("[data-map-whats-new]", map);
+  }), setup: groupedSourcesFixture },
   { ...base("map-legend-compact", "Legend with at most six rows", () => mapCanvas() ? select("details.map-legend[open] .map-legend-more") : null, async root => { await enterMap(root); }),
     setup: async bridge => {
       await prepareFixture(bridge);

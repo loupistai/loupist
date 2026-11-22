@@ -146,7 +146,17 @@ impl DesktopEffects for NativeEffects {
                 loupist_id: loupist_id.into(),
             },
         );
-        let _ = refresh_tray(&self.0);
+        let entries = tray_entries(&self.0);
+        let app = self.0.clone();
+        // Tauri menu operations wait for the main thread. During Quit the
+        // main thread is draining runs, so finishing a run must not wait here.
+        let _ = self.0.run_on_main_thread(move || {
+            if let Some(tray) = app.tray_by_id(TRAY_ID) {
+                if let Ok(menu) = tray_menu(&app, entries) {
+                    let _ = tray.set_menu(Some(menu));
+                }
+            }
+        });
     }
 }
 
@@ -305,7 +315,31 @@ pub(crate) fn open(app: &tauri::AppHandle, target: Option<InboxOpen>) {
     }
 }
 
-fn tray_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+fn tray_entries(app: &tauri::AppHandle) -> Vec<(String, String)> {
+    let Some(state) = app.try_state::<AppState>() else {
+        return Vec::new();
+    };
+    state
+        .store
+        .list_loupists()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|loupist| {
+            let count = state.store.inbox_unread_count(&loupist.id).unwrap_or(0);
+            let title = if count == 0 {
+                loupist.name
+            } else {
+                format!("{} ({count})", loupist.name)
+            };
+            (format!("briefing-loupist:{}", loupist.id), title)
+        })
+        .collect()
+}
+
+fn tray_menu(
+    app: &tauri::AppHandle,
+    entries: Vec<(String, String)>,
+) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
     use tauri::menu::{Menu, MenuItem, Submenu};
     let menu = Menu::new(app)?;
     menu.append(&MenuItem::with_id(
@@ -316,24 +350,8 @@ fn tray_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::W
         None::<&str>,
     )?)?;
     let briefings = Submenu::new(app, "Briefings", true)?;
-    if let Some(state) = app.try_state::<AppState>() {
-        if let Ok(loupists) = state.store.list_loupists() {
-            for loupist in loupists {
-                let count = state.store.inbox_unread_count(&loupist.id).unwrap_or(0);
-                let title = if count == 0 {
-                    loupist.name
-                } else {
-                    format!("{} ({count})", loupist.name)
-                };
-                briefings.append(&MenuItem::with_id(
-                    app,
-                    format!("briefing-loupist:{}", loupist.id),
-                    title,
-                    true,
-                    None::<&str>,
-                )?)?;
-            }
-        }
+    for (id, title) in entries {
+        briefings.append(&MenuItem::with_id(app, id, title, true, None::<&str>)?)?;
     }
     menu.append(&briefings)?;
     menu.append(&MenuItem::with_id(
@@ -345,17 +363,10 @@ fn tray_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::W
     )?)?;
     Ok(menu)
 }
-fn refresh_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
-    if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        tray.set_menu(Some(tray_menu(app)?))?;
-    }
-    Ok(())
-}
-
 pub(crate) fn install(app: &tauri::AppHandle) -> tauri::Result<()> {
     let _ = APP.set(app.clone());
     let mut tray = tauri::tray::TrayIconBuilder::with_id(TRAY_ID)
-        .menu(&tray_menu(app)?)
+        .menu(&tray_menu(app, tray_entries(app))?)
         .tooltip("Loupist")
         .on_menu_event(|app, event| {
             tray_action(&NativeEffects(app.clone()), event.id.as_ref());

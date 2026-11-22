@@ -5,6 +5,7 @@ use rusqlite::{params, OptionalExtension, Transaction};
 use super::authority::{require_edit, require_record};
 use super::canonical::{canonical_string, digest_json, from_json, to_value};
 use super::error::{KnowledgeError, KnowledgeResult};
+use super::growth::{WorldGrowthPublication, WorldGrowthSource};
 use super::model::{
     mint_id, validate_knowledge_id, validate_loupist_id, validate_text, validate_time,
     validate_time_point, validate_token, DependencyRole, EvidenceRevision, GraphClaim,
@@ -23,6 +24,14 @@ pub(super) fn seal_world(
     seal_world_with_actor(tx, request, "user", None, None, &[])
 }
 
+#[derive(Default)]
+struct PublicationOrigin<'a> {
+    chat_id: Option<&'a str>,
+    message_id: Option<&'a str>,
+    source: Option<WorldGrowthSource>,
+    other: Option<serde_json::Value>,
+}
+
 pub(super) fn seal_world_with_actor(
     tx: &Transaction<'_>,
     request: SealWorld,
@@ -35,9 +44,33 @@ pub(super) fn seal_world_with_actor(
         tx,
         request,
         actor,
-        origin_chat_id,
-        origin_message_id,
-        None,
+        PublicationOrigin {
+            chat_id: origin_chat_id,
+            message_id: origin_message_id,
+            ..PublicationOrigin::default()
+        },
+        followed,
+    )
+}
+
+pub(super) fn seal_world_from_source(
+    tx: &Transaction<'_>,
+    request: SealWorld,
+    chat_id: Option<&str>,
+    message_id: Option<&str>,
+    source: Option<WorldGrowthSource>,
+    followed: &[MapContextItem],
+) -> KnowledgeResult<WorldRevision> {
+    seal_world_with_origin(
+        tx,
+        request,
+        "processing",
+        PublicationOrigin {
+            chat_id,
+            message_id,
+            source,
+            other: None,
+        },
         followed,
     )
 }
@@ -50,16 +83,23 @@ pub(super) fn seal_world_with_provenance(
     actor: &str,
     origin: Option<serde_json::Value>,
 ) -> KnowledgeResult<WorldRevision> {
-    seal_world_with_origin(tx, request, actor, None, None, origin, &[])
+    seal_world_with_origin(
+        tx,
+        request,
+        actor,
+        PublicationOrigin {
+            other: origin,
+            ..PublicationOrigin::default()
+        },
+        &[],
+    )
 }
 
 fn seal_world_with_origin(
     tx: &Transaction<'_>,
     request: SealWorld,
     actor: &str,
-    origin_chat_id: Option<&str>,
-    origin_message_id: Option<&str>,
-    origin: Option<serde_json::Value>,
+    origin: PublicationOrigin<'_>,
     followed: &[MapContextItem],
 ) -> KnowledgeResult<WorldRevision> {
     validate_loupist_id(&request.loupist_id)?;
@@ -104,11 +144,14 @@ fn seal_world_with_origin(
         actor,
         "World publication",
     );
-    // A Chat turn's Source keeps its message on the growth events this publication adds.
-    // A Map add has no origin, so those events stay unattributed.
-    event.origin_chat_id = origin_chat_id.map(str::to_owned);
-    event.origin_message_id = origin_message_id.map(str::to_owned);
-    event.origin = origin;
+    event.origin_chat_id = origin.chat_id.map(str::to_owned);
+    event.origin_message_id = origin.message_id.map(str::to_owned);
+    event.origin = origin.other;
+    event.publication = Some(WorldGrowthPublication {
+        revision_id: published.revision_id.clone(),
+        source: origin.source,
+        fact_subject_id: None,
+    });
     super::growth::world_diff(tx, &event, previous.as_ref(), &body)?;
     super::world_followups::after_seal(
         tx,

@@ -28,25 +28,37 @@ have created the release because verification follows publication. Before recove
 inspect the tag’s release ID and assets and, for a published release, repeat the
 read-only check with `apps/loupist/scripts/verify-published-release.sh TAG`.
 
-1. Set the product to `X.Y.Z-rc.N`, commit it, push it to `main`, and wait for the exact commit's CI run to pass. Create `vX.Y.Z-rc.N`; the workflow publishes that non-draft prerelease.
-2. On clean machines, complete the acceptance flow in `LOUPIST.md`: ordinary Chat retains Source material or revises Lens, and a later relevant turn uses that revision. A write that never changes later work does not qualify.
-3. After RC acceptance, set the product to `X.Y.Z`. In `CHANGELOG.md`, manually
+1. Choose whether to publish an RC. If there is no published Latest release,
+   the first stable release still needs a matching published RC for qualification.
+   To publish an RC, set the product to `X.Y.Z-rc.N`, land the version on `main`,
+   and wait for the exact commit's CI run to pass. Push `vX.Y.Z-rc.N` to build
+   and publish the prerelease. On clean machines, complete the acceptance flow in
+   `LOUPIST.md`: ordinary Chat retains Source material or revises Lens, and a
+   later relevant turn uses that revision. A write that never changes later work
+   does not qualify.
+2. For either path, set the product to `X.Y.Z`. In `CHANGELOG.md`, manually
    rename `## Unreleased` to `## X.Y.Z - YYYY-MM-DD` using the release date.
-   The stable workflow only validates the dated heading. Commit both changes,
-   push, and wait for that exact commit's CI run to pass.
-   Create `vX.Y.Z`; its workflow requires the matching published RC and creates
-   the stable **draft** candidate.
-4. Qualify that stable draft: matching RC → stable for the first stable release,
-   then current Latest → strictly newer stable on macOS Apple Silicon. Scripts:
-   `verify-release-assets.py`, `serve-update-candidate.py`,
-   `release-qualification.py`.
-5. Promote the qualified stable draft with `promote-release.yml`. `stable-release` is the environment that approves that promotion. Promotion does not build or upload files.
+   Land both changes on `main` and wait for that exact commit's CI run to pass.
+   Push `vX.Y.Z` to build and stage the stable draft. Approve the signing build
+   and then the verified draft publication in the `release` environment.
+3. Qualify the stable draft on macOS Apple Silicon. Use the current Latest
+   release as the predecessor of a strictly newer draft. For the first stable
+   release, use its matching published RC. Without an RC, nobody has installed
+   a signed and notarized build of this version before the stable draft exists.
+   Run product acceptance on the draft as the first install and run of that build.
+   See [Candidate update qualification](#candidate-update-qualification).
+4. Promote the qualified stable draft with `promote-release.yml`. Approve
+   promotion in the `stable-release` environment. Promotion publishes the
+   verified draft as Latest using its existing files.
 
 ## Signing modes and rehearsal
 
 `apps/loupist/release-profile.json` is part of the tag: `channel` is `beta` or
 `stable`, and `macos_signing.mode` is `self-signed` or `developer-id`.
-The 0.1.3 Beta selects Developer ID. Before a real tag, replace the team placeholder in `apps/loupist/release-profile.json` and both publisher instructions in `installation.md`. The tag pins the public team through import, artifact verification and qualification. Its three certificate fields are null so the
+The 0.1.3 Beta selects Developer ID. A real tag requires the publisher's Apple
+Team ID in `apps/loupist/release-profile.json` and both publisher instructions in
+`installation.md`. The tag pins the public team through import, artifact
+verification and qualification. Its three certificate fields are null so the
 team can renew its Apple-issued leaf. Self-signed mode requires a common name
 and both fingerprints in the tag’s profile.
 Switching modes requires a source change and a new tag, never a mutable repository
@@ -100,13 +112,16 @@ does so only when requested. A dry run must be green before the first tag, and
 after workflow, staging or Tauri configuration changes.
 
 For a tag whose push started nothing, dispatch the existing tag explicitly:
-`gh workflow run release.yml --ref vX.Y.Z-rc.N -f dry_run=false`.
+`gh workflow run release.yml --ref "$tag" -f dry_run=false`.
 A non-dry dispatch from a branch is refused. A burned RC tag may be skipped only
 if every skipped number exists as a tag without a published release, and the new
-number exceeds every published RC. Never move or delete the burned tag. An
-installed RC whose next candidate was burned can still update through the stable
-feed, though it will not see a later RC. A burned stable tag requires a higher
-patch version. Publication asks for `release` approval separately from building;
+number exceeds every published RC. Never move or delete a release tag. A version
+released directly as stable has no RC numbers to account for, and its promotion
+closes that version to later RCs. An installed RC checks the exact next RC and
+then Latest, so it can still receive a newer stable release if the next RC is
+absent. An unpublished stable draft can still qualify and be promoted using its
+own tag. If a stable tag is burned without a usable draft, use a higher patch
+version. Publication asks for `release` approval separately from building;
 inspect build verification before approving it.
 
 Keep the updater key and bundle identifier across the transition from 0.1.2.
@@ -145,8 +160,7 @@ their IDs before a bounded wait and fetch Apple's log on rejection. Tauri's sign
 binds the final updater signature to the release version. Build verification and qualification compare the
 extracted updater’s sealed app to the reference app and validate its stapled ticket.
 
-Developer ID signing and notarization have not yet been exercised on a Loupist
-runner. **Pending qualification:** record the first real tag, the Gatekeeper dialog
+For the first Developer ID release, record the tag, the Gatekeeper dialog
 on first opening a quarantined download, startup of all hardened helpers, and the
 once-per-key prompts when updating from 0.1.2. Only the following update signed by
 the same team can establish that choosing Always Allow prevents the prompt from
@@ -162,12 +176,20 @@ developer's daily-use machine or on a production network.
 1. Download the unchanged stable draft assets and run `verify-release-assets.py`
    with the candidate tag and source commit. Record the SHA-256 printed by
    `release-qualification.py digest --release-metadata RELEASE-METADATA.json`.
-2. In each isolated test machine, arrange for only that machine's
-   `https://github.com` traffic to resolve to its loopback address, and trust a
-   disposable TLS certificate whose subject alternative name is `github.com`.
-   The local candidate server binds to `127.0.0.1` and needs port 443 because the
-   signed app has a canonical, portless GitHub updater endpoint.
-3. Serve the verified candidate assets for the duration of the test:
+2. Install the draft on a clean test machine or account. Complete the
+   `LOUPIST.md` Data connections, Chat, and Knowledge flow, including a later
+   turn that uses a retained Source or a revised World or Lens. Capture
+   credential-free HTTPS evidence that identifies the draft tag and candidate-set
+   digest. Keep OAuth and connector credentials out of the evidence.
+3. Install the published predecessor on a clean update test machine. With or
+   without an RC, qualify against the current Latest release, which must be
+   strictly older than the stable draft. The first stable release has no Latest
+   to install, so use its matching published RC as the predecessor. Arrange for
+   only that machine's `https://github.com` traffic to resolve to its loopback
+   address, and trust a disposable TLS certificate whose subject alternative
+   name is `github.com`. The local candidate server binds to `127.0.0.1` and needs
+   port 443 because the signed app has a canonical, portless GitHub updater endpoint.
+4. Serve the verified candidate assets for the duration of the test:
 
    ```sh
    sudo python3 apps/loupist/scripts/serve-update-candidate.py \
@@ -176,27 +198,20 @@ developer's daily-use machine or on a production network.
      --private-key /absolute/path/to/github-com-test-key.pem
    ```
 
-4. On a clean machine, install the published predecessor. The matching RC is
-   valid only for the first stable release; afterward the predecessor must be
-   the current Latest release and the candidate version must be strictly newer.
-   Use the app's explicit update flow to install the candidate, restart it, and
+5. Use the app's explicit update flow to install the candidate, restart it, and
    verify both the installed version and retained local data. When the
    candidate raises a schema version, the predecessor's catalog and Loupist
    folders must open upgraded, each with its `upgrade-backup` beside it (see
    [Storage and downgrades](#storage-and-downgrades)). An unsupported older
    database must still be present and unchanged. Capture durable,
    credential-free HTTPS evidence for the macOS candidate.
-5. On the clean signed macOS candidate, complete the `LOUPIST.md` Data connections,
-   Chat, and Knowledge flow, including a later turn that uses a retained Source
-   or a revised World or Lens. Capture durable credential-free HTTPS evidence
-   that identifies the candidate tag and candidate-set digest; OAuth or
-   connector credentials must never appear in that evidence.
-6. Dispatch `release-qualification.yml` from the candidate `vX.Y.Z` tag (not
-   `main`) with the macOS update-evidence URL, product-acceptance URL,
-   candidate-set digest, `update_check`, `product_acceptance`, and
-   `unperformed_checks`. Its receipt seals the exact
-   tested asset set; use its successful run ID to dispatch `promote-release.yml` from that same candidate
-   tag.
+6. Dispatch `release-qualification.yml` from the draft's `vX.Y.Z` tag with that
+   tag as `candidate_tag`, the installed `predecessor_tag`, the macOS
+   update-evidence URL, product-acceptance URL, candidate-set digest,
+   `update_check`, `product_acceptance`, and `unperformed_checks`. Approve the
+   `release-qualification` environment. Its receipt seals the exact tested
+   asset set. Use its successful run ID to dispatch `promote-release.yml` from
+   that same tag.
 
 Qualification schema 2 records the channel and signing mode, method and result
 (`passed` or `not_performed`) for each check, evidence URLs, the sealed candidate
@@ -210,13 +225,14 @@ RC update as a test of the candidate. The workflow prints the receipt in its sum
 
 `channel: stable` requires the first value of each choice. Beta requires product
 acceptance; it can record an unperformed candidate update with an explicit
-explanation and substitute evidence (for example, a real RC-to-RC update before
-promotion and RC-to-stable immediately afterward). VM methods are available for
-Beta; the stable channel retains its stricter
-isolated-machine choices. An evidence URL is required
-for each performed check; an unperformed update may carry a substitute evidence
-URL or be empty. Beta always requires a non-empty `unperformed_checks` line,
-including an explicit statement when no checks were omitted. Other channels
+explanation. If an RC was published, substitute evidence can cover a real
+RC-to-RC update before promotion. For a direct stable draft, describe any
+substitute check you performed and disclose any omission. VM methods are available
+for Beta. The stable channel requires isolated-machine checks. An evidence URL
+is required for each performed check. An unperformed update may carry a
+substitute evidence URL or be empty. Beta always requires a non-empty
+`unperformed_checks` line, including an explicit statement when no checks were
+omitted. Other channels
 require it whenever either choice differs from its first value. A VM records its
 actual method, never isolated-machine.
 For Beta promotion the current draft title must end in `(Beta)` and its body must
@@ -227,19 +243,36 @@ Edit the stable draft notes before qualification and
 promotion. Neither workflow replaces the candidate bytes. Their first end-to-end
 execution requires a real draft and cannot be established by the build rehearsal.
 
-Example Beta qualification after acceptance in a separate macOS account:
+For direct Beta qualification, resolve Latest before the update check and keep
+the tag you installed in `predecessor`.
 
 ```sh
-gh workflow run release-qualification.yml --ref v0.1.0 \
-  -f candidate_tag=v0.1.0 -f predecessor_tag=v0.1.0-rc.2 \
-  -f macos_candidate_set_sha256=<SHA256-of-SHA256SUMS> \
-  -f update_check=not-performed-on-candidate \
-  -f "macos_update_evidence_url=https://github.com/loupistai/loupist/issues/<number>" \
-  -f product_acceptance=separate-user-account \
-  -f "macos_product_acceptance_evidence_url=https://github.com/loupistai/loupist/issues/<number>" \
-  -f unperformed_checks='<actual omitted checks and substitute test>'
-gh workflow run promote-release.yml --ref v0.1.0 \
-  -f candidate_tag=v0.1.0 -f qualification_run_id=<successful-run-id>
+repo=loupistai/loupist
+predecessor=$(gh api "repos/$repo/releases/latest" --jq .tag_name)
+```
+
+After both checks pass in an isolated macOS VM, set `tag` to the draft tag,
+`digest` to the digest from step 1 and the evidence URL variables to the records
+from steps 2 and 5. Use `None.` for `unperformed_checks` only if no checks were
+omitted, and put that same line in the Beta draft notes.
+
+```sh
+gh workflow run release-qualification.yml --repo "$repo" --ref "$tag" \
+  -f "candidate_tag=$tag" -f "predecessor_tag=$predecessor" \
+  -f "macos_candidate_set_sha256=$digest" \
+  -f update_check=candidate-in-virtual-machine \
+  -f "macos_update_evidence_url=$update_evidence_url" \
+  -f product_acceptance=clean-virtual-machine \
+  -f "macos_product_acceptance_evidence_url=$product_evidence_url" \
+  -f 'unperformed_checks=None.'
+```
+
+After approval and a successful qualification, set `qualification_run_id` to
+that run's ID and request promotion.
+
+```sh
+gh workflow run promote-release.yml --repo "$repo" --ref "$tag" \
+  -f "candidate_tag=$tag" -f "qualification_run_id=$qualification_run_id"
 ```
 
 The public download link is `releases/latest/download/Loupist-macOS-arm64.dmg`; do not advertise a Windows installer. The app feed is `https://github.com/loupistai/loupist/releases/latest/download/latest.json`. Install and restart need explicit user confirmation: a native alert attached as a sheet to the Loupist window (brought forward first), worded in the interface language from the renderer's `confirmation` text while the host bounds it and appends the versions line itself; the Updates page says to answer it there. The offer's release date reaches the renderer as RFC 3339 and shows as a local date. A release build sets `requireSignedVersion`, and the app treats any other updater configuration as unsupported. The signature's trusted comment has to carry the same version as `latest.json`. A rewritten feed cannot pair a new version number with an older signed package.

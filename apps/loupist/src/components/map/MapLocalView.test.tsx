@@ -292,7 +292,7 @@ it("keeps the selected name, scope and What's new rows when the World advances d
   }));
   function Harness() {
     const [location, setLocation] = useState<KnowledgeLocation>({ loupistId: catalog.loupistId, surface: "world", recordId, revisionId: LOCAL_REVISION });
-    return <MapView bridge={bridge} catalog={catalog} location={location} building onPatch={setLocation} onOpen={vi.fn()} onAsk={vi.fn()} />;
+    return <MapView bridge={bridge} catalog={catalog} location={location} worldProcessing={{ activity: { kind: "building", sourceCount: 0 }, readiness: null, pending: true }} onPatch={setLocation} onOpen={vi.fn()} onAsk={vi.fn()} />;
   }
   render(<Harness />);
   const user = userEvent.setup();
@@ -300,10 +300,11 @@ it("keeps the selected name, scope and What's new rows when the World advances d
   expect(screen.getByTestId("map-stats")).toHaveTextContent("79 in World · 75 relationships");
   await user.click(screen.getByRole("button", { name: "What's new" }));
   const drawer = await screen.findByRole("dialog", { name: "What's new" });
-  expect(await within(drawer).findByText("2 new facts about Subaru")).toBeVisible();
+  const subaruRow = await within(drawer).findByRole("button", { name: /Subaru.*Company · 2 new facts/ });
+  expect(within(drawer).getAllByRole("listitem")).toHaveLength(1);
   expect(within(drawer).queryByText("ASML")).toBeNull();
   current = true;
-  await user.click(within(drawer).getByText("Subaru").closest("button")!);
+  await user.click(subaruRow);
   const inspector = await screen.findByRole("complementary", { name: "Subaru" });
   expect(await within(inspector).findByText("Revenue was $32B.")).toBeVisible();
   expect(within(inspector).getByText("Market cap was $12B.")).toBeVisible();

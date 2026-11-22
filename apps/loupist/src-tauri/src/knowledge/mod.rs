@@ -1138,7 +1138,7 @@ impl KnowledgeWrite<'_> {
         record_id: &str,
     ) -> KnowledgeResult<SourceProcessing> {
         let record = self.owned_record(loupist_id, record_id)?;
-        if let Some(job) = graph_jobs::latest_source_job(self.tx, loupist_id, record_id)? {
+        if let Some(job) = graph_jobs::source_status_job(self.tx, loupist_id, record_id)? {
             let status = graph_jobs::processing_status(self.tx, loupist_id, &job.status)?;
             return Ok(SourceProcessing {
                 job_id: Some(job.job_id),

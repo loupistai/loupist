@@ -102,7 +102,8 @@ pub(super) fn export_bytes(
     state: &AppState,
     request: &KnowledgeSourceReadRequest,
 ) -> Result<(Vec<u8>, String, String), CommandError> {
-    // Shares renderer inspection authority, including World -> historical Source binding.
+    // Reuse renderer inspection checks, including the current World's binding
+    // to the selected Source revision and span when opened from World.
     let detail = source_read(
         state,
         KnowledgeSourceReadRequest {

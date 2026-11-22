@@ -369,6 +369,11 @@
 .map-whats-new-list ul { list-style:none; margin:0; padding:0; }
 .map-whats-new-row { display:flex; align-items:flex-start; gap:var(--gg-space-2); width:100%; min-height:44px; padding:var(--gg-space-2) var(--gg-space-4); border:0; background:transparent; color:var(--gg-color-text-primary); font:inherit; font-size:var(--gg-text-body); line-height:var(--gg-leading-body); text-align:left; cursor:pointer; }
 .map-whats-new-row:hover { background:var(--gg-color-bg-hover); }
+.map-whats-new-group { display:flex; align-items:center; padding-inline-end:var(--gg-space-2); }
+.map-whats-new-group > .map-whats-new-row { min-width:0; padding-inline-end:var(--gg-space-2); }
+.map-whats-new-group > [aria-expanded=true] svg { transform:rotate(180deg); }
+.map-whats-new-list .map-whats-new-children { padding-inline-start:var(--gg-space-4); }
+
 .map-whats-new-row[aria-disabled=true] { color:var(--gg-color-text-tertiary); cursor:default; }
 .map-whats-new-row[aria-disabled=true]:hover { background:transparent; }
 .map-whats-new-glyph { flex:none; display:inline-flex; align-items:center; justify-content:center; width:16px; height:var(--gg-leading-body); }

@@ -267,3 +267,123 @@ fn repeated_authorized_spans_do_not_hide_a_later_foreign_span() {
         .read(|read| crate::knowledge::world::authorize_spans(read.tx, LOUPIST, &body))
         .is_err());
 }
+
+#[test]
+fn growth_uses_the_publishing_source_even_when_two_jobs_finish_at_the_same_time() {
+    let (_dir, store) = open();
+    let mut settings = enabled();
+    let fixture = prepare(&store, &settings);
+    let first = publish(
+        &store,
+        &mut settings,
+        &fixture.first,
+        &fixture.first_artifact,
+        AT,
+    )
+    .unwrap();
+    let mut second_artifact: Value = serde_json::from_str(&fixture.second_artifact).unwrap();
+    let fact = &mut second_artifact["claims"][1];
+    let fact_subject = fact["endpoints"][0]["node_id"].clone();
+    fact["endpoints"][1]["node_id"] = fact_subject.clone();
+    fact["relation"] = json!("REPORTS");
+    fact["proposition"] = json!("Ada reported 5 completed runs.");
+    let second = publish(
+        &store,
+        &mut settings,
+        &fixture.second,
+        &second_artifact.to_string(),
+        AT,
+    )
+    .unwrap();
+    let events = store
+        .growth_events(&crate::knowledge::GrowthEventsQuery {
+            loupist_id: LOUPIST.into(),
+            since_ms: Some(AT + 100),
+            until_ms: Some(AT + 100),
+            world_revision_id: second.document.sealed_revision_id.clone(),
+            limit: None,
+            cursor: None,
+        })
+        .unwrap()
+        .events;
+    for (job, event_count) in [(first, 3), (second, 1)] {
+        let binding = job.document.source_binding.unwrap();
+        let revision = job.document.sealed_revision_id.unwrap();
+        let published: Vec<_> = events
+            .iter()
+            .filter_map(|event| event.publication.as_ref())
+            .filter(|publication| publication.revision_id == revision)
+            .collect();
+        assert_eq!(published.len(), event_count);
+        for publication in published {
+            let source = publication.source.as_ref().unwrap();
+            assert_eq!(source.record_id, binding.source_record_id);
+            assert_eq!(source.revision_id, binding.source_revision_id);
+            assert_eq!(source.source_id, binding.source_id);
+            assert_eq!(source.title, "Notes");
+            assert_eq!(
+                publication.fact_subject_id.as_deref(),
+                if event_count == 1 {
+                    fact_subject.as_str()
+                } else {
+                    None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn growth_records_no_single_source_for_a_manual_publication_with_several_sources() {
+    let (_dir, store) = open();
+    let fixture = prepare(&store, &enabled());
+    let dependencies = [&fixture.first, &fixture.second].map(|job| {
+        let binding = job.document.source_binding.as_ref().unwrap();
+        let revision = store
+            .get_revision(LOUPIST, &binding.source_revision_id)
+            .unwrap();
+        crate::knowledge::EvidenceRevision {
+            record_id: binding.source_record_id.clone(),
+            revision_digest: revision.revision_digest,
+            role: crate::knowledge::DependencyRole::WorldSource,
+        }
+    });
+    let at_ms = AT + 100;
+    let published = store
+        .seal_world(crate::knowledge::SealWorld {
+            loupist_id: LOUPIST.into(),
+            record_id: fixture.world,
+            expected_revision_id: Some(fixture.first.world_revision_id),
+            at_ms,
+            nodes: vec![crate::knowledge::GraphNode {
+                id: "nod_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                name: "Ada".into(),
+                aliases: Vec::new(),
+                description: String::new(),
+                kind: "Entity".into(),
+                source_role: "source".into(),
+                properties: Default::default(),
+            }],
+            claims: Vec::new(),
+            annotations: Vec::new(),
+            dependencies: Vec::from(dependencies),
+        })
+        .unwrap();
+    let events = store
+        .growth_events(&crate::knowledge::GrowthEventsQuery {
+            loupist_id: LOUPIST.into(),
+            since_ms: Some(at_ms),
+            until_ms: Some(at_ms),
+            world_revision_id: Some(published.revision_id.clone()),
+            limit: None,
+            cursor: None,
+        })
+        .unwrap()
+        .events;
+    let [event] = events.as_slice() else {
+        panic!("expected one world change: {events:?}");
+    };
+    let publication = event.publication.as_ref().unwrap();
+    assert_eq!(publication.revision_id, published.revision_id);
+    assert!(publication.source.is_none());
+}

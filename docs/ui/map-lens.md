@@ -81,11 +81,14 @@ refreshes the overview before showing that result. Selection and scope stay
 open, and What's new keeps the row being read as new changes arrive. Its event
 read uses the overview's revision and ends at its latest recorded change. Busy reads retry twice
 before showing an error. Try again gets the current World.
-The sidebar World row shows the session spinner while the selected Loupist has
-Source processing queued or running, or a World rebuild in progress. Its tooltip
+The sidebar World row shows the session spinner while a Source job is running,
+queued Sources are ready to run, or World recovery is in progress. Its tooltip
 and accessible name include the same Source count as the Library's Processing
-filter when the host provides one. The icon rail places the spinner in the
-corner of the World icon. Reduced motion keeps the ring still.
+filter when the host provides one. When processing needs the user, the sidebar,
+World status line and Library show the reason. The sidebar keeps its ordinary
+shortcut in that state. Connecting a provider refreshes the status with World
+closed. The icon rail places the spinner in the corner of the World icon.
+Reduced motion keeps the ring still.
 The inspector's close control stays in the corner while the facts scroll. Below 900 px the inspector opens as a bottom sheet, and that control stays inside the sheet. An entity's name leads its inspector: the kind and Following sit above it in the side column and follow it on the sheet's first line.
 The application filter acts on the World canvas. It highlights the entities a
 Lens was applied to and names them. It does not draw the Lens, and it does not

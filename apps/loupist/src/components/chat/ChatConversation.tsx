@@ -26,6 +26,7 @@ import { ThreadLink } from "./ThreadLink";
 import { ThreadVocabulary } from "./ThreadVocabulary";
 import { ChatDivider } from "./ChatDivider";
 import { chatSeenAt, dividersBefore, firstNewSince, markChatSeen } from "../../chat/dividers";
+import { lastTurnMessageIndex } from "../../chat/turnMessages";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -283,8 +284,9 @@ export function ChatConversation({
     });
   }, [messages]);
   // A scheduled run's request is run again by its task, not sent again as the user's turn.
-  const lastRequest = useMemo(() => [...messages].reverse().find((message) => message.role !== "assistant" && !message.steer), [messages]);
-  const lastRequestScheduled = lastRequest?.scheduled;
+  const lastTurnIndex = lastTurnMessageIndex(messages);
+  const lastRequest = messages[lastTurnMessageIndex(messages, lastTurnIndex)];
+  const lastRequestScheduled = lastRequest?.role === "user" ? lastRequest.scheduled : undefined;
   // A tool can replace a receipt without changing the revision, as when a read is followed by a delete.
   const receiptKey = home && active ? messages
     .flatMap(message => message.schedule_receipts ?? [])
@@ -369,8 +371,8 @@ export function ChatConversation({
               editDisabled={message.role === "user" && Boolean(run?.running)}
               onEarlierVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "earlier", onSwitchVersion) : undefined}
               onLaterVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "later", onSwitchVersion) : undefined}
-              onRetry={message.role === "assistant" && index === messages.length - 1 && (message.status === "error" || message.status === "aborted") && lastRequest?.role !== "bot_handoff" && !lastRequestScheduled ? onRetry : undefined}
-              scheduledRetry={message.role === "assistant" && index === messages.length - 1 && (message.status === "error" || message.status === "aborted") ? lastRequestScheduled : undefined}
+              onRetry={message.role === "assistant" && index === lastTurnIndex && (message.status === "error" || message.status === "aborted") && lastRequest?.role === "user" && !lastRequestScheduled ? onRetry : undefined}
+              scheduledRetry={message.role === "assistant" && index === lastTurnIndex && (message.status === "error" || message.status === "aborted") ? lastRequestScheduled : undefined}
               latest={message.role === "assistant" ? index === lastAssistantIndex : index === lastUserIndex}
               providerName={message.status === "error" ? providerLabel?.(message.execution_model?.provider) : undefined}
               retryAttempt={index === messages.length - 1 ? retryAttempt : undefined}

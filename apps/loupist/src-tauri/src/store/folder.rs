@@ -118,10 +118,11 @@ impl SqliteStore {
                     "Loupist database changed while opening",
                 ));
             }
-            let connection = local
+            let mut connection = local
                 .connection
                 .into_inner()
                 .map_err(|_| StoreError::LockPoisoned)?;
+            super::chat_recovery::stop_interrupted_turns(&mut connection, loupist_id)?;
             folders.insert(
                 loupist_id.to_owned(),
                 FolderConnection {

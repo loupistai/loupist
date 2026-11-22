@@ -8,13 +8,28 @@ The process has to be running, including while the window is hidden. The Schedul
 World jobs and World search run in-process through Rust and the local embedding
 model. Existing folders keep their canonical SQLite snapshot; leftover
 `graph-instance/` data is ignored and never migrated or read.
-App exit stops schedule admission, cancels/drains World work and shuts down MCP
-workers and leased processes. The Tauri exit callback allows 30 seconds; unfinished
-cleanup retains leases for startup recovery. Recovery verifies process identity
-before signaling. Process leases are implemented for macOS, Windows and Linux.
-Linux verifies the boot ID, process start ticks and executable identity through
-procfs and requires the process group to remain verifiable. Other Unix hosts
-fail closed with `UnsupportedPlatform`.
+Quit, menu-bar Quit and update restart stop schedule and Chat admission,
+cancel active Chat and World work, and let the existing receipt and Memory
+completion paths settle. Tray menu refreshes are queued on the main thread so
+saving a receipt can finish while the native exit callback is waiting. Idle
+MCP workers stop in parallel after the run drain.
+
+The host gives graceful cleanup up to 26 seconds within the existing 30-second
+quit budget. Before exiting, it fences worker launches, sends SIGKILL to
+remaining owned Unix process groups, and clears their leases once they have no
+live members. This includes Pi, MCP and Python workers, the login-shell probe
+and one-shot macOS helper commands. Signals go to every remaining group before waiting on any one
+group. The host logs counts and deadline events without run content. The
+remaining time also lets cancelled runs finish saving after their workers
+stop. A visible window can remain until native Quit finishes. Quit adds no
+progress dialog. The updater shows its existing restart status until the
+restart begins.
+
+If the host is killed, the next launch recovers durable leases before starting
+new workers. Recovery verifies process identity before signaling. On Linux
+this includes the boot ID, process start ticks and executable identity through
+procfs. Windows uses kill-on-close Job Objects for worker trees. Other Unix
+hosts fail closed with `UnsupportedPlatform`.
 
 Keep running in the menu bar starts off. With no explicit choice, enabling the
 first briefing or custom task turns it on automatically. The host preserves an

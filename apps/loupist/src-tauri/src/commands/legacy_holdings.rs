@@ -646,11 +646,12 @@ pub async fn legacy_holdings_reveal(runtime: State<'_, Arc<Runtime>>) -> Result<
     tauri::async_runtime::spawn_blocking(move || {
         let (target, _) = runtime.exported_file()?;
         #[cfg(target_os = "macos")]
-        std::process::Command::new("/usr/bin/open")
-            .arg("-R")
-            .arg(&target)
-            .spawn()
-            .map_err(internal)?;
+        crate::process_lease::macos_commands::spawn(
+            std::process::Command::new("/usr/bin/open")
+                .arg("-R")
+                .arg(&target),
+        )
+        .map_err(internal)?;
         #[cfg(windows)]
         std::process::Command::new("explorer.exe")
             .arg(format!("/select,{}", target.display()))

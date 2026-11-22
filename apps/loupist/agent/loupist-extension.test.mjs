@@ -1120,6 +1120,55 @@ async function promptNativeSession(t, context, responses, prompt, observe = () =
   }
 }
 
+for (const cancelled of [false, true]) {
+  test(cancelled ? "cancelling a native read before Pi delivers it does not report its links"
+    : "Pi reports only the links in the delivered page of a native read", async (t) => {
+    const first = "https://publisher.example/first";
+    const second = "https://publisher.example/second";
+    const boundary = { prefix: '<<untrusted id=host-id source="app-exported text">>\n', suffix: "\n<<end untrusted id=host-id>>" };
+    const calls = await startToolBroker(t, ({ method, params }) => {
+      if (method === "native.authorize") {
+        writeFileSync(params.path, `${first}\n${second}\n`);
+        return { allowed: true, resolved: params.path, untrusted_text: boundary };
+      }
+      return {};
+    });
+    const reports = () => calls.filter(({ method }) => method === "native.delivered_text");
+    let readEnded = false;
+    let reportsAtReadEnd;
+    let reportsAtNextModelCall;
+    const messages = await promptNativeSession(t, runtimeContext("chat", ["read"]), [
+      fauxAssistantMessage([fauxToolCall("read", { path: "export.txt", limit: 1 })], { stopReason: "toolUse" }),
+      () => {
+        reportsAtNextModelCall = reports().length;
+        return fauxAssistantMessage("I read the export.");
+      },
+    ], "Read the first line of the export.", session => session.subscribe(event => {
+      if (event.type !== "tool_execution_end" || event.toolName !== "read") return;
+      readEnded = !event.isError;
+      reportsAtReadEnd = reports().length;
+      if (cancelled) session.agent.abort();
+    }));
+    assert.equal(readEnded, true);
+    if (cancelled) {
+      assert.equal(reports().length, 0);
+      return;
+    }
+    assert.equal(reportsAtReadEnd, 0);
+    assert.equal(reportsAtNextModelCall, 1);
+    const result = messages.find(message => message.role === "toolResult" && message.toolName === "read");
+    const text = result.content[0].text;
+    assert.ok(text.startsWith(boundary.prefix));
+    assert.ok(text.endsWith(boundary.suffix));
+    assert.ok(text.includes(first));
+    assert.ok(!text.includes(second));
+    assert.deepEqual(reports().map(({ call_id, params }) => ({ call_id, ...params })), [{
+      call_id: result.toolCallId,
+      parts: [text.slice(boundary.prefix.length, -boundary.suffix.length)],
+    }]);
+  });
+}
+
 test("ask_user settles before a destructive call in the same pinned Pi tool batch starts", async (t) => {
   await startToolBroker(t, () => ({ answered: false, assumed: "Both" }));
   const events = [];
