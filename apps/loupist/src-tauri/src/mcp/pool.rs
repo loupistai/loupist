@@ -547,12 +547,15 @@ impl McpProcessPool {
                 let _ = task.await;
             }
         }
-        for entry in idle {
-            entry.server.discard().await;
+        let mut discards = tokio::task::JoinSet::new();
+        for server in idle
+            .into_iter()
+            .map(|entry| entry.server)
+            .chain(fresh.into_iter().map(|entry| entry.server))
+        {
+            discards.spawn(server.discard());
         }
-        for entry in fresh {
-            entry.server.discard().await;
-        }
+        while discards.join_next().await.is_some() {}
         let mut changes = self.lifecycle.changes.subscribe();
         while self.lifecycle.releases.load(Ordering::Acquire) != 0 {
             if changes.changed().await.is_err() {

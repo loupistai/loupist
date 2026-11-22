@@ -114,6 +114,8 @@ pub(crate) struct RunLog {
     /// worker's cold start when no pooled OpenBB process was ready.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub openbb_first_call_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub connector_keychain_statuses: BTreeSet<crate::finance_credentials::KeychainReadStatus>,
     #[serde(skip)]
     observed_calls: BTreeSet<String>,
 }
@@ -195,6 +197,7 @@ impl RunLog {
             stage_ms: BTreeMap::new(),
             queue_wait_ms: None,
             openbb_first_call_ms: None,
+            connector_keychain_statuses: BTreeSet::new(),
             observed_calls: BTreeSet::new(),
         }
     }
@@ -597,11 +600,12 @@ pub fn run_logs_reveal(
 ) -> Result<(), CommandError> {
     let (path, _guard) = directory(&diagnostics_root(&state, request.loupist_id.as_deref())?)?;
     #[cfg(target_os = "macos")]
-    std::process::Command::new("/usr/bin/open")
-        .arg("-R")
-        .arg(&path)
-        .spawn()
-        .map_err(io_error)?;
+    crate::process_lease::macos_commands::spawn(
+        std::process::Command::new("/usr/bin/open")
+            .arg("-R")
+            .arg(&path),
+    )
+    .map_err(io_error)?;
     #[cfg(windows)]
     std::process::Command::new("explorer.exe")
         .arg(format!("/select,{}", path.display()))

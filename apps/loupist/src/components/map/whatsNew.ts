@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { TFunction } from "i18next";
-import type { GrowthEvent, KnowledgeMap, KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
+import type { GrowthEvent, KnowledgeMap, KnowledgeMapEdge, KnowledgeMapNode, WorldGrowthSource } from "../../contracts/knowledge";
 import type { LoupistBridge } from "../../types";
 import { readWithWorldRetry } from "../../knowledge/readWithWorldRetry";
 import { commandErrorCode } from "../../lib/errors";
@@ -10,7 +10,7 @@ import { nodeCategory } from "../../knowledge/mapKinds";
 import { relationName } from "./relations";
 
 const DAY_MS = 86_400_000;
-const MAX_EVENT_PAGES = 4;
+const SOURCE_GROUP_THRESHOLD = 3;
 
 /** What changed in the Loupist's knowledge, in the rows the What's new drawer lists. A `fact` is a value reported about one name. */
 export type WhatsNewKind = "name" | "relationship" | "fact" | "conflict" | "method" | "principle" | "subject" | "idea";
@@ -25,7 +25,12 @@ export type WhatsNewRow = {
   edge?: KnowledgeMapEdge;
   claimId?: string;
   recordId?: string;
-  /** Title of a source retained in the same reply, when there is one. */
+  publicationKey: string;
+  source?: WorldGrowthSource;
+  /** New facts folded into a new name's row in the same publication. */
+  facts?: number;
+  factSubjectIds?: string[];
+  /** Title of a Source retained in the same reply, for historical events. */
   origin?: string;
   /** A claim's names in the interface language and its relation, when they are on the Map. A value reported about one name has no `b`. */
   link?: { a: string; b?: string; relation?: string };
@@ -80,34 +85,45 @@ export function whatsNewRows(events: readonly GrowthEvent[] | null | undefined, 
   const sources = new Map<string, string>();
   for (const event of ordered) if (event.kind === "source_retained" && event.originMessageId && event.summary.trim() && !sources.has(event.originMessageId)) sources.set(event.originMessageId, event.summary.trim());
   const rows: WhatsNewRow[] = [];
+  const nameKey = (publicationKey: string, id: string) => JSON.stringify([publicationKey, id]);
+  const names = new Map<string, WhatsNewRow>();
   const seen = new Set<string>();
   const alike = new Map<string, WhatsNewRow>();
   for (const event of ordered) {
     const origin = event.originMessageId ? sources.get(event.originMessageId) : undefined;
-    const base = { id: event.eventId, atMs: event.atMs, origin, count: 1 };
+    const source = event.publication?.source;
+    const publicationKey = JSON.stringify(event.publication
+      ? [event.publication.revisionId, source?.recordId, source?.revisionId]
+      : [event.recordId, event.atMs, event.originMessageId]);
+    const base = { id: event.eventId, atMs: event.atMs, origin, count: 1, publicationKey, source };
     if (event.kind === "entity_added" && event.subjectId) {
       if (seen.has(`name:${event.subjectId}`)) continue;
       seen.add(`name:${event.subjectId}`);
       const node = nodes.get(event.subjectId);
       const gone = !node || node.kind !== "entity" || !!node.archived;
-      rows.push({ ...base, kind: "name", label: node ? entityLabel(node, language) : event.summary, category: node ? nodeCategory(node) : "other", node: gone ? undefined : node, gone });
+      const row: WhatsNewRow = { ...base, kind: "name", label: node ? entityLabel(node, language) : event.summary, category: node ? nodeCategory(node) : "other", node: gone ? undefined : node, gone };
+      names.set(nameKey(publicationKey, event.subjectId), row);
+      rows.push(row);
     } else if ((event.kind === "claim_added" || event.kind === "claim_disputed") && event.subjectId) {
       const changed = event.kind === "claim_added" ? "added" : "disputed";
       if (seen.has(`${changed}:${event.subjectId}`)) continue;
       seen.add(`${changed}:${event.subjectId}`);
       const edge = claims.get(event.subjectId);
       // The stored proposition is English; the row speaks the interface language through the names and relation.
-      const a = edge ? nodes.get(edge.source) : undefined, b = edge ? nodes.get(edge.target) : undefined;
-      const single = !!a && !!b && oneName(a, b, language);
+      const factSubjectId = event.publication?.factSubjectId;
+      const a = nodes.get(edge?.source ?? factSubjectId ?? "");
+      const b = edge ? nodes.get(edge.target) : undefined;
+      const single = !!factSubjectId || edge?.kind === "fact" || (!!a && !!b && oneName(a, b, language));
       const kind = changed === "disputed" ? "conflict" : single ? "fact" : "relationship";
-      const link = a && b ? { a: entityLabel(a, language), b: single ? undefined : entityLabel(b, language), relation: edge?.relation } : undefined;
-      // Rows that would read the same, from one publication, are one row. A fact's ends are its one subject.
-      const ends = !edge ? event.summary : single ? edge.source : `${edge.source}>${edge.target}`;
-      const key = [kind, ends, edge?.relation ?? "", event.originMessageId ?? "", event.atMs].join("\u0000");
+      const link = a && (single || b) ? { a: entityLabel(a, language), b: single || !b ? undefined : entityLabel(b, language), relation: edge?.relation } : undefined;
+      // Rows that would read the same, from one publication, are one row.
+      const ends = factSubjectId ?? (edge ? single ? edge.source : `${edge.source}>${edge.target}` : event.summary);
+      const key = JSON.stringify([kind, ends, edge?.relation ?? "", publicationKey]);
       const same = alike.get(key);
       if (same) { same.count += 1; continue; }
-      const gone = !edge || (kind !== "conflict" && edge.status === "withdrawn");
-      const row: WhatsNewRow = { ...base, kind, label: event.summary, link, claimId: event.subjectId, edge, gone,
+      const factSubjectIds = single ? [...new Set([factSubjectId, edge?.source, edge?.target].filter((id): id is string => !!id))] : undefined;
+      const gone = (!edge && !(kind === "fact" && a && !a.archived)) || (kind !== "conflict" && edge?.status === "withdrawn");
+      const row: WhatsNewRow = { ...base, kind, label: event.summary, link, claimId: event.subjectId, edge, gone, factSubjectIds,
         ...(single && a ? { node: gone || a.archived ? undefined : a, category: nodeCategory(a) } : {}) };
       alike.set(key, row);
       rows.push(row);
@@ -119,23 +135,66 @@ export function whatsNewRows(events: readonly GrowthEvent[] | null | undefined, 
       rows.push({ ...base, kind, label: node?.label ?? event.summary, recordId: event.recordId, node, gone: !!node?.archived });
     }
   }
-  return rows;
+  return rows.filter(row => {
+    const name = row.kind === "fact" ? row.factSubjectIds?.map(id => names.get(nameKey(row.publicationKey, id))).find(Boolean) : undefined;
+    if (!name) return true;
+    name.facts = (name.facts ?? 0) + row.count;
+    return false;
+  });
 }
 
-export function whatsNewCounts(rows: readonly WhatsNewRow[]) {
+export type WhatsNewSourceGroup = {
+  kind: "source";
+  id: string;
+  atMs: number;
+  source: WorldGrowthSource;
+  rows: WhatsNewRow[];
+  names: number;
+  facts: number;
+};
+export type WhatsNewEntry = WhatsNewRow | WhatsNewSourceGroup;
+
+/** Collapse Sources per publication. Separate publications of the same Source stay separate. */
+export function whatsNewEntries(rows: readonly WhatsNewRow[], language: string): WhatsNewEntry[] {
+  const updates = new Map<string, WhatsNewRow[]>();
+  for (const row of rows) {
+    if (!row.source) continue;
+    const update = updates.get(row.publicationKey);
+    if (update) update.push(row);
+    else updates.set(row.publicationKey, [row]);
+  }
+  const order = new Intl.Collator(language);
+  return rows.flatMap<WhatsNewEntry>(row => {
+    const source = row.source;
+    const update = source && updates.get(row.publicationKey);
+    if (!source || !update || update.length <= SOURCE_GROUP_THRESHOLD) return [row];
+    if (update[0] !== row) return [];
+    return [{
+      kind: "source", id: `source:${row.publicationKey}`, atMs: row.atMs, source,
+      rows: [...update].sort((a, b) => Number(b.kind === "name") - Number(a.kind === "name")
+        || order.compare(a.link?.a ?? a.label, b.link?.a ?? b.label)),
+      names: update.filter(item => item.kind === "name").length,
+      facts: update.reduce((total, item) => total + (item.kind === "fact" ? item.count : item.facts ?? 0), 0),
+    }];
+  });
+}
+
+export function whatsNewCounts(entries: readonly WhatsNewEntry[]) {
+  const includes = (entry: WhatsNewEntry, matches: (row: WhatsNewRow) => boolean) =>
+    entry.kind === "source" ? entry.rows.some(matches) : matches(entry);
   return {
-    names: rows.filter((row) => row.kind === "name").length,
-    links: rows.filter((row) => row.kind === "relationship" && row.edge).length,
-    conflicts: rows.filter((row) => row.kind === "conflict").length,
+    names: entries.filter(entry => includes(entry, row => row.kind === "name")).length,
+    links: entries.filter(entry => includes(entry, row => row.kind === "relationship" && !!row.edge)).length,
+    conflicts: entries.filter(entry => includes(entry, row => row.kind === "conflict")).length,
   };
 }
 
 const startOfDay = (ms: number) => { const day = new Date(ms); day.setHours(0, 0, 0, 0); return day.getTime(); };
 
 /** Rows grouped by local calendar day, newest day first. `daysAgo` is 0 for today. */
-export function groupByDay(rows: readonly WhatsNewRow[], nowMs: number) {
+export function groupByDay<T extends { atMs: number }>(rows: readonly T[], nowMs: number) {
   const today = startOfDay(nowMs);
-  const groups: { dayMs: number; daysAgo: number; rows: WhatsNewRow[] }[] = [];
+  const groups: { dayMs: number; daysAgo: number; rows: T[] }[] = [];
   for (const row of rows) {
     const dayMs = startOfDay(row.atMs);
     const group = groups.at(-1);
@@ -161,13 +220,16 @@ export function useGrowthSince(bridge: LoupistBridge, loupistId: string, since: 
       if (sinceMs !== undefined && untilMs !== undefined && sinceMs > untilMs) return [];
       const all: GrowthEvent[] = [];
       let cursor: string | undefined;
-      for (let page = 0; page < MAX_EVENT_PAGES; page += 1) {
+      // A publication can start on one page and end on another. Publish the
+      // list once all pages for this pinned revision have been collected.
+      do {
         const result = await bridge.knowledgeGrowthEvents({ loupistId, sinceMs, untilMs, worldRevisionId: revisionId ?? undefined, limit: 5000, cursor });
         if (!current) return [];
         all.push(...result.events);
-        cursor = result.nextCursor ?? undefined;
-        if (!cursor) break;
-      }
+        const next = result.nextCursor ?? undefined;
+        if (next !== undefined && next === cursor) throw new Error("Growth event cursor did not advance");
+        cursor = next;
+      } while (cursor);
       return all;
     }, () => current).then((events) => { if (current) setState({ key, status: "done", events }); })
       .catch(cause => {

@@ -216,7 +216,9 @@ fn personal_names() -> Vec<String> {
         .get_or_init(|| {
             let mut names = Vec::new();
             #[cfg(target_os = "macos")]
-            if let Ok(output) = std::process::Command::new("/usr/bin/id").arg("-F").output() {
+            if let Ok(output) = crate::process_lease::macos_commands::output(
+                std::process::Command::new("/usr/bin/id").arg("-F"),
+            ) {
                 let name = String::from_utf8_lossy(&output.stdout).trim().to_owned();
                 if name.chars().count() >= 3 {
                     names.push(name);

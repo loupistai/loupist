@@ -63,7 +63,7 @@ audit prints `WARN`. When another maintainer joins, restore
 `prevent_self_review: true`; the audit rejects self-review with multiple maintainers.
 Enable immutable GitHub Releases.
 
-Before every RC tag and stable promotion, run the checked-in, read-only audit
+Before every release tag and stable promotion, run the checked-in, read-only audit
 from an authenticated GitHub CLI session:
 
 ```sh
@@ -245,7 +245,7 @@ configured common name, team and certificate chain before staging. The signed
 build verifies the runtime, timestamps and entitlements throughout the bundle.
 It validates notarization tickets on the DMG and on both the mounted and
 updater-extracted app. Qualification repeats the package and ticket checks
-against the attested draft. The first real Developer ID runner build is pending. Publication is
+against the attested draft. Publication is
 skipped in dry runs; otherwise a second `release` approval gates the write token,
 verification against the configured updater public key, attestations and release
 creation. The signing report is an artifact because GitHub can suppress secret-like

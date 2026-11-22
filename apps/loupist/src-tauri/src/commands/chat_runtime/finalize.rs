@@ -127,7 +127,7 @@ pub(super) async fn finalize_chat_turn(turn: LaunchedChatTurn, streamed: Streame
             .map(|memories| memories.values().cloned().collect::<Vec<_>>())
             .unwrap_or_default();
         let aborted_content = if content.trim().is_empty() {
-            "Response stopped.".to_owned()
+            crate::domain::STOPPED_REPLY_CONTENT.to_owned()
         } else {
             content.clone()
         };

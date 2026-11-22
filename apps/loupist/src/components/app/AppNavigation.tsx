@@ -25,7 +25,7 @@ import { shortcutFor, tabShortcut } from "../../app/shortcuts";
 import { matchesSetting, normalizeSetting, settingTranslations, type SettingResult } from "../settings/settingSearch";
 import { APP_DESTINATIONS } from "../../app/navigation";
 import type { ChatThread, LoupistSummary } from "../../types";
-import type { MapBuildStatus } from "../../app/useMapCatalog";
+import { sourceProcessingLabel, type WorldProcessing } from "../../knowledge/mapProcessing";
 import "../../styles/navigation.css";
 
 type Props = {
@@ -72,7 +72,7 @@ type Props = {
   /** Unread scheduled results for the selected Loupist, shown on the Schedule row. */
   scheduleUnread?: number;
   scheduleRunning?: readonly string[];
-  mapBuild?: MapBuildStatus | null;
+  mapProcessing?: WorldProcessing["activity"];
   /** Opens a destination from the same list as the View menu. */
   onDestination?: (id: AppDestinationId) => void;
 };
@@ -81,7 +81,7 @@ export function AppNavigation({
   attention = [], finishedThreadKeys = new Set(), onOpenAttention, onMoreAttention, tab, selectedLoupist, loupists, runningLoupists, unreadCounts,
   onSelectLoupist, onCreateLoupist, onLoupistSettings, loading, threadsByLoupist, activeThreadId,
   runningThreadKeys, savingThreadKeys, draftThreadKeys = new Set(), settingsSection, settingsQuery: settingsSearch = "", onSettingsQuery: setSettingsSearch, indexedSettings, updateAvailable, onTabChange, onSettingsSectionChange, onExitSettings,
-  onCreateThread, onSelectThread, onRenameThread, onDeleteThread, onExportThread, onSearch, scheduleUnread = 0, scheduleRunning = [], mapBuild, onDestination,
+  onCreateThread, onSelectThread, onRenameThread, onDeleteThread, onExportThread, onSearch, scheduleUnread = 0, scheduleRunning = [], mapProcessing, onDestination,
 }: Props) {
   useTranslation();
   const { isMobile, setOpenMobile, state } = useSidebar();
@@ -113,14 +113,23 @@ export function AppNavigation({
    * Each is a destination: choosing it again keeps it open, and the row of the place on screen is raised.
    * Map and Lens open beside the conversation; while one is open its row is the current place.
    */
-  const mapSourceCount = mapBuild?.sourceCount;
-  const mapActivity = mapBuild ? (mapSourceCount
-    ? i18n.t("app:shell.mapBuildingFromSources", { count: mapSourceCount, formattedCount: formatNumber(mapSourceCount) })
-    : i18n.t("app:shell.mapBuilding")) : undefined;
+  let mapActivity: string | undefined;
+  if (mapProcessing?.kind === "building") {
+    const count = mapProcessing.sourceCount;
+    mapActivity = count ? i18n.t("app:shell.mapBuildingFromSources", { count, formattedCount: formatNumber(count) })
+      : i18n.t("app:shell.mapBuilding");
+  } else if (mapProcessing?.kind === "waiting") {
+    switch (mapProcessing.reason) {
+      case "provider_disconnected": mapActivity = i18n.t("app:shell.mapWaitingForModel"); break;
+      case "paused": mapActivity = i18n.t("app:shell.mapBuildingPaused"); break;
+      case "disabled": mapActivity = i18n.t("app:shell.mapBuildingOff"); break;
+      default: mapActivity = sourceProcessingLabel(mapProcessing.reason);
+    }
+  }
   const scheduleActivity = scheduleRunning.length === 1
     ? i18n.t("app:shell.scheduleRunning", { title: scheduleRunning[0] })
     : scheduleRunning.length > 1 ? i18n.t("app:shell.scheduleRunsInProgress", { count: scheduleRunning.length }) : undefined;
-  const placeRow = ({ id, icon: Icon, active, onClick, unread = 0, activity }: { id: AppDestinationId; icon: LucideIcon; active: boolean; onClick: () => void; unread?: number; activity?: string }) => {
+  const placeRow = ({ id, icon: Icon, active, onClick, unread = 0, activity, spinning = Boolean(activity) }: { id: AppDestinationId; icon: LucideIcon; active: boolean; onClick: () => void; unread?: number; activity?: string; spinning?: boolean }) => {
     const label = i18n.t(`app:shell.tabs.${id}`);
     const index = APP_DESTINATIONS.findIndex(item => item.id === id);
     const unreadId = `sidebar-${id}-unread`;
@@ -132,7 +141,7 @@ export function AppNavigation({
         title={activity ?? (index >= 0 ? `${label} ${tabShortcut(index + 1)}` : label)} onClick={onClick}>
         <Icon className="loupist-home-icon" aria-hidden="true" />
         {iconOnly ? null : <span className="loupist-chat-title">{label}</span>}
-        {activity ? <Spinner className="thread-running" role="img" aria-hidden="true" />
+        {spinning ? <Spinner className="thread-running" role="img" aria-hidden="true" />
           : showUnread ? <><span className="shell-unread" aria-hidden="true">{unread}</span><span className="sr-only" id={unreadId}>{i18n.t("app:shell.unreadScheduledResults", { count: unread })}</span></>
           : !iconOnly && index >= 0 ? <kbd className="loupist-place-key" aria-hidden="true">{tabShortcut(index + 1)}</kbd> : null}
       </SidebarMenuButton>
@@ -215,7 +224,7 @@ export function AppNavigation({
         <SidebarMenu className="loupist-places">{recent.filter(thread => thread.home).map(row)}
           {selectedLoupist ? <>
             {placeRow({ id: "following", icon: StarIcon, active: tab === "following", onClick: () => openDestination("following") })}
-            {placeRow({ id: "map", icon: NetworkIcon, active: tab === "map", onClick: () => openDestination("map"), activity: mapActivity })}
+            {placeRow({ id: "map", icon: NetworkIcon, active: tab === "map", onClick: () => openDestination("map"), activity: mapActivity, spinning: mapProcessing?.kind === "building" })}
             {placeRow({ id: "lens", icon: ApertureIcon, active: tab === "lens", onClick: () => openDestination("lens") })}
             {placeRow({ id: "schedule", icon: CalendarClockIcon, active: tab === "schedule", onClick: () => navigate("schedule"), unread: scheduleUnread, activity: scheduleActivity })}
           </> : null}

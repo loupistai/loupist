@@ -46,7 +46,8 @@ pub(super) fn resolve(
         .span_id
         .clone()
         .ok_or_else(|| CommandError::invalid("select a retained Source passage"))?;
-    // Reuse exact revision, owner and historical World inspection admission.
+    // Reuse the exact Source revision and ownership checks, including span
+    // authorization against the current World when opened from World.
     let loupist_id = request.source.loupist_id.clone();
     let detail = source_read(state, request.source)?;
     let span = detail

@@ -73,8 +73,13 @@ and names `connection_setup` with the entry ID for the
 [setup card](connections.md#connections-and-credentials).
 Credentialed providers have separate entries. The sidecar also checks each
 route's credential requirement. For providers with both public and protected
-routes, such as Nasdaq and BLS, the public routes remain usable without a key. New
-Loupists enable keyless entries without required setup, including the Market data
+routes, such as Nasdaq and BLS, the public routes remain usable without a key.
+Each run boots with the credentials it could read. A missing or unreadable key
+leaves credential-dependent providers and routes out of that run. Keyless reads
+keep working, including anonymous CFTC reads when the optional app token cannot
+be read. The load names the connection that needs setup or whose saved key could
+not be read. Legacy keys still go through **Allow access** in Connections.
+New Loupists enable keyless entries without required setup, including the Market data
 platform, World Bank, DefiLlama, Web Research and Asset lookup. KIS, KRX and
 OpenDART start disabled in the optional Korea group. Rust filters read-only tool
 and provider choices against the Loupist's active bindings and rejects provider

@@ -61,9 +61,10 @@ markers under the app's private `export-trust` directory. Renderer-composed CSV
 and Markdown exports have no authoritative origin receipt, so they are tagged
 conservatively. Native `read` reports its resolved target to Rust, which recognizes
 those exact bytes, raises the tier and supplies fresh delimiters for the native
-result. The native adapter reports the final text for link recording after it
-applies the read limit. Unchanged copies and renamed files are recognized; `dataset_import`
-keeps tagged bytes in the third-party class. Workspace captures of tagged bytes
+result. The native adapter reports links after Pi accepts the final, limited
+tool result into its transcript. If the call is cancelled before that report,
+it contributes no links. Unchanged copies and renamed files are recognized.
+`dataset_import` keeps tagged bytes in the third-party class. Workspace captures of tagged bytes
 are delimited too and retain tool authorship if saved as a Source. Files exported before tagging,
 externally changed bytes and derived files without declared lineage remain
 unclassified local files. These tags do not make the host filesystem a sandbox

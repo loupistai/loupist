@@ -339,7 +339,7 @@ struct WorkerOutcome {
 
 #[cfg(unix)]
 enum Stop {
-    Exit(std::process::ExitStatus),
+    Exit,
     Cancel,
     Timeout,
     Output,
@@ -365,17 +365,19 @@ async fn supervise_worker(
     .await
     .map_err(|_| failed())?
     .map_err(|_| BrokerError::Execution("Python runtime is untrusted".into()))?;
-    let mut child = Command::new(worker)
+    use crate::process_lease::{wait_for_process_group_exit, OwnedProcessGroup};
+
+    let mut command = Command::new(worker);
+    command
         .process_group(0)
         .env_clear()
         .current_dir(snapshot)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|_| failed())?;
-    let pid = child.id().ok_or_else(failed)?;
+        .kill_on_drop(true);
+    let (mut child, owned) = OwnedProcessGroup::spawn(&mut command).map_err(|_| failed())?;
+    let pid = child.id().ok_or_else(failed)? as i32;
     let mut stdin = child.stdin.take().ok_or_else(failed)?;
     let stdout = child.stdout.take().ok_or_else(failed)?;
     let stderr = child.stderr.take().ok_or_else(failed)?;
@@ -387,23 +389,27 @@ async fn supervise_worker(
 
     let stop = tokio::select! {
         biased;
-        status = child.wait() => Stop::Exit(status.map_err(|_| failed())?),
+        exited = wait_for_process_group_exit(pid) => {
+            exited.map_err(|_| failed())?;
+            Stop::Exit
+        },
         _ = cancel.cancelled() => Stop::Cancel,
         _ = disconnected.cancelled() => Stop::Cancel,
         _ = tokio::time::sleep(wall) => Stop::Timeout,
         _ = overflow.notified() => Stop::Output,
     };
-    let exited = matches!(stop, Stop::Exit(_));
-    let status = match &stop {
-        Stop::Exit(status) => *status,
-        Stop::Cancel | Stop::Timeout | Stop::Output => {
-            kill_group(pid);
-            match tokio::time::timeout(Duration::from_secs(2), child.wait()).await {
-                Ok(Ok(status)) => status,
-                _ => {
-                    kill_group(pid);
-                    child.wait().await.map_err(|_| failed())?
-                }
+    let exited = matches!(stop, Stop::Exit);
+    let status = if exited {
+        owned.disarm();
+        owned.complete().map_err(|_| failed())?;
+        child.wait().await.map_err(|_| failed())?
+    } else {
+        let _ = owned.kill();
+        match tokio::time::timeout(Duration::from_secs(2), child.wait()).await {
+            Ok(Ok(status)) => status,
+            _ => {
+                let _ = owned.kill();
+                child.wait().await.map_err(|_| failed())?
             }
         }
     };
@@ -414,12 +420,10 @@ async fn supervise_worker(
         Stop::Cancel => ("cancelled", "Python execution was cancelled"),
         Stop::Timeout => ("timed_out", "Python execution timed out"),
         Stop::Output => ("failed", "Python execution exceeded an output limit"),
-        Stop::Exit(_) if exit_code == 0 => ("completed", ""),
-        Stop::Exit(_) if exit_code == 124 => ("timed_out", "Python execution timed out"),
-        Stop::Exit(_) if exit_code == 126 => {
-            ("failed", "Python execution exceeded a resource limit")
-        }
-        Stop::Exit(_) => ("failed", "Python execution failed"),
+        Stop::Exit if exit_code == 0 => ("completed", ""),
+        Stop::Exit if exit_code == 124 => ("timed_out", "Python execution timed out"),
+        Stop::Exit if exit_code == 126 => ("failed", "Python execution exceeded a resource limit"),
+        Stop::Exit => ("failed", "Python execution failed"),
     };
     if stderr.is_empty() && !fallback.is_empty() {
         stderr.extend_from_slice(fallback.as_bytes());
@@ -456,15 +460,6 @@ async fn read_capped(
             return (output, true);
         }
         output.extend_from_slice(&buffer[..count]);
-    }
-}
-
-#[cfg(unix)]
-fn kill_group(pid: u32) {
-    let pid = pid as i32;
-    if pid > 1 {
-        let _ = crate::process_lease::signal_process_group(pid, libc::SIGKILL);
-        unsafe { libc::kill(pid, libc::SIGKILL) };
     }
 }
 

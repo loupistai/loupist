@@ -1806,9 +1806,15 @@ mod tests {
     }
 
     #[test]
-    fn after_a_restart_a_running_row_is_done_with_its_committed_answer_or_interrupted() {
+    fn crash_recovery_settles_each_handoff_and_its_session_from_the_durable_reply() {
         let id = "loupist-restart-answer";
-        let (root, state) = state_with_loupist(id);
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_folder_test(root.path().join("app"));
+        crate::test_fixtures::create_folder_loupist(
+            &state.store,
+            id,
+            &root.path().join("workspace"),
+        );
         let answered = commit_standalone(&state, id, &staged_fixture("answered")).unwrap();
         let unanswered = commit_standalone(&state, id, &staged_fixture("unanswered")).unwrap();
         let failed = commit_standalone(&state, id, &staged_fixture("failed-reply")).unwrap();
@@ -1853,9 +1859,9 @@ mod tests {
         append_session(&state, &failed, vec![error]);
         // The app quits: no run, no lease and no outcome recorded.
         drop(admissions);
-        drop(state);
+        state.close_for_restart_test();
 
-        let state = AppState::for_persistent_test(root.path().join("app"));
+        let state = AppState::for_folder_test(root.path().join("app"));
         assert_eq!(
             super::super::home::deliver_finished_runs(&state, id).unwrap(),
             3
@@ -1914,6 +1920,25 @@ mod tests {
         assert_eq!(
             card(&unanswered).handoff.as_ref().unwrap().stop_reason,
             Some(HandoffStopReason::Interrupted)
+        );
+        let recovered = state.store.get_chat(&unanswered.chat_id).unwrap().unwrap();
+        assert_eq!(recovered.messages.len(), 3);
+        assert!(recovered.messages[1].steer);
+        assert_eq!(recovered.messages[2].status, ChatMessageStatus::Aborted);
+        assert_eq!(
+            recovered.messages[2].content,
+            crate::domain::STOPPED_REPLY_CONTENT
+        );
+        let completed = state.store.get_chat(&answered.chat_id).unwrap().unwrap();
+        assert_eq!(completed.messages.len(), 3);
+        assert_eq!(completed.messages[2].status, ChatMessageStatus::Complete);
+        assert_eq!(
+            completed.messages[2]
+                .memory_update
+                .as_ref()
+                .unwrap()
+                .discarded_memory_items,
+            items
         );
         assert_eq!(
             super::super::home::deliver_finished_runs(&state, id).unwrap(),

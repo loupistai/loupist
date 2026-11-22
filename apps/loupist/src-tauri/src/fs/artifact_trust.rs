@@ -485,12 +485,12 @@ fn parse_macos_team(details: &str) -> Result<Option<String>, ArtifactTrustError>
 
 #[cfg(all(target_os = "macos", any(not(debug_assertions), test)))]
 fn macos_team(path: &Path) -> Result<Option<String>, ArtifactTrustError> {
-    let output = Command::new("/usr/bin/codesign")
-        .env_clear()
-        .args(["--display", "--verbose=4"])
-        .arg(path)
-        .stdin(Stdio::null())
-        .output()?;
+    let output = crate::process_lease::macos_commands::output(
+        Command::new("/usr/bin/codesign")
+            .env_clear()
+            .args(["--display", "--verbose=4"])
+            .arg(path),
+    )?;
     if !output.status.success() {
         return Err(ArtifactTrustError::Untrusted);
     }
@@ -506,15 +506,16 @@ fn macos_leaf(path: &Path) -> Result<String, ArtifactTrustError> {
     let prefix = temporary.path().join("certificate");
     let mut extract = std::ffi::OsString::from("--extract-certificates=");
     extract.push(&prefix);
-    let status = Command::new("/usr/bin/codesign")
-        .env_clear()
-        .arg("--display")
-        .arg(extract)
-        .arg(path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()?;
+    let status = crate::process_lease::macos_commands::status(
+        Command::new("/usr/bin/codesign")
+            .env_clear()
+            .arg("--display")
+            .arg(extract)
+            .arg(path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null()),
+    )?;
     if !status.success() {
         return Err(ArtifactTrustError::Untrusted);
     }
@@ -541,12 +542,13 @@ fn verify_codesign(
     if let Some(requirement) = requirement {
         command.args(["-R", requirement]);
     }
-    let status = command
-        .arg(path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()?;
+    let status = crate::process_lease::macos_commands::status(
+        command
+            .arg(path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null()),
+    )?;
     if status.success() {
         Ok(())
     } else {

@@ -538,7 +538,10 @@ export type GrowthEventKind =
   /** An asset page's read moved: summary is the asset's name, before/after the steps. */
   | "thesis_moved";
 
+export type WorldGrowthSource = Wire.WorldGrowthSource;
+
 export type GrowthEvent = {
+  publication?: Wire.WorldGrowthPublication;
   rationale?: string;
   eventId: string;
   loupistId: string;

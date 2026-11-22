@@ -225,11 +225,12 @@ pub fn share_reveal(
         .get(&request.loupist_id)
         .ok_or_else(|| CommandError::not_found("saved copy"))?;
     #[cfg(target_os = "macos")]
-    std::process::Command::new("/usr/bin/open")
-        .arg("-R")
-        .arg(&path)
-        .spawn()
-        .map_err(internal)?;
+    crate::process_lease::macos_commands::spawn(
+        std::process::Command::new("/usr/bin/open")
+            .arg("-R")
+            .arg(&path),
+    )
+    .map_err(internal)?;
     #[cfg(windows)]
     std::process::Command::new("explorer.exe")
         .arg(format!("/select,{}", path.display()))

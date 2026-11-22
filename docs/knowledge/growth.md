@@ -148,9 +148,23 @@ whose Key facts list the values; a disputed one reads "Two sources disagree: KRW
 Changes one publication made that would read the same (kind, ends, relation and Source) are one
 row, and a reported-values row counts them; changes that differ in any of these stay separate.
 The same rule keeps the Bot's morning questions from asking how a name is linked to itself.
-Rows open the inspector or the Lens entry; rows for items no longer in World are dimmed. The
-toolbar badge counts changes since the last visit; Bot does not repeat this growth.
-Schema and truncation events are excluded.
+A World change records the publishing revision and, when a Source job published
+it, that job's Source record and revision. Corrections, merges and shared pack
+imports have no single Source. Historical events remain readable without that
+identity. A new name and the facts added about it in that publication share one
+row, with the fact count next to its kind. Facts about an existing name keep
+their own row.
+
+Four or more rows from the same Source in one publication collapse into one
+expandable row. Its title opens the Source in the Library. The group shows the
+numbers of new names and facts. Its children list names first, with each category
+ordered alphabetically. The reader keeps disclosure state while the drawer
+stays open, and pages of events join before the drawer counts or renders them.
+The drawer totals count collapsed entries, and the toolbar badge counts them
+since the last visit. Row actions still open the inspector or Lens entry and
+dim items that have left World. Replay and date ranges use the underlying
+changes. Bot does not repeat this growth. Schema and truncation events are
+excluded.
 
 Replay reveals the current projection by first-seen timestamps; it is not a
 historical snapshot or revision browser. Export creates a PNG or a replay video

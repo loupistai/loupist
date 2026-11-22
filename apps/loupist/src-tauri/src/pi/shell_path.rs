@@ -226,8 +226,8 @@ pub(crate) fn resolve(
             Ok(())
         });
     }
-    let mut child = command.spawn().map_err(|_| ShellPathError::Launch)?;
-    let group = i32::try_from(child.id()).map_err(|_| ShellPathError::Launch)?;
+    let (mut child, owned) = crate::process_lease::OwnedProcessGroup::spawn_std(&mut command)
+        .map_err(|_| ShellPathError::Launch)?;
     let mut stdout = child.stdout.take().ok_or(ShellPathError::Launch)?;
     let (sender, receiver) = mpsc::channel();
     std::thread::spawn(move || {
@@ -262,7 +262,7 @@ pub(crate) fn resolve(
     // The probe is finished or abandoned. Signal before reaping: the unreaped
     // leader keeps the group id reserved, so this cannot reach a reused group,
     // and it also stops anything the profile left running in the group.
-    let _ = crate::process_lease::signal_process_group(group, libc::SIGKILL);
+    let _ = owned.kill();
     let _ = child.wait();
     parse_probe_output(&output?)
 }

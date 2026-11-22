@@ -750,6 +750,92 @@ fn pause_and_resume_restore_the_queue_without_resetting_the_job_budget() {
 }
 
 #[test]
+fn a_running_chunk_takes_precedence_over_its_queued_follower() {
+    let (_directory, store) = open();
+    let settings = enabled();
+    let first = queued(
+        &store,
+        &settings,
+        "loupist-a",
+        "A".repeat(EPISODE_CHUNK_CHARS * 2).as_bytes(),
+    );
+    let record = &first
+        .document
+        .source_binding
+        .as_ref()
+        .unwrap()
+        .source_record_id;
+    let jobs = store.graph_jobs("loupist-a").unwrap();
+    assert_eq!(jobs.len(), 2);
+    let follower = jobs.iter().find(|job| job.job_id != first.job_id).unwrap();
+    assert_eq!(follower.status, JOB_QUEUED);
+    assert!(follower.created_at_ms > first.created_at_ms);
+    assert_eq!(
+        claim(&store, &settings, &first.job_id, T + 2).status,
+        JOB_RUNNING
+    );
+    let view = store
+        .transact(|write| write.source_processing("loupist-a", record))
+        .unwrap();
+    assert_eq!(view.status, JOB_RUNNING);
+    assert_eq!(view.job_id.as_deref(), Some(first.job_id.as_str()));
+}
+
+#[test]
+fn a_legacy_queued_tail_does_not_hide_a_stopped_source() {
+    let (_directory, store) = open();
+    let settings = GraphProcessingSettings {
+        max_llm_calls: 1,
+        ..enabled()
+    };
+    let first = queued(
+        &store,
+        &settings,
+        "loupist-a",
+        "A".repeat(EPISODE_CHUNK_CHARS * 3).as_bytes(),
+    );
+    let record = &first
+        .document
+        .source_binding
+        .as_ref()
+        .unwrap()
+        .source_record_id;
+    let jobs = store.graph_jobs("loupist-a").unwrap();
+    assert_eq!(jobs.len(), 3);
+    store
+        .transact(|write| {
+            // Older jobs could keep independent allowance in their followers.
+            for job in jobs.iter().filter(|job| job.job_id != first.job_id) {
+                let mut document = job.document.clone();
+                document.extraction.max_llm_calls = 2;
+                write_status(write.tx, &job.job_id, JOB_QUEUED, JOB_QUEUED, &document)?;
+            }
+            Ok(())
+        })
+        .unwrap();
+
+    assert_eq!(
+        claim(&store, &settings, &first.job_id, T + 3).status,
+        JOB_PAUSED
+    );
+    assert!(heads(&store).is_empty());
+    assert_eq!(
+        store
+            .graph_jobs("loupist-a")
+            .unwrap()
+            .iter()
+            .filter(|job| job.status == JOB_QUEUED)
+            .count(),
+        2
+    );
+    let view = store
+        .transact(|write| write.source_processing("loupist-a", record))
+        .unwrap();
+    assert_eq!(view.status, JOB_PAUSED);
+    assert_eq!(view.job_id.as_deref(), Some(first.job_id.as_str()));
+}
+
+#[test]
 fn a_source_whose_allowance_ran_out_is_not_reported_as_the_users_pause() {
     let (_directory, store) = open();
     let mut settings = enabled();

@@ -1,6 +1,6 @@
 import i18n from "../i18n";
 import { setPreviewLanguage } from "../i18n/useLanguage";
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { App } from "../App";
 import { enableSharingPreviewHarness } from "../sharing/releaseVisibility";
 
@@ -14,8 +14,9 @@ import { selectPanel } from "./scenarios/kit";
 afterEach(() => { cleanup(); localStorage.clear(); setPreviewLanguage("en"); Reflect.deleteProperty(window.navigator, "onLine"); });
 
 describe("design preview scenarios", () => {
-  for (const scenario of scenarios) {
-    it(`${scenario.id} reaches its visible landmark`, async () => {
+  for (const scenario of scenarios) for (const locale of scenario.id === "map-whats-new-sources" ? ["en", "ko"] as const : ["en"] as const) {
+    it(`${scenario.id}${locale === "ko" ? " (Korean)" : ""} reaches its visible landmark`, async () => {
+      if (locale === "ko") setPreviewLanguage(locale);
       const bridge = new PreviewBridge({ delay_ms: 0 });
       await scenario.setup(bridge);
       await configureTheme(bridge, "light");
@@ -61,6 +62,19 @@ describe("design preview scenarios", () => {
       if (scenario.id === "map-whats-new-reported") {
         const labels = [...document.querySelectorAll(".map-whats-new-label")].map((label) => label.textContent);
         expect(labels.filter((label) => label?.includes("NVIDIA"))).toEqual(["6 new facts about NVIDIA", "NVIDIA"]);
+      }
+      if (scenario.id === "map-whats-new-sources") {
+        const title = locale === "ko" ? "자동차 기업 가치평가 배수" : "Automaker valuation multiples";
+        const summary = locale === "ko" ? "새 이름 40개 · 새 사실 80건" : "40 new names · 80 new facts";
+        const button = scenario.landmark()!;
+        expect(button).toHaveTextContent(title);
+        expect(button).toHaveTextContent(summary);
+        expect(document.querySelector("[data-map-whats-new] .map-badge")).toHaveTextContent("3");
+        expect(document.querySelectorAll('.map-whats-new-row[data-kind="name"]')).toHaveLength(2);
+        expect(button.nextElementSibling).toHaveAccessibleName(locale === "ko" ? "이 자료에서 온 변경 40건 보기" : "Show the 40 changes from this source");
+        fireEvent.click(button);
+        await waitFor(() => expect(document.querySelector(".map-reader h2")).toHaveTextContent(title));
+        expect(document.querySelector(".map-whats-new")).toBeNull();
       }
       // The greeting asks about the followed asset by name and says nothing it cannot back.
       if (scenario.id === "thread-morning") {

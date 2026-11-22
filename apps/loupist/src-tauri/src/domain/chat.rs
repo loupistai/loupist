@@ -47,6 +47,8 @@ pub enum ChatMessageStatus {
     Error,
 }
 
+pub(crate) const STOPPED_REPLY_CONTENT: &str = "Response stopped.";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
@@ -939,6 +941,68 @@ pub struct ChatToolTrace {
 }
 
 impl ChatMessage {
+    pub(crate) fn terminal_reply(
+        id: String,
+        status: ChatMessageStatus,
+        content: String,
+        created_at_ms: i64,
+        as_of: Option<String>,
+    ) -> Result<Self, DomainError> {
+        Ok(Self {
+            id,
+            role: ChatRole::Assistant,
+            status,
+            content,
+            created_at_ms,
+            as_of,
+            refs_digest: memory_refs_digest(&[])?,
+            lens_receipts: Vec::new(),
+            memory_refs: Vec::new(),
+            observed_exact_count: 0,
+            refs_truncated: false,
+            memory_update: None,
+            memory_revision: None,
+            execution_model: None,
+            agent_harness: None,
+            attachments: Vec::new(),
+            artifact_refs: Vec::new(),
+            evidence_refs: Vec::new(),
+            progress: None,
+            tool_refusals: Vec::new(),
+            feedback: None,
+            schedule_receipts: Vec::new(),
+            performance: None,
+            tool_trace: None,
+            failure_kind: None,
+            host_composed: false,
+            steer: false,
+            retry_after_seconds: None,
+            delivery: None,
+            replaced_model: None,
+            alert: None,
+            handoff: None,
+            research_session_id: None,
+            handoff_note: None,
+            handoff_action: None,
+            scheduled: None,
+            vocabulary: None,
+            link: None,
+            number_checks: Vec::new(),
+            as_of_report: None,
+        })
+    }
+
+    pub(crate) fn is_bot_post(&self) -> bool {
+        self.delivery.is_some()
+            || self.alert.is_some()
+            || self.vocabulary.is_some()
+            || self.handoff.is_some()
+            || self.link.is_some()
+            || (self.host_composed && self.execution_model.is_none())
+            // The price setup answer was generated in its own session, then posted to Bot.
+            || self.id.starts_with("price-setup-reply-")
+    }
+
     pub(crate) fn has_untrusted_text(&self) -> bool {
         self.role == ChatRole::Assistant
             && self
@@ -1437,9 +1501,14 @@ pub fn prepare_chat_retry(
         return Err(DomainError::Invalid("chat retry time is invalid"));
     }
     let mut session = chat.clone();
-    let assistant = session.messages.pop().ok_or(DomainError::Invalid(
-        "only the latest failed or stopped reply can be tried again",
-    ))?;
+    let assistant_index = session
+        .messages
+        .iter()
+        .rposition(|message| !message.steer && !message.is_bot_post())
+        .ok_or(DomainError::Invalid(
+            "only the latest failed or stopped reply can be tried again",
+        ))?;
+    let assistant = session.messages.remove(assistant_index);
     if assistant.role != ChatRole::Assistant
         || !matches!(
             assistant.status,
@@ -1455,10 +1524,9 @@ pub fn prepare_chat_retry(
             "a failed reply cannot be removed after it saved Memory or a document",
         ));
     }
-    let request_index = session
-        .messages
+    let request_index = session.messages[..assistant_index]
         .iter()
-        .rposition(|message| !message.steer)
+        .rposition(|message| !message.steer && !message.is_bot_post())
         .ok_or(DomainError::Invalid(
             "only the latest failed or stopped reply can be tried again",
         ))?;

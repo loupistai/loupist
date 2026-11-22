@@ -27,6 +27,7 @@ use crate::{
 
 pub(crate) mod app_settings;
 mod artifact_history;
+mod chat_recovery;
 pub(crate) mod deletion;
 mod folder;
 mod host;

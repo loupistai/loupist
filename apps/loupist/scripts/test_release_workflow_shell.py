@@ -41,6 +41,20 @@ def unguarded_empty_array_expansions(text: str) -> list[str]:
 
 
 class ReleaseWorkflowShellTests(unittest.TestCase):
+    def test_published_tag_sequence_check_only_applies_to_rcs(self):
+        workflow = (WORKFLOWS / "release.yml").read_text()
+        validation = workflow.split("\n  validate:\n", 1)[1]
+        validation = validation.split("\n  full-ci:\n", 1)[0]
+        published_tag_checks = [
+            step
+            for step in validation.split("\n      - ")
+            if "/releases?per_page=" in step
+        ]
+        self.assertEqual(len(published_tag_checks), 1)
+        (rc_check,) = published_tag_checks
+        self.assertIn("steps.identity.outputs.prerelease == 'true'", rc_check)
+        self.assertIn("release-qualification.py rc-sequence", rc_check)
+
     def test_no_possibly_empty_array_is_expanded_without_a_guard(self):
         for name in NAMES:
             with self.subTest(workflow=name):

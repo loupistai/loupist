@@ -1,10 +1,6 @@
 /* Activity sheet (DIRECTION "Bot: a conversation with a person"): how a reply was made, behind the
    Loupist's face. It docks beside the conversation when the chat keeps 420 px, and slides over it
    from the right below that. Nothing about process floats over the conversation. */
-.chat-layout[data-activity] { position: relative; }
-.chat-layout[data-activity="docked"] { display: flex; }
-.chat-layout[data-activity="docked"] > .chat-workspace { flex: 1 1 0; width: 0; }
-
 .activity-sheet {
   display: flex; flex-direction: column; min-width: 0; min-height: 0;
   border-left: 1px solid var(--gg-color-border-subtle);

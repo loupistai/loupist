@@ -288,10 +288,11 @@ fn dispatch(file: &File, _: &Path) -> io::Result<Option<String>> {
     let url = mac_handler::file_reference_url(path).ok_or_else(|| {
         io::Error::other("Could not resolve the admitted file's system reference.")
     })?;
-    let output = std::process::Command::new("/usr/bin/open")
-        .arg("--")
-        .arg(&url)
-        .output()?;
+    let output = crate::process_lease::macos_commands::output(
+        std::process::Command::new("/usr/bin/open")
+            .arg("--")
+            .arg(&url),
+    )?;
     if output.status.success() {
         Ok(mac_handler::display_name(path))
     } else {

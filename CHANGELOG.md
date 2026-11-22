@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.4 - 2026-11-23
+
+- See that World is waiting for a model, instead of a spinner, when the model chosen for World is not connected.
+- Keep your place in a conversation when the side panel opens and when an answer finishes.
+- Find a research session that was cut off by a crash or a forced quit marked as stopped, with Try again.
+- Quit without leaving a helper process behind.
+- Read market data that needs no key even when a saved key cannot be read: only the connection that needs that key is left out, and Loupist says which.
+- Keep the World to the names your research is about: a table that lists many companies with the same few figures no longer adds every row.
+- Read What's new by Source: one update from one Source is one row that expands, and a new name shows its new facts on the same row.
+
 ## 0.1.3 - 2026-11-22
 
 - Open the Developer ID-signed, Apple-notarized Beta directly from Applications, without approving it in System Settings.

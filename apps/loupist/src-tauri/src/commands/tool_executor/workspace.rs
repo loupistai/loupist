@@ -216,8 +216,8 @@ impl AppToolExecutor {
         Ok(result)
     }
 
-    /// Pi sends the final text parts at the same point it wraps them. Native
-    /// authorization only sees the path, before Pi applies its read limits.
+    /// Pi sends the final text parts after accepting the native tool result
+    /// into its transcript. Authorization sees the path before the read limits.
     pub(super) async fn native_delivered_text(
         &self,
         params: &Value,

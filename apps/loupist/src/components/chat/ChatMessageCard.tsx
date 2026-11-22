@@ -13,6 +13,7 @@ import { chatTitle } from "../../app/chatTitle";
 import { Spinner } from "../ui/spinner";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { useConversationScroll } from "../ai-elements/conversation";
+import { AnswerActionTooltip } from "./AnswerActionTooltip";
 import { AnswerFeedback, type SaveAnswerFeedback } from "./AnswerFeedback";
 import {
   CheckIcon,
@@ -496,9 +497,11 @@ function ChatMessageCardComponent({
       : t("memorySaving.inProgress")}
   </div> : undefined;
   const copyAction = copyText !== null ? <div className="message-actions">
-    <button type="button" aria-label={copyState === "copied" ? t("chatMessageCard.answerCopied") : t("chatMessageCard.copyAnswer")} title={copyState === "copied" ? t("chatMessageCard.copied") : t("chatMessageCard.copyAnswer")} onClick={() => {
-      void copy(copyText);
-    }}>{copyState === "copied" ? <CheckIcon /> : <CopyIcon />}</button>
+    <AnswerActionTooltip label={copyState === "copied" ? t("chatMessageCard.copied") : t("chatMessageCard.copyAnswer")}>
+      <button type="button" aria-label={copyState === "copied" ? t("chatMessageCard.answerCopied") : t("chatMessageCard.copyAnswer")} onClick={() => {
+        void copy(copyText);
+      }}>{copyState === "copied" ? <CheckIcon /> : <CopyIcon />}</button>
+    </AnswerActionTooltip>
     {copyState === "failed" ? <span role="alert">{t("chatMessageCard.couldNotCopySelectTheAnswerToCopyIt")}</span> : null}
   </div> : null;
   const writingFeedback = view.footer.kind === "live" && message.status === "streaming" && Boolean(message.content.trim());

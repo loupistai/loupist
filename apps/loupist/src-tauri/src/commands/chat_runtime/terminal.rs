@@ -197,62 +197,46 @@ pub(super) fn persist_and_emit_terminal_chat(
         return Err(CommandError::conflict("Chat response is already saved"));
     }
     let created_at_ms = now_ms().max(expected.updated_at_ms + 1);
+    let status = match terminal_status {
+        ChatTerminalStatus::Aborted => ChatMessageStatus::Aborted,
+        ChatTerminalStatus::Error | ChatTerminalStatus::StoreFailed => ChatMessageStatus::Error,
+    };
+    let as_of = expected
+        .messages
+        .iter()
+        .rev()
+        .find(|message| message.role == ChatRole::User && !message.steer)
+        .and_then(|message| message.as_of.clone());
     let mut chat = expected.clone();
     chat.messages.push(ChatMessage {
         tool_refusals: on_event.tool_refusals(),
-        performance: None,
-        feedback: None,
         tool_trace: Some(on_event.tool_trace.snapshot()),
         schedule_receipts: on_event.schedule_receipts(),
         failure_kind: (!matches!(terminal_status, ChatTerminalStatus::Aborted))
             .then(|| on_event.failure_kind()),
-        host_composed: false,
-        steer: false,
         retry_after_seconds: on_event.retry_after_seconds(),
-        delivery: None,
         replaced_model: on_event.replaced_model(),
-        as_of: expected
-            .messages
-            .iter()
-            .rev()
-            .find(|message| message.role == ChatRole::User && !message.steer)
-            .and_then(|message| message.as_of.clone()),
-        number_checks: Vec::new(),
-        as_of_report: None,
-        alert: None,
-
-        vocabulary: None,
-        handoff: None,
-        research_session_id: None,
-        handoff_note: None,
-        handoff_action: None,
-        scheduled: None,
-        link: None,
-        id: message_id.to_owned(),
-        role: ChatRole::Assistant,
-        status: match terminal_status {
-            ChatTerminalStatus::Aborted => ChatMessageStatus::Aborted,
-            ChatTerminalStatus::Error | ChatTerminalStatus::StoreFailed => ChatMessageStatus::Error,
-        },
-        content: if store_failed {
-            FAILED_CHAT_CONTENT.into()
-        } else {
-            content.clone()
-        },
-        created_at_ms,
-        lens_receipts: Vec::new(),
         memory_refs: memory_trace.refs,
         observed_exact_count: memory_trace.observed_exact_count,
         refs_truncated: memory_trace.refs_truncated,
         refs_digest: memory_trace.refs_digest,
-        memory_update: None,
         memory_revision,
         execution_model: Some(execution_model.clone()),
         agent_harness: Some(agent_harness.clone()),
-        attachments: Vec::new(),
-        artifact_refs: Vec::new(),
         evidence_refs: on_event.evidence_refs(),
         progress: progress.clone(),
+        ..ChatMessage::terminal_reply(
+            message_id.to_owned(),
+            status,
+            if store_failed {
+                FAILED_CHAT_CONTENT.into()
+            } else {
+                content.clone()
+            },
+            created_at_ms,
+            as_of,
+        )
+        .map_err(map_internal)?
     });
     chat.updated_at_ms = created_at_ms;
     store.replace_chat(&expected, &chat).map_err(map_store)?;
@@ -418,7 +402,7 @@ pub(in crate::commands) fn persist_or_emit_failed_chat_with_stop_precedence(
             run_id,
             thread_id,
             message_id,
-            "Response stopped.".into(),
+            crate::domain::STOPPED_REPLY_CONTENT.into(),
             memory_trace,
             memory_revision,
             execution_model,

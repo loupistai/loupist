@@ -13,6 +13,7 @@ import {
 import type { ChatFeedback, ChatArtifactSelection, ChatKnowledgePin, ChatMessage, ChatThread, LoupistBridge } from "../types";
 import { commandErrorCode, errorMessage } from "../lib/errors";
 import { admissionRefusal, type ChatAdmission } from "./submission";
+import { lastTurnMessageIndex } from "./turnMessages";
 import { markActive } from "../app/loupistVisit";
 import {
   RUNTIME_STOP_MARKER,
@@ -147,7 +148,8 @@ export function useLoupistChat({
   );
   const isRunning =
     status === "submitted" || status === "streaming" || isStopping;
-  const lastMessageStatus = messages.at(-1)?.status;
+  const lastTurnMessage = messages[lastTurnMessageIndex(messages)];
+  const lastMessageStatus = lastTurnMessage?.role === "assistant" ? lastTurnMessage.status : undefined;
   const savingRunId = messages.at(-1)?.memorySaving?.run_id;
   const isSkipping = savingRunId !== undefined && skipRequested === savingRunId;
   // Only the run's transitions are said here. Each step's label is the turn's own live
@@ -433,8 +435,9 @@ export function useLoupistChat({
     const capturedChat = chat;
     const capturedEpoch = chatScope.current.epoch;
     if (!threadId || isRunning || isStopping || retryGuard.current) return null;
-    const assistant = messages.at(-1);
-    const request = messages.slice(0, -1).reverse().find(message => !message.steer);
+    const assistantIndex = lastTurnMessageIndex(messages);
+    const assistant = messages[assistantIndex];
+    const request = messages[lastTurnMessageIndex(messages, assistantIndex)];
     if (!assistant || assistant.role !== "assistant" || (assistant.status !== "error" && assistant.status !== "aborted")) return null;
     if (!request || request.role !== "user" || (!request.content.trim() && !(request.attachments?.length))) return null;
     const ownsAttempt = () => chatScope.current.chat === capturedChat
@@ -457,8 +460,9 @@ export function useLoupistChat({
         else {
           const workspace = await bridge.loupistSelect(loupistId);
           const stored = workspace.threads.find((thread) => thread.id === threadId)?.messages ?? [];
-          const storedAssistant = stored.at(-1);
-          const storedUser = stored.slice(0, -1).reverse().find(message => !message.steer);
+          const storedAssistantIndex = lastTurnMessageIndex(stored);
+          const storedAssistant = stored[storedAssistantIndex];
+          const storedUser = stored[lastTurnMessageIndex(stored, storedAssistantIndex)];
           if (!storedAssistant || storedAssistant.role !== "assistant" || (storedAssistant.status !== "error" && storedAssistant.status !== "aborted") || storedUser?.role !== "user") {
             throw new Error(t("useLoupistChat.theAttachedFilesFromThatRequestCouldNotBe"));
           }
@@ -519,7 +523,7 @@ export function useLoupistChat({
     announcement: visibleAnnouncement,
     // A terminal assistant error has its own localized notice. Local operation
     // failures still belong beside the composer, including a failed retry.
-    error: error ?? (waitingForMemory || messages.at(-1)?.role === "assistant" && lastMessageStatus === "error" ? null : chatError?.message ?? null),
+    error: error ?? (waitingForMemory || lastMessageStatus === "error" ? null : chatError?.message ?? null),
     submit,
     steer,
     commitSteers,

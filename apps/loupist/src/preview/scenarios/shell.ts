@@ -23,6 +23,11 @@ async function runningSchedule(bridge: PreviewBridge) {
 
 async function buildingMap(bridge: PreviewBridge) {
   await prepareFixture(bridge);
+  const graphSettings = bridge.knowledgeGraphSettingsGet.bind(bridge);
+  bridge.knowledgeGraphSettingsGet = async request => {
+    const view = await graphSettings(request);
+    return { ...view, readiness: { ...view.readiness, status: "ready", note: null } };
+  };
   const read = bridge.knowledgeCatalog.bind(bridge);
   bridge.knowledgeCatalog = async request => {
     const catalog = await read(request);

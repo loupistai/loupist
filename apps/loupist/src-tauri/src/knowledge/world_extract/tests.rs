@@ -281,9 +281,7 @@ fn empty_text() -> MemoryClaimText {
     MemoryClaimText::new(std::iter::empty()).unwrap()
 }
 
-#[test]
-fn golden_extract_nodes() {
-    let case = case("extract_nodes");
+fn replay_extract_nodes(case: Value) {
     let (schema, instructions) = schema_and_instructions(&case);
     let (episode, previous) = episode(&case);
     let mut host = Host::new(&case);
@@ -311,6 +309,51 @@ fn golden_extract_nodes() {
     drop(bridge);
     assert_calls(&case, &host);
     assert_eq!(Value::Array(nodes), case["result"]["nodes"]);
+}
+
+#[test]
+fn golden_extract_nodes() {
+    replay_extract_nodes(case("extract_nodes"));
+}
+
+#[test]
+fn peer_table_replays_four_selected_names_without_admitting_the_other_rows() {
+    let mut fixture = case("extract_nodes");
+    let prose = "Aurora Motors opened a factory. Boreal Motors is cutting exports. Cedar Motors renewed its loan.";
+    let kept = [
+        "Aurora Motors",
+        "Boreal Motors",
+        "Cedar Motors",
+        "Delta Motors",
+    ];
+    let mut table = format!("{prose}\n\nCompany | Revenue | Market cap\n--- | --- | ---\n");
+    for (index, name) in kept
+        .iter()
+        .map(|name| (*name).to_owned())
+        .chain((5..=20).map(|index| format!("Peer Motors {index}")))
+        .enumerate()
+    {
+        table.push_str(&format!("{name} | $ {}B | $ {}B\n", 20 + index, 10 + index));
+    }
+    let focus = fixture["hints"]["focus"].as_str().unwrap();
+    let message = fixture["calls"][0]["messages"][1]["content"]
+        .as_str()
+        .unwrap();
+    let (before, rest) = message.split_once("<TEXT>\n").unwrap();
+    let (_, after) = rest.split_once("\n</TEXT>").unwrap();
+    fixture["calls"][0]["messages"][1]["content"] = json!(format!(
+        "{before}<TEXT>\n{table}\n</TEXT>{}",
+        after.replacen(focus, "Delta Motors", 1)
+    ));
+    fixture["hints"]["focus"] = json!("Delta Motors");
+    fixture["episode"]["content"] = json!(table);
+    fixture["responses"] = json!([{"extracted_entities": kept.map(|name| json!({
+        "name": name, "entity_type_id": 1
+    }))}]);
+    fixture["result"]["nodes"] = json!(kept.map(|name| json!({
+        "name": name, "labels": ["Organization", "Entity"]
+    })));
+    replay_extract_nodes(fixture);
 }
 
 #[test]

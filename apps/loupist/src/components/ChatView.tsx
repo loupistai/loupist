@@ -15,6 +15,7 @@ import { InfoIcon, Settings2Icon } from "lucide-react";
 import { Button } from "./ui/button";
 import { errorMessage } from "../lib/errors";
 import { useLoupistChat } from "../chat/useLoupistChat";
+import { lastTurnMessageIndex } from "../chat/turnMessages";
 import { runningHandoffRun, useHostedRun, type WatchHostedRun } from "../chat/useHostedRun";
 import { useChatMap } from "./workspace/ChatMapContext";
 import { stepEntityIds } from "../chat/chatMapData";
@@ -279,6 +280,7 @@ export function ChatView({
   const [editing, setEditing] = useState<{ threadId: string; messageId: string; position: number; content: string } | null>(null);
   const [pendingSubmission, setPendingSubmission] = useState<{ threadId: string; item: QueuedChatMessage } | null>(null);
   const admitting = useRef(new Set<string>());
+  const retryingLink = useRef(false);
   const selectedModelProfileId = modelSelection.model_profile_id;
   const selectedModelAvailable = configurationReady && visibleCatalogModels(modelCatalog).some(
     (model) => model.id === selectedModelProfileId && model.credential_source !== "missing",
@@ -771,9 +773,22 @@ export function ChatView({
     return true;
   };
 
-  /** Try again: Rust clears the failed tail, then the request is sent again with current settings. */
+  /** Try again repeats a link action or resends the user's request with current settings. */
   const retryFailed = () => {
-    if (!selectedModelAvailable || !workspaceAvailable || isRunning) return;
+    if (!workspaceAvailable || isRunning) return;
+    const replyIndex = lastTurnMessageIndex(messages);
+    const link = messages[lastTurnMessageIndex(messages, replyIndex)]?.handoff_action;
+    if (link?.kind === "link") {
+      if (retryingLink.current) return;
+      retryingLink.current = true;
+      setConfigurationReadError(null);
+      void bridge.researchHandoffStart({ loupistId: loupist.id, connectionId: link.connectionId, ...composerChoices() })
+        .then((receipt) => open({ kind: "chat", threadId: receipt.chatId }))
+        .catch(() => setConfigurationReadError(t("link.startError")))
+        .finally(() => { retryingLink.current = false; });
+      return;
+    }
+    if (!selectedModelAvailable) return;
     const originThread = activeThread?.id;
     const originDraft = draft;
     void (async () => {

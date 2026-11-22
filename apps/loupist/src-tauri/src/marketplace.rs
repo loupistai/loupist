@@ -392,7 +392,27 @@ pub(crate) fn execute_binding_ready(
     ) {
         return Ok(ready);
     }
-    connector_ready(entry, state)
+    let status = connector_status(entry, state)?;
+    if status.readiness == MarketplaceConnectorReadiness::Ready {
+        return Ok(true);
+    }
+    // A previously configured bundled MCP grant can reach connect even when
+    // its key is locked. Connect omits the provider and reports the refusal.
+    if entry.runtime.kind != MarketplaceRuntimeKind::BundledMcp
+        || status.readiness == MarketplaceConnectorReadiness::RuntimeUnavailable
+        || status.config_state == MarketplaceConfigState::Missing
+        || !crate::finance_credentials::is_locked(&state.credential_environment, &entry.id)
+    {
+        return Ok(false);
+    }
+    let active = crate::finance_credentials::known_active_fields(state, &entry.id);
+    Ok(!active.is_empty()
+        && entry.setup.as_ref().is_some_and(|setup| {
+            setup
+                .credential_fields
+                .iter()
+                .all(|field| !field.required || active.contains(&field.id))
+        }))
 }
 
 fn ensure_installable(entry_id: &str) -> Result<(), CommandError> {

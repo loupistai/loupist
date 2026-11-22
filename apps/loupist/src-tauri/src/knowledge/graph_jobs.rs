@@ -1369,15 +1369,41 @@ fn sources_awaiting_world(
         .map_err(KnowledgeError::from)
 }
 
-pub(super) fn latest_source_job(
+/// What the user sees for a Source. A running chunk takes precedence over
+/// later chunks waiting for it. A queued tail after a parked chunk cannot
+/// start on its own, even if a legacy receipt kept it marked queued.
+pub(super) fn source_status_job(
     tx: &Transaction<'_>,
     loupist_id: &str,
     record_id: &str,
 ) -> KnowledgeResult<Option<GraphJobView>> {
-    tx.query_row(
-        "SELECT job_id, loupist_id, world_record_id, world_revision_id, status, payload_json, payload_digest, created_at_ms FROM knowledge_graph_outbox WHERE loupist_id = ?1 AND json_extract(payload_json, '$.sourceBinding.sourceRecordId') = ?2 ORDER BY created_at_ms DESC, job_id DESC LIMIT 1",
-        params![loupist_id, record_id], row_to_job,
-    ).optional().map_err(KnowledgeError::from)
+    let job_id = tx
+        .query_row(
+            "WITH RECURSIVE source_jobs AS MATERIALIZED (
+               SELECT job_id, status, created_at_ms,
+                      json_extract(payload_json, '$.episodeKey') AS episode_key,
+                      json_extract(payload_json, '$.previousEpisodeKey') AS previous_key
+               FROM knowledge_graph_outbox
+               WHERE loupist_id = ?1
+                 AND json_extract(payload_json, '$.sourceBinding.sourceRecordId') = ?2
+             ), parked(episode_key) AS (
+               SELECT episode_key FROM source_jobs WHERE status IN ('paused_budget', 'reconcile_required')
+               UNION
+               SELECT follower.episode_key FROM source_jobs follower JOIN parked
+                 ON follower.previous_key = parked.episode_key
+               WHERE follower.status = 'queued'
+             )
+             SELECT job_id FROM source_jobs
+             WHERE status != 'queued' OR NOT EXISTS (
+               SELECT 1 FROM parked WHERE parked.episode_key = source_jobs.episode_key
+             )
+             ORDER BY (status = 'running') DESC, (status = 'queued') DESC, created_at_ms DESC, job_id DESC
+             LIMIT 1",
+            params![loupist_id, record_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    job_id.map(|id| load_job(tx, &id)).transpose()
 }
 
 /// Whether a job's status is final. A queued, running or paused job may still
@@ -2825,14 +2851,14 @@ pub fn publish_and_complete(
     }
     let previous_dependencies: Vec<super::model::EvidenceRevision> =
         serde_json::from_str(&current.dependency_json)?;
-    let dependencies = source_closure(
+    let (dependencies, source) = source_closure(
         write.tx,
         &job.loupist_id,
         &job,
         &previous_dependencies,
         &spans,
     )?;
-    let sealed = super::world::seal_world_with_actor(
+    let sealed = super::world::seal_world_from_source(
         write.tx,
         SealWorld {
             loupist_id: job.loupist_id.clone(),
@@ -2844,9 +2870,9 @@ pub fn publish_and_complete(
             annotations,
             dependencies,
         },
-        "processing",
         job.document.origin_chat_id.as_deref(),
         job.document.origin_message_id.as_deref(),
+        source,
         followed,
     )?;
     let mut document = job.document.clone();
@@ -3100,7 +3126,10 @@ fn source_closure(
     job: &GraphJobView,
     previous: &[super::model::EvidenceRevision],
     span_ids: &[String],
-) -> KnowledgeResult<Vec<super::model::EvidenceRevision>> {
+) -> KnowledgeResult<(
+    Vec<super::model::EvidenceRevision>,
+    Option<super::growth::WorldGrowthSource>,
+)> {
     use std::collections::{BTreeMap, BTreeSet};
 
     use super::model::{DependencyRole, EvidenceRevision, SourceRecordPayload};
@@ -3200,7 +3229,16 @@ fn source_closure(
             role: DependencyRole::WorldSource,
         });
     }
-    Ok(dependencies)
+    let source =
+        binding.zip(bound).map(
+            |(binding, (_, _, payload))| super::growth::WorldGrowthSource {
+                record_id: binding.source_record_id.clone(),
+                revision_id: binding.source_revision_id.clone(),
+                source_id: binding.source_id.clone(),
+                title: payload.source.title,
+            },
+        );
+    Ok((dependencies, source))
 }
 
 fn payload_has_span(payload: &super::model::SourceRecordPayload, span_id: &str) -> bool {

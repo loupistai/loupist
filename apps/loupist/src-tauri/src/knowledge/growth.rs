@@ -34,6 +34,34 @@ pub struct GrowthEvent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub title_key: Option<String>,
+    /// Immutable identity of the World publication that wrote this change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub publication: Option<WorldGrowthPublication>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct WorldGrowthPublication {
+    pub revision_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub source: Option<WorldGrowthSource>,
+    /// Subject of a fact, including when it is outside the bounded Map projection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub fact_subject_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct WorldGrowthSource {
+    pub record_id: String,
+    pub revision_id: String,
+    pub source_id: String,
+    pub title: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,6 +157,7 @@ impl GrowthEvent {
             before_summary: None,
             after_summary: None,
             title_key: None,
+            publication: None,
         }
     }
 
@@ -143,10 +172,11 @@ impl GrowthEvent {
         }
         tx.execute(
             "INSERT INTO knowledge_growth_events (event_id, loupist_id, at_ms, kind, record_id, subject_id,
-             origin_chat_id, origin_message_id, actor, summary, before_summary, after_summary, origin, rationale)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+             origin_chat_id, origin_message_id, actor, summary, before_summary, after_summary, origin, rationale, publication_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![self.event_id, self.loupist_id, self.at_ms, self.kind, self.record_id, self.subject_id,
-                self.origin_chat_id, self.origin_message_id, self.actor, self.summary, self.before_summary, self.after_summary, self.origin.as_ref().map(serde_json::Value::to_string), self.rationale],
+                self.origin_chat_id, self.origin_message_id, self.actor, self.summary, self.before_summary, self.after_summary, self.origin.as_ref().map(serde_json::Value::to_string), self.rationale,
+                self.publication.as_ref().map(serde_json::to_string).transpose()?],
         )?;
         Ok(())
     }
@@ -172,7 +202,7 @@ pub(super) fn world_diff(
     let mut changes = Vec::new();
     for node in &next.nodes {
         if !prior_nodes.contains(node.id.as_str()) {
-            changes.push(("entity_added", node.id.as_str(), node.name.as_str()));
+            changes.push(("entity_added", node.id.as_str(), node.name.as_str(), None));
         }
     }
     for claim in &next.claims {
@@ -186,22 +216,30 @@ pub(super) fn world_diff(
             _ => None,
         };
         if let Some(kind) = kind {
-            changes.push((kind, claim.id.as_str(), claim.proposition.as_str()));
+            let subject = if claim.connects_names() {
+                None
+            } else {
+                claim.endpoints.first().map(|end| end.node_id.as_str())
+            };
+            changes.push((kind, claim.id.as_str(), claim.proposition.as_str(), subject));
         }
     }
     // A removed claim is a withdrawal even when the producer omitted a tombstone.
     for (id, claim) in &prior_claims {
         if !next_claims.contains(id) && claim.status != ClaimStatus::Withdrawn {
-            changes.push(("claim_withdrawn", *id, claim.proposition.as_str()));
+            changes.push(("claim_withdrawn", *id, claim.proposition.as_str(), None));
         }
     }
     changes.sort_unstable();
-    for (kind, id, summary) in changes.iter().take(2000) {
+    for (kind, id, summary, fact_subject_id) in changes.iter().take(2000) {
         let mut event = context.clone();
         event.event_id = mint_id("gev");
         event.kind = (*kind).into();
         event.subject_id = Some((*id).into());
         event.summary = one_line(summary);
+        if let Some(publication) = &mut event.publication {
+            publication.fact_subject_id = fact_subject_id.map(str::to_owned);
+        }
         event.insert(tx)?;
     }
     if changes.len() > 2000 {
@@ -211,7 +249,7 @@ pub(super) fn world_diff(
         event.kind = "growth_truncated".into();
         event.subject_id = None;
         let mut counts = BTreeMap::<&str, usize>::new();
-        for (kind, _, _) in changes.iter().skip(2000) {
+        for (kind, _, _, _) in changes.iter().skip(2000) {
             *counts.entry(kind).or_default() += 1;
         }
         event.summary = format!(
@@ -284,7 +322,7 @@ pub(super) fn query(
     }
     let mut statement = tx.prepare(
         "SELECT event_id, loupist_id, at_ms, kind, record_id, subject_id, origin_chat_id, origin_message_id,
-         actor, summary, before_summary, after_summary, origin, rationale FROM knowledge_growth_events
+         actor, summary, before_summary, after_summary, origin, rationale, publication_json FROM knowledge_growth_events
          WHERE loupist_id = ?1 AND (?2 IS NULL OR at_ms >= ?2) AND (?3 IS NULL OR at_ms <= ?3)
          AND (?4 IS NULL OR (at_ms, event_id) > (?4, ?5)) ORDER BY at_ms, event_id LIMIT ?6"
     )?;
@@ -314,6 +352,18 @@ pub(super) fn query(
                     before_summary: row.get(10)?,
                     after_summary: row.get(11)?,
                     title_key: None,
+                    publication: row
+                        .get::<_, Option<String>>(14)?
+                        .map(|s| {
+                            serde_json::from_str(&s).map_err(|error| {
+                                rusqlite::Error::FromSqlConversionFailure(
+                                    14,
+                                    rusqlite::types::Type::Text,
+                                    Box::new(error),
+                                )
+                            })
+                        })
+                        .transpose()?,
                     origin: row
                         .get::<_, Option<String>>(12)?
                         .map(|s| {

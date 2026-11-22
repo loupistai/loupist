@@ -1,5 +1,30 @@
 import assert from "node:assert/strict";
 
+export class ComposerPreviewUnresponsive extends Error {}
+
+export async function openComposerPreview(browser, url) {
+  // The old WebView document can still answer requests after navigation starts.
+  await browser.execute(() => { document.documentElement.dataset.previewReady = "stale"; });
+  await browser.url(url);
+  await browser.waitUntil(() => browser.execute((expected) =>
+    location.href === expected && document.documentElement?.dataset.previewReady === "true", url),
+  { timeout: 60_000, interval: 250, timeoutMsg: `The composer preview did not become ready: ${url}` });
+
+  let timer;
+  try {
+    // waitUntil alone cannot bound a WebDriver request that never receives a script result.
+    const response = await Promise.race([
+      browser.execute(() => 42),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Script deadline exceeded")), 2_000); }),
+    ]);
+    assert.equal(response, 42);
+  } catch (cause) {
+    throw new ComposerPreviewUnresponsive(`Composer preview unresponsive after ready (2 s script deadline): ${url}`, { cause });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Read actual legend geometry. Text presence alone misses a collapsed heading.
  * WKWebView shrinks a grid or flex fieldset legend to about one character;

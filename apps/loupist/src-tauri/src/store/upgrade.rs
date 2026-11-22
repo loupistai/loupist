@@ -69,6 +69,7 @@ const KNOWLEDGE_STEPS: &[Step] = &[
     knowledge_7_to_8,
     knowledge_8_to_9,
     knowledge_9_to_10,
+    knowledge_10_to_11,
 ];
 
 const _: () = assert!(STORE_BASELINE_VERSION + STORE_STEPS.len() as i64 == STORE_SCHEMA_VERSION);
@@ -977,6 +978,12 @@ fn knowledge_9_to_10(tx: &Transaction<'_>) -> StoreResult<()> {
     Ok(())
 }
 
+/// Existing growth events have no recorded publication identity.
+fn knowledge_10_to_11(tx: &Transaction<'_>) -> StoreResult<()> {
+    tx.execute_batch("ALTER TABLE knowledge_growth_events ADD COLUMN publication_json TEXT;")?;
+    Ok(())
+}
+
 // --- Table rebuilds -------------------------------------------------------
 
 fn shape_error(table: &str, problem: impl std::fmt::Display) -> StoreError {
@@ -1466,6 +1473,9 @@ pub(crate) fn restore_baseline_for_test(connection: &mut Connection) {
          FROM thin_test_pages;
          DROP TABLE thin_test_pages;",
     ).unwrap();
+    transaction
+        .execute_batch("ALTER TABLE knowledge_growth_events DROP COLUMN publication_json;")
+        .unwrap();
     for (table, _) in STORE_5_ENUMERATIONS.iter().chain(KNOWLEDGE_7_ENUMERATIONS) {
         let start = BASELINE_FIXTURE
             .find(&format!("CREATE TABLE {table} ("))

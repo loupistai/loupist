@@ -368,7 +368,7 @@ impl KnowledgeWrite<'_> {
         for (record_id, _) in &records {
             let processing = self.source_processing(loupist_id, record_id)?;
             if matches!(processing.status.as_str(), "queued" | "running") {
-                let job = graph_jobs::latest_source_job(self.tx, loupist_id, record_id)?;
+                let job = graph_jobs::source_status_job(self.tx, loupist_id, record_id)?;
                 if let Some(job) = job {
                     status.queued_at_ms = Some(
                         status

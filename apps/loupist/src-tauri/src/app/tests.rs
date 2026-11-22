@@ -1,39 +1,155 @@
 use super::*;
 
 #[cfg(unix)]
-#[tokio::test]
-async fn shutdown_stops_support_sidecars_without_a_chat_registration() {
-    use crate::process_lease::{confirm_process_group_exit, ChildProcessLease, ProcessKind};
-    use std::time::Duration;
+mod shutdown {
+    use super::*;
+    use crate::process_lease::{confirm_process_group_exit, ProcessGroups, ProcessKind};
+    use std::{os::unix::process::ExitStatusExt, process::Stdio, time::Duration};
+    use tokio::io::{AsyncBufReadExt, BufReader};
 
-    let temporary = tempfile::tempdir().unwrap();
-    let state = AppState::for_persistent_test(temporary.path().join("app-data"));
-    let program = Path::new("/bin/sleep").canonicalize().unwrap();
-    let mut child = tokio::process::Command::new(&program)
-        .arg("30")
-        .process_group(0)
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
-    let group = child.id().unwrap() as i32;
-    let _lease = ChildProcessLease::register(
-        &state.artifacts.app_data_dir.join("process-leases"),
-        ProcessKind::Pi,
-        group,
-        group,
-        &program,
-    )
-    .unwrap();
-    tokio::time::timeout(Duration::from_secs(5), state.shutdown())
+    async fn stubborn_worker(
+        state: &AppState,
+        groups: &Arc<ProcessGroups>,
+    ) -> (
+        tokio::process::Child,
+        crate::process_lease::OwnedProcessGroup,
+    ) {
+        let program = Path::new("/bin/bash");
+        let mut command = tokio::process::Command::new(program);
+        command
+            .args(["-c", "trap '' TERM; sleep 30 & printf 'ready\n'; wait"])
+            .stdout(Stdio::piped())
+            .process_group(0)
+            .kill_on_drop(true);
+        let (mut child, owned) = groups
+            .spawn(|| {
+                let child = command.spawn()?;
+                let pid = child.id().unwrap();
+                Ok((child, pid))
+            })
+            .unwrap();
+        let mut line = String::new();
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            BufReader::new(child.stdout.take().unwrap()).read_line(&mut line),
+        )
         .await
         .unwrap()
         .unwrap();
-    assert!(
-        confirm_process_group_exit(group, Duration::from_millis(100))
+        assert_eq!(line.trim(), "ready");
+        owned
+            .register_lease(
+                &state.artifacts.process_lease_dir,
+                ProcessKind::Mcp,
+                program,
+            )
+            .unwrap();
+        (child, owned)
+    }
+
+    fn lease_count(state: &AppState) -> usize {
+        std::fs::read_dir(&state.artifacts.process_lease_dir)
+            .unwrap()
+            .count()
+    }
+
+    #[tokio::test]
+    async fn shutdown_kills_stubborn_support_groups_and_releases_leases() {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_persistent_test(temporary.path().join("app-data"));
+        let groups = Arc::new(ProcessGroups::default());
+        let workers = [
+            stubborn_worker(&state, &groups).await,
+            stubborn_worker(&state, &groups).await,
+        ];
+        assert_eq!(lease_count(&state), 2);
+        state
+            .shutdown_with_budget(&groups, Duration::from_secs(1), Duration::from_secs(2))
             .await
-            .is_confirmed()
-    );
-    assert!(!child.wait().await.unwrap().success());
+            .unwrap();
+
+        for (mut child, _owned) in workers {
+            let pid = child.id().unwrap() as i32;
+            assert!(confirm_process_group_exit(pid, Duration::ZERO)
+                .await
+                .is_confirmed());
+            assert_eq!(child.wait().await.unwrap().signal(), Some(libc::SIGKILL));
+        }
+        assert_eq!(lease_count(&state), 0);
+        assert!(groups
+            .spawn::<()>(|| panic!("spawn after shutdown"))
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn shutdown_cancels_active_runs_and_waits_for_their_settlement() {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temporary.path().join("app-data"));
+        let mut registrations = [
+            state
+                .register_run(
+                    "first".into(),
+                    "loupist".into(),
+                    RunKind::Chat,
+                    RunTarget::ChatThread("first".into()),
+                )
+                .unwrap(),
+            state
+                .register_run(
+                    "second".into(),
+                    "loupist".into(),
+                    RunKind::Chat,
+                    RunTarget::ChatThread("second".into()),
+                )
+                .unwrap(),
+        ];
+        let groups = ProcessGroups::default();
+        let shutdown =
+            state.shutdown_with_budget(&groups, Duration::from_secs(1), Duration::from_secs(2));
+        tokio::pin!(shutdown);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), &mut shutdown)
+                .await
+                .is_err()
+        );
+        for run in &mut registrations {
+            assert!(*run.cancel.borrow_and_update());
+        }
+        drop(registrations);
+        shutdown.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_deadline_stops_workers_before_their_active_runs_drain() {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temporary.path().join("app-data"));
+        let registration = state
+            .register_run(
+                "run".into(),
+                "loupist".into(),
+                RunKind::Chat,
+                RunTarget::ChatThread("thread".into()),
+            )
+            .unwrap();
+        let groups = Arc::new(ProcessGroups::default());
+        let (mut child, owned) = stubborn_worker(&state, &groups).await;
+        let pid = child.id().unwrap() as i32;
+        let settle = async {
+            assert!(confirm_process_group_exit(pid, Duration::from_secs(2))
+                .await
+                .is_confirmed());
+            owned.disarm();
+            assert_eq!(child.wait().await.unwrap().signal(), Some(libc::SIGKILL));
+            assert!(*registration.cancel.borrow());
+            drop(registration);
+        };
+        let (result, ()) = tokio::join!(
+            state.shutdown_with_budget(&groups, Duration::from_millis(50), Duration::from_secs(2)),
+            settle,
+        );
+        result.unwrap();
+        assert_eq!(lease_count(&state), 0);
+    }
 }
 
 #[test]

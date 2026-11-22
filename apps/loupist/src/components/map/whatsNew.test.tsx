@@ -1,9 +1,10 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import i18n from "@/i18n";
+import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { GrowthEvent, KnowledgeMap } from "../../contracts/knowledge";
 import { MapWhatsNew } from "./MapWhatsNew";
-import { groupByDay, sinceMs, whatsNewCounts, whatsNewRows } from "./whatsNew";
+import { groupByDay, sinceMs, whatsNewCounts, whatsNewEntries, whatsNewRows } from "./whatsNew";
 
 const NOW = new Date(2026, 9, 31, 12).getTime();
 const HOUR = 3_600_000;
@@ -137,4 +138,101 @@ describe("the What's new drawer", () => {
     expect(labels[4]).toBe("출처가 엇갈림: 비트코인 (보고)");
     expect(labels.some((label) => /(\S+) → \1/.test(label!))).toBe(false);
   });
+});
+
+function sourcesFixture() {
+  const at = NOW - HOUR;
+  const source = { recordId: "source-a", revisionId: "source-rev-a", sourceId: "a", title: "Automaker valuation multiples" };
+  const short = { ...source, recordId: "source-b", revisionId: "source-rev-b", sourceId: "b", title: "Motorcycle report" };
+  const update = { revisionId: "world-a", source };
+  const secondUpdate = { revisionId: "world-b", source: short };
+  const names = ["Zenith", "Gamma", "Beta", "Delta", "Echo", "Fable"];
+  const newsMap: KnowledgeMap = {
+    ...map,
+    nodes: [...map.nodes, ...names.map(label => ({ id: label, label, kind: "entity" as const, entityKind: "Organization", degree: 0, watched: false }))],
+  };
+  const namesAdded = names.map((name, index) => event("entity_added", name, at, {
+    publication: index < 4 ? update : secondUpdate, originMessageId: "the-same-reply",
+  }));
+  const fact = (name: string, id: string, publication = update) => event("claim_added", id, at, {
+    publication: { ...publication, factSubjectId: name }, originMessageId: "the-same-reply",
+  });
+  const facts = [fact("Zenith", "sales"), fact("Zenith", "cap"), fact("hanul", "income"), fact("Echo", "margin", secondUpdate)];
+  return { newsMap, source, short, namesAdded, facts, at };
+}
+
+it("combines a new name and all its facts from the same publication even off the projection", () => {
+  const { newsMap, namesAdded, facts } = sourcesFixture();
+  const separate = { ...facts[0]!, eventId: "another", subjectId: "another", publication: { ...facts[0]!.publication!, revisionId: "later" } };
+  const rows = whatsNewRows([...namesAdded, ...facts, separate], newsMap, "en");
+  expect(rows.filter(row => row.facts).map(row => [row.label, row.facts])).toEqual([["Zenith", 2], ["Echo", 1]]);
+  expect(rows.filter(row => row.kind === "fact").map(row => [row.link?.a, row.count])).toEqual([["Hanul Precision", 1], ["Zenith", 1]]);
+});
+
+it("uses the collapsed row threshold per publication and Source after combining names and facts", () => {
+  const { newsMap, namesAdded, facts, source, short } = sourcesFixture();
+  const rows = whatsNewRows([...namesAdded, ...facts], newsMap, "en");
+  const entries = whatsNewEntries(rows, "en");
+  expect(entries).toHaveLength(3);
+  const group = entries[0]!;
+  expect(group).toMatchObject({ kind: "source", source, names: 4, facts: 3 });
+  if (group.kind !== "source") throw new Error("Expected one Source group");
+  expect(group.rows.map(row => [row.kind, row.link?.a ?? row.label])).toEqual([
+    ["name", "Beta"], ["name", "Delta"], ["name", "Gamma"], ["name", "Zenith"], ["fact", "Hanul Precision"],
+  ]);
+  expect(entries.slice(1)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "name", source: short, facts: 1 })]));
+  expect(whatsNewCounts(entries)).toEqual({ names: 3, links: 0, conflicts: 0 });
+  expect(whatsNewEntries(rows.filter(row => ["Beta", "Gamma", "Zenith"].includes(row.label)), "en")).toHaveLength(3);
+});
+
+it("never groups by a shared Source title, timestamp or message without matching identity", () => {
+  const { newsMap, namesAdded, source } = sourcesFixture();
+  const separate = namesAdded.map((item, index) => ({ ...item,
+    publication: { revisionId: "world-a", source: index < 3 ? source : { ...source, recordId: "different-record" } },
+  }));
+  expect(whatsNewEntries(whatsNewRows(separate, newsMap, "en"), "en")).toHaveLength(6);
+  const historical = namesAdded.map(item => ({ ...item, publication: undefined }));
+  expect(whatsNewEntries(whatsNewRows(historical, newsMap, "en"), "en")).toHaveLength(6);
+});
+
+it("carries a Source across five pages, keeps disclosure open after refresh and opens its Source and children", async () => {
+  const user = userEvent.setup();
+  const { newsMap, namesAdded, facts, source, at } = sourcesFixture();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const pages = [[...facts], [namesAdded[0]!], [namesAdded[1]!], [namesAdded[2]!], namesAdded.slice(3)];
+  const read = vi.spyOn(bridge, "knowledgeGrowthEvents").mockImplementation(async ({ cursor }) => {
+    const page = cursor ? Number(cursor) : 0;
+    return { events: pages[page]!, nextCursor: page < pages.length - 1 ? String(page + 1) : null };
+  });
+  const onOpenSource = vi.fn(), onOpenRow = vi.fn(), onReplay = vi.fn();
+  const props = { bridge, loupistId: "loupist", lastSeenAtMs: at - 1, nowMs: NOW, onOpenSource, onOpenRow, onReplay, onClose: vi.fn() };
+  const view = render(<MapWhatsNew {...props} map={newsMap} />);
+  const show = await screen.findByRole("button", { name: "Show the 5 changes from this source" });
+  expect(read).toHaveBeenCalledTimes(5);
+  expect(view.container.querySelectorAll('[data-kind="source"]')).toHaveLength(1);
+  expect(screen.getByText("4 new names · 3 new facts")).toBeVisible();
+  expect(view.container.querySelector(".map-whats-new-summary")).toHaveTextContent("+3 in World");
+  expect(screen.queryByRole("list", { name: source.title })).toBeNull();
+  const title = screen.getByRole("button", { name: new RegExp(source.title) });
+  title.focus();
+  await user.tab();
+  expect(show).toHaveFocus();
+  await user.keyboard("{Enter}");
+  const list = screen.getByRole("list", { name: source.title });
+  expect(within(list).getAllByRole("listitem")).toHaveLength(5);
+  expect(within(list).getByText("Company · 2 new facts")).toBeVisible();
+  expect(screen.getByText("Company · 1 new fact")).toBeVisible();
+  expect(view.container.querySelector(".map-whats-new-summary")).toHaveTextContent("+3 in World");
+  await act(async () => view.rerender(<MapWhatsNew {...props} map={{ ...newsMap, worldRevisionId: "world-newer" }} />));
+  expect(screen.getByRole("list", { name: source.title })).toBeVisible();
+  await user.click(within(list).getByRole("button", { name: /Zenith/ }));
+  expect(onOpenRow).toHaveBeenCalledWith(expect.objectContaining({ kind: "name", label: "Zenith" }));
+  const hide = screen.getByRole("button", { name: "Hide the changes from this source" });
+  expect(hide).toHaveAttribute("aria-expanded", "true");
+  await user.click(hide);
+  expect(screen.queryByRole("list", { name: source.title })).toBeNull();
+  await user.click(title);
+  expect(onOpenSource).toHaveBeenCalledWith(source);
+  await user.click(screen.getByRole("button", { name: "Replay these" }));
+  expect(onReplay).toHaveBeenCalledWith(at - 1);
 });

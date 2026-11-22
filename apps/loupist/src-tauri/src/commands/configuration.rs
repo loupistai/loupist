@@ -132,11 +132,12 @@ pub fn config_reveal(
             .ok_or_else(|| CommandError::internal("Configuration directory is missing"))?
     };
     #[cfg(target_os = "macos")]
-    std::process::Command::new("/usr/bin/open")
-        .arg("-R")
-        .arg(target)
-        .spawn()
-        .map_err(super::map_internal)?;
+    crate::process_lease::macos_commands::spawn(
+        std::process::Command::new("/usr/bin/open")
+            .arg("-R")
+            .arg(target),
+    )
+    .map_err(super::map_internal)?;
     #[cfg(windows)]
     std::process::Command::new("explorer.exe")
         .arg(format!("/select,{}", target.display()))

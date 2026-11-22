@@ -34,8 +34,8 @@ use crate::fs::windows::{metadata_is_reparse, open_directory_no_reparse, open_re
 use crate::process_lease::ChildProcessJob;
 #[cfg(unix)]
 use crate::process_lease::{
-    process_group_has_exited, signal_process_group, terminate_and_reap_process_group,
-    wait_for_process_group_exit, ChildProcessLease, ProcessKind,
+    process_group_has_exited, signal_process_group, wait_for_process_group_exit, OwnedProcessGroup,
+    ProcessKind,
 };
 use crate::{
     agent_harness,
@@ -1323,19 +1323,19 @@ struct PiProcessGroup {
     #[cfg(unix)]
     process_group_id: i32,
     #[cfg(unix)]
-    lease: Option<ChildProcessLease>,
+    owned: OwnedProcessGroup,
     #[cfg(windows)]
     job: Option<ChildProcessJob>,
     armed: bool,
 }
 
 impl PiProcessGroup {
-    fn own(child: &Child) -> Result<Self, PiError> {
+    fn own(child: &Child, #[cfg(unix)] owned: OwnedProcessGroup) -> Result<Self, PiError> {
         let mut group = Self {
             #[cfg(unix)]
             process_group_id: child.id().ok_or(PiError::InvalidLaunchValue)? as i32,
             #[cfg(unix)]
-            lease: None,
+            owned,
             #[cfg(windows)]
             job: None,
             armed: true,
@@ -1371,24 +1371,17 @@ impl PiProcessGroup {
             .map_err(|_| PiError::StopTimeout)??;
         }
         self.armed = false;
+        self.owned.disarm();
         Ok(())
     }
 }
 
+#[cfg(windows)]
 impl Drop for PiProcessGroup {
     fn drop(&mut self) {
         if !self.armed {
             return;
         }
-        #[cfg(unix)]
-        {
-            if let Some(lease) = self.lease.take() {
-                terminate_and_reap_process_group(self.process_group_id, lease);
-            } else {
-                let _ = signal_process_group(self.process_group_id, libc::SIGKILL);
-            }
-        }
-        #[cfg(windows)]
         if let Some(job) = &self.job {
             let _ = job.terminate();
         }
@@ -1506,10 +1499,16 @@ impl PiProcess {
             broker_token.as_ref(),
         );
 
+        #[cfg(unix)]
+        let (mut child, owned) = OwnedProcessGroup::spawn(&mut command)?;
+        #[cfg(not(unix))]
         let mut child = command.spawn()?;
         let broker_token = broker_token.and_then(BrokerTokenHandoff::after_spawn);
-        let mut group = PiProcessGroup::own(&child)?;
-        let _ = &mut group;
+        let group = PiProcessGroup::own(
+            &child,
+            #[cfg(unix)]
+            owned,
+        )?;
         let stdin = child
             .stdin
             .take()
@@ -1518,15 +1517,9 @@ impl PiProcess {
             io::Error::new(io::ErrorKind::BrokenPipe, "Pi stdout was not created")
         })?;
         #[cfg(unix)]
-        {
-            group.lease = Some(ChildProcessLease::register(
-                lease_dir,
-                ProcessKind::Pi,
-                group.process_group_id,
-                group.process_group_id,
-                executable,
-            )?);
-        }
+        group
+            .owned
+            .register_lease(lease_dir, ProcessKind::Pi, executable)?;
         let (events, _) = broadcast::channel(PI_EVENT_BUFFER_CAPACITY);
         let event_writer = events.clone();
         let reader = tokio::spawn(async move {
@@ -1587,6 +1580,7 @@ impl PiProcess {
                 return None;
             }
             self.group.armed = false;
+            self.group.owned.disarm();
         }
         self.child
             .try_wait()
@@ -1755,9 +1749,7 @@ impl PiProcess {
         #[cfg(windows)]
         self.group.job.take();
         #[cfg(unix)]
-        if let Some(lease) = self.group.lease.take() {
-            lease.complete()?;
-        }
+        self.group.owned.complete()?;
         Ok(())
     }
 }

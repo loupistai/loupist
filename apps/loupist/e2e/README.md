@@ -263,6 +263,10 @@ header reports the new Loupist.
 
 `test:native` calls `assertFormLegendsFit` (`native-forms.mjs`) on `[data-loupist-tone]` on New Loupist. Its later step “native browser preserves the article while blocking unsafe navigation” calls `verifyNativeBrowserNavigation` (`native-browser.mjs`). A row above names the command. The WebKit result is that step’s finished run, recorded by the session that ran it. Preview Vitest and `preview:capture` check the React fixtures in Chrome and jsdom.
 
+The composer smoke checks wait for the requested preview URL and its ready
+marker. Before interacting with the composer, they require a separate script
+response within two seconds so a hung renderer reports a deadline failure.
+
 For chat layout changes, run the separate geometry suite against an owned
 WebDriver session. From the repository root:
 
@@ -279,6 +283,14 @@ session has no recorded dev URL. A display that cannot fit 2560px records that
 boundary as skipped;
 it is not a pass. Fixture rendering uses the mock bridge; the browser-policy
 step in `test:native` exercises the real child WebView and Rust commands.
+
+The native geometry suite also checks that the Bot answer's Activity action keeps
+the end or the current reading element in place while docking, switching tabs,
+resizing through the overlay breakpoint and closing. It checks both reading positions
+in a research session through streaming, saving, completion with a checked figure and
+table, and a late chart. It measures the composer's bottom and empty editor height and
+checks answer action tooltip positions in English and Korean. Use `--transitions-only`
+to run these cases without the static geometry matrix.
 
 Linux runs the same commands; see [Run native suites on Linux](#run-native-suites-on-linux).
 

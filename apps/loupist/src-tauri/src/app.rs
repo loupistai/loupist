@@ -281,6 +281,7 @@ pub struct AppState {
     pub finance_data: Arc<FinanceDataService>,
     pub(crate) fx_reference: Arc<crate::finance_data::fx::FxService>,
     pub run_coordinator: RunCoordinator,
+    exit_shutdown: Arc<tokio::sync::OnceCell<Result<(), CommandError>>>,
     pub(crate) live_handoffs: crate::chat::live::LiveChats,
     pub provider_support: ProviderSupportCoordinator,
     pub(crate) provider_model_cache: ProviderModelDiscoveryCache,
@@ -487,6 +488,7 @@ impl AppState {
             )),
             finance_data,
             run_coordinator: RunCoordinator::new(maintenance.clone()),
+            exit_shutdown: Default::default(),
             live_handoffs: Default::default(),
             provider_support,
             provider_model_cache: ProviderModelDiscoveryCache::default(),
@@ -770,24 +772,70 @@ impl AppState {
     }
 
     pub(crate) async fn shutdown(&self) -> Result<(), CommandError> {
+        self.exit_shutdown
+            .get_or_init(|| async {
+                self.shutdown_with_budget(
+                    #[cfg(all(unix, not(test)))]
+                    &crate::process_lease::HOST_PROCESS_GROUPS,
+                    #[cfg(all(unix, test))]
+                    &crate::process_lease::ProcessGroups::default(),
+                    std::time::Duration::from_secs(26),
+                    std::time::Duration::from_secs(30),
+                )
+                .await
+            })
+            .await
+            .clone()
+    }
+
+    async fn shutdown_with_budget(
+        &self,
+        #[cfg(unix)] groups: &crate::process_lease::ProcessGroups,
+        polite_budget: std::time::Duration,
+        total_budget: std::time::Duration,
+    ) -> Result<(), CommandError> {
+        #[cfg(unix)]
+        use std::time::Duration;
+        use std::time::Instant;
+
+        let started = Instant::now();
+        let deadline = started + total_budget;
         self.scheduled.stop();
-        self.run_coordinator.request_shutdown()?;
-        self.scheduled.drain().await;
+        let cancellation = self.run_coordinator.request_shutdown();
         self.provider_support.cancel_oauth();
         self.mcp_pool.close_admission();
-        let (runs, graph) = tokio::join!(self.run_coordinator.drain(), self.graph.shutdown());
-        self.mcp_pool.shutdown().await;
-        // Also stop support sidecars that do not own a Chat run. The instance
-        // lock is still held, and durable identities are checked before any
-        // signal; no process is selected by name or executable text.
-        let lease_dir = self.artifacts.app_data_dir.join("process-leases");
-        let recovered = tokio::task::spawn_blocking(move || recover_orphaned_processes(&lease_dir))
-            .await
-            .map_err(|_| CommandError::internal("sidecar shutdown observation failed"))?
-            .map_err(|error| CommandError::internal(error.to_string()));
-        runs?;
-        graph.map_err(|error| CommandError::internal(error.to_string()))?;
-        recovered
+        let drain = async {
+            let ((), runs, graph) = tokio::join!(
+                self.scheduled.drain(),
+                self.run_coordinator.drain(),
+                self.graph.shutdown(),
+            );
+            self.mcp_pool.shutdown().await;
+            cancellation?;
+            runs?;
+            graph.map_err(|error| CommandError::internal(error.to_string()))
+        };
+        tokio::pin!(drain);
+        let settled = tokio::time::timeout_at((started + polite_budget).into(), &mut drain).await;
+
+        // This runs even if a supervisor fails or the drain times out. Keep
+        // the final part of the original quit budget for group confirmation
+        // and for cancelled runs to finish committing after a forced stop.
+        #[cfg(unix)]
+        groups.finish_shutdown(
+            deadline.min(Instant::now() + Duration::from_secs(2)),
+            matches!(settled, Ok(Ok(()))),
+        );
+
+        match settled {
+            Ok(result) => result,
+            Err(_) => {
+                eprintln!("Loupist shutdown reached the graceful drain deadline");
+                tokio::time::timeout_at(deadline.into(), drain)
+                    .await
+                    .map_err(|_| CommandError::internal("Loupist shutdown drain timed out"))?
+            }
+        }
     }
 
     pub async fn submit_chat_control(
@@ -963,6 +1011,7 @@ impl AppState {
             )),
             finance_data,
             run_coordinator: RunCoordinator::new(maintenance.clone()),
+            exit_shutdown: Default::default(),
             live_handoffs: Default::default(),
             provider_support,
             provider_model_cache: ProviderModelDiscoveryCache::default(),

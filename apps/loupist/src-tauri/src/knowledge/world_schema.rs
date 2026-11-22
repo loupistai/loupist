@@ -1105,6 +1105,7 @@ fn append_growth(
         before_summary: None,
         after_summary: None,
         title_key: None,
+        publication: None,
     }
     .insert(tx)
 }

@@ -16,9 +16,9 @@ import {
 /**
  * Anchored reading (DIRECTION 10.1). On send the new question glides to the
  * top of the viewport. While the reply runs, the page moves by itself only
- * when a block is appended (once, to make room for it), never while a block
- * grows and never at commit, and only until the reader scrolls. "Jump to
- * latest", End, or scrolling to the very end follows the reply instead.
+ * when a block is appended (once, to make room for it), and only until the
+ * reader scrolls. Reflow keeps the current reading block in place. "Jump to
+ * latest", End, or scrolling to the very end keeps the end in view instead.
  */
 type ConversationActions = {
   /** Follow the end of the thread until the reader scrolls up. */
@@ -54,12 +54,22 @@ const GLIDE_MS = 240;
 const FOLLOW_SHARE = 0.18;
 const AWAY_PX = 12;
 const BOTTOM_TOLERANCE_PX = 2;
+/** Ignore differences below a CSS pixel, including WebKit's scroll rounding. */
+const differs = (a: number, b: number) => Math.abs(a - b) >= 1;
 /** A scroll event this soon after reader input is the reader's. */
 const INPUT_WINDOW_MS = 300;
 
 const reducedMotion = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 type Box = { top: number; bottom: number; height: number };
+type ReadingAnchor = { block: HTMLElement; top: number };
+type Viewport = { top: number; width: number; height: number; extent: number };
+const readViewport = (element: HTMLElement): Viewport => ({
+  top: element.getBoundingClientRect().top,
+  width: element.clientWidth,
+  height: element.clientHeight,
+  extent: element.scrollHeight,
+});
 
 /** Where the scroll position goes on send: the question 16 px under the top, or a tall one's bottom at 40%. */
 export function anchorDelta(question: Box, view: Box): number {
@@ -96,9 +106,8 @@ export type ConversationProps = ComponentProps<"div"> & {
   running?: boolean;
 };
 
-/** The chat sub-header shows a rule and a fade only while the thread is scrolled under it. */
 /** The viewport's height, for the latest turn's reserve (chat.css `--turn-viewport`). */
-const writeViewport = (element: HTMLElement) => element.style.setProperty("--turn-viewport", `${element.clientHeight}px`);
+const writeViewport = (element: HTMLElement, height: number) => element.style.setProperty("--turn-viewport", `${height}px`);
 
 /**
  * Behind a full-page Map or Lens the thread is `display: none`: it has no box, every measure reads zero and the
@@ -106,6 +115,7 @@ const writeViewport = (element: HTMLElement) => element.style.setProperty("--tur
  */
 const laidOut = (element: HTMLElement) => element.clientHeight > 0;
 
+/** The chat sub-header shows a rule and a fade only while the thread is scrolled under it. */
 const markScrolled = (element: HTMLElement) => element.toggleAttribute("data-scrolled", element.scrollTop > 0);
 
 const latestTurn = (element: HTMLElement) => element.querySelector<HTMLElement>("[data-turn][data-turn-latest]");
@@ -129,6 +139,27 @@ function layoutBox(block: HTMLElement, scroller: HTMLElement): Box {
   return { top: at, bottom: at + height, height };
 }
 
+/**
+ * Find a reading block within the first visible message. The enclosing boxes
+ * can hold the place if a streaming block is replaced when the answer settles.
+ */
+function readingAnchors(scroller: HTMLElement): ReadingAnchor[] {
+  const edge = scroller.getBoundingClientRect().top;
+  const first = (nodes: Iterable<Element>) => {
+    for (const node of nodes) {
+      if (!(node instanceof HTMLElement) || node.matches(".thread-selection-end")) continue;
+      const box = layoutBox(node, scroller);
+      if (box.height > 0 && box.bottom > edge + 1) return node;
+    }
+  };
+  const turn = first(scroller.firstElementChild?.children ?? []);
+  const message = turn?.hasAttribute("data-turn") ? first(turn.children) : undefined;
+  const block = message && first(message.querySelectorAll(
+    ".message-content :is(p,h1,h2,h3,h4,h5,h6,li,pre,tr), [data-turn-item]:not([data-turn-item=prose]), .turn-footer",
+  ));
+  return [block, message, turn].flatMap(node => node ? [{ block: node, top: layoutBox(node, scroller).top }] : []);
+}
+
 export const Conversation = ({
   className,
   children,
@@ -147,15 +178,16 @@ export const Conversation = ({
   const following = useRef(false);
   const lastInput = useRef(-Infinity);
   const lastTop = useRef(0);
-  /** The scroller's top edge in the window when last seen. */
-  const edge = useRef<number | null>(null);
+  const ownScroll = useRef<number | undefined>(undefined);
+  const viewport = useRef<Viewport | null>(null);
+  const anchors = useRef<ReadingAnchor[]>([]);
   const glide = useRef<number | undefined>(undefined);
   /** Where the running glide ends. */
   const glideTarget = useRef(0);
   const follow = useRef<number | undefined>(undefined);
+  const layoutFrame = useRef<number | undefined>(undefined);
+  const measureFrame = useRef<number | undefined>(undefined);
   const lastResetKey = useRef(scrollResetKey);
-  /** The thread has had a box. One that never had one has no place to keep; it opens when it shows. */
-  const seen = useRef(false);
   /** The thread was last seen without a box, hidden behind a full-page view. */
   const unseen = useRef(false);
   /** A question sent, or a running chat opened, while the thread was hidden goes to the top once it shows. */
@@ -167,18 +199,40 @@ export const Conversation = ({
   const [state, setState] = useState<ConversationState>({ away: false, moreBelow: false });
   const stateRef = useRef(state);
 
+  // Scroll events are asynchronous and WebKit may round or clamp the target.
+  const writeScroll = useCallback((element: HTMLElement, target: number) => {
+    const before = element.scrollTop;
+    const next = Math.max(0, Math.min(target, element.scrollHeight - element.clientHeight));
+    if (!differs(before, next)) return false;
+    element.scrollTop = next;
+    const accepted = element.scrollTop;
+    if (accepted !== before) ownScroll.current = accepted;
+    return differs(accepted, before);
+  }, []);
+
+  const rememberPosition = useCallback((element: HTMLElement) => {
+    lastTop.current = element.scrollTop;
+    anchors.current = mode.current === "anchored" && !following.current ? readingAnchors(element) : [];
+    markScrolled(element);
+  }, []);
+
+  // Read status in a separate frame from the placement that may write layout.
   const measure = useCallback(() => {
-    const element = scrollRef.current;
-    if (!element) return;
-    const view = element.getBoundingClientRect();
-    const footers = latestTurn(element)?.querySelectorAll<HTMLElement>(".turn-footer");
-    const end = footers?.length ? footers[footers.length - 1]!.getBoundingClientRect().bottom - view.bottom
-      : element.scrollHeight - element.clientHeight - element.scrollTop;
-    const next = { away: pillVisible(end, following.current), moreBelow: end > AWAY_PX };
-    if (next.away !== stateRef.current.away || next.moreBelow !== stateRef.current.moreBelow) {
-      stateRef.current = next;
-      setState(next);
-    }
+    if (measureFrame.current !== undefined) return;
+    measureFrame.current = requestAnimationFrame(() => {
+      measureFrame.current = undefined;
+      const element = scrollRef.current;
+      if (!element || !laidOut(element)) return;
+      const view = element.getBoundingClientRect();
+      const footers = latestTurn(element)?.querySelectorAll<HTMLElement>(".turn-footer");
+      const end = footers?.length ? footers[footers.length - 1]!.getBoundingClientRect().bottom - view.bottom
+        : element.scrollHeight - element.clientHeight - element.scrollTop;
+      const next = { away: pillVisible(end, following.current), moreBelow: end > AWAY_PX };
+      if (next.away !== stateRef.current.away || next.moreBelow !== stateRef.current.moreBelow) {
+        stateRef.current = next;
+        setState(next);
+      }
+    });
   }, []);
 
   const stopGlide = useCallback(() => {
@@ -193,29 +247,34 @@ export const Conversation = ({
     const from = element.scrollTop;
     const to = Math.max(0, target);
     glideTarget.current = to;
-    if (reducedMotion() || typeof requestAnimationFrame !== "function") {
-      element.scrollTop = to;
-      lastTop.current = element.scrollTop;
-      markScrolled(element);
+    if (reducedMotion()) {
+      writeScroll(element, to);
+      rememberPosition(element);
+      measure();
       return;
     }
     const start = performance.now();
     const step = (now: number) => {
       // Hidden mid-glide: the thread shows again where the glide would have ended.
-      if (!laidOut(element)) { lastTop.current = to; glide.current = undefined; return; }
+      if (!laidOut(element)) {
+        lastTop.current = to;
+        anchors.current = [];
+        glide.current = undefined;
+        return;
+      }
       const progress = Math.min(1, (now - start) / GLIDE_MS);
       const eased = 1 - (1 - progress) ** 3;
-      element.scrollTop = from + (to - from) * eased;
-      lastTop.current = element.scrollTop;
-      markScrolled(element);
+      writeScroll(element, from + (to - from) * eased);
+      rememberPosition(element);
+      measure();
       glide.current = progress < 1 ? requestAnimationFrame(step) : undefined;
     };
     glide.current = requestAnimationFrame(step);
-  }, [stopGlide]);
+  }, [measure, rememberPosition, stopGlide, writeScroll]);
 
   const glideBy = useCallback((delta: number) => {
     const element = scrollRef.current;
-    if (!element || !delta) return;
+    if (!element || !differs(delta, 0)) return;
     glideTo(element.scrollTop + delta);
   }, [glideTo]);
 
@@ -225,7 +284,10 @@ export const Conversation = ({
     const turn = element && latestTurn(element);
     if (!element || !turn) return;
     const missing = element.scrollTop + delta + element.clientHeight - element.scrollHeight;
-    if (missing > 0) turn.style.minHeight = `${turn.getBoundingClientRect().height + missing}px`;
+    if (missing >= 1) {
+      const minimum = turn.offsetHeight + Math.ceil(missing);
+      if (!turn.style.minHeight || minimum > Number.parseFloat(turn.style.minHeight)) turn.style.minHeight = `${minimum}px`;
+    }
   }, []);
 
   /** The latest question 16 px under the top (or a tall one's bottom at 40%), with room made below it. */
@@ -244,84 +306,91 @@ export const Conversation = ({
   const toBottom = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
-    element.scrollTop = element.scrollHeight;
-    lastTop.current = element.scrollTop;
-    markScrolled(element);
-  }, []);
-
-  /**
-   * True while the thread has no box, and on the first frame it has one again, once the reader is back where they
-   * were: a thread kept at its end or following the reply returns to its end, a question sent meanwhile goes to the
-   * top, anything else returns to the position it had. Zero-sized measures never reach the reserve or the position.
-   */
-  const keepPlaceWhileHidden = useCallback(() => {
-    const element = scrollRef.current;
-    if (!element) return false;
-    if (!laidOut(element)) { if (seen.current) unseen.current = true; return true; }
-    seen.current = true;
-    if (!unseen.current) return false;
-    unseen.current = false;
-    edge.current = element.getBoundingClientRect().top;
-    writeViewport(element);
-    if (mode.current === "bottom" || following.current) toBottom();
-    else {
-      element.scrollTop = lastTop.current;
-      lastTop.current = element.scrollTop;
-      markScrolled(element);
-      if (anchorWhenShown.current) anchorQuestion();
-    }
-    anchorWhenShown.current = false;
-    return true;
-  }, [anchorQuestion, toBottom]);
-
-  /**
-   * Context above the thread (the inline rail's rows) grows or shrinks and moves the thread's top edge,
-   * for example when a question is answered or the reply commits. The scroll position moves with that
-   * edge, so what the reader sees stays where it was; the browser would otherwise keep the position,
-   * or clamp it to the new range, and shift the whole transcript. A thread kept at its end or following
-   * the reply stays at the end instead.
-   */
-  const keepContentStill = useCallback(() => {
-    const element = scrollRef.current;
-    if (!element) return false;
-    if (keepPlaceWhileHidden()) return true;
-    const top = element.getBoundingClientRect().top;
-    const before = edge.current;
-    edge.current = top;
-    if (before === null || Math.abs(top - before) < 1 || mode.current === "bottom" || following.current) return false;
-    const to = Math.max(0, lastTop.current + top - before);
-    // The latest turn's room follows the viewport: size it now, so the reserve below sees the range the frame will have.
-    writeViewport(element);
-    reserve(to - element.scrollTop);
-    // A glide making room for a block keeps its target, which already counts the new edge, and starts from here.
-    const gliding = glide.current !== undefined ? glideTarget.current : null;
-    stopGlide();
-    element.scrollTop = to;
-    lastTop.current = element.scrollTop;
-    markScrolled(element);
-    if (gliding !== null && gliding > to) glideTo(gliding);
-    return true;
-  }, [glideTo, keepPlaceWhileHidden, reserve, stopGlide]);
+    writeScroll(element, element.scrollHeight);
+    rememberPosition(element);
+  }, [rememberPosition, writeScroll]);
 
   const followFrame = useCallback(() => {
     follow.current = undefined;
     const element = scrollRef.current;
-    if (!element || !following.current) return;
+    if (!element || !following.current || !laidOut(element)) return;
     const remaining = element.scrollHeight - element.clientHeight - element.scrollTop;
-    if (remaining < 1) { measure(); return; }
-    // WKWebView keeps scrollTop in whole pixels and drops a smaller step, which would stall a few pixels short.
-    element.scrollTop = Math.ceil(element.scrollTop + (reducedMotion() ? remaining : Math.max(1, remaining * FOLLOW_SHARE)));
-    lastTop.current = element.scrollTop;
-    markScrolled(element);
+    if (remaining < 1) return;
+    // WKWebView can drop steps below a whole pixel. If it clamps even this step, wait for a layout change.
+    const step = reducedMotion() ? remaining : Math.max(1, remaining * FOLLOW_SHARE);
+    if (!writeScroll(element, Math.ceil(element.scrollTop + step))) return;
+    rememberPosition(element);
+    measure();
     follow.current = requestAnimationFrame(followFrame);
-  }, [measure]);
+  }, [measure, rememberPosition, writeScroll]);
+
+  const queueFollow = useCallback(() => {
+    if (follow.current === undefined) follow.current = requestAnimationFrame(followFrame);
+  }, [followFrame]);
+
+  const readLayoutChange = useCallback((element: HTMLElement) => {
+    const before = viewport.current;
+    const view = readViewport(element);
+    const anchor = anchors.current.find(({ block }) => element.contains(block) && block.offsetHeight > 0);
+    const box = anchor && layoutBox(anchor.block, element);
+    // Adding scrollTop recovers the layout coordinate even if WebKit clamped the scroll position.
+    const delta = anchor && box
+      ? box.top + element.scrollTop - (anchor.top + lastTop.current)
+      : view.top - (before?.top ?? view.top);
+    const resized = !before || differs(view.width, before.width) || differs(view.height, before.height);
+    const changed = !before || resized || differs(view.extent, before.extent) || differs(delta, 0);
+    return { before, view, anchor, box, delta, resized, changed };
+  }, []);
+
+  /** Apply at most one correction for a new layout. Hidden threads keep their last visible snapshot. */
+  const keepContentStill = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return false;
+    if (!laidOut(element)) {
+      if (viewport.current) unseen.current = true;
+      return false;
+    }
+    const returned = unseen.current;
+    const { before, view, anchor, box, delta, resized, changed } = readLayoutChange(element);
+    if (!returned && !changed) return false;
+    unseen.current = false;
+    if (!before || differs(view.height, before.height)) writeViewport(element, view.height);
+
+    const wasAtEnd = before && before.extent - before.height - lastTop.current <= BOTTOM_TOLERANCE_PX;
+    const displaced = element.scrollTop < lastTop.current - BOTTOM_TOLERANCE_PX;
+    if (mode.current === "bottom" || following.current && (wasAtEnd || displaced || resized || !runningRef.current || returned)) {
+      toBottom();
+    } else if (anchorWhenShown.current) {
+      writeScroll(element, lastTop.current);
+      rememberPosition(element);
+      anchorQuestion();
+    } else if (!following.current && (before || returned)) {
+      // If the block itself got shorter, keep at least its last line in the viewport.
+      const anchorTop = anchor && box ? Math.max(anchor.top, view.top + 2 - box.height) : null;
+      const target = Math.max(0, lastTop.current + delta + (anchor && anchorTop !== null ? anchor.top - anchorTop : 0));
+      if (differs(target, element.scrollTop)) {
+        reserve(target - element.scrollTop);
+        const gliding = glide.current !== undefined ? glideTarget.current : null;
+        stopGlide();
+        writeScroll(element, target);
+        if (gliding !== null && gliding - target >= 1) glideTo(gliding);
+      }
+      rememberPosition(element);
+    }
+    anchorWhenShown.current = false;
+    // Reserve writes can change the extent. Use the resulting layout only as the baseline for the next pass.
+    viewport.current = readViewport(element);
+    if (following.current && element.scrollHeight - element.clientHeight - element.scrollTop > BOTTOM_TOLERANCE_PX) queueFollow();
+    return true;
+  }, [anchorQuestion, glideTo, queueFollow, readLayoutChange, rememberPosition, reserve, stopGlide, toBottom, writeScroll]);
 
   const startFollowing = useCallback(() => {
     following.current = true;
+    anchors.current = [];
     stopGlide();
-    if (follow.current === undefined && typeof requestAnimationFrame === "function") follow.current = requestAnimationFrame(followFrame);
+    queueFollow();
     measure();
-  }, [followFrame, measure, stopGlide]);
+  }, [measure, queueFollow, stopGlide]);
 
   const stopFollowing = useCallback(() => {
     following.current = false;
@@ -337,7 +406,9 @@ export const Conversation = ({
   const holdScrollPosition = useCallback(() => {
     if (mode.current === "bottom") mode.current = "anchored";
     stopFollowing();
-  }, [stopFollowing]);
+    const element = scrollRef.current;
+    if (element && laidOut(element)) rememberPosition(element);
+  }, [rememberPosition, stopFollowing]);
   const blockAppended = useCallback((block: HTMLElement, kind: "prose" | "card") => {
     const element = scrollRef.current;
     if (!element || mode.current !== "anchored" || touched.current || following.current) return;
@@ -349,20 +420,21 @@ export const Conversation = ({
 
   // Context above the thread usually changes in the same commit as the thread (an answer, the reply's commit):
   // correct before that frame is drawn, not a frame later when the resize is observed.
-  useLayoutEffect(() => { keepContentStill(); });
-
-  // The viewport's height, for the latest turn's reserve: one write per resize.
   useLayoutEffect(() => {
-    const element = scrollRef.current;
-    if (!element) return;
-    // Hidden, the thread keeps the room it had, so it shows again with the same layout.
-    const write = () => { if (laidOut(element)) writeViewport(element); };
-    write();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(write);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
+    if (!autoScroll) return;
+    keepContentStill();
+    measure();
+  }, [autoScroll, children, keepContentStill, measure, running]);
+
+  // ResizeObserver and browser scroll events can both report a reflow. One
+  // deferred pass handles both without writing into the observer delivery.
+  const queueLayout = useCallback(() => {
+    if (layoutFrame.current !== undefined) return;
+    layoutFrame.current = requestAnimationFrame(() => {
+      layoutFrame.current = undefined;
+      if (keepContentStill()) measure();
+    });
+  }, [keepContentStill, measure]);
 
   // Opening: a settled chat opens at its end; a chat whose reply is in flight opens with the latest question at the top.
   // A Suspense boundary that showed its fallback (a lazy page opening) re-runs layout effects when it shows this
@@ -371,9 +443,9 @@ export const Conversation = ({
     const element = scrollRef.current;
     if (!element || openedFor.current === autoScroll) return;
     openedFor.current = autoScroll;
-    edge.current = element.getBoundingClientRect().top;
     if (!autoScroll) {
-      element.scrollTop = 0;
+      writeScroll(element, 0);
+      viewport.current = null;
       markScrolled(element);
       return;
     }
@@ -385,9 +457,8 @@ export const Conversation = ({
       const question = turn?.querySelector<HTMLElement>(".message.user");
       if (turn && question) {
         turn.style.setProperty("--turn-lead", `${layoutBox(question, element).top - layoutBox(turn, element).top}px`);
-        element.scrollTop += anchorDelta(layoutBox(question, element), element.getBoundingClientRect());
-        lastTop.current = element.scrollTop;
-        markScrolled(element);
+        writeScroll(element, element.scrollTop + anchorDelta(layoutBox(question, element), element.getBoundingClientRect()));
+        rememberPosition(element);
       }
     } else if (laidOut(element)) toBottom();
     measure();
@@ -413,58 +484,68 @@ export const Conversation = ({
     const element = scrollRef.current;
     const content = element?.firstElementChild;
     if (!autoScroll || !element || !content || typeof ResizeObserver === "undefined") return;
-    const changed = () => {
-      keepContentStill();
-      if (!laidOut(element)) return;
-      if (mode.current === "bottom") toBottom();
-      else if (following.current && follow.current === undefined && typeof requestAnimationFrame === "function") follow.current = requestAnimationFrame(followFrame);
-      measure();
-    };
-    const observer = new ResizeObserver(changed);
+    const observer = new ResizeObserver(queueLayout);
     observer.observe(element);
     observer.observe(content);
     // WKWebView can deliver the viewport resize without a ResizeObserver callback for this flex child.
-    window.addEventListener("resize", changed);
-    return () => { observer.disconnect(); window.removeEventListener("resize", changed); };
-  }, [autoScroll, followFrame, keepContentStill, measure, toBottom]);
+    window.addEventListener("resize", queueLayout);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", queueLayout);
+      if (layoutFrame.current !== undefined) cancelAnimationFrame(layoutFrame.current);
+      layoutFrame.current = undefined;
+    };
+  }, [autoScroll, queueLayout]);
 
   useEffect(() => () => {
     if (glide.current !== undefined) cancelAnimationFrame(glide.current);
     if (follow.current !== undefined) cancelAnimationFrame(follow.current);
+    if (layoutFrame.current !== undefined) cancelAnimationFrame(layoutFrame.current);
+    if (measureFrame.current !== undefined) cancelAnimationFrame(measureFrame.current);
+    glide.current = follow.current = layoutFrame.current = measureFrame.current = undefined;
   }, []);
 
   /** Any wheel, touch, key or scrollbar drag on the thread is the reader's. Upward input stops following. */
   const noteInput = useCallback((upward: boolean) => {
+    if (!autoScroll) return;
     lastInput.current = performance.now();
     touched.current = true;
     stopGlide();
-    if (upward && following.current) stopFollowing();
-  }, [stopFollowing, stopGlide]);
+    if (upward && (following.current || mode.current === "bottom")) holdScrollPosition();
+  }, [autoScroll, holdScrollPosition, stopGlide]);
 
   const handleScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
     const element = event.currentTarget;
-    // The browser moved or clamped the position because the thread's top edge moved: put it back, not the reader's scroll.
-    if (keepContentStill()) { measure(); onScroll?.(event); return; }
-    const movedUp = element.scrollTop < lastTop.current - 1;
-    // Movement no glide or follow made (a scrollbar drag reports no other input) is the reader's too.
-    if (Math.abs(element.scrollTop - lastTop.current) > 1 && glide.current === undefined && follow.current === undefined && mode.current === "anchored") {
-      touched.current = true;
-      if (movedUp) lastInput.current = performance.now();
+    const accepted = ownScroll.current;
+    ownScroll.current = undefined;
+    const reflow = autoScroll && (unseen.current || !laidOut(element) || readLayoutChange(element).changed);
+    if (reflow) queueLayout();
+    // Consume our write once, even if a later scroll superseded it before delivery.
+    if (reflow || accepted !== undefined && !differs(element.scrollTop, accepted)) {
+      onScroll?.(event);
+      return;
     }
-    lastTop.current = element.scrollTop;
-    markScrolled(element);
+    // A scrollbar drag can report movement without a DOM pointer event.
+    const moved = differs(element.scrollTop, lastTop.current);
+    const movedUp = moved && element.scrollTop < lastTop.current;
+    const reader = performance.now() - lastInput.current < INPUT_WINDOW_MS
+      || moved && glide.current === undefined && follow.current === undefined;
+    if (reader && moved) touched.current = true;
     const atBottom = element.scrollHeight - element.clientHeight - element.scrollTop <= BOTTOM_TOLERANCE_PX;
-    const reader = performance.now() - lastInput.current < INPUT_WINDOW_MS;
     if (reader && movedUp) {
       if (following.current) stopFollowing();
       if (mode.current === "bottom") mode.current = "anchored";
     }
-    if (reader && atBottom && runningRef.current && !following.current) startFollowing();
+    if (reader && atBottom && !following.current && !movedUp) {
+      if (runningRef.current) startFollowing();
+      else mode.current = "bottom";
+    }
     // A reader who leaves the end of a thread opened there is no longer pinned to it.
     if (mode.current === "bottom" && !atBottom && reader) mode.current = "anchored";
+    rememberPosition(element);
     measure();
     onScroll?.(event);
-  }, [keepContentStill, measure, onScroll, startFollowing, stopFollowing]);
+  }, [autoScroll, measure, onScroll, queueLayout, readLayoutChange, rememberPosition, startFollowing, stopFollowing]);
 
   const actions = useMemo(() => ({ jumpToLatest, holdScrollPosition, blockAppended }), [jumpToLatest, holdScrollPosition, blockAppended]);
 
