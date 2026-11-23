@@ -320,6 +320,7 @@ fn settings(options: &Options, scenario: &Scenario) -> Result<GraphProcessingSet
         helper_provider: Some(provider.into()),
         helper_model: Some(model.into()),
         helper_model_profile_id: Some(options.world_model.clone()),
+        world_model_choice: crate::knowledge::WorldModelChoice::Chosen,
         thinking_level: options.world_thinking.clone(),
         timeout_ms: options.world_timeout_ms,
         research_focus: scenario.research_focus.trim().to_string(),
@@ -1268,6 +1269,7 @@ mod tests {
             helper_provider: Some("openai".into()),
             helper_model: Some("fixture-model".into()),
             helper_model_profile_id: Some("openai/fixture-model".into()),
+            world_model_choice: crate::knowledge::WorldModelChoice::Chosen,
             research_focus: focus.into(),
             max_llm_calls: 16,
             ..Default::default()
@@ -1312,6 +1314,7 @@ mod tests {
             enrichment_enabled: true,
             helper_provider: Some("openai".into()),
             helper_model: Some("fixture-model".into()),
+            world_model_choice: crate::knowledge::WorldModelChoice::Chosen,
             ..Default::default()
         };
         save_settings(&state, &loupist.id, &config).unwrap();

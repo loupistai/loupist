@@ -6,7 +6,7 @@ import type { ConnectSheetTarget } from "../components/settings/ConnectSheet";
 import type { LoupistUIMessage } from "../chat/ai-sdk";
 import type { RecoveredChatRun } from "../chat/loupistRunRegistry";
 import { chatSessionKey, type HostedWatchPhase } from "../chat/sessionRegistry";
-import { modelRunSelection, resolveExplicitSelection } from "../lib/modelSelection";
+import { modelRunSelection, resolveExplicitSelection, usableCatalogModel } from "../lib/modelSelection";
 import type { ChatArtifactRef, ChatThread, LoupistBridge, LoupistSummary, ModelRunSelection } from "../types";
 import type { ChatDraft, useChatDrafts } from "./useChatDrafts";
 import type { useChatSessions } from "./useChatSessions";
@@ -148,6 +148,7 @@ export function useChatViewModel({
     bridge,
     chat: activeChat,
     recoveredRun: recoveredChat,
+    pendingSaves: chat.pendingSaves,
     onWaitForMemory: runRegistry?.waitForMemory,
     loupist: selectedLoupist,
     threads,
@@ -172,7 +173,9 @@ export function useChatViewModel({
       if (!next || next.diagnostics.length) throw new Error(i18n.t("app:app.correctTheConfigurationFileBeforeSending"));
       const catalog = model.catalog ? { ...model.catalog, hidden_model_profile_ids: next.effective.models.hidden_model_profile_ids } : null;
       const override = model.selections[loupistId];
-      if (override) return { ...resolveExplicitSelection(catalog, override), memoryDefaults: next.effective.chat };
+      if (override && usableCatalogModel(catalog, override.model_profile_id)) return { ...resolveExplicitSelection(catalog, override), memoryDefaults: next.effective.chat };
+      // A pick Chat can no longer answer with never goes out: the Loupist's default answers.
+      if (override) model.resetSelection(loupistId);
       const selection = next.modelSelection;
       if (selection?.is_default && selection.model) {
         return { model_profile_id: "", thinking_level: next.effective.chat.thinking_level ?? "", run_options: { ...next.effective.chat.run_options }, auto: true, memoryDefaults: next.effective.chat };

@@ -304,6 +304,25 @@ export class ChatSessionRegistry {
     return thread;
   }
 
+  /**
+   * Shows one stored reply as the host has it now: a reply whose save resolved
+   * after its stream ended. Only that message changes, so a newer reply may be
+   * streaming meanwhile; it keeps its view key and its answer's node key.
+   */
+  replaceMessage(loupistId: string, threadId: string, message: ChatThread["messages"][number]) {
+    const chat = this.get(loupistId, threadId);
+    if (!chat) return;
+    let replaced = false;
+    const messages = chat.messages.map((shown) => {
+      if ((shown.metadata?.native_message_id ?? shown.id) !== message.id) return shown;
+      replaced = true;
+      const stored = toLoupistUIMessage(message);
+      const answerKey = shown.metadata?.answer_key;
+      return { ...stored, id: shown.id, metadata: { ...stored.metadata, ...(answerKey ? { answer_key: answerKey } : {}) } };
+    });
+    if (replaced) chat.messages = messages;
+  }
+
   remove(loupistId: string, threadId: string) {
     const key = chatSessionKey(loupistId, threadId);
     const entry = this.#entries.get(key);

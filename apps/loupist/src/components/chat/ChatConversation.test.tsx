@@ -192,9 +192,9 @@ describe("Bot greeting", () => {
     const nvidia = mockAssetId("NVIDIA"), apple = mockAssetId("Apple"), harbor = mockAssetId("Harbor Fund");
     follow([followedRow(nvidia, "NVIDIA"), followedRow(apple, "Apple"), followedRow(harbor, "Harbor Fund")]);
     vi.spyOn(bridge, "watchlistQuotes").mockResolvedValue([
-      { assetId: nvidia, price: { value: 162.85, date: "2026-11-13", currency: "USD", provider: "yfinance", sourceUrl: null, dataset: { dataset_id: "a", revision: 1, digest: "test" } } },
-      // A time as the provider stated it, and no currency: the price prints without one.
-      { assetId: apple, price: { value: 268.47, date: "2026-11-14T14:30:00Z", currency: null, provider: "fmp", sourceUrl: null, dataset: { dataset_id: "b", revision: 1, digest: "test" } } },
+      { assetId: nvidia, price: { value: 162.85, date: "2026-11-13", currency: "USD", currencySource: "result", provider: "yfinance", sourceUrl: null, dataset: { dataset_id: "a", revision: 1, digest: "test" } } },
+      // A time as the provider stated it, and no currency: the price prints without one and says so.
+      { assetId: apple, price: { value: 268.47, date: "2026-11-14T14:30:00Z", currency: null, currencySource: "none", provider: "fmp", sourceUrl: null, dataset: { dataset_id: "b", revision: 1, digest: "test" } } },
     ]);
     render(<ChatConversation loupistId="loupist-quality" loupistName="Loupist" bridge={bridge} home messages={[]} messageKeys={[]} onSuggestion={vi.fn()} onReadAttachment={vi.fn()} />);
     const greeting = await screen.findByRole("region", { name: "Loupist greets you" });
@@ -204,6 +204,7 @@ describe("Bot greeting", () => {
     expect(tiles[0]!.querySelector(".bot-tile-foot")).toHaveTextContent("As of Nov 13 · Yahoo Finance");
     expect(tiles[1]!.querySelector(".bot-tile-foot")).toHaveTextContent(/^As of Nov 14 \d{1,2}:\d{2} [AP]M · Financial Modeling Prep$/u);
     expect(tiles[1]!.querySelector(".bot-tile-price")).not.toHaveTextContent("$");
+    expect(tiles[1]!.querySelector("[data-price-currency=unknown]")).toHaveTextContent("Currency unknown");
     // No close or session wording, no change it was not given, and no news bubble built from prices.
     expect(greeting).not.toHaveTextContent(/close|fell|rose|%/iu);
     expect(greeting.querySelectorAll(".bot-bubble")).toHaveLength(1);
@@ -219,7 +220,7 @@ describe("Bot greeting", () => {
     const greeting = await screen.findByRole("region", { name: "Loupist greets you" });
     await waitFor(() => expect(greeting).toHaveAttribute("aria-busy", "false"));
     expect(greeting.querySelectorAll(".bot-tile")).toHaveLength(0);
-    quotes.mockResolvedValue([{ assetId: nvidia, price: { value: 162.85, date: "2026-11-13", currency: "USD", provider: "yfinance", sourceUrl: null, dataset: { dataset_id: "a", revision: 1, digest: "test" } } }]);
+    quotes.mockResolvedValue([{ assetId: nvidia, price: { value: 162.85, date: "2026-11-13", currency: "USD", currencySource: "result", provider: "yfinance", sourceUrl: null, dataset: { dataset_id: "a", revision: 1, digest: "test" } } }]);
     act(() => bridge.assets.changed());
     await waitFor(() => expect(greeting.querySelectorAll(".bot-tile")).toHaveLength(1));
   });
@@ -229,7 +230,7 @@ describe("Bot greeting", () => {
     const first = `ast_${"1".repeat(16)}`, second = `ast_${"2".repeat(16)}`;
     follow([followedRow(first, "Hanul Precision"), followedRow(second, "Hanul Works")]);
     // The prices arrive in the other order.
-    const price = (value: number) => ({ value, date: "2026-11-13", currency: "USD", provider: "krx", sourceUrl: null, dataset: { dataset_id: "x", revision: 1, digest: "test" } });
+    const price = (value: number) => ({ value, date: "2026-11-13", currency: "USD", currencySource: "result" as const, provider: "krx", sourceUrl: null, dataset: { dataset_id: "x", revision: 1, digest: "test" } });
     vi.spyOn(bridge, "watchlistQuotes").mockResolvedValue([{ assetId: second, price: price(222.25) }, { assetId: first, price: price(111.5) }]);
     render(<ChatConversation loupistId="loupist-quality" loupistName="Loupist" bridge={bridge} home messages={[]} messageKeys={[]} onSuggestion={vi.fn()} onReadAttachment={vi.fn()} />);
     const greeting = await screen.findByRole("region", { name: "Loupist greets you" });

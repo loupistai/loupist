@@ -88,7 +88,7 @@ pub(crate) fn suggestion_groups(
     Ok(groups)
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn pack_suggestions(
     request: LoupistRequest,
     state: State<'_, AppState>,
@@ -108,7 +108,7 @@ pub struct PackItemRequest {
     key: String,
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn pack_item_read(
     request: PackItemRequest,
     state: State<'_, AppState>,
@@ -283,7 +283,7 @@ pub(crate) fn decide(
     Ok(())
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn pack_decide(
     request: PackDecideRequest,
     state: State<'_, AppState>,

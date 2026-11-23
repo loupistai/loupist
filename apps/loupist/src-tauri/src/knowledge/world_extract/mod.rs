@@ -28,7 +28,7 @@ use super::KnowledgeStore;
 
 #[cfg(test)]
 pub(crate) use job::drive_job;
-pub(crate) use job::drive_job_with_slots;
+pub(crate) use job::{drive_job_with_slots, ResolutionSlot};
 pub(crate) use text::casefold;
 
 const QUERY_LIMIT: usize = 25;

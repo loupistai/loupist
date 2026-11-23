@@ -9,6 +9,11 @@ A Chat turn can carry an as-of date ([`/asof`](#composer-date-control),
 uses only what was published or recorded by the end of that calendar day: each
 tool and Memory read applies the cutoff in Rust, and the turn envelope tells the
 model not to add later facts from its own knowledge.
+The day ends at midnight on the user's clock, as `as_of.end_of_day` states. A
+published instant counts on the user's date at that instant (`local_time.rs`), and
+a date written without a time counts as written. In Seoul, a page published at
+00:30 on the 23rd is after a cutoff on the 22nd although it is still the 22nd in
+UTC (`record_date` in `tool_executor/market.rs`).
 
 | Under a cutoff | Rule |
 | --- | --- |

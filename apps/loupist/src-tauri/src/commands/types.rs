@@ -333,6 +333,28 @@ pub struct ChatWatchSnapshot {
     pub thread: ChatThreadDto,
 }
 
+/// A stored reply whose Memory save waits on its own while its conversation
+/// accepts new messages (docs/runtime/chat-turns.md#saves-that-wait-on-their-own).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct ChatSaveState {
+    pub run_id: String,
+    pub thread_id: String,
+    pub message_id: String,
+    pub waiting_for_other_chat: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub blocking_chat_id: Option<String>,
+    pub save_activity: crate::chat::progress::ChatSaveActivity,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct ChatSavesRequest {
+    pub loupist_id: String,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
 #[serde(deny_unknown_fields)]

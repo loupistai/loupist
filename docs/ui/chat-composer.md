@@ -70,7 +70,7 @@ next-step chips after the latest answer come from the conflicts and names it
 found and fill the composer without sending. A chip names only a company World
 matched by listing to something followed; currencies, places, sectors,
 metrics and other or unknown kinds offer none, so an answer may have no chips. Leaving a view or switching Loupist does not cancel an admitted
-Chat. Private chat is a checkbox in the composer's + menu; while it is on, a "Private · memory off" chip with an off button sits under the message row. Without an AI account, Connect an AI account takes the send slot and the placeholder says so. Private chat is described under
+Chat. Private chat is a checkbox in the composer's + menu; while it is on, a "Private · memory off" chip with an off button sits under the message row, and directly under the chip, in the secondary text style, what it means: "Private chat: your Loupist doesn't use or add to what it remembers. The chat is still saved, and still goes to your AI provider." It wraps to a second line in a narrow composer and is visible text, not a tooltip. The composer grows by those lines without moving the conversation: a reader at the end stays at the end, and a reader in history keeps their place. Without an AI account, Connect an AI account takes the send slot and the placeholder says so. Private chat is described under
 [Memory permissions](../knowledge/memory.md#memory-permissions-and-retrieval).
 Focusing a control below the fold scrolls it into the conversation. A sent question
 glides to the top of the thread and the reply writes beneath it; the page moves by
@@ -153,7 +153,16 @@ left the catalog or its runtime is missing). Needs setup opens the same
 `MarketplaceSetupDialog` as Settings › Connections and refreshes when it closes; off
 for this Loupist calls `loupist_capability_enable`; ready offers Ask again, which puts
 the user's previous question back in the composer through the same path as Change the
-rates. No key passes through Chat, and the connection works from the next message.
+rates. Needs setup says what setup asks for, read from the entry's own fields
+(`setupNeeds`): a connection with a credential field shows the key sentence ("Any key goes
+in the setup dialog and stays on this Mac; the Loupist never sees it."); a required field
+that is not secret and not a list choice, such as SEC EDGAR's contact email, is named by
+its label in the first line ("Before this Loupist can use SEC EDGAR, it needs: SEC
+contact email."; several are joined with commas) followed by "Enter it in the setup window. It is stored on this Mac
+and sent to SEC EDGAR with each request."; a connection with both shows both. A list
+choice (Tradier's account type, Korea Investment's environment) starts on its first
+option in the dialog and is sent nowhere, so it adds no sentence. No key passes through
+Chat, and the connection works from the next message.
 Preview scenarios `chat-connection-setup-needs-setup` and `chat-connection-setup-ready`
 show it. A chat with both Memory flags off shows a
 private mark; the chat title in the sub-header renames in place; a Loupist row shows a
@@ -188,9 +197,20 @@ The composer names the model that will answer and its reasoning level, for examp
 “GPT-6.2 Sol · Medium”. Chat defaults and each Loupist’s settings use the same
 account-grouped picker. The checked model carries a Default tag while Rust selects
 it. Choosing that tagged row keeps the model preference unset. Choosing another
-model sets an explicit choice. Composer overrides last for the current app session.
+model sets an explicit choice. A composer choice covers every chat of that Loupist
+for the current app session (no chat keeps a model of its own; a queued message
+keeps the one it was queued with) until one of these ends it: choosing the Default
+row, saving a Chat model, reasoning level or run option in Settings (for the app,
+every Loupist's choice; for a Loupist, its own), or its model leaving Chat (its
+account disconnected, or the model hidden or no longer offered). The next reply then
+uses the Loupist's default as Rust resolves it for a new session, and the control
+names that model at once; reconnecting the account does not bring the old choice back.
 The picker shows the answering account’s plan and exposes reasoning and performance
 under Advanced. A model switch keeps the current reasoning level when supported.
+A stored Chat default that cannot run (its account signed out or disconnected, or the
+model hidden) gives way to the recommended model, which the control names; Chat stays
+sendable, and the default applies again once it can run
+([Shared providers](../runtime/providers.md#shared-providers-and-world-processing)).
 With no connected account the control reads “No AI account” and opens account setup.
 When a Loupist’s default changes, its notice names the previous and current models.
 Changing the model, dismissing the notice or sending acknowledges it on the host. A
@@ -223,7 +243,12 @@ menu stay in reach. Its header is one row: the tabs, "Working" only while a repl
 and close. It repeats neither the Loupist's face and name, which the page already shows,
 nor the answer's time, which What it did gives once ("This answer · 9:00 AM · 11s"); once
 a reply succeeds, the header announces "Answered at 9:00 AM". For a failed reply, What it did shows "Failed at" with the reply time and adds "Your AI account was busy." for a rate limit. The header announces the same outcome for the latest reply. A source review still running shows only on the Learned tab. Earlier answers list replies only, never a
-message the host posted on its own (a result, an alert, a "now also tracks" line).
+message the host posted on its own (a result, an alert, a "now also tracks" line). Each is
+named by the question it answered, on one line that ends in an ellipsis before the time in
+its own column; the whole question is the row's accessible name and native title. The row
+is a button whose items WebKit does not stretch by default, so it sets `align-items:
+stretch` (without it a long question ran under the time and off the sheet in WKWebView).
+The layout suite pins it with `activity-sheet-earlier`.
 
 Three tabs:
 - **Activity**: what the reply did, read and checked. Every step in order, steps of

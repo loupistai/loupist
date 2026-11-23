@@ -1273,7 +1273,9 @@ endpoints remain fail-closed; `replay_fallbacks` exposes every fallback used.
 Multi-event lists include the needed partial-window responses after their full
 response, so an earlier as-of query receives only the events in that window.
 The fixture lint checks listed receipts and three containing windows. Scenario
-`clock` pins model `live_time` for dated questions. Scenario `language` sets the disposable app language; otherwise a
+`clock` pins model `live_time` for dated questions. The offset its RFC 3339 text
+states is the user's time zone: `live_time`'s local fields and every local date
+the host derives use it on any host, so `+09:00` is a user in Korea and `Z` one at UTC. Scenario `language` sets the disposable app language; otherwise a
 single `en`/`ko` tag supplies it, and with neither the app takes the machine's
 language (see the authoring rules under [Scenario suites](#scenario-suites): every
 scenario states one).

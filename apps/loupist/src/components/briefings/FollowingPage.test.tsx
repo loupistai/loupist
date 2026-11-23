@@ -51,7 +51,7 @@ it("shows each available stored price beside its followed asset", async () => {
     const asset = bridge.assets.installAsset(NVIDIA);
     bridge.assets.installAsset({ name: "No stored quote" });
     bridge.assets.installPrice(loupist.id, asset.assetId, { price: {
-      value: 1093.8299560546875, currency: "USD", date: "2026-11-19", provider: "yfinance",
+      value: 1093.8299560546875, currency: "USD", currencySource: "result", date: "2026-11-19", provider: "yfinance",
       sourceUrl: null, dataset: { dataset_id: "quote", revision: 1, digest: "test" },
     } });
   });
@@ -115,7 +115,7 @@ it("keeps the host's ranking and carries the selected exchange name into the fol
   const { followName, loupist, lookup, user } = await fixture();
   const first = { ...NVIDIA, name: "Zeta Corp", exchange: "UB", exchangeName: "Example Exchange", marketSector: "Equity" };
   const second = { ...NVIDIA, name: "Alpine Fund", figi: "BBG000BBJR79", marketSector: "Equity" };
-  lookup.mockResolvedValue([first, second]);
+  lookup.mockResolvedValue({ candidates: [first, second], savedKeyUnread: false });
   await user.type(field(), "NVDA{Enter}");
   const top = await screen.findByRole("option", { name: "Follow Zeta Corp, NVDA · Example Exchange · Common Stock" });
   expect(options().filter(item => item.dataset.kind === "candidate").map(item => item.dataset.figi)).toEqual([first.figi, second.figi]);
@@ -137,7 +137,7 @@ it("localizes generic listing labels and accessible names while saving the provi
       ...domestic, ticker: "00593EUR", figi: "BBG019T9FJM3",
       exchange: "XL", exchangeName: "TradEcho-LSE OTC", securityType: "Provider Type",
     };
-    lookup.mockResolvedValue([{ ...domestic, marketSector: "Equity" }, { ...otc, marketSector: "Equity" }]);
+    lookup.mockResolvedValue({ candidates: [{ ...domestic, marketSector: "Equity" }, { ...otc, marketSector: "Equity" }], savedKeyUnread: false });
     await user.type(screen.getByRole("combobox"), "samsung{Enter}");
     const country = await screen.findByRole("option", { name: /005930 · 대한민국 · 보통주/u });
     expect(country).toHaveTextContent("005930 · 대한민국 · 보통주");
@@ -230,21 +230,38 @@ it("words each lookup failure with the one thing to do about it", async () => {
   expect(lookup).toHaveBeenCalledTimes(3);
 });
 
-it.each([
-  ["credential_rejected", "keyRejected", "OpenFIGI rejected the saved API key. Replace or remove it in Connections."],
-  ["credential_locked", "keyUnreadable", "Loupist can't use the saved OpenFIGI API key. Allow access to it, or save it again, in Connections."],
-  ["credential_unavailable", "keyUnreadable", "Loupist can't use the saved OpenFIGI API key."],
-])("sends a saved-key problem (%s) to Connections, not to Try again", async (code, state, text) => {
+it("sends a rejected saved key to Connections, not to Try again", async () => {
   const onOpenConnections = vi.fn();
   const { lookup, user } = await fixture(undefined, { onOpenConnections });
-  lookup.mockRejectedValueOnce({ code, message: "OpenFIGI key problem." });
+  lookup.mockRejectedValueOnce({ code: "credential_rejected", message: "OpenFIGI rejected the key." });
   await user.type(field(), "nvidia{Enter}");
-  const line = await lookupLine(state);
-  expect(line).toHaveTextContent(text);
+  const line = await lookupLine("keyRejected");
+  expect(line).toHaveTextContent("OpenFIGI rejected the saved API key. Replace or remove it in Connections.");
   // Searching again would fail the same way until the key is fixed.
   expect(within(line).queryByRole("button", { name: "Try again" })).toBeNull();
   await user.click(within(line).getByRole("button", { name: "Open Connections" }));
   expect(onOpenConnections).toHaveBeenCalledWith("openfigi.lookup");
+});
+
+it("lists the public route's listings and notes a saved key it could not read", async () => {
+  const onOpenConnections = vi.fn();
+  const { bridge, user } = await fixture(undefined, { onOpenConnections });
+  bridge.assets.lookupSavedKeyUnread = true;
+  await user.type(field(), "nvidia{Enter}");
+  await waitFor(() => expect(options().filter(item => item.dataset.kind === "candidate")).toHaveLength(2));
+  expect(await lookupLine("done")).toHaveTextContent("Listings from OpenFIGI.");
+  const note = document.querySelector<HTMLElement>("[data-lookup-key=unread]")!;
+  expect(note).toHaveTextContent("Loupist can't use the saved OpenFIGI API key. Allow access to it, or save it again, in Connections.");
+  expect(within(note).queryByRole("button", { name: "Try again" })).toBeNull();
+  await user.click(within(note).getByRole("button", { name: "Open Connections" }));
+  expect(onOpenConnections).toHaveBeenCalledWith("openfigi.lookup");
+
+  // Without a saved key there is nothing to report. (The same text is never sent twice.)
+  bridge.assets.lookupSavedKeyUnread = false;
+  await user.clear(field());
+  await user.type(field(), "nvda{Enter}");
+  await waitFor(() => expect(options().filter(item => item.dataset.kind === "candidate").length).toBeGreaterThan(0));
+  expect(document.querySelector("[data-lookup-key=unread]")).toBeNull();
 });
 
 it("describes the field with what typing and Enter do, and shows a long name whole on hover", async () => {

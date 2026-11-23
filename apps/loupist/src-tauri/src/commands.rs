@@ -74,12 +74,18 @@ pub struct ModelVisibilityUpdateRequest {
     pub visible_in_chat: bool,
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn model_visibility_update(
     request: ModelVisibilityUpdateRequest,
     state: State<'_, AppState>,
 ) -> Result<ModelCatalogView, CommandError> {
     state.set_model_visible(&request.model_profile_id, request.visible_in_chat)?;
+    // A hidden model is never recommended for World. Every Loupist's folder is
+    // read for that, so it runs off the main thread.
+    let world_state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::commands::knowledge::follow_recommended_world_models_quietly(&world_state);
+    });
     state.model_catalog_view()
 }
 

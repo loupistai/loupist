@@ -295,6 +295,10 @@ export type ChatMemorySaving = Pick<Extract<Wire.ChatStreamEvent, { type: "savin
   blocking_chat_id?: string | null;
 };
 export type ChatSaveActivity = Wire.ChatSaveActivity;
+/** A stored reply whose Memory save waits on its own while its conversation takes new messages. */
+export type ChatSaveState = Wire.ChatSaveState;
+/** `chat-save-changed`: a reply's save reports a new wait, or ends with the stored reply and its receipt. */
+export type ChatSaveChangedEvent = Omit<Wire.ChatSaveChangedEvent, "message"> & { message?: ChatMessage };
 
 export type ChatMessage = HostPostRecords & Pick<Wire.ChatMessageDto,
   "id" | "role" | "content" | "created_at" | "research_session_id" | "handoff_note" | "handoff_action" | "scheduled" |

@@ -344,7 +344,10 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onO
   const priceLine = <div ref={quoteRef} className="asset-quote" data-price-read={state} tabIndex={-1}>
     {price ? <>
       <PriceText value={price.value} currency={currency} digits="auto" size="figure" />
-      <small className="asset-quote-meta" data-price-date={price.date}>{priceAsOf(price.date, price.kind)}{providerName(price.provider) ? ` · ${providerName(price.provider)}` : ""}
+      <small className="asset-quote-meta" data-price-date={price.date}>
+        {/* Neither the result nor the listing states a currency: say so rather than leave a bare number. */}
+        {currency ? null : <><span data-price-currency="unknown">{t("price.currencyUnknown")}</span>{" · "}</>}
+        {priceAsOf(price.date, price.kind)}{providerName(price.provider) ? ` · ${providerName(price.provider)}` : ""}
         {" "}<SourceChips evidence={priceEvidence} numbers={numbers} onOpen={evidence => {
           if (evidence.url) void openBrowser(evidence.url);
           else setPriceSource(price);
@@ -396,8 +399,13 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onO
           <DialogDescription>{priceAsOf(priceSource.date, priceSource.kind)}</DialogDescription>
         </DialogHeader>
         <DialogBody>
-          <p><PriceText value={priceSource.value} currency={priceSource.currency ?? undefined} digits="auto" /></p>
+          <p><PriceText value={priceSource.value} currency={priceSource.currency ?? undefined} digits="auto" />
+            {priceSource.currency ? null : <> <span className="asset-quote-meta" data-price-currency="unknown">{t("price.currencyUnknown")}</span></>}</p>
           <dl className="evidence-receipt">
+            {priceSource.currencySource === "listing" && priceSource.currency ? <>
+              <dt>{t("price.currency")}</dt>
+              <dd data-price-currency="listing">{t("price.currencyFromListing", { currency: priceSource.currency, exchange: exchangeLabel ?? page.asset.reference?.exchange ?? "" })}</dd>
+            </> : null}
             {storedPriceWasRounded(priceSource.value, priceSource.currency) ? <>
               <dt>{t("price.storedValue")}</dt><dd className="gg-num">{String(priceSource.value)}</dd>
             </> : null}

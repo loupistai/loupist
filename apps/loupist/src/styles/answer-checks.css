@@ -38,7 +38,10 @@
 .number-chip:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 1px; }
 .number-chip[data-status="differs"] { text-decoration-style: wavy; text-decoration-color: var(--gg-color-warning); }
 /* Not in its source: no checked underline, a muted figure and a small raised "?". */
-.number-chip[data-status="not_found"] { color: var(--gg-color-text-secondary); text-decoration-style: dashed; text-decoration-color: var(--gg-color-warning); }
+.number-chip:is([data-status="not_found"], [data-status="unlinked"]) { color: var(--gg-color-text-secondary); text-decoration-style: dashed; text-decoration-color: var(--gg-color-warning); }
+/* Nothing to open: the reason is its name and its hover text. */
+.number-chip[data-status="unlinked"] { cursor: help; }
+.number-chip[data-status="unlinked"]:hover { background: transparent; }
 /* Generated content, so a copied selection keeps the figure as written. */
 .number-chip-unmatched::after { content: "?"; margin-inline-start: 1px; color: var(--gg-color-warning); font-size: 0.72em; font-weight: var(--gg-weight-medium); vertical-align: super; line-height: 0; }
 .number-chip[data-status="pending"] { cursor: text; text-decoration-color: var(--gg-color-border-subtle); }

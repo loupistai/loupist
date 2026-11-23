@@ -238,6 +238,13 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
     : null;
   const ordered = [...tasks].sort((a, b) => taskRank(a) - taskRank(b) || (a.next_run_at_ms ?? Number.MAX_SAFE_INTEGER) - (b.next_run_at_ms ?? Number.MAX_SAFE_INTEGER) || displayTitle(a).localeCompare(displayTitle(b)));
   const visible = ordered.filter(listed);
+  // The built-in briefing always has a row: today's row while it is on or waiting for an OK, and an
+  // offer to turn it on while it is off (never created, or turned off, which pauses it).
+  const listedBriefing = ordered.find(task => task.kind === "briefing") ?? null;
+  const briefingOff = !listedBriefing || (listedBriefing.status !== "active" && !listedBriefing.awaiting_confirmation);
+  const scheduled = (task: ScheduledTaskListItem) => !(briefingOff && task.kind === "briefing");
+  const rows = visible.filter(scheduled);
+  const hiddenByFilter = ordered.some(task => scheduled(task) && !listed(task));
   const focusTask = !focusExplicit ? null : ordered.find(task => task.id === focusTaskId) ?? null;
   const readerOpen = Boolean(selected) || Boolean(focusTask);
   // One time zone for every timed task is named once in the header instead of on each row.
@@ -280,12 +287,13 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
     </button></li>;
   };
   const headerMeta = [
-    visible.length ? t("schedule.summary", { count: visible.length, formattedCount: formatNumber(visible.length) }) : null,
+    rows.length ? t("schedule.summary", { count: rows.length, formattedCount: formatNumber(rows.length) }) : null,
     running.length ? t("schedule.runningCount", { count: running.length, formattedCount: formatNumber(running.length) }) : null,
     sharedZone ? friendlyTimeZone(sharedZone, i18n.language) : null,
   ].filter(Boolean).join(" · ");
   const rowState = (task: ScheduledTaskListItem) => task.awaiting_confirmation || task.status !== "active" || waiting(task) ? taskStatus(task) : null;
   const introductory = !ordered.length && !readerOpen;
+  const listShown = !introductory && (rows.length > 0 || briefingOff);
   const spending = <p className="briefings-meta schedule-spending" data-schedule-spending>{t("schedule.spending")}</p>;
   const builtIn = <Badge variant="outline">{t("schedule.builtIn")}</Badge>;
   const skipped = skippedToolNames(selected?.skippedTools ?? []);
@@ -297,7 +305,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
       {!readerOpen && spending}
     </header> : null}
     {error && <p role="alert" className="briefings-error">{t("loadError")} <Button variant="ghost" onClick={() => void load()}>{t("retry")}</Button></p>}
-    {loading ? <p role="status">{t("loading")}</p> : <div className="briefings-layout" data-run-open={Boolean(selected) || undefined} data-intro={introductory || undefined} data-reader-open={readerOpen || undefined} data-empty={(!visible.length && !selected) || undefined}>
+    {loading ? <p role="status">{t("loading")}</p> : <div className="briefings-layout" data-run-open={Boolean(selected) || undefined} data-intro={introductory || undefined} data-reader-open={readerOpen || undefined} data-empty={(!listShown && !selected) || undefined}>
       <div className="schedule-list">
         {ordered.length ? <SegmentedControl className="schedule-filter" value={filter} onValueChange={value => setFilter(value as typeof filter)} aria-label={t("schedule.filterLabel")} data-schedule-filter={filter}>
           <SegmentedControlItem value="active">{t("schedule.filterActive")}</SegmentedControlItem>
@@ -313,7 +321,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
         </section> : null}
         <LoginItemHint bridge={bridge} active={tasks.some(task => task.status === "active")} />
         <section aria-label={t("schedule.tasks")}>
-          {visible.length ? <h2 className="schedule-section-label">{t("schedule.tasks")}</h2> : null}
+          {listShown ? <h2 className="schedule-section-label">{t("schedule.tasks")}</h2> : null}
           {introductory ? <div className="schedule-empty">
             <h2>{t("schedule.emptyTitle")}</h2>
             <p>{t("schedule.emptyBody")}</p>
@@ -333,9 +341,9 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
             </div>
             {spending}
           </div>
-            : !visible.length ? <div className="briefings-empty"><h3>{t("schedule.noActiveTitle")}</h3><p>{t("schedule.noActiveBody")}</p>
-              <Button type="button" variant="outline" onClick={() => setFilter("all")}>{t("schedule.showAll")}</Button></div>
-            : <ul className="schedule-tasks">{visible.map(task => {
+            : <>{!rows.length && hiddenByFilter ? <div className="briefings-empty"><h3>{t("schedule.noActiveTitle")}</h3><p>{t("schedule.noActiveBody")}</p>
+              <Button type="button" variant="outline" onClick={() => setFilter("all")}>{t("schedule.showAll")}</Button></div> : null}
+            {listShown ? <ul className="schedule-tasks">{rows.map(task => {
             const next = nextRun(task);
             const state = rowState(task);
             const current = focusTask?.id === task.id;
@@ -348,7 +356,8 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
                 <ChevronRightIcon className="schedule-task-chevron" aria-hidden="true" />
               </div>
             </li>;
-          })}</ul>}
+          })}{briefingOff ? <BriefingOffRow title={displayTitle(listedBriefing ?? { kind: "briefing", title: "" })} builtIn={builtIn} enabling={enabling} enableError={enableError}
+            current={Boolean(listedBriefing && focusTask?.id === listedBriefing.id)} onOpen={listedBriefing ? () => openTask(listedBriefing) : undefined} onTurnOn={() => void enableBriefing()} /> : null}</ul> : null}</>}
         </section>
         {/* The footer says to tell Bot, so it leads there: Bot opens with its composer focused. */}
         {ordered.length ? <p className="briefings-meta schedule-footer">{t("schedule.locationRule")} {t("schedule.footer")}{onAskHome ? <> <Button variant="link" className="schedule-task-ask" data-schedule-footer-ask onClick={() => onAskHome("")}>{t("schedule.changeAsk")}</Button></> : null}</p> : null}
@@ -399,6 +408,28 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
       </article> : null}</div> : null}
     </div>}
   </section>;
+}
+
+/**
+ * The built-in briefing while it is off: its name, what it does, Off and Turn on. A briefing that
+ * was turned off keeps its task, so its name still opens the detail with its run history.
+ */
+function BriefingOffRow({ title, builtIn, enabling, enableError, current, onOpen, onTurnOn }: {
+  title: string; builtIn: React.ReactNode; enabling: boolean; enableError: boolean; current: boolean; onOpen?: () => void; onTurnOn: () => void;
+}) {
+  const { t } = useTranslation("briefings");
+  const summary = <>
+    <span className="schedule-task-heading"><strong title={title}>{title}</strong>{builtIn}<span className="schedule-task-status">{t("off")}</span></span>
+    <span className="briefings-meta">{t("schedule.briefingDescription")}</span>
+  </>;
+  return <li className="schedule-task" data-schedule-briefing="off" data-status="off" data-current={current || undefined}>
+    <div className="schedule-task-row">
+      {onOpen ? <button type="button" className="schedule-task-summary" aria-current={current || undefined} onClick={onOpen}>{summary}</button>
+        : <div className="schedule-task-summary">{summary}</div>}
+      <Button type="button" size="sm" className="schedule-task-turn-on" data-schedule-morning disabled={enabling} onClick={onTurnOn}>{t("schedule.turnOn")}</Button>
+    </div>
+    {enableError ? <p role="alert" className="inline-error schedule-task-error">{t("schedule.statusFailed")}</p> : null}
+  </li>;
 }
 
 /** Sections the host computed when the briefing ran; the narrative follows unparsed. */

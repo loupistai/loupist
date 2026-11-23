@@ -995,6 +995,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
               {surface.loupistSettings && selectedLoupist && selectedLoupist.id === surface.loupistSettings.loupistId ? <div className="loupist-settings-page-layer"><Suspense fallback={<Spinner />}>
                     <LoupistSettings
                       onConnectAccount={() => openModelSettings({ kind: "picker" })}
+                      onChatDefaultSaved={model.yieldToChatDefault}
                       key={`${selectedLoupist.id}:${surface.loupistSettings.section ?? "profile"}`}
                       catalog={model.catalog}
                       onChanged={refreshKnowledge}
@@ -1042,6 +1043,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                   >
                     <SettingsView searching={Boolean(settingsQuery.trim())} target={settingTarget} onIndexed={indexSettings}
                       onConnectAccount={() => openModelSettings({ kind: "picker" })}
+                      onChatDefaultSaved={model.yieldToChatDefault}
                       bridge={bridge}
                       loupists={loupists}
                       connectionsEntryId={marketplaceEntryId}

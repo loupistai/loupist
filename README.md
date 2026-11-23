@@ -118,7 +118,7 @@ Loupist reads and researches. Every bundled data connection is read-only, and th
 
 **What leaves your Mac, and to whom**
 
-- **Your AI provider** receives your messages, and the Sources and saved notes an answer or World building uses. A position you mention goes with the message. Private chat still sends the conversation to the provider.
+- **Your AI provider** receives your messages, and the Sources and saved notes an answer or World building uses. A position you mention goes with the message. Each message also carries the current time with your Mac's UTC offset and local date, but no time zone name or location. Private chat still sends the conversation to the provider.
 - **Data services you enable** receive the names and tickers you follow or ask about. A listing search sends its text to OpenFIGI.
 - **The web** receives the pages Loupist opens and the searches it runs, through your AI provider's own search or Exa.
 - **Loupist's makers receive nothing**: no analytics or telemetry. The app checks GitHub for a signed update about once a day, and installing one always asks first.

@@ -250,7 +250,9 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
   const conversion = matchedConversion(check);
   const matchDetail = conversion ?? (check.status === "matched" && check.unstated_scale
     ? t(check.unstated_scale === "source" ? "numberChip.unstatedSourceScale" : "numberChip.unstatedAnswerScale")
-    : undefined);
+    : (check.status === "matched" || check.status === "rounded") && check.sourceSign === "outflow"
+      ? t("numberChip.sourceOutflow")
+      : undefined);
   const status = matchDetail || needsChecking(check) || (check.status === "rounded" && !shownExactly(check)) ? statusId : undefined;
   // Worded only while open: popovers mount lazily (finance-show-the-math.md §3.3).
   const view = useMemo(() => open && check.kind === "calculated" && check.calc ? calcView(check, checks) : undefined, [open, check, checks]);

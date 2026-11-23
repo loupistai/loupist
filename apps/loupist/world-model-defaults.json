@@ -62,19 +62,19 @@
     "provider": "xai",
     "models": [
       {
-        "id": "grok-4.3",
-        "thinking_level": "medium"
+        "id": "grok-4.6",
+        "thinking_level": "low"
+      },
+      {
+        "id": "grok-4.7",
+        "thinking_level": "low"
       },
       {
         "id": "grok-4.5",
         "thinking_level": "medium"
       },
       {
-        "id": "grok-4.6",
-        "thinking_level": "medium"
-      },
-      {
-        "id": "grok-4.7",
+        "id": "grok-4.3",
         "thinking_level": "medium"
       }
     ]

@@ -38,6 +38,14 @@ it("renders the path with its relations and opens World on it", async () => {
   expect(onOpenMap).toHaveBeenCalledWith({ kind: "page", location: { loupistId: "loupist-a", surface: "world", view: { highlightEntityIds: ["a", "b", "c"] } } });
 });
 
+it("names the path's relations in the interface language, and an unlisted one in plain English", async () => {
+  await act(async () => { await i18n.changeLanguage("ko"); });
+  const message = post();
+  message.link!.path = [{ name: "Beta", relation: "LISTS_ON" }, { name: "Gamma", relation: "RAISED_PRICES_FOR", reversed: true }];
+  renderWithOpen(<ThreadLink message={message} loupistId="loupist-a" loupistName="Chip desk" />);
+  expect(screen.getByTitle("Alpha → 상장 거래소 → Beta ← raised prices for ← Gamma")).toBeVisible();
+});
+
 it("sends only the link and the composer's choices at the click, and leaves the opened mark to the host", async () => {
   const researchHandoffStart = vi.fn(async () => receipt);
   const knowledgeConnectionOpen = vi.fn(async () => ({}));

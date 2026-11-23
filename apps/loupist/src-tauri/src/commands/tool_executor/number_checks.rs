@@ -6,6 +6,8 @@
 mod answer_units;
 mod diagnostics;
 mod observation;
+#[cfg(test)]
+mod sign_tests;
 pub(in crate::commands) use observation::SavedFigureChecks;
 pub(crate) mod replay;
 use super::*;
@@ -18,8 +20,10 @@ use crate::domain::{
     NumberCheckInput, NumberCheckKind, NumberCheckStatus, MAX_NUMBER_CHECKS,
 };
 use crate::knowledge::numbers::{self, Candidate, Place, Unit, Verdict};
+use answer_units::AnswerRow;
 
 /// One `[text](#evidence-…)` link, in answer order.
+#[derive(Clone)]
 pub(in crate::commands) struct EvidenceLink {
     pub index: u32,
     pub text: String,
@@ -189,6 +193,7 @@ fn calc_candidates(payload: &Value) -> Vec<Candidate> {
                 place: Place::Pointer(format!("/{list}/{index}/value")),
                 inferred_scale: false,
                 direction: None,
+                cell: None,
             });
         }
     }
@@ -215,6 +220,7 @@ fn extend_dcf_candidates(payload: &Value, out: &mut Vec<Candidate>) {
                     place: Place::Pointer(format!("/grid/values/{row}/{column}")),
                     inferred_scale: false,
                     direction: None,
+                    cell: None,
                 });
             }
         }
@@ -229,6 +235,7 @@ fn extend_dcf_candidates(payload: &Value, out: &mut Vec<Candidate>) {
                     place: Place::Pointer(format!("/grid/{axis}/{index}")),
                     inferred_scale: false,
                     direction: None,
+                    cell: None,
                 });
             }
         }
@@ -258,6 +265,7 @@ fn extend_dcf_candidates(payload: &Value, out: &mut Vec<Candidate>) {
                 place: Place::Pointer("/formulas/0".into()),
                 inferred_scale: false,
                 direction: None,
+                cell: None,
             });
         }
     }
@@ -448,7 +456,9 @@ fn locate(
 ) -> Option<(usize, usize)> {
     let candidates = numbers::checked_passage_candidates(text, amount);
     let found = candidates.iter().find(|found| {
-        found.value == candidate.value && (found.unit == candidate.unit || candidates.len() == 1)
+        found.value == candidate.value
+            && found.direction == candidate.direction
+            && (found.unit == candidate.unit || candidates.len() == 1)
     })?;
     match found.place {
         Place::Span { start, end } => Some((start, end)),
@@ -648,12 +658,85 @@ pub(in crate::commands) fn check_printed(
     evidence: Option<&ChatEvidenceRef>,
     registry: &RunResultRegistry,
 ) -> NumberCheck {
-    check_with_window(link, printed_number, result, evidence, registry, None)
+    check_in_row(link, printed_number, None, result, evidence, registry)
+}
+
+/// As [`check_printed`], for a figure in a table row the answer reproduces.
+fn check_in_row(
+    link: &EvidenceLink,
+    printed_number: numbers::Printed,
+    row: Option<&AnswerRow>,
+    result: &RunResult,
+    evidence: Option<&ChatEvidenceRef>,
+    registry: &RunResultRegistry,
+) -> NumberCheck {
+    check_with_window(link, printed_number, row, result, evidence, registry, None)
+}
+
+/// Among candidates that hold the figure, put first those whose source row
+/// holds the answer row's other figures at the same column offsets.
+fn order_by_row(printed: &numbers::Printed, row: &AnswerRow, candidates: &mut [Candidate]) {
+    let key = |candidate: &Candidate| {
+        let (run, column) = candidate.cell?;
+        let group = match &candidate.place {
+            Place::Pointer(pointer) => pointer.clone(),
+            Place::Span { .. } => String::new(),
+        };
+        Some((group, run, column))
+    };
+    let holds = |figure: &numbers::Printed, candidate: &Candidate| {
+        matches!(
+            numbers::check_citation(figure, std::slice::from_ref(candidate), false).0,
+            Verdict::Matched | Verdict::Rounded
+        )
+    };
+    let mut cells: BTreeMap<(String, u32, u32), Vec<usize>> = BTreeMap::new();
+    for (index, candidate) in candidates.iter().enumerate() {
+        if let Some(key) = key(candidate) {
+            cells.entry(key).or_default().push(index);
+        }
+    }
+    let scores: Vec<usize> = candidates
+        .iter()
+        .map(|candidate| {
+            let Some((group, run, column)) = key(candidate).filter(|_| holds(printed, candidate))
+            else {
+                return 0;
+            };
+            row.cells
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| *index != row.column)
+                .filter_map(|(index, figure)| Some((index, figure.as_ref()?)))
+                .filter(|(index, figure)| {
+                    let target = i64::from(column) + *index as i64 - row.column as i64;
+                    u32::try_from(target)
+                        .ok()
+                        .and_then(|target| cells.get(&(group.clone(), run, target)))
+                        .is_some_and(|others| {
+                            others
+                                .iter()
+                                .any(|other| holds(figure, &candidates[*other]))
+                        })
+                })
+                .count()
+        })
+        .collect();
+    if scores.iter().all(|score| *score == 0) {
+        return;
+    }
+    let mut ordered: Vec<(usize, Candidate)> =
+        scores.into_iter().zip(candidates.iter().cloned()).collect();
+    ordered.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
+    for (slot, (_, candidate)) in candidates.iter_mut().zip(ordered) {
+        *slot = candidate;
+    }
 }
 
 fn check_with_window(
     link: &EvidenceLink,
     mut printed_number: numbers::Printed,
+    row: Option<&AnswerRow>,
     result: &RunResult,
     evidence: Option<&ChatEvidenceRef>,
     registry: &RunResultRegistry,
@@ -726,6 +809,9 @@ fn check_with_window(
         .flatten();
     if target_currency.is_some() && printed_number.unit == Unit::Plain {
         printed_number.unit = Unit::Amount(1.0);
+    }
+    if let Some(row) = row {
+        order_by_row(&printed_number, row, &mut candidates);
     }
     // A literal passage selection identifies the occurrence the citation
     // targeted. Other figures in the surrounding window remain citable.
@@ -816,7 +902,11 @@ fn check_with_window(
     if kind == NumberCheckKind::Passage && verdict == Verdict::NotFound {
         // The retained excerpt is bounded. Only content fields count, never
         // the result's metadata.
-        full_candidates = numbers::content_candidates(full_payload, amount.as_ref());
+        let mut whole_candidates = numbers::content_candidates(full_payload, amount.as_ref());
+        if let Some(row) = row {
+            order_by_row(&printed_number, row, &mut whole_candidates);
+        }
+        full_candidates = whole_candidates;
         let (whole, index) = numbers::check_citation(&printed_number, &full_candidates, false);
         if matches!(whole, Verdict::Matched | Verdict::Rounded) {
             found = index.and_then(|index| full_candidates.get(index));
@@ -894,6 +984,9 @@ fn check_with_window(
         _ => {}
     }
     if verdict != Verdict::Differs {
+        if found.outflow_for(&printed_number) {
+            check.source_sign = Some(crate::domain::answer_checks::SourceSign::Outflow);
+        }
         match &found.place {
             Place::Span { start, end } => {
                 check.span = Some(ChatEvidenceMatch {
@@ -925,6 +1018,7 @@ fn new_check(link: &EvidenceLink, kind: NumberCheckKind, status: NumberCheckStat
         link_index: link.index,
         text: clip(&link.text, 256),
         evidence_id: link.evidence_id.clone(),
+        repaired_from: None,
         kind,
         status,
         compared_value: None,
@@ -936,6 +1030,7 @@ fn new_check(link: &EvidenceLink, kind: NumberCheckKind, status: NumberCheckStat
         exact: None,
         scale_conversion: None,
         unstated_scale: None,
+        source_sign: None,
         pointer: None,
         span: None,
         context: None,
@@ -944,18 +1039,79 @@ fn new_check(link: &EvidenceLink, kind: NumberCheckKind, status: NumberCheckStat
     }
 }
 
+/// Whether two evidence ids differ by at most two single-character edits.
+fn near_miss(written: &str, retained: &str) -> bool {
+    let (a, b) = (written.as_bytes(), retained.as_bytes());
+    if a.len().abs_diff(b.len()) > 2 {
+        return false;
+    }
+    let mut previous: Vec<usize> = (0..=b.len()).collect();
+    for (i, x) in a.iter().enumerate() {
+        let mut current = vec![i + 1; b.len() + 1];
+        for (j, y) in b.iter().enumerate() {
+            current[j + 1] = (previous[j] + usize::from(x != y))
+                .min(previous[j + 1] + 1)
+                .min(current[j] + 1);
+        }
+        previous = current;
+    }
+    previous[b.len()] <= 2
+}
+
+/// The one retained id that a written id is a near miss of; none when no
+/// retained id, or more than one, is within two edits of it.
+fn near_retained<'a>(
+    written: &str,
+    retained: impl IntoIterator<Item = &'a String>,
+) -> Option<&'a String> {
+    let mut near = retained.into_iter().filter(|id| near_miss(written, id));
+    match (near.next(), near.next()) {
+        (Some(id), None) => Some(id),
+        _ => None,
+    }
+}
+
+/// The byte range of the `#evidence-…` destination of the inline link that
+/// starts at `at`. A reference-style link has none: its target is elsewhere.
+fn link_target(content: &str, at: usize, evidence_id: &str) -> Option<std::ops::Range<usize>> {
+    use pulldown_cmark::{Event, LinkType, Parser, Tag};
+    let range = Parser::new(content)
+        .into_offset_iter()
+        .find_map(|(event, range)| match event {
+            Event::Start(Tag::Link {
+                link_type: LinkType::Inline,
+                ..
+            }) if range.start == at => Some(range),
+            _ => None,
+        })?;
+    let target = format!("#evidence-{evidence_id}");
+    let offset = content[range.clone()].rfind(&target)?;
+    Some(range.start + offset..range.start + offset + target.len())
+}
+
+/// The finished answer after the host's link repairs, and its number checks.
+pub(in crate::commands) struct CheckedAnswer {
+    pub content: String,
+    pub checks: Vec<NumberCheck>,
+}
+
 impl ToolCapture {
     /// Checks every number link in the finished answer against this turn's
-    /// evidence. Links to evidence this turn did not retain are left to the
-    /// renderer's "not available in this reply".
+    /// evidence. A number link naming no evidence of this reply is rebound when
+    /// exactly one retained id is within two characters of it and the number
+    /// holds in that result; otherwise it is stored as `unlinked`, never left
+    /// to read like a working citation.
     pub(in crate::commands) async fn number_checks(
         &self,
         content: &str,
         evidence: &[ChatEvidenceRef],
-    ) -> Vec<NumberCheck> {
+    ) -> CheckedAnswer {
         let links = located_links(content);
         if links.is_empty() {
-            return Vec::new();
+            return CheckedAnswer {
+                content: content.to_owned(),
+                checks: Vec::new(),
+            };
         }
         let governing = answer_units::governing_units(content);
         let registry = self.run_results.lock().await;
@@ -964,58 +1120,116 @@ impl ToolCapture {
             .map(|result| (evidence::evidence_id(&result.result_ref), result))
             .collect();
         let mut checks = Vec::new();
+        let mut repairs = Vec::new();
         for (at, link) in &links {
             if checks.len() >= MAX_NUMBER_CHECKS {
                 break;
             }
-            let Some(result) = by_id.get(&link.evidence_id) else {
+            let Some(printed) =
+                answer_units::printed_number(content, *at, &link.text, governing.get(at).copied())
+            else {
                 continue;
             };
-            let evidence = evidence.iter().find(|item| item.id == link.evidence_id);
-            if let Some(printed) = numbers::parse_with_unit(&link.text, governing.get(at).copied())
-            {
-                let mut check = check_printed(link, printed, result, evidence, &registry);
-                if result.producer.runtime_id == "native-web"
-                    && check.kind == NumberCheckKind::Passage
-                    && (check.unstated_scale
-                        == Some(crate::domain::answer_checks::UnstatedScale::Source)
-                        || (matches!(printed.unit, Unit::Amount(_))
-                            && check.status == NumberCheckStatus::NotFound))
-                {
-                    // A literal selection can start below a caption even while the
-                    // original acquired representation is still retained this turn.
-                    let wider = || {
-                        let evidence = evidence?;
-                        let offset =
-                            usize::try_from(result.payload["content_offset"].as_u64()?).ok()?;
-                        let source_id = result.payload["source_id"].as_str()?;
-                        let digest = result.payload["content_sha256"].as_str()?;
-                        let snapshots = self.web_fetch_snapshots.try_lock().ok()?;
-                        let original = &snapshots.get(source_id)?.fetched;
-                        if !original.matches_source(source_id, digest) {
-                            return None;
-                        }
-                        let window = original.number_check_window(offset, &evidence.excerpt)?;
-                        if window.len() == evidence.excerpt.len() {
-                            return None;
-                        }
-                        Some(check_with_window(
-                            link,
-                            printed,
-                            result,
-                            Some(evidence),
-                            &registry,
-                            Some(window),
-                        ))
-                    };
-                    if let Some(verified) = wider() {
-                        check = verified;
-                    }
+            let row = answer_units::answer_row(content, *at, &links, &governing);
+            if let Some(result) = by_id.get(&link.evidence_id) {
+                let evidence = evidence.iter().find(|item| item.id == link.evidence_id);
+                checks.push(self.check_retained(
+                    link,
+                    printed,
+                    row.as_ref(),
+                    result,
+                    evidence,
+                    &registry,
+                ));
+                continue;
+            }
+            if evidence.iter().any(|item| item.id == link.evidence_id) {
+                // Saved context this turn shows but did not retain as a result.
+                continue;
+            }
+            let repaired = near_retained(&link.evidence_id, by_id.keys()).and_then(|id| {
+                let found = evidence.iter().find(|item| &item.id == id)?;
+                let target = link_target(content, *at, &link.evidence_id)?;
+                let rebound = EvidenceLink {
+                    evidence_id: id.clone(),
+                    ..link.clone()
+                };
+                let mut check = self.check_retained(
+                    &rebound,
+                    printed,
+                    row.as_ref(),
+                    by_id[id],
+                    Some(found),
+                    &registry,
+                );
+                if matches!(
+                    check.status,
+                    NumberCheckStatus::NotFound | NumberCheckStatus::Differs
+                ) {
+                    return None;
                 }
-                checks.push(check);
+                check.repaired_from = Some(link.evidence_id.clone());
+                repairs.push((target, format!("#evidence-{id}")));
+                Some(check)
+            });
+            checks.push(repaired.unwrap_or_else(|| {
+                new_check(link, NumberCheckKind::Passage, NumberCheckStatus::Unlinked)
+            }));
+        }
+        let mut content = content.to_owned();
+        for (target, replacement) in repairs.into_iter().rev() {
+            content.replace_range(target, &replacement);
+        }
+        CheckedAnswer { content, checks }
+    }
+
+    fn check_retained(
+        &self,
+        link: &EvidenceLink,
+        printed: numbers::Printed,
+        row: Option<&AnswerRow>,
+        result: &RunResult,
+        evidence: Option<&ChatEvidenceRef>,
+        registry: &RunResultRegistry,
+    ) -> NumberCheck {
+        let check = check_in_row(link, printed, row, result, evidence, registry);
+        if result.producer.runtime_id == "native-web"
+            && check.kind == NumberCheckKind::Passage
+            && (check.unstated_scale == Some(crate::domain::answer_checks::UnstatedScale::Source)
+                || (matches!(printed.unit, Unit::Amount(_))
+                    && check.status == NumberCheckStatus::NotFound))
+        {
+            // A literal selection can start below a caption even while the
+            // original acquired representation is still retained this turn.
+            let wider = || {
+                let evidence = evidence?;
+                let offset = usize::try_from(result.payload["content_offset"].as_u64()?).ok()?;
+                let source_id = result.payload["source_id"].as_str()?;
+                let digest = result.payload["content_sha256"].as_str()?;
+                let snapshots = self.web_fetch_snapshots.try_lock().ok()?;
+                let original = &snapshots.get(source_id)?.fetched;
+                if !original.matches_source(source_id, digest) {
+                    return None;
+                }
+                let window = original.number_check_window(offset, &evidence.excerpt)?;
+                if window.len() == evidence.excerpt.len() {
+                    return None;
+                }
+                Some(check_with_window(
+                    link,
+                    printed,
+                    row,
+                    result,
+                    Some(evidence),
+                    registry,
+                    Some(window),
+                ))
+            };
+            if let Some(verified) = wider() {
+                return verified;
             }
         }
-        checks
+        check
     }
 }
 
@@ -2741,7 +2955,7 @@ mod tests {
                 .await
                 .results
                 .insert(result.result_ref.clone(), result);
-            let checks = capture.number_checks(&answer, &[]).await;
+            let checks = capture.number_checks(&answer, &[]).await.checks;
             assert_eq!(checks.len(), 1);
             assert_eq!(checks[0].status, status, "{checks:?}");
             if currency == "USD" {
@@ -2790,7 +3004,8 @@ mod tests {
         );
         let checks = capture
             .number_checks(&answer, std::slice::from_ref(&evidence))
-            .await;
+            .await
+            .checks;
         let (exact, rounded) = (&checks[0], &checks[1]);
         assert_eq!(exact.status, NumberCheckStatus::Matched);
         assert_eq!(exact.exact.as_deref(), Some("383285000000"));
@@ -2807,7 +3022,8 @@ mod tests {
         );
         let real = capture
             .number_checks(&answer, std::slice::from_ref(&evidence))
-            .await;
+            .await
+            .checks;
         assert_eq!(real[0].status, NumberCheckStatus::Rounded);
         assert_eq!(real[0].exact.as_deref(), Some("383285000000"));
         assert!(real[0].scale_conversion.is_none());
@@ -2822,14 +3038,14 @@ mod tests {
             start: chosen_accession,
             end: chosen_accession + "0000320193-24-000123".len(),
         });
-        let selected_row = capture.number_checks(&answer, &[accession]).await;
+        let selected_row = capture.number_checks(&answer, &[accession]).await.checks;
         assert_eq!(selected_row[0].span.as_ref().unwrap().start, offset);
 
         let first = ChatEvidenceRef {
             excerpt_match: None,
             ..evidence
         };
-        let fallback = capture.number_checks(&answer, &[first]).await;
+        let fallback = capture.number_checks(&answer, &[first]).await.checks;
         assert_eq!(
             fallback[0].span.as_ref().unwrap().start,
             text.find("383285000000").unwrap()
@@ -2860,7 +3076,7 @@ mod tests {
             "| Reported consolidated revenue (USD millions) |\n|---|\n| [211,915](#evidence-{0}) |\n| [245,122](#evidence-{0}) |",
             evidence.id
         );
-        let checks = capture.number_checks(&answer, &[evidence]).await;
+        let checks = capture.number_checks(&answer, &[evidence]).await.checks;
         assert_eq!(checks.len(), 2);
         for check in checks {
             assert_eq!(check.status, NumberCheckStatus::Matched, "{check:?}");
@@ -3067,6 +3283,230 @@ mod tests {
     }
 
     #[test]
+    fn rate_changes_convert_every_printed_points_and_basis_points_notation() {
+        use NumberCheckStatus::{NotFound, Rounded};
+        let points = [
+            "%p",
+            "pp",
+            "percentage points",
+            "퍼센트포인트",
+            "%포인트",
+            "百分点",
+            "パーセントポイント",
+        ];
+        let basis = [
+            "bp",
+            "bps",
+            "basis points",
+            "베이시스포인트",
+            "基點",
+            "ベーシスポイント",
+        ];
+        for unit in points {
+            for source_unit in basis {
+                let answer = format!("−2.7 {unit}");
+                let source = format!("Operating margin −265\t{source_unit}\tAdjusted EBITDA");
+                let read = page(&source);
+                let evidence = evidence::project(&read);
+                let check = |figure| {
+                    check_link(
+                        &link(figure),
+                        &read,
+                        Some(&evidence),
+                        &RunResultRegistry::default(),
+                    )
+                    .unwrap()
+                };
+                let rounded = check(&answer);
+                assert_eq!(rounded.status, Rounded, "{answer} / {source}: {rounded:?}");
+                assert_eq!(
+                    rounded.exact.as_deref(),
+                    Some(
+                        source
+                            .strip_prefix("Operating margin ")
+                            .unwrap()
+                            .split("\tAdjusted")
+                            .next()
+                            .unwrap()
+                    )
+                );
+                for wrong in ["−2.7%", "2.7 pp", "−265 pp", "−3.7 pp"] {
+                    assert_eq!(check(wrong).status, NotFound, "{wrong} / {source}");
+                }
+                let read = page(&format!("Operating margin −2.65 {unit}"));
+                let reverse = format!("−265 {source_unit}");
+                let check = check_link(&link(&reverse), &read, None, &RunResultRegistry::default())
+                    .unwrap();
+                assert_eq!(check.status, Rounded, "{reverse} / {unit}: {check:?}");
+            }
+        }
+        for source in [
+            "Margin −2.65%",
+            "Margin −265 bpadjusted",
+            "Margin −265 bpsValue",
+        ] {
+            let read = page(source);
+            assert_eq!(
+                check_link(&link("−2.7pp"), &read, None, &RunResultRegistry::default())
+                    .unwrap()
+                    .status,
+                NotFound,
+                "{source}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn spending_magnitudes_keep_the_stated_scale_currency_and_sign() {
+        use NumberCheckStatus::{Matched, NotFound, Rounded};
+
+        let row = "Capital expenditures – TTM (1)";
+        let cases = [
+            (
+                row,
+                "(15,407)",
+                "USD",
+                "설비투자는 직전 12개월",
+                "$154억",
+                Rounded,
+            ),
+            (row, "-15,407", "EUR", "TTM capex was", "€154억", Rounded),
+            (row, "(150)", "JPY", "設備投資は", "¥1.5억", Matched),
+            (
+                row,
+                "(15,407)",
+                "USD",
+                "Capital spending was",
+                "$1.54백억",
+                Rounded,
+            ),
+            (row, "(15,407)", "USD", "Capex was", "-$154억", Rounded),
+            (row, "(15,407)", "USD", "Capex was", "₩154억", NotFound),
+            (row, "(15,407)", "USD", "Capex was", "$154만", NotFound),
+            (row, "(15,407)", "USD", "Capex was", "$154조", NotFound),
+            (row, "(15,407)", "USD", "Capex was", "+$154억", NotFound),
+            (
+                row,
+                "(15,407)",
+                "USD",
+                "Capex increased by",
+                "$154억",
+                NotFound,
+            ),
+            (row, "(15,407)", "USD", "Revenue was", "$154억", NotFound),
+            (
+                "Net cash flow",
+                "(15,407)",
+                "USD",
+                "Capex was",
+                "$154억",
+                NotFound,
+            ),
+            (
+                "Shares outstanding",
+                "(15,407)",
+                "USD",
+                "Capex was",
+                "$154억",
+                NotFound,
+            ),
+            (row, "(15,407)", "USD", "Capex was", "$1,540,700만", Matched),
+            (row, "(1,540,700)", "GBP", "Capex was", "£1.54조", Rounded),
+            (
+                row,
+                "(1,540,700)",
+                "USD",
+                "Capex was",
+                "$1조 5,407억",
+                Matched,
+            ),
+            (
+                row,
+                "(1,540,701)",
+                "USD",
+                "Capex was",
+                "$1조 5,407억",
+                Rounded,
+            ),
+            (
+                row,
+                "(1,540,760)",
+                "USD",
+                "Capex was",
+                "$1조 5,407억",
+                NotFound,
+            ),
+            (
+                row,
+                "(1,540,700)",
+                "USD",
+                "Capex was",
+                "$1조 5,407만",
+                NotFound,
+            ),
+        ];
+        for (row, figure, currency, context, answer, expected) in cases {
+            let passage = format!(
+                "| In millions of {currency} | 2Q-2026 | 3Q-2026 |\n| {row} | (9,528) | {figure} |"
+            );
+            let read = page(&passage);
+            let evidence = evidence::project(&read);
+            let capture = ToolCapture::default();
+            capture
+                .run_results
+                .lock()
+                .await
+                .results
+                .insert(read.result_ref.clone(), read);
+            let id = &evidence.id;
+            let checks = capture
+                .number_checks(
+                    &format!("{context} [{answer}](#evidence-{id})."),
+                    &[evidence],
+                )
+                .await
+                .checks;
+            assert_eq!(checks.len(), 1, "{answer}");
+            let check = &checks[0];
+            assert_eq!(check.kind, NumberCheckKind::Passage);
+            assert_eq!(check.status, expected, "{row} / {answer}: {check:?}");
+            if expected != NotFound {
+                assert!(check.unstated_scale.is_none(), "{check:?}");
+                assert_eq!(
+                    check.scale_conversion.is_some(),
+                    expected == Matched,
+                    "{check:?}"
+                );
+                let span = check.span.as_ref().unwrap();
+                assert_eq!(&passage[span.start..span.end], figure);
+            }
+        }
+    }
+
+    #[test]
+    fn a_ttm_sum_requires_a_calculation_when_the_passage_has_only_quarters() {
+        let registry = RunResultRegistry::default();
+        let quarters = page("| In millions of USD | Q4 | Q1 | Q2 | Q3 |\n| Capital expenditures | (2,393) | (2,493) | (5,789) | (4,732) |");
+        let link = link("$154억");
+        let mut printed = numbers::parse_printed(&link.text).unwrap();
+        printed.line = Some(numbers::LineNature::Outflow);
+        let check = check_printed(&link, printed, &quarters, None, &registry);
+        assert_eq!(check.status, NumberCheckStatus::NotFound);
+
+        let sum: i32 = [2393, 2493, 5789, 4732].into_iter().sum();
+        let calculation = result(
+            "calculate",
+            RunResultOrigin::Derived,
+            json!({
+                "values":[{"name":"ttm","value":sum,"unit":"USD million","display":"15,407 USD million"}]
+            }),
+        );
+        let check = check_printed(&link, printed, &calculation, None, &registry);
+        assert_eq!(check.kind, NumberCheckKind::Calculated);
+        assert_eq!(check.status, NumberCheckStatus::Rounded);
+    }
+
+    #[test]
     fn c007_distinguishes_an_unstated_scale_and_a_captured_heading() {
         use crate::domain::answer_checks::{ComparisonReason, UnstatedScale};
         let excerpt = "| Total | $245,122 |";
@@ -3168,7 +3608,7 @@ mod tests {
                 .results
                 .insert(source.result_ref.clone(), source);
         }
-        let checks = capture.number_checks(&answer, &[]).await;
+        let checks = capture.number_checks(&answer, &[]).await.checks;
         assert_eq!(checks.len(), 6);
         for check in checks {
             assert_eq!(check.status, NumberCheckStatus::Matched, "{check:?}");
@@ -3217,7 +3657,7 @@ mod tests {
                 .results
                 .insert(source.result_ref.clone(), source);
             let answer = markdown.replace("#ID", &format!("#evidence-{id}"));
-            let checks = capture.number_checks(&answer, &[]).await;
+            let checks = capture.number_checks(&answer, &[]).await.checks;
             let statuses: Vec<_> = checks.iter().map(|c| c.status).collect();
             assert_eq!(statuses, expected, "{markdown}: {checks:?}");
             if expected == [NotFound] {
@@ -3388,5 +3828,133 @@ mod tests {
             serde_json::from_value::<NumberCheckCalc>(stored).unwrap(),
             detail
         );
+    }
+
+    /// The retained FY 2025 passage the v0.1.4 answer quoted for Tesla's 2022 revenue.
+    async fn retained_tesla_passage(capture: &ToolCapture) -> ChatEvidenceRef {
+        let content = "Annual financial summary (unaudited, in millions)\nTotal revenues 53,823 81,462 96,773 97,690 94,827";
+        let mut source = result(
+            "world_read",
+            RunResultOrigin::SavedContext,
+            json!({"text": json!({"content": content}).to_string()}),
+        );
+        source.result_ref = "result:tesla-fy2025".into();
+        let evidence = evidence::project(&source);
+        capture
+            .run_results
+            .lock()
+            .await
+            .results
+            .insert(source.result_ref.clone(), source);
+        evidence
+    }
+
+    /// `id` with its last `count` characters replaced by other hex digits.
+    fn miscopied(id: &str, count: usize) -> String {
+        let (head, tail) = id.split_at(id.len() - count);
+        let swapped: String = tail
+            .chars()
+            .map(|c| if c == '0' { '1' } else { '0' })
+            .collect();
+        format!("{head}{swapped}")
+    }
+
+    #[test]
+    fn only_one_retained_id_within_two_edits_is_a_repair_candidate() {
+        let retained = "ev_a736684a94e3c46462331372b53d709b".to_owned();
+        let other = "ev_0123456789abcdef0123456789abcdef".to_owned();
+        let written = "ev_a736684a94e3c46462331372b53d709d";
+        assert_eq!(near_retained(written, [&retained, &other]), Some(&retained));
+        // Two characters, or a dropped and an added one, are still near.
+        assert!(near_miss("ev_a736684a94e3c46462331372b53d70dd", &retained));
+        assert!(near_miss("ev_a736684a94e3c46462331372b53d709", &retained));
+        assert!(near_miss("ev_a736684a94e3c46462331372b53d709bb", &retained));
+        // Three are not.
+        assert!(!near_miss("ev_a736684a94e3c46462331372b53d7ddd", &retained));
+        assert_eq!(
+            near_retained("ev_a736684a94e3c46462331372b53d7ddd", [&retained]),
+            None
+        );
+        // Two near candidates make the written id ambiguous.
+        let twin = "ev_a736684a94e3c46462331372b53d709f".to_owned();
+        assert_eq!(near_retained(written, [&retained, &twin]), None);
+        assert_eq!(near_retained(written, []), None);
+    }
+
+    #[tokio::test]
+    async fn a_miscopied_link_to_this_replys_passage_is_rebound_when_its_number_holds() {
+        let capture = ToolCapture::default();
+        let evidence = retained_tesla_passage(&capture).await;
+        for count in [1, 2] {
+            let written = miscopied(&evidence.id, count);
+            let answer =
+                format!("2022 Total revenues were [81,462백만 달러](#evidence-{written}).");
+            let checked = capture
+                .number_checks(&answer, std::slice::from_ref(&evidence))
+                .await;
+            assert_eq!(
+                checked.content,
+                format!(
+                    "2022 Total revenues were [81,462백만 달러](#evidence-{}).",
+                    evidence.id
+                )
+            );
+            let [check] = checked.checks.as_slice() else {
+                panic!("{:?}", checked.checks)
+            };
+            assert_eq!(check.status, NumberCheckStatus::Matched, "{check:?}");
+            assert_eq!(check.evidence_id, evidence.id);
+            assert_eq!(check.repaired_from.as_deref(), Some(written.as_str()));
+            assert!(crate::domain::answer_checks::validate_number_checks(&checked.checks).is_ok());
+        }
+    }
+
+    #[tokio::test]
+    async fn links_that_cannot_be_rebound_are_stored_unlinked_and_left_as_written() {
+        let capture = ToolCapture::default();
+        let evidence = retained_tesla_passage(&capture).await;
+        let three = miscopied(&evidence.id, 3);
+        let one = miscopied(&evidence.id, 1);
+        let unrelated = "ev_0123456789abcdef0123456789abcdef";
+        // Three edits away; one edit away but the number is not in that passage;
+        // a reference-style link, whose target cannot be rebound in place; another reply's id.
+        let answer = format!(
+            "[81,462](#evidence-{three}) and [99,999](#evidence-{one}) and [81,462][r] and [96,773](#evidence-{unrelated}). [Tesla](#evidence-{unrelated})\n\n[r]: #evidence-{one}\n"
+        );
+        let checked = capture
+            .number_checks(&answer, std::slice::from_ref(&evidence))
+            .await;
+        assert_eq!(checked.content, answer);
+        let statuses: Vec<_> = checked
+            .checks
+            .iter()
+            .map(|check| (check.link_index, check.status, check.evidence_id.as_str()))
+            .collect();
+        assert_eq!(
+            statuses,
+            [
+                (0, NumberCheckStatus::Unlinked, three.as_str()),
+                (1, NumberCheckStatus::Unlinked, one.as_str()),
+                (2, NumberCheckStatus::Unlinked, one.as_str()),
+                (3, NumberCheckStatus::Unlinked, unrelated),
+            ]
+        );
+        assert!(checked
+            .checks
+            .iter()
+            .all(|check| check.repaired_from.is_none()));
+        // The stored form the renderer reads.
+        assert_eq!(
+            serde_json::to_value(&checked.checks[0]).unwrap()["status"],
+            "unlinked"
+        );
+        // A link to this reply's evidence is checked as before.
+        let direct = format!("[81,462](#evidence-{})", evidence.id);
+        let checks = capture
+            .number_checks(&direct, std::slice::from_ref(&evidence))
+            .await
+            .checks;
+        assert_eq!(checks[0].status, NumberCheckStatus::Matched);
+        assert!(checks[0].repaired_from.is_none());
     }
 }

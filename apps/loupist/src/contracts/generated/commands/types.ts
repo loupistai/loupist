@@ -217,6 +217,21 @@ export type ChatRenameRequest = { loupist_id: string, thread_id: string, title: 
 /** What a running reply is doing between progress steps. */
 export type ChatRunPhase = "thinking" | "writing" | "tool";
 
+/**
+ * A stored reply whose Memory save waits on its own while its conversation
+ * accepts new messages (docs/runtime/chat-turns.md#saves-that-wait-on-their-own).
+ */
+export type ChatSaveState = {
+  run_id: string,
+  thread_id: string,
+  message_id: string,
+  waiting_for_other_chat: boolean,
+  blocking_chat_id?: string,
+  save_activity: ChatSaveActivity,
+};
+
+export type ChatSavesRequest = { loupist_id: string };
+
 export type ChatSendRequest = {
   run_id: string,
   loupist_id: string,

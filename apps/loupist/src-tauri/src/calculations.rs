@@ -220,7 +220,7 @@ impl Operation {
                 "periods_per_year",
             ],
             Self::MovingAverage => &["series", "dates", "skip_missing", "window"],
-            Self::Ratio => &["as_percent"],
+            Self::Ratio | Self::Margin => &["as_percent"],
             Self::Convert => &["to"],
             Self::DcfGrid | Self::ReverseDcf => {
                 &["wacc_pct", "terminal_growth_pct", "forecast_years"]
@@ -349,6 +349,37 @@ pub(crate) fn input_kind(name: &str) -> InputKind {
         "rate" => InputKind::Rate,
         _ if name.ends_with("_pct") => InputKind::Percent,
         _ => InputKind::Amount,
+    }
+}
+
+/// A `unit` naming a quantity per something (`USD per share`, `KRW/share`,
+/// `vehicles per store`), which a ratio's result takes.
+fn per_unit(unit: &str) -> bool {
+    let lower = unit.to_lowercase();
+    lower.contains('/')
+        || lower.split_whitespace().any(|word| word == "per")
+        || ["주당", "株当たり", "每股"]
+            .iter()
+            .any(|word| lower.contains(word))
+}
+
+/// The unit of a ratio's result when its request states one per something:
+/// an amount in that unit divided by a pure number.
+fn ratio_unit(operation: Operation, unit: Option<&str>) -> Option<&str> {
+    unit.filter(|unit| operation == Operation::Ratio && per_unit(unit))
+}
+
+/// What an input measures in a request: by name, except a ratio's
+/// denominator under a per-something `unit`, which is a pure number.
+pub(crate) fn request_input_kind(request: &Value, name: &str) -> InputKind {
+    let ratio = request["operation"] == "ratio";
+    if name == "denominator"
+        && ratio
+        && ratio_unit(Operation::Ratio, request["unit"].as_str()).is_some()
+    {
+        InputKind::Count
+    } else {
+        input_kind(name)
     }
 }
 
@@ -587,6 +618,10 @@ impl Request<'_> {
             && self.field("series_kind").and_then(Value::as_str) == Some("returns_pct")
         {
             InputKind::Percent
+        } else if name == "denominator"
+            && ratio_unit(self.operation, self.unit.as_deref()).is_some()
+        {
+            InputKind::Count
         } else {
             input_kind(name)
         };
@@ -968,11 +1003,20 @@ fn ratio(
         });
     }
     let as_percent = request.boolean("as_percent")?;
+    let per = ratio_unit(request.operation, request.unit.as_deref());
+    if as_percent && per.is_some() {
+        return Err(CalcError::invalid(
+            "as_percent",
+            "left out here: a ratio with a per-something unit divides an amount by a plain number and returns an amount in that unit, never a percentage. For a percentage of two amounts, drop unit and keep as_percent",
+        ));
+    }
     let raw = numerator.value / denominator.value;
-    let (value, unit) = if as_percent {
-        (raw * 100.0, "%")
-    } else {
-        (raw, "x")
+    // Two amounts in one unit give a multiple; an amount per something
+    // divided by a pure number keeps that unit.
+    let (value, unit) = match (as_percent, per) {
+        (true, _) => (raw * 100.0, "%"),
+        (false, Some(unit)) => (raw, unit),
+        (false, None) => (raw, "x"),
     };
     if denominator.value < 0.0 {
         outcome
@@ -980,13 +1024,16 @@ fn ratio(
             .push("The denominator is negative; the ratio's sign may not be meaningful.".into());
     }
     outcome.value("ratio", value, unit)?;
+    let result = match per {
+        Some(unit) => format!("{} {unit}", format::amount(value)),
+        None => display(value, unit),
+    };
     outcome.formulas.push(format!(
-        "{} / {} = {} / {} = {}",
+        "{} / {} = {} / {} = {result}",
         request.label("numerator"),
         request.label("denominator"),
         format::amount(numerator.value),
         format::amount(denominator.value),
-        display(value, unit)
     ));
     outcome.input("numerator", &numerator);
     outcome.input("denominator", &denominator);
@@ -998,6 +1045,13 @@ fn margin(
     datasets: &mut dyn DatasetSource,
     outcome: &mut Outcome,
 ) -> Result<(), CalcError> {
+    // A margin is a percentage, so `as_percent: true` changes nothing.
+    if request.field("as_percent").is_some() && !request.boolean("as_percent")? {
+        return Err(CalcError::invalid(
+            "as_percent",
+            "true or left out: a margin is always a percentage",
+        ));
+    }
     let profit = request.number("profit", datasets)?;
     let revenue = request.number("revenue", datasets)?;
     let base = positive(&revenue, "inputs.revenue", "must be positive for a margin")?;

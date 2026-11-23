@@ -24,6 +24,7 @@ mod finance_data;
 mod fs;
 mod keychain_operation;
 mod knowledge;
+mod local_time;
 mod market_calendar;
 mod marketplace;
 mod mcp;
@@ -252,6 +253,11 @@ pub fn run() {
             tauri::async_runtime::spawn_blocking(move || {
                 commands::records::release_host_sessions(&release_state);
             });
+            // This build's World model list applies to every Recommended Loupist.
+            let world_state = state.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                commands::knowledge::follow_recommended_world_models_quietly(&world_state);
+            });
             // Start any due launch check before the renderer can read update status.
             updater::start_auto_update_loop(app.handle().clone(), state.updates.clone());
             app.manage(state);
@@ -404,6 +410,7 @@ pub fn run() {
             commands::chat_runtime::chat_retry_last,
             commands::handoff::research_handoff_start,
             commands::chat_runtime::chat_abort,
+            commands::chat_runtime::saves::chat_saves,
             commands::knowledge::knowledge_catalog,
             commands::knowledge::knowledge_growth_events,
             commands::knowledge::knowledge_world_query,

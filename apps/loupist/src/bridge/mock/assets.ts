@@ -9,7 +9,7 @@
  * are and what the next replay does. Nothing here reaches a network.
  */
 import type {
-  AssetBridge, AssetEntitySetRequest, AssetFollowNameRequest, AssetIdRequest, AssetLine, AssetLookupCandidate, AssetLookupRequest,
+  AssetBridge, AssetEntitySetRequest, AssetFollowNameRequest, AssetIdRequest, AssetLine, AssetLookupCandidate, AssetLookupRequest, AssetLookupResult,
   AssetOpenRequest, AssetPage, AssetPricePoint, AssetReason, AssetReferenceFields, AssetReferenceOrigin, AssetRow, AssetStoredPrice,
   AssetVerdictUndoRequest, AssetsListRequest, PriceReadState, SavedPriceRead, StoredAssetQuote,
 } from "../../contracts/assets";
@@ -104,6 +104,8 @@ export class MockAssets implements AssetBridge {
   lookupNeedsConnection = false;
   /** OpenFIGI answered 429: `asset_lookup` refuses with `rate_limited`. */
   lookupRateLimited = false;
+  /** A saved OpenFIGI key the host could not read: the public route still answers. */
+  lookupSavedKeyUnread = false;
   followFails = false;
   unfollowFails = false;
   pageFails = false;
@@ -205,7 +207,7 @@ export class MockAssets implements AssetBridge {
     return this.followed(loupistId).map(row => this.asRow(loupistId, row));
   }
 
-  async assetLookup({ loupistId, query }: AssetLookupRequest): Promise<AssetLookupCandidate[]> {
+  async assetLookup({ loupistId, query }: AssetLookupRequest): Promise<AssetLookupResult> {
     this.admit(loupistId);
     const text = trimmed(query);
     if (!text || [...text].length > QUERY_MAX) return rejectCommand("invalid_request", "Search text must be 1 to 128 characters.");
@@ -215,7 +217,8 @@ export class MockAssets implements AssetBridge {
     if (this.lookupRateLimited) throw commandError("rate_limited", "OpenFIGI asked to wait.");
     if (this.lookupFails) throw commandError("provider_unavailable", "OpenFIGI did not answer.");
     const needle = text.toLocaleLowerCase();
-    return LISTINGS.filter(item => item.name.toLocaleLowerCase().includes(needle) || item.ticker?.toLocaleLowerCase() === needle).map(clone);
+    const candidates = LISTINGS.filter(item => item.name.toLocaleLowerCase().includes(needle) || item.ticker?.toLocaleLowerCase() === needle).map(clone);
+    return { candidates, savedKeyUnread: this.lookupSavedKeyUnread };
   }
 
   async assetFollowName(request: AssetFollowNameRequest): Promise<AssetRow> {
@@ -355,7 +358,7 @@ export class MockAssets implements AssetBridge {
     if (price.replay === "ready") {
       const base = price.price;
       if (base || price.next) {
-        price.price = { ...(base ?? { currency: null, provider: "yfinance", sourceUrl: null, dataset: { dataset_id: "mock-replay", revision: 1, digest: "mock" } }), ...(price.next ?? { value: base!.value, date: base!.date }) };
+        price.price = { ...(base ?? { currency: null, currencySource: "none", provider: "yfinance", sourceUrl: null, dataset: { dataset_id: "mock-replay", revision: 1, digest: "mock" } }), ...(price.next ?? { value: base!.value, date: base!.date }) };
         const point = { date: price.price.date.slice(0, 10), value: price.price.value };
         price.points = [...price.points.filter(item => item.date !== point.date), point];
       }

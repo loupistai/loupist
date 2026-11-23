@@ -341,10 +341,9 @@ async fn cited_inputs_are_checked_against_this_turns_evidence_and_join_the_linea
         )
         .await
         .unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        "input_sources.price: not an input of this calculation"
-    );
+    let refusal = error.to_string();
+    assert!(refusal.starts_with("input_sources.price: One of this call's own input names ("));
+    assert!(refusal.contains("profit") && refusal.contains("revenue"));
 }
 
 #[tokio::test]
@@ -417,6 +416,45 @@ async fn cited_inputs_are_read_in_their_own_unit_not_the_amount_unit() {
         .await
         .unwrap();
     assert_eq!(status(&output, "shares"), "not_found");
+}
+
+/// A price divided by an assumed multiple is a price: the cited close matches
+/// in the per-share unit and a cited multiple reads as a pure number.
+#[tokio::test]
+async fn a_ratio_per_share_reads_its_numerator_in_unit_and_its_denominator_as_a_number() {
+    let temporary = tempfile::tempdir().unwrap();
+    let executor = executor(&temporary);
+    let close = stage_original(
+        &executor,
+        "close",
+        "equity_price_historical",
+        json!({"structuredContent": {"results": [{"date": "2026-11-20", "close": 345.82000732421875}]}}),
+    )
+    .await;
+    let multiple = stage_original(
+        &executor,
+        "multiple",
+        "research_note",
+        json!({"data": {"text": "The scenario applies a 100x earnings multiple."}}),
+    )
+    .await;
+    let output = executor
+        .execute(
+            &policy(),
+            ToolMethod::Calculate,
+            json!({"operation": "ratio", "unit": "USD per share",
+                "inputs": {"numerator": 345.82000732421875, "denominator": 100},
+                "input_sources": {"numerator": close, "denominator": multiple}}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(input_status(&output, "numerator"), "matched");
+    assert_eq!(input_status(&output, "denominator"), "matched");
+    assert_eq!(output["values"][0]["unit"], "USD per share");
+    assert_eq!(
+        output["formulas"][0],
+        "numerator / denominator = 345.82 / 100 = 3.4582 USD per share"
+    );
 }
 
 async fn stage_original(

@@ -222,6 +222,13 @@ impl ConfiguredModel {
         }
     }
 
+    pub(crate) fn default_run_options(&self) -> std::collections::BTreeMap<String, String> {
+        self.run_controls
+            .iter()
+            .map(|control| (control.id.clone(), control.default_choice.clone()))
+            .collect()
+    }
+
     pub fn validate_run_options(
         &self,
         options: &std::collections::BTreeMap<String, String>,
@@ -593,7 +600,9 @@ pub fn catalog_view(
     // auth.json is bounded but may sit on a slower user-data volume. Read and
     // validate it once per view instead of once per model (provider catalogs
     // can contain thousands of entries) and once again per provider.
-    let saved_auth = read_auth_map(&agent_data_dir.join("auth.json"))?;
+    // If the shared file is unreadable, saved sign-ins cannot be offered.
+    // Independently available environment credentials can still use the catalog.
+    let saved_auth = read_auth_map(&agent_data_dir.join("auth.json")).unwrap_or_default();
     let credential_sources = provider_options
         .iter()
         .map(|provider| {

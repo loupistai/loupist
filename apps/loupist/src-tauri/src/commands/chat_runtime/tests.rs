@@ -3,6 +3,8 @@ use serde_json::json;
 use tauri::Manager;
 use FirstProviderBodyWatchdogSelectMode::{Fair, Timeout};
 
+mod admission;
+
 #[test]
 fn price_setup_host_context_starts_the_extension_with_bundled_capabilities() {
     let root = tempfile::tempdir().unwrap();
@@ -983,6 +985,127 @@ async fn a_settled_reply_keeps_its_answer_when_an_older_reader_does_not_drain() 
     assert_pending_reply_is_kept(Some(crate::domain::MemorySaveSkipReason::Deadline), true).await;
 }
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+#[tokio::test]
+async fn interactive_answers_complete_directly_while_a_research_reader_stays_active() {
+    use crate::commands::{
+        knowledge::{file_test_perspective, memory_usage},
+        tests::{
+            chat,
+            chat_behavior::{install_chat_rpc_fixture, send_request},
+            initialized_workspace, profile, seed_profile,
+        },
+    };
+    use crate::domain::MemoryUpdateStatus;
+
+    let root = tempfile::tempdir().unwrap();
+    let workspace = root.path().join("workspace");
+    initialized_workspace(&workspace, "chat-direct-completion");
+    let mut state = AppState::for_folder_test(root.path().join("app"));
+    install_chat_rpc_fixture(
+        &mut state,
+        root.path(),
+        include_str!("../tests/fixtures/answer_checks_pi.py"),
+    );
+    let profile = profile("direct-completion", &workspace, 1);
+    seed_profile(state.store.as_ref(), &profile);
+    let lens = file_test_perspective(&state, &profile.id, "Check units before comparing.");
+    let bot = crate::chat::home::ensure_home_thread(&state, &profile.id).unwrap();
+    let session = chat("direct-session", &profile.id, 1);
+    state.store.create_chat(&session).unwrap();
+    let (controls, _) = chat_control_channel();
+    let _older = state
+        .register_chat_run(
+            "older-research".into(),
+            profile.id.clone(),
+            "older-chat".into(),
+            controls,
+        )
+        .unwrap();
+
+    for (run_id, thread_id, update_memory) in [
+        ("direct-bot-1", &bot.id, true),
+        ("direct-bot-2", &bot.id, true),
+        ("direct-session-1", &session.id, false),
+    ] {
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = events.clone();
+        let sink = ChatEventSink::new(move |event| {
+            recorded.lock().unwrap().push(event);
+            Ok(())
+        });
+        let mut request = send_request(run_id, &profile.id, thread_id, "What was the margin?");
+        request.use_memory = true;
+        request.update_memory = update_memory;
+        send_chat(request, sink, &state, None).await.unwrap();
+        timeout(Duration::from_secs(10), async {
+            while state.run_coordinator.active_count() != 1 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the interactive turn must finish while the older reader is held");
+
+        let events = events.lock().unwrap();
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event, ChatStreamEvent::Saving { .. })));
+        assert!(matches!(events.last(), Some(ChatStreamEvent::Completed {
+            memory_save_skip: None, save_activity: None, number_checks, ..
+        }) if number_checks.len() == 4));
+        let stored = state.store.get_chat(thread_id).unwrap().unwrap();
+        let answer = stored.messages.last().unwrap();
+        assert_eq!(answer.status, ChatMessageStatus::Complete);
+        // The fixture's answer also holds a miscopied link (rebound) and one naming no read.
+        assert_eq!(answer.number_checks.len(), 4);
+        assert_eq!(answer.evidence_refs.len(), 1);
+        assert!(answer.progress.as_ref().unwrap().save_activity.is_none());
+        assert!(answer
+            .lens_receipts
+            .iter()
+            .any(|receipt| receipt.record_id == lens));
+        assert_eq!(
+            answer
+                .memory_update
+                .as_ref()
+                .map(|receipt| (receipt.status, receipt.skip_reason)),
+            update_memory.then_some((MemoryUpdateStatus::NoChange, None)),
+        );
+        if thread_id == &bot.id {
+            let requests = stored
+                .messages
+                .iter()
+                .filter(|message| message.role == ChatRole::User);
+            assert!(requests
+                .map(|request| &request.id)
+                .eq(stored.bot_memory.unreviewed.iter()));
+        }
+    }
+    let usage = memory_usage::usage(&state, &profile.id).unwrap();
+    assert!(usage
+        .iter()
+        .any(|entry| entry.record_id == lens && entry.used_count == 3));
+    let diagnostics_dir = workspace.join(".loupist/logs");
+    let diagnostics = std::fs::read_dir(diagnostics_dir)
+        .unwrap()
+        .filter_map(|entry| {
+            let path = entry.unwrap().path();
+            (path.extension().and_then(|extension| extension.to_str()) == Some("jsonl"))
+                .then(|| std::fs::read_to_string(path).unwrap())
+        })
+        .collect::<Vec<_>>();
+    let records = diagnostics
+        .iter()
+        .flat_map(|file| file.lines())
+        .map(|line| serde_json::from_str::<Value>(line).unwrap());
+    assert_eq!(
+        records
+            .filter(|record| record["chatSavePath"] == "direct")
+            .count(),
+        3
+    );
+}
+
 #[tokio::test(start_paused = true)]
 async fn stop_while_saving_skips_memory_and_keeps_the_settled_reply() {
     assert_pending_reply_is_kept(Some(crate::domain::MemorySaveSkipReason::User), true).await;
@@ -1850,5 +1973,6 @@ fn saved_key_permission_is_in_run_context_and_scheduled_delivery_without_a_secre
     assert_eq!(test_store::secret_reads(environment, entry), reads);
 }
 
+mod message_saves;
 mod pending_memory;
 mod price_reads;

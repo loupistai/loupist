@@ -27,9 +27,10 @@ const args = process.argv.slice(2);
 const layout = args[0] === "--chat-layout";
 if (layout) args.shift();
 const options = layout ? {
-  scenarios: "chat-grid-card,browser-ready,shell-titlebar-grown,chat-header-resuming,activity-sheet",
+  scenarios: "chat-grid-card,browser-ready,shell-titlebar-grown,chat-header-resuming,activity-sheet,activity-sheet-earlier,shell-sidebar-many",
   themes: "light",
   sizes: "700x560,1060x820,1061x820,1280x820,1920x1080",
+  locales: "en,ko",
 } : {};
 for (let i = 0; i < args.length; i += 2) {
   if (!["--out", "--scenarios", "--themes", "--sizes", "--locales", "--browser-scenarios"].includes(args[i]) || !args[i + 1] || args[i + 1].startsWith("--")) {

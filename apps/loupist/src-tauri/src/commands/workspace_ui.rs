@@ -442,7 +442,7 @@ fn write_draft_files(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn chat_draft_files_read(
     state: State<'_, AppState>,
     request: DraftIdentity,
@@ -570,7 +570,7 @@ impl StoredChatDraft {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn chat_draft_read(
     state: State<'_, AppState>,
     request: DraftIdentity,
@@ -596,7 +596,7 @@ pub fn chat_draft_read(
     .transpose()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn chat_draft_write(
     state: State<'_, AppState>,
     request: DraftIdentity,
@@ -638,14 +638,14 @@ pub fn chat_draft_write(
     })
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn workspace_ui_read(
     state: State<'_, AppState>,
 ) -> Result<Option<WorkspaceUiState>, CommandError> {
     read_state(&state)
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn workspace_ui_write(
     request: WorkspaceUiWriteRequest,
     state: State<'_, AppState>,

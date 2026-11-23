@@ -41,8 +41,10 @@ Its Add a provider sheet and onboarding share one list of ways to connect
 (`components/settings/ProviderWays.tsx`, featured rows from the provider
 manifest); the sheet adds Pi's other key providers
 under More providers. Connect and add stay at the bottom of the sheet while the
-fields scroll, so a short window does not leave the action below the sheet. Each Loupist saves its own World model, reasoning controls
-and processing bounds independently of Chat.
+fields scroll, so a short window does not leave the action below the sheet. Each Loupist saves its own World settings and
+processing bounds. Its World model follows the connected accounts, trying its Chat
+default's provider first, until the user chooses one
+([World building model](../knowledge/world-search.md#world-building-model)).
 
 One `openai` slot holds either a ChatGPT sign-in (Pi's `openai-chatgpt` OAuth with
 its dynamic client; the installation ID stays in Pi's private settings) or an
@@ -62,7 +64,7 @@ third-party apps to offer Claude.ai sign-in
 catalog entry has no sign-in flow, and `provider_connect` refuses it. At startup
 Rust deletes a Claude sign-in grant an earlier build saved in Pi's `auth.json`
 (`providers/unknown.rs`) and treats it as a disconnect: the card reads
-Disconnected while schedules, the Chat default or a World model still use the
+Disconnected while schedules, the Chat default or a chosen World model still use the
 account, and an Anthropic API key is left alone.
 
 Rust owns each provider's status (`providers/status.rs`): one row per provider in
@@ -77,7 +79,8 @@ Connecting clears the notice and dates the connection. A request that fails with
 one of those kinds sets its notice and `needs_reconnect` sets Needs reconnect;
 rate limits, outages and a gone model change nothing; any request that goes
 through clears both. Disconnecting deletes the row unless schedules, the Chat
-default or a World model still use the account; a Disconnected card then says so,
+default or a chosen World model still use the account (a Recommended one moves to
+another account); a Disconnected card then says so,
 and that connecting again lets them run, until Remove. Rust serializes provider support operations (sign-in, key
 change, model discovery and native search), with native search able to overlap
 read-only upgrade discovery. Concurrent model loads from startup, Settings and the
@@ -175,13 +178,22 @@ An in-process permit excludes concurrent probes. Preparation, runtime launch fai
 dispatch and a confirmed `not_sent` result leave the window available; a completed or uncertain dispatch
 spends it when its outcome is consumed.
 
-The catalog exposes its current recommended model in `default_selection`. Global and project configuration snapshots carry the effective `modelSelection`, including a model identity, default flag, supported thinking levels and run controls, and the chosen settings. An unavailable selection has a null model and a typed reason. A composer override belongs to the renderer session. The host keeps the stored Chat preference unset until the user chooses a model.
+The catalog exposes its current recommended model in `default_selection`. Global and project configuration snapshots carry the effective `modelSelection`, including a model identity, default flag, supported thinking levels and run controls, and the chosen settings. An unavailable selection has a null model and a typed reason; it occurs only when no account can run a model, or the configuration or catalog cannot be read. A composer override belongs to the renderer session and never names a model Chat cannot use: once the model is hidden, removed or its account disconnected, the renderer drops the override and sends the Loupist's default ([Chat composer](../ui/chat-composer.md#chat-composer)). The host keeps the stored Chat preference unset until the user chooses a model.
 
 Each project snapshot can carry a `defaultModelChange` with previous and current identities. Refresh the project configuration when catalog or provider status changes, and acknowledge a displayed change by ID with `model_notice_ack`. The host retains the notice across reads and restart until acknowledgement. The global catalog stores this per-Loupist observation separately from the selected model, using the extensible `app_settings` key space.
 
 Auto is resolved in Rust (`providers/auto.rs`) at each Chat or scheduled
 admission: an explicit model that is still offered runs; an empty choice, or one
-that left the catalog, uses Auto. Connected providers rank by connection date,
+that left the catalog, uses Auto. A stored choice (a Loupist's or the app's Chat
+default, a scheduled task's model, the default a hand-off runs on) that is still
+listed but cannot run, because its account signed out or disconnected or the user
+hid it, also uses Auto, with the thinking level and run options Auto declares for
+the model it picks (`SelectionCatalog::admit`, `auto::stored_fallback`). The stored
+choice is not rewritten: it applies again once it can run. The snapshot reports it
+in `stored_unavailable`; Chat defaults and the Loupist's settings keep showing the
+stored model with "Not available now. Chat uses the recommended model until it is.",
+and the composer names the model that runs. Chat refuses only when no connected
+account can run any model ("No AI account"). A run records the model that ran. Connected providers rank by connection date,
 earliest first and Needs reconnect last; notices are ignored, so Auto never moves to another paid
 account because one hit its limit. Each provider in turn offers its first visible
 model from [`chat-model-defaults.json`](../../apps/loupist/chat-model-defaults.json)
@@ -196,7 +208,14 @@ wins (`flash-lite` is Flash), and an undeclared family takes the `unknown` tier,
 ordering. Auto excludes Astra from the reviewed Chat defaults and from fallback.
 Chat keeps GPT-6.1 Sol first and includes GPT-6.2 Sol at medium when it is available. With nothing connected, admission fails with a pointer to
 Settings. An empty choice keeps the requested reasoning and run options only where
-the resolved model supports them. Rust remembers each provider’s last admitted default model. Scoped change notices cover default moves. The catalog also reports removal of an explicitly configured global model.
+the resolved model supports them. A saved model can omit run controls such as
+Performance. The settings snapshot and Chat admission fill omitted controls with
+the model's declared defaults and keep explicit choices for validation. A missing
+or malformed saved sign-in makes that account unavailable for Auto. If the shared
+sign-in file is unreadable, the catalog can still offer independently available
+environment credentials in builds that support them. Rust remembers each provider’s
+last admitted default model. Scoped change notices cover default moves. The
+catalog also reports removal of an explicitly configured global model.
 
 Bot and research use the same reasoning-level resolution: an explicit choice,
 then the saved Chat default when supported, then the model default from
@@ -254,7 +273,7 @@ At startup `providers/unknown.rs` deletes state that names a provider this build
 does not offer (release builds drop `openai-codex`): catalog models, status rows
 and gone-model entries. A global Chat default naming one is unset, schedules that
 named one use Auto from their next run, and a World model on one is forgotten, so
-that Loupist takes the World default as a new one does. This is deletion, not migration; stored
+that Loupist goes back to Recommended. This is deletion, not migration; stored
 answers keep their model record.
 
 World extraction builds each bounded prompt/schema in Rust and launches isolated

@@ -4,7 +4,8 @@
 //! resolutions are batched.
 //!
 //! 1. extract entities (`extract_nodes.extract_text`)
-//! 2. resolve entities (name-vector candidates, `dedupe_nodes.nodes`)
+//! 2. resolve entities (name-vector candidates, `dedupe_nodes.nodes`), where
+//!    the host's identifying codes overrule the model ([`entity_codes`])
 //! 3. extract relations (`extract_edges.edge`)
 //! 4. resolve relations (same-endpoint duplicates, hybrid invalidation
 //!    candidates, `dedupe_edges.resolve_edge`, temporal rules)
@@ -32,6 +33,7 @@ use super::text::{
     isoformat, new_node_labels, normalize_exact, prefix_chars, python_str, to_utc,
     truncate_at_sentence,
 };
+use crate::knowledge::entity_codes::{self, Codes};
 
 const ENTITY_TYPE_DESCRIPTION: &str = "A specific, identifiable entity that does not fit any of the other listed types. Must still be a concrete, meaningful thing — specific enough to be uniquely identifiable. GOOD: a named entity not covered by the other types. BAD: \"luck\", \"ideas\", \"tomorrow\", \"things\", \"them\", \"everybody\", \"a sense of wonder\", \"great times\". When in doubt, do not extract the entity.";
 const NODE_DEDUP_CANDIDATE_LIMIT: usize = 15;
@@ -68,6 +70,17 @@ impl Node {
             .iter()
             .map(String::as_str)
             .find(|label| *label != "Entity")
+    }
+
+    /// The identifying codes its name and attributes state.
+    pub(crate) fn codes(&self) -> Codes {
+        Codes::of_node(
+            &self.name,
+            self.kind().unwrap_or("Entity"),
+            self.attributes
+                .iter()
+                .map(|(key, value)| (key.as_str(), value)),
+        )
     }
 
     fn attribute(&self, key: &str) -> Option<&Value> {
@@ -134,6 +147,20 @@ pub(crate) struct Input<'a> {
 pub(crate) struct Output {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    pub resolution: ResolutionTally,
+}
+
+/// How entity resolution went, by count only: what the model proposed and
+/// what the host's identifying codes changed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ResolutionTally {
+    /// Extracted names the model resolved to an existing node.
+    pub proposed: u32,
+    /// Of those, merges the host refused: the two names carry different codes.
+    pub refused: u32,
+    /// Names the host joined to the existing node whose code is equal, where
+    /// the model had not.
+    pub by_code: u32,
 }
 
 struct Run<'a, 'b> {
@@ -148,6 +175,15 @@ struct Run<'a, 'b> {
     nodes: Vec<Node>,
     edges: Vec<Edge>,
     response_models: HashMap<Vec<(String, Fields)>, Fields>,
+    /// The stored nodes' codes and the stored nodes carrying each code value,
+    /// computed when an extracted name first carries a code.
+    graph_codes: Option<GraphCodes>,
+    tally: ResolutionTally,
+}
+
+struct GraphCodes {
+    codes: Vec<Codes>,
+    by_value: HashMap<String, Vec<usize>>,
 }
 
 /// Attribute fields as (name, description), in declaration order.
@@ -237,6 +273,8 @@ pub(crate) fn add_episode(input: Input<'_>, bridge: &mut Bridge<'_>) -> StopResu
         nodes: Vec::new(),
         edges: Vec::new(),
         response_models: HashMap::new(),
+        graph_codes: None,
+        tally: ResolutionTally::default(),
     };
     let extracted = run.extract_nodes()?;
     let resolution = if extracted.is_empty() {
@@ -297,6 +335,7 @@ pub(crate) fn add_episode(input: Input<'_>, bridge: &mut Bridge<'_>) -> StopResu
             .chain(&invalidated)
             .map(|index| run.edges[*index].clone())
             .collect(),
+        resolution: run.tally,
     })
 }
 
@@ -682,7 +721,11 @@ impl Run<'_, '_> {
         }
     }
 
-    /// Apply the resolution reply; nodes without candidates stay as extracted.
+    /// Apply the resolution reply, then hold the codes over it: a merge into
+    /// a node whose identifying code differs from the extracted name's, under
+    /// a name that does not agree, is refused, and a name the host joins to a
+    /// stored node ([`Codes::joins`]) joins it whatever the model answered.
+    /// Every other answer stands; nodes without a merge stay as extracted.
     fn apply_resolution(
         &mut self,
         extracted: &[usize],
@@ -690,7 +733,10 @@ impl Run<'_, '_> {
         response: Option<Value>,
     ) -> StopResult<(Vec<usize>, HashMap<String, String>)> {
         let mut uuid_map = HashMap::new();
-        let mut resolved: Vec<Option<usize>> = vec![None; extracted.len()];
+        // The model's merge for each extracted position, as an arena index.
+        let mut chosen: Vec<Option<usize>> = vec![None; extracted.len()];
+        // Stored nodes already in the arena, by id.
+        let mut arena: HashMap<String, usize> = HashMap::new();
         if let (
             Some(NodeResolution {
                 unresolved, pool, ..
@@ -698,6 +744,9 @@ impl Run<'_, '_> {
             Some(response),
         ) = (plan, response)
         {
+            for index in &pool {
+                arena.insert(self.nodes[*index].uuid.clone(), *index);
+            }
             let mut resolutions = Vec::new();
             for item in schema::objects(schema::field(&response, "entity_resolutions")?)? {
                 let id = schema::lax_int(schema::field(item, "id")?)?;
@@ -713,39 +762,127 @@ impl Run<'_, '_> {
                 if relative >= unresolved.len() || !processed.insert(relative) {
                     continue;
                 }
-                let original = unresolved[relative];
-                let extracted_index = extracted[original];
-                let target = usize::try_from(duplicate)
+                chosen[unresolved[relative]] = usize::try_from(duplicate)
                     .ok()
                     .and_then(|candidate| pool.get(candidate).copied());
-                let winner = match target {
-                    Some(candidate) => {
-                        self.promote(extracted_index, candidate);
-                        let spelling = self.nodes[extracted_index].name.clone();
-                        if spelling != self.nodes[candidate].name {
-                            self.nodes[candidate].spellings.push(spelling);
-                        }
-                        candidate
-                    }
-                    None => extracted_index,
-                };
-                resolved[original] = Some(winner);
-                uuid_map.insert(
-                    self.nodes[extracted_index].uuid.clone(),
-                    self.nodes[winner].uuid.clone(),
-                );
             }
         }
         let mut out = Vec::with_capacity(extracted.len());
         for (position, index) in extracted.iter().enumerate() {
-            let winner = resolved[position].unwrap_or_else(|| {
-                let uuid = self.nodes[*index].uuid.clone();
-                uuid_map.insert(uuid.clone(), uuid);
-                *index
-            });
+            let target = self.hold_codes(*index, chosen[position], &mut arena);
+            let winner = match target {
+                Some(candidate) => {
+                    self.promote(*index, candidate);
+                    let spelling = self.nodes[*index].name.clone();
+                    if spelling != self.nodes[candidate].name {
+                        self.nodes[candidate].spellings.push(spelling);
+                    }
+                    candidate
+                }
+                None => *index,
+            };
+            uuid_map.insert(
+                self.nodes[*index].uuid.clone(),
+                self.nodes[winner].uuid.clone(),
+            );
             out.push(winner);
         }
         Ok((out, uuid_map))
+    }
+
+    /// The node an extracted name merges into once the codes are held over
+    /// the model's `chosen` merge, counted in the episode's tally.
+    fn hold_codes(
+        &mut self,
+        extracted: usize,
+        chosen: Option<usize>,
+        arena: &mut HashMap<String, usize>,
+    ) -> Option<usize> {
+        let codes = self.nodes[extracted].codes();
+        let mut target = chosen;
+        if let Some(candidate) = chosen {
+            self.tally.proposed += 1;
+            if codes.refuses(&self.nodes[candidate].codes()) {
+                self.tally.refused += 1;
+                target = None;
+            }
+        }
+        if codes.is_empty() {
+            return target;
+        }
+        let kind = self.nodes[extracted].kind().unwrap_or("Entity").to_string();
+        let preferred = target.map(|index| self.nodes[index].uuid.clone());
+        let Some(stored) = self.code_match(&codes, &kind, preferred.as_deref()) else {
+            return target;
+        };
+        let uuid = self.graph.nodes[stored].uuid.clone();
+        if preferred.as_deref() == Some(uuid.as_str()) {
+            return target;
+        }
+        let index = match arena.get(&uuid) {
+            Some(index) => *index,
+            None => {
+                let index = self.push_node(self.graph.nodes[stored].clone());
+                arena.insert(uuid, index);
+                index
+            }
+        };
+        self.tally.by_code += 1;
+        Some(index)
+    }
+
+    /// The stored node the host joins `codes` to ([`Codes::joins`]), of a kind
+    /// that may be the same entity. When several stored nodes qualify and none
+    /// of their codes differ from another's (duplicates publication merges),
+    /// the `preferred` one or the first; when two of them differ, none.
+    fn code_match(&mut self, codes: &Codes, kind: &str, preferred: Option<&str>) -> Option<usize> {
+        if self.graph_codes.is_none() {
+            let mut by_value: HashMap<String, Vec<usize>> = HashMap::new();
+            let codes: Vec<Codes> = self
+                .graph
+                .nodes
+                .iter()
+                .enumerate()
+                .map(|(index, node)| {
+                    let codes = node.codes();
+                    for value in codes.values() {
+                        let holders = by_value.entry(value.to_string()).or_default();
+                        if holders.last() != Some(&index) {
+                            holders.push(index);
+                        }
+                    }
+                    codes
+                })
+                .collect();
+            self.graph_codes = Some(GraphCodes { codes, by_value });
+        }
+        let graph = self.graph_codes.as_ref().expect("stored codes");
+        let mut matches: Vec<usize> = Vec::new();
+        for value in codes.values() {
+            for index in graph.by_value.get(value).into_iter().flatten() {
+                let node = &self.graph.nodes[*index];
+                if !matches.contains(index)
+                    && entity_codes::kinds_join(kind, node.kind().unwrap_or("Entity"))
+                    && codes.joins(&graph.codes[*index])
+                {
+                    matches.push(*index);
+                }
+            }
+        }
+        matches.sort_unstable();
+        let apart = matches.iter().enumerate().any(|(position, left)| {
+            matches[position + 1..]
+                .iter()
+                .any(|right| graph.codes[*left].differs_from(&graph.codes[*right]))
+        });
+        if apart {
+            return None;
+        }
+        matches
+            .iter()
+            .copied()
+            .find(|index| Some(self.graph.nodes[*index].uuid.as_str()) == preferred)
+            .or_else(|| matches.first().copied())
     }
 
     /// `_promote_resolved_node`: a generic candidate takes the duplicate's type.
@@ -1783,8 +1920,14 @@ impl<'a, 'b> Harness<'a, 'b> {
                 nodes: Vec::new(),
                 edges: Vec::new(),
                 response_models: HashMap::new(),
+                graph_codes: None,
+                tally: ResolutionTally::default(),
             },
         }
+    }
+
+    pub(super) fn tally(&self) -> ResolutionTally {
+        self.run.tally
     }
 
     pub(super) fn node(&self, index: usize) -> &Node {

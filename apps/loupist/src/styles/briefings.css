@@ -156,6 +156,12 @@
 .schedule-task-chevron { position: absolute; right: var(--gg-space-3); top: 50%; width: 16px; height: 16px; translate: 0 -50%; color: var(--gg-color-text-tertiary); pointer-events: none; }
 .schedule-footer { margin: var(--gg-space-4); max-width: 72ch; }
 .schedule-task-row .schedule-task-summary { padding-right: calc(var(--gg-space-3) + 20px); }
+/* The built-in briefing while it is off: Turn on takes the chevron's place at the row's end. */
+.schedule-task[data-schedule-briefing="off"] .schedule-task-row { align-items: center; }
+.schedule-task[data-schedule-briefing="off"] .schedule-task-summary { min-width: 0; padding-right: 0; }
+.schedule-task[data-schedule-briefing="off"] div.schedule-task-summary { cursor: default; }
+.schedule-task-turn-on { flex: none; }
+.schedule-task > .schedule-task-error { margin: 0; padding: 0 var(--gg-space-3) var(--gg-space-3) var(--gg-space-4); }
 
 /* The morning message in Bot (owner redesign, area E): what moved, what is coming up and what
    changed sit in one card under the lead; sections are divided by hairlines. */

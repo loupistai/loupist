@@ -250,7 +250,7 @@ async fn what_the_user_follows_waits_for_a_model_and_is_skipped_when_nothing_is_
         }
     );
     connect_fixture(&state);
-    crate::commands::knowledge::complete_pending_world_models(&state).unwrap();
+    crate::commands::knowledge::follow_recommended_world_models(&state).unwrap();
     let (_, jobs, _) = followed_state(&state, &loupist_id);
     assert_eq!(jobs.len(), 1);
     assert!(jobs[0]

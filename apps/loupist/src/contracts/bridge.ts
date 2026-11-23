@@ -42,6 +42,8 @@ import type {
   ChatThread,
   ChatWatchRequest,
   ChatWatchSnapshot,
+  ChatSaveState,
+  ChatSaveChangedEvent,
   LoupistWorkspace,
   ResearchHandoffReceipt,
   ResearchHandoffRequest,
@@ -335,6 +337,9 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
   knowledgeConnectionDismiss(request: { loupistId: string; connectionId: string }): Promise<import("./knowledge").ConnectionView>;
   /** Look into it: records that a research hand-off was started for the link. */
   chatAbort(run_id: string): Promise<void>;
+  /** Replies of the Loupist whose saves wait on their own, oldest first; read after subscribing to `onChatSaveChanged`. */
+  chatSaves(request: { loupist_id: string }): Promise<ChatSaveState[]>;
+  onChatSaveChanged(handler: (event: ChatSaveChangedEvent) => void): () => void;
   runActivityList(): Promise<RunActivity[]>;
   knowledgeGrowthEvents(request: import("./knowledge").GrowthEventsQuery): Promise<import("./knowledge").GrowthEventsPage>;
   knowledgeCatalog(request: KnowledgeCatalogRequest): Promise<KnowledgeCatalog>;

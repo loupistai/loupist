@@ -323,3 +323,8 @@ article[data-source-id][tabindex="-1"]:focus { outline: none; }
 .saved-passage-table :is(th, td) { white-space: nowrap; overflow-wrap: normal; padding: var(--gg-space-1) var(--gg-space-2); text-align: start; border-bottom: 1px solid var(--gg-color-border-subtle); }
 .saved-source-data caption { text-align: start; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); padding-block-end: var(--gg-space-2); }
 .saved-passage-table table[data-aligned] { font-family: var(--gg-font-mono); }
+/* The Source reader keeps the column that names a table's rows in view while its figures scroll sideways. */
+/* Its own stacking context keeps the sticky labels under the reader's sticky toolbar. */
+.source-reader .saved-passage-table { container-type: inline-size; isolation: isolate; }
+.source-reader .saved-passage-table table[data-row-labels] :is(th, td):first-child { position: sticky; inset-inline-start: 0; z-index: var(--gg-z-sticky); background: var(--gg-color-bg-app); box-shadow: inset -1px 0 0 var(--gg-color-border-subtle); }
+.source-reader .saved-passage-label { display: block; min-width: min(12ch, 45cqi); max-width: 45cqi; white-space: normal; }

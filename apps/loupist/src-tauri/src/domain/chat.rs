@@ -306,13 +306,19 @@ impl SetupChange {
 
 impl MemoryUpdateResult {
     pub fn validate(&self) -> Result<(), DomainError> {
+        // A saved reply lists only what its own commit could not keep: a price
+        // read for an asset no longer followed, or a Bot memory change whose
+        // entry an earlier reply's save resolved or forgot.
         validate_discarded_memory_items(
             self.discarded_memory_items.as_deref(),
             self.skip_reason.is_some()
                 || self.discarded_memory_items.as_ref().is_some_and(|items| {
-                    items
-                        .iter()
-                        .all(|item| item.kind == DiscardedMemoryKind::PriceRead)
+                    items.iter().all(|item| {
+                        matches!(
+                            item.kind,
+                            DiscardedMemoryKind::PriceRead | DiscardedMemoryKind::BotMemory
+                        )
+                    })
                 }),
         )?;
         // Price reads have their own staging path and do not use the Memory
@@ -1700,6 +1706,12 @@ pub struct ChatSession {
     #[serde(default, deserialize_with = "cache_or_cold")]
     pub pi_session_cache: Option<PiSessionCache>,
     pub title: String,
+    /// The title came from a reply that did not finish (stopped, failed, or cut
+    /// short by a crash): its request's first line or first file. The next
+    /// finished reply titles the session as it would an untitled one; a rename
+    /// keeps the user's title.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub title_provisional: bool,
     pub memory_policy: MemoryPolicy,
     /// Principles and methods the user set aside for this chat ("Not this
     /// time"). The host leaves them out of this chat's context.
@@ -1730,6 +1742,46 @@ fn cache_or_cold<'de, D: serde::Deserializer<'de>>(
 }
 
 impl ChatSession {
+    /// Whether a finished reply titles this session: it has no title yet, or
+    /// only one a reply that did not finish gave it.
+    pub(crate) fn takes_reply_title(&self) -> bool {
+        self.title.is_empty() || self.title_provisional
+    }
+
+    /// Title the session from a finished reply when it takes one.
+    pub(crate) fn apply_reply_title(&mut self, title: &str) -> bool {
+        if !self.takes_reply_title() {
+            return false;
+        }
+        title.clone_into(&mut self.title);
+        self.title_provisional = false;
+        true
+    }
+
+    /// An untitled session whose reply did not finish (stopped, failed, or cut
+    /// short) takes the title that reply would have given it on completion:
+    /// its request's first line, or its first file's name. No model is asked.
+    /// The next finished reply may still replace it.
+    pub(crate) fn title_unfinished_reply(&mut self) -> Option<String> {
+        if !self.title.is_empty() {
+            return None;
+        }
+        let request = self
+            .messages
+            .iter()
+            .rfind(|message| message.role == ChatRole::User && !message.steer)?;
+        let title = crate::commands::fallback_chat_title(match request.attachments.first() {
+            Some(file) if request.content.is_empty() => &file.filename,
+            _ => &request.content,
+        });
+        if title.is_empty() {
+            return None;
+        }
+        self.title.clone_from(&title);
+        self.title_provisional = true;
+        Some(title)
+    }
+
     pub(crate) fn opening_scheduled_turn(&self) -> Option<&ScheduledTurn> {
         if !self
             .id
@@ -1824,6 +1876,63 @@ mod tests {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     );
+
+    #[test]
+    fn an_unfinished_reply_titles_only_an_untitled_session_and_a_finished_one_replaces_it() {
+        use crate::test_fixtures::{chat_message, chat_session};
+        let mut chat = chat_session("chat-title", "loupist-title");
+        chat.title.clear();
+        let mut steer = chat_message("steer", ChatRole::User, "Also check margins");
+        steer.steer = true;
+        chat.messages = vec![
+            chat_message(
+                "request",
+                ChatRole::User,
+                "Compare the two filings line by line",
+            ),
+            steer,
+        ];
+        assert_eq!(
+            chat.title_unfinished_reply().as_deref(),
+            Some("Compare the two filings line by line")
+        );
+        assert!(chat.title_provisional);
+        // A titled session keeps its title, provisional or not.
+        assert_eq!(chat.title_unfinished_reply(), None);
+        assert!(chat.apply_reply_title("Segment margins"));
+        assert_eq!(
+            (chat.title.as_str(), chat.title_provisional),
+            ("Segment margins", false)
+        );
+        assert!(!chat.apply_reply_title("A later request"));
+
+        // A request with only a file takes its name.
+        let mut file_only = chat_session("chat-file", "loupist-title");
+        file_only.title.clear();
+        let mut request = chat_message("request", ChatRole::User, "");
+        request.attachments.push(ChatAttachment {
+            id: "attachment".into(),
+            filename: "annual-report.pdf".into(),
+            media_type: "application/pdf".into(),
+            size_bytes: 4,
+            content_sha256: "a".repeat(64),
+        });
+        file_only.messages = vec![request];
+        assert_eq!(
+            file_only.title_unfinished_reply().as_deref(),
+            Some("annual-report.pdf")
+        );
+
+        // Bot and named sessions keep theirs.
+        for title in [crate::chat::home::HOME_TITLE, "Test chat"] {
+            let mut named = chat_session("chat-named", "loupist-title");
+            named.title = title.into();
+            named.messages = vec![chat_message("request", ChatRole::User, "Question")];
+            assert_eq!(named.title_unfinished_reply(), None);
+            assert!(!named.apply_reply_title("Question"));
+            assert_eq!(named.title, title);
+        }
+    }
 
     #[test]
     fn edit_forks_validate_messages_and_reject_duplicate_ids_within_each_tail() {

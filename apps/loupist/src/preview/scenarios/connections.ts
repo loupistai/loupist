@@ -66,6 +66,11 @@ export const connectionScenarios: PreviewScenario[] = [
     }),
     setup: bridge => prepareConnectionSetupFixture(bridge, state),
   })),
+  // X-003: a connection that needs a contact email, not a key, names the field and where it goes.
+  { ...base("chat-connection-setup-contact", "A connection that needs a contact email, set up from Chat", () => select('.connection-setup-card[data-entry-id="sec.edgar"][data-state="needs_setup"]'), async () => {
+    await until(() => select('.connection-setup-card[data-state="needs_setup"]'), "Setup card did not load");
+    select(".connection-setup-card")?.scrollIntoView({ block: "center" });
+  }), setup: bridge => prepareConnectionSetupFixture(bridge, "needs_setup", "sec.edgar") },
 
   // The setup dialog for a key source, from its card, in each state a key goes through.
   ...SETUP_DIALOGS.map(({ id, title, entry, key, landmark, prepare }): PreviewScenario => ({

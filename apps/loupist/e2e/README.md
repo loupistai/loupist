@@ -41,7 +41,10 @@ the form) while Chrome keeps the line. Form-heading proof is `assertFormLegendsF
 in the macOS WebView (`native-forms.mjs`), not a preview PNG. Likewise WKWebView
 has no `field-sizing: content`, so a textarea styled to grow with its text stays
 at its row height there; the composer measures its own height, and
-`assertComposerGrows` (native smoke) types into it in the WebView.
+`assertComposerGrows` (native smoke) types into it in the WebView. A `<button>`
+with `display: flex; flex-direction: column` does not stretch its items in
+WKWebView unless it sets `align-items: stretch`, so a child meant to end in an
+ellipsis keeps its full width there (X-015), while Chrome stretches it.
 `browser-ready`, `browser-blocked`, and `browser-failure` are the in-app browser
 fixtures in `src/preview/browserScenarios.ts`: one fictional article opened from
 an answer link, then the ready page, a typed blocked navigation that keeps that
@@ -67,7 +70,12 @@ geometry suite. Chat captures also check the responsive title and reading gutter
 `activity-sheet` and `activity-sheet-panel` check the activity sheet: at most 372px,
 held to the right edge of the chat layout under the page header; docked, it leaves
 the chat at least 420px and covers neither the reading column nor the composer;
-it overlays only when the chat layout is too narrow to dock. Narrow overlay panels
+it overlays only when the chat layout is too narrow to dock.
+`activity-sheet-earlier` adds earlier turns with long questions. Every shell capture
+measures the lists in the sidebar and side panels whose rows pair a one-line title with a
+time, count or status at the row's end (Earlier answers, sidebar chat and place rows,
+Schedule's running list, workspace files) and fails when a title runs under that end or
+either leaves its row. `preview:layout` runs English and Korean. Narrow overlay panels
 make the covered chat inert, so split fixtures open docked panels only above 1060px.
 The panel opens with ⌘\ in these fixtures; the page header's button is the
 activity sheet's. `work-progress.mjs` reads steps from the inline ledger while the

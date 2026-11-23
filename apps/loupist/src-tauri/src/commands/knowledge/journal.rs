@@ -53,7 +53,7 @@ pub struct JournalArchiveRequest {
     pub archived: bool,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn journal_list(
     state: State<'_, AppState>,
     request: JournalListRequest,
@@ -66,7 +66,7 @@ pub fn journal_list(
             .collect())
     })
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn journal_create(
     state: State<'_, AppState>,
     request: JournalCreateRequest,
@@ -77,7 +77,7 @@ pub fn journal_create(
         storage::create(tx, &loupist, request.input(), crate::commands::now_ms())
     })
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn journal_update(
     state: State<'_, AppState>,
     request: JournalUpdateRequest,
@@ -100,7 +100,7 @@ pub fn journal_update(
         )
     })
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn journal_archive(
     state: State<'_, AppState>,
     request: JournalArchiveRequest,

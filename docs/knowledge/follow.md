@@ -83,10 +83,11 @@ and then the query; input-method composition keeps its Enter. One line under the
 where listings came from (and that the text was sent to OpenFIGI), that none matched (with an
 action that drafts a follow request in Bot's composer when the name is available to follow),
 or why the search did not run: offline,
-Asset lookup switched off for the Loupist (`connection_unavailable`), a saved OpenFIGI key
-that was rejected (`credential_rejected`) or cannot be read (`credential_locked`,
-`credential_unavailable`), each with Open Connections and no Try again,
-OpenFIGI asking to wait (`rate_limited`) or another failure (with Try again). The field's
+Asset lookup switched off for the Loupist (`connection_unavailable`) or a saved OpenFIGI key
+that was rejected (`credential_rejected`), each with Open Connections and no Try again,
+OpenFIGI asking to wait (`rate_limited`) or another failure (with Try again). A saved key
+that cannot be read does not stop the search: the public route's listings show, and a second
+line says the saved key can't be used, with Open Connections. The field's
 accessible description says what typing and Enter do; a long name ends in an ellipsis and
 shows whole under the pointer. A cleared or
 changed field drops a late answer.

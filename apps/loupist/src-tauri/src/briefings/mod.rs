@@ -307,9 +307,10 @@ pub(crate) fn build_prompt(
         serde_json::to_value(&growth).map_err(|e| CommandError::internal(e.to_string()))?;
     shared.mark_delivery(&mut world_growth);
     let data = serde_json::json!({
-        "date":chrono::DateTime::from_timestamp_millis(now).map(|date|date.with_timezone(&chrono::Local).to_rfc3339()),
+        // Both moments at the user's offset, so "since" names the user's own date.
+        "date":crate::local_time::at_ms(now).map(|date|date.to_rfc3339()),
         "appLanguage":language,
-        "previousBriefingAtMs":previous,
+        "previousBriefingAt":previous.and_then(crate::local_time::at_ms).map(|date|date.to_rfc3339()),
         "timeSincePreviousBriefingMs":previous.map(|at| now.saturating_sub(at)),
         "worldGrowth":world_growth,
         "dueJournalReviews":due_reviews,

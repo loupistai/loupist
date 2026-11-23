@@ -118,6 +118,16 @@ pub struct AssetLookupCandidate {
     pub market_sector: Option<String>,
 }
 
+/// One listing search. The key is optional: a saved key that could not be
+/// read leaves the public route, and `saved_key_unread` says so.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct AssetLookupResult {
+    pub candidates: Vec<AssetLookupCandidate>,
+    pub saved_key_unread: bool,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
@@ -166,6 +176,11 @@ pub struct SavedPriceRead {
     pub state: PriceReadState,
     pub current: SavedReadCall,
     pub history: Option<SavedReadCall>,
+    /// The currency a quote for the same symbol stated in the reply that saved
+    /// this read, kept for repeats of a read whose own result states none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub quoted_currency: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -182,6 +197,19 @@ pub enum AssetQuoteKind {
     Ask,
 }
 
+/// Where a stored price's currency came from: the provider's result (the read
+/// itself, or a quote for the same symbol in the reply that saved it), the
+/// listing the asset is bound to, or nowhere, when the currency is unknown.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum CurrencySource {
+    Result,
+    Listing,
+    #[default]
+    None,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -192,6 +220,8 @@ pub struct AssetStoredPrice {
     pub value: f64,
     pub date: String,
     pub currency: Option<String>,
+    #[serde(default)]
+    pub currency_source: CurrencySource,
     pub provider: String,
     pub source_url: Option<String>,
     pub dataset: DatasetRef,

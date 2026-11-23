@@ -70,6 +70,15 @@ matches `52억원`; a negative input also matches a fall its evidence
 records `matched`, `rounded` or `not_found`. A dataset-cell input keeps its pinned
 provenance.
 
+`ratio` divides `numerator` by `denominator`. Two amounts in the request's
+`unit` give a multiple (`x`), or a percentage with `as_percent: true`. A `unit`
+that names a quantity per something (`USD per share`, `KRW/share`,
+`vehicles per store`) divides an amount in that unit by a pure number: the
+numerator is read in `unit`, the denominator is a `number` input, and the result
+and its formula carry `unit` (`345.82 / 100 = 3.4582 USD per share`). Such a
+ratio refuses `as_percent: true`. `margin` is always a percentage: it accepts
+`as_percent: true` as a no-op and refuses `as_percent: false`.
+
 `convert` takes `inputs.amount` and `inputs.rate`, a `unit` with the amount's
 ISO currency code and scale (for example, `USD billions`), and a different
 uppercase target code in `to`. It multiplies the amount by its scale and by

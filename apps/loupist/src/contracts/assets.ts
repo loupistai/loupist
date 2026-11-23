@@ -19,6 +19,7 @@ export type AssetReferenceOrigin = Wire.AssetReferenceOrigin;
 export type AssetReferenceFields = Wire.AssetReferenceFields;
 export type AssetRow = Wire.AssetRow;
 export type AssetLookupCandidate = Wire.AssetLookupCandidate;
+export type AssetLookupResult = Wire.AssetLookupResult;
 export type PriceReadState = Wire.PriceReadState;
 export type SavedPriceRead = Wire.SavedPriceRead;
 export type AssetStoredPrice = Wire.AssetStoredPrice;
@@ -44,7 +45,7 @@ export interface AssetBridge {
   /** Followed assets only. */
   assetsList(request: AssetsListRequest): Promise<AssetRow[]>;
   /** One OpenFIGI request per submitted search; never called while typing. */
-  assetLookup(request: AssetLookupRequest): Promise<AssetLookupCandidate[]>;
+  assetLookup(request: AssetLookupRequest): Promise<AssetLookupResult>;
   /** Follows by name, with a picked listing's fields as reference; Rust starts one delegated price setup per burst. */
   assetFollowName(request: AssetFollowNameRequest): Promise<AssetRow>;
   /** Follows an asset the catalog already has. */

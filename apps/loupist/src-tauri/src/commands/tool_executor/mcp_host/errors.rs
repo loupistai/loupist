@@ -7,7 +7,11 @@ pub(super) fn mcp_call_error_with_inventory(
     error: BrokerError,
 ) -> Result<Value, BrokerError> {
     // Preserve the typed broker code even when activation refreshed tools.
-    if is_offline(&error) || is_argument_failure(&error) || is_sec_contact_required(&error) {
+    if is_offline(&error)
+        || is_argument_failure(&error)
+        || is_sec_contact_required(&error)
+        || matches!(error, BrokerError::EmptyResult)
+    {
         return Err(error);
     }
     let message = safe_mcp_error_summary(&error);
@@ -44,6 +48,9 @@ pub(super) fn is_sec_contact_required(error: &BrokerError) -> bool {
 }
 
 const MCP_REQUEST_REJECTED: &str = "The MCP provider rejected the request";
+/// A provider refused one named argument.
+const MCP_FIELD_REJECTED: &str = "A value the chosen provider accepts for this argument. The tool's schema states, by provider, which arguments are required and which values or forms each takes.";
+const MCP_FIELD_NEXT: &str = "Change this one argument to what the schema gives for the provider you chose and call again; choose another provider the tool lists if this one cannot serve the request. If it is refused again, report that this data is unavailable.";
 const MCP_REQUEST_NEXT: &str = "Check the active tool schema, provider, symbol, and date range. Change the request before trying again; if it still fails, report that this data is unavailable.";
 
 pub(super) fn invalid_mcp_arguments() -> BrokerError {
@@ -127,6 +134,23 @@ pub(super) fn map_mcp_error(error: McpError) -> BrokerError {
 /// What the agent is told when Yahoo Finance cannot serve the price as traded.
 const YAHOO_ADJUSTMENT_EXPECTED: &str = "splits_only or splits_and_dividends. Yahoo Finance restates its prices for later share splits, so it gives the price as traded only for a daily bar with no split after it. Read the adjusted price and say that it is adjusted, or read the price as traded from a connected source that serves unadjusted prices.";
 
+fn yahoo_statement_argument(marker: &Value) -> Option<BrokerError> {
+    let field = marker["field"].as_str()?;
+    let expected = match field {
+        "limit" => {
+            let minimum = marker["minimum"].as_u64()?;
+            let maximum = marker["maximum"].as_u64()?;
+            format!("An integer from {minimum} to {maximum}. The yfinance provider returns at most {maximum} periods of a statement in one call: ask for {maximum} or fewer, and say in the answer how many periods were read. Use another provider listed for this tool only if it accepts more.")
+        }
+        "period" if marker["allowed_values"] == json!(["annual", "quarter"]) => {
+            "annual or quarter. The yfinance provider has no trailing-twelve-month statement: read the last four quarters and add them with calculate, or use another provider listed for this tool if it offers that period.".to_owned()
+        }
+        "symbol" => "A ticker as the yfinance provider writes it, with the exchange suffix it uses outside the United States. Check the ticker, or use another provider listed for this tool.".to_owned(),
+        _ => return None,
+    };
+    Some(BrokerError::invalid(field, expected))
+}
+
 pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerError {
     let marker = result
         .structured_content
@@ -160,6 +184,12 @@ pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerE
             return BrokerError::invalid(field, expected);
         }
         Some("invalid_arguments") => {
+            if let Some(error) = marker
+                .filter(|marker| marker["provider"] == "yfinance")
+                .and_then(yahoo_statement_argument)
+            {
+                return error;
+            }
             if marker.is_some_and(|marker| marker["provider"] == "fred") {
                 let field = marker
                     .filter(|marker| marker["field"] == "symbol")
@@ -167,12 +197,25 @@ pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerE
                 return BrokerError::invalid(field, MCP_REQUEST_REJECTED)
                     .with_next("Find the series id with economy_fred_search, then read it again.");
             }
+            let field = marker.and_then(|marker| marker["field"].as_str());
+            if let Some(field) = field.filter(|field| {
+                !field.is_empty()
+                    && field.len() <= 64
+                    && field
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            }) {
+                return BrokerError::invalid(field, MCP_FIELD_REJECTED).with_next(MCP_FIELD_NEXT);
+            }
             return invalid_mcp_arguments();
         }
         Some("unsupported_adjustment") => {
             return BrokerError::invalid("adjustment", YAHOO_ADJUSTMENT_EXPECTED);
         }
         Some("offline") => return BrokerError::Offline("market data provider".into()),
+        Some("empty_result") => {
+            return BrokerError::EmptyResult;
+        }
         Some("sec_contact_required")
             if marker.is_some_and(|marker| marker["provider"] == "sec") =>
         {
@@ -295,6 +338,112 @@ fn mcp_has_status(value: &Value, status: i64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bundled_refusals_keep_a_safe_field_and_allow_any_empty_provider() {
+        use crate::chat::progress::{step_failure_reason, ChatStepFailureReason};
+
+        for (marker, reason) in [
+            (
+                json!({"kind": "invalid_arguments", "provider": "imf", "field": "country"}),
+                ChatStepFailureReason::InvalidInput,
+            ),
+            (
+                json!({"kind": "empty_result", "provider": "seeking_alpha"}),
+                ChatStepFailureReason::EmptyResult,
+            ),
+            (
+                json!({"kind": "empty_result"}),
+                ChatStepFailureReason::EmptyResult,
+            ),
+        ] {
+            let result = crate::mcp::McpCallResult {
+                is_error: true,
+                content: vec![],
+                structured_content: Some(json!({"loupist_error": marker})),
+                metadata: None,
+            };
+            let refusal = rejected_mcp_result(&result);
+            let body = crate::broker::error_body(&refusal);
+            assert_eq!(step_failure_reason(&Value::Null, Some(&body)), reason);
+            if let BrokerError::WithNext { source, .. } = refusal {
+                assert!(matches!(source.as_ref(),
+                    BrokerError::InvalidArguments { field, .. } if field == "country"));
+            }
+        }
+    }
+
+    #[test]
+    fn statement_refusals_keep_the_fields_bounds_and_activity_reason() {
+        use crate::chat::progress::{step_failure_reason, ChatStepFailureReason};
+
+        for (mut marker, code, reason, expected) in [
+            (
+                json!({"kind": "invalid_arguments", "field": "limit", "minimum": 0, "maximum": 5}),
+                "malformed_request",
+                ChatStepFailureReason::InvalidInput,
+                Some((
+                    "limit",
+                    json!({"provider": "yfinance", "minimum": 0, "maximum": 5}),
+                )),
+            ),
+            (
+                json!({"kind": "invalid_arguments", "field": "period", "allowed_values": ["annual", "quarter"]}),
+                "malformed_request",
+                ChatStepFailureReason::InvalidInput,
+                Some((
+                    "period",
+                    json!({"provider": "yfinance", "allowed_values": ["annual", "quarter"]}),
+                )),
+            ),
+            (
+                json!({"kind": "empty_result"}),
+                "empty_result",
+                ChatStepFailureReason::EmptyResult,
+                None,
+            ),
+        ] {
+            marker["provider"] = json!("yfinance");
+            let result = serde_json::from_value(json!({
+                "isError": true, "content": [{"type": "text", "text": "private provider error"}],
+                "structuredContent": {"loupist_error": marker},
+            }))
+            .unwrap();
+            let error = super::super::provider_failure(
+                rejected_mcp_result(&result),
+                None,
+                Some("yfinance"),
+                true,
+            );
+            let error = mcp_call_error_with_inventory(Some(vec![]), error).unwrap_err();
+            if let Some((field, facts)) = expected {
+                // The sentence names the provider and carries every bound or allowed value.
+                assert!(
+                    matches!(&error, BrokerError::InvalidArguments { field: rejected, expected }
+                    if rejected == field
+                        && expected.contains("yfinance")
+                        && facts.as_object().unwrap().iter().filter(|(key, _)| *key != "provider").all(|(_, value)| match value {
+                            Value::Array(values) => values.iter().all(|value| expected.contains(value.as_str().unwrap())),
+                            other => expected.contains(&other.to_string()),
+                        }))
+                );
+            } else {
+                assert!(matches!(&error, BrokerError::EmptyResult));
+            }
+            let body = crate::broker::error_body(&error);
+            assert_eq!(body["code"], code);
+            assert_eq!(step_failure_reason(&Value::Null, Some(&body)), reason);
+            assert!(!body.to_string().contains("private provider error"));
+        }
+        assert_eq!(
+            step_failure_reason(
+                &json!({"content": [{"type": "text", "text":
+                    "Validation failed for tool \"mcp__openbb__equity_fundamental_income\":\n  - limit: Expected a value <= 5"}], "details": {}}),
+                None,
+            ),
+            ChatStepFailureReason::InvalidInput,
+        );
+    }
 
     #[test]
     fn openbb_offline_results_keep_the_typed_broker_failure_after_activation() {

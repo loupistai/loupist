@@ -35,7 +35,8 @@ profile and the World settings' `research_focus`; Loupist settings and `loupist_
 change it there, and every turn's context carries it from the profile
 ([context assembly](../agent/context.md#context-assembly-and-bounds)). The first
 perspective the agent files creates the perspective page. The interface shows the
-English default heading of a suggested section key in its own language.
+English default heading of a suggested section key, and the `statement` section a
+principle save records in History, in its own language.
 
 Bodies link `lens:rec_…` (navigation, resolved by record id, with backlinks from the
 link index) and, on subject and idea pages, `world:<node id>` of this Loupist's

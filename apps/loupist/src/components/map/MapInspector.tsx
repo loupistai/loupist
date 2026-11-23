@@ -4,7 +4,7 @@ import { ConnectionOrigin } from "../connections/custom/ConnectionOrigin";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeftIcon, XIcon } from "lucide-react";
 import { LensLearningPanel } from "../knowledge/LensLearningPanel";
-import type { KnowledgeMap, KnowledgeMapNode } from "../../contracts/knowledge";
+import type { KnowledgeMap, KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
 import type { LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin, PageSummary, WorldGraphView } from "../../types";
 import { useTranslation } from "../../i18n";
 import { formatDate } from "../../i18n/format";
@@ -96,7 +96,9 @@ export function MapInspector({ onShowConnections, node, map, bridge, location, o
   })).values()];
   const connected = map.edges.filter((e) => e.source === node.id || e.target === node.id);
   const lenses = connected.filter((e) => e.kind === "applies_to").map((e) => map.nodes.find((n) => n.id === (e.source === node.id ? e.target : e.source))).filter((n): n is KnowledgeMapNode => !!n && n.kind !== "entity");
-  const connections = connected.filter((e) => e.kind === "claim" && isDrawnRelation(e)).sort((a, b) => (a.relation ?? "").localeCompare(b.relation ?? ""));
+  // Grouped by the label the reader sees: two stored names with one label are one group.
+  const relationLabel = (edge: KnowledgeMapEdge) => edge.relation ? relationName(edge.relation, t) : "";
+  const connections = connected.filter((e) => e.kind === "claim" && isDrawnRelation(e)).sort((a, b) => relationLabel(a).localeCompare(relationLabel(b)));
   const openSource = (spanId: string) => {
     const target = graph?.sourceTargets?.[spanId];
     if (target) onOpen({ loupistId: location.loupistId, surface: "source", recordId: target.recordId, revisionId: target.revisionId, objectId: target.sourceId, selection: { kind: "source", sourceId: target.sourceId, spanId: target.spanId, worldRecordId: target.worldRecordId, worldRevisionId: target.worldRevisionId } });
@@ -145,7 +147,7 @@ export function MapInspector({ onShowConnections, node, map, bridge, location, o
       <h3>{t("map.seenThrough")}</h3>{lenses.map((item) => <Button variant="ghost" className="map-connection map-lens-applied" key={item.id} onClick={() => onSelect(item)}><span>{lensDisplayTitle(item, catalogLenses)}</span><small>{t(`pageReader.kind.${item.kind.replace(/^lens_/, "") as "principle" | "perspective" | "method" | "subject" | "idea"}`)}</small></Button>)}{!lenses.length ? <p className="map-muted">{t("map.noLens")}</p> : null}
     </> : <><h3>{connected.filter((e) => e.kind === "applies_to").length ? t("map.appliedTo", { count: connected.filter((e) => e.kind === "applies_to").length }) : t("map.notApplied")}</h3>{connected.filter((e) => e.kind === "applies_to").map((e) => { const target = map.nodes.find((n) => n.id === e.target); return target ? <Button className="map-connection" variant="ghost" key={e.id} onClick={() => onSelect(target)}>{entityLabel(target, i18n.language)}</Button> : null; })}{node.recordId ? <Button variant="outline" onClick={() => onOpen({ loupistId: location.loupistId, surface: "lens", recordId: node.recordId })}>{t("map.openDocument")}</Button> : null}</>}
     {/* The Relationships view already shows every connection with its direction; the flat list belongs to Facts. */}
-    {showRelationships ? null : <><h3>{t("map.connections", { count: connections.length })}</h3>{(allConnections ? connections : connections.slice(0, 8)).map((edge, index, rows) => { const neighbor = map.nodes.find((n) => n.id === (edge.source === node.id ? edge.target : edge.source)); return neighbor ? <div key={edge.id}>{index === 0 || rows[index - 1].relation !== edge.relation ? <small className="map-relation">{(edge.relation ? relationName(edge.relation, t) : undefined)}</small> : null}<Button variant="ghost" className="map-connection" onClick={() => onSelect(neighbor)}><i className={`map-swatch is-${nodeCategory(neighbor)}`} />{entityLabel(neighbor, i18n.language)}</Button></div> : null; })}
+    {showRelationships ? null : <><h3>{t("map.connections", { count: connections.length })}</h3>{(allConnections ? connections : connections.slice(0, 8)).map((edge, index, rows) => { const neighbor = map.nodes.find((n) => n.id === (edge.source === node.id ? edge.target : edge.source)); return neighbor ? <div key={edge.id}>{index === 0 || relationLabel(rows[index - 1]) !== relationLabel(edge) ? <small className="map-relation">{relationLabel(edge) || undefined}</small> : null}<Button variant="ghost" className="map-connection" onClick={() => onSelect(neighbor)}><i className={`map-swatch is-${nodeCategory(neighbor)}`} />{entityLabel(neighbor, i18n.language)}</Button></div> : null; })}
     {connections.length > 8 ? <Button variant="link" onClick={() => setAllConnections(!allConnections)}>{t(allConnections ? "map.less" : "map.more")}</Button> : null}</>}
     <footer>{onShowConnections ? <Button variant="outline" onClick={onShowConnections}>{t("map.showConnections")}</Button> : null}
     {node.kind === "entity" && location.recordId && location.revisionId ? <Button onClick={() => onAsk(pinForNode(location.loupistId, location.recordId!, location.revisionId!, entity ?? { id: node.id, name: node.label, aliases: [], description: "", kind: node.entityKind ?? "", sourceRole: "", properties: {} }))}>{t("map.askAbout")}</Button> : null}

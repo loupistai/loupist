@@ -14,7 +14,9 @@ a previously delivered card. A hidden research card stays in its version until t
 version is selected again. Link delivery marks commit in the
 same SQLite transaction as their Thread messages.
 Posting takes the chat-mutation lock; while a reply runs in the Thread, delivery
-waits for the next completion or workspace load. The post names Schedule, the task and the run’s finish date and time. Open shows the exact run in Schedule. A failed run says "This run couldn't finish." A post whose task or run has been removed keeps its preview and explains that the record was removed when opened. Seeing a delivery for one second marks it read, as does opening its run reader.
+waits for the next completion or workspace load. A reply whose answer is stored and
+whose save waits on its own no longer holds the Thread, so posts follow it at once
+([saves that wait on their own](../runtime/chat-turns.md#saves-that-wait-on-their-own)). The post names Schedule, the task and the run’s finish date and time. Open shows the exact run in Schedule. A failed run says "This run couldn't finish." A post whose task or run has been removed keeps its preview and explains that the record was removed when opened. Seeing a delivery for one second marks it read, as does opening its run reader.
 Bot’s task cards share the current Schedule list by task ID. A changed tool receipt refreshes that list for every card, including when a deletion replaces a read at the same task revision. Active tasks show their next run. A deleted task card shows its title and a muted Deleted label. Cards omit status while the list loads. Task cards, delivery posts and Needs attention use Schedule’s localized briefing title and preserve custom titles. For an unopened Loupist, the briefing task’s dedicated session ID identifies its attention row.
 
 A [price setup](../knowledge/asset-pages.md#host-reads-and-refresh) that ran and left an asset
@@ -148,7 +150,9 @@ figures that did not match have their own button. A reply that failed as a whole
 bubble of its own. Days between messages are a small pill; "New since you left" is not shown in Bot.
 
 An empty Bot opens on the greeting (`BotGreeting.tsx`, renderer only, no model call): the face, a
-greeting by the time of day and the date (the page header above names the Loupist), then up to
+greeting by the Mac's local time of day (Good morning from 05:00, Good afternoon from 12:00,
+Good evening from 18:00 to midnight; from 00:00 to 05:00, which neither language greets by
+name, the neutral "What would you like to research?" of an empty research session) and the date (the page header above names the Loupist), then up to
 four cards and up to four of this Loupist's followed assets (`assets_list`) that have a stored price (`watchlist_quotes`) as tiles:
 the name, the price and "As of {date} · {provider}", each opening its asset page by id (named
 "Open {name}", with the price and its date read as the tile's description). Tiles and cards name
@@ -165,7 +169,7 @@ followed the cards, under "Suggested questions", are where the first followed as
 morning briefing while it is off), another asset's next earnings date and the week's biggest movers; a
 quiet line offers to teach a principle until one is saved or the line is hidden
 (`loupist.bot.principleHidden.v1:{loupistId}` in `localStorage`; hiding it moves the keyboard
-to the last card). Steps are read again each time Bot
+to the last card). Steps, the greeting and the date are read again each time Bot
 is shown, so a step done elsewhere drops out. The greeting stays below host posts until the user
 writes; nothing is pinned under the conversation after that.
 

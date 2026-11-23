@@ -25,6 +25,7 @@ const readinessNotes = (): Record<GraphReadinessNote, string> => ({
   recovering: i18n.t("settings:worldSettings.readiness.recovering"),
   runtime_unavailable: i18n.t("settings:worldSettings.readiness.runtimeUnavailable"),
   awaiting_provider: i18n.t("settings:worldSettings.readiness.awaitingProvider"),
+  no_account: i18n.t("knowledge:sourceWorkspace.worldWaitingForAccount"),
   choose_model: i18n.t("settings:worldSettings.readiness.chooseModel"),
   model_unavailable: i18n.t("settings:worldSettings.readiness.modelUnavailable"),
   connect_provider: i18n.t("settings:worldSettings.readiness.connectProvider"),
@@ -178,7 +179,16 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
   const models = catalog.models.filter((model) => model.credential_source !== "missing" && catalog.providers.find((provider) => provider.id === model.provider)?.credential_source !== "missing");
   const readinessLabel = view.readiness.status === "model_required" && !models.length ? t("worldProcessingSettings.waitingForAProvider") : worldReadinessLabels()[view.readiness.status];
   const readinessMessage = (view.readiness.note ? readinessNotes()[view.readiness.note] : null) || (!models.length ? t("worldProcessingSettings.noConnectedModelsConnectAProviderToStartProcessing") : null);
+  const following = draft.worldModelChoice === "recommended";
+  const recommended = view.recommended ?? null;
+  const recommendedModel = recommended ? models.find((model) => model.id === recommended.modelProfileId) : undefined;
+  const recommendedLabel = recommendedModel ? t("worldProcessingSettings.recommendedModel", { model: recommendedModel.name }) : t("worldProcessingSettings.recommended");
+  // Recommended shows the list's effort and run options for the model it resolves to.
+  const menuSelection = following
+    ? { model_profile_id: recommendedModel?.id ?? "", thinking_level: recommended?.thinkingLevel ?? "", run_options: recommended?.runOptions ?? {} }
+    : { model_profile_id: draft.helperModelProfileId ?? "", thinking_level: draft.thinkingLevel, run_options: draft.runOptions };
   const selectedModel = models.find((model) => model.id === draft.helperModelProfileId);
+  const chosenUnavailable = !following && !!draft.helperModelProfileId && !selectedModel;
   const savedRelations = (view.settings.relationHints ?? []).join(", ");
   const savedAnchors = serializeAnchors(view.settings.anchors);
   const changed = JSON.stringify(draft) !== JSON.stringify(view.settings) || relationText !== savedRelations || anchorText !== savedAnchors;
@@ -186,7 +196,7 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
     setLoaded((previous) => previous?.loupistId === loupistId ? { ...previous, draft: { ...previous.draft, ...patch } } : previous);
     setNote(null);
   };
-  const save = (pause?: boolean) => {
+  const save = (pause?: boolean, patch?: Partial<GraphProcessingSettings>) => {
     if (busy) return;
     const ticket = ++serial.current;
     const captured = loupistId;
@@ -195,6 +205,7 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
     setError(null);
     const settings = {
       ...draft,
+      ...patch,
       relationHints: relationText.split(",").map((item) => item.trim()).filter(Boolean).slice(0, 32),
       anchors: anchorText === savedAnchors ? view.settings.anchors : parseAnchors(anchorText, view.settings.anchors),
     };
@@ -255,10 +266,12 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
         {t("worldProcessingSettings.automaticallyProcessSavedSources")}</label>
       <div className="world-processing-model">
         <span>{t("worldProcessingSettings.processingModel")}</span>
-        {models.length ? <ModelSelectionMenu models={models} providers={catalog.providers} disabled={busy} ariaLabel={t("worldProcessingSettings.worldProcessingModel")} selection={{ model_profile_id: draft.helperModelProfileId ?? "", thinking_level: draft.thinkingLevel, run_options: draft.runOptions }}
-          onSelectionChange={(selection) => edit({ helperModelProfileId: selection.model_profile_id, thinkingLevel: selection.thinking_level, runOptions: selection.run_options })} /> : null}
-        {models.length ? <p className="knowledge-hint">{t("worldProcessingSettings.thisChoiceIsSeparateFromTheModelSelectedInChat")}</p> : null}
-        {models.length > 0 && draft.helperModelProfileId && !selectedModel ? <p>{t("worldProcessingSettings.theSavedModelIsUnavailableReconnectItsProviderOrChoose")}</p> : null}
+        <ModelSelectionMenu models={models} providers={catalog.providers} disabled={busy} ariaLabel={t("worldProcessingSettings.worldProcessingModel")} selection={menuSelection}
+          recommended={{ label: recommendedLabel, selected: following, onSelect: () => edit({ worldModelChoice: "recommended" }) }}
+          onSelectionChange={(selection) => edit({ worldModelChoice: "chosen", helperModelProfileId: selection.model_profile_id, thinkingLevel: selection.thinking_level, runOptions: selection.run_options })} />
+        <p className="knowledge-hint">{t("worldProcessingSettings.recommendedModelCaption")}</p>
+        {chosenUnavailable && models.length > 0 ? <p>{t("worldProcessingSettings.theSavedModelIsUnavailableReconnectItsProviderOrChoose")}</p> : null}
+        {chosenUnavailable ? <Button type="button" variant="outline" disabled={busy} onClick={() => save(undefined, { worldModelChoice: "recommended" })}>{t("worldProcessingSettings.useTheRecommendedModel")}</Button> : null}
         {onManageProviders ? <Button type="button" variant="ghost" onClick={onManageProviders}>{view.readiness.status === "provider_disconnected" ? t("worldProcessingSettings.reconnectProvider") : t("worldProcessingSettings.manageProviders")}</Button> : null}
       </div>
       <Disclosure title={t("worldProcessingSettings.researchGuidance")} description={t("worldProcessingSettings.focusRelationshipNamesAndAnchorEntities")}>
@@ -282,7 +295,7 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
     </fieldset>
     {changed ? <p className="knowledge-hint">{t("worldProcessingSettings.unsavedChangesStatusAboveReflectsTheSavedSettings")}</p> : null}
     <div className="knowledge-inspector-actions">
-      <Button type="submit" variant="outline" disabled={busy || !changed || (draft.enrichmentEnabled && !selectedModel)}>{action === "save" || action === "pause" ? t("worldProcessingSettings.savingSettings") : t("worldProcessingSettings.saveProcessingSettings")}</Button>
+      <Button type="submit" variant="outline" disabled={busy || !changed || (draft.enrichmentEnabled && !following && !selectedModel)}>{action === "save" || action === "pause" ? t("worldProcessingSettings.savingSettings") : t("worldProcessingSettings.saveProcessingSettings")}</Button>
       {changed ? <Button type="button" variant="ghost" disabled={busy} onClick={() => { setLoaded((previous) => previous?.loupistId === loupistId ? { ...previous, draft: previous.view.settings } : previous); setRelationText(savedRelations); setAnchorText(savedAnchors); setError(null); setNote(null); }}>{t("worldProcessingSettings.discardChanges")}</Button> : null}
       <Button type="button" variant="ghost" disabled={busy} onClick={() => save(!draft.paused)}>{draft.paused ? t("worldProcessingSettings.resumeProcessing") : t("worldProcessingSettings.pauseProcessing")}</Button>
       <Button type="button" variant="ghost" disabled={busy || changed} onClick={() => setReload((value) => value + 1)}>{t("worldProcessingSettings.refreshStatus")}</Button>

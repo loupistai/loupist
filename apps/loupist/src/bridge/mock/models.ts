@@ -271,17 +271,22 @@ export function executionModelLock(
   };
 }
 
-/** Preview projection of a scoped request using the fixture catalog. */
+/**
+ * Preview projection of a scoped request using the fixture catalog. Like the
+ * host, a stored model that cannot run (hidden, or its account signed out)
+ * gives way to the default model, with that model's own controls.
+ */
 export function mockModelSelection(catalog: Contract.ModelCatalog, request?: Pick<Contract.EffectiveConfig["chat"], "model_profile_id" | "thinking_level" | "run_options">): NonNullable<Contract.ModelCatalog["default_selection"]> {
   const id = request?.model_profile_id;
-  const requested = catalog.models.find(model => model.id === id);
   const hidden = catalog.hidden_model_profile_ids;
-  const model = requested ?? catalog.models.find(model => !hidden.includes(model.id) && model.credential_source !== "missing");
+  const requested = catalog.models.find(model => model.id === id);
+  const storedUnavailable = !requested ? null : hidden.includes(requested.id) ? "model_hidden" as const : requested.credential_source === "missing" ? "account_disconnected" as const : null;
+  const explicit = requested && !storedUnavailable ? requested : undefined;
+  const model = explicit ?? catalog.models.find(model => !hidden.includes(model.id) && model.credential_source !== "missing");
   const connected = [...catalog.providers, ...catalog.custom_providers].some(option => option.credential_source !== "missing");
-  const unavailable = !model ? connected ? "no_eligible_model" : "no_connected_account"
-    : hidden.includes(model.id) ? "model_hidden" : model.credential_source === "missing" ? "account_disconnected" : null;
-  if (!model || unavailable) return { model: null, is_default: !requested, unavailable_reason: unavailable, thinking_levels: [], thinking_level: null, run_options: {}, run_controls: [] };
-  return { model: { id: model.id, name: model.name, provider: model.provider, model: model.model }, is_default: !requested, unavailable_reason: null,
-    thinking_level: request?.thinking_level || defaultThinkingLevel(model.thinking_levels), thinking_levels: model.thinking_levels,
-    run_controls: model.run_controls, run_options: { ...defaultRunOptions(model), ...request?.run_options } };
+  if (!model) return { model: null, is_default: true, unavailable_reason: connected ? "no_eligible_model" : "no_connected_account", thinking_levels: [], thinking_level: null, run_options: {}, run_controls: [], stored_unavailable: null };
+  const controls = explicit || !requested ? request : undefined;
+  return { model: { id: model.id, name: model.name, provider: model.provider, model: model.model }, is_default: !explicit, unavailable_reason: null,
+    thinking_level: controls?.thinking_level && model.thinking_levels.includes(controls.thinking_level) ? controls.thinking_level : defaultThinkingLevel(model.thinking_levels), thinking_levels: model.thinking_levels,
+    run_controls: model.run_controls, run_options: { ...defaultRunOptions(model), ...controls?.run_options }, stored_unavailable: storedUnavailable };
 }

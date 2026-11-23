@@ -258,9 +258,15 @@ describe("ChatComposer input", () => {
     // Focus goes back to the message, so the "+" tooltip does not reopen over the chip.
     await waitFor(() => expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveFocus());
     expect(screen.queryByRole("tooltip")).toBeNull();
-    expect(screen.getByText("Private · memory off").parentElement).toHaveAccessibleDescription("Private chat: your Loupist doesn't use or add to what it remembers. The chat is still saved, and still goes to your AI provider.");
+    // What Private chat keeps and sends is visible text under its chip, not a tooltip.
+    const chip = screen.getByText("Private · memory off").parentElement!;
+    expect(chip).not.toHaveAttribute("title");
+    const note = screen.getByText("Private chat: your Loupist doesn't use or add to what it remembers. The chat is still saved, and still goes to your AI provider.");
+    expect(note).toBeVisible();
+    expect(chip.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await user.click(off);
     expect(screen.queryByText("Private · memory off")).toBeNull();
+    expect(screen.queryByText(/^Private chat: /)).toBeNull();
     expect(screen.getByText("AI can be wrong. Not a licensed financial adviser.")).toBeVisible();
   });
 

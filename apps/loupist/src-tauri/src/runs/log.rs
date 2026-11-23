@@ -75,6 +75,50 @@ impl MemoryCommitFailure {
     }
 }
 
+/// Local startup diagnostics use a fixed checkpoint and a known host code.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ChatStartPhase {
+    CredentialPresence,
+    Request,
+    RunAdmission,
+    Scratch,
+    Model,
+    Configuration,
+    ConnectorAuthority,
+    WorkspaceContext,
+    Transcript,
+    Launch,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ChatStartFailure {
+    pub phase: ChatStartPhase,
+    pub reason: String,
+}
+
+impl ChatStartFailure {
+    pub fn new(phase: ChatStartPhase, code: &crate::app::CommandErrorCode) -> Self {
+        use crate::app::CommandErrorCode;
+        let reason = match code {
+            CommandErrorCode::Unlisted(_) => CommandErrorCode::Internal.as_str(),
+            code => code.as_str(),
+        };
+        Self {
+            phase,
+            reason: reason.into(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ChatSavePath {
+    Direct,
+    Queued,
+    Waited,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RunLog {
@@ -89,7 +133,11 @@ pub(crate) struct RunLog {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_start_failure: Option<ChatStartFailure>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory_save_skip: Option<crate::domain::MemorySaveSkipReason>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_save_path: Option<ChatSavePath>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory_commit_failure: Option<MemoryCommitFailure>,
     pub model: Option<String>,
@@ -110,6 +158,13 @@ pub(crate) struct RunLog {
     /// World jobs: how long the job waited in the queue before this attempt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub queue_wait_ms: Option<u64>,
+    /// World jobs that ran extraction: names the model merged into an existing
+    /// node (`proposed`), those merges the host refused because the two names
+    /// carry different identifying codes (`refused`), and names the host
+    /// joined to the stored node with an equal code where the model had not
+    /// (`byCode`). Counts only.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub entity_resolution: BTreeMap<String, u64>,
     /// Chat turns: duration of the turn's first OpenBB call. It includes the
     /// worker's cold start when no pooled OpenBB process was ready.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -184,7 +239,9 @@ impl RunLog {
             duration_ms: 0,
             status: "ok".into(),
             failure_kind: None,
+            chat_start_failure: None,
             memory_save_skip: None,
+            chat_save_path: None,
             memory_commit_failure: None,
             model: None,
             effort: None,
@@ -196,6 +253,7 @@ impl RunLog {
             inference_calls: BTreeMap::new(),
             stage_ms: BTreeMap::new(),
             queue_wait_ms: None,
+            entity_resolution: BTreeMap::new(),
             openbb_first_call_ms: None,
             connector_keychain_statuses: BTreeSet::new(),
             observed_calls: BTreeSet::new(),
@@ -593,7 +651,7 @@ fn diagnostics_root(state: &AppState, loupist: Option<&str>) -> Result<PathBuf, 
     )
     .join(".loupist"))
 }
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn run_logs_reveal(
     request: DiagnosticsRequest,
     state: tauri::State<'_, AppState>,
@@ -615,7 +673,7 @@ pub fn run_logs_reveal(
     open::that_detached(path).map_err(io_error)?;
     Ok(())
 }
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn run_logs_last_error(
     request: DiagnosticsRequest,
     state: tauri::State<'_, AppState>,

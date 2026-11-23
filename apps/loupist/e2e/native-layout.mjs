@@ -10,7 +10,7 @@ import { verifyChatTransitions } from "./native-chat-transitions.mjs";
 export const layoutWidths = [700, 800, 899, 900, 1061, 1280, 1680, 2560];
 export const layoutScenarios = [
   "shell-titlebar-grown", "chat-header-resuming",
-  "activity-sheet", "activity-sheet-panel", "chat-chart-inline", "chat-chart-failed", "chat-grid-card", "chat-step-paused",
+  "activity-sheet", "activity-sheet-earlier", "activity-sheet-panel", "chat-chart-inline", "chat-chart-failed", "chat-grid-card", "chat-step-paused",
   "chat-all-chats", "chat-status-pill", "chat-status-pill-idle",
 ];
 
@@ -34,16 +34,20 @@ export function measureChatLayout() {
     width: contentBox.width - left - right, center: contentBox.center + (left - right) / 2 };
   const panel = document.querySelector(".workspace-panel");
   const scroll = document.querySelector(".message-scroll");
-  const textContext = document.createElement("canvas").getContext("2d");
   const receipts = [...document.querySelectorAll(".chat-receipt-item")].flatMap((item) => {
     const label = item.querySelector(".chat-receipt-segment, .chat-receipt-text");
     const bounds = box(label);
     if (!bounds || label.querySelector("svg")) return [];
-    const style = getComputedStyle(label);
-    textContext.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
     const text = label.textContent.trim();
-    const textWidth = textContext.measureText(text).width
-      + (parseFloat(style.letterSpacing) || 0) * Math.max(0, [...text].length - 1);
+    // The label's own width on one line, measured in place: a copy beside it inherits the
+    // language and so the font the page chose. A canvas has no language, and where a
+    // language picks its own fallback font (Korean on Linux) it measures another font.
+    const probe = label.cloneNode(true);
+    probe.setAttribute("aria-hidden", "true");
+    probe.style.cssText += ";position:absolute;visibility:hidden;white-space:nowrap;width:max-content;max-width:none;flex:none";
+    label.after(probe);
+    const textWidth = probe.getBoundingClientRect().width;
+    probe.remove();
     const available = item.closest(".chat-receipt").clientWidth - item.querySelector(".chat-receipt-separator").getBoundingClientRect().width;
     return [{ text, bounds, requiredWidth: Math.min(textWidth, available) }];
   });

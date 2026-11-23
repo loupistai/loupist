@@ -129,8 +129,17 @@ active, uncertain, quarantined, stale-revision or user-paused work. Duplicate cl
 while queued cannot refill it. If this attempt exhausts its allowance again it
 stops again; only another explicit Source retry can fund it. Resuming World building,
 settings changes and restarts never refill a spent allowance.
-Its Library row, Source reader and Chat status then read "World building stopped for this source"; a row reads "World
-building paused" only while the user has paused World building (`source_processing`
+Such a chunk never resumes by itself. Its Library row, the Source reader, World's
+status line and the sidebar's World row then read "World building paused for this
+source: it reached the request allowance set in World building settings.", without
+a spinner, and World's status line, the Library status and the reader carry the
+control that opens World building settings (Maximum model requests per source,
+1–64, default 32 per Loupist, since a clean run of a 20 KB filing needs up to 24 on
+every recommended model; there is no daily or token cap). World settings saved before
+Loupists recorded their World model choice that still hold the old default, 16, read
+as 32 and record it on the next save; settings saved since keep what they hold. Chat's status still
+reads "World: building paused for this source (request allowance reached)". A row reads "World building
+paused" only while the user has paused World building (`source_processing`
 and `knowledge_graph_job` report such a job as `paused`, an exhausted one keeps
 `paused_budget`). Chat reads parked jobs once on opening and offers Refresh status
 without scheduling work.
@@ -283,6 +292,71 @@ requires the resolver to select it and the time guards to pass. Other resolution
 keep their existing fact-only requests. Restating an earlier start with an explicit
 end closes the old interval at the end, preserving the stated start.
 
+### Identifying codes in entity resolution
+
+Extraction names an entity with the identifying codes its Source states.
+Resolution asks the model which stored node an extracted name is. The host then
+holds the codes over that answer (`knowledge/entity_codes.rs`, `apply_resolution`
+in `world_extract/pipeline.rs`).
+
+- A code is any of these:
+  - a listing ticker with or without its exchange (`0489.HK`, `HKEX:489`);
+  - a ticker as the trailing capital word after a written name ("Stellantis STLA");
+  - an ISIN, FIGI or LEI whose check digits hold;
+  - a CIK, a DART corp code or another identifier a node's properties state.
+- Exchange suffixes compare by the venue families that followed assets already use
+  (`identity::market_family`). `0489.HK` and `HKEX:489` are one code. One ticker
+  on two families is two codes.
+- A trailing capital word is not a ticker in these cases:
+  - the other name spells it as one of its own words ("Samsung SDI");
+  - it is a legal form, a roman numeral or a share class;
+  - it is the initials of the name before it ("General Motors GM").
+- Two names agree when, without their code, legal forms, punctuation and case, they
+  are equal or one's words begin the other's ("Toyota", "Toyota Motor", "Toyota
+  Motor Corporation"). Names in different scripts do not agree.
+- The host refuses a merge the model proposed when the codes differ and the names do
+  not agree ("Stellantis STLA" into "Dongfeng Motor 0489.HK"). When the codes differ
+  but the names agree, the model's decision stands. Such codes are listings of one
+  company as often as two companies ("Toyota TM" and "Toyota 7203.T", "Alphabet
+  GOOG" and "Alphabet GOOGL").
+- The host joins a name to a stored node without the model when a code is equal and
+  either the code identifies the entity on its own or the names agree. The node must
+  be of the same kind, or one of the two untyped. Codes that identify on their own:
+  - a ticker both sides write with its exchange suffix or exchange;
+  - a checked ISIN, FIGI or LEI;
+  - a CIK or a DART corp code.
+  "Tesla TSLA" joins "Tesla Inc TSLA". An equal bare trailing capital under names
+  that do not agree ("Google AI" and "Meta AI", "Apple TV" and "Samsung TV")
+  stays the model's decision. When two stored nodes qualify and their codes differ,
+  the codes decide nothing.
+- Every other case is the model's decision, as before, including every name without
+  a code.
+- A resolved spelling becomes an alias unless the host would refuse it beside the
+  node's name and codes.
+- Each World run log entry counts these decisions as `entityResolution`
+  ([Diagnostics](../dev/diagnostics.md#diagnostics)).
+
+A World resolved before these rules can hold what they refuse. Every publication
+from a Source repairs it before the seal (`entity_codes/repair.rs`, called from
+`graph_jobs::publish_and_complete`), so the first publication after an update
+repairs the existing World:
+
+- An alias the host refuses beside its node is dropped.
+- Nodes the host joins merge into the one World saw first (its first
+  `entity_added`). Its name and aliases, missing properties and missing summary text
+  join the survivor, within the alias, property and description caps.
+- Claims keep their ids, text, status and evidence and move to the survivor. A
+  relationship between two merged nodes is now about one entity and is withdrawn,
+  as publication already withdraws such relationships. Growth events stay as written.
+- Lens anchors and asset pages that named a merged node name the survivor.
+  Discovered connections keep their stored ends.
+- The repair touches a node only under those two rules. Names whose codes differ but
+  agree in name ("Toyota TM" aliased "Toyota 7203.T") stay as the model resolved them,
+  and so do names that share only an equal bare trailing capital.
+- The pass compares only nodes that share a code value. It reads growth events only
+  when two nodes do. It repeats while a merge gives the survivor a new code, so a
+  second pass over its result changes nothing.
+
 ### Discovery after publication
 
 Every World publication runs `world_followups::after_seal` in the transaction that
@@ -330,5 +404,6 @@ nodes in the current World.
 
 - Discovery: `src-tauri/src/knowledge/connections.rs` (pure detector), `src-tauri/src/knowledge/world_followups.rs` (post-seal steps and the `knowledge_connections` table)
 - World extraction and index: `src-tauri/src/knowledge/world_extract/` (`pipeline`, `bridge`, `index`, `search`, `job`)
+- Identifying codes in entity resolution: `src-tauri/src/knowledge/entity_codes.rs`
 - Queue, scheduling and interruptions: `src-tauri/src/knowledge/graph_service.rs` (worker loop and slots), `src-tauri/src/knowledge/graph_jobs.rs` (job states, retries, request limits)
 - Keep-awake: `src-tauri/src/power.rs` (rule and macOS assertion), `src-tauri/src/commands/power.rs`

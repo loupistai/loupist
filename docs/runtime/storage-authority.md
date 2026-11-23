@@ -294,6 +294,18 @@ opening other registrations. A failed ownership probe is skipped so an unavailab
 folder cannot block records in another folder; a located owner still passes the
 folder and database identity checks.
 
+Each Loupist database has one connection, and every folder connection sits behind
+one host lock that a transaction holds until it commits. A World publication holds
+it while it seals and indexes the whole World, so the wait grows with the World.
+That wait is on the host lock: SQLite's five-second busy timeout applies only to a
+second connection to the same file (admission's read-only check and registration's
+attached write). Tauri runs a command declared without `async` inside IPC dispatch,
+which in the app is the main thread, where AppKit, accessibility and clicks wait
+for it. A command that reads or writes a database, a file or the keychain is
+therefore `#[tauri::command(async)]`; only in-memory, menu and open-a-page commands
+stay synchronous. `commands/tests/main_thread.rs` holds the lock and checks that
+the commands the renderer sends while World works leave dispatch free.
+
 Store 5 also restores the `piSessionCache` key that builds before it removed from
 stored Chats on reconnect and import. Chat writes compare the stored text with the
 re-encoded Chat, so those Chats refused every later write; the step puts the key
@@ -427,8 +439,12 @@ The key needs no database migration. Older versions reject it until the line
 is removed from global `config.toml`.
 
 Fields resolve project → global → app default; arrays replace. Reset removes the
-scoped field. Explicit composer selections override Chat defaults, and new Chats
-inherit Memory defaults while existing Chats retain their saved policy. Scheduled
+scoped field. The Chat defaults picker saves the selected model and its run
+controls in one scope update. A locally selected model inherits only compatible
+global controls. Older preferences that saved only a model use its declared
+defaults for any missing controls. Explicit composer selections override Chat
+defaults. New Chats inherit Memory defaults and existing Chats retain their
+saved policy. Scheduled
 runs use their saved model (empty means [Auto](providers.md#shared-providers-and-world-processing))
 and Memory selections. Invalid configuration blocks new dependent runs without
 replacing the file: malformed TOML, an unknown section or key, an invalid value

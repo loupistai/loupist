@@ -38,6 +38,8 @@ pub enum NumberCheckStatus {
     Rounded,
     NotFound,
     Differs,
+    /// The link names no result this reply retained, so nothing could be checked.
+    Unlinked,
 }
 
 /// Why a numeric citation did not verify against its retained evidence.
@@ -215,6 +217,16 @@ pub enum UnstatedScale {
     Answer,
 }
 
+/// How the source signs a matched amount that the answer states unsigned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum SourceSign {
+    /// Negative or in brackets, in a row or field that is spending or a
+    /// deduction by nature.
+    Outflow,
+}
+
 /// One number link in an answer, checked against the evidence it links.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -223,6 +235,15 @@ pub struct NumberCheck {
     pub link_index: u32,
     pub text: String,
     pub evidence_id: String,
+    /// The evidence id the answer wrote, when the host rebound a link that
+    /// named no retained result to the one this reply retained near it.
+    #[serde(
+        rename = "repairedFrom",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[cfg_attr(test, ts(optional))]
+    pub repaired_from: Option<String>,
     pub kind: NumberCheckKind,
     pub status: NumberCheckStatus,
     /// Nearest calculation result or plausible source figure for an unmatched citation.
@@ -279,6 +300,14 @@ pub struct NumberCheck {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub unstated_scale: Option<UnstatedScale>,
+    /// Present on a match the source prints as an outflow.
+    #[serde(
+        rename = "sourceSign",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[cfg_attr(test, ts(optional))]
+    pub source_sign: Option<SourceSign>,
     /// The matched or compared cell (JSON Pointer into the retained result).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
@@ -357,6 +386,10 @@ pub(crate) fn validate_number_checks(checks: &[NumberCheck]) -> Result<(), Domai
             !bounded(&check.text, MAX_CHECK_TEXT_BYTES)
                 || check.text.trim().is_empty()
                 || !bounded(&check.evidence_id, 128)
+                || check
+                    .repaired_from
+                    .as_ref()
+                    .is_some_and(|written| !bounded(written, 128))
                 || [
                     &check.nearest,
                     &check.exact,

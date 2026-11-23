@@ -1296,6 +1296,9 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 .turn-footer[data-state="saving"] > div.message-action-bar { grid-area: 2 / 1; }
 .turn-live[data-kind="saving"] { white-space: normal; }
 .turn-live[data-kind="saving"] a { text-decoration: underline; }
+.turn-live-skip { flex: none; min-height: var(--gg-size-control-sm); padding: 0 10px; border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-xs); background: transparent; color: var(--gg-color-text-primary); font: inherit; cursor: pointer; }
+.turn-live-skip:hover:not(:disabled) { background: var(--gg-color-bg-hover); }
+.turn-live-skip:disabled { cursor: default; opacity: 0.6; }
 .turn-footer[data-state="settled"] > .turn-live { pointer-events: none; animation: turn-fade-out var(--gg-motion-fast) var(--gg-ease-in) both; }
 /* At commit the actions arrive one after another, after the live line has left. */
 .message-action-bar[data-arriving] > * { animation: turn-fade-in var(--gg-motion-normal) var(--gg-ease-out) both; animation-delay: calc(var(--gg-motion-instant) + var(--gg-motion-stagger) * var(--turn-stagger, 0)); }

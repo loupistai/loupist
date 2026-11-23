@@ -8,8 +8,8 @@ use serde_json::Value;
 
 use super::{asset_error, KnowledgeResult};
 use crate::commands::assets::wire::{
-    AssetPricePoint, AssetQuoteKind, AssetStoredPrice, PriceFields, PriceReadState, RollingDates,
-    SavedPriceRead,
+    AssetPricePoint, AssetQuoteKind, AssetReferenceFields, AssetStoredPrice, CurrencySource,
+    PriceFields, PriceReadState, RollingDates, SavedPriceRead,
 };
 
 #[derive(Clone, Debug)]
@@ -41,11 +41,19 @@ pub(crate) fn load(
         )
         .optional()?;
     row.map(|(read, price, generation)| -> KnowledgeResult<Stored> {
+        let price = price
+            .map(|value| serde_json::from_str::<AssetStoredPrice>(&value))
+            .transpose()?
+            .map(|mut price| {
+                // Saved before the source was recorded: a stated currency came from the result.
+                if price.currency.is_some() && price.currency_source == CurrencySource::None {
+                    price.currency_source = CurrencySource::Result;
+                }
+                price
+            });
         Ok(Stored {
             read: serde_json::from_str(&read)?,
-            price: price
-                .map(|value| serde_json::from_str(&value))
-                .transpose()?,
+            price,
             generation,
         })
     })
@@ -376,11 +384,68 @@ pub(crate) fn price(
         kind: quote_kind(&fields.value),
         value: price.value,
         date: price.date.to_owned(),
+        currency_source: if price.currency.is_some() {
+            CurrencySource::Result
+        } else {
+            CurrencySource::None
+        },
         currency: price.currency,
         provider,
         source_url,
         dataset,
     })
+}
+
+/// Completes the currency of a price whose own result states none: first the
+/// currency a quote for the same symbol stated when the read was saved, then
+/// the listing the asset is bound to. Otherwise the currency stays unknown.
+pub(crate) fn complete_currency(
+    price: &mut AssetStoredPrice,
+    quoted: Option<&str>,
+    listing: Option<&AssetReferenceFields>,
+) {
+    if price.currency.is_some() {
+        return;
+    }
+    if let Some(quoted) = quoted {
+        price.currency = Some(quoted.to_owned());
+        price.currency_source = CurrencySource::Result;
+    } else if let Some(currency) = listing.and_then(listing_currency) {
+        price.currency = Some(currency.to_owned());
+        price.currency_source = CurrencySource::Listing;
+    } else {
+        price.currency_source = CurrencySource::None;
+    }
+}
+
+/// The quote currency of the listing an asset is bound to, when its exchange says it.
+pub(crate) fn listing_currency(listing: &AssetReferenceFields) -> Option<&'static str> {
+    [
+        listing.exchange.as_deref(),
+        listing.exchange_name.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(crate::finance_data::openfigi::listing_currency)
+}
+
+/// The three-letter currencies that quote rows for exactly `symbol` state in a
+/// retained result. Each row names its own symbol, so a read of several symbols
+/// never lends one symbol's currency to another.
+pub(crate) fn quoted_currencies<'a>(payload: &'a Value, symbol: &str) -> Vec<&'a str> {
+    let rows = ["/structuredContent/results", "/results", "/data"]
+        .into_iter()
+        .filter_map(|pointer| payload.pointer(pointer).and_then(Value::as_array))
+        .flatten()
+        .chain(std::iter::once(payload));
+    rows.filter(|row| {
+        row.get("symbol")
+            .and_then(Value::as_str)
+            .is_some_and(|stated| stated.trim().eq_ignore_ascii_case(symbol))
+    })
+    .filter_map(|row| row.get("currency").and_then(Value::as_str))
+    .filter(|code| code.len() == 3 && code.bytes().all(|byte| byte.is_ascii_alphabetic()))
+    .collect()
 }
 
 pub(crate) fn history(
@@ -613,6 +678,7 @@ mod tests {
             value: 73400.0,
             date: "2026-03-03".into(),
             currency: Some("KRW".into()),
+            currency_source: CurrencySource::Result,
             provider: "KRX".into(),
             source_url: None,
             dataset: fixture_dataset(),
@@ -633,6 +699,7 @@ mod tests {
                     state: PriceReadState::Ready,
                     current: call.clone(),
                     history: Some(call),
+                    quoted_currency: None,
                 },
                 price: price.clone(),
                 history: Vec::new(),
@@ -680,5 +747,147 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![73_100.0, 74_100.0],
         );
+    }
+
+    fn listing(exchange: Option<&str>, name: Option<&str>) -> AssetReferenceFields {
+        AssetReferenceFields {
+            figi: None,
+            ticker: Some("TSLA".into()),
+            exchange: exchange.map(Into::into),
+            exchange_name: name.map(Into::into),
+            security_type: None,
+        }
+    }
+
+    #[test]
+    fn a_price_without_a_currency_takes_the_quote_then_the_listing_or_stays_unknown() {
+        // yfinance history rows state no currency, as the saved Tesla close did.
+        let payload = json!({"structuredContent":{"results":[
+            {"date":"2026-11-19","close":341.1},{"date":"2026-11-20","close":345.82}
+        ]}});
+        let history_fields = PriceFields {
+            value: "/close".into(),
+            date: "/date".into(),
+            currency: None,
+            rows: Some("/structuredContent/results".into()),
+        };
+        let bare = price(
+            &payload,
+            &history_fields,
+            "yfinance".into(),
+            None,
+            fixture_dataset(),
+        )
+        .unwrap();
+        assert_eq!(
+            (bare.currency.as_deref(), bare.currency_source),
+            (None, CurrencySource::None)
+        );
+        let completed = |quoted: Option<&str>, reference: Option<AssetReferenceFields>| {
+            let mut price = bare.clone();
+            complete_currency(&mut price, quoted, reference.as_ref());
+            (price.currency, price.currency_source)
+        };
+        assert_eq!(
+            completed(Some("USD"), Some(listing(Some("KS"), None))),
+            (Some("USD".into()), CurrencySource::Result)
+        );
+        for (exchange, name, currency) in [
+            (Some("US"), None, "USD"),
+            (Some("UW"), Some("NASDAQ Global Select Market"), "USD"),
+            (Some("NYSE"), Some("New York Stock Exchange"), "USD"),
+            (Some("NASDAQ"), None, "USD"),
+            (None, Some("New York Stock Exchange"), "USD"),
+            (Some("KS"), None, "KRW"),
+            (Some("KQ"), None, "KRW"),
+            (Some("JT"), None, "JPY"),
+        ] {
+            assert_eq!(
+                completed(None, Some(listing(exchange, name))),
+                (Some(currency.into()), CurrencySource::Listing),
+                "{exchange:?} {name:?}"
+            );
+        }
+        // No exchange, or a venue quoting several currencies or minor units.
+        for (exchange, name) in [
+            (None, None),
+            (Some("LN"), Some("London Stock Exchange")),
+            (Some("HK"), None),
+            (Some("SW"), None),
+            (Some("NA"), None),
+            (Some("SJ"), None),
+            (Some("IT"), None),
+            (Some("CN"), None),
+            (Some("nyse"), None),
+        ] {
+            assert_eq!(
+                completed(None, Some(listing(exchange, name))),
+                (None, CurrencySource::None),
+                "{exchange:?} {name:?}"
+            );
+        }
+        assert_eq!(completed(None, None), (None, CurrencySource::None));
+        // A currency the result states is never replaced.
+        let mut stated = price(
+            &json!({"bars":[{"close":"73400","date":"2026-03-03","currency":"KRW"}]}),
+            &fields(),
+            "KRX".into(),
+            None,
+            fixture_dataset(),
+        )
+        .unwrap();
+        complete_currency(&mut stated, Some("USD"), Some(&listing(Some("US"), None)));
+        assert_eq!(
+            (stated.currency.as_deref(), stated.currency_source),
+            (Some("KRW"), CurrencySource::Result)
+        );
+    }
+
+    #[test]
+    fn quote_rows_lend_a_currency_only_to_their_own_symbol() {
+        let quote = json!({"structuredContent":{"results":[
+            {"symbol":"TSLA","last_price":345.8,"currency":"USD","exchange":"NMS"},
+            {"symbol":"7203.T","last_price":2810,"currency":"JPY"},
+            {"symbol":"VOD.L","last_price":71.2,"currency":"GBp"},
+            {"symbol":"GM","last_price":55.1,"currency":"US Dollar"}
+        ]}});
+        assert_eq!(quoted_currencies(&quote, "TSLA"), ["USD"]);
+        assert_eq!(quoted_currencies(&quote, "tsla"), ["USD"]);
+        assert_eq!(quoted_currencies(&quote, "VOD.L"), ["GBp"]);
+        assert!(quoted_currencies(&quote, "GM").is_empty());
+        assert!(quoted_currencies(&quote, "F").is_empty());
+        assert_eq!(
+            quoted_currencies(&json!({"symbol":"TSLA","currency":"USD"}), "TSLA"),
+            ["USD"]
+        );
+    }
+
+    #[test]
+    fn a_stored_currency_saved_before_its_source_reads_as_the_results() {
+        let store = crate::store::SqliteStore::open_in_memory().unwrap();
+        store
+            .create_loupist(&crate::test_fixtures::loupist_profile("l"))
+            .unwrap();
+        let mut db = store.lock().unwrap();
+        let tx = db.transaction().unwrap();
+        let read = json!({"state":"ready","current":{"tool":"krx_daily_quote","server":null,
+            "arguments":{},"fields":{"value":"/close","date":"/date","currency":null,"rows":null},"rolling":null},
+            "history":null});
+        for (id, currency, source) in [
+            ("a", json!("KRW"), CurrencySource::Result),
+            ("b", json!(null), CurrencySource::None),
+        ] {
+            let price = json!({"kind":"close","value":1.0,"date":"2026-03-03","currency":currency,
+                "provider":"KRX","sourceUrl":null,"dataset":fixture_dataset()});
+            tx.execute(
+                "INSERT INTO knowledge_saved_price_reads(loupist_id,asset_id,read_json,price_json,generation)
+                 VALUES('l',?1,?2,?3,'g')",
+                rusqlite::params![id, read.to_string(), price.to_string()],
+            )
+            .unwrap();
+            let stored = load(&tx, "l", id).unwrap().unwrap();
+            assert_eq!(stored.price.unwrap().currency_source, source);
+            assert_eq!(stored.read.quoted_currency, None);
+        }
     }
 }

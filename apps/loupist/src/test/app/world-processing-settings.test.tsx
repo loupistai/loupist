@@ -27,9 +27,10 @@ it("saves the World model per Loupist without touching global configuration", as
   await screen.findByText("World building settings saved for this Loupist.");
   expect(save).toHaveBeenCalledExactlyOnceWith({ loupistId: "loupist-quality", settings: expect.objectContaining({ helperModelProfileId: "model-test", thinkingLevel: "high" }) });
   expect(config).not.toHaveBeenCalled();
+  expect(save).toHaveBeenCalledWith(expect.objectContaining({ settings: expect.objectContaining({ worldModelChoice: "chosen" }) }));
   await chooseLoupist(user, "Contrarian Value");
   await openWorldProcessing(user);
-  expect(await screen.findByRole("button", { name: /World building model/ })).toHaveTextContent("Choose model");
+  expect(await screen.findByRole("button", { name: /World building model/ })).toHaveTextContent("Recommended (GPT-5.6 Luna)");
   await chooseLoupist(user, "Quality Compounder");
   await openWorldProcessing(user);
   expect(await screen.findByRole("button", { name: /World building model/ })).toHaveTextContent("GPT-5.6 Luna · High");

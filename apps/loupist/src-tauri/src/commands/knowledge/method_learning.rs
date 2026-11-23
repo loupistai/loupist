@@ -7,7 +7,7 @@ pub struct SettingsRequest {
     pub loupist_id: String,
     pub learn_methods: bool,
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn learning_review_list(
     state: State<'_, AppState>,
     request: ReviewQuery,
@@ -17,7 +17,7 @@ pub fn learning_review_list(
         learning::list(tx, &request)
     })
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn memory_learning_settings_get(
     state: State<'_, AppState>,
     request: KnowledgeCatalogRequest,
@@ -27,7 +27,7 @@ pub fn memory_learning_settings_get(
         learning::settings(tx, &request.loupist_id)
     })
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn memory_learning_settings_set(
     state: State<'_, AppState>,
     request: SettingsRequest,

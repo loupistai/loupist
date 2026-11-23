@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
+import i18n from "@/i18n";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { ConfigScope, LoupistSummary, ModelCatalog } from "../../types";
@@ -46,6 +47,37 @@ describe("Agent configuration", () => {
     expect(reset.effective.chat).toMatchObject({ use_memory: false, update_memory: false });
   });
 
+  it("keeps showing a stored default that cannot run and says Chat uses the recommended model, in both languages", async () => {
+    const fixture = await setup();
+    await fixture.bridge.providerConfigure({ provider: "anthropic", api_key: "test-key" });
+    const global = await fixture.bridge.configRead({ scope: { kind: "global" } });
+    await fixture.bridge.configUpdate({ scope: global.scope, expectedRevision: global.revision, set: { chat: { model_profile_id: "model-test", thinking_level: "max" } }, unset: [] });
+    await fixture.bridge.modelVisibilityUpdate({ model_profile_id: "model-test", visible_in_chat: false });
+    const snapshot = await fixture.bridge.configRead({ scope: { kind: "global" } });
+    // Chat runs Auto meanwhile: the selection is sendable and names another model.
+    expect(snapshot.modelSelection).toMatchObject({ is_default: true, unavailable_reason: null, stored_unavailable: "model_hidden" });
+    expect(snapshot.modelSelection?.model?.provider).toBe("anthropic");
+    const caption = "Not available now. Chat uses the recommended model until it is.";
+    const { unmount } = render(<Settings {...fixture} catalog={await fixture.bridge.modelCatalogGet()} />);
+    const control = await screen.findByRole("button", { name: / · Default model$/ });
+    expect(control).toHaveTextContent("GPT-5.6 Luna");
+    expect(control).not.toHaveTextContent("Claude");
+    expect(screen.getByRole("note")).toHaveTextContent(caption);
+    await act(async () => { await i18n.changeLanguage("ko"); });
+    try {
+      expect(screen.getByRole("note")).toHaveTextContent("지금은 사용할 수 없습니다. 사용할 수 있을 때까지 채팅은 권장 모델을 씁니다.");
+    } finally {
+      await act(async () => { await i18n.changeLanguage("en"); });
+    }
+    unmount();
+    // Shown again, the stored model applies and the caption goes.
+    await fixture.bridge.modelVisibilityUpdate({ model_profile_id: "model-test", visible_in_chat: true });
+    expect((await fixture.bridge.configRead({ scope: { kind: "global" } })).modelSelection).toMatchObject({ is_default: false, stored_unavailable: null, model: { id: "model-test" } });
+    render(<Settings {...fixture} catalog={await fixture.bridge.modelCatalogGet()} />);
+    expect(await screen.findByRole("button", { name: / · Default model$/ })).toHaveTextContent("GPT-5.6 Luna");
+    expect(screen.queryByText(caption)).toBeNull();
+  });
+
   it("shows the chosen conversation context preset and saves the other one", async () => {
     const user = userEvent.setup();
     const fixture = await setup();
@@ -81,6 +113,54 @@ describe("Agent configuration", () => {
     expect(screen.queryByRole("button", { name: "Reset Default model" })).not.toBeInTheDocument();
     expect(screen.queryByText("Saved · Applies to new responses")).not.toBeInTheDocument();
   });
+
+  it.each<ConfigScope>([{ kind: "global" }, { kind: "project", loupistId: "loupist-quality" }])(
+    "saves a selected default model and its controls together in the $kind scope",
+    async (scope) => {
+      const user = userEvent.setup();
+      const fixture = await setup();
+      const catalog = await fixture.bridge.providerConfigure({ provider: "google", api_key: "fixture" });
+      const current = await fixture.bridge.configRead({ scope });
+      await fixture.bridge.configUpdate({
+        scope, expectedRevision: current.revision,
+        set: { chat: { model_profile_id: "google/google-default", run_options: { obsolete: "previous" } } },
+        unset: [],
+      });
+      const update = vi.spyOn(fixture.bridge, "configUpdate");
+      render(<AgentSettings {...fixture} catalog={catalog} scope={scope} />);
+      await user.click(await screen.findByRole("button", { name: /google default.*Default model/ }));
+      await user.click(screen.getByRole("menuitemradio", { name: "GPT-5.6 Luna" }));
+      await user.keyboard("{Escape}");
+      expect(await screen.findByText("Saved · Applies to new responses")).toBeInTheDocument();
+      const chat = { model_profile_id: "model-test", run_options: { performance: "standard" } };
+      expect(update).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        scope, set: { chat }, unset: [["chat", "run_options", "obsolete"]],
+      }));
+      expect((await fixture.bridge.configRead({ scope })).explicit?.chat).toEqual(chat);
+    },
+  );
+
+  it.each<ConfigScope>([{ kind: "global" }, { kind: "project", loupistId: "loupist-quality" }])(
+    "reports a saved Chat model, reasoning level or run option in the $kind scope, and no other setting",
+    async (scope) => {
+      const user = userEvent.setup();
+      const fixture = await setup();
+      const saved = vi.fn();
+      render(<AgentSettings {...fixture} scope={scope} onChatDefaultSaved={saved} />);
+      await user.click(await screen.findByRole("switch", { name: "Remember new conversations" }));
+      await waitFor(async () => expect((await fixture.bridge.configRead({ scope })).effective.chat.update_memory).toBe(false));
+      expect(saved).not.toHaveBeenCalled();
+      await waitFor(() => expect(screen.getByLabelText("Reasoning level")).toBeEnabled());
+      await user.selectOptions(screen.getByLabelText("Reasoning level"), "high");
+      await waitFor(() => expect(saved).toHaveBeenCalledExactlyOnceWith(scope));
+      await user.click(screen.getByRole("button", { name: /GPT-5.6 Luna.*Default model/ }));
+      await user.click(screen.getByRole("menuitem", { name: "Advanced" }));
+      await user.click(await screen.findByRole("menuitemradio", { name: "Fast" }));
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(saved).toHaveBeenCalledTimes(2));
+      expect((await fixture.bridge.configRead({ scope })).explicit?.chat).toMatchObject({ thinking_level: "high", run_options: { performance: "fast" } });
+    },
+  );
 
   it("turns retrying failed requests off and on with a switch, like the other on/off setting", async () => {
     const user = userEvent.setup();

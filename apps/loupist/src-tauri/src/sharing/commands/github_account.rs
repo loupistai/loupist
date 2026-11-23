@@ -60,7 +60,7 @@ pub(super) fn account(state: &AppState) -> GithubAccount {
     }
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn github_account(state: State<'_, AppState>) -> GithubAccount {
     account(state.inner())
 }

@@ -15,6 +15,7 @@ use super::*;
 use crate::knowledge::graph_inference::{InferenceDisposition, InferenceReply};
 
 mod entity_names;
+mod identity_codes;
 mod indexing;
 mod jobs;
 mod temporal;

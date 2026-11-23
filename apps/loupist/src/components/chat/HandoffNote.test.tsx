@@ -22,7 +22,7 @@ const linkFirst: ChatMessage = {
   handoff_note: { title: "Link: Alpha and Gamma", linkPath: {
     seed: "Alpha", far: "Gamma", path: [
       { from: "Alpha", relation: "SUPPLIES", to: "Beta" },
-      { from: "Gamma", relation: "USES", to: "Beta" },
+      { from: "Gamma", relation: "FILES_WITH", to: "Beta" },
     ],
   } },
 };
@@ -94,7 +94,7 @@ it("says the user chose a link action instead of showing the host's caption, and
   await userEvent.setup().click(trigger);
   expect(within(first).getByText("Start: Alpha")).toBeVisible();
   expect(within(first).getByText("Alpha → supplies → Beta")).toBeVisible();
-  expect(within(first).getByText("Gamma → uses → Beta")).toBeVisible();
+  expect(within(first).getByText("Gamma → files with → Beta")).toBeVisible();
   expect(within(first).getByText("End: Gamma")).toBeVisible();
 
   await act(async () => { await i18n.changeLanguage("ko"); });
@@ -102,7 +102,7 @@ it("says the user chose a link action instead of showing the host's caption, and
   expect(within(first).getByText("연결 정보")).toBeVisible();
   expect(within(first).getByText("시작: Alpha")).toBeVisible();
   expect(within(first).getByText("Alpha → 공급 → Beta")).toBeVisible();
-  expect(within(first).getByText("Gamma → 사용 → Beta")).toBeVisible();
+  expect(within(first).getByText("Gamma → 공시 제출처 → Beta")).toBeVisible();
   expect(within(first).getByText("끝: Gamma")).toBeVisible();
 });
 

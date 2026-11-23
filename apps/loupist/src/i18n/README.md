@@ -44,6 +44,14 @@ instead when a string reads better without a particle. `scripts/check-ui-copy.mj
 rejects a single bare particle after a value (`{{name}}을`) and a wrong one after
 the app's name (루피스트가, 루피스트를).
 
+World relation names are stored as English SCREAMING_SNAKE (`FILES_WITH`).
+`knowledge.relations` labels the reviewed types; `knowledge.customRelations` is the
+bundled table of common open relations the extraction model names itself, keyed the
+same way. Extend it by adding the stored name to the English catalog and every
+locale, in the short noun style of the reviewed labels ("공시 제출처", "생산지"). A
+name in neither table is shown as lowercase English; see
+[World labels](../../../../docs/ui/map-lens.md#world-and-library).
+
 `useLanguage` shares the global appearance configuration reader with Theme.
 Rust validates and persists `appearance.language = "system" | "en" | "ko"` and
 `appearance.price_colors = "auto" | "red-up" | "green-up"` (see

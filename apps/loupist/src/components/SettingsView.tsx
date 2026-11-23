@@ -45,6 +45,8 @@ type Props = {
   currentLoupistId: string | null;
   onManageProviders: () => void;
   onConnectAccount?: () => void;
+  /** A Chat default was saved here; the composer's earlier pick yields to it. */
+  onChatDefaultSaved?: (scope: ConfigScope) => void;
   onDraftSkill?: (scope: ConfigScope, brief: string) => void | Promise<void>;
   appearanceConfiguration: ReturnType<typeof useConfiguration>;
   section: SettingsSection;
@@ -81,7 +83,7 @@ function SettingsPage({
   bridge,
   loupists, connectionsEntryId, permissionNoticeRequest, onOpenLoupistSettings, onCreateLoupist, onImportLoupist, onRemoveLoupist, onOpenLoupists, onOpenLoupistConnections,
   currentLoupistId,
-  onManageProviders, onConnectAccount,
+  onManageProviders, onConnectAccount, onChatDefaultSaved,
   onDraftSkill,
   appearanceConfiguration,
   section,
@@ -138,7 +140,7 @@ function SettingsPage({
         {section === "keyboard" ? <KeyboardSettings /> : null}
         {section === "skills" ? <SkillsSettings bridge={bridge} loupists={loupists} scope={{ kind: "global" }} onDraftSkill={onDraftSkill} /> : null}
 
-        {section === "agent" ? <AgentSettings onConnectAccount={onConnectAccount} bridge={bridge} loupists={loupists} catalog={catalog} scope={{ kind: "global" }} /> : null}
+        {section === "agent" ? <AgentSettings onConnectAccount={onConnectAccount} onChatDefaultSaved={onChatDefaultSaved} bridge={bridge} loupists={loupists} catalog={catalog} scope={{ kind: "global" }} /> : null}
         {section === "general" ? <ApplicationSettings bridge={bridge} /> : null}
 
         {section === "updates" ? (

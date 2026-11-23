@@ -24,6 +24,12 @@ function whatsNewFixture(bridge: PreviewBridge, withChanges: boolean) {
   bridge.knowledgeMap = async request => {
     const map = await readMap(request);
     map.generatedAtMs = Math.max(map.generatedAtMs, ...events.map(item => item.atMs));
+    // As the host does, a name or claim was first seen at its first add.
+    for (const item of events) {
+      const added = item.kind === "entity_added" ? map.nodes.find(node => node.id === item.subjectId)
+        : item.kind === "claim_added" ? map.edges.find(edge => edge.id === item.subjectId) : undefined;
+      if (added) added.firstSeenAtMs = item.atMs;
+    }
     return map;
   };
   bridge.knowledgeGrowthEvents = async request => ({

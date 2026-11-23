@@ -90,9 +90,12 @@ for line in sys.stdin:
         })
         (fixture_root / "calculation.json").write_text(json.dumps(calculated))
         url = calculated["result"]["citation_url"]
+        # One link miscopies the last character of this reply's id; another names no read at all.
+        miscopied = url[:-1] + ("1" if url[-1] == "0" else "0")
         answer = (f"Operating margin was [8.42%](citation_url={url}), not the [9.1%](citation_url:{url}) guided; "
                   f"see [the calculation]({url}).\n\n`[8.42%](citation_url={url})`\n\n"
-                  f"```md\n[9.1%](citation_url:{url})\n```")
+                  f"```md\n[9.1%](citation_url:{url})\n```\n\n"
+                  f"It held at [8.42%]({miscopied}) after the [7.7%](#evidence-ev_0123456789abcdef0123456789abcdef) low.")
         message = {"role": "assistant", "stopReason": "stop", "content": [{"type": "text", "text": answer}]}
         entries = [{"id": "assistant-answer", "type": "message", "message": message}]
         session_file.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n")

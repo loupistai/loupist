@@ -13,14 +13,14 @@ fn acknowledge_notice(store: &SqliteStore) -> Result<AppSettings, CommandError> 
     store.acknowledge_notice().map_err(super::map_store)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn notice_settings_get(state: State<'_, AppState>) -> Result<AppSettings, CommandError> {
     read_notice(&state.store)
 }
 
 // The host selects the version. The renderer can acknowledge the current notice,
 // but cannot mark unseen future notices acknowledged or reset earlier consent.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn notice_acknowledge(state: State<'_, AppState>) -> Result<AppSettings, CommandError> {
     acknowledge_notice(&state.store)
 }

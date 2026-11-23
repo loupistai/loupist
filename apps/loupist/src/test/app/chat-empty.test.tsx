@@ -60,7 +60,7 @@ describe("Loupist · New Chat", () => {
     const bridge = await openApp();
     const assetId = mockAssetId("NVIDIA");
     bridge.assets.installAsset({ assetId, name: "NVIDIA" });
-    bridge.assets.installPrice("loupist-quality", assetId, { price: { value: 162.85, date: "2026-11-13", currency: "USD", provider: "yfinance", sourceUrl: null, dataset: { dataset_id: "chat-empty", revision: 1, digest: "test" } } });
+    bridge.assets.installPrice("loupist-quality", assetId, { price: { value: 162.85, date: "2026-11-13", currency: "USD", currencySource: "result", provider: "yfinance", sourceUrl: null, dataset: { dataset_id: "chat-empty", revision: 1, digest: "test" } } });
     await user.click(screen.getByRole("button", { name: "Bot" }));
     const greeting = await screen.findByRole("region", { name: "Quality Compounder greets you" });
     expect(within(greeting).getByRole("button", { name: /Where NVIDIA stands/ })).toBeVisible();

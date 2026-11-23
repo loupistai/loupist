@@ -40,28 +40,28 @@ pub struct PrincipleArchiveRequest {
     pub archived: bool,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn principle_list(
     state: State<'_, AppState>,
     request: PrincipleListRequest,
 ) -> Result<Vec<Principle>, CommandError> {
     list(&state, request)
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn principle_create(
     state: State<'_, AppState>,
     request: PrincipleCreateRequest,
 ) -> Result<Principle, CommandError> {
     create(&state, request)
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn principle_update(
     state: State<'_, AppState>,
     request: PrincipleUpdateRequest,
 ) -> Result<Principle, CommandError> {
     update(&state, request)
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn principle_archive(
     state: State<'_, AppState>,
     request: PrincipleArchiveRequest,
@@ -238,6 +238,16 @@ pub(in crate::commands) struct CitationInputs<'a> {
     pub lens_deliveries: &'a [crate::domain::LensReceipt],
 }
 
+pub(in crate::commands) fn answer_lens_links(answer: &str) -> impl Iterator<Item = String> + '_ {
+    use pulldown_cmark::{Event, Parser, Tag};
+    Parser::new(answer).filter_map(|event| match event {
+        Event::Start(Tag::Link { dest_url, .. }) => {
+            dest_url.strip_prefix("lens:").map(str::to_owned)
+        }
+        _ => None,
+    })
+}
+
 pub(in crate::commands) fn persist_citations(
     tx: &rusqlite::Transaction<'_>,
     blobs: &BlobStore,
@@ -247,15 +257,7 @@ pub(in crate::commands) fn persist_citations(
     inputs: CitationInputs<'_>,
     at_ms: i64,
 ) -> crate::knowledge::KnowledgeResult<usize> {
-    use pulldown_cmark::{Event, Parser, Tag};
-    let ids = Parser::new(answer)
-        .filter_map(|event| match event {
-            Event::Start(Tag::Link { dest_url, .. }) => {
-                dest_url.strip_prefix("lens:").map(str::to_owned)
-            }
-            _ => None,
-        })
-        .collect::<std::collections::BTreeSet<_>>();
+    let ids = answer_lens_links(answer).collect::<std::collections::BTreeSet<_>>();
     let mut entities = std::collections::BTreeSet::new();
     for read in inputs.reads {
         if let crate::commands::tool_executor::AckedPayload::World { view_json, .. } = &read.payload

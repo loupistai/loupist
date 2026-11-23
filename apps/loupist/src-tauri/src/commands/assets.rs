@@ -83,7 +83,7 @@ pub(crate) fn follows_changed(state: &AppState) {
     changed();
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn assets_list(
     state: State<'_, AppState>,
     request: AssetsListRequest,
@@ -95,7 +95,7 @@ pub fn assets_list(
         .map_err(map_context_error)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn asset_follow_name(
     state: State<'_, AppState>,
     request: AssetFollowNameRequest,
@@ -127,7 +127,7 @@ pub fn asset_follow_name(
     Ok(asset)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn asset_follow(
     state: State<'_, AppState>,
     request: AssetIdRequest,
@@ -145,7 +145,7 @@ pub fn asset_follow(
     Ok(asset)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn asset_unfollow(
     state: State<'_, AppState>,
     request: AssetIdRequest,
@@ -164,9 +164,11 @@ pub fn asset_unfollow(
 pub async fn asset_lookup(
     state: State<'_, AppState>,
     request: AssetLookupRequest,
-) -> Result<Vec<AssetLookupCandidate>, CommandError> {
+) -> Result<AssetLookupResult, CommandError> {
     admit(&state, &request.loupist_id)?;
-    crate::finance_data::openfigi::search(&state, &request.loupist_id, &request.query).await
+    crate::finance_data::openfigi::search(&state, &request.loupist_id, &request.query)
+        .await
+        .map(Into::into)
 }
 
 fn copied_asset(page: assets::PageRecord) -> AssetRow {
@@ -243,7 +245,7 @@ fn with_price_setup(
     page
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn asset_page_get(
     state: State<'_, AppState>,
     request: AssetOpenRequest,
@@ -367,7 +369,7 @@ pub async fn asset_price_series(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn watchlist_quotes(
     state: State<'_, AppState>,
     request: AssetsListRequest,
@@ -405,6 +407,12 @@ pub(crate) async fn replay_current(
     else {
         return Ok(());
     };
+    let listing = state
+        .store
+        .asset_by_id(loupist, asset)
+        .map_err(map_context_error)?
+        .and_then(|row| row.reference)
+        .map(|reference| reference.fields);
     let result = match replay(state, loupist, &stored.read.current, max_age).await {
         Ok((payload, provider, source_url, dataset)) => saved_read::price(
             &payload,
@@ -413,6 +421,16 @@ pub(crate) async fn replay_current(
             source_url,
             dataset,
         )
+        .map(|mut price| {
+            // The same completion as the save, so an older read without a
+            // currency gains one on its next repeat.
+            saved_read::complete_currency(
+                &mut price,
+                stored.read.quoted_currency.as_deref(),
+                listing.as_ref(),
+            );
+            price
+        })
         .map_err(|_| PriceReadState::Failed),
         Err(status) => Err(status),
     };
@@ -470,7 +488,7 @@ pub struct AssetEntitySetRequest {
     pub entity_id: serde_json::Value,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn asset_entity_set(
     state: State<'_, AppState>,
     request: AssetEntitySetRequest,
@@ -509,7 +527,7 @@ pub struct AssetVerdictUndoRequest {
     pub move_id: String,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn asset_verdict_undo(
     state: State<'_, AppState>,
     request: AssetVerdictUndoRequest,
@@ -542,7 +560,7 @@ pub fn asset_verdict_undo(
     .inspect(|_| changed())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn asset_page_seen(
     state: State<'_, AppState>,
     request: AssetIdRequest,

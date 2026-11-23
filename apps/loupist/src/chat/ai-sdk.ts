@@ -691,9 +691,8 @@ export class TauriChatTransport implements ChatTransport<LoupistUIMessage> {
           }
 
           if (event.type === "title") {
-            if (!abortSignal?.aborted) {
-              this.onTitle?.(context.loupist_id, context.thread_id, event.title);
-            }
+            // A stopped or failed first reply also titles its session (host rule).
+            this.onTitle?.(context.loupist_id, context.thread_id, event.title);
             return;
           }
 

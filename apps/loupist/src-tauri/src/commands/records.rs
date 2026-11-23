@@ -52,6 +52,7 @@ pub async fn chat_create(
         pi_session_id: Uuid::new_v4().to_string(),
         pi_session_cache: None,
         title,
+        title_provisional: false,
         memory_policy: MemoryPolicy {
             use_memory: defaults.use_memory,
             update_memory: defaults.update_memory,
@@ -84,6 +85,7 @@ pub async fn chat_rename(
     }
     let mut chat = expected.clone();
     chat.title = require_text(&request.title, "chat title", MAX_CHAT_TITLE_BYTES)?;
+    chat.title_provisional = false;
     chat.updated_at_ms = now_ms().max(chat.updated_at_ms.saturating_add(1));
     state
         .store
@@ -144,6 +146,13 @@ pub(super) fn branch_chat(
     let tail = chat.messages.split_off(position);
     keep_version(&mut chat, position, tail, timestamp);
     restart_session(&mut chat, timestamp);
+    // An edit that would set aside a reply still saving to Memory waits for it.
+    super::chat_runtime::saves::ensure_saves_kept(
+        state,
+        &request.loupist_id,
+        &request.thread_id,
+        Some(&chat),
+    )?;
     state
         .store
         .replace_chat(&expected, &chat)
@@ -198,6 +207,13 @@ pub(super) fn switch_version(
     keep_version(&mut chat, position, shown, timestamp);
     chat.messages.extend(version.messages);
     restart_session(&mut chat, timestamp);
+    // Switching away from a reply still saving to Memory waits for it.
+    super::chat_runtime::saves::ensure_saves_kept(
+        state,
+        &request.loupist_id,
+        &request.thread_id,
+        Some(&chat),
+    )?;
     state
         .store
         .replace_chat(&expected, &chat)
@@ -304,6 +320,13 @@ pub(super) fn set_feedback(
         RunKind::ChatMutation,
         RunTarget::ChatThread(request.thread_id.clone()),
     )?;
+    // Feedback on a reply still saving to Memory waits for its receipt.
+    super::chat_runtime::saves::ensure_not_saving(
+        state,
+        &request.loupist_id,
+        &request.thread_id,
+        &request.message_id,
+    )?;
     let expected = artifact_chat(state, &request.loupist_id, &request.thread_id)?;
     let mut chat = expected.clone();
     let message = chat
@@ -376,6 +399,8 @@ pub(crate) fn delete_chat_session(
     )?;
     let expected = artifact_chat(state, loupist_id, thread_id)?;
     allow(&expected)?;
+    // A conversation with a reply still saving to Memory is deleted after it.
+    super::chat_runtime::saves::ensure_saves_kept(state, loupist_id, thread_id, None)?;
     let durable_root = state.loupist_files_root(&expected.loupist_id)?;
     let timestamp = now_ms();
     let result = if state.store.is_folder_catalog() {
@@ -434,7 +459,7 @@ pub(crate) fn release_host_sessions(state: &AppState) -> usize {
         .sum()
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn chat_attachment_read(
     request: ChatAttachmentReadRequest,
     state: State<'_, AppState>,
@@ -486,7 +511,7 @@ fn artifact_chat(
     Ok(chat)
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn chat_artifact_list(
     request: ChatArtifactListRequest,
     state: State<'_, AppState>,
@@ -502,7 +527,7 @@ pub fn chat_artifact_list(
 const MAX_LOUPIST_ARTIFACTS: usize = 200;
 
 /// The Loupist's charts and documents across its chats, newest first, with each chat's title.
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn loupist_artifact_list(
     request: LoupistArtifactListRequest,
     state: State<'_, AppState>,
@@ -521,7 +546,7 @@ pub fn loupist_artifact_list(
         .collect())
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn chat_artifact_read(
     request: ChatArtifactReadRequest,
     state: State<'_, AppState>,
@@ -564,7 +589,7 @@ fn owned_artifact(
     Ok(artifact)
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn artifact_versions(
     request: ChatArtifactReadRequest,
     state: State<'_, AppState>,
@@ -577,7 +602,7 @@ pub fn artifact_versions(
         .map_err(map_store)
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn artifact_restore(
     request: ChatArtifactRestoreRequest,
     state: State<'_, AppState>,

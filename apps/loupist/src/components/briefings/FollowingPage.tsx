@@ -35,13 +35,17 @@ type Option = { key: string } & (
   | { kind: "typed"; followed: Row | null }
 );
 
-/** One listing search for one submitted text: waiting on OpenFIGI, answered, or refused. */
+/**
+ * One listing search for one submitted text: waiting on OpenFIGI, answered, or refused.
+ * The key is optional: when a saved key could not be read the public route answered,
+ * and `savedKeyUnread` says so under the results.
+ */
 type Lookup = { query: string; state: "waiting" }
-  | { query: string; state: "done"; candidates: AssetLookupCandidate[] }
-  | { query: string; state: "failed"; reason: "offline" | "connection" | "busy" | "keyRejected" | "keyUnreadable" | "failed" };
+  | { query: string; state: "done"; candidates: AssetLookupCandidate[]; savedKeyUnread: boolean }
+  | { query: string; state: "failed"; reason: "offline" | "connection" | "busy" | "keyRejected" | "failed" };
 
 /** Reasons fixed in Settings › Connections, where Try again alone would fail the same way. */
-const FIXED_IN_CONNECTIONS = new Set(["connection", "keyRejected", "keyUnreadable"]);
+const FIXED_IN_CONNECTIONS = new Set(["connection", "keyRejected"]);
 
 export type FollowingPageProps = {
   bridge: LoupistBridge;
@@ -191,16 +195,15 @@ export function FollowingPage({ bridge, loupist, onOpenConnections, onAskInChat,
     setLookup({ query: text, state: "waiting" });
     setActive(null);
     try {
-      const found = await bridge.assetLookup({ loupistId, query: text });
+      const { candidates: found, savedKeyUnread } = await bridge.assetLookup({ loupistId, query: text });
       if (current !== generation.current) return;
-      setLookup({ query: text, state: "done", candidates: found });
-      setAnnouncement(t("following.announce.count", { count: found.length, formattedCount: formatNumber(found.length) }));
+      setLookup({ query: text, state: "done", candidates: found, savedKeyUnread });
+      const count = t("following.announce.count", { count: found.length, formattedCount: formatNumber(found.length) });
+      setAnnouncement(savedKeyUnread ? `${count} ${t("following.lookup.keyUnreadable")}` : count);
     } catch (cause) {
       if (current !== generation.current) return;
       const code = commandErrorCode(cause);
       const reason = code === "credential_rejected" ? "keyRejected"
-        // macOS refused the saved key this session, or it can no longer be read.
-        : code === "credential_locked" || code === "credential_unavailable" ? "keyUnreadable"
         : code === "offline" ? "offline"
         : code === "connection_unavailable" || code === "not_configured" ? "connection"
         : code === "rate_limited" ? "busy"
@@ -332,8 +335,18 @@ export function FollowingPage({ bridge, loupist, onOpenConnections, onAskInChat,
   const lookupLine = () => {
     if (!submitted) return <p className="following-line following-note" data-lookup="idle">{t("following.search.enter")}</p>;
     if (submitted.state === "waiting") return <p className="following-line" role="status" data-lookup="waiting"><Spinner aria-hidden="true" role="presentation" />{t("following.lookup.searching")}</p>;
-    if (submitted.state === "done") return submitted.candidates.length ? <p className="following-line following-note" data-lookup="done">{t("following.lookup.from")}</p>
-      : <div className="following-line" data-lookup="none"><span>{t(typedFollowed ? "following.lookup.noneFollowed" : "following.lookup.none")}</span><span className="following-line-actions">{askBot}</span></div>;
+    if (submitted.state === "done") {
+      const answered = submitted.candidates.length ? <p className="following-line following-note" data-lookup="done">{t("following.lookup.from")}</p>
+        : <div className="following-line" data-lookup="none"><span>{t(typedFollowed ? "following.lookup.noneFollowed" : "following.lookup.none")}</span><span className="following-line-actions">{askBot}</span></div>;
+      // The public route answered; the saved key that could not be read is fixed in Connections.
+      return submitted.savedKeyUnread ? <>
+        {answered}
+        <div className="following-line" data-lookup-key="unread">
+          <span>{t("following.lookup.keyUnreadable")}</span>
+          {onOpenConnections ? <span className="following-line-actions"><Button variant="outline" size="sm" onClick={() => onOpenConnections("openfigi.lookup")}>{t("following.openConnections")}</Button></span> : null}
+        </div>
+      </> : answered;
+    }
     const inConnections = FIXED_IN_CONNECTIONS.has(submitted.reason);
     return <div className="following-line" data-lookup={submitted.reason}>
       <span>{lookupFailureMessage(submitted.reason)}</span>

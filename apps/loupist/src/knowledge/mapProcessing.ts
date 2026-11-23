@@ -3,7 +3,7 @@ import type { GraphProcessingView, KnowledgeCatalog } from "../types";
 import { worldReadinessLabels, type WorldReadinessStatus } from "./worldReadiness";
 
 type Readiness = GraphProcessingView["readiness"];
-type WaitingReason = Exclude<WorldReadinessStatus, "ready" | "recovering"> | "awaiting_provider" | "paused_budget" | "failed_before_mutation" | "reconcile_required";
+type WaitingReason = Exclude<WorldReadinessStatus, "ready" | "recovering"> | "awaiting_provider" | "no_account" | "paused_budget" | "failed_before_mutation" | "reconcile_required";
 
 export type WorldProcessing = {
   activity: { kind: "building"; sourceCount: number } | { kind: "waiting"; reason: WaitingReason } | { kind: "idle" };
@@ -15,7 +15,9 @@ export const isMapProcessing = (status: string | undefined) => status === "queue
 
 function blockedReadiness(readiness: Readiness | null): WaitingReason | undefined {
   if (!readiness || readiness.status === "ready" || readiness.status === "recovering") return undefined;
-  return readiness.note === "awaiting_provider" ? "awaiting_provider" : readiness.status;
+  // The host words its waiting by code: no account at all, or a new Loupist awaiting its default model.
+  if (readiness.note === "no_account" || readiness.note === "awaiting_provider") return readiness.note;
+  return readiness.status;
 }
 
 export function sourceDisplayStatus(status: string | undefined, readiness: Readiness | null | undefined) {
@@ -47,9 +49,10 @@ export function sourceProcessingLabel(status?: string) {
     case "queued": case "running": return i18n.t("knowledge:sourceWorkspace.worldIsUpdating");
     case "completed": return i18n.t("knowledge:sourceWorkspace.worldUpdated");
     case "awaiting_provider": return i18n.t("knowledge:worldProcessingSettings.waitingForAProvider");
+    case "no_account": return i18n.t("knowledge:sourceWorkspace.worldWaitingForAccount");
     case "provider_disconnected": return i18n.t("knowledge:sourceWorkspace.worldWaitingForModel");
     case "paused": return i18n.t("knowledge:sourceWorkspace.worldProcessingPaused");
-    case "paused_budget": return i18n.t("knowledge:sourceWorkspace.worldProcessingStoppedForThisSource");
+    case "paused_budget": return i18n.t("knowledge:sourceWorkspace.worldProcessingPausedAtAllowance");
     case "failed_before_mutation": return i18n.t("knowledge:sourceWorkspace.worldProcessingFailed");
     case "reconciliation_required": case "reconcile_required": return i18n.t("knowledge:sourceWorkspace.worldUpdateNeedsReview");
     case "model_required": case "runtime_unavailable": case "model_unavailable": return worldReadinessLabels()[status];

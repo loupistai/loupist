@@ -87,31 +87,19 @@ pub(super) fn start_link(
     let defaults = configuration.chat;
     let mut language = configuration.appearance.language;
     crate::agent_harness::interface::resolve_language(&mut language);
-    let model_profile_id = options
-        .model_profile_id
-        .as_deref()
-        .or(defaults.model_profile_id.as_deref())
-        .unwrap_or_default();
     let requested_level = options
         .thinking_level
         .as_deref()
         .filter(|level| !level.is_empty());
-    let thinking_level = match requested_level {
-        Some(level) => level.to_owned(),
-        None => crate::providers::auto::research_level(state, &loupist_id, model_profile_id)?,
-    };
-    let run_options = match &options.run_options {
-        Some(run_options) => run_options.clone(),
-        None => match state.model_catalog()?.resolve(model_profile_id) {
-            Ok(model) if model.validate_run_options(&defaults.run_options).is_err() => model
-                .run_controls
-                .into_iter()
-                .map(|control| (control.id, control.default_choice))
-                .collect(),
-            _ => defaults.run_options,
-        },
-    };
-    let execution = state.pi_execution(model_profile_id, &thinking_level, &run_options)?;
+    let (model_profile_id, thinking_level, run_options) = run_settings(
+        state,
+        &loupist_id,
+        &defaults,
+        options.model_profile_id.as_deref(),
+        requested_level,
+        options.run_options.as_ref(),
+    )?;
+    let execution = state.pi_execution(&model_profile_id, &thinking_level, &run_options)?;
     if options
         .model_profile_id
         .as_deref()
@@ -160,6 +148,57 @@ pub(super) fn start_link(
     };
     transaction.commit().map_err(map_internal)?;
     Ok(receipt(handoff))
+}
+
+/// The model, thinking level and run options a hand-off runs with: the ones
+/// it names, else the Loupist's Chat default, which gives way to Auto while it
+/// cannot run (`providers::auto::stored_fallback`).
+pub(crate) fn run_settings(
+    state: &AppState,
+    loupist_id: &str,
+    defaults: &crate::scoped_config::ResolvedChatConfig,
+    model_profile_id: Option<&str>,
+    requested_level: Option<&str>,
+    requested_options: Option<&BTreeMap<String, String>>,
+) -> Result<(String, String, BTreeMap<String, String>), CommandError> {
+    let fallback = model_profile_id
+        .is_none()
+        .then(|| {
+            crate::providers::auto::stored_fallback(
+                state,
+                defaults.model_profile_id.as_deref().unwrap_or_default(),
+                defaults.thinking_level.as_deref().unwrap_or_default(),
+                &defaults.run_options,
+            )
+        })
+        .flatten();
+    if let Some(auto) = fallback {
+        return Ok((
+            auto.model.id,
+            requested_level.map_or(auto.thinking_level, str::to_owned),
+            requested_options.cloned().unwrap_or(auto.run_options),
+        ));
+    }
+    let model_profile_id = model_profile_id
+        .or(defaults.model_profile_id.as_deref())
+        .unwrap_or_default()
+        .to_owned();
+    let thinking_level = match requested_level {
+        Some(level) => level.to_owned(),
+        None => crate::providers::auto::research_level(state, loupist_id, &model_profile_id)?,
+    };
+    let run_options = match requested_options {
+        Some(run_options) => run_options.clone(),
+        None => match state.model_catalog()?.resolve(&model_profile_id) {
+            Ok(model) if model.validate_run_options(&defaults.run_options).is_err() => model
+                .run_controls
+                .into_iter()
+                .map(|control| (control.id, control.default_choice))
+                .collect(),
+            _ => defaults.run_options.clone(),
+        },
+    };
+    Ok((model_profile_id, thinking_level, run_options))
 }
 
 fn receipt(handoff: handoff::Handoff) -> ResearchHandoffReceipt {

@@ -57,6 +57,7 @@ pub(crate) fn ensure_home_thread(
         pi_session_id: Uuid::new_v4().to_string(),
         pi_session_cache: None,
         title: HOME_TITLE.into(),
+        title_provisional: false,
         memory_policy: MemoryPolicy {
             use_memory: defaults.use_memory,
             update_memory: defaults.update_memory,
@@ -192,8 +193,8 @@ pub(crate) fn alert_message(
     } else {
         format!("{} {unit}", trim_number(alert.line.observed))
     };
-    let set_on = chrono::DateTime::from_timestamp_millis(alert.line.set_at_ms)
-        .map(|time| time.date_naive().to_string())
+    let set_on = crate::local_time::date_at_ms(alert.line.set_at_ms)
+        .map(|date| date.to_string())
         .unwrap_or_default();
     let source = alert.evidence.first();
     Ok(ChatMessage {

@@ -36,7 +36,7 @@ it("uses the shared model catalog and controls while leaving automatic processin
   await user.clear(screen.getByLabelText("Time limit per request (seconds)"));
   await user.type(screen.getByLabelText("Time limit per request (seconds)"), "45");
   await user.click(screen.getByRole("button", { name: "Save processing settings" }));
-  await waitFor(() => expect(save).toHaveBeenCalledExactlyOnceWith({ loupistId: props.loupistId, settings: { enrichmentEnabled: true, paused: false, helperModelProfileId: "model-test", thinkingLevel: "high", runOptions: { performance: "fast" }, maxLlmCalls: 6, timeoutMs: 45000, researchFocus: "", relationHints: [], anchors: [], fastModel: null } }));
+  await waitFor(() => expect(save).toHaveBeenCalledExactlyOnceWith({ loupistId: props.loupistId, settings: { enrichmentEnabled: true, paused: false, helperModelProfileId: "model-test", worldModelChoice: "chosen", thinkingLevel: "high", runOptions: { performance: "fast" }, maxLlmCalls: 6, timeoutMs: 45000, researchFocus: "", relationHints: [], anchors: [], fastModel: null } }));
   expect(await screen.findByText("Ready to review sources")).toBeVisible();
   expect(screen.getByLabelText("World building readiness")).toHaveTextContent("GPT-5.6 Luna");
 });
@@ -49,39 +49,129 @@ it("keeps model preferences per Loupist and independent of the Chat picker", asy
   await user.click(screen.getByRole("button", { name: "Save processing settings" }));
   await screen.findByText("World building settings saved for this Loupist.");
   rerender(<WorldProcessingSettings {...props} loupistId="loupist-value" />);
-  expect(await screen.findByRole("button", { name: /World building model/ })).toHaveTextContent("Choose model");
+  expect(await screen.findByRole("button", { name: /World building model/ })).toHaveTextContent("Recommended (GPT-5.6 Luna) · High");
   expect(autoProcess()).not.toBeChecked();
   rerender(<WorldProcessingSettings {...props} />);
   expect(await screen.findByRole("button", { name: /World building model/ })).toHaveTextContent("GPT-5.6 Luna · High · Fast");
 });
 
-it("offers provider management when there are no connected models without enabling processing", async () => {
+it("offers provider management when there are no connected models and lets Recommended wait for one", async () => {
   const props = setup();
   vi.spyOn(props.bridge, "modelCatalogGet").mockResolvedValue({ models: [], providers: [], custom_providers: [], hidden_model_profile_ids: [], model_notice: null });
   const save = vi.spyOn(props.bridge, "knowledgeGraphSettingsSet");
   render(<WorldProcessingSettings {...props} />);
   const user = userEvent.setup();
   expect(await screen.findByText(/No connected models/)).toBeVisible();
-  expect(screen.queryByRole("button", { name: /World building model/ })).toBeNull();
+  // With no eligible account the control names the choice, not a model.
+  const control = screen.getByRole("button", { name: /World building model/ });
+  expect(control).toHaveTextContent(/^Recommended$/);
+  expect(control).toBeDisabled();
   expect(autoProcess()).not.toBeChecked();
   await user.click(screen.getByRole("button", { name: "Manage AI accounts" }));
   expect(props.onManageProviders).toHaveBeenCalledOnce();
   await user.click(autoProcess());
-  expect(screen.getByRole("button", { name: "Save processing settings" })).toBeDisabled();
-  expect(save).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Save processing settings" }));
+  await waitFor(() => expect(save).toHaveBeenCalledExactlyOnceWith({ loupistId: props.loupistId, settings: expect.objectContaining({ enrichmentEnabled: true, worldModelChoice: "recommended" }) }));
 });
 
 it("shows host readiness for a disconnected provider", async () => {
   const [status, label] = ["provider_disconnected", "Reconnect your AI account"] as const;
   const props = setup();
   const view = await props.bridge.knowledgeGraphSettingsGet({ loupistId: props.loupistId });
-  vi.spyOn(props.bridge, "knowledgeGraphSettingsGet").mockResolvedValue({ ...view, settings: { ...view.settings, enrichmentEnabled: true, helperModelProfileId: "removed-model" }, readiness: { status, note: "not_connected", modelName: "Saved model", providerName: "Saved provider", authKind: "oauth" } });
+  vi.spyOn(props.bridge, "knowledgeGraphSettingsGet").mockResolvedValue({ ...view, settings: { ...view.settings, enrichmentEnabled: true, worldModelChoice: "chosen", helperModelProfileId: "removed-model" }, readiness: { status, note: "not_connected", modelName: "Saved model", providerName: "Saved provider", authKind: "oauth" } });
   render(<WorldProcessingSettings {...props} />);
   const readiness = await screen.findByLabelText("World building readiness");
   expect(within(readiness).getByText(label)).toBeVisible();
   expect(readiness).toHaveTextContent("Saved model");
   expect(within(readiness).getByText("Connect its AI account in Settings.")).toBeVisible();
   expect(screen.getByText(/The saved model is unavailable/)).toBeVisible();
+});
+
+const inKorean = async (check: () => void | Promise<void>) => {
+  await act(async () => { await i18n.changeLanguage("ko"); });
+  try { await check(); } finally { await act(async () => { await i18n.changeLanguage("en"); }); }
+};
+const modelControl = () => screen.getByRole("button", { name: /World building model|월드 구성 모델/ });
+
+it("starts the model control with the recommended model and keeps its options read-only", async () => {
+  const props = setup();
+  const save = vi.spyOn(props.bridge, "knowledgeGraphSettingsSet");
+  render(<WorldProcessingSettings {...props} />);
+  const user = userEvent.setup();
+  expect(await screen.findByRole("button", { name: /World building model/ })).toHaveTextContent("Recommended (GPT-5.6 Luna) · High");
+  expect(screen.getByText("Loupist picks the World building model from your connected AI account. Choose a model yourself to keep it fixed.")).toBeVisible();
+  await user.click(modelControl());
+  const entries = screen.getAllByRole("menuitemradio");
+  expect(entries[0]).toHaveTextContent("Recommended (GPT-5.6 Luna)");
+  expect(entries[0]).toHaveAttribute("aria-checked", "true");
+  // The recommended model is listed too, but not as the choice.
+  expect(screen.getByRole("menuitemradio", { name: "GPT-5.6 Luna" })).toHaveAttribute("aria-checked", "false");
+  await user.click(screen.getByRole("menuitem", { name: "Advanced" }));
+  expect(screen.getByRole("menuitemradio", { name: "High" })).toHaveAttribute("aria-checked", "true");
+  expect(screen.getByRole("menuitemradio", { name: "High" })).toHaveAttribute("aria-disabled", "true");
+  expect(screen.getByRole("menuitemradio", { name: "Fast" })).toHaveAttribute("aria-disabled", "true");
+  await user.keyboard("{Escape}");
+  await inKorean(async () => {
+    expect(modelControl()).toHaveTextContent("권장 (GPT-5.6 Luna)");
+    expect(screen.getByText("루피스트가 연결된 AI 계정에 맞춰 월드 구성 모델을 고릅니다. 직접 고르면 그 모델로 고정됩니다.")).toBeVisible();
+  });
+  expect(save).not.toHaveBeenCalled();
+});
+
+it("fixes a chosen model, even the recommended one, and goes back to Recommended from the same control", async () => {
+  const props = setup();
+  const save = vi.spyOn(props.bridge, "knowledgeGraphSettingsSet");
+  render(<WorldProcessingSettings {...props} />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /World building model/ }));
+  await user.click(screen.getByRole("menuitemradio", { name: "GPT-5.6 Luna" }));
+  expect(screen.getAllByRole("menuitemradio")[0]).toHaveAttribute("aria-checked", "false");
+  await user.click(screen.getByRole("menuitem", { name: "Advanced" }));
+  expect(screen.getByRole("menuitemradio", { name: "Medium" })).not.toHaveAttribute("aria-disabled");
+  await user.click(screen.getByRole("menuitemradio", { name: "Medium" }));
+  await user.keyboard("{Escape}");
+  expect(modelControl()).toHaveTextContent("GPT-5.6 Luna · Medium");
+  await user.click(screen.getByRole("button", { name: "Save processing settings" }));
+  await waitFor(() => expect(save).toHaveBeenLastCalledWith({ loupistId: props.loupistId, settings: expect.objectContaining({ worldModelChoice: "chosen", helperModelProfileId: "model-test", thinkingLevel: "medium" }) }));
+  await screen.findByText("World building settings saved for this Loupist.");
+  await user.click(modelControl());
+  await user.click(screen.getAllByRole("menuitemradio")[0]);
+  await user.keyboard("{Escape}");
+  expect(modelControl()).toHaveTextContent("Recommended (GPT-5.6 Luna) · High");
+  await user.click(screen.getByRole("button", { name: "Save processing settings" }));
+  await waitFor(() => expect(save).toHaveBeenLastCalledWith({ loupistId: props.loupistId, settings: expect.objectContaining({ worldModelChoice: "recommended" }) }));
+  await screen.findByText("World building settings saved for this Loupist.");
+  expect(modelControl()).toHaveTextContent("Recommended (GPT-5.6 Luna) · High");
+});
+
+it("reads Recommended with no eligible account, in both languages", async () => {
+  const props = setup();
+  // Only an endpoint the World list does not name is connected.
+  const catalog = await props.bridge.modelCatalogGet();
+  vi.spyOn(props.bridge, "modelCatalogGet").mockResolvedValue({ ...catalog, models: [{ ...catalog.models[0], id: "my-server/local", provider: "my-server", model: "local", name: "Local model" }] });
+  render(<WorldProcessingSettings {...props} />);
+  const control = await screen.findByRole("button", { name: /World building model/ });
+  expect(control).toHaveTextContent(/^Recommended$/);
+  expect(control).toBeEnabled();
+  await inKorean(() => { expect(modelControl()).toHaveTextContent(/^권장$/); });
+});
+
+it("offers the recommended model beside a chosen model that is no longer available, in both languages", async () => {
+  const props = setup();
+  const view = await props.bridge.knowledgeGraphSettingsGet({ loupistId: props.loupistId });
+  vi.spyOn(props.bridge, "knowledgeGraphSettingsGet").mockResolvedValue({ ...view, settings: { ...view.settings, enrichmentEnabled: true, worldModelChoice: "chosen", helperModelProfileId: "anthropic/claude-gone", thinkingLevel: "low" }, readiness: { status: "model_unavailable", note: "model_unavailable" } });
+  const save = vi.spyOn(props.bridge, "knowledgeGraphSettingsSet");
+  render(<WorldProcessingSettings {...props} />);
+  const user = userEvent.setup();
+  const readiness = await screen.findByLabelText("World building readiness");
+  expect(within(readiness).getByText("Choose another AI model")).toBeVisible();
+  expect(screen.getByText(/The saved model is unavailable/)).toBeVisible();
+  await inKorean(() => { expect(screen.getByRole("button", { name: "권장 모델 사용" })).toBeVisible(); });
+  await user.click(screen.getByRole("button", { name: "Use the recommended model" }));
+  await waitFor(() => expect(save).toHaveBeenCalledExactlyOnceWith({ loupistId: props.loupistId, settings: expect.objectContaining({ worldModelChoice: "recommended" }) }));
+  await screen.findByText("World building settings saved for this Loupist.");
+  expect(screen.queryByRole("button", { name: "Use the recommended model" })).toBeNull();
+  expect(modelControl()).toHaveTextContent("Recommended (GPT-5.6 Luna)");
 });
 
 it("words the host's readiness note in the interface language", async () => {
@@ -131,9 +221,9 @@ it("ignores an old Loupist save response after navigation", async () => {
   await selection(user);
   await user.click(screen.getByRole("button", { name: "Save processing settings" }));
   rerender(<WorldProcessingSettings {...props} loupistId="loupist-value" />);
-  expect(await screen.findByRole("button", { name: /World building model/ })).toHaveTextContent("Choose model");
-  await act(async () => resolveSave({ ...old, settings: { ...old.settings, helperModelProfileId: "model-test" } }));
-  expect(screen.getByRole("button", { name: /World building model/ })).toHaveTextContent("Choose model");
+  expect(await screen.findByRole("button", { name: /World building model/ })).toHaveTextContent("Recommended (GPT-5.6 Luna)");
+  await act(async () => resolveSave({ ...old, settings: { ...old.settings, worldModelChoice: "chosen", helperModelProfileId: "model-test" } }));
+  expect(screen.getByRole("button", { name: /World building model/ })).toHaveTextContent("Recommended (GPT-5.6 Luna)");
   expect(props.onChanged).not.toHaveBeenCalled();
 });
 

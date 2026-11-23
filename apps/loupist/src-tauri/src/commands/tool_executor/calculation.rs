@@ -77,10 +77,14 @@ fn take_input_sources(params: &mut Value) -> Result<BTreeMap<String, String>, Br
     for (name, url) in sources {
         let field = format!("input_sources.{name}");
         if !inputs.is_some_and(|inputs| inputs.contains_key(name)) {
-            return Err(BrokerError::invalid(
-                field,
-                "not an input of this calculation",
-            ));
+            let names = inputs
+                .map(|inputs| inputs.keys().cloned().collect::<Vec<_>>().join(", "))
+                .filter(|names| !names.is_empty());
+            let expected = match names {
+                Some(names) => format!("One of this call's own input names ({names}). input_sources cites single named inputs only: remove this entry and call again. A series passed as numbers is not cited here; state its source beside the result in the answer, or pass the series as a dataset column, which carries its own source."),
+                None => "This call has no named inputs, so input_sources must be left out. A series passed as numbers is not cited here; state its source beside the result in the answer, or pass the series as a dataset column, which carries its own source.".to_owned(),
+            };
+            return Err(BrokerError::invalid(field, expected));
         }
         let url = url
             .as_str()
@@ -102,14 +106,15 @@ enum InputReading {
     AsPrinted,
 }
 
-/// The readings of a cited input, by what it measures
-/// ([`calculations::input_kind`], which also words the input for readers): a
-/// `price` is a per-share price in base currency units, printed with or
-/// without its currency; an amount is in the request's `unit`, or as printed
-/// when the request states none.
-fn input_units(name: &str, amount: Option<Unit>) -> Vec<InputReading> {
+/// The readings of a cited input, by what it measures in the request
+/// ([`calculations::request_input_kind`], which also words the input for
+/// readers): a `price` is a per-share price in base currency units, printed
+/// with or without its currency; a ratio's denominator under a per-something
+/// `unit` is a pure number; an amount is in the request's `unit`, or as
+/// printed when the request states none.
+fn input_units(params: &Value, name: &str, amount: Option<Unit>) -> Vec<InputReading> {
     use InputReading::{AsPrinted, In};
-    match calculations::input_kind(name) {
+    match calculations::request_input_kind(params, name) {
         calculations::InputKind::Count | calculations::InputKind::Rate => vec![In(Unit::Plain)],
         calculations::InputKind::Price => vec![In(Unit::Amount(1.0)), In(Unit::Plain)],
         calculations::InputKind::Percent => vec![In(Unit::Percent)],
@@ -182,6 +187,8 @@ fn printed_input(value: &Value, unit: Unit, exponent_precision: bool) -> Option<
         currency: None,
         precision: 0.5 * 10f64.powi(exponent.saturating_sub(decimals as i32)),
         signed: text.starts_with(['+', '-']),
+        line: None,
+        falls: false,
     })
 }
 
@@ -379,7 +386,7 @@ impl AppToolExecutor {
                 NumberCheckStatus::Matched
             } else {
                 let (status, pointer) =
-                    cited_status(value, &input_units(name, unit), &source.payload);
+                    cited_status(value, &input_units(&params, name, unit), &source.payload);
                 if let Some(from) = conversion
                     .as_ref()
                     .filter(|_| {

@@ -1,7 +1,7 @@
 //! Read-only projection of previously unverified receipts.
 use super::{
-    answer_units, check_printed, kind_of, located_links, EvidenceLink, RunResult, RunResultOrigin,
-    RunResultProducer, RunResultRegistry,
+    answer_units, check_in_row, kind_of, located_links, AnswerRow, EvidenceLink, RunResult,
+    RunResultOrigin, RunResultProducer, RunResultRegistry,
 };
 use crate::{
     app::AppState,
@@ -12,8 +12,8 @@ use crate::{
     commands::types::{ChatArtifactViewDto, ChatEvidenceViewDto, ChatThreadDto},
     domain::{
         answer_checks::{clip, ComparisonReason, ComparisonReplay, ComparisonScope},
-        ChatEvidenceKind, ChatEvidenceRef, ChatMessage, ChatSession, MemoryAccess, NumberCheck,
-        NumberCheckKind, NumberCheckStatus,
+        ChatEvidenceKind, ChatEvidenceRef, ChatMessage, ChatSession, MemoryAccess,
+        MemoryRefSnapshot, NumberCheck, NumberCheckKind, NumberCheckStatus,
     },
     knowledge::numbers::{self, Printed},
     util::sha256,
@@ -25,7 +25,7 @@ use std::{
 };
 
 const MAX_CACHED_PROJECTIONS: usize = 128;
-const CHECKER_VERSION: u32 = 2;
+const CHECKER_VERSION: u32 = 4;
 
 #[derive(Clone, Default)]
 pub(crate) struct ReplayCache(Arc<Mutex<CachedProjections>>);
@@ -43,6 +43,7 @@ fn unresolved(check: &NumberCheck) -> bool {
 struct Replay<'a> {
     state: &'a AppState,
     workspace: &'a str,
+    chat_id: &'a str,
 }
 
 impl Replay<'_> {
@@ -52,7 +53,8 @@ impl Replay<'_> {
         content: &str,
         checks: &[NumberCheck],
         evidence: impl Iterator<Item = &'a ChatEvidenceRef>,
-        replace: impl FnOnce(&mut ReplayResults<'_>, &mut [NumberCheck]),
+        reads: &'a [MemoryRefSnapshot],
+        replace: impl FnOnce(&mut ReplayResults<'_>, &mut Vec<NumberCheck>),
     ) -> Option<Vec<NumberCheck>> {
         if !checks.iter().any(unresolved) {
             return None;
@@ -101,6 +103,7 @@ impl Replay<'_> {
             &serde_json::to_vec(&(
                 CHECKER_VERSION,
                 self.workspace,
+                self.chat_id,
                 id,
                 sha256(content.as_bytes()),
                 checks,
@@ -120,7 +123,10 @@ impl Replay<'_> {
         let mut results = ReplayResults {
             replay: self,
             evidence,
+            reads,
             loaded: BTreeMap::new(),
+            web_payloads: BTreeMap::new(),
+            saved_sources: BTreeMap::new(),
             remaining_payload_bytes: super::super::MAX_RUN_RESULT_REGISTRY_BYTES,
         };
         let mut projected = checks.to_vec();
@@ -130,12 +136,16 @@ impl Replay<'_> {
             }
         }
         replace(&mut results, &mut projected);
-        if let Ok(mut cache) = self.state.number_replay_cache.0.lock() {
-            cache.retain(|(cached, _)| cached != &key);
-            if cache.len() == MAX_CACHED_PROJECTIONS {
-                cache.pop_front();
+        // A retained capture or saved Source can be erased or saved between
+        // reads. Consult the store again for projections that needed it.
+        if results.web_payloads.is_empty() && results.saved_sources.is_empty() {
+            if let Ok(mut cache) = self.state.number_replay_cache.0.lock() {
+                cache.retain(|(cached, _)| cached != &key);
+                if cache.len() == MAX_CACHED_PROJECTIONS {
+                    cache.pop_front();
+                }
+                cache.push_back((key, projected.clone()));
             }
-            cache.push_back((key, projected.clone()));
         }
         Some(projected)
     }
@@ -214,7 +224,7 @@ impl Replay<'_> {
 
     fn message<'a>(
         self,
-        message: &ChatMessage,
+        message: &'a ChatMessage,
         checks: &[NumberCheck],
         evidence: impl Iterator<Item = &'a ChatEvidenceRef>,
     ) -> Option<Vec<NumberCheck>> {
@@ -223,10 +233,15 @@ impl Replay<'_> {
             &message.content,
             checks,
             evidence,
+            &message.memory_refs,
             |results, checks| {
                 let units = answer_units::governing_units(&message.content);
                 let links = located_links(&message.content);
-                for check in checks.iter_mut().filter(|check| unresolved(check)) {
+                let mut not_figures = Vec::new();
+                for (position, check) in checks.iter_mut().enumerate() {
+                    if !unresolved(check) {
+                        continue;
+                    }
                     let Some((at, link)) =
                         links.get(check.link_index as usize).filter(|(_, link)| {
                             link.evidence_id == check.evidence_id && link.text == check.text
@@ -234,11 +249,24 @@ impl Replay<'_> {
                     else {
                         continue;
                     };
-                    if let Some(printed) =
-                        numbers::parse_with_unit(&link.text, units.get(at).copied())
-                    {
-                        results.check(check, link, printed);
+                    match answer_units::printed_number(
+                        &message.content,
+                        *at,
+                        &link.text,
+                        units.get(at).copied(),
+                    ) {
+                        Some(printed) => {
+                            let row =
+                                answer_units::answer_row(&message.content, *at, &links, &units);
+                            results.check(check, link, printed, row.as_ref(), &message.id);
+                        }
+                        // The current reader takes the link for a citation
+                        // marker, so it is no figure to check.
+                        None => not_figures.push(position),
                     }
+                }
+                for position in not_figures.into_iter().rev() {
+                    checks.remove(position);
                 }
             },
         )
@@ -248,7 +276,12 @@ impl Replay<'_> {
 struct ReplayResults<'a> {
     replay: Replay<'a>,
     evidence: BTreeMap<&'a str, &'a ChatEvidenceRef>,
+    /// The reply's exact Memory reads, which name the saved Source behind a
+    /// `world_read` excerpt.
+    reads: &'a [MemoryRefSnapshot],
     loaded: BTreeMap<(&'a str, u8), Option<RunResult>>,
+    web_payloads: BTreeMap<&'a str, Option<RunResult>>,
+    saved_sources: BTreeMap<&'a str, Option<RunResult>>,
     remaining_payload_bytes: usize,
 }
 
@@ -266,7 +299,14 @@ fn evidence_unavailable(check: &mut NumberCheck) {
 }
 
 impl ReplayResults<'_> {
-    fn check(&mut self, check: &mut NumberCheck, link: &EvidenceLink, printed: Printed) {
+    fn check(
+        &mut self,
+        check: &mut NumberCheck,
+        link: &EvidenceLink,
+        printed: Printed,
+        row: Option<&AnswerRow>,
+        message_id: &str,
+    ) {
         let Some(&evidence) = self.evidence.get(link.evidence_id.as_str()) else {
             return;
         };
@@ -284,13 +324,80 @@ impl ReplayResults<'_> {
             }
             return;
         };
-        let mut projected = check_printed(
+        // A truncated `world_read` excerpt is the prefix of the saved Source
+        // the exact read returned, which the live check read whole.
+        let saved = (check.kind == NumberCheckKind::Passage
+            && evidence.kind == ChatEvidenceKind::SavedContext
+            && evidence.tool_name == "world_read"
+            && evidence.excerpt_truncated)
+            .then(|| {
+                let reads = self.reads;
+                self.saved_sources
+                    .entry(&evidence.id)
+                    .or_insert_with(|| {
+                        let read = reads.iter().find(|read| {
+                            read.access == MemoryAccess::ExactRead
+                                && evidence.read_ref.as_deref() == Some(read.read_ref.as_str())
+                        })?;
+                        let (text, bytes) = crate::commands::knowledge::saved_source_text(
+                            self.replay.state,
+                            self.replay.workspace,
+                            evidence,
+                            read,
+                            self.remaining_payload_bytes,
+                        )?;
+                        self.remaining_payload_bytes -= bytes;
+                        Some(RunResult {
+                            payload: json!({"scope": "source", "text": text}),
+                            ..result.clone()
+                        })
+                    })
+                    .as_ref()
+            })
+            .flatten();
+        let mut projected = check_in_row(
             link,
             printed,
-            result,
+            row,
+            saved.unwrap_or(result),
             Some(evidence),
             &RunResultRegistry::default(),
         );
+        if unresolved(&projected)
+            && check.kind == NumberCheckKind::Passage
+            && evidence.kind == ChatEvidenceKind::Original
+            && evidence.tool_name == "web_fetch"
+            && evidence.excerpt_truncated
+        {
+            let full = self.web_payloads.entry(&evidence.id).or_insert_with(|| {
+                let (payload, bytes) = crate::commands::knowledge::retained_web_payload(
+                    self.replay.state,
+                    self.replay.workspace,
+                    self.replay.chat_id,
+                    message_id,
+                    evidence,
+                    self.remaining_payload_bytes,
+                )?;
+                self.remaining_payload_bytes -= bytes;
+                Some(RunResult {
+                    payload,
+                    ..result.clone()
+                })
+            });
+            if let Some(full) = full {
+                let wider = check_in_row(
+                    link,
+                    printed,
+                    row,
+                    full,
+                    Some(evidence),
+                    &RunResultRegistry::default(),
+                );
+                if !unresolved(&wider) {
+                    projected = wider;
+                }
+            }
+        }
         if projected.comparison_reason == Some(ComparisonReason::NoCandidate)
             && check.kind == NumberCheckKind::Passage
         {
@@ -337,6 +444,7 @@ pub(in crate::commands) fn project_chat(
     let replay = Replay {
         state,
         workspace: &chat.loupist_id,
+        chat_id: &chat.id,
     };
     for (stored, rendered) in chat.messages.iter().zip(&mut dto.messages) {
         let evidence = available_evidence(&rendered.evidence_refs, Some(stored));
@@ -393,16 +501,19 @@ pub(in crate::commands) fn project_grid(
     let replay = Replay {
         state,
         workspace: &chat.loupist_id,
+        chat_id: &chat.id,
     };
     let id = format!(
         "{}/{}",
         dto.revision.source_message_id, dto.revision.artifact_id
     );
+    let reads = source_message.map_or(&[][..], |message| &message.memory_refs[..]);
     let result = replay.project(
         &id,
         &dto.revision.digest,
         &checks,
         evidence,
+        reads,
         |results, checks| {
             for (check, (_, printed)) in checks.iter_mut().zip(&cells) {
                 if let Some(printed) = printed {
@@ -411,7 +522,13 @@ pub(in crate::commands) fn project_grid(
                         text: check.text.clone(),
                         evidence_id: check.evidence_id.clone(),
                     };
-                    results.check(check, &link, *printed);
+                    results.check(
+                        check,
+                        &link,
+                        *printed,
+                        None,
+                        &dto.revision.source_message_id,
+                    );
                 }
             }
         },
@@ -540,6 +657,356 @@ mod tests {
     }
 
     #[test]
+    fn saved_margin_and_spending_recheck_after_restart() {
+        use crate::knowledge::{
+            Authorship, Coverage, KnowledgeStore, RepresentationRole, RetainMaterial,
+            RetainNewSource, Selector, SourceClass,
+        };
+
+        let scratch = tempfile::tempdir().unwrap();
+        let path = scratch.path().join("app");
+        let state = AppState::for_folder_test(path.clone());
+        let workspace = "loupist-a";
+        let folder = scratch.path().join(workspace);
+        std::fs::create_dir(&folder).unwrap();
+        let profile = crate::commands::tests::profile(workspace, &folder, 1);
+        state.store.create_loupist(&profile).unwrap();
+        let mut chat = crate::test_fixtures::chat_session("chat-a", workspace);
+        let margin_id = super::super::evidence::evidence_id("result:financial-summary");
+        let spending_id = "ev_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let mut reply = message("reply", &format!(
+            "Change [-2.7%p](#evidence-{margin_id}). 설비투자는 직전 12개월 [$154억](#evidence-{spending_id})으로 집계됐습니다."
+        ));
+        let prefix = "Financial Summary\nQuarterly operating margin 5.7% -50\tbp\n";
+        let prefix = format!("{prefix}{}", " ".repeat(8192));
+        let full = serde_json::to_vec(&json!({
+            "content": format!("{prefix}\nOperating\tmargin\t12.1%\t16.8%\t9.2%\t7.2%\t4.6%\t-265\tbp"),
+        })).unwrap();
+        let excerpt = &prefix[..8192];
+        let mut margin = saved_evidence(&margin_id, "web_fetch", "original", excerpt);
+        margin.excerpt_truncated = true;
+        margin.content_sha256 = sha256(&full);
+        let mut spending = saved_evidence(spending_id, "web_fetch", "original",
+            "| In millions of USD | 2Q-2026 | 3Q-2026 |\n| Capital expenditures – TTM (1) | (12,923) | (15,407) |");
+        spending.excerpt_truncated = true;
+        reply.evidence_refs = vec![margin, spending];
+        reply.number_checks = vec![
+            unresolved_check(0, &margin_id, "-2.7%p"),
+            unresolved_check(1, spending_id, "$154억"),
+        ];
+        chat.messages.push(reply);
+        state.store.create_chat(&chat).unwrap();
+        let project = |state: &AppState, chat: &ChatSession| {
+            crate::commands::types::chat_dto_with_memory(state, chat)
+                .unwrap()
+                .messages
+                .remove(0)
+                .number_checks
+        };
+        let checks = project(&state, &chat);
+        assert_eq!(checks[0].status, NumberCheckStatus::NotFound);
+        assert_eq!(checks[1].status, NumberCheckStatus::Rounded);
+
+        KnowledgeStore::for_loupist(state.store.clone(), workspace)
+            .unwrap()
+            .transact(|write| {
+                write.retain_new_source_with_origin(
+                    RetainNewSource {
+                        origin: None,
+                        loupist_id: workspace.into(),
+                        at_ms: 2,
+                        title: "Financial summary".into(),
+                        source_class: SourceClass::ToolResult,
+                        origin_locator: "https://example.test/financial-summary.pdf".into(),
+                        provider_identity: "example.test".into(),
+                        authorship: Authorship::Publisher,
+                        coverage: Coverage::UpstreamTruncated,
+                        origin_chat_id: Some(chat.id.clone()),
+                        request_ref: Some("result:financial-summary".into()),
+                        declared_digest: None,
+                        publication_time: None,
+                        material: Some(RetainMaterial {
+                            media_type: "application/json".into(),
+                            role: RepresentationRole::ProviderPayload,
+                            document_id: "filing".into(),
+                            parser_version: None,
+                            parent_representation_id: None,
+                            input_span_ids: Vec::new(),
+                            selector: Selector::ByteRange {
+                                start: 0,
+                                end: full.len() as u64,
+                            },
+                            context_note: "Exact delivered provider payload".into(),
+                            bytes: full,
+                        }),
+                    },
+                    &chat.messages[0].id,
+                    None,
+                )
+            })
+            .unwrap();
+
+        assert_eq!(project(&state, &chat)[0].status, NumberCheckStatus::Rounded);
+        state.close_for_restart_test();
+        let state = AppState::for_folder_test(path);
+        let stored = state.store.get_chat(&chat.id).unwrap().unwrap();
+        let checks = project(&state, &stored);
+        for (check, printed) in checks.iter().zip(["-265\tbp", "(15,407)"]) {
+            assert_eq!(check.kind, NumberCheckKind::Passage);
+            assert_eq!(check.status, NumberCheckStatus::Rounded, "{check:?}");
+            assert_eq!(check.exact.as_deref(), Some(printed));
+        }
+        let context = checks[0].context.as_ref().unwrap();
+        assert_eq!(&context.text[context.start..context.end], "-265\tbp");
+        assert_eq!(
+            stored.messages[0].number_checks,
+            chat.messages[0].number_checks
+        );
+        let mut unrelated = stored;
+        unrelated.messages[0].id = "other-reply".into();
+        assert_eq!(
+            project(&state, &unrelated)[0].status,
+            NumberCheckStatus::NotFound
+        );
+    }
+
+    /// The twelve wrong warnings of two stored Tesla answers, re-evaluated on
+    /// read from the saved Sources, dataset slice and calculations they cite.
+    #[test]
+    fn stored_tesla_warnings_are_rechecked_from_their_saved_sources() {
+        use crate::domain::answer_checks::SourceSign;
+        use crate::knowledge::{
+            Authorship, Coverage, KnowledgeStore, RepresentationRole, RetainMaterial,
+            RetainNewSource, Selector, SourceClass,
+        };
+
+        let fixture = super::super::sign_tests::fixture();
+        let scratch = tempfile::tempdir().unwrap();
+        let state = AppState::for_folder_test(scratch.path().join("app"));
+        let workspace = "loupist-a";
+        let folder = scratch.path().join(workspace);
+        std::fs::create_dir(&folder).unwrap();
+        let profile = crate::commands::tests::profile(workspace, &folder, 1);
+        state.store.create_loupist(&profile).unwrap();
+        let mut grok = message("grok", fixture["answers"]["grok"].as_str().unwrap());
+        for name in ["highlights", "statements"] {
+            let source = &fixture["sources"][name];
+            let envelope = super::super::sign_tests::envelope(source);
+            let marker =
+                serde_json::to_string(source["excerpt_ends_after"].as_str().unwrap()).unwrap();
+            let marker = marker.trim_matches('"');
+            let excerpt = &envelope[..envelope.find(marker).unwrap() + marker.len()];
+            let title = source["title"].as_str().unwrap();
+            let retained = KnowledgeStore::for_loupist(state.store.clone(), workspace)
+                .unwrap()
+                .transact(|write| {
+                    write.retain_new_source(RetainNewSource {
+                        origin: None,
+                        loupist_id: workspace.into(),
+                        at_ms: 2,
+                        title: title.into(),
+                        source_class: SourceClass::ToolResult,
+                        origin_locator: "tool:web_fetch".into(),
+                        provider_identity: "ir.example.test".into(),
+                        authorship: Authorship::Publisher,
+                        coverage: Coverage::IncludedExcerpt,
+                        origin_chat_id: None,
+                        request_ref: None,
+                        declared_digest: None,
+                        publication_time: None,
+                        material: Some(RetainMaterial {
+                            media_type: "application/json".into(),
+                            role: RepresentationRole::Excerpt,
+                            document_id: name.into(),
+                            parser_version: None,
+                            parent_representation_id: None,
+                            input_span_ids: Vec::new(),
+                            selector: Selector::ByteRange {
+                                start: 0,
+                                end: envelope.len() as u64,
+                            },
+                            context_note: "Delivered excerpt".into(),
+                            bytes: envelope.clone().into_bytes(),
+                        }),
+                    })
+                })
+                .unwrap();
+            let read_ref = format!("rdg_{name}");
+            let mut evidence = saved_evidence(
+                source["id"].as_str().unwrap(),
+                "world_read",
+                "saved_context",
+                excerpt,
+            );
+            evidence.title = title.into();
+            evidence.read_ref = Some(read_ref.clone());
+            evidence.excerpt_truncated = true;
+            evidence.content_sha256 = sha256(envelope.as_bytes());
+            grok.evidence_refs.push(evidence);
+            grok.memory_refs.push(MemoryRefSnapshot {
+                read_ref: read_ref.clone(),
+                kind: "source".into(),
+                title: title.into(),
+                excerpt: excerpt.chars().take(180).collect(),
+                as_of: None,
+                section: None,
+                access: MemoryAccess::ExactRead,
+                full_record_digest: None,
+                record_id: retained.record_id,
+                revision_id: retained.revision_id,
+                object_id: retained.source_id,
+                span_id: retained.span_id,
+                receipt_id: Some(read_ref),
+            });
+        }
+        grok.observed_exact_count = 2;
+        grok.refs_digest = crate::domain::memory_refs_digest(&grok.memory_refs).unwrap();
+        grok.created_at_ms = 3;
+        let dataset = &fixture["dataset"];
+        grok.evidence_refs.push(saved_evidence(
+            dataset["id"].as_str().unwrap(),
+            "dataset_query",
+            "saved_context",
+            &serde_json::to_string_pretty(&dataset["payload"]).unwrap(),
+        ));
+        grok.number_checks =
+            serde_json::from_value(fixture["stored_checks"]["grok"].clone()).unwrap();
+        let mut gpt = message("gpt", fixture["answers"]["gpt"].as_str().unwrap());
+        for ratio in fixture["ratios"].as_array().unwrap() {
+            let mut evidence = saved_evidence(
+                ratio["id"].as_str().unwrap(),
+                "calculate",
+                "derived",
+                &serde_json::to_string_pretty(&ratio["stored"]).unwrap(),
+            );
+            evidence.title = "Ratio".into();
+            gpt.evidence_refs.push(evidence);
+        }
+        gpt.number_checks =
+            serde_json::from_value(fixture["stored_checks"]["gpt"].clone()).unwrap();
+        let mut chat = crate::test_fixtures::chat_session("chat-a", workspace);
+        chat.messages.extend([grok, gpt]);
+        state.store.create_chat(&chat).unwrap();
+
+        let dto = crate::commands::types::chat_dto_with_memory(&state, &chat).unwrap();
+        let grok = &dto.messages[0].number_checks;
+        let summary: Vec<_> = grok
+            .iter()
+            .map(|check| (check.link_index, check.status, check.source_sign))
+            .collect();
+        let outflow = Some(SourceSign::Outflow);
+        assert_eq!(
+            summary,
+            [
+                (4, NumberCheckStatus::Matched, None),
+                (11, NumberCheckStatus::Rounded, outflow),
+                (13, NumberCheckStatus::Rounded, outflow),
+                (14, NumberCheckStatus::Rounded, outflow),
+                (15, NumberCheckStatus::Rounded, outflow),
+                (16, NumberCheckStatus::Rounded, outflow),
+                (17, NumberCheckStatus::Rounded, outflow),
+                (20, NumberCheckStatus::Rounded, outflow),
+                (22, NumberCheckStatus::Rounded, outflow),
+            ],
+            "{grok:#?}"
+        );
+        for check in grok {
+            assert!(check.comparison_reason.is_none(), "{check:?}");
+            assert!(check.compared_value.is_none(), "{check:?}");
+        }
+        let printed = |check: &NumberCheck| {
+            let context = check.context.as_ref().unwrap();
+            context.text[context.start..context.end].to_owned()
+        };
+        assert_eq!(printed(&grok[0]), "0.22");
+        assert_eq!(printed(&grok[1]), "(4,732)");
+        assert_eq!(printed(&grok[2]), "(15,407)");
+        assert_eq!(printed(&grok[3]), "(8,914)");
+        assert_eq!(
+            grok[5].pointer.as_deref(),
+            Some("/rows/1/capital_expenditure")
+        );
+        // The stored ratio results state a multiple ("3.46x"), so they stay
+        // `differs`; only results that keep their unit match.
+        let gpt = &dto.messages[1].number_checks;
+        assert_eq!(
+            gpt.iter().map(|check| check.status).collect::<Vec<_>>(),
+            [NumberCheckStatus::Differs; 3],
+            "{gpt:#?}"
+        );
+        // Nothing is written back.
+        let stored = state.store.get_chat(&chat.id).unwrap().unwrap();
+        assert_eq!(
+            stored.messages[0].number_checks,
+            chat.messages[0].number_checks
+        );
+        assert_eq!(
+            stored.messages[1].number_checks,
+            chat.messages[1].number_checks
+        );
+    }
+
+    /// A stored research answer's sign conflicts on `△`, brackets and English
+    /// outflow rows, and a stored check of a citation marker.
+    #[test]
+    fn stored_negative_notations_and_citation_markers_are_projected_again() {
+        use crate::domain::answer_checks::SourceSign;
+        let fixture = super::super::sign_tests::research_fixture();
+        let scratch = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(scratch.path().join("app"));
+        let mut research = message("research", fixture["answer"].as_str().unwrap());
+        for source in fixture["sources"].as_object().unwrap().values() {
+            let mut evidence = saved_evidence(
+                source["id"].as_str().unwrap(),
+                "web_fetch",
+                "original",
+                source["excerpt"].as_str().unwrap(),
+            );
+            evidence.title = source["title"].as_str().unwrap().into();
+            research.evidence_refs.push(evidence);
+        }
+        research.number_checks = serde_json::from_value(fixture["stored_checks"].clone()).unwrap();
+        let marker = &fixture["citation_marker"];
+        let mut table = message("table", marker["answer"].as_str().unwrap());
+        table.evidence_refs.push(saved_evidence(
+            marker["evidence"]["id"].as_str().unwrap(),
+            "dataset_query",
+            "saved_context",
+            marker["evidence"]["excerpt"].as_str().unwrap(),
+        ));
+        table.number_checks = vec![serde_json::from_value(marker["stored_check"].clone()).unwrap()];
+        let mut chat = crate::test_fixtures::chat_session("chat-a", "loupist-a");
+        chat.messages.extend([research, table]);
+
+        let dto = crate::commands::types::chat_dto_with_memory(&state, &chat).unwrap();
+        let research = &dto.messages[0].number_checks;
+        let outflow = Some(SourceSign::Outflow);
+        assert_eq!(
+            research
+                .iter()
+                .map(|check| (check.link_index, check.status, check.source_sign))
+                .collect::<Vec<_>>(),
+            [
+                (3, NumberCheckStatus::Matched, outflow),
+                (4, NumberCheckStatus::Matched, outflow),
+                (5, NumberCheckStatus::Matched, outflow),
+                (6, NumberCheckStatus::Matched, outflow),
+                (7, NumberCheckStatus::Matched, outflow),
+                (8, NumberCheckStatus::Matched, outflow),
+                (9, NumberCheckStatus::Matched, outflow),
+                (10, NumberCheckStatus::Matched, None),
+                // Working-capital changes stay warnings: the answer states
+                // the increase the source prints as its cash effect.
+                (11, NumberCheckStatus::NotFound, None),
+                (12, NumberCheckStatus::NotFound, None),
+            ],
+            "{research:#?}"
+        );
+        assert!(dto.messages[1].number_checks.is_empty());
+        assert_eq!(chat.messages[1].number_checks.len(), 1);
+    }
+
+    #[test]
     fn missing_figures_distinguish_the_saved_passage_from_missing_evidence() {
         let scratch = tempfile::tempdir().unwrap();
         let state = AppState::for_test(scratch.path().join("app"));
@@ -599,6 +1066,7 @@ mod tests {
         let replay = Replay {
             state: &state,
             workspace: "loupist-a",
+            chat_id: "chat-a",
         };
         for (index, item) in fixture["cases"]
             .as_array()
@@ -699,6 +1167,7 @@ mod tests {
         let replay = Replay {
             state: &state,
             workspace: "loupist-a",
+            chat_id: "chat-a",
         };
         let current = replay
             .message(&reply, &reply.number_checks, reply.evidence_refs.iter())

@@ -1,7 +1,9 @@
 pub(crate) mod as_of;
 mod chat_reads;
 mod evidence_origin;
-pub(in crate::commands) use evidence_origin::{project_artifact_memory, project_chat_memory};
+pub(in crate::commands) use evidence_origin::{
+    project_artifact_memory, project_chat_memory, retained_web_payload, saved_source_text,
+};
 pub(crate) mod followed;
 pub(crate) mod journal;
 pub(crate) mod lens_archive;
@@ -13,8 +15,8 @@ pub(crate) mod world_schema;
 mod world_setup;
 pub(crate) use followed::{sync_followed_assets, FollowedSync};
 pub(crate) use world_setup::{
-    complete_pending_world_model, complete_pending_world_models, initialize_new_world,
-    release_unknown_world_models,
+    follow_recommended_world_model, follow_recommended_world_models,
+    follow_recommended_world_models_quietly, initialize_new_world, release_unknown_world_models,
 };
 #[cfg(test)]
 pub(crate) use world_setup::{set_world_model_for_test, world_model_for_test};
@@ -391,7 +393,7 @@ pub fn knowledge_source_read(
     source_read(state.inner(), request)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_lens_read(
     request: KnowledgeLensReadRequest,
     state: State<'_, AppState>,
@@ -399,7 +401,7 @@ pub fn knowledge_lens_read(
     lens_read(state.inner(), request)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_lens_pages_for_node(
     request: KnowledgeLensPagesForNodeRequest,
     state: State<'_, AppState>,
@@ -427,7 +429,7 @@ fn connection_set_status(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_connection_dismiss(
     request: KnowledgeConnectionRequest,
     state: State<'_, AppState>,
@@ -439,7 +441,7 @@ pub fn knowledge_connection_dismiss(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn memory_section_forget(
     request: MemorySectionForgetRequest,
     state: State<'_, AppState>,
@@ -455,7 +457,7 @@ pub fn memory_section_forget(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn memory_op_undo(
     request: MemoryOpUndoRequest,
     state: State<'_, AppState>,
@@ -470,7 +472,7 @@ pub fn memory_op_undo(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn memory_learned(
     request: MemoryLearnedRequest,
     state: State<'_, AppState>,
@@ -550,7 +552,7 @@ pub struct JournalSourceReadDto {
     pub pinned: crate::knowledge::JournalSourceInput,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_journal_read(
     request: KnowledgeJournalReadRequest,
     state: State<'_, AppState>,
@@ -569,7 +571,7 @@ pub(crate) fn journal_read(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_journal_source_read(
     request: KnowledgeJournalSourceReadRequest,
     state: State<'_, AppState>,
@@ -603,7 +605,7 @@ pub(crate) fn journal_source_read(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_research_search(
     request: KnowledgeResearchSearchRequest,
     state: State<'_, AppState>,
@@ -809,6 +811,11 @@ fn graph_settings_view(
         .helper_model_profile_id
         .as_deref()
         .and_then(|id| state.model_catalog().ok()?.resolve(id).ok());
+    let recommended = crate::providers::world_defaults::WorldModels::load(state)
+        .ok()
+        .and_then(|models| models.recommend(Some(loupist_id)));
+    let follows_list =
+        settings.world_model_choice == crate::knowledge::WorldModelChoice::Recommended;
     let ready = model.as_ref().and_then(|model| {
         crate::providers::inference::ProviderInferenceService::from_state(state)
             .ok()?
@@ -837,17 +844,25 @@ fn graph_settings_view(
     } else {
         "ready"
     };
+    // With no AI account at all, World waits for one, not for another model.
+    // A Recommended model waiting for an account already says it waits for one.
+    let no_account = matches!(
+        status,
+        "model_required" | "model_unavailable" | "provider_disconnected"
+    ) && !(status == "model_required" && follows_list)
+        && state
+            .selection_catalog()
+            .is_ok_and(|snapshot| !snapshot.any_account_connected());
     Ok(crate::knowledge::GraphProcessingView {
         settings: settings.public_settings(),
         readiness: crate::knowledge::GraphReadiness {
             status: status.into(),
             note: match status {
+                _ if no_account => Some(ReadinessNote::NoAccount),
                 "reconciliation_required" => Some(ReadinessNote::RecoveryRequired),
                 "recovering" => Some(ReadinessNote::Recovering),
                 "runtime_unavailable" => Some(ReadinessNote::RuntimeUnavailable),
-                "model_required" if settings.awaiting_default_model => {
-                    Some(ReadinessNote::AwaitingProvider)
-                }
+                "model_required" if follows_list => Some(ReadinessNote::AwaitingProvider),
                 "model_required" => Some(ReadinessNote::ChooseModel),
                 "model_unavailable" => Some(ReadinessNote::ModelUnavailable),
                 "provider_disconnected" => Some(
@@ -864,10 +879,15 @@ fn graph_settings_view(
             model_name: model.as_ref().map(|model| model.name.clone()),
             auth_kind: ready.and_then(|ready| ready.auth_kind),
         },
+        recommended: recommended.map(|model| crate::knowledge::RecommendedWorldModel {
+            model_profile_id: model.profile_id,
+            thinking_level: model.thinking_level,
+            run_options: model.run_options,
+        }),
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_graph_job(
     request: KnowledgeGraphJobRequest,
     state: State<'_, AppState>,
@@ -966,12 +986,19 @@ pub fn knowledge_graph_settings_get(
     request: KnowledgeGraphLoupistRequest,
     state: State<'_, AppState>,
 ) -> Result<crate::knowledge::GraphProcessingView, CommandError> {
-    admit(state.inner(), &request.loupist_id)?;
-    graph_settings_view(
-        state.inner(),
-        &request.loupist_id,
-        &load_graph_settings(state.inner(), &request.loupist_id)?,
-    )
+    graph_settings(state.inner(), &request.loupist_id)
+}
+
+pub(crate) fn graph_settings(
+    state: &AppState,
+    loupist_id: &str,
+) -> Result<crate::knowledge::GraphProcessingView, CommandError> {
+    admit(state, loupist_id)?;
+    // What the status names is the model the next job uses.
+    if follow_recommended_world_model(state, loupist_id).is_err() {
+        eprintln!("Could not update the recommended World model for {loupist_id}");
+    }
+    graph_settings_view(state, loupist_id, &load_graph_settings(state, loupist_id)?)
 }
 
 #[tauri::command(async)]
@@ -979,43 +1006,58 @@ pub fn knowledge_graph_settings_set(
     request: KnowledgeGraphSettingsRequest,
     state: State<'_, AppState>,
 ) -> Result<crate::knowledge::GraphProcessingView, CommandError> {
-    let _activity = admit_mutation(state.inner(), &request.loupist_id)?;
-    let model = request
-        .settings
-        .helper_model_profile_id
-        .as_deref()
-        .map(|id| state.model_catalog()?.resolve(id))
-        .transpose()?;
-    if let Some(model) = &model {
-        model.validate_thinking_level(&request.settings.thinking_level)?;
-        model.validate_run_options(&request.settings.run_options)?;
-    } else if request.settings.enrichment_enabled {
-        return Err(CommandError::invalid(
-            "Choose a World model before enabling automatic processing",
-        ));
-    }
-    let current =
-        with_loupist_knowledge(state.inner(), &request.loupist_id.clone(), |tx, blobs| {
-            let mut current = crate::knowledge::load_settings(tx, &request.loupist_id)?;
-            let was_paused = current.paused;
-            current.apply_public(&request.settings, model.as_ref());
-            current.validate()?;
-            if current.paused && !was_paused {
-                crate::knowledge::pause_processing(tx, &mut current, &request.loupist_id)?;
-            }
-            if !current.paused && was_paused {
-                crate::knowledge::resume_processing(tx, &mut current, &request.loupist_id)?;
-            }
-            crate::knowledge::store_settings(tx, &request.loupist_id, &current)?;
-            crate::knowledge::KnowledgeWrite::bind(tx, blobs).enqueue_existing_sources(
-                &request.loupist_id,
-                &current,
-                crate::commands::now_ms(),
-            )?;
-            Ok(current)
-        })?;
+    set_graph_settings(state.inner(), request)
+}
+
+pub(crate) fn set_graph_settings(
+    state: &AppState,
+    request: KnowledgeGraphSettingsRequest,
+) -> Result<crate::knowledge::GraphProcessingView, CommandError> {
+    let _activity = admit_mutation(state, &request.loupist_id)?;
+    let model = match request.settings.world_model_choice {
+        crate::knowledge::WorldModelChoice::Chosen => {
+            let id = request
+                .settings
+                .helper_model_profile_id
+                .as_deref()
+                .ok_or_else(|| CommandError::invalid("Choose a World model"))?;
+            let model = state.model_catalog()?.resolve(id)?;
+            model.validate_thinking_level(&request.settings.thinking_level)?;
+            model.validate_run_options(&request.settings.run_options)?;
+            Some(crate::knowledge::WorldModel {
+                profile_id: model.id,
+                provider: model.provider,
+                model: model.model,
+                thinking_level: request.settings.thinking_level.clone(),
+                run_options: request.settings.run_options.clone(),
+            })
+        }
+        crate::knowledge::WorldModelChoice::Recommended => {
+            crate::providers::world_defaults::WorldModels::load(state)?
+                .recommend(Some(&request.loupist_id))
+        }
+    };
+    let current = with_loupist_knowledge(state, &request.loupist_id.clone(), |tx, blobs| {
+        let mut current = crate::knowledge::load_settings(tx, &request.loupist_id)?;
+        let was_paused = current.paused;
+        current.apply_public(&request.settings, model.as_ref());
+        current.validate()?;
+        if current.paused && !was_paused {
+            crate::knowledge::pause_processing(tx, &mut current, &request.loupist_id)?;
+        }
+        if !current.paused && was_paused {
+            crate::knowledge::resume_processing(tx, &mut current, &request.loupist_id)?;
+        }
+        crate::knowledge::store_settings(tx, &request.loupist_id, &current)?;
+        crate::knowledge::KnowledgeWrite::bind(tx, blobs).enqueue_existing_sources(
+            &request.loupist_id,
+            &current,
+            crate::commands::now_ms(),
+        )?;
+        Ok(current)
+    })?;
     state.graph.wake();
-    graph_settings_view(state.inner(), &request.loupist_id, &current)
+    graph_settings_view(state, &request.loupist_id, &current)
 }
 
 /// A removed pack loses access to its reference Sources. A capture retained

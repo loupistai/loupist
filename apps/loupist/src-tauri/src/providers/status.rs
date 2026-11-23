@@ -341,6 +341,17 @@ pub fn load_all(state: &AppState) -> Result<BTreeMap<String, ProviderStatusRow>,
         .collect())
 }
 
+/// The stored rows, read only; an unreadable table reads as none.
+pub fn rows(store: &crate::store::SqliteStore) -> BTreeMap<String, ProviderStatusRow> {
+    store
+        .provider_status_all()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(ProviderStatusRow::from_record)
+        .map(|row| (row.provider.clone(), row))
+        .collect()
+}
+
 pub fn load(state: &AppState, provider: &str) -> Result<Option<ProviderStatusRow>, CommandError> {
     Ok(state
         .store
@@ -614,7 +625,8 @@ pub fn next_probe_at(store: &crate::store::SqliteStore) -> Option<i64> {
         .min()
 }
 
-/// What still points at a provider: schedules, the Chat default and Loupist World models.
+/// What still points at a provider: schedules, the Chat default and the World
+/// models users chose. A Recommended World model moves to another account.
 pub fn used_by(state: &AppState, provider: &str) -> UsedBy {
     let prefix = format!("{provider}/");
     let mut used = UsedBy {
@@ -635,9 +647,10 @@ pub fn used_by(state: &AppState, provider: &str) -> UsedBy {
                 .count() as u32;
         }
         if let Ok(connection) = state.store.lock_loupist(&loupist.id) {
-            if crate::knowledge::load_settings(&connection, &loupist.id)
-                .is_ok_and(|settings| settings.helper_provider.as_deref() == Some(provider))
-            {
+            if crate::knowledge::load_settings(&connection, &loupist.id).is_ok_and(|settings| {
+                settings.world_model_choice == crate::knowledge::WorldModelChoice::Chosen
+                    && settings.helper_provider.as_deref() == Some(provider)
+            }) {
                 used.world_models += 1;
             }
         }

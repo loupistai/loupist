@@ -111,6 +111,41 @@ async function workListFixture(bridge: PreviewBridge) {
 }
 
 /** The side panel: sources, evidence, the Work list, docking and delivered files. */
+/**
+ * A retained quarterly table too wide for the docked panel, opened at its cited figure in a far
+ * column. Synthetic figures.
+ */
+async function citedWideTableFixture(bridge: PreviewBridge) {
+  await prepareFixture(bridge, "answer");
+  const table = [
+    "| (USD millions) | Q3 2025 | Q4 2025 | Q1 2026 | Q2 2026 | Q3 2026 | YoY |",
+    "| --- | --- | --- | --- | --- | --- | --- |",
+    "| Total revenues | 25,182 | 25,707 | 19,335 | 22,496 | 28,095 | 12% |",
+    "| Income from operations | 1,409 | 941 | 398 | 923 | 718 | -49% |",
+    "| Operating margin | 5.7% | 3.7% | 2.1% | 4.1% | 2.6% | -312 bp |",
+    "| Net income attributable to common stockholders (GAAP) | 2,167 | 2,356 | 409 | 1,172 | 1,373 | -37% |",
+    "| Free cash flow | 2,742 | 2,034 | 664 | 146 | 3,990 | 46% |",
+  ].join("\n");
+  const text = `Hanul Precision Q3 2026 update.\n\n${table}\n\nOperating income fell on lower average selling prices.`;
+  const bytes = (value: string) => new TextEncoder().encode(value).length;
+  const at = (start: number, length: number) => ({ start: bytes(text.slice(0, start)), end: bytes(text.slice(0, start + length)) });
+  const title = "Hanul Precision Q3 2026 update";
+  const saved = await bridge.knowledgeSourceRetain({ loupistId: "loupist-quality", title, originLocator: "Pasted text", coverage: "included_full", text });
+  const read = bridge.knowledgeSourceRead.bind(bridge);
+  const spanId = "preview-cited-table";
+  bridge.knowledgeSourceRead = async request => request.recordId !== saved.recordId ? read(request) : {
+    ...await read(request.spanId === spanId ? { ...request, spanId: undefined } : request), material: "provider_payload", selectedSpanId: spanId,
+    spans: [{
+      spanId, mediaType: "application/json", selector: "bytes:0-4096", contextNote: "", text: JSON.stringify({ content: text }),
+      presentation: {
+        text, sourcePointer: "/content", extractionMethod: "readability", contentOffset: 0, nextOffset: null, extractionTruncated: false,
+        citedPassages: [{ ...at(text.indexOf(table), table.length), marks: [at(text.indexOf("| 718 |") + 2, 3)] }],
+      },
+    }],
+  };
+  await bridge.workspaceUiWrite({ version: 1, open: true, placement: "side", width: 480, height: 360, sessions: [{ loupist_id: "loupist-quality", thread_id: "preview-chat", active_tab_id: "saved-source", tabs: [{ id: "saved-source", kind: "memory", title, record_id: saved.recordId, location: { loupistId: "loupist-quality", surface: "source", recordId: saved.recordId, revisionId: saved.revisionId, selection: { kind: "source", sourceId: saved.sourceId, spanId } } }] }] });
+}
+
 export const panelScenarios: PreviewScenario[] = [
   { ...base("panel-closed-text-answer", "A sourced text answer leaves the panel closed", () => {
     const answer = select("article.message.assistant.complete");
@@ -140,6 +175,9 @@ export const panelScenarios: PreviewScenario[] = [
       await bridge.workspaceUiWrite({ version: 1, open: true, placement: "side", width: 480, height: 360, sessions: [{ loupist_id: "loupist-quality", thread_id: "preview-chat", active_tab_id: "saved-source", tabs: [{ id: "saved-source", kind: "memory", title, record_id: saved.recordId, location: { loupistId: "loupist-quality", surface: "source", recordId: saved.recordId, revisionId: saved.revisionId, selection: { kind: "source", sourceId: saved.sourceId, spanId: saved.spanId ?? undefined } } }] }] });
     },
   })),
+  { ...base("panel-source-cited-table", "A cited figure in a wide retained table opens beside its row label", () => select(".workspace-panel .saved-passage-table table[data-row-labels] mark.evidence-match"), async () => {
+    await until(() => select(".workspace-panel .saved-passage-table table[data-row-labels]"), "The cited table did not open");
+  }), setup: citedWideTableFixture },
   { ...base("panel-evidence-passage", "A citation opens its retained passage", () => select(".workspace-evidence .evidence-match"), async root => {
     await click("button.loupist-citation", root);
     await viewSavedPassage();

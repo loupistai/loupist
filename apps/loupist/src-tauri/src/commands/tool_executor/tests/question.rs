@@ -108,7 +108,10 @@ async fn an_ask_user_card_releases_the_reader_until_the_answer_can_resume() {
         .register_chat_run("saver".into(), "loupist-a".into(), "chat-b".into(), control)
         .unwrap();
     assert!(state.claim_run_completion("saver", RunKind::Chat).unwrap());
-    state.run_coordinator.queue_chat_save("saver").unwrap();
+    state
+        .run_coordinator
+        .queue_chat_save("saver", None)
+        .unwrap();
     assert_eq!(
         tokio::time::timeout(
             std::time::Duration::from_secs(1),

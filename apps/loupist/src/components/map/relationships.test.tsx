@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import i18n from "../../i18n";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { KnowledgeMap, KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
 import { MapInspector } from "./MapInspector";
@@ -114,4 +115,32 @@ it("points the canvas at a relationship while a chip is hovered or focused", asy
   // Leaving the view clears the line it pointed at.
   view.unmount();
   expect(onPoint).toHaveBeenLastCalledWith();
+});
+
+it("names each relation in the interface language in both inspector views, one heading per label", async () => {
+  const user = userEvent.setup();
+  const listed = {
+    nodes: [nodes[0]!, company("nasdaq", "Nasdaq"), company("twse", "TWSE"), company("cerebras", "Cerebras"), nodes[7]!],
+    edges: [
+      // Two stored names the bundled table labels alike read as one group.
+      claim("l1", "tsmc", "nasdaq", "LISTED_ON"),
+      claim("l2", "tsmc", "twse", "LISTS_ON"),
+      claim("l3", "tsmc", "cerebras", "RAISED_PRICES_FOR"),
+      claim("l4", "tsmc", "hsinchu", "LOCATED_IN"),
+    ],
+    worldRevisionId: "rev",
+  } as KnowledgeMap;
+  await act(async () => { await i18n.changeLanguage("ko"); });
+  try {
+    render(<MapInspector node={nodes[0]!} map={listed} bridge={new MockLoupistBridge({ delay_ms: 0 })} location={{ loupistId: "loupist", surface: "world" }} providedGraph={{ nodes: [], edges: [] } as never}
+      onClose={vi.fn()} onSelect={vi.fn()} onOpen={vi.fn()} onAsk={vi.fn()} />);
+    const headings = [...document.querySelectorAll(".map-relation")].map((item) => item.textContent);
+    expect(headings).toHaveLength(3);
+    expect(headings).toEqual(expect.arrayContaining(["상장 거래소", "raised prices for", "소재지"]));
+    await user.click(screen.getByRole("button", { name: "관계" }));
+    expect(within(screen.getByRole("region", { name: "기타" })).getAllByRole("listitem").map((item) => item.textContent))
+      .toEqual(expect.arrayContaining(["상장 거래소Nasdaq", "상장 거래소TWSE", "raised prices forCerebras", "소재지Hsinchu"]));
+  } finally {
+    await act(async () => { await i18n.changeLanguage("en"); });
+  }
 });

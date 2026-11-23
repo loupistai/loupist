@@ -248,7 +248,7 @@ mod tests {
             ),
         ] {
             let base = crate::agent_harness::turn_envelope_block(
-                chrono::Utc::now(),
+                crate::local_time::now(),
                 use_memory,
                 &[],
                 None,

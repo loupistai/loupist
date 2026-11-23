@@ -27,4 +27,9 @@ export type ResolvedModelSelection = {
   unavailable_reason: ModelUnavailableReason | null,
   thinking_level: string | null,
   run_options: { [key in string]: string },
+  /**
+   * Why the stored model, still listed, cannot run now. The selection is
+   * then Auto in its place; the stored choice applies again once it can run.
+   */
+  stored_unavailable: ModelUnavailableReason | null,
 };

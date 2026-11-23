@@ -6,7 +6,7 @@ import { chooseLoupist } from "../renderApp";
 
 const QUALITY = { id: "loupist-quality", name: "Quality Compounder" };
 const VALUE = { id: "loupist-value", name: "Contrarian Value" };
-const PRICE = { currency: "USD", provider: "yfinance", sourceUrl: null, dataset: { dataset_id: "follows", revision: 1, digest: "test" } };
+const PRICE = { currency: "USD", currencySource: "result" as const, provider: "yfinance", sourceUrl: null, dataset: { dataset_id: "follows", revision: 1, digest: "test" } };
 
 /** Each Loupist follows one asset of the shared catalog, with a stored price. */
 function bridgeWithFollows() {

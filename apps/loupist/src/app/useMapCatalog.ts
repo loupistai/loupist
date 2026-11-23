@@ -9,6 +9,7 @@ type CatalogSnapshot = {
   catalog: KnowledgeCatalog | null;
   error: string | null;
   readiness: GraphProcessingView["readiness"] | null;
+  world: GraphProcessingView | null;
 };
 
 /** The shell and the Map share a catalog and its pending-work refresh. */
@@ -41,6 +42,7 @@ export function useMapCatalog(bridge: LoupistBridge, loupistId: string | null, r
         return {
           loupistId, catalog,
           readiness: graphResult.status === "fulfilled" ? graphResult.value.readiness : prior?.readiness ?? null,
+          world: graphResult.status === "fulfilled" ? graphResult.value : prior?.world ?? null,
           error: catalogResult.status === "rejected" ? errorMessage(catalogResult.reason, i18n.t("knowledge:map.catalogError")) : null,
         };
       });
@@ -58,7 +60,17 @@ export function useMapCatalog(bridge: LoupistBridge, loupistId: string | null, r
     return () => clearTimeout(timer);
   }, [processing.pending, current, reload]);
 
-  return { catalog, error: current?.error ?? null, processing, reload, refreshKey: refreshKey + reloadKey };
+  // A chosen World model that became unavailable can go back to Recommended
+  // from where World says so.
+  const world = current?.world ?? null;
+  const backToRecommended = useCallback(() => {
+    if (!loupistId || !world) return;
+    void bridge.knowledgeGraphSettingsSet({ loupistId, settings: { ...world.settings, worldModelChoice: "recommended" } })
+      .catch(() => undefined).finally(reload);
+  }, [bridge, loupistId, world, reload]);
+  const onUseRecommendedModel = world?.settings.worldModelChoice === "chosen" && world.readiness.status === "model_unavailable" ? backToRecommended : undefined;
+
+  return { catalog, error: current?.error ?? null, processing, reload, refreshKey: refreshKey + reloadKey, onUseRecommendedModel };
 }
 
 export type MapCatalog = ReturnType<typeof useMapCatalog>;

@@ -830,6 +830,7 @@ fn commit(
         pi_session_id: Uuid::new_v4().to_string(),
         pi_session_cache: None,
         title: staged.request.title.clone(),
+        title_provisional: false,
         memory_policy: MemoryPolicy {
             use_memory: run.use_memory,
             update_memory: run.update_memory,
@@ -1105,24 +1106,18 @@ pub(crate) fn claim_fixture(
 }
 
 /// Ends a claimed fixture hand-off with its child's final message, as the runtime does.
-#[cfg(all(
-    test,
-    feature = "eval-harness",
-    target_os = "macos",
-    target_arch = "aarch64",
-    debug_assertions
-))]
+#[cfg(test)]
 pub(crate) fn finish_done_fixture(
     state: &AppState,
     loupist_id: &str,
     id: &str,
-    message_id: String,
+    message_id: Option<String>,
 ) -> Result<(), CommandError> {
     finish(
         state,
         loupist_id,
         id,
-        Outcome::Done(Some(message_id), None),
+        Outcome::Done(message_id, None),
         now_ms(),
     )
 }

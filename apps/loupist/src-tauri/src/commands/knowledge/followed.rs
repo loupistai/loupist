@@ -142,7 +142,7 @@ fn queued_state(readiness: &str) -> FollowedState {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_followed_status(
     request: FollowedStatusRequest,
     state: State<'_, AppState>,

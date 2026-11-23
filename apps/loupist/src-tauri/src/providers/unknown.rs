@@ -326,7 +326,7 @@ mod tests {
         assert!(crate::providers::status::load(&state, "openai-codex")
             .unwrap()
             .is_none());
-        // The World model falls back to the World default for a connected model.
+        // The World model goes back to Recommended and follows a connected account.
         let world = crate::commands::knowledge::world_model_for_test(&state, &loupist);
         assert_eq!(world.as_deref(), Some("openai/gpt-6-luna"));
         // Nothing is left to delete the second time.

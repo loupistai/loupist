@@ -50,7 +50,7 @@ it("resolves status and evidence labels from the current language", async () => 
 it("distinguishes a Source allowance stop from a user pause in Korean", async () => {
   await act(async () => { await i18n.changeLanguage("ko"); });
   const view = render(<WorldProcessingStatus initialStatus="paused_budget" />);
-  expect(screen.getByRole("status")).toHaveTextContent("월드: 이 자료의 월드 구성 멈춤");
+  expect(screen.getByRole("status")).toHaveTextContent("월드: 이 자료의 구성 일시 중지 (요청 한도 도달)");
   view.rerender(<WorldProcessingStatus initialStatus="paused" />);
   expect(screen.getByRole("status")).toHaveTextContent("월드: 구성 일시정지");
 });

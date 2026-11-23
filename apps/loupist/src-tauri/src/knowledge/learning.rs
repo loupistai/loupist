@@ -1105,7 +1105,7 @@ pub(super) fn claim(
     if budget == 0 || current.max_llm_calls == 0 {
         return Ok(None);
     }
-    let mut s: GraphProcessingSettings = serde_json::from_str(&frozen)?;
+    let mut s = super::graph_jobs::parse_settings(&frozen)?;
     // Like untouched World chunks, use the currently selected model while preserving the frozen call budget.
     s.helper_provider = current.helper_provider.clone();
     s.helper_model = current.helper_model.clone();

@@ -36,10 +36,11 @@ export function runChoiceDescription(control: ModelRunControl, choice: ModelRunC
 }
 
 export function modelRunSelection(resolved: ConfigSnapshot["modelSelection"]): ModelRunSelection {
+  if (!resolved?.model) return emptyModelRunSelection();
   return {
-    model_profile_id: resolved?.model?.id ?? "",
-    thinking_level: resolved?.thinking_level ?? "",
-    run_options: resolved?.run_options ?? {},
+    model_profile_id: resolved.model.id,
+    thinking_level: resolved.thinking_level ?? "",
+    run_options: { ...defaultRunOptions(resolved), ...resolved.run_options },
   };
 }
 
@@ -52,7 +53,7 @@ const emptyModelRunSelection = (): ModelRunSelection => ({
 export const defaultThinkingLevel = (levels: readonly string[]) =>
   levels.includes("medium") ? "medium" : (levels[0] ?? "");
 
-export const defaultRunOptions = (model: ModelCatalog["models"][number]) =>
+export const defaultRunOptions = (model: Pick<ModelCatalog["models"][number], "run_controls">) =>
   Object.fromEntries(
     model.run_controls.map((control) => [control.id, control.default_choice]),
   );
@@ -63,13 +64,15 @@ export const visibleCatalogModels = (catalog: ModelCatalog | null) => {
   return catalog.models.filter((model) => !hidden.has(model.id));
 };
 
+/** A model Chat can answer with now: in the catalog, shown in Chat and on a connected account. */
+export const usableCatalogModel = (catalog: ModelCatalog | null, modelProfileId: string) =>
+  visibleCatalogModels(catalog).find((model) => model.id === modelProfileId && model.credential_source !== "missing");
+
 export const resolveExplicitSelection = (
   catalog: ModelCatalog | null,
   selection: ModelRunSelection,
 ): ModelRunSelection => {
-  const models = visibleCatalogModels(catalog);
-  const model = models.find(item => item.id === selection.model_profile_id)
-    ?? (catalog?.hidden_model_profile_ids.includes(selection.model_profile_id) ? models[0] : undefined);
+  const model = usableCatalogModel(catalog, selection.model_profile_id);
   if (!model) return emptyModelRunSelection();
   const options = selection.run_options;
   const supported = model.run_controls.length === Object.keys(options).length

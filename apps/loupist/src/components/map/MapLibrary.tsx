@@ -13,9 +13,9 @@ import { ResearchLibrary } from "../knowledge/ResearchLibrary";
 const noteTab = (location: KnowledgeLocation, fallback: LibraryTab): LibraryTab =>
   location.selection?.kind === "journal" ? "journal" : location.selection?.kind === "research" ? "note" : fallback === "source" ? "journal" : fallback;
 
-export function MapLibrary({ bridge, catalog, worldProcessing, location, onOpen, onAsk, onChanged, onClose, onAddSource, onManageProcessing }: {
+export function MapLibrary({ bridge, catalog, worldProcessing, location, onOpen, onAsk, onChanged, onClose, onAddSource, onManageProcessing, onManageProviders }: {
   bridge: LoupistBridge; catalog: KnowledgeCatalog; worldProcessing?: WorldProcessing; location: KnowledgeLocation; onOpen: (location: KnowledgeLocation) => void;
-  onAsk: (pin: KnowledgePin, threadId?: string) => void; onChanged: () => void; onClose: () => void; onAddSource?: () => void; onManageProcessing?: () => void;
+  onAsk: (pin: KnowledgePin, threadId?: string) => void; onChanged: () => void; onClose: () => void; onAddSource?: () => void; onManageProcessing?: () => void; onManageProviders?: () => void;
 }) {
   const { t } = useTranslation("knowledge");
   const savedState = libraryState(bridge, location.loupistId);
@@ -38,7 +38,7 @@ export function MapLibrary({ bridge, catalog, worldProcessing, location, onOpen,
     <header><h2>{t("map.library")}</h2><Button variant="ghost" size="icon-sm" aria-label={t("map.closeLibrary")} onClick={onClose}><XIcon /></Button></header>
     <Tabs value={tab} onValueChange={value => setTab(value as typeof tab)}>
       <div className="map-library-tabbar"><TabsList aria-label={t("map.library")}><TabsTrigger value="source">{t("map.sources")}</TabsTrigger><TabsTrigger value="journal">{t("map.libraryJournal")}</TabsTrigger><TabsTrigger value="note">{t("map.libraryNotes")}</TabsTrigger></TabsList></div>
-      <TabsContent value="source"><SourceWorkspace {...shared} worldProcessing={worldProcessing} compact onAddSource={onAddSource} onManageProcessing={onManageProcessing} /></TabsContent>
+      <TabsContent value="source"><SourceWorkspace {...shared} worldProcessing={worldProcessing} compact onAddSource={onAddSource} onManageProcessing={onManageProcessing} onManageProviders={onManageProviders} /></TabsContent>
       <TabsContent value="journal"><ResearchLibrary {...shared} compact show="journal" /></TabsContent>
       <TabsContent value="note"><ResearchLibrary {...shared} compact show="notes" /></TabsContent>
     </Tabs>

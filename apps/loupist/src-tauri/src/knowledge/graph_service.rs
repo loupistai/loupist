@@ -205,6 +205,15 @@ impl GraphSupervisor {
         }
     }
 
+    /// The settings the next World job of this Loupist runs with.
+    #[cfg(test)]
+    pub(crate) fn settings_for_work(
+        &self,
+        loupist_id: &str,
+    ) -> KnowledgeResult<GraphProcessingSettings> {
+        self.inner.settings_for_work(loupist_id)
+    }
+
     pub fn runtime_available(&self) -> bool {
         self.semantic_assets().is_some() && self.inner.inference.is_some()
     }
@@ -775,13 +784,7 @@ impl Inner {
             .collect::<Vec<_>>();
         let mut ready = Vec::new();
         for candidate in candidates {
-            let settings = load_settings(
-                &*self
-                    .store
-                    .lock_loupist(&candidate.loupist_id)
-                    .map_err(|_| KnowledgeError::LockPoisoned)?,
-                &candidate.loupist_id,
-            )?;
+            let settings = self.settings_for_work(&candidate.loupist_id)?;
             if !super::graph_jobs::ready_to_run(&settings, &candidate) {
                 continue;
             }
@@ -834,6 +837,50 @@ impl Inner {
                 );
         }
         Ok(selected)
+    }
+
+    /// A Loupist's settings as its next model call should use them. A
+    /// Recommended World model is resolved again first, so the job uses what
+    /// the bundled list recommends for the accounts connected now; that change
+    /// is saved like any other and asks nothing of the user.
+    fn settings_for_work(&self, loupist_id: &str) -> KnowledgeResult<GraphProcessingSettings> {
+        let saved = || {
+            load_settings(
+                &*self
+                    .store
+                    .lock_loupist(loupist_id)
+                    .map_err(|_| KnowledgeError::LockPoisoned)?,
+                loupist_id,
+            )
+        };
+        let settings = saved()?;
+        if settings.world_model_choice != super::graph_jobs::WorldModelChoice::Recommended {
+            return Ok(settings);
+        }
+        // Without the host's catalog (tests, a missing runtime) the saved model stands.
+        let Some(recommended) = self
+            .inference
+            .as_ref()
+            .and_then(|service| service.world_models().ok())
+            .map(|models| models.recommend(Some(loupist_id)))
+        else {
+            return Ok(settings);
+        };
+        if settings.world_model() == recommended {
+            return Ok(settings);
+        }
+        let followed = loupist_knowledge(self.store.clone(), loupist_id, &self.app_data).and_then(
+            |knowledge| {
+                knowledge.transact(|write| {
+                    write.follow_recommended_world_model(loupist_id, recommended.as_ref(), now_ms())
+                })
+            },
+        );
+        if followed.is_err() {
+            eprintln!("Could not update the recommended World model for {loupist_id}");
+            return Ok(settings);
+        }
+        saved()
     }
 
     fn spawn_world_job(self: &Arc<Self>, selected: Selected) {
@@ -989,6 +1036,7 @@ impl Inner {
                 reply
             }
         };
+        let resolution = super::world_extract::ResolutionSlot::default();
         let driven = super::world_extract::drive_job_with_slots(
             &knowledge,
             &mut settings,
@@ -998,9 +1046,17 @@ impl Inner {
             &followed,
             &embed_assets(self.resource_dir.as_deref()),
             Some(call_slots),
+            Some(resolution.clone()),
             on_inference,
         )
         .await;
+        if let Some(tally) = *resolution.lock().unwrap_or_else(|e| e.into_inner()) {
+            run_log.entity_resolution = BTreeMap::from([
+                ("proposed".to_string(), u64::from(tally.proposed)),
+                ("refused".to_string(), u64::from(tally.refused)),
+                ("byCode".to_string(), u64::from(tally.by_code)),
+            ]);
+        }
         run_log.usage = usage.lock().unwrap_or_else(|e| e.into_inner()).snapshot();
         run_log.stage_ms = std::mem::take(&mut *stage_ms.lock().unwrap_or_else(|e| e.into_inner()));
         calls.record(&mut run_log);
@@ -1057,13 +1113,7 @@ impl Inner {
             .map_err(|_| KnowledgeError::Invalid("could not read schema reviews"))?;
         for loupist in candidates.into_iter().flatten() {
             let knowledge = loupist_knowledge(self.store.clone(), &loupist, &self.app_data)?;
-            let settings = load_settings(
-                &*self
-                    .store
-                    .lock_loupist(&loupist)
-                    .map_err(|_| KnowledgeError::LockPoisoned)?,
-                &loupist,
-            )?;
+            let settings = self.settings_for_work(&loupist)?;
             if super::graph_inference::admit_helper(
                 settings.helper_provider.as_deref().unwrap_or(""),
                 &inference_auth_mode(self.inference.as_ref(), &settings),
@@ -1206,13 +1256,7 @@ impl Inner {
         }).map_err(|_|KnowledgeError::Invalid("could not read learning jobs"))?;
         for (loupist, review_id) in candidates.into_iter().flatten() {
             let knowledge = loupist_knowledge(self.store.clone(), &loupist, &self.app_data)?;
-            let settings = load_settings(
-                &*self
-                    .store
-                    .lock_loupist(&loupist)
-                    .map_err(|_| KnowledgeError::LockPoisoned)?,
-                &loupist,
-            )?;
+            let settings = self.settings_for_work(&loupist)?;
             if super::graph_inference::admit_helper(
                 settings.helper_provider.as_deref().unwrap_or(""),
                 &inference_auth_mode(self.inference.as_ref(), &settings),

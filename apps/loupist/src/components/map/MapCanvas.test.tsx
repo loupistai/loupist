@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ForceGraphProps } from "react-force-graph-2d";
+import i18n from "../../i18n";
 import MapCanvas, { coverAlpha, FOCUS_FADE_MS, SCOPE_FADE_MS, SETTLE_MS, type MapCanvasControls, type MapCanvasLink } from "./MapCanvas";
 import type { PositionedNode } from "./layout";
 // `log` records, in order, each render's redraw mode ("paused" lets the renderer stop drawing) and each camera call.
@@ -134,6 +135,17 @@ it('names a disputed relation in its tooltip and labels every node only while ex
   expect(labelsAt(.5)).toEqual(['a', 'b', 'c']);
   act(() => controls.current!.exportLabels!(false));
   expect(labelsAt(.5)).toEqual(['a']);
+});
+
+it('names an open relation in its tooltip in the interface language', async () => {
+  await act(async () => { await i18n.changeLanguage('ko'); });
+  try {
+    render(<MapCanvas {...base} nodes={[node('a'), node('b', 100)]} edges={[{ id: 'ab', kind: 'claim', source: 'a', target: 'b', status: 'active', relation: 'MANUFACTURES_IN' }]} scopeKey="relation-tooltip" />);
+    act(() => renderer.props!.onLinkHover?.(renderer.props!.graphData!.links[0], null));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('생산지');
+  } finally {
+    await act(async () => { await i18n.changeLanguage('en'); });
+  }
 });
 
 it('centres a selection above the bottom sheet it opens without zooming', async () => {

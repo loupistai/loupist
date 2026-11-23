@@ -15,7 +15,12 @@ the submitted text and this device's IP address.
 An optional API key raises the request limit. Saving the key activates it
 immediately in the native credential store. If OpenFIGI rejects the key, the
 lookup reports that error. Deleting the key restores the standard request limit
-and preserves each Loupist's access setting.
+and preserves each Loupist's access setting. A key that cannot be read (no
+keychain, a refused or unanswered macOS prompt, a pending key change) leaves the
+public route, which answers the search. Only when the connection's non-secret
+status record says a key was saved does the result say so (`savedKeyUnread` in
+Following, a notice in the `asset_lookup` result); a refused read's Security
+status category joins the Chat entry's `connectorKeychainStatuses`.
 
 ## Agent-facing data services
 
@@ -33,6 +38,13 @@ another listed provider and add the contact in Settings. Direct SEC web reads us
 the same refusal code. The MCP host preserves these typed errors after tool
 activation. Custom MCP connections recognize JSON-RPC Invalid params
 and structured bad-request tool errors without exposing remote error prose.
+
+For Yahoo Finance income statements, balance sheets and cash flows, the query model
+accepts `annual` and `quarter` with a limit of at most five. Yahoo-only cards
+expose those periods and the maximum. A card shared with other providers keeps
+their wider schema. If Yahoo rejects an input, the sidecar returns the field and
+its constraints as typed data. Yahoo statements with zero rows return
+`empty_result`. Activity classifies these as invalid input or empty result.
 
 
 The model loads an enabled connection by exact ID with `capability_load`; `@`
@@ -168,13 +180,30 @@ become the property's enum only when every enabled provider that accepts it list
 them, so a provider without choices (TMX intervals) keeps the upstream union. When
 a provider rejects some of the union's values, the description names up to
 twelve rejected values. Longer disjoint lists
-such as screener industries keep the bare union. The nine default cards fall from
-21,860 to about 8,250 bytes for the keyless providers.
+such as screener industries keep the bare union. The sidecar also reads required
+fields and literal values from each enabled fetcher's query model. A field
+becomes required in the shared card when every offered provider requires it.
+When requirements differ, the field identifies the providers that require it.
+ECB balance of payments and IMF trade validators require fields behind optional
+upstream defaults. The IMF indicator description gives its qualified symbol
+format. Cboe's index constituents list its index codes, and TMX uses the
+identifiers returned by index discovery, such as `^TSX`. USDA crop reports
+list the commodity categories from the provider model.
+
+The sidecar turns an empty OpenBB response into a typed `empty_result` before
+MCP can reject a bodyless response. Validation failures in provider query
+models name a known request field without forwarding validator text or inputs.
+A successful response with null scalar measures retains those nulls. The MCP
+output schema accepts null in number, integer, and string fields. Other
+constraints, such as required keys, container shapes, enums, and wrong non-null
+types, remain enforced.
 No model-facing text names the runtime; the model and the user see "market
 data", and the capability index lists no provider ids. Scraped providers
 (yfinance, finviz, seeking_alpha, stockgrid, multpl, wsj) are labeled best
 effort. Their failures come from individual requests such as layout changes,
-consent walls or blocking. For a provider error, recovery names up to four
+consent walls or blocking. Finviz is excluded from the key metrics route because
+its pinned fetcher cannot read the quote page. Without provider setup, key
+metrics use Yahoo Finance. For a provider error, recovery names up to four
 enabled alternatives on the same tool, with official sources first. When the
 tool has no alternative, the reply keeps the existing failure guidance. For an
 explicitly unadjusted Yahoo daily equity

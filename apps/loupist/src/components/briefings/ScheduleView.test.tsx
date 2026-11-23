@@ -1,7 +1,9 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import i18n from "../../i18n";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { MOCK_LOUPISTS } from "../../bridge/mock/fixtures";
+import type { KnowledgeMap } from "../../contracts/knowledge";
 import type { InboxChangedEvent } from "../../contracts/scheduled";
 import type { ChatMessage, LoupistWorkspace, ScheduledRun, ScheduledTaskListItem } from "@/types";
 import { inboxItemOf, ScheduleView } from "./ScheduleView";
@@ -66,7 +68,7 @@ it("labels a task's prompt in its detail, and hides one that only repeats the ti
   await user.click(await screen.findByRole("button", { name: /Morning review/ }));
   const detail = await screen.findByRole("article", { name: "Morning review" });
   expect(within(detail).getByText("Model: GPT-5.6 Luna")).toBeVisible();
-  expect(screen.queryByText("Built in")).toBeNull();
+  expect(within(detail).queryByText("Built in")).toBeNull();
   expect(within(detail).getByRole("heading", { level: 3, name: "Prompt" })).toBeVisible();
   expect(within(detail).getByText("Summarize new Hanul Precision filings.")).toBeVisible();
 
@@ -94,6 +96,87 @@ it("lists no Watching item and names a briefing's followed tickers by their save
   expect(screen.getByText("Not used: FRED (macOS permission needed for the saved key)")).toBeVisible();
   expect(screen.queryByRole("list", { name: "Watching" })).toBeNull();
   expect(screen.queryByRole("button", { name: /^Watching/ })).toBeNull();
+});
+
+it("names a changed relationship's relation in the interface language", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const map = {
+    nodes: [
+      { id: "tesla", label: "Tesla, Inc.", localNames: ["테슬라"], kind: "entity", entityKind: "Organization", degree: 1, watched: false },
+      { id: "nasdaq", label: "Nasdaq Global Select Market", kind: "entity", entityKind: "Organization", degree: 1, watched: false },
+    ],
+    edges: [{ id: "c1", kind: "claim", source: "tesla", target: "nasdaq", relation: "LISTS_ON", status: "active" }],
+    counts: {}, unmatchedWatchlist: [], worldRevisionId: "rev", generatedAtMs: 0,
+  } as unknown as KnowledgeMap;
+  vi.spyOn(bridge, "knowledgeMap").mockResolvedValue(map);
+  const briefing: ScheduledRun = {
+    ...running, kind: "briefing", task_id: "briefing", task_title: "Briefings", status: "succeeded", finished_at_ms: Date.now(), thread_id: null, summary: "A quiet day.",
+    briefing_context: { symbols: [], principlesChecked: 0, newFacts: 0, disputedEntityIds: [], changed: { names: 0, relations: 1, conflicts: 0, rows: [{ kind: "claim_added", subjectId: "c1", summary: "Tesla, Inc. lists on Nasdaq" }] }, ahead: [] },
+  };
+  vi.spyOn(bridge, "scheduledTasksList").mockResolvedValue([{ ...task(briefing), id: "briefing", kind: "briefing", title: "Briefings" } as ScheduledTaskListItem]);
+  vi.spyOn(bridge, "inboxList").mockResolvedValue({ items: [inboxItemOf(briefing)], nextCursor: null });
+  render(<ScheduleView bridge={bridge} loupist={loupist} theme="light" open={vi.fn()} onOpenChat={vi.fn()} initialRunId="run-1" />);
+  expect(await screen.findByText("Tesla, Inc. → Nasdaq Global Select Market (lists on)")).toBeVisible();
+  await act(async () => { await i18n.changeLanguage("ko"); });
+  try {
+    expect(await screen.findByText("테슬라 → Nasdaq Global Select Market (상장 거래소)")).toBeVisible();
+  } finally {
+    await act(async () => { await i18n.changeLanguage("en"); });
+  }
+});
+
+describe("the built-in briefing beside a custom task", () => {
+  async function scheduleWithCustomTask() {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const finished: ScheduledRun = { ...running, status: "succeeded", finished_at_ms: Date.now() };
+    const own = bridge.scheduledTasksList.bind(bridge);
+    vi.spyOn(bridge, "scheduledTasksList").mockImplementation(async request => [task(finished), ...await own(request)]);
+    vi.spyOn(bridge, "scheduledTaskRuns").mockResolvedValue([]);
+    return bridge;
+  }
+  const briefingRow = () => document.querySelector<HTMLElement>("[data-schedule-briefing]");
+
+  it("stays in the list while off, in Active and All, and Turn on there makes it today's row", async () => {
+    const user = userEvent.setup();
+    const bridge = await scheduleWithCustomTask();
+    const enable = vi.spyOn(bridge, "briefingSettingsSet");
+    render(<ScheduleView bridge={bridge} loupist={loupist} theme="light" open={vi.fn()} onOpenChat={vi.fn()} />);
+
+    const list = await screen.findByRole("region", { name: "Scheduled work" });
+    expect(within(list).getByRole("button", { name: /^Chip news/ })).toBeVisible();
+    for (const filter of ["All", "Active"]) {
+      const row = await vi.waitFor(() => { const found = briefingRow(); if (!found) throw new Error("no briefing row"); return found; });
+      expect(row).toHaveTextContent("Briefing");
+      expect(within(row).getByText("Built in")).toBeVisible();
+      expect(within(row).getByText("Off")).toBeVisible();
+      expect(within(row).getByText("What changed for the assets you follow, on weekday mornings. Built in.")).toBeVisible();
+      expect(within(row).getByRole("button", { name: "Turn on" })).toBeVisible();
+      // It is not scheduled while it is off, so the header counts only the custom task.
+      expect(screen.getByText(/^1 scheduled task/)).toBeVisible();
+      await user.click(screen.getByRole("radio", { name: filter }));
+    }
+
+    await user.click(within(briefingRow()!).getByRole("button", { name: "Turn on" }));
+    expect(enable).toHaveBeenCalledExactlyOnceWith({ loupistId: loupist.id, enabled: true });
+    const on = await within(list).findByRole("button", { name: /^Briefing/ });
+    expect(on.closest("li")).toHaveAttribute("data-status", "active");
+    expect(within(on).getByText("Built in")).toBeVisible();
+    expect(briefingRow()).toBeNull();
+    expect(screen.queryByText("Off")).toBeNull();
+  });
+
+  it("offers Turn on for a briefing that was turned off, and its name still opens its runs", async () => {
+    const user = userEvent.setup();
+    const bridge = await scheduleWithCustomTask();
+    await bridge.briefingSettingsSet({ loupistId: loupist.id, enabled: false, schedule: { kind: "weekly", days: [1, 2, 3, 4, 5], hour: 8, minute: 0, timezone: "Asia/Seoul" } });
+    render(<ScheduleView bridge={bridge} loupist={loupist} theme="light" open={vi.fn()} onOpenChat={vi.fn()} />);
+
+    const row = await vi.waitFor(() => { const found = briefingRow(); if (!found) throw new Error("no briefing row"); return found; });
+    expect(within(row).getByText("Off")).toBeVisible();
+    expect(within(row).getByRole("button", { name: "Turn on" })).toBeVisible();
+    await user.click(within(row).getByRole("button", { name: /^Briefing/ }));
+    expect(await screen.findByRole("article", { name: "Briefing" })).toBeVisible();
+  });
 });
 
 it("tries a failed run again by running its task now, then shows that task", async () => {

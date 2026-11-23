@@ -1326,3 +1326,151 @@ fn a_driver_error_settles_the_claim_instead_of_leaving_the_world_running() {
         settled
     );
 }
+
+const DONGFENG: &str = "nod_19a6f236445d44088da76e89d4b5b536";
+const DONGFENG_AGAIN: &str = "nod_8e8d35da6c8c36e8dd485304b9760881";
+const STELLANTIS: &str = "nod_1a6c4793e29dacf6841f3257e2ba11f9";
+const DONGFENG_ROW: &str = "Dongfeng Motor 0489.HK ranks 29 with market cap $10.05 B.";
+const STELLANTIS_ROW: &str = "Stellantis STLA ranks 30 with market cap $9.84 B.";
+
+#[test]
+fn a_ranking_resolved_a_row_late_keeps_one_node_per_code_and_repairs_the_stored_world() {
+    use crate::knowledge::model::GraphNode;
+    let mut fixture = Fixture::new();
+    // The World as a tester's ranking pages left it: Dongfeng Motor twice, the
+    // first carrying Stellantis as an alias.
+    let organization = |id: &str, name: &str, ticker: &str, aliases: &[&str]| GraphNode {
+        id: id.into(),
+        name: name.into(),
+        aliases: aliases.iter().map(|alias| alias.to_string()).collect(),
+        description: String::new(),
+        kind: "Organization".into(),
+        source_role: "source".into(),
+        properties: [("ticker".to_string(), json!(ticker))].into(),
+    };
+    fixture
+        .store
+        .seal_world(SealWorld {
+            loupist_id: LOUPIST.into(),
+            record_id: fixture.world.clone(),
+            expected_revision_id: Some(fixture.head()),
+            at_ms: AT + 100,
+            nodes: vec![
+                organization(
+                    DONGFENG,
+                    "Dongfeng Motor 0489.HK",
+                    "0489.HK",
+                    &["Stellantis STLA"],
+                ),
+                organization(DONGFENG_AGAIN, "Dongfeng Motor 0489.HK", "0489.HK", &[]),
+                organization(STELLANTIS, "Stellantis STLA", "STLA", &[]),
+            ],
+            claims: vec![],
+            annotations: vec![],
+            dependencies: vec![],
+        })
+        .unwrap();
+    // A Lens page about the company points at the second node.
+    let page = fixture.file_about("Dongfeng Motor 0489.HK");
+    fixture
+        .store
+        .transact(|write| {
+            write.tx.execute(
+                "UPDATE knowledge_lens_anchors SET node_id = ?1 WHERE record_id = ?2 AND role = 'subject'",
+                rusqlite::params![DONGFENG_AGAIN, page],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    // The next ranking names both, and the model resolves each to the other.
+    let script = Arc::new(Mutex::new(Script::default()));
+    {
+        let mut script = script.lock().unwrap();
+        script
+            .same_as
+            .insert("Dongfeng Motor 0489.HK".into(), "Stellantis STLA".into());
+        script
+            .same_as
+            .insert("Stellantis STLA".into(), "Dongfeng Motor 0489.HK".into());
+        script.reply(
+            "ExtractedEntities",
+            entities(&["Dongfeng Motor 0489.HK", "Stellantis STLA"]),
+        );
+        script.reply(
+            "ExtractedEdges",
+            json!({"edges": [
+                relation("Dongfeng Motor 0489.HK", "Dongfeng Motor 0489.HK", "REPORTS", DONGFENG_ROW),
+                relation("Stellantis STLA", "Stellantis STLA", "REPORTS", STELLANTIS_ROW),
+            ]}),
+        );
+        script.reply("CoreAttributeBatch", json!({"entities": []}));
+    }
+    let job = fixture.queue(
+        "CompaniesMarketCap largest automakers by market cap",
+        &format!("{DONGFENG_ROW}\n{STELLANTIS_ROW}"),
+    );
+    let slot = world_extract::ResolutionSlot::default();
+    let answering = script.clone();
+    let finished = runtime()
+        .block_on(world_extract::drive_job_with_slots(
+            &fixture.store,
+            &mut fixture.settings,
+            &job.job_id,
+            "fixture",
+            AT + 1_000,
+            &[],
+            &assets(),
+            None,
+            Some(slot.clone()),
+            move |request: Value| {
+                let reply = answering.lock().unwrap().answer(&request);
+                std::future::ready(reply)
+            },
+        ))
+        .unwrap();
+    assert_eq!(finished.status, graph_jobs::JOB_COMPLETED);
+    // Both swaps were refused and each name joined its own code's node.
+    assert_eq!(
+        *slot.lock().unwrap(),
+        Some(crate::knowledge::world_extract::pipeline::ResolutionTally {
+            proposed: 2,
+            refused: 2,
+            by_code: 2,
+        })
+    );
+    let body = fixture.body();
+    let nodes: Vec<(&str, &str, &[String])> = body
+        .nodes
+        .iter()
+        .map(|node| {
+            (
+                node.id.as_str(),
+                node.name.as_str(),
+                node.aliases.as_slice(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        nodes,
+        [
+            (DONGFENG, "Dongfeng Motor 0489.HK", &[][..]),
+            (STELLANTIS, "Stellantis STLA", &[][..]),
+        ]
+    );
+    for (row, subject) in [(DONGFENG_ROW, DONGFENG), (STELLANTIS_ROW, STELLANTIS)] {
+        let claim = body
+            .claims
+            .iter()
+            .find(|claim| claim.proposition == row)
+            .unwrap();
+        assert!(claim
+            .endpoints
+            .iter()
+            .all(|endpoint| endpoint.node_id == subject));
+    }
+    // The page now names the node that survived.
+    assert_eq!(
+        fixture.subject_anchor(&page),
+        ("dongfeng motor 0489.hk".into(), Some(DONGFENG.to_string()))
+    );
+}

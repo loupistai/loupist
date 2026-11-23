@@ -67,7 +67,7 @@ export function assetScenarios({ base, select, until, click, hasLayout, centerOn
     page("asset-page-no-price", "Asset page: just followed, no saved read yet, so no price and no chart", '.asset-quote [data-price-note="none"]', noThesisFixture),
     page("asset-page-price-failed", "Asset page: the last replay failed, the earlier price kept with its date", '.asset-quote [data-price-note="failed"]', failedFixture),
     page("asset-page-price-needs-connection", "Asset page: the price's connection is off, the earlier price kept, one way to turn it on", '.asset-quote [data-price-note="needs-connection"] button', needsConnectionFixture),
-    page("asset-page-no-currency", "Asset page: a result that states no currency shows the value without one", '.asset-quote[data-price-read="ready"]', noCurrencyFixture,
+    page("asset-page-no-currency", "Asset page: neither the result nor the listing states a currency, so the line says it is unknown", '.asset-quote[data-price-read="ready"]', noCurrencyFixture,
       { setup: bridge => showInDisplayCurrency(bridge, previewRates("KRW")) }),
     page("asset-page-name-only", "Asset page: an asset followed by its long name alone, with one reason and no price yet", '.asset-quote [data-price-note="none"]', nameOnlyFixture),
     page("asset-page-checking", "Asset page: checking now", '.asset-page-actions [data-slot="spinner"]', nvidiaFixture, {

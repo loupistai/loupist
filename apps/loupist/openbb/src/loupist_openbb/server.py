@@ -37,9 +37,14 @@ from loupist_openbb.failures import (
     INVALID_ARGUMENTS,
     InvalidProviderArguments,
     SecContactRequired,
+    STATEMENT_ROUTES,
+    empty_result,
+    reject_no_content,
+    YAHOO_STATEMENT_MAX_LIMIT,
     call_tool_with_failures,
     classify_rest_failures,
 )
+from loupist_openbb.schemas import allow_nullable_output_scalars, apply_query_metadata
 
 _DISABLED_COMPONENTS = {
     "install_skill",
@@ -48,6 +53,9 @@ _DISABLED_COMPONENTS = {
     "list_resources",
     "read_resource",
 }
+_STATEMENT_TOOLS = frozenset(
+    f"equity_fundamental_{route}" for route in STATEMENT_ROUTES
+)
 # Match the host's per-schema limit for compact UTF-8 JSON.
 _MAX_TOOL_SCHEMA_BYTES = 64 * 1024
 _ALPHA_RAW_DAILY = ContextVar("alpha_vantage_raw_daily", default=False)
@@ -130,6 +138,10 @@ def _available_route_providers(
         allowed = []
         for name in providers:
             if not isinstance(name, str) or name not in eligible:
+                continue
+            # Finviz's quote page rejects the pinned KeyMetrics fetcher's
+            # requests. The fetcher swallows the 403 and returns no data.
+            if model == "KeyMetrics" and name == "finviz":
                 continue
             provider = registry[name]
             fetcher = provider.fetcher_dict.get(model)
@@ -457,6 +469,7 @@ def mark_registered_tools_read_only(
     yahoo_raw_daily: bool = False,
     provider_hosts: dict[str, frozenset[str]] | None = None,
     available_route_providers: dict[str, list[str]] | None = None,
+    route_models: dict[str, str] | None = None,
 ) -> int:
     """Attach MCP safety annotations and bound generated output schemas.
 
@@ -468,10 +481,14 @@ def mark_registered_tools_read_only(
     from fastmcp.server.providers.openapi.components import OpenAPITool
     from fastmcp.tools.tool import ToolResult
     from mcp.types import ToolAnnotations
+    from openbb_core.app.provider_interface import ProviderInterface
 
     annotations = ToolAnnotations(readOnlyHint=True, destructiveHint=False)
     marked = 0
     stamped: set[str] = set()
+    registry = (
+        ProviderInterface().create_executor().registry.providers if route_models else {}
+    )
     for provider in server.providers:
         tools = getattr(provider, "_tools", None)
         if not isinstance(tools, dict):
@@ -487,6 +504,20 @@ def mark_registered_tools_read_only(
                     for key in ("const", "default"):
                         if provider_schema.get(key) not in provider_choices:
                             provider_schema.pop(key, None)
+                    properties = tool.parameters["properties"]
+                    model = (route_models or {}).get(tool._route.path)
+                    for name in provider_choices if model else ():
+                        provider_entry = registry[name]
+                        fetcher = provider_entry.fetcher_dict.get(model)
+                        if fetcher is not None:
+                            apply_query_metadata(
+                                properties, model, name, fetcher.query_params_type
+                            )
+                    if tool.name in _STATEMENT_TOOLS and "yfinance" in provider_choices:
+                        limit = properties["limit"]
+                        limit.setdefault("yfinance", {})["maximum"] = (
+                            YAHOO_STATEMENT_MAX_LIMIT
+                        )
                 tool.annotations = annotations.model_copy(deep=True)
                 schema = tool.output_schema
                 if (
@@ -503,6 +534,11 @@ def mark_registered_tools_read_only(
                     tool.output_schema = {"type": "object"}
                     if schema.get("x-fastmcp-wrap-result"):
                         tool.output_schema["x-fastmcp-wrap-result"] = True
+                elif schema is not None:
+                    allow_nullable_output_scalars(schema)
+                hooks = tool._client.event_hooks["response"]
+                if reject_no_content not in hooks:
+                    hooks.append(reject_no_content)
                 provider_id = implicit_provider.get(tool.name)
                 if yahoo_raw_daily and tool.name == "equity_price_historical":
                     adjustment = tool.parameters.get("properties", {}).get(
@@ -568,6 +604,18 @@ def mark_registered_tools_read_only(
                             RAW_DAILY_REQUEST.reset(token)
                     else:
                         result = await call_tool_with_failures(_original_run, arguments)
+                    structured = result.structured_content or {}
+                    if not result.is_error and any(
+                        name in structured and structured[name] in (None, [])
+                        for name in ("results", "result")
+                    ):
+                        return ToolResult(
+                            content="empty_result",
+                            structured_content=empty_result(
+                                _provider_id or arguments.get("provider")
+                            ),
+                            is_error=True,
+                        )
                     if _provider_id is not None:
                         result = _canonicalize_implicit_provider_result(
                             result, _provider_id
@@ -677,6 +725,11 @@ def create_server(bootstrap: Bootstrap) -> Any:
         yahoo_raw_daily="yfinance" in enabled_provider_ids,
         provider_hosts=provider_hosts,
         available_route_providers=available_route_providers,
+        route_models={
+            route.path: model
+            for route in target_app.router.routes
+            if (model := (route.openapi_extra or {}).get("model"))
+        },
     )
     server.disable(names=_DISABLED_COMPONENTS)
     return server

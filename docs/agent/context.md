@@ -56,5 +56,13 @@ are listed in their serialized order inside that block.
 | 7 | Mentioned connections | Subset of admitted bundled/≤32 custom connections | User mentioned an enabled connection; preloading grants no new authority |
 | 8 | As-of date | `loupist-as-of/1`: the cutoff, its end of day, the rule (answer only from what was known by then; tools and Memory already keep to it; say what could not be shown; principles apply as today) and `not_evidence` | The turn has an [as-of date](../analysis/point-in-time.md#point-in-time-answers); independent of Memory |
 | 9 | Selected artifact pointer | One validated artifact identity ≤256 bytes, revision, kind and fixed hint | User selected a current artifact in this Chat; independent of Memory |
-| 10 | Live time | Fixed schema, UTC timestamp/date and authority flags | Every turn; not evidence |
+| 10 | Live time | Fixed schema, UTC timestamp and date, the user's own clock from the Mac's time zone (`current_local` in RFC 3339 with its numeric offset, `current_date_local`, the English `current_weekday_local` and `utc_offset`; never a zone name or place) and authority flags. A scheduled run or hand-off reads it as its turn starts | Every turn; not evidence |
 | After envelope | Current request and attachments | Request ≤128 KiB; ≤4 attachments, ≤20 MiB combined raw bytes; image budget ≤5 MiB; extraction ≤2 MiB per document | Current user turn |
+
+Every other date the host derives for the model or an unattended run is the same
+local date (`src-tauri/src/local_time.rs`): Journal's today, its due checks and
+review limit, the latest allowed as-of date, Memory's cutoff day, Bot memory and
+working-note dates, an asset page's evidence day, an alert's "set on" date, and a
+briefing's `date` and `previousBriefingAt`, both RFC 3339 at the user's offset.
+Under an eval scenario `clock`, its stated offset stands for the user's time zone
+([eval clock](../../apps/loupist/evals/README.md#finance-workflow-evaluation)).

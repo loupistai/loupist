@@ -1,13 +1,14 @@
 import i18n, { useTranslation } from "@/i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
+  ConfigScope,
   LoupistBridge,
   ModelCatalog,
   ModelRunSelection,
 } from "../types";
 import type { ModelProviderActions } from "../components/settings/ModelSettingsPanel";
 import { errorMessage } from "../lib/errors";
-import { visibleCatalogModels } from "../lib/modelSelection";
+import { usableCatalogModel, visibleCatalogModels } from "../lib/modelSelection";
 import { CONFIG_CHANGED_EVENT, notifyConfigurationChanged } from "./useConfiguration";
 
 /** Model catalog loading and per-loupist model run selections. */
@@ -117,10 +118,29 @@ export function useModelCatalog(bridge: LoupistBridge) {
   /** Keep the host default unpinned when its tagged row is chosen. */
   const resetSelection = useCallback((loupistId: string) => {
     setSelections((current) => {
+      if (!Object.hasOwn(current, loupistId)) return current;
       const { [loupistId]: _removed, ...rest } = current;
       return rest;
     });
   }, []);
+
+  /** A Chat default saved in Settings ends the composer picks it covers: every Loupist's for the app scope, else that Loupist's. */
+  const yieldToChatDefault = useCallback((scope: ConfigScope) => {
+    if (scope.kind === "project") resetSelection(scope.loupistId);
+    else setSelections((current) => (Object.keys(current).length ? {} : current));
+  }, [resetSelection]);
+
+  // A composer pick lasts only while Chat can still answer with it. Once its account is
+  // disconnected or its model is hidden or no longer offered, the pick is dropped, so the
+  // Loupist's default answers from now on, including after the account comes back.
+  const usableSelections = useMemo(() => {
+    if (!catalog) return selections;
+    const kept = Object.entries(selections).filter(([, selection]) => usableCatalogModel(catalog, selection.model_profile_id));
+    return kept.length === Object.keys(selections).length ? selections : Object.fromEntries(kept);
+  }, [catalog, selections]);
+  useEffect(() => {
+    if (usableSelections !== selections) setSelections(usableSelections);
+  }, [selections, usableSelections]);
 
   /** Provider operations used by Settings; each refreshes the catalog it returns. */
   const providerActions = useMemo<ModelProviderActions>(() => {
@@ -158,9 +178,11 @@ export function useModelCatalog(bridge: LoupistBridge) {
     setCatalog,
     resolved,
     settingsError,
-    selections,
+    /** This app session's composer picks by Loupist, only those Chat can still answer with. */
+    selections: usableSelections,
     changeSelection,
     resetSelection,
+    yieldToChatDefault,
     providerActions,
     acknowledgeModelNotice,
     needsProviderSetup,

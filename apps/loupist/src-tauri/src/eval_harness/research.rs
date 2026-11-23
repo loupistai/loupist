@@ -132,6 +132,7 @@ async fn open_arm(run: &Run, name: &str) -> Result<Arm> {
         helper_provider: Some(world.provider.clone()),
         helper_model: Some(world.model.clone()),
         helper_model_profile_id: Some(world.id.clone()),
+        world_model_choice: crate::knowledge::WorldModelChoice::Chosen,
         thinking_level: run.world_thinking.clone(),
         timeout_ms: 120_000,
         run_options: world

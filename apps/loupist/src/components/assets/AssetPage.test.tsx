@@ -132,6 +132,31 @@ it.each([[83_155_048, "83,155,048"], [1093.8299560546875, "1,093.83"], [0.000012
   const page = await opened("Harbor Fund");
   expect(quote(page).querySelector(".market-price")?.textContent).toBe(expected);
   expect(page.querySelector("[data-converted-amount]")).toBeNull();
+  // Neither the result nor the listing states a currency: the line says so after the number.
+  expect(quote(page).querySelector("[data-price-currency=unknown]")).toHaveTextContent("Currency unknown");
+});
+
+it("says the currency is unknown in Korean on the line and in the receipt", async () => {
+  await i18n.changeLanguage("ko");
+  try {
+    const { user } = await fixture(noCurrencyFixture());
+    const line = quote(await opened("Harbor Fund"));
+    expect(line.querySelector("[data-price-currency=unknown]")).toHaveTextContent("통화 알 수 없음");
+    await user.click(within(line).getByRole("button"));
+    expect((await screen.findByRole("dialog")).querySelector("[data-price-currency=unknown]")).toHaveTextContent("통화 알 수 없음");
+  } finally { await i18n.changeLanguage("en"); }
+});
+
+it("names the listing as the currency's source in the receipt when the result states none", async () => {
+  const asset = nvidiaFixture();
+  asset.price!.price = { ...asset.price!.price!, currency: "USD", currencySource: "listing" };
+  const { user } = await fixture(asset);
+  const line = quote(await opened("NVIDIA CORP"));
+  expect(line.querySelector("[data-price-currency]")).toBeNull();
+  await user.click(within(line).getByRole("button"));
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText("Currency")).toBeVisible();
+  expect(dialog.querySelector("[data-price-currency=listing]")).toHaveTextContent(/^USD, from the listing on .+; the price result states none\.$/u);
 });
 
 it("shows the same localized quote in the receipt with its exact stored value below", async () => {
@@ -178,7 +203,7 @@ it("without a saved read: says so, and Check now starts the Loupist's price setu
   expect(within(note).queryByRole("button")).toBeNull();
   expect(bridge.assets.setups.at(-1)).toEqual({ loupistId: loupist.id, assetIds: [asset.asset.assetId], reason: "check" });
   // The delegated run saved a read; the host's event brings the price and the note goes.
-  bridge.assets.installPrice(loupist.id, asset.asset.assetId, { price: { value: 18.4, date: "2026-11-18", currency: "USD", provider: "fmp", sourceUrl: null, dataset: { dataset_id: "test-price", revision: 1, digest: "test" } }, savedRead: (await import("../../bridge/mock/assets")).mockSavedRead("ready") });
+  bridge.assets.installPrice(loupist.id, asset.asset.assetId, { price: { value: 18.4, date: "2026-11-18", currency: "USD", currencySource: "result", provider: "fmp", sourceUrl: null, dataset: { dataset_id: "test-price", revision: 1, digest: "test" } }, savedRead: (await import("../../bridge/mock/assets")).mockSavedRead("ready") });
   act(() => bridge.assets.finishSetup(loupist.id, asset.asset.assetId));
   await waitFor(() => expect(quote(page)).toHaveTextContent("$18.40"));
   expect(quote(page).querySelector("[data-price-note]")).toBeNull();

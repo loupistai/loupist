@@ -1518,6 +1518,181 @@ fn a_paused_queue_keeps_an_unsent_attempt_paused() {
 }
 
 #[test]
+fn a_row_saved_before_the_world_model_choice_reads_by_what_the_list_chose() {
+    use WorldModelChoice::{Chosen, Recommended};
+    let row = |model: Option<(&str, &str)>, level: &str| {
+        let mut row = serde_json::to_value(enabled()).unwrap();
+        let fields = row.as_object_mut().unwrap();
+        fields.remove("worldModelChoice");
+        fields.insert("awaitingDefaultModel".into(), json!(model.is_none()));
+        fields.insert("helperProvider".into(), json!(model.map(|(p, _)| p)));
+        fields.insert("helperModel".into(), json!(model.map(|(_, m)| m)));
+        fields.insert(
+            "helperModelProfileId".into(),
+            json!(model.map(|(p, m)| format!("{p}/{m}"))),
+        );
+        fields.insert("thinkingLevel".into(), json!(level));
+        row.to_string()
+    };
+    for (model, level, choice) in [
+        // Waiting for its default model, or never given one.
+        (None, "off", Recommended),
+        // First choices of the earlier lists, and of this build's.
+        (Some(("openai", "gpt-6-luna")), "high", Recommended),
+        (Some(("anthropic", "claude-haiku-4-5")), "low", Recommended),
+        (
+            Some(("anthropic", "claude-haiku-5-5")),
+            "medium",
+            Recommended,
+        ),
+        (Some(("xai", "grok-4.3")), "medium", Recommended),
+        (Some(("xai", "grok-4.7")), "medium", Recommended),
+        (Some(("minimax", "MiniMax-M3")), "off", Recommended),
+        // A model the lists never named, or a listed one at another effort.
+        (Some(("anthropic", "claude-opus-5-5")), "low", Chosen),
+        (Some(("openai", "gpt-6-luna")), "medium", Chosen),
+    ] {
+        let settings = parse_settings(&row(model, level)).unwrap();
+        assert_eq!(settings.world_model_choice, choice, "{model:?} {level}");
+        // Saved again, the row records its choice and drops the old marker.
+        let saved = serde_json::to_value(&settings).unwrap();
+        assert!(saved.get("awaitingDefaultModel").is_none());
+        assert_eq!(saved["worldModelChoice"], json!(choice));
+        assert_eq!(parse_settings(&saved.to_string()).unwrap(), settings);
+    }
+    // A recorded choice is read as recorded, whatever the model.
+    let mut chosen = enabled();
+    chosen.world_model_choice = Chosen;
+    chosen.helper_provider = Some("openai".into());
+    chosen.helper_model = Some("gpt-6-luna".into());
+    chosen.thinking_level = "high".into();
+    assert_eq!(
+        parse_settings(&serde_json::to_string(&chosen).unwrap()).unwrap(),
+        chosen
+    );
+    let mut unknown = serde_json::to_value(enabled()).unwrap();
+    unknown["somethingElse"] = json!(true);
+    assert!(parse_settings(&unknown.to_string()).is_err());
+}
+
+#[test]
+fn the_request_allowance_defaults_to_32_and_an_old_default_moves_while_frozen_spans_stay() {
+    assert_eq!(GraphProcessingSettings::default().max_llm_calls, 32);
+    let legacy = |calls: u32| {
+        let mut row = serde_json::to_value(enabled()).unwrap();
+        let fields = row.as_object_mut().unwrap();
+        fields.remove("worldModelChoice");
+        fields.insert("awaitingDefaultModel".into(), json!(false));
+        fields.insert("maxLlmCalls".into(), json!(calls));
+        row.to_string()
+    };
+    // A row from before this version that still holds the old default moves.
+    assert_eq!(parse_settings(&legacy(16)).unwrap().max_llm_calls, 32);
+    // Any other value was set by the user and stays.
+    for calls in [1, 6, 24, 64] {
+        assert_eq!(parse_settings(&legacy(calls)).unwrap().max_llm_calls, calls);
+    }
+    // A row saved by this version keeps what it holds, 16 included.
+    let mut saved = enabled();
+    saved.max_llm_calls = 16;
+    assert_eq!(
+        parse_settings(&serde_json::to_string(&saved).unwrap())
+            .unwrap()
+            .max_llm_calls,
+        16
+    );
+
+    // A span queued under the old allowance keeps what it froze.
+    let (_directory, store) = open();
+    let job = queued(&store, &saved, "loupist-a", b"Acme builds chips.");
+    assert_eq!(job.document.extraction.max_llm_calls, 16);
+    let raw = |store: &KnowledgeStore| -> Value {
+        let json: String = store
+            .read(|read| {
+                Ok(read.tx.query_row(
+                    "SELECT data_json FROM app_settings WHERE id = 'world_processing:loupist-a'",
+                    [],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap();
+        serde_json::from_str(&json).unwrap()
+    };
+    store
+        .transact(|write| {
+            write.tx.execute(
+                "INSERT INTO app_settings (id, data_json) VALUES ('world_processing:loupist-a', ?1)
+                 ON CONFLICT(id) DO UPDATE SET data_json = excluded.data_json",
+                [legacy(16)],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let loaded = store
+        .read(|read| load_settings(read.tx, "loupist-a"))
+        .unwrap();
+    assert_eq!(loaded.max_llm_calls, 32);
+    assert_eq!(
+        claim(&store, &loaded, &job.job_id, T + 1)
+            .document
+            .extraction
+            .max_llm_calls,
+        16
+    );
+    // The next save records it.
+    assert_eq!(raw(&store)["maxLlmCalls"], json!(16));
+    store
+        .transact(|write| store_settings(write.tx, "loupist-a", &loaded))
+        .unwrap();
+    let recorded = raw(&store);
+    assert_eq!(recorded["maxLlmCalls"], json!(32));
+    assert!(recorded.get("worldModelChoice").is_some());
+}
+
+#[test]
+fn following_the_recommendation_never_changes_a_chosen_model() {
+    let (_directory, store) = open();
+    let model = |profile: &str| WorldModel {
+        profile_id: profile.into(),
+        provider: profile.split_once('/').unwrap().0.into(),
+        model: profile.split_once('/').unwrap().1.into(),
+        thinking_level: "high".into(),
+        run_options: Default::default(),
+    };
+    let mut settings = enabled();
+    settings.set_world_model(None);
+    store
+        .transact(|write| store_settings(write.tx, "loupist-a", &settings))
+        .unwrap();
+    let follow = |recommended: Option<WorldModel>| {
+        store
+            .transact(|write| {
+                write.follow_recommended_world_model("loupist-a", recommended.as_ref(), T)
+            })
+            .unwrap()
+    };
+    let saved = || {
+        store
+            .read(|read| load_settings(read.tx, "loupist-a"))
+            .unwrap()
+    };
+    assert!(follow(Some(model("openai/gpt-6-luna"))));
+    assert_eq!(saved().world_model(), Some(model("openai/gpt-6-luna")));
+    assert!(!follow(Some(model("openai/gpt-6-luna"))), "unchanged");
+    assert!(follow(None));
+    assert_eq!(saved().world_model(), None);
+    let mut chosen = saved();
+    chosen.world_model_choice = WorldModelChoice::Chosen;
+    chosen.set_world_model(Some(&model("anthropic/claude-haiku-5-5")));
+    store
+        .transact(|write| store_settings(write.tx, "loupist-a", &chosen))
+        .unwrap();
+    assert!(!follow(Some(model("openai/gpt-6-luna"))));
+    assert!(!follow(None));
+    assert_eq!(saved(), chosen);
+}
+
+#[test]
 fn a_saved_sixty_second_request_limit_is_preserved_and_the_cap_is_five_minutes() {
     let (_directory, store) = open();
     let mut settings = enabled();

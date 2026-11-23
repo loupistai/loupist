@@ -358,9 +358,16 @@ const EXTRACTION_INSTRUCTIONS: &str = concat!(
     "is evidence about its topic, not a reason to add every row. From such a list keep the rows that ",
     "the text around it discusses, that the research focus names, or that state a relationship to ",
     "another name; leave the remaining rows in the Source, which stays searchable. A name enters ",
-    "only when the Source says something about it beyond its row of figures."
+    "only when the Source says something about it beyond its row of figures.",
+    " A heading or widget that groups names (similar companies, peers, competitors, related, ",
+    "people also viewed) is the publisher's grouping, not a statement about any pair in it: ",
+    "record a relationship between the page's subject and a listed name only when the text ",
+    "itself states that relationship.",
+    " A Source that is itself such a list (a ranking, a screen, a league table) adds the names ",
+    "the research focus names and no others."
 );
-const MAX_INSTRUCTION_CHARS: usize = 4000;
+// Room for the standing instructions (about 3,000 characters) and the hints after them.
+const MAX_INSTRUCTION_CHARS: usize = 5000;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Anchor {

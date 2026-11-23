@@ -14,6 +14,7 @@ export const BRIDGE_EVENTS = {
   legacyHoldingsChanged: "legacy-holdings-changed",
   assetsChanged: "assets-changed",
   fxChanged: "fx-changed",
+  chatSaveChanged: "chat-save-changed",
 } as const;
 
 export type BridgeEventName = (typeof BRIDGE_EVENTS)[keyof typeof BRIDGE_EVENTS];

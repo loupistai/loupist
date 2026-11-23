@@ -96,7 +96,7 @@ fn is_apostrophe(c: &char) -> bool {
 
 /// Accents dropped, NFKC, casefold, apostrophes removed, and every other
 /// character but a letter, a digit or `&` as a space, whitespace collapsed.
-fn name_words(name: &str) -> String {
+pub(super) fn name_words(name: &str) -> String {
     let plain: String = name.nfkd().filter(|c| !is_latin_accent(c)).nfkc().collect();
     let folded = super::world_extract::casefold(&plain);
     let spaced: String = folded
@@ -144,9 +144,17 @@ fn strip_form<'a>(key: &'a str, form: &str, edge: Edge, joined: bool) -> Option<
     (!rest.is_empty()).then_some(rest)
 }
 
+/// Whether one folded word is a legal form a company name may end with
+/// (`ag`, `plc`, `inc`).
+pub(super) fn is_legal_form(word: &str) -> bool {
+    legal_forms()
+        .iter()
+        .any(|(form, edge, _)| matches!(edge, Edge::Trailing) && form == word)
+}
+
 /// `words` without a leading "the" and without legal forms, while a name
 /// remains; a name that is only a legal form keeps it.
-fn strip_legal_forms(words: &str) -> &str {
+pub(super) fn strip_legal_forms(words: &str) -> &str {
     let mut key = words.strip_prefix("the ").unwrap_or(words);
     while let Some(rest) = legal_forms()
         .iter()
@@ -158,7 +166,7 @@ fn strip_legal_forms(words: &str) -> &str {
 }
 
 /// `text` outside its parentheses, then the inside of each parenthetical.
-fn segments(text: &str) -> Vec<String> {
+pub(super) fn segments(text: &str) -> Vec<String> {
     let mut outer = String::new();
     let mut inner = Vec::new();
     let mut current = String::new();
@@ -641,7 +649,8 @@ enum MarketAgreement {
 }
 
 // World identity uses venue families. Session clocks can be shared by unrelated markets.
-fn market_family(market: &str) -> Option<&'static str> {
+// The same families read an exchange suffix (`0489.HK`) in a World name's code.
+pub(super) fn market_family(market: &str) -> Option<&'static str> {
     let market = market.trim().to_uppercase();
     if is_us_session_market(&market) {
         return Some("US");

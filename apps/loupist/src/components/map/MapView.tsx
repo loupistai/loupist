@@ -22,7 +22,7 @@ import { replayStart, useMapReplay, useReplayVisible } from "./replay";
 import { MapLegend } from "./MapLegend";
 import { dismissMapHint, mapHintDismissed, recentFocal, rememberRecentFocal, rememberLegendOpen, storedLegendOpen } from "./mapVisit";
 import { MapWhatsNew } from "./MapWhatsNew";
-import { useGrowthSince, whatsNewEntries, whatsNewRows, type WhatsNewRow } from "./whatsNew";
+import { sinceMs, useGrowthSince, whatsNewEntries, whatsNewRows, whatsNewTotals, type WhatsNewRow } from "./whatsNew";
 import { followedNames, localSet, neighborOrder, type MapScope } from "./localView";
 import { MapList } from "./MapList";
 import { entityCategory, isMetricNode, nodeCategory } from "../../knowledge/mapKinds";
@@ -30,7 +30,7 @@ import { isBasePerspective, isLensNode, lensAppliedEntities, lensDisplayTitle } 
 import { claimDegree, entityLabel, isDrawnRelation, matchesMapQuery, projectClaim } from "../../knowledge/mapItems";
 import { sourceProcessingLabel, worldProcessing as deriveWorldProcessing, type WorldProcessing } from "../../knowledge/mapProcessing";
 import { frozenLayout } from "./layout";
-import { useMapData, useMapDetail, useWorldReads, weeklyDrawnCount } from "./useMapData";
+import { useMapData, useMapDetail, useWorldReads } from "./useMapData";
 import type { MapCanvasControls } from "./MapCanvas";
 import "../../styles/map.css";
 const MapCanvas = lazy(() => import("./MapCanvas"));
@@ -39,7 +39,9 @@ export type MapViewProps = {
   initialAnchor?: string;
   bridge: LoupistBridge; catalog: KnowledgeCatalog; location: KnowledgeLocation; active?: boolean; refreshKey?: unknown; worldProcessing?: WorldProcessing;
   onPatch: (location: KnowledgeLocation) => void; onOpen: (location: KnowledgeLocation) => void; onAsk: (pin: KnowledgePin, threadId?: string) => void;
-  readerLocation?: KnowledgeLocation; onReaderPatch?: (location: KnowledgeLocation) => void; onBack?: () => void; onChanged?: () => void; onManageProcessing?: () => void; onOpenLink?: (url: string) => void | Promise<void>;
+  readerLocation?: KnowledgeLocation; onReaderPatch?: (location: KnowledgeLocation) => void; onBack?: () => void; onChanged?: () => void; onManageProcessing?: () => void; onManageProviders?: () => void; onOpenLink?: (url: string) => void | Promise<void>;
+  /** Present while a chosen World model is unavailable: go back to Recommended. */
+  onUseRecommendedModel?: () => void;
   onOpenChat?: (chatId: string) => void; onAskInChat?: () => void; onAddSource?: () => void;
   /** "Explain the disagreement": a new topic Chat with the entity and its disputed relations, never sent. */
   onExplainDisagreement?: (pins: KnowledgePin[]) => void;
@@ -59,7 +61,7 @@ function filterMapNodes(nodes: KnowledgeMapNode[], disputed: Set<string>, filter
     return kindOk && (filters.metrics || !isMetricNode(node)) && (!filters.personal || node.watched) && (!filters.disputed || disputed.has(node.id));
   });
 }
-export function MapView({ initialAnchor, bridge, catalog, location: savedLocation, active = true, refreshKey, worldProcessing, onPatch, onOpen, onAsk, onAskInChat, onAddSource, readerLocation, onReaderPatch = onPatch, onBack, onChanged = () => {}, onManageProcessing, onOpenLink, onOpenChat, onExplainDisagreement }: MapViewProps) {
+export function MapView({ initialAnchor, bridge, catalog, location: savedLocation, active = true, refreshKey, worldProcessing, onPatch, onOpen, onAsk, onAskInChat, onAddSource, readerLocation, onReaderPatch = onPatch, onBack, onChanged = () => {}, onManageProcessing, onManageProviders, onUseRecommendedModel, onOpenLink, onOpenChat, onExplainDisagreement }: MapViewProps) {
   const { t, i18n } = useTranslation("knowledge");
   const data = useMapData(bridge, savedLocation.loupistId, refreshKey ?? catalog, active, catalog.worlds[0]?.revisionId);
   const location = { ...savedLocation, revisionId: data.map?.worldRevisionId ?? savedLocation.revisionId };
@@ -253,7 +255,11 @@ export function MapView({ initialAnchor, bridge, catalog, location: savedLocatio
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `focalChoice` re-reads the stored recent list after a choice.
   const recent = useMemo(() => recentFocal(location.loupistId), [location.loupistId, focalChoice]);
   const badge = useGrowthSince(bridge, location.loupistId, visit.lastSeenAtMs, active && !!data.map && visit.loupistId === location.loupistId && visit.lastSeenAtMs !== undefined, data.map?.generatedAtMs, data.map?.worldRevisionId, data.retry);
-  const badgeCount = useMemo(() => visit.lastSeenAtMs === undefined || badge.status !== "done" ? 0 : whatsNewEntries(whatsNewRows(badge.events, map, i18n.language), i18n.language).length, [visit.lastSeenAtMs, badge.status, badge.events, map, i18n.language]);
+  const badgeCount = useMemo(() => visit.lastSeenAtMs === undefined || badge.status !== "done" ? 0 : whatsNewEntries(whatsNewRows(badge.events, map, i18n.language, visit.lastSeenAtMs), i18n.language).length, [visit.lastSeenAtMs, badge.status, badge.events, map, i18n.language]);
+  // "New this week" is What's new for its last seven days: the same names, counted the same way.
+  const weekSince = sinceMs({ kind: "days", days: 7 }, undefined, visit.nowMs);
+  const week = useGrowthSince(bridge, location.loupistId, weekSince, active && !!data.map && visit.loupistId === location.loupistId, data.map?.generatedAtMs, data.map?.worldRevisionId, data.retry);
+  const weekly = useMemo(() => week.status === "done" ? whatsNewTotals(whatsNewRows(week.events, map, i18n.language, weekSince)).names : 0, [week.status, week.events, map, i18n.language, weekSince]);
   const openWhatsNew = () => { setLibraryOpen(false); setWhatsNewOpen(true); };
   const closeWhatsNew = () => { setWhatsNewOpen(false); toolbar.current?.querySelector<HTMLButtonElement>("[data-map-whats-new]")?.focus(); };
   useEffect(() => {
@@ -267,6 +273,8 @@ export function MapView({ initialAnchor, bridge, catalog, location: savedLocatio
     if (narrowMap()) setWhatsNewOpen(false);
     // A value reported about one name opens that name, whose Key facts list it.
     if ((row.kind === "name" || row.kind === "fact") && row.node) { changeFocal(row.node.id); selectOnly(row.node); return; }
+    // A new name a bounded overview left out opens from its id, as a link to it would.
+    if (row.kind === "name" && row.nameId) { changeFocal(row.nameId); return; }
     if ((row.kind === "relationship" || row.kind === "fact" || row.kind === "conflict") && row.edge && row.claimId) {
       const ends = [row.edge.source, row.edge.target].map((id) => map?.nodes.find((node) => node.id === id)).filter((node): node is KnowledgeMapNode => Boolean(node));
       const anchor = ends.find((node) => !isMetricNode(node)) ?? ends[0];
@@ -326,12 +334,19 @@ export function MapView({ initialAnchor, bridge, catalog, location: savedLocatio
     else toolbar.current?.querySelector<HTMLInputElement>("input")?.focus();
   };
   const stats = mapStatsText(t, replayed.nodes.length, replayed.edges.filter(edge => edge.kind === "claim" && isDrawnRelation(edge)).length);
-  const weekly = weeklyDrawnCount(replayed.nodes);
   const showStats = !map || hasWorldNodes;
   const emptyLens = overlay && appliedEntities.length === 0 ? overlay : undefined;
   const processing = worldProcessing ?? deriveWorldProcessing(catalog, null);
   const activity = processing.activity;
-  const processingStatus = activity.kind === "waiting" ? <span>{sourceProcessingLabel(activity.reason)}</span>
+  // A waiting reason the user can act on carries the control that opens the right settings.
+  const waitingAction = activity.kind !== "waiting" ? undefined
+    : activity.reason === "no_account" ? onManageProviders && { label: t("worldProcessingSettings.manageProviders"), run: onManageProviders }
+      : activity.reason === "paused_budget" ? onManageProcessing && { label: t("sourceWorkspace.worldProcessingSettings"), run: onManageProcessing }
+      : activity.reason === "model_unavailable" ? onUseRecommendedModel && { label: t("worldProcessingSettings.useTheRecommendedModel"), run: onUseRecommendedModel } : undefined;
+  const processingStatus = activity.kind === "waiting" ? <>
+    <span>{sourceProcessingLabel(activity.reason)}</span>
+    {waitingAction ? <Button variant="link" onClick={waitingAction.run}>{waitingAction.label}</Button> : null}
+  </>
     : activity.kind === "building" && (!replay.active || replay.playing) ? <span className="map-updating"><i />{t("map.updating")}</span> : null;
   const bounded = !!map?.counts.entity.truncated;
   const total = map ? map.counts.entity.total : 0;
@@ -386,9 +401,9 @@ export function MapView({ initialAnchor, bridge, catalog, location: savedLocatio
           {!list ? <MapLegend open={legendOpen} lead={showMapHint} nodes={replayed.nodes} conflicts={conflicts > 0} lensLines={!!overlayHighlight} onOpenChange={(open) => { setLegendChoice(open); rememberLegendOpen(open); }} /> : null}
         </> : null}
       </div>
-      {libraryOpen ? <MapLibrary key={`${location.loupistId}:library`} bridge={bridge} catalog={catalog} worldProcessing={processing} location={readerLocation ?? location} onOpen={next => { onOpen(next); if ((toolbar.current?.clientWidth ?? 0) > 0 && toolbar.current!.clientWidth <= 900) setLibraryOpen(false); }} onAsk={onAsk} onChanged={onChanged} onClose={() => setLibraryOpen(false)} onAddSource={onAddSource} onManageProcessing={onManageProcessing} /> : null}
+      {libraryOpen ? <MapLibrary key={`${location.loupistId}:library`} bridge={bridge} catalog={catalog} worldProcessing={processing} location={readerLocation ?? location} onOpen={next => { onOpen(next); if ((toolbar.current?.clientWidth ?? 0) > 0 && toolbar.current!.clientWidth <= 900) setLibraryOpen(false); }} onAsk={onAsk} onChanged={onChanged} onClose={() => setLibraryOpen(false)} onAddSource={onAddSource} onManageProcessing={onManageProcessing} onManageProviders={onManageProviders} /> : null}
       {whatsNewOpen ? <MapWhatsNew key={`${location.loupistId}:whats-new`} bridge={bridge} loupistId={location.loupistId} map={map} onRevisionChange={data.retry} lastSeenAtMs={visit.lastSeenAtMs} nowMs={visit.nowMs} sources={catalog.sources} onOpenRow={openWhatsNewRow} onOpenSource={openWhatsNewSource} onReplay={replayThese} onClose={closeWhatsNew} /> : null}
-      {reading ? <MapReader key={`${location.loupistId}:${reading.surface}`} bridge={bridge} catalog={catalog} worldProcessing={processing} location={reading} onOpen={onOpen} onPatch={onReaderPatch} onAsk={onAsk} onChanged={onChanged} onClose={clear} onBack={onBack} onOpenLink={onOpenLink} onManageProcessing={onManageProcessing} /> : null}
+      {reading ? <MapReader key={`${location.loupistId}:${reading.surface}`} bridge={bridge} catalog={catalog} worldProcessing={processing} location={reading} onOpen={onOpen} onPatch={onReaderPatch} onAsk={onAsk} onChanged={onChanged} onClose={clear} onBack={onBack} onOpenLink={onOpenLink} onManageProcessing={onManageProcessing} onManageProviders={onManageProviders} /> : null}
       {selectedClaimId ? <MapClaimInspector bridge={bridge} location={location} claimId={selectedClaimId} onClose={clear} onOpen={onOpen} onAsk={onAsk} onRevisionChange={data.retry} /> : null}
       {!reading && selected && map ? <MapInspector key={`${location.loupistId}:inspector`} node={selected} onShowConnections={!focal && !replay.active && selected.kind === "entity" ? () => changeFocal(selected.id) : undefined} map={map} onChanged={onChanged} onOpenChat={onOpenChat} catalog={catalog} bridge={bridge} location={location} providedGraph={selected.id === missingId ? missingDetail.graph : undefined} onClose={() => { setPointedEdge(undefined); clear(); }} onSelect={select} onOpen={onOpen} onAsk={onAsk} onExplainDisagreement={onExplainDisagreement} onPointRelationship={setPointedEdge} onRevisionChange={data.retry} /> : null}
     </div>

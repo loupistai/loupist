@@ -13,7 +13,7 @@ import type { Chat } from "@ai-sdk/react";
 import type { FileUIPart } from "ai";
 import { InfoIcon, Settings2Icon } from "lucide-react";
 import { Button } from "./ui/button";
-import { errorMessage } from "../lib/errors";
+import { commandErrorCode, errorMessage } from "../lib/errors";
 import { useLoupistChat } from "../chat/useLoupistChat";
 import { lastTurnMessageIndex } from "../chat/turnMessages";
 import { runningHandoffRun, useHostedRun, type WatchHostedRun } from "../chat/useHostedRun";
@@ -39,7 +39,7 @@ import type {
   ModelRunSelection,
   ResearchHandoffChoices,
 } from "../types";
-import { visibleCatalogModels } from "../lib/modelSelection";
+import { usableCatalogModel, visibleCatalogModels } from "../lib/modelSelection";
 import { quoteChip, type ComposerChip } from "../chat/composerChips";
 import { retainedEvidenceFor } from "../chat/links";
 import { OpenProvider, useOpenLayer, type OpenLayer } from "./navigation/Open";
@@ -51,6 +51,7 @@ const sameOptions = <T extends ComposerOption,>(current: T[], next: T[]) =>
     ? current : next;
 import { searchComposerContext } from "../chat/searchComposerContext";
 import type { RecoveredChatRun } from "../chat/loupistRunRegistry";
+import { usePendingSaves, withPendingSaves, type PendingSaves } from "../chat/pendingSaves";
 import { focusComposerAtEnd } from "./chat/focusComposer";
 import { ChatComposer } from "./chat/ChatComposer";
 import type { ComposerOption, ComposerSkill } from "./chat/ComposerAssist";
@@ -112,6 +113,8 @@ type Props = {
   bridge: LoupistBridge;
   chat: Chat<LoupistUIMessage>;
   recoveredRun?: RecoveredChatRun;
+  /** Replies whose saves wait on their own; each shows its wait and Skip saving on itself. */
+  pendingSaves?: PendingSaves;
   onWaitForMemory?: (loupistId: string, threadId: string, resume: () => boolean) => void;
   loupist: LoupistSummary;
   threads: ChatThread[];
@@ -176,6 +179,7 @@ export function ChatView({
   bridge,
   chat,
   recoveredRun,
+  pendingSaves,
   onWaitForMemory,
   loupist,
   threads,
@@ -282,9 +286,7 @@ export function ChatView({
   const admitting = useRef(new Set<string>());
   const retryingLink = useRef(false);
   const selectedModelProfileId = modelSelection.model_profile_id;
-  const selectedModelAvailable = configurationReady && visibleCatalogModels(modelCatalog).some(
-    (model) => model.id === selectedModelProfileId && model.credential_source !== "missing",
-  );
+  const selectedModelAvailable = configurationReady && Boolean(usableCatalogModel(modelCatalog, selectedModelProfileId));
   const workspaceAvailable = loupist.availability.status === "available";
   const selectedThinkingLevel = modelSelection.thinking_level;
   const selectedRunOptions = modelSelection.run_options;
@@ -348,8 +350,24 @@ export function ChatView({
   const chatMap = useChatMap();
   const reportLive = chatMap?.reportLive;
   const lastMessage = messages.at(-1);
+  // A reply still on its stream (one that saves before it ends) keeps the composer's Skip saving.
   const saving = lastMessage?.memorySaving;
-  const blockingChat = saving?.blocking_chat_id ? threads.find(thread => thread.id === saving.blocking_chat_id) : undefined;
+  const saves = usePendingSaves(pendingSaves, loupist.id);
+  const savingMessages = useMemo(() => withPendingSaves(messages, saves), [messages, saves]);
+  const replySaving = savingMessages.some((message) => message.memorySaving);
+  const [skippingSaves, setSkippingSaves] = useState<ReadonlySet<string>>(() => new Set());
+  const [skipError, setSkipError] = useState<string | null>(null);
+  const skipSave = useCallback((runId: string) => {
+    setSkipError(null);
+    setSkippingSaves((current) => new Set([...current, runId]));
+    void bridge.chatAbort(runId).catch((cause) => {
+      // Refused because the save is already writing, or just ended: its receipt follows.
+      const code = commandErrorCode(cause);
+      if (code === "conflict" || code === "not_found") return;
+      setSkippingSaves((current) => new Set([...current].filter((id) => id !== runId)));
+      setSkipError(errorMessage(cause, t("memorySaving.skipFailed")));
+    });
+  }, [bridge]);
   const liveNames = localIsRunning && lastMessage ? stepEntityIds(lastMessage).join("\n") : "";
   useEffect(() => {
     const threadId = activeThread?.id;
@@ -514,7 +532,7 @@ export function ChatView({
         ? t("chatView.refreshingTheCompletedResponse")
         : t("chatView.loupistIsContinuingAResponseStartedBeforeReload")
     : localStreamAnnouncement;
-  const error = activeRecoveredRun?.error ?? localError;
+  const error = activeRecoveredRun?.error ?? skipError ?? localError;
   const hostedRunId = hostedRun.pending ? hostedRun.runId : undefined;
   const recovering = Boolean(activeRecoveredRun);
   const abortActiveRun = useCallback(() => {
@@ -907,12 +925,12 @@ export function ChatView({
     : undefined;
   const visibleConversation = useMemo(() => {
     const steers = activeSteers ?? [];
-    if (!isRunning || !steers.length) return withVisibleSteers(messages, messageKeys, steers);
+    if (!isRunning || !steers.length) return withVisibleSteers(savingMessages, messageKeys, steers);
     // While the reply runs, guidance shows inside its timeline (S4) instead of as a message.
     const guided = new Set(steers.map((item) => item.id));
-    const keep = messages.map((message) => !guided.has(message.id));
-    return { messages: messages.filter((_, index) => keep[index]), messageKeys: messageKeys.filter((_, index) => keep[index]) };
-  }, [activeSteers, isRunning, messageKeys, messages]);
+    const keep = savingMessages.map((message) => !guided.has(message.id));
+    return { messages: savingMessages.filter((_, index) => keep[index]), messageKeys: messageKeys.filter((_, index) => keep[index]) };
+  }, [activeSteers, isRunning, messageKeys, savingMessages]);
   const guidingTexts = useMemo(() => (isRunning ? (activeSteers ?? []).map((item) => item.text) : []), [activeSteers, isRunning]);
   const executionScope = useMemo(() => activeThread ? ({
     bridge, loupistId: loupist.id, threadId: activeThread.id, surface: activeThread.home ? "bot" as const : "session" as const, theme, active,
@@ -965,7 +983,9 @@ export function ChatView({
     loupistId={loupist.id}
     chatId={activeThread?.id}
     progressFocus={progressFocus}
-    blockingChat={blockingChat}
+    threads={threads}
+    onSkipSave={skipSave}
+    skippingSaves={skippingSaves}
     onReadWorldJob={onReadWorldJob}
     onWorldChanged={onWorldChanged}
     onSuggestion={askFromMorningMessage}
@@ -988,7 +1008,8 @@ export function ChatView({
     bridge={bridge}
     onEditUser={editUser}
     versions={activeThread?.versions ?? []}
-    onSwitchVersion={isRunning || !activeThread?.id ? undefined : (versionId) => {
+    // Switching versions waits for a reply that is still saving to Memory.
+    onSwitchVersion={isRunning || replySaving || !activeThread?.id ? undefined : (versionId) => {
       const threadId = activeThread.id;
       setEditing(null);
       void bridge.chatVersionSwitch({ loupist_id: loupist.id, thread_id: threadId, version_id: versionId })
@@ -1152,7 +1173,7 @@ export function ChatView({
         </div>
         </div>
       </div>
-      <ActivitySheet sheet={activitySheet} loupist={loupist} messages={messages} threads={threads} running={isRunning} rail={rail} bridge={bridge} execution={executionScope}
+      <ActivitySheet sheet={activitySheet} loupist={loupist} messages={savingMessages} threads={threads} running={isRunning} rail={rail} bridge={bridge} execution={executionScope}
         onOpenUsing={openRailUsing} onOpenFile={openRailFile} onShowOnMap={showOnMap} onWorldChanged={onWorldChanged} />
       </ChatLightboxProvider>
     </section>

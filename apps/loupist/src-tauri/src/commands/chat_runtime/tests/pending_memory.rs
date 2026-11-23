@@ -1,6 +1,7 @@
 use super::*;
 use crate::{
     broker::{ToolExecutor as _, ToolMethod, ToolPolicy},
+    chat::surface::ChatSurface,
     commands::{assets::with_assets, knowledge::knowledge_blobs_for_loupist},
     domain::{MemoryUpdateChange, MemoryUpdateStatus},
     knowledge::{self, GraphProcessingSettings, KnowledgeResult, KnowledgeWrite},
@@ -31,13 +32,15 @@ pub(super) async fn commit_test_reply(
         .unwrap());
     let pending = Arc::new(tokio::sync::Notify::new());
     let queued = pending.clone();
+    // An interactive reply's stream ends with its stored answer while the
+    // save waits on its own; another reply's stream reports the wait itself.
     let sink = ChatEventSink::new(move |event| {
         if matches!(
             event,
             ChatStreamEvent::Saving {
                 waiting_for_other_chat: true,
                 ..
-            }
+            } | ChatStreamEvent::Completed { .. }
         ) {
             queued.notify_one();
         }
@@ -121,13 +124,22 @@ struct PendingMemoryFixture {
 
 impl PendingMemoryFixture {
     fn new(user_text: &str) -> Self {
+        Self::for_surface(user_text, ChatSurface::Session)
+    }
+
+    fn for_surface(user_text: &str, surface: ChatSurface) -> Self {
         use crate::commands::tests::{chat, profile, seed_profile};
 
         let root = tempfile::tempdir().unwrap();
         let state = AppState::for_folder_test(root.path().join("app"));
         let profile = profile("pending-memory", &root.path().join("workspace"), 1);
         seed_profile(&state.store, &profile);
-        let mut chat = chat("pending-chat", &profile.id, 1);
+        let thread_id = if surface.is_bot() {
+            crate::chat::home::home_thread_id(&profile.id)
+        } else {
+            "pending-chat".into()
+        };
+        let mut chat = chat(&thread_id, &profile.id, 1);
         chat.messages.push(crate::test_fixtures::chat_message(
             USER_MESSAGE,
             ChatRole::User,
@@ -143,9 +155,10 @@ impl PendingMemoryFixture {
             as_of: None,
             display_currency: None,
         };
-        let mut capture = ToolCapture::default();
+        let mut capture = ToolCapture::for_chat("settled-reply".into());
         capture.bound_chat_id = Some(chat.id.clone());
         capture.principle_user_message_id = Some(USER_MESSAGE.into());
+        capture.surface = Some(surface);
         let executor = AppToolExecutor {
             state,
             capture: Arc::new(capture),
@@ -209,6 +222,78 @@ impl PendingMemoryFixture {
         })
         .unwrap();
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_explicit_bot_memory_edit_waits_for_the_older_reader() {
+    let fixture = PendingMemoryFixture::for_surface("Please keep answers short.", ChatSurface::Bot);
+    fixture
+        .stage(
+            ToolMethod::BotMemory,
+            json!({"changes": [
+                {"action": "remember", "kind": "preference", "text": "Keep answers short"}
+            ]}),
+        )
+        .await;
+    let state = &fixture.executor.state;
+    let chat = &fixture.chat;
+    let reply = commit_test_reply(
+        state,
+        chat,
+        &fixture.executor.capture,
+        "Will do.",
+        Some(|| {
+            let waiting = state.store.get_chat(&chat.id).unwrap().unwrap();
+            assert!(waiting.bot_memory.unreviewed.is_empty());
+        }),
+    )
+    .await;
+    assert!(reply.memory_update.unwrap().skip_reason.is_none());
+    let stored = state.store.get_chat(&chat.id).unwrap().unwrap();
+    let context = crate::chat::bot_memory::context(&stored, None);
+    assert_eq!(context.block["entries"][0]["text"], "Keep answers short");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_staged_bot_hand_off_waits_for_the_older_reader() {
+    use crate::chat::handoff::{self, HandoffRequest, HandoffRun, StagedHandoff};
+
+    let fixture =
+        PendingMemoryFixture::for_surface("Compare these manufacturers.", ChatSurface::Bot);
+    let capture = &fixture.executor.capture;
+    *capture.staged_handoff.lock().await = Some(StagedHandoff {
+        request: HandoffRequest::parse(&json!({
+            "title": "Manufacturer comparison",
+            "question": "Compare these manufacturers.",
+            "requestKey": "manufacturers"
+        }))
+        .unwrap(),
+        run: HandoffRun {
+            model_profile_id: "fixture".into(),
+            thinking_level: "medium".into(),
+            run_options: Default::default(),
+            use_memory: true,
+            update_memory: true,
+        },
+    });
+    let state = &fixture.executor.state;
+    let chat = &fixture.chat;
+    let reply = commit_test_reply(
+        state,
+        chat,
+        capture,
+        "I opened a session.",
+        Some(|| {
+            assert!(handoff::list(state, &chat.loupist_id).unwrap().is_empty());
+        }),
+    )
+    .await;
+    let handoffs = handoff::list(state, &chat.loupist_id).unwrap();
+    assert_eq!(handoffs.len(), 1);
+    assert_eq!(
+        reply.research_session_id.as_deref(),
+        Some(handoffs[0].chat_id.as_str())
+    );
 }
 
 #[tokio::test(start_paused = true)]

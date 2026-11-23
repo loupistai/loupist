@@ -401,6 +401,7 @@ impl ScheduledSupervisor {
         if observer.is_some() {
             sink.eval_pi_event = observer;
         }
+        let (model_profile_id, thinking_level, run_options) = run_settings(state, &task);
         let request = ChatSendRequest {
             run_id: run_id.clone(),
             loupist_id: loupist_id.to_owned(),
@@ -412,9 +413,9 @@ impl ScheduledSupervisor {
             use_memory: task.use_memory,
             update_memory: task.update_memory,
             as_of: None,
-            model_profile_id: task.model_profile_id,
-            thinking_level: task.thinking_level,
-            run_options: task.run_options,
+            model_profile_id,
+            thinking_level,
+            run_options,
             mentioned_connection_ids: vec![],
             attachments: vec![],
             pins: vec![],
@@ -664,3 +665,25 @@ fn bounded_error(value: &str) -> String {
 
 #[cfg(test)]
 mod tests;
+
+/// The model, thinking level and run options a scheduled run uses. A task's
+/// model that cannot run now gives way to Auto for this run, with the controls
+/// Auto declares; the task keeps its model, and the run records the one that ran.
+pub(crate) fn run_settings(
+    state: &AppState,
+    task: &types::Task,
+) -> (String, String, std::collections::BTreeMap<String, String>) {
+    match crate::providers::auto::stored_fallback(
+        state,
+        &task.model_profile_id,
+        &task.thinking_level,
+        &task.run_options,
+    ) {
+        Some(auto) => (auto.model.id, auto.thinking_level, auto.run_options),
+        None => (
+            task.model_profile_id.clone(),
+            task.thinking_level.clone(),
+            task.run_options.clone(),
+        ),
+    }
+}

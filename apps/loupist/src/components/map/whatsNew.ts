@@ -10,6 +10,7 @@ import { nodeCategory } from "../../knowledge/mapKinds";
 import { relationName } from "./relations";
 
 const DAY_MS = 86_400_000;
+/** A Source with more rows than this in the range shown is one expandable group. */
 const SOURCE_GROUP_THRESHOLD = 3;
 
 /** What changed in the Loupist's knowledge, in the rows the What's new drawer lists. A `fact` is a value reported about one name. */
@@ -24,6 +25,8 @@ export type WhatsNewRow = {
   node?: KnowledgeMapNode;
   edge?: KnowledgeMapEdge;
   claimId?: string;
+  /** The World name a name row adds, which a bounded overview may leave out. */
+  nameId?: string;
   recordId?: string;
   publicationKey: string;
   source?: WorldGrowthSource;
@@ -69,19 +72,42 @@ function lensKind(event: GrowthEvent, node: KnowledgeMapNode | undefined): "meth
 }
 
 /**
+ * World's one rule for "new" in a range that starts after `sinceMs` (the growth read's
+ * exclusive start): first seen after it. What's new and World's weekly count share it.
+ */
+export const firstSeenAfter = (firstSeenAtMs: number | null | undefined, sinceMs: number | undefined) =>
+  sinceMs === undefined || firstSeenAtMs == null || firstSeenAtMs > sinceMs;
+
+/**
  * Rows newest first: names, relationships, reported values, conflicting
  * evidence, and Lens methods or principles. One row per subject; schema and
  * truncation markers are left out, as in the morning message. A claim whose
  * ends are one name is a value reported about it, not a relationship. Changes
  * one publication made that read the same (kind, ends, relation and Source)
  * are one row; `count` says how many.
+ *
+ * A name or claim is new in the range when it was first seen after `sinceMs`
+ * (its first appearance in World, not just in these events) and exists now. Its
+ * row belongs to the change that first added it in the range, so a later Source
+ * adding facts about it shows those facts, not the name again. One that has
+ * left World stays as a dimmed row and is not new. A bounded overview leaves
+ * some names and claims out: those are taken to exist, first seen at their
+ * first change in the range.
  */
-export function whatsNewRows(events: readonly GrowthEvent[] | null | undefined, map: KnowledgeMap | null | undefined, language: string): WhatsNewRow[] {
+export function whatsNewRows(events: readonly GrowthEvent[] | null | undefined, map: KnowledgeMap | null | undefined, language: string, sinceMs?: number): WhatsNewRow[] {
   const nodes = new Map((map?.nodes ?? []).map((node) => [node.id, node]));
   const lenses = new Map((map?.nodes ?? []).filter((node) => node.recordId && node.kind !== "entity").map((node) => [node.recordId!, node]));
   const claims = new Map<string, KnowledgeMapEdge>();
   for (const edge of map?.edges ?? []) if ((edge.kind === "claim" || edge.kind === "fact") && !claims.has(claimIdForEdge(edge))) claims.set(claimIdForEdge(edge), edge);
+  const namesBounded = !!map?.counts?.entity?.truncated;
+  const claimsBounded = !!(map?.counts?.claim?.truncated || map?.counts?.fact?.truncated);
   const ordered = relevantEvents(events);
+  // The first add of each subject in the range carries it; a later add of the same subject is not news.
+  const firstAdd = new Map<string, GrowthEvent>();
+  for (let index = ordered.length - 1; index >= 0; index -= 1) {
+    const event = ordered[index]!;
+    if ((event.kind === "entity_added" || event.kind === "claim_added") && event.subjectId && !firstAdd.has(`${event.kind}:${event.subjectId}`)) firstAdd.set(`${event.kind}:${event.subjectId}`, event);
+  }
   const sources = new Map<string, string>();
   for (const event of ordered) if (event.kind === "source_retained" && event.originMessageId && event.summary.trim() && !sources.has(event.originMessageId)) sources.set(event.originMessageId, event.summary.trim());
   const rows: WhatsNewRow[] = [];
@@ -97,18 +123,20 @@ export function whatsNewRows(events: readonly GrowthEvent[] | null | undefined, 
       : [event.recordId, event.atMs, event.originMessageId]);
     const base = { id: event.eventId, atMs: event.atMs, origin, count: 1, publicationKey, source };
     if (event.kind === "entity_added" && event.subjectId) {
-      if (seen.has(`name:${event.subjectId}`)) continue;
-      seen.add(`name:${event.subjectId}`);
+      if (firstAdd.get(`entity_added:${event.subjectId}`) !== event) continue;
       const node = nodes.get(event.subjectId);
-      const gone = !node || node.kind !== "entity" || !!node.archived;
-      const row: WhatsNewRow = { ...base, kind: "name", label: node ? entityLabel(node, language) : event.summary, category: node ? nodeCategory(node) : "other", node: gone ? undefined : node, gone };
+      // A name World already had before the range came back, so it is not new.
+      if (node && !firstSeenAfter(node.firstSeenAtMs, sinceMs)) continue;
+      const gone = node ? node.kind !== "entity" || !!node.archived : !namesBounded;
+      const row: WhatsNewRow = { ...base, kind: "name", label: node ? entityLabel(node, language) : event.summary, category: node ? nodeCategory(node) : "other", node: gone ? undefined : node, nameId: event.subjectId, gone };
       names.set(nameKey(publicationKey, event.subjectId), row);
       rows.push(row);
     } else if ((event.kind === "claim_added" || event.kind === "claim_disputed") && event.subjectId) {
       const changed = event.kind === "claim_added" ? "added" : "disputed";
-      if (seen.has(`${changed}:${event.subjectId}`)) continue;
+      if (changed === "added" ? firstAdd.get(`claim_added:${event.subjectId}`) !== event : seen.has(`disputed:${event.subjectId}`)) continue;
       seen.add(`${changed}:${event.subjectId}`);
       const edge = claims.get(event.subjectId);
+      if (changed === "added" && edge && !firstSeenAfter(edge.firstSeenAtMs, sinceMs)) continue;
       // The stored proposition is English; the row speaks the interface language through the names and relation.
       const factSubjectId = event.publication?.factSubjectId;
       const a = nodes.get(edge?.source ?? factSubjectId ?? "");
@@ -122,7 +150,7 @@ export function whatsNewRows(events: readonly GrowthEvent[] | null | undefined, 
       const same = alike.get(key);
       if (same) { same.count += 1; continue; }
       const factSubjectIds = single ? [...new Set([factSubjectId, edge?.source, edge?.target].filter((id): id is string => !!id))] : undefined;
-      const gone = (!edge && !(kind === "fact" && a && !a.archived)) || (kind !== "conflict" && edge?.status === "withdrawn");
+      const gone = (!edge && !claimsBounded && !(kind === "fact" && a && !a.archived)) || (kind !== "conflict" && edge?.status === "withdrawn");
       const row: WhatsNewRow = { ...base, kind, label: event.summary, link, claimId: event.subjectId, edge, gone, factSubjectIds,
         ...(single && a ? { node: gone || a.archived ? undefined : a, category: nodeCategory(a) } : {}) };
       alike.set(key, row);
@@ -154,39 +182,48 @@ export type WhatsNewSourceGroup = {
 };
 export type WhatsNewEntry = WhatsNewRow | WhatsNewSourceGroup;
 
-/** Collapse Sources per publication. Separate publications of the same Source stay separate. */
+const sourceKey = (source: WorldGrowthSource) => JSON.stringify([source.recordId, source.sourceId]);
+
+/**
+ * Collapse each Source into one group across the publications in `rows`
+ * (newest first): a Source processed in several chunks is one group whose
+ * counts add up, dated by its latest change, with its rows newest first.
+ */
 export function whatsNewEntries(rows: readonly WhatsNewRow[], language: string): WhatsNewEntry[] {
-  const updates = new Map<string, WhatsNewRow[]>();
+  const bySource = new Map<string, WhatsNewRow[]>();
   for (const row of rows) {
     if (!row.source) continue;
-    const update = updates.get(row.publicationKey);
-    if (update) update.push(row);
-    else updates.set(row.publicationKey, [row]);
+    const key = sourceKey(row.source);
+    const changes = bySource.get(key);
+    if (changes) changes.push(row);
+    else bySource.set(key, [row]);
   }
   const order = new Intl.Collator(language);
   return rows.flatMap<WhatsNewEntry>(row => {
     const source = row.source;
-    const update = source && updates.get(row.publicationKey);
-    if (!source || !update || update.length <= SOURCE_GROUP_THRESHOLD) return [row];
-    if (update[0] !== row) return [];
+    const key = source && sourceKey(source);
+    const changes = key ? bySource.get(key) : undefined;
+    if (!source || !changes || changes.length <= SOURCE_GROUP_THRESHOLD) return [row];
+    if (changes[0] !== row) return [];
     return [{
-      kind: "source", id: `source:${row.publicationKey}`, atMs: row.atMs, source,
-      rows: [...update].sort((a, b) => Number(b.kind === "name") - Number(a.kind === "name")
+      kind: "source", id: `source:${key}`, atMs: row.atMs, source,
+      rows: [...changes].sort((a, b) => b.atMs - a.atMs
+        || Number(b.kind === "name") - Number(a.kind === "name")
         || order.compare(a.link?.a ?? a.label, b.link?.a ?? b.label)),
-      names: update.filter(item => item.kind === "name").length,
-      facts: update.reduce((total, item) => total + (item.kind === "fact" ? item.count : item.facts ?? 0), 0),
+      names: changes.filter(item => item.kind === "name" && !item.gone).length,
+      facts: changes.reduce((total, item) => total + (item.kind === "fact" ? item.count : item.facts ?? 0), 0),
     }];
   });
 }
 
-export function whatsNewCounts(entries: readonly WhatsNewEntry[]) {
-  const includes = (entry: WhatsNewEntry, matches: (row: WhatsNewRow) => boolean) =>
-    entry.kind === "source" ? entry.rows.some(matches) : matches(entry);
-  return {
-    names: entries.filter(entry => includes(entry, row => row.kind === "name")).length,
-    links: entries.filter(entry => includes(entry, row => row.kind === "relationship" && !!row.edge)).length,
-    conflicts: entries.filter(entry => includes(entry, row => row.kind === "conflict")).length,
-  };
+/**
+ * The drawer's totals for its range, over every row (a Source group adds up its
+ * rows): new names, new relationships and new disagreements, each counted once.
+ * A row that has left World is listed dimmed and not counted.
+ */
+export function whatsNewTotals(rows: readonly WhatsNewRow[]) {
+  const sum = (kind: WhatsNewKind) => rows.reduce((total, row) => total + (row.kind === kind && !row.gone ? row.count : 0), 0);
+  return { names: sum("name"), links: sum("relationship"), conflicts: sum("conflict") };
 }
 
 const startOfDay = (ms: number) => { const day = new Date(ms); day.setHours(0, 0, 0, 0); return day.getTime(); };

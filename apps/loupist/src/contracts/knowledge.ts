@@ -320,10 +320,15 @@ export type KnowledgeSourceRetainRequest = {
 /** One World processing job; the renderer never reads the job's stored document. */
 export type GraphJobView = Wire.GraphJobView;
 
+/** Recommended follows the bundled list and the connected accounts; Chosen keeps the user's pick. */
+export type WorldModelChoice = Wire.WorldModelChoice;
+export type RecommendedWorldModel = Wire.RecommendedWorldModel;
+
 export type GraphProcessingSettings = {
   enrichmentEnabled: boolean;
   paused: boolean;
   helperModelProfileId: string | null;
+  worldModelChoice: WorldModelChoice;
   thinkingLevel: string;
   runOptions: Record<string, string>;
   maxLlmCalls: number;
@@ -371,7 +376,7 @@ export type FollowedStatus = Wire.FollowedStatus;
 
 /** Why World processing is not ready, by code; the interface words it. */
 export type GraphReadinessNote =
-  | "recovery_required" | "recovering" | "runtime_unavailable" | "awaiting_provider" | "choose_model" | "model_unavailable" | "connect_provider"
+  | "recovery_required" | "recovering" | "runtime_unavailable" | "awaiting_provider" | "no_account" | "choose_model" | "model_unavailable" | "connect_provider"
   | "isolation_unsupported" | "runtime_missing" | "choose_connected_model" | "not_connected" | "account_waiting";
 
 /**
@@ -390,6 +395,8 @@ export type GraphProcessingView = {
     modelName?: string | null;
     authKind?: string | null;
   };
+  /** What the list recommends with the accounts connected now; null while none offers a listed model. */
+  recommended: RecommendedWorldModel | null;
 };
 
 export type KnowledgeJournalReadRequest = Wire.KnowledgeJournalReadRequest;
