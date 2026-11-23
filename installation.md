@@ -4,7 +4,7 @@
 
 **Install Loupist (Beta)**
 
-Loupist runs on macOS 13 or newer on Apple Silicon. Windows, Intel Macs and Linux are not supported.
+The signed Beta runs on macOS 13 or newer on Apple Silicon. Windows and Intel Macs are not supported. Linux x86_64 can build and run the app from source. That build is not this signed download. See [Linux](apps/loupist/README.md#linux).
 
 1. Download [Loupist-macOS-arm64.dmg](https://github.com/loupistai/loupist/releases/latest/download/Loupist-macOS-arm64.dmg).
 2. Open the file and drag Loupist to Applications.

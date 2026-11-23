@@ -11,7 +11,7 @@
 
 A research companion for investors, on your Mac. It reads filings and market data, checks each figure it cites against the source, and keeps what it learns for the next question.
 
-macOS 13 or later on Apple Silicon · free and open source · [install guide](installation.md)
+macOS 13 or later on Apple Silicon · Linux x86_64 from source · free and open source · [install guide](installation.md)
 
 <a href="https://github.com/loupistai/loupist/releases/latest/download/Loupist-macOS-arm64.dmg"><img src="https://img.shields.io/badge/Download_for_Mac-Beta-5b45e0?style=for-the-badge&logo=apple&logoColor=white" alt="Download Loupist for Mac (Beta)" /></a>
 
@@ -21,6 +21,7 @@ By downloading Loupist you accept the [disclaimer](#disclaimer).
 [![Latest release](https://img.shields.io/github/v/release/loupistai/loupist?label=release)](https://github.com/loupistai/loupist/releases/latest)
 [![License: AGPL-3.0-only](https://img.shields.io/github/license/loupistai/loupist)](LICENSING.md)
 [![Platform: macOS 13+ on Apple Silicon](https://img.shields.io/badge/macOS_13%2B-Apple_Silicon-555)](installation.md)
+[![Platform: Linux x86_64](https://img.shields.io/badge/Linux-x86__64-555)](apps/loupist/README.md#linux)
 
 </div>
 
@@ -103,7 +104,7 @@ Follow the assets you research. Each one gets a page with why you follow it, wha
 2. Drag Loupist to Applications and open it. From 0.1.3 it is signed with Developer ID and notarized by Apple, so macOS only asks once to confirm an app from the internet.
 3. Connect an AI account, or look around first without one.
 
-Loupist needs macOS 13 or later on a Mac with Apple Silicon. Windows, Intel Macs and Linux are not supported. The [installation guide](installation.md) covers checking the download and updating from 0.1.2, which asks once for access to each saved data-connection key.
+The signed download needs macOS 13 or later on a Mac with Apple Silicon. Windows and Intel Macs are not supported. Linux x86_64 builds and runs from source. That build is not a signed release. The [installation guide](installation.md) covers checking the download and updating from 0.1.2, which asks once for access to each saved data-connection key. [Desktop development](apps/loupist/README.md#linux) covers the Linux libraries and the `.deb` build.
 
 ## Security model
 
@@ -174,7 +175,7 @@ sh scripts/setup.sh && sh scripts/stage-macos-arm64.sh
 npm run tauri dev
 ```
 
-Development builds keep their data in `~/.loupist/development/` and never open the installed app's data. [Desktop development](apps/loupist/README.md) covers the rest, [native UI testing](apps/loupist/e2e/README.md) drives the real app, and the [repository guide](docs/README.md) maps every topic. Linux works for source checks and the native suites under Xvfb; macOS on Apple Silicon is the release target.
+Development builds keep their data in `~/.loupist/development/` and never open the installed app's data. [Desktop development](apps/loupist/README.md) covers the rest, [native UI testing](apps/loupist/e2e/README.md) drives the real app, and the [repository guide](docs/README.md) maps every topic. On Linux x86_64, install the [WebKitGTK 4.1 build libraries](docs/dev/checks.md#linux-cloud-development). From `apps/loupist`, run `sh scripts/setup.sh` for development, and `sh scripts/stage-linux-x64.sh` before `npm run tauri build`. That stages the pinned Linux Pi and OpenBB programs into the `.deb`. The signed release target remains macOS on Apple Silicon.
 
 `scripts/verify.sh` is the clean-checkout gate: it installs locked dependencies and runs the web, Rust and Python checks. With dependencies installed, `npm run check --prefix apps/loupist` runs the app checks without reinstalling. Before a pull request, run `scripts/verify.sh --affected` to check the scopes your change selects, as CI does. [Release acceptance](LOUPIST.md) lists the journeys a release must pass.
 

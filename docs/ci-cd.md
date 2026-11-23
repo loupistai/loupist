@@ -1,6 +1,6 @@
 # CI and releases
 
-First-release target: macOS 13+ on Apple Silicon only. Windows, Intel Macs and Linux are not supported in this release. Repository identity is `loupistai/loupist`.
+Signed release target: macOS 13+ on Apple Silicon. Windows and Intel Macs are not supported. Linux x86_64 builds an unsigned `.deb` and runs the shell. It is not a signed release. Repository identity is `loupistai/loupist`.
 
 This page owns GitHub settings, CI and release gates. Version tags and the manual update qualification are in [Releases](release.md). Workflows and scripts in the repo are the source of truth for smoke details.
 
@@ -127,11 +127,13 @@ remain in scope. Missing history or classification errors select all checks.
 Native interaction runs on macOS outside pull requests and on Linux only for an
 explicit `workflow_dispatch` with `linux_native=true`. Automatic Linux Rust tests
 remain required: they exercise shared persistence, process ownership and worker
-isolation on the host used by cloud agents. Packaging runs only outside pull requests.
+isolation on the host used by cloud agents. The macOS package job runs only outside
+pull requests. The Linux `.deb` job runs whenever the packaging scope is selected,
+including pull requests.
 
 Rust, uv and Ubuntu package caches are saved only by `main` runs; pull requests restore
 them without uploading branch copies. The signed build shares the package-smoke
-dependency cache. Official package CI has one explicit macOS job. Unselected jobs are skipped. The source gate,
+dependency cache. Official package CI has one macOS job and one Linux `.deb` job. Unselected jobs are skipped. The source gate,
 `Source and product contracts`, accepts a skip only for a scope the classifier
 deselected, a macOS job on a pull request, or the opt-in Linux native job, and
 fails on any other result,
@@ -139,7 +141,8 @@ including `cancelled` and `abandoned`. A newer pull-request or `main` push cance
 the older run. A `main` run classifies every change since the last successful
 `main` push run, so a cancelled run's changes stay in scope, and a burst of merges
 runs the macOS jobs once. Manual `workflow_dispatch` and release validation always run
-all source and macOS checks; only the explicit dispatch option adds Linux GUI validation. When GitHub cannot assign a macOS runner, the job ends cancelled and
+all source and macOS checks, including the Linux `.deb` job. Only the explicit
+dispatch option adds Linux GUI validation. When GitHub cannot assign a macOS runner, the job ends cancelled and
 the `main` run fails; rerun it with `gh run rerun <run-id> --failed`.
 Actions are pinned to commit SHAs. Toolchain pins:
 Node 26.13.0 LTS (root `.nvmrc`), Rust 1.97.1, uv 0.11.2,
@@ -260,7 +263,9 @@ The only required check is `Source and product contracts`, owned by GitHub Actio
 with no bypass. Pull requests never report `Native macOS interaction`,
 `Package smoke (aarch64-apple-darwin)`, `Rust lint/tests/eval (macOS)`,
 `Native Linux interaction (WebKitGTK)`, so no `main` ruleset or legacy branch protection may require them. The
-read-only release audit flags them.
+read-only release audit flags them. `Package (x86_64-unknown-linux-gnu)` runs when
+the packaging scope is selected, including on pull requests, and is skipped otherwise.
+Do not require that job name. The source gate requires it when the scope is selected.
 
 ### Timing baseline (2026-11-09)
 

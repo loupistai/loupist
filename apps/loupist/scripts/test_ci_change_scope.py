@@ -84,6 +84,14 @@ class ChangeScopeTests(unittest.TestCase):
                 ["apps/loupist/src-tauri/tauri.conf.json"],
                 {"python", "rust", "native", "packaging"},
             ),
+            (
+                ["apps/loupist/src-tauri/tauri.linux.conf.json"],
+                {"python", "rust", "native", "packaging"},
+            ),
+            (
+                ["apps/loupist/src-tauri/tauri.linux.conf.json"],
+                {"python", "rust", "native", "packaging"},
+            ),
             (["apps/loupist/THIRD_PARTY_NOTICES.md"], {"python", "packaging"}),
             ([".nvmrc"], ALL),
             (["apps/loupist/package.json"], ALL),
@@ -221,6 +229,7 @@ class ChangeScopeTests(unittest.TestCase):
             "NATIVE_LINUX",
             "NATIVE",
             "PACKAGE",
+            "PACKAGE_LINUX",
         )
         for required, result, success in (
             ("false", "skipped", True),
@@ -262,6 +271,7 @@ class ChangeScopeTests(unittest.TestCase):
             "native-e2e-linux",
             "native-e2e",
             "package-smoke",
+            "package-linux",
         ):
             self.assertIn(f"      - {name}\n", self.job_block(workflow, "verify"))
 
@@ -298,6 +308,14 @@ class ChangeScopeTests(unittest.TestCase):
         )
         self.assertIn(
             "NATIVE_LINUX_REQUIRED: ${{ needs.changes.outputs.native == 'true' && needs.changes.outputs.linux_native == 'true' }}",
+            self.job_block(workflow, "verify"),
+        )
+        linux_package = self.job_block(workflow, "package-linux")
+        self.assertIn("runs-on: ubuntu-24.04", linux_package)
+        self.assertIn("needs.changes.outputs.packaging == 'true'", linux_package)
+        self.assertNotIn("macos", linux_package.split("runs-on:", 1)[0])
+        self.assertIn(
+            "PACKAGE_LINUX_REQUIRED: ${{ needs.changes.outputs.packaging }}",
             self.job_block(workflow, "verify"),
         )
 

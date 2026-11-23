@@ -202,14 +202,15 @@ To drive the real app on Linux, run the native suites or `up.sh` from
 [Run native suites on Linux](../../apps/loupist/e2e/README.md#run-native-suites-on-linux).
 They need only the `xvfb` package above; the launchers start a private display.
 
-Pull-request CI runs shared Rust, Python and web contracts on Ubuntu; the `main`
-run adds macOS Rust, WKWebView/native interaction and packaging, and releases add
+Pull-request CI runs shared Rust, Python and web contracts on Ubuntu, and builds
+the Linux `.deb` when the packaging scope is selected. The `main`
+run adds macOS Rust, WKWebView/native interaction and the macOS package, and releases add
 signing. Linux native UI is opt-in CI:
 `gh workflow run ci.yml --ref <branch> -f linux_native=true`. Codex, Claude and
 Cursor cloud sessions still run the affected native suites locally under Xvfb;
 removing the repeated GUI CI job does not remove Linux development support or
 claim macOS qualification. See the [CI placement and timing rationale](../ci-cd.md#ci).
-Linux is a development and test host, not a release target. The Linux GTK dependency advisory remains
+Linux x86_64 builds and runs the shell. It is not a signed release target. The Linux GTK dependency advisory remains
 documented in [Dependency security review](dependencies.md#dependency-security-review).
 
 ### Generated storage

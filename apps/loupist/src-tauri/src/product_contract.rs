@@ -171,15 +171,21 @@ fn release_workflows_pin_actions_and_identity() {
 
     let stage_pi_macos = text("apps/loupist/scripts/stage-pi-macos-arm64.sh");
     let stage_pi_windows = text("apps/loupist/scripts/stage-pi-windows-x64.ps1");
+    let stage_pi_linux = text("apps/loupist/scripts/stage-pi-linux-x64.sh");
     let pi_runtime = text("apps/loupist/src-tauri/src/pi.rs");
     assert!(stage_pi_macos.contains("PI_VERSION=1.5.2"));
     assert!(stage_pi_windows.contains("$piVersion = \"1.5.2\""));
+    assert!(stage_pi_linux.contains("PI_VERSION=1.5.2"));
     let macos_pi_archive_sha256 =
         "56b5e194d485ced555667b8ba3276157a8272e9ecde9e001e428af80985bdd9b";
     let windows_pi_archive_sha256 =
         "e6adb8cb8c84eca14391ad24b363de9d2be98a89ca3ba3fdee1fa4de32b7f2e8";
+    let linux_pi_archive_sha256 =
+        "811c6f2c9e7aaee252b5404252e556fb713aa209c1f7f924226aa77d4ef70cb5";
     assert!(stage_pi_macos.contains(macos_pi_archive_sha256));
     assert!(stage_pi_windows.contains(windows_pi_archive_sha256));
+    assert!(stage_pi_linux.contains(linux_pi_archive_sha256));
     assert!(pi_runtime.contains(macos_pi_archive_sha256));
     assert!(pi_runtime.contains(windows_pi_archive_sha256));
+    assert!(pi_runtime.contains(linux_pi_archive_sha256));
 }

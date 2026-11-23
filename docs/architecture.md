@@ -6,8 +6,9 @@ belongs to [Financial analysis](analysis.md).
 
 ## Platform boundary
 
-The release target is macOS 13+ on Apple Silicon. Linux is a development and
-native-test host (WebKitGTK), not a release target. Keep bridge contracts and durable
+The signed release target is macOS 13+ on Apple Silicon. Linux x86_64 builds
+and runs the shell on WebKitGTK. That build is not a signed release. Windows
+and Intel Macs are not supported. Keep bridge contracts and durable
 records independent of the OS; paths, process recovery, credential storage and
 packaging own platform-specific behavior. [CI and releases](ci-cd.md) owns support
 and qualification procedures. Unix broker sockets use a private directory scoped

@@ -69,6 +69,14 @@ async function main() {
     if (separator < 0) { separator = args.length; args.push("--"); }
     args.splice(separator + 1, 0, "--config", resolve(appRoot, "e2e/macos-dev-runner.toml"));
   }
+  // Bundle the staged Pi, OpenBB, embedding model, and Python worker. The
+  // resource list is the same one the macOS package smoke uses. This flag
+  // belongs to the CLI, before any `--` runner arguments.
+  if (!isDev && process.platform === "linux" && !cliArgs.includes("--config")) {
+    const separator = args.indexOf("--");
+    const insertAt = separator < 0 ? args.length : separator;
+    args.splice(insertAt, 0, "--config", resolve(appRoot, "src-tauri/tauri.package-smoke.conf.json"));
+  }
   const env = { ...process.env };
   if (isDev) {
     const port = await resolveWebdriverPort(preferred);
