@@ -333,9 +333,12 @@ class ChangeScopeTests(unittest.TestCase):
             "renderer-tests",
         }
         self.assertEqual(set.intersection(*selected), shared)
-        self.assertNotIn("chat-layout", selected[0])
-        self.assertNotIn("renderer-build", selected[0])
-        self.assertTrue({"chat-layout", "renderer-build"} <= selected[1])
+        # The browser steps share the second leg's Chrome.
+        for name in ("chat-layout", "release-policy", "renderer-build"):
+            self.assertNotIn(name, selected[0])
+        self.assertTrue(
+            {"chat-layout", "release-policy", "renderer-build"} <= selected[1]
+        )
         for _, only in legs:
             self.assertIn("renderer-tests", only.split(","))
             self.assertLessEqual(set(only.split(",")), planned)

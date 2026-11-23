@@ -347,7 +347,8 @@ fn seed_handoff_fixture(state: &AppState, loupist_id: &str) -> Result<(), Comman
             name: "Fixture research model".into(),
             provider: "openai".into(),
             model: "loupist-e2e-link-research".into(),
-            input: vec!["text".into()],
+            // Images too, so the native suite can send an attached image under the shipped policy.
+            input: vec!["text".into(), "image".into()],
             reasoning: false,
             context_window: 32_000,
             max_tokens: 4_096,

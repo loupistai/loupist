@@ -283,7 +283,8 @@ describe("ChatComposer input", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("25 MB");
     expect(screen.queryByText("too-large.pdf")).not.toBeInTheDocument();
     await user.upload(upload, new File([new Uint8Array(6 * 1024 * 1024)], "research.pdf", { type: "application/pdf" }));
-    expect(screen.getByText("research.pdf")).toBeVisible();
+    // The file is read into the tray before it shows.
+    expect(await screen.findByText("research.pdf", {}, { timeout: 10_000 })).toBeVisible();
     // The tray shows the file's real size beside its name.
     expect(screen.getByText("6.0 MB")).toBeVisible();
     expect(screen.getByText("research.pdf").closest(".composer-file-chip")).toHaveAttribute("title", "research.pdf · 6.0 MB");
@@ -462,8 +463,8 @@ describe("ChatComposer input", () => {
     fireEvent.drop(screen.getByRole("textbox", { name: "Message Loupist" }), {
       dataTransfer: { types: ["Files"], files: [new File(["notes"], "notes.txt", { type: "text/plain" })] },
     });
-    expect(screen.getByText("notes.txt")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Send next" }));
+    expect(await screen.findByText("notes.txt")).toBeVisible();
+    await user.click(await screen.findByRole("button", { name: "Send next" }));
     expect(onFollowUp).toHaveBeenCalledWith("", [expect.objectContaining({ filename: "notes.txt" })], "");
     expect(onSend).not.toHaveBeenCalled();
   });
@@ -473,63 +474,72 @@ describe("ChatComposer input", () => {
 describe("Chat attachment submission recovery", () => {
   afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-  it("creates and releases each attachment URL once in StrictMode", async () => {
+  it("reads each attachment into a data: URL once in StrictMode, with no object URL", async () => {
     const user = userEvent.setup();
-    const create = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:one-attachment");
-    const revoke = vi.spyOn(URL, "revokeObjectURL");
-    const view = render(<StrictMode><RunningComposer isRunning={false} /></StrictMode>);
-    create.mockClear();
-    revoke.mockClear();
-    await user.upload(screen.getByLabelText("Upload files"), new File(["notes"], "notes.txt", { type: "text/plain" }));
-    expect(create).toHaveBeenCalledOnce();
-    await user.click(screen.getByRole("button", { name: "Remove notes.txt" }));
-    expect(revoke).toHaveBeenCalledExactlyOnceWith("blob:one-attachment");
-    view.unmount();
-    expect(revoke).toHaveBeenCalledOnce();
+    const create = vi.spyOn(URL, "createObjectURL");
+    const reads = vi.spyOn(FileReader.prototype, "readAsDataURL");
+    render(<StrictMode><RunningComposer isRunning={false} /></StrictMode>);
+    await user.upload(screen.getByLabelText("Upload files"), [
+      new File(["notes"], "notes.txt", { type: "text/plain" }),
+      new File([new Uint8Array([137, 80, 78, 71])], "chart.png", { type: "image/png" }),
+    ]);
+    // The policy allows data: images (img-src) and no blob: source, so the preview is the file's bytes.
+    expect(await screen.findByRole("img", { name: "chart.png" })).toHaveAttribute("src", expect.stringMatching(/^data:image\/png;base64,/));
+    expect(screen.getByText("notes.txt")).toBeVisible();
+    expect(reads).toHaveBeenCalledTimes(2);
+    expect(create).not.toHaveBeenCalled();
   });
 
-  it("keeps the draft and file when reading an attachment fails", async () => {
+  it("refuses a file it cannot read and keeps the draft", async () => {
     const user = userEvent.setup();
-    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:attachment");
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Blob unavailable")));
-    const onSend = vi.fn();
+    vi.spyOn(FileReader.prototype, "readAsDataURL").mockImplementation(function (this: FileReader) {
+      queueMicrotask(() => this.onerror?.(new ProgressEvent("error") as ProgressEvent<FileReader>));
+    });
+    render(<RunningComposer isRunning={false} />);
+    await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), "Keep this research draft");
+    await user.upload(screen.getByLabelText("Upload files"), new File(["notes"], "notes.txt", { type: "text/plain" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not read an attached file. Remove it and attach it again.");
+    expect(screen.queryByText("notes.txt")).toBeNull();
+    expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveValue("Keep this research draft");
+  });
+
+  it("keeps the draft and file when sending the attached message fails", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn().mockRejectedValue(new Error("host unavailable"));
     render(<RunningComposer isRunning={false} onSend={onSend} />);
     await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), "Keep this research draft");
     await user.upload(screen.getByLabelText("Upload files"), new File(["notes"], "notes.txt", { type: "text/plain" }));
+    await screen.findByText("notes.txt");
     await user.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Your draft and files have been kept");
     expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveValue("Keep this research draft");
     expect(screen.getByText("notes.txt")).toBeVisible();
-    expect(onSend).not.toHaveBeenCalled();
+    expect(onSend).toHaveBeenCalledOnce();
     expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
   });
 
-  it("submits a converted snapshot once and keeps files added during submission", async () => {
+  it("submits a snapshot once and keeps files added during submission", async () => {
     const user = userEvent.setup();
-    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:attachment");
-    let resolveFetch!: (value: unknown) => void;
-    const fetchFile = vi.fn(() => new Promise((resolve) => { resolveFetch = resolve; }));
-    vi.stubGlobal("fetch", fetchFile);
     let resolveSend!: () => void;
     const onSend = vi.fn(() => new Promise<void>((resolve) => { resolveSend = resolve; }));
     render(<RunningComposer isRunning={false} onSend={onSend} />);
     const prompt = screen.getByRole("textbox", { name: "Message Loupist" });
     await user.type(prompt, "Read the file");
     await user.upload(screen.getByLabelText("Upload files"), new File(["notes"], "notes.txt", { type: "text/plain" }));
+    await screen.findByText("notes.txt");
     await user.click(screen.getByRole("button", { name: "Send" }));
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
     await user.type(prompt, " and a new thought");
     fireEvent.submit(prompt.closest("form")!);
-    expect(fetchFile).toHaveBeenCalledOnce();
-    await act(async () => resolveFetch({ ok: true, blob: async () => new Blob(["notes"], { type: "text/plain" }) }));
-    await waitFor(() => expect(onSend).toHaveBeenCalledOnce());
+    expect(onSend).toHaveBeenCalledOnce();
     expect(onSend).toHaveBeenCalledWith("Read the file", [expect.objectContaining({ filename: "notes.txt", url: expect.stringMatching(/^data:text\/plain;base64,/) })], "Read the file");
     await user.upload(screen.getByLabelText("Upload files"), new File(["next"], "next.txt", { type: "text/plain" }));
+    await screen.findByText("next.txt");
     await act(async () => resolveSend());
     await waitFor(() => expect(screen.queryByText("notes.txt")).not.toBeInTheDocument());
     expect(screen.getByText("next.txt")).toBeVisible();
     expect(prompt).toHaveValue("Read the file and a new thought");
-    expect(fetchFile).toHaveBeenCalledOnce();
+    expect(onSend).toHaveBeenCalledOnce();
   });
 });
 

@@ -135,8 +135,13 @@ pub(super) fn normalize_llama_response(
         ),
         LlamaRoute::Stablecoin => (
             root.as_array().ok_or(FinanceDataError::InvalidResponse)?,
+            // `totalCirculatingUSD` holds one USD value keyed by the coin's peg
+            // (`peggedUSD`, `peggedEUR`, `peggedJPY` and so on).
             |row| {
-                row.pointer("/totalCirculatingUSD/peggedUSD")
+                row.get("totalCirculatingUSD")
+                    .and_then(Value::as_object)
+                    .filter(|values| values.len() == 1)
+                    .and_then(|values| values.values().next())
                     .or_else(|| row.pointer("/totalCirculating/peggedUSD"))
             },
             None,
@@ -261,6 +266,30 @@ mod tests {
         assert_eq!(output["data"]["rows"][0]["value"], "73000000000.25");
         assert!(normalize_llama_response(&chain, &raw(r#"[{"date":1,"tvl":1}]"#)).is_err());
         assert!(normalize_llama_response(&chain, &raw(r#"{"tvl":[]}"#)).is_err());
+    }
+
+    /// Recorded 2026-11-23 from `stablecoincharts/all`: the last rows for
+    /// EURC (id 50, pegged to the euro) and USDT (id 1).
+    #[test]
+    fn a_stablecoin_pegged_to_another_currency_reads_its_usd_value() {
+        let eurc = query("stablecoin", "50", "2026-11-22", "2026-11-23");
+        let output = normalize_llama_response(
+            &eurc,
+            &raw(r#"[{"date":"1795305600","totalCirculating":{"peggedEUR":459130476},"totalUnreleased":{"peggedEUR":48921712},"totalCirculatingUSD":{"peggedEUR":503064679}},{"date":"1795392000","totalCirculating":{"peggedEUR":455652552.85},"totalUnreleased":{"peggedEUR":48710582.89},"totalCirculatingUSD":{"peggedEUR":499695928.61},"totalMintedUSD":{"peggedEUR":0},"totalBridgedToUSD":{"peggedEUR":0}}]"#),
+        )
+        .unwrap();
+        assert_eq!(
+            output["data"]["rows"],
+            json!([{"date":"2026-11-22","value":"503064679"},{"date":"2026-11-23","value":"499695928.61"}])
+        );
+        assert_eq!(output["data"]["series"]["unit"], "USD");
+        let usdt = query("stablecoin", "1", "2026-11-23", "2026-11-23");
+        let output = normalize_llama_response(
+            &usdt,
+            &raw(r#"[{"date":"1795392000","totalCirculating":{"peggedUSD":174807834143.05},"totalUnreleased":{"peggedUSD":9036467344.84},"totalCirculatingUSD":{"peggedUSD":174598064742.07},"totalMintedUSD":{"peggedUSD":0},"totalBridgedToUSD":{"peggedUSD":0}}]"#),
+        )
+        .unwrap();
+        assert_eq!(output["data"]["rows"][0]["value"], "174598064742.07");
     }
 
     #[test]

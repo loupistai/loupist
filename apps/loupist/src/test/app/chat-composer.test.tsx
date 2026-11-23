@@ -90,6 +90,7 @@ describe("Loupist · Chat composer", () => {
     await togglePrivateChat();
     await chooseModelOption(user, "Max");
     await user.upload(screen.getByLabelText("Upload files"), new File(["original attachment"], "queued.txt", { type: "text/plain" }));
+    await screen.findByText("queued.txt");
     await user.type(composer(), "Use this next");
     await user.click(screen.getByRole("button", { name: "Send next" }));
     expect(within(screen.getByLabelText("Pending chat instructions")).getByText(/Memory off/)).toHaveTextContent("1 file");
@@ -111,6 +112,7 @@ describe("Loupist · Chat composer", () => {
     await openApp(bridge);
     await togglePrivateChat();
     await user.upload(screen.getByLabelText("Upload files"), new File(["keep original"], "kept.txt", { type: "text/plain" }));
+    await screen.findByText("kept.txt");
     await send(user, "Rejected request");
     await waitFor(() => expect(chatSend).toHaveBeenCalledOnce());
     await user.type(composer(), "Newer unsent thought");
@@ -287,6 +289,9 @@ describe("Loupist · Chat composer", () => {
     await user.upload(screen.getByLabelText("Upload files"), new File(["margin bridge"], "notes.txt", { type: "text/plain" }));
     const chart = new File([new Uint8Array([137, 80, 78, 71])], "chart.png", { type: "image/png" });
     fireEvent.paste(composer(), { clipboardData: { items: [{ kind: "file", getAsFile: () => chart }] } });
+    // Each file is read into the tray before it can go.
+    await screen.findByRole("img", { name: "chart.png" });
+    await screen.findByText("notes.txt");
     await send(user, "Review these inputs");
     await waitFor(() => expect(chatSend).toHaveBeenCalled());
     expect(chatSend.mock.calls[0][0]).toMatchObject({
@@ -304,6 +309,7 @@ describe("Loupist · Chat composer", () => {
     const chatSend = vi.spyOn(bridge, "chatSend");
     await openApp(bridge);
     await user.upload(screen.getByLabelText("Upload files"), new File([new Uint8Array([137, 80, 78, 71])], "chart.png", { type: "image/png" }));
+    await screen.findByRole("img", { name: "chart.png" });
     await send(user, "Review this chart");
     expect(await screen.findByRole("alert")).toHaveTextContent("The selected model does not accept images.");
     expect(composer()).toHaveValue("Review this chart");

@@ -13,6 +13,7 @@ import { assertReaderLayout, measureReaderLayout } from "../e2e/reader-layout.mj
 import { assertMapOverlays, measureMapOverlays } from "../e2e/map-layout.mjs";
 import { collectRunningCssMotion, reducedMotionViolations } from "./capture-motion.mjs";
 import { markdownIsRendered } from "./capture-readiness.mjs";
+import { buildReleaseRenderer, describeViolations, serveReleaseRenderer } from "../e2e/release-renderer.mjs";
 
 // Reduced-motion guards use none/0ms/0.01ms. A 1ms total permits rounding of
 // near-zero effects, but rejects visible motion and repeated near-zero effects.
@@ -26,6 +27,9 @@ const stamp = new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").sl
 const args = process.argv.slice(2);
 const layout = args[0] === "--chat-layout";
 if (layout) args.shift();
+// The built pages under the shipped Content-Security-Policy; every cell fails on a violation.
+const underReleasePolicy = args.includes("--release-policy");
+if (underReleasePolicy) args.splice(args.indexOf("--release-policy"), 1);
 const options = layout ? {
   scenarios: "chat-grid-card,browser-ready,shell-titlebar-grown,chat-header-resuming,activity-sheet,activity-sheet-earlier,shell-sidebar-many",
   themes: "light",
@@ -50,7 +54,7 @@ if (sizes.some((size) => !/^[1-9]\d{1,4}x[1-9]\d{1,4}$/.test(size))) throw new E
 if (typeof WebSocket === "undefined") throw new Error("Node 22 or later with built-in WebSocket is required");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const html = (value) => String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-let server, browser, cacheDir;
+let server, browser, cacheDir, releaseServer, releaseDir;
 let interrupted = false;
 const onSignal = () => { interrupted = true; };
 process.on("SIGINT", onSignal);
@@ -107,7 +111,14 @@ try {
   for (const id of ids) if (!registry.some((scenario) => scenario.id === id)) throw new Error(`Unknown scenario: ${id}`);
   console.log(`Capturing ${ids.length} scenarios × ${themes.length} themes × ${sizes.length} sizes × ${locales.length} locales (${ids.length * themes.length * sizes.length * locales.length} cells); reduced-motion limit ${reducedMotionPolicy.maxDurationMs}ms`);
   const address = server.httpServer.address();
-  const origin = `http://127.0.0.1:${address.port}`;
+  let origin = `http://127.0.0.1:${address.port}`;
+  if (underReleasePolicy) {
+    releaseDir = await mkdtemp(join(tmpdir(), "loupist-preview-release-"));
+    await buildReleaseRenderer(releaseDir);
+    releaseServer = await serveReleaseRenderer(releaseDir);
+    origin = releaseServer.url;
+    console.log(`Release policy: ${releaseServer.policy}`);
+  }
   // A long-lived page can stop answering CDP after many navigations. Bound its
   // lifetime to a bounded number of scenarios (one by default).
   for (const [scenarioIndex, scenario] of ids.entries()) {
@@ -225,13 +236,17 @@ try {
             assertMapOverlays(cell.maps, { label: file });
           }
           if (layout) checkChatCell(cell, await evaluate(`(${measureChatLayout.toString()})()`), width, height);
+          if (underReleasePolicy) {
+            cell.policyViolations = await evaluate(`(() => { try { return JSON.parse(sessionStorage.getItem("loupist.cspViolations") || "[]"); } catch { return []; } })()`);
+            if (cell.policyViolations.length) throw new Error(`Content-Security-Policy: ${describeViolations(cell.policyViolations).join("; ")}`);
+          }
           cell.status = "ok";
           cell.error = null;
           cell.capturedAt = new Date().toISOString();
         } catch (error) {
           cell.error = error.message;
           // A policy failure is deterministic; only readiness/load errors retry.
-          if (cell.shell || cell.layout || cell.reducedMotion?.violations.length || cell.reducedMotion?.reducedMotion === false) break;
+          if (cell.shell || cell.layout || cell.policyViolations?.length || cell.reducedMotion?.violations.length || cell.reducedMotion?.reducedMotion === false) break;
         }
       }
       cell.captureMs = Math.round(performance.now() - cellStarted);
@@ -252,6 +267,11 @@ try {
   }).join("")}</tr>`)).join("")}</tbody></table></section>`).join("\n");
   await writeFile(join(out, "index.html"), `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Loupist preview matrix</title><style>body{font:14px system-ui;margin:24px;background:#f4f4f5;color:#18181b}section{margin:32px 0;overflow:auto}table{border-collapse:collapse}td,th{padding:10px;text-align:left;vertical-align:top}img{display:block;width:360px;height:auto;border:1px solid #bbb}small{font-weight:normal;color:#666}.error{color:#b91c1c;width:360px}</style><h1>Loupist design preview</h1><p>Mock bridge design aid · ${html(manifest.gitHead ?? "No commits yet")}${manifest.dirty ? " · dirty checkout" : ""} · ${(manifest.totalCaptureMs / 1000).toFixed(1)} seconds</p>${sections}</html>`);
   console.log(`Preview matrix: ${out} (${(manifest.totalCaptureMs / 1000).toFixed(1)}s)`);
+  if (underReleasePolicy) {
+    const all = manifest.cells.flatMap((cell) => (cell.policyViolations ?? []).map((entry) => ({ ...entry, page: `${cell.scenario}` })));
+    const lines = describeViolations(all);
+    console.log(lines.length ? `Content-Security-Policy violations (${lines.length}):\n${lines.map((line, index) => `  ${index + 1}. ${line}`).join("\n")}` : "No Content-Security-Policy violation.");
+  }
   if (manifest.cells.some((cell) => cell.status !== "ok")) process.exitCode = 1;
 } catch (error) {
   console.error(error);
@@ -259,6 +279,8 @@ try {
 } finally {
   await browser?.close();
   if (server) await server.close();
+  if (releaseServer) await releaseServer.close();
+  if (releaseDir) await rm(releaseDir, { recursive: true, force: true });
   if (cacheDir) await rm(cacheDir, { recursive: true, force: true });
   process.off("SIGINT", onSignal); process.off("SIGTERM", onSignal);
 }

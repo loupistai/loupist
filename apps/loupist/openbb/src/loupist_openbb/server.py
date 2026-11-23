@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import re
@@ -30,6 +31,7 @@ from loupist_openbb.destinations import guard_tool_destinations
 from loupist_openbb.network import apply_network_policy
 from loupist_openbb.failures import (
     AlphaVantagePaidPlanRequired,
+    AlphaVantageRateLimited,
     YAHOO_ADJUSTMENT,
     CredentialRejectedError,
     FRED_INVALID_ARGUMENTS,
@@ -59,6 +61,8 @@ _STATEMENT_TOOLS = frozenset(
 # Match the host's per-schema limit for compact UTF-8 JSON.
 _MAX_TOOL_SCHEMA_BYTES = 64 * 1024
 _ALPHA_RAW_DAILY = ContextVar("alpha_vantage_raw_daily", default=False)
+# A free Alpha Vantage key allows one request per second.
+ALPHA_BURST_RETRY_SECONDS = 1.1
 
 
 def _route_segments(path: str, api_prefix: str) -> list[str]:
@@ -142,6 +146,22 @@ def _available_route_providers(
             # Finviz's quote page rejects the pinned KeyMetrics fetcher's
             # requests. The fetcher swallows the 403 and returns no data.
             if model == "KeyMetrics" and name == "finviz":
+                continue
+            # FINRA's short-interest fetcher downloads every bi-weekly file
+            # since July 2021 (128 files of about 2 MB) inside one synchronous
+            # call. That blocks the whole server for about three minutes, so
+            # every request sent meanwhile times out.
+            if model == "EquityShortInterest" and name == "finra":
+                continue
+            # EIA's weekly petroleum report returns every week since 1982 by
+            # default (28.8 MB, 133,773 rows on 2026-11-23), over the host's
+            # 4 MiB MCP frame limit; that reply ends the whole session.
+            if model == "PetroleumStatusReport" and name == "eia":
+                continue
+            # The Federal Reserve's Svensson curve returns every day since
+            # 1961 by default (17,068 rows, about 73 MB per frame on
+            # 2026-11-23), over the 32 MiB frame limit as well.
+            if model == "SvenssonYieldCurve" and name == "federal_reserve":
                 continue
             provider = registry[name]
             fetcher = provider.fetcher_dict.get(model)
@@ -360,14 +380,22 @@ def apply_alpha_vantage_history() -> None:
                         if isinstance(payload, dict)
                         else None
                     )
-                    if (
-                        isinstance(message, str)
-                        and "premium endpoint" in message.lower()
-                    ):
-                        raise AlphaVantagePaidPlanRequired()
+                    if isinstance(message, str):
+                        lowered = message.lower()
+                        # The free key's burst notice also offers "premium
+                        # endpoints"; it asks for one request per second.
+                        if "1 request per second" in lowered:
+                            raise AlphaVantageRateLimited()
+                        if "premium endpoint" in lowered:
+                            raise AlphaVantagePaidPlanRequired()
                 return await callback(response, session)
 
             kwargs["response_callback"] = check_plan
+            try:
+                return await original(url, *args, **kwargs)
+            except AlphaVantageRateLimited:
+                await asyncio.sleep(ALPHA_BURST_RETRY_SECONDS)
+                return await original(url, *args, **kwargs)
         return await original(url, *args, **kwargs)
 
     setattr(request, "__loupist_alpha_original__", original)

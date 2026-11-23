@@ -9,6 +9,9 @@ import { ChatArtifactBlock } from "./ChatArtifactBlock";
 import { ChatExecutionProvider } from "./ChatExecutionContext";
 import { ChatMessageCard } from "./ChatMessageCard";
 
+const scroll = vi.hoisted(() => ({ holdScrollPosition: vi.fn(), jumpToLatest: vi.fn(), blockAppended: vi.fn() }));
+vi.mock("../ai-elements/conversation", async (load) => ({ ...(await load<typeof import("../ai-elements/conversation")>()), useConversationScroll: () => scroll }));
+
 // The stand-in chart leaves a snapshot the way the real engines do: a 320 × 160 CSS-pixel drawing.
 vi.mock("../artifacts/ArtifactChart", async () => {
   const { useChartSnapshotSlot } = await import("../charts/chartSnapshot");
@@ -230,4 +233,44 @@ it("draws the older answer's revision, keeps the update note, and opens the late
   expect(onAsk).toHaveBeenCalledWith({ ...ref, revision: 1, digest: "c".repeat(64) });
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Open latest" })); });
   expect(onOpen).toHaveBeenCalledWith({ kind: "artifact", artifact: ref });
+});
+
+it("opens this chart in the side panel, and focuses the panel when that chart is already open", async () => {
+  scroll.holdScrollPosition.mockClear();
+  const onOpen = openSpy();
+  render(<OpenProvider open={onOpen}>{withScope(<ChatArtifactBlock block={{ kind: "ready", key: "r", artifact: ref, updating: false }} />)}</OpenProvider>);
+  const openPanel = await screen.findByRole("button", { name: "Open in side panel" });
+  expect(openPanel).toHaveAttribute("title", "Open in side panel");
+  expect(openPanel.compareDocumentPosition(screen.getByRole("button", { name: "Copy data" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.click(openPanel);
+  expect(onOpen).toHaveBeenCalledExactlyOnceWith({ kind: "artifact", artifact: ref });
+  expect(scroll.holdScrollPosition).toHaveBeenCalledOnce();
+  const panel = document.createElement("aside");
+  panel.id = "workspace-panel";
+  panel.tabIndex = -1;
+  panel.dataset.openArtifact = ref.artifact_id;
+  panel.dataset.openRevision = String(ref.revision);
+  document.body.append(panel);
+  const focus = vi.spyOn(panel, "focus");
+  fireEvent.click(openPanel);
+  expect(onOpen).toHaveBeenCalledOnce();
+  expect(focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
+  expect(scroll.holdScrollPosition).toHaveBeenCalledTimes(2);
+  panel.remove();
+});
+
+it("hides Open in side panel while the chart card is expanded, and does not draw it on the panel chart", async () => {
+  vi.mocked(window.matchMedia).mockImplementation((query: string) => ({ matches: query.includes("min-width: 1440px"), media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn() }) as MediaQueryList);
+  try {
+    const onOpen = openSpy();
+    render(<OpenProvider open={onOpen}>{withScope(<ChatArtifactBlock block={{ kind: "ready", key: "r", artifact: ref, updating: false }} />)}</OpenProvider>);
+    expect(await screen.findByRole("button", { name: "Open in side panel" })).toBeVisible();
+    const actions = document.querySelector(".chat-artifact-block-actions");
+    expect(actions?.querySelector("button")).toHaveAccessibleName("Open in side panel");
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    expect(screen.queryByRole("button", { name: "Open in side panel" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Chart: Operating margin" })).toHaveAttribute("data-expanded", "true");
+  } finally {
+    vi.mocked(window.matchMedia).mockImplementation((query: string) => ({ matches: false, media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn() }) as MediaQueryList);
+  }
 });

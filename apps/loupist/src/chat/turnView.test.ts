@@ -181,6 +181,17 @@ describe("the ledger", () => {
     expect(ledger(turn)?.progress.items.map((item) => item.id)).toEqual(["n0", "a", "b", "n1", "c", "n2", "d", "e"]);
   });
 
+  it("leaves an empty result out of the failed-attempt count and keeps a refused value in it", () => {
+    const empty = step("empty", { status: "failed", failureReason: "empty_result", toolName: "dart_financials", category: "finance", operation: "read" });
+    const refused = step("refused", { status: "failed", failureReason: "invalid_input" });
+    const only = view(message({ status: "complete", content: "The report is not filed.", progress: { startedAtMs: start, finishedAtMs: start + 2_000, items: [empty] } }));
+    expect(ledger(only)?.ledger.failed).toBeNull();
+    expect(only.announce).toBe("Worked 2s · 1 step");
+    const done = view(message({ status: "complete", content: "The report is not filed.", progress: { startedAtMs: start, finishedAtMs: start + 2_000, items: [empty, refused] } }));
+    expect(ledger(done)?.ledger.failed).toBe("1 failed attempt");
+    expect(done.announce).toBe("Worked 2s · 2 steps · 1 failed attempt");
+  });
+
   it("counts steps while running, appends failed attempts in plain words, and becomes the receipt", () => {
     const failed = step("f", { status: "failed" });
     const running = view(message({ phase: "tool", progress: { startedAtMs: start, items: [search, failed, reading], finishedAtMs: null } }));

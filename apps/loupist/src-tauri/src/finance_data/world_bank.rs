@@ -86,6 +86,22 @@ pub(super) fn normalize_world_bank_response(
     let metadata = envelope[0]
         .as_object()
         .ok_or(FinanceDataError::InvalidResponse)?;
+    // With no observation in the requested years (a year not yet published,
+    // or before the series starts) World Bank ignores the date filter and
+    // answers with the series' latest years, over as many pages as it takes.
+    let in_range = |record: &Value| {
+        record
+            .get("date")
+            .and_then(Value::as_str)
+            .and_then(|period| period.parse::<i32>().ok())
+            .is_some_and(|year| (query.start_year..=query.end_year).contains(&year))
+    };
+    if envelope[1]
+        .as_array()
+        .is_some_and(|records| !records.is_empty() && !records.iter().any(in_range))
+    {
+        return Err(FinanceDataError::NoData(WORLD_BANK_SOURCE_ID));
+    }
     let pages = metadata
         .get("pages")
         .and_then(Value::as_u64)
@@ -428,5 +444,42 @@ mod tests {
             decode_world_bank_read(&query, StatusCode::OK, &raw),
             Err(FinanceDataError::InvalidResponse)
         ));
+    }
+
+    /// Recorded 2026-11-23 for KOR NY.GDP.MKTP.CD, date=2026:2027, per_page=2:
+    /// no year in the range is published, so World Bank dropped the date filter.
+    const IGNORED_DATE_FILTER: &[u8] = br#"[{"page":1,"pages":33,"per_page":2,"total":66,"sourceid":"2","lastupdated":"2026-11-11"},[{"indicator":{"id":"NY.GDP.MKTP.CD","value":"GDP (current US$)"},"country":{"id":"KR","value":"Korea, Rep."},"countryiso3code":"KOR","date":"2025","value":1872374961553.15,"unit":"","obs_status":"","decimal":0},{"indicator":{"id":"NY.GDP.MKTP.CD","value":"GDP (current US$)"},"country":{"id":"KR","value":"Korea, Rep."},"countryiso3code":"KOR","date":"2024","value":1875388209406.8,"unit":"","obs_status":"","decimal":0}]]"#;
+
+    #[test]
+    fn a_range_without_published_years_is_no_data_not_an_invalid_reply() {
+        let source = "https://api.worldbank.org/v2/country/KOR/indicator/NY.GDP.MKTP.CD";
+        let mut query = ValidatedMacroDataQuery {
+            indicator: "NY.GDP.MKTP.CD".into(),
+            economy: "KOR".into(),
+            start_year: 2026,
+            end_year: 2027,
+        };
+        assert!(matches!(
+            normalize_world_bank_response(
+                &query,
+                source,
+                "2026-11-23T00:00:00Z",
+                IGNORED_DATE_FILTER
+            ),
+            Err(FinanceDataError::NoData(WORLD_BANK_SOURCE_ID))
+        ));
+        // The same rows answering a range that holds them still read as observations.
+        query.start_year = 2024;
+        query.end_year = 2025;
+        let reply = String::from_utf8(IGNORED_DATE_FILTER.to_vec())
+            .unwrap()
+            .replace(r#""pages":33"#, r#""pages":1"#);
+        let output =
+            normalize_world_bank_response(&query, source, "2026-11-23T00:00:00Z", reply.as_bytes())
+                .unwrap();
+        assert_eq!(
+            output["data"]["observations"][1],
+            json!({"date":"2025","period":"2025","value":"1872374961553.15","decimal":0,"observation_status":""})
+        );
     }
 }

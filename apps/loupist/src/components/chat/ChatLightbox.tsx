@@ -32,8 +32,8 @@ const isImage = (attachment: ChatAttachment) => attachment.media_type.startsWith
 
 /**
  * The image as a file the composer can attach again (it keeps its name and
- * type). Rust hands images over as data URLs; a just-sent one may still be a
- * local blob URL.
+ * type). Rust hands images over as data URLs and the composer sends them as
+ * data URLs; the app's policy allows no other source to be read back.
  */
 export async function attachmentFile(url: string, attachment: Pick<ChatAttachment, "filename" | "media_type">) {
   const data = /^data:([^,;]*)((?:;[^,;]*)*),(.*)$/su.exec(url);
@@ -45,8 +45,7 @@ export async function attachmentFile(url: string, attachment: Pick<ChatAttachmen
       : new TextEncoder().encode(decodeURIComponent(payload));
     return new File([bytes], attachment.filename, { type });
   }
-  const blob = await (await fetch(url)).blob();
-  return new File([blob], attachment.filename, { type: blob.type || attachment.media_type });
+  throw new Error("attachment_unreadable");
 }
 
 /**

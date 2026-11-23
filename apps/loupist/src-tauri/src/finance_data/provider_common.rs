@@ -229,17 +229,68 @@ pub(super) fn validate_ohlcv_strings(
     Ok(())
 }
 
-/// Visible text of an HTML or XML document, up to `maximum` characters.
-pub(super) fn extract_text_within(bytes: &[u8], maximum: usize) -> (String, bool) {
+/// Visible text of an HTML or XML document, up to `maximum` characters, every
+/// whitespace run as one space, with the character
+/// offset and text of each section heading: a DART `TITLE` that the filing's
+/// table of contents lists (`ATOC="Y"`) and that names a section of the
+/// report form (`AASSOCNOTE`) or a top-level part (a Roman numeral).
+pub(super) fn extract_text_and_headings_within(
+    bytes: &[u8],
+    maximum: usize,
+) -> (String, bool, Vec<(usize, String)>) {
     let decoded = String::from_utf8_lossy(bytes);
     let document = Html::parse_document(&decoded);
-    let normalized = document
-        .root_element()
-        .text()
-        .flat_map(str::split_whitespace)
-        .collect::<Vec<_>>()
-        .join(" ");
-    truncate_chars(normalized, maximum)
+    let mut text = String::new();
+    let mut chars = 0_usize;
+    let mut headings = Vec::new();
+    for node in document.root_element().descendants() {
+        let Some(fragment) = node.value().as_text() else {
+            continue;
+        };
+        // A filing's style sheet and scripts are markup, not its text (v0.1.6:
+        // every provisional-results notice began with 1,300 characters of CSS).
+        if node.ancestors().any(|ancestor| {
+            ancestor
+                .value()
+                .as_element()
+                .is_some_and(|element| matches!(element.name(), "style" | "script"))
+        }) {
+            continue;
+        }
+        let heading = node
+            .parent()
+            .and_then(|parent| parent.value().as_element())
+            .filter(|element| element.name() == "title" && element.attr("atoc") == Some("Y"))
+            .is_some_and(|element| {
+                element.attr("aassocnote").is_some() || roman_part(fragment.trim_start())
+            });
+        let mut words = fragment.split_whitespace().peekable();
+        if heading && words.peek().is_some() {
+            let title = fragment.split_whitespace().collect::<Vec<_>>().join(" ");
+            headings.push((chars + usize::from(!text.is_empty()), title));
+        }
+        for word in words {
+            if !text.is_empty() {
+                text.push(' ');
+                chars += 1;
+            }
+            text.push_str(word);
+            chars += word.chars().count();
+        }
+        if chars > maximum {
+            break;
+        }
+    }
+    headings.retain(|(offset, _)| *offset < maximum);
+    let (text, truncated) = truncate_chars(text, maximum);
+    (text, truncated, headings)
+}
+
+/// "I. 회사의 개요", "XII. 상세표": a part of a periodic report's form.
+pub(super) fn roman_part(text: &str) -> bool {
+    text.split_once(". ").is_some_and(|(numeral, _)| {
+        !numeral.is_empty() && numeral.chars().all(|c| matches!(c, 'I' | 'V' | 'X'))
+    })
 }
 
 pub(super) fn truncate_chars(text: String, maximum: usize) -> (String, bool) {

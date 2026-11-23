@@ -65,8 +65,25 @@ argument refusal (OpenDART's message names no field, so arguments are validated
 before a request). A native read past its time limit is `provider_timeout`, which
 Activity shows as a timeout. `dart_filing_search` takes `page` (OpenDART's
 `page_no`, newest first) and `report_type` (`annual`, `half_year`, `quarterly`:
-`pblntf_detail_ty` A001 to A003); `dart_filing_read` takes `page`, 200,000 characters
-of text each, up to 20 pages. Results name the next page.
+`pblntf_detail_ty` A001 to A003). Results name the next page.
+
+`dart_filing_read` delivers a filing the way `web_fetch` delivers a long page: whole,
+in pages small enough that no page is ever compacted to a summary. A page holds at
+most 12 KiB of text as a JSON string, about 4,000 Korean characters (three bytes each)
+and up to 12,288 ASCII ones, and ends at a space when one falls in its second half;
+with the result's other fields it stays under the 16 KiB compaction threshold
+([Datasets](../analysis/datasets.md#data-and-provenance)). Page 1 also carries
+`outline`: each section heading of the report form (a `TITLE` listed in the filing's
+table of contents that names a form section or opens a part with a Roman numeral) with
+the page it starts on, within 4 KiB taken from page 1's text; sub-sections are left
+out from the end first and `outline_omitted` counts them. `find` (a literal,
+case-sensitive phrase of at most 256 characters, as in `web_fetch`) searches the whole
+filing instead of one page and returns the match count and up to eight passages (200
+characters before a match, 400 after, 12 KiB in all) with the page each is on, and
+`next_occurrence`; `occurrence` (0 to 1,000) continues from a later match. `page` and
+`find` are exclusive. Text past 4,000,000 characters is not read. `source_save`
+retains a page or a find result as `included_excerpt`; `included_full` is refused
+unless the filing has a single page.
 
 Each native vendor row declares the query parameters that carry its credential
 (OpenDART's `crtfc_key`; the others send theirs in headers). A request URL becomes a

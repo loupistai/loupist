@@ -2462,6 +2462,196 @@ mod tests {
         }
     }
 
+    /// v0.1.6 W16-001: the provisional-results notice as `dart_filing_read`
+    /// stored it on 2026-11-23 (its style sheet included). Every rate the
+    /// answer linked is in the text: -25.4, 426.4 and -72.5 read "not found".
+    fn provisional_results_notice() -> RunResult {
+        result(
+            "dart_filing_read",
+            RunResultOrigin::AcquiredOriginal,
+            json!({"data": {"document": {"archive_document_count": 1, "chars": 2347,
+                "media_type": "text/plain", "primary_document": null, "truncated": false,
+                "page": 1, "pages": 1, "total_chars": 2347, "next_page": null,
+                "text": PROVISIONAL_RESULTS_TEXT},
+                "filing": {"filing_id": "20261104900314"}},
+                "dataset_ref": {"dataset_id": "dataset-6847dfb42f5d43cd9fbcfa814e97df18", "revision": 1},
+                "operation": "filing.read", "page": {"available": 1, "returned": 1, "truncated": false},
+                "source_id": "opendart.disclosures"}),
+        )
+    }
+
+    const PROVISIONAL_RESULTS_TEXT: &str = ".xforms * { font-family: 돋움체;} .xforms_title * { font-size: 13pt; padding : 0 0 10 0;} .xforms table { font-size: 10px; padding:0px; border-collapse:collapse; color: #3D3D3D; } .xforms td { padding-left:0px; padding-top:0px; border-collapse:collapse; line-height:22px; color: #3D3D3D; /*text-align:right;*/ vertical-align:middle; border: 1px solid #7f7f7f; } .xforms span { /*display: inline-block;*/ padding-left:3px; padding-right: 1px; line-height:22px; padding-top:0px; padding-bottom:0px; text-align:left; vertical-align:middle; border: 0px solid #DBDBDB; } .xforms.img{ border : 0px; } .xforms a:link { color: #194866; text-decoration: none; } .xforms a:active { color: #194866; text-decoration: none; } .xforms a:visited { color: #194866; text-decoration: none; } .xforms A:hover { color:008BE3; text-decoration: none; } .xforms_input{ border: 0px solid #DBDBDB; padding-left:3px; padding-right: 1px; height:22px; padding-top:0px; padding-bottom:0px; text-align:left; } 주성엔지니어링/연결재무제표 기준 영업(잠정)실적(공정공시)/(2026.11.04)연결재무제표 기준 영업(잠정)실적(공정공시) 연결재무제표 기준 영업(잠정)실적(공정공시) 실적기간 당기실적 2026-07-01 ~ 2026-09-30 전기실적 2026-04-01 ~ 2026-06-30 전년동기실적 2025-07-01 ~ 2025-09-30 당기누계실적 2026-01-01 ~ 2026-09-30 전년동기누적실적 2025-01-01 ~ 2025-09-30 ※ 동 정보는 확정치가 아닌 잠정치로서 향후 확정치와는 다를 수 있음. 1. 연결실적내용 구분(단위 : 백만원, %) 당기실적 전기실적 전기대비 전년동기실적 전년동기대비 (26년3분기) (26년2분기) 증감율(%) 흑자적자전환여부 (25년3분기) 증감율(%) 흑자적자전환여부 매출액 당해실적 78,076 59,882 30.4 - 58,773 32.8 - 누계실적 192,837 - - - 258,412 -25.4 - 영업이익 당해실적 17,667 1,423 1,141.5 - 3,356 426.4 - 누계실적 12,059 - - - 43,839 -72.5 - 법인세비용차감전계속사업이익 당해실적 15,689 4,683 235.0 - 9,176 71.0 - 누계실적 18,982 - - - 46,308 -59.0 - 당기순이익 당해실적 28,048 5,501 409.9 - 7,634 267.4 - 누계실적 32,359 - - - 40,389 -19.9 - 지배기업 소유주지분 순이익 당해실적 28,048 5,501 409.9 - 7,634 267.4 - 누계실적 32,359 - - - 40,389 -19.9 - - - - - - - - -";
+
+    /// v0.1.6 W16-001/002: the statement reads of the two answers, from the
+    /// replies OpenDART sent on 2026-11-23. The model now sees a compact table
+    /// of these facts; a figure it writes from a row in 억원 or 조원 verifies
+    /// against the raw KRW fact it came from.
+    #[test]
+    fn w16_statement_figures_in_won_units_verify_against_the_raw_dart_rows() {
+        let jusung = include_bytes!("../tests/fixtures/dart-statements-jusung-2026q3-cfs.json");
+        let samsung = include_bytes!("../tests/fixtures/dart-statements-samsung-2025-cfs.json");
+        let registry = RunResultRegistry::default();
+        for (bytes, corp_code, year, period, figures, absent) in [
+            (
+                &jusung[..],
+                "00252135",
+                2026,
+                "q3",
+                vec![
+                    ("781억원", "78076419507"),
+                    ("1,928억원", "192837329288"),
+                    ("177억원", "17666618598"),
+                    ("121억원", "12058616922"),
+                    ("-203억원", "-20314931530"),
+                ],
+                // The order backlog is in the report's text, not its statements.
+                vec!["2,118억원", "-25.4%"],
+            ),
+            (
+                &samsung[..],
+                "00126380",
+                2025,
+                "annual",
+                vec![
+                    ("333.61조원", "333605938000000"),
+                    ("43.60조원", "43601051000000"),
+                    ("566.94조원", "566942110000000"),
+                    ("85.32조원", "85315148000000"),
+                ],
+                vec!["333.7조원"],
+            ),
+        ] {
+            let mut payload =
+                crate::finance_data::recorded_statements(bytes, corp_code, year, period);
+            payload["dataset_ref"] = json!({"dataset_id": "ds_statements", "revision": 1});
+            let table = super::super::finance::dart_statement_table(&payload).unwrap();
+            let shown = table.to_string();
+            assert!(shown.len() <= 24 * 1024, "{corp_code}: {}", shown.len());
+            assert_eq!(table["unit"], "KRW");
+            assert!(
+                table["left_to_dataset"].as_array().unwrap().is_empty(),
+                "{corp_code}"
+            );
+            for statement in ["income_statement", "balance_sheet", "cash_flow"] {
+                assert!(
+                    table["statements"][statement]
+                        .as_array()
+                        .is_some_and(|rows| !rows.is_empty()),
+                    "{corp_code} {statement}"
+                );
+            }
+            let read = result(
+                "dart_financials",
+                RunResultOrigin::AcquiredOriginal,
+                payload,
+            );
+            for (figure, raw) in figures {
+                // The row the model reads is the fact the check finds.
+                assert!(shown.contains(&format!("\"{raw}\"")), "{corp_code} {raw}");
+                let check = check_link(&link(figure), &read, None, &registry).unwrap();
+                assert_eq!(check.kind, NumberCheckKind::Data, "{figure}");
+                assert!(
+                    matches!(
+                        check.status,
+                        NumberCheckStatus::Matched | NumberCheckStatus::Rounded
+                    ),
+                    "{figure}: {check:?}"
+                );
+                // It verifies against that fact, wherever the check points.
+                let pointer = check.pointer.clone().unwrap_or_default();
+                assert_eq!(
+                    read.payload.pointer(&pointer),
+                    Some(&json!(raw)),
+                    "{figure}: {pointer}"
+                );
+            }
+            for figure in absent {
+                let check = check_link(&link(figure), &read, None, &registry).unwrap();
+                assert_eq!(check.status, NumberCheckStatus::NotFound, "{figure}");
+            }
+        }
+    }
+
+    /// v0.1.6 W16-001: "124억원의 법인세수익" from the quarterly statement rows the
+    /// answer cited (stored 2026-11-23): an expense(income) row's negative amount
+    /// is the income, so the positive figure that names it matches.
+    #[test]
+    fn w16_an_expense_income_row_matches_the_income_it_names() {
+        let page = result(
+            "web_fetch",
+            RunResultOrigin::AcquiredOriginal,
+            json!({"status": 200, "title": "분기보고서 (2026.09)", "url": "https://samara.kr/disclosure/20261113000376",
+                "content": "| 영업이익(손실) | 17,666,618,598 | 12,058,616,922 | 3,355,821,494 | 43,838,919,475 |\n| 기타수익 | 855,395,034 | 10,144,181,396 | 3,430,962,387 | 14,939,806,364 |\n| 기타비용 | 2,785,320,172 | 3,262,106,150 | (2,006,529,548) | 15,132,617,584 |\n| 금융수익 | 792,336,003 | 2,770,143,630 | 1,316,075,641 | 5,364,681,205 |\n| 금융비용 | 840,300,612 | 2,728,416,327 | 933,621,242 | 2,702,480,939 |\n| 법인세비용차감전순이익(손실) | 15,688,728,851 | 18,982,419,471 | 9,175,767,828 | 46,308,308,521 |\n| 법인세비용(수익) | (12,359,747,436) | (13,376,082,215) | 1,542,229,944 | 5,918,920,521 |\n| 당기순이익(손실) | 28,048,476,287 | 32,358,501,686 | 7,633,537,884 | 40,389,388,000 |\n| 기타포괄손익 | (3,875,519,070) | (4,275,484,060) | 80,858,335 | (452,907,816) |\n| 당기손익으로 재분류될 수 있는 항목(세후기타포괄손익) | (426,285,647) | (158,374,730) | 135,894,773 | (199,776,677) |\n| 해외사업장환산외환차이(세후기타포괄손익) | (426,285,647) | (158,374,730) | 135,894,773 | (199,776,677) |\n| 당기손익으로 재분류되지 않는항목(세후기타포괄손익) | (3,449,233,423) | (4,117,109,330) | (55,036,438) | (253,131,139) |\n| 세후기타포괄손익, 지분상품에 대한 투자자산 | (3,320,337,972) | (3,635,542,037) |  |  |\n| 확정급여제도의 재측정손익(세후기타포괄손익) | (128,895,451) | (481,567,293) | (55,036,438) | (253,131,139) |\n"}),
+        );
+        let registry = RunResultRegistry::default();
+        let check = |text: &str| check_link(&link(text), &page, None, &registry).unwrap();
+        let benefit = check("124억원");
+        assert!(
+            matches!(
+                benefit.status,
+                NumberCheckStatus::Matched | NumberCheckStatus::Rounded
+            ),
+            "{benefit:?}"
+        );
+        // A true conflict stays: the signed comprehensive-loss row printed positive.
+        let loss = check("39억원");
+        assert!(
+            !matches!(
+                loss.status,
+                NumberCheckStatus::Matched | NumberCheckStatus::Rounded
+            ),
+            "{loss:?}"
+        );
+        assert!(matches!(
+            check("-39억원").status,
+            NumberCheckStatus::Matched | NumberCheckStatus::Rounded
+        ));
+        // The same figure negative still matches as filed.
+        let filed = check("-124억원");
+        assert!(
+            matches!(
+                filed.status,
+                NumberCheckStatus::Matched | NumberCheckStatus::Rounded
+            ),
+            "{filed:?}"
+        );
+        for (label, reversible) in [
+            ("법인세비용(수익)", true),
+            ("Income tax expense (benefit)", true),
+            ("금융수익(비용)", true),
+            ("Net income (loss)", false),
+            ("Other (expense) income, net", false),
+            ("기타비용", false),
+        ] {
+            assert_eq!(numbers::reversible_row(label), reversible, "{label}");
+        }
+    }
+
+    #[test]
+    fn w16_provisional_result_rates_and_amounts_match_the_notice() {
+        let notice = provisional_results_notice();
+        let registry = RunResultRegistry::default();
+        let check = |text: &str| check_link(&link(text), &notice, None, &registry).unwrap();
+        for text in [
+            "+32.8%",
+            "-25.4%",
+            "+426.4%",
+            "-72.5%",
+            "426.4%",
+            "▲426.4%",
+            "−25.4%",
+        ] {
+            let found = check(text);
+            assert_eq!(
+                found.status,
+                NumberCheckStatus::Matched,
+                "{text}: {found:?}"
+            );
+        }
+        // A rate the notice does not state stays not found.
+        assert_eq!(check("-25.3%").status, NumberCheckStatus::NotFound);
+    }
+
     #[test]
     fn rc1_year_amount_pairs_keep_the_revenue_unit_in_the_retained_passage() {
         let text = "Microsoft 2024 Annual Report, fiscal year ended June 30, 2024. Consolidated revenue (USD millions): 2024 245,122; 2023 211,915.";

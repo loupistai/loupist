@@ -892,8 +892,14 @@ impl AppToolExecutor {
                     (reference, Some(fetched_at))
                 }
             };
-            let mut model_payload =
-                self.shape_mcp_read(&mut payload, &reference, fetched_at, reused, compact)?;
+            let mut model_payload = self.shape_mcp_read(
+                &mut payload,
+                &request,
+                &reference,
+                fetched_at,
+                reused,
+                compact,
+            )?;
             let result_ref = match self
                 .stage_mcp_read(
                     delivery_id,
@@ -1089,6 +1095,7 @@ impl AppToolExecutor {
     fn shape_mcp_read(
         &self,
         payload: &mut Value,
+        request: &McpToolCallRequest,
         reference: &crate::datasets::DatasetRef,
         fetched_at: Option<String>,
         reused: bool,
@@ -1106,9 +1113,30 @@ impl AppToolExecutor {
         let description = self
             .state
             .store
-            .dataset_describe(&self.loupist_id, &reference.dataset_id, reference.revision)
+            .dataset_describe_omitting(
+                &self.loupist_id,
+                &reference.dataset_id,
+                reference.revision,
+                // SEC statements carry about 60 KiB of XBRL source tags
+                // here, which left the sample no room for the periods.
+                &["/structuredContent/extra/results_metadata"],
+            )
             .map_err(command_error)?;
         let mut delivered = json!({"dataset_ref":reference,"fetched_at":payload["fetched_at"],"data_summary":description,"model_delivery":{"coverage":"bounded_sample","retained":"complete"}});
+        // A statement read is too large to deliver whole, and its sample
+        // shows three periods; the model still sees every period, compact.
+        if request.server_id == openbb::OPENBB_SERVER_ID
+            && matches!(
+                request.tool_name.as_str(),
+                "equity_fundamental_income"
+                    | "equity_fundamental_balance"
+                    | "equity_fundamental_cash"
+            )
+        {
+            if let Some(statements) = super::finance::market_statement_table(payload) {
+                delivered["statements"] = statements;
+            }
+        }
         if let Some(as_of) = payload.get("as_of") {
             delivered["as_of"] = as_of.clone();
         }
@@ -4421,6 +4449,97 @@ done
     /// the first call, then a new 10-Q too), an income read that fails, closes,
     /// and `etf_info` that knows only the fund QQQF.
     #[cfg(unix)]
+    /// SEC's five-year Apple income statement as the bundled runtime returned
+    /// it on 2026-11-23: about 60 KiB of XBRL source tags in
+    /// `extra.results_metadata` ahead of the periods. Delivered compacted, the
+    /// sample used to show `results` as omitted and no statements table.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_compacted_sec_statement_shows_its_periods_and_every_line_item() {
+        let _guard = crate::mcp::MCP_PROCESS_TEST_LOCK.lock().await;
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/commands/tests/fixtures/sec-income-aapl-annual5.json");
+        let recorded: Value = serde_json::from_slice(&fs::read(&fixture).unwrap()).unwrap();
+        assert!(
+            recorded["structuredContent"]["extra"]["results_metadata"]
+                .to_string()
+                .len()
+                > 32 * 1024
+        );
+        let script = SEC_STATEMENT_SCRIPT.replace("FIXTURE", &fixture.to_string_lossy());
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temporary.path().join("app"));
+        let turn = capture(&temporary, "sec-statement", None);
+        let spawned = spawn_script_server(&temporary, "sec-statement", "sec", None, &script).await;
+        install(&turn, spawned.server).await;
+        let executor = turn_executor(&temporary, &state, "loupist-a", turn.clone());
+        let delivery = new_id("mcp-call");
+        let read = executor
+            .mcp_call(
+                &policy("loupist-a", None),
+                json!({"server_id": "openbb", "tool_name": "equity_fundamental_income",
+                    "arguments": {"symbol": "AAPL", "period": "annual", "limit": 5, "provider": "sec"}}),
+                &delivery,
+            )
+            .await
+            .unwrap();
+        executor.capture.commit_delivery(&delivery).await;
+        let delivered = &read["result"];
+        let sample = &delivered["data_summary"]["sample"]["structuredContent"];
+        assert!(
+            sample["extra"].get("results_metadata").is_none(),
+            "{sample}"
+        );
+        let periods = sample["results"].as_array().unwrap();
+        assert!(!periods.is_empty() && periods[0]["total_revenue"].is_number());
+        let statements = &delivered["statements"];
+        assert_eq!(statements["provider"], "sec");
+        let columns = statements["columns"].as_array().unwrap();
+        assert_eq!(columns[0], "period_ending");
+        let rows = statements["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 5);
+        for line in ["total_revenue", "total_operating_income", "net_income"] {
+            let index = columns.iter().position(|column| column == line).unwrap();
+            assert!(rows.iter().all(|row| row[index].is_number()), "{line}");
+        }
+        assert!(delivered.to_string().len() < 32 * 1024);
+        // The retained result keeps the provider's bookkeeping whole.
+        let reference = &delivered["dataset_ref"];
+        let (_, retained, _) = state
+            .store
+            .dataset(
+                "loupist-a",
+                reference["dataset_id"].as_str().unwrap(),
+                reference["revision"].as_u64().unwrap() as u32,
+            )
+            .unwrap();
+        assert_eq!(
+            retained["structuredContent"]["extra"]["results_metadata"],
+            recorded["structuredContent"]["extra"]["results_metadata"]
+        );
+        turn.shutdown_mcp().await;
+        wait_for_exit_marker(&spawned.exited).await;
+    }
+
+    const SEC_STATEMENT_SCRIPT: &str = r#"
+trap 'printf exited > "$MCP_TEST_EXITED"' EXIT
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$MCP_TEST_TRANSCRIPT"
+  id=${line#*\"id\":\"}; id=${id%%\"*}
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '{"jsonrpc":"2.0","id":"%s","result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":true}},"serverInfo":{"name":"Loupist SEC statement test server","version":"1"}}}\n' "$id"
+      ;;
+    *'"method":"tools/list"'*)
+      printf '{"jsonrpc":"2.0","id":"%s","result":{"tools":[{"name":"activate_tools","description":"activate","inputSchema":{"type":"object","properties":{"tool_names":{"type":"array"}},"required":["tool_names"]}},{"name":"deactivate_tools","description":"deactivate","inputSchema":{"type":"object","properties":{"tool_names":{"type":"array"}},"required":["tool_names"]}},{"name":"equity_fundamental_income","description":"income","inputSchema":{"type":"object","properties":{"symbol":{"type":"string"},"period":{"type":"string"},"limit":{"type":"integer"},"provider":{"type":"string","enum":["sec"]}}},"annotations":{"readOnlyHint":true,"destructiveHint":false}}]}}\n' "$id"
+      ;;
+    *'"method":"tools/call"'*'"name":"equity_fundamental_income"'*)
+      printf '{"jsonrpc":"2.0","id":"%s","result":' "$id"; tr -d '\n' < 'FIXTURE'; printf '}\n'
+      ;;
+  esac
+done
+"#;
+
     const ASSET_REFRESH_SCRIPT: &str = r#"
 trap 'printf exited > "$MCP_TEST_EXITED"' EXIT
 tool() { printf '{"name":"%s","description":"%s","inputSchema":{"type":"object","properties":{"symbol":{"type":"string"},"limit":{"type":"integer"},"start_date":{"type":"string"},"period":{"type":"string"},"provider":{"type":"string","enum":["sec"]}}},"annotations":{"readOnlyHint":true,"destructiveHint":false}}' "$1" "$1"; }

@@ -216,6 +216,7 @@ describe("GridCard asset names", () => {
     const { open } = renderWithOpen(<ChatExecutionProvider value={scope}><ArtifactContent view={view} theme="light" /></ChatExecutionProvider>);
     await user.click(screen.getByRole("button", { name: "Solsup Foods" }));
     expect(destinations(open)).toEqual([{ kind: "asset", target: { loupistId: "loupist-a", assetId: "ast_0123456789abcdef", name: "Solsup Foods" } }]);
+    expect(screen.queryByRole("button", { name: "Open in side panel" })).toBeNull();
   });
 
   it("opens a reloaded table's row in a real answer, and keeps its menu actions", async () => {
@@ -237,6 +238,10 @@ describe("GridCard asset names", () => {
     expect(chatArtifactRead).toHaveBeenCalledWith("loupist-a", "chat", "grid-1", 1);
     // The card's own actions still work in the answer.
     expect(screen.getByRole("table", { name: "Revenue" })).toBeVisible();
+    scroll.holdScrollPosition.mockClear();
+    await user.click(screen.getByRole("button", { name: "Open in side panel" }));
+    expect(opened(open, "artifact")).toEqual([{ kind: "artifact", artifact: ref }]);
+    expect(scroll.holdScrollPosition).toHaveBeenCalledOnce();
   });
 
   it("opens a staged table's names while the answer streams and after the host saves it", async () => {

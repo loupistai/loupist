@@ -180,3 +180,53 @@ export async function assertNewLoupistPreviewShows(browser) {
     `The preview card must show whole before the form scrolls: ${JSON.stringify(layout)}`);
   return layout;
 }
+
+/**
+ * ⌘A in the composer: on macOS the Edit menu's Select All (selectAll:) is what the key reaches, so the
+ * native menu must carry it enabled; WebKit's own SelectAll command then selects the whole message, and
+ * the selection must paint its text. The composer's glyphs are transparent over its highlight layer, so a
+ * transparent selected text once left a selection that read as greyed-out text and nothing selected.
+ */
+export async function assertComposerSelectAll(browser, { mac = process.platform === "darwin" } = {}) {
+  if (mac) {
+    const menu = await browser.execute(() => window.__TAURI_INTERNALS__.invoke("e2e_native_menu_snapshot"));
+    const edit = menu.find((group) => group.items?.some((item) => item.action === "selectAll:"));
+    assert.ok(edit?.enabled, `The app menu has no enabled Edit menu with Select All: ${JSON.stringify(menu.map((group) => group.title))}`);
+    const selectAll = edit.items.find((item) => item.action === "selectAll:");
+    assert.ok(selectAll.enabled, "Edit › Select All is disabled");
+    for (const action of ["undo:", "redo:", "cut:", "copy:", "paste:"]) {
+      assert.ok(edit.items.some((item) => item.action === action && item.enabled), `Edit has no enabled ${action}`);
+    }
+  }
+  const textarea = await browser.$('textarea[data-chat-composer="true"]');
+  await textarea.waitForDisplayed({ timeout: 10_000 });
+  await textarea.click();
+  await textarea.addValue("Select every word of this message");
+  const state = await browser.execute(() => {
+    const field = document.querySelector('textarea[data-chat-composer="true"]');
+    field.focus();
+    field.setSelectionRange(field.value.length, field.value.length);
+    const ran = document.execCommand("selectAll");
+    const selection = getComputedStyle(field, "::selection");
+    const alpha = (color) => {
+      const match = /rgba?\(([^)]+)\)/.exec(color);
+      if (!match) return 1;
+      const parts = match[1].split(/[,\s/]+/).filter(Boolean);
+      return parts.length > 3 ? Number(parts[3]) : 1;
+    };
+    return {
+      ran, start: field.selectionStart, end: field.selectionEnd, length: field.value.length,
+      glyphs: selection.webkitTextFillColor, glyphAlpha: alpha(selection.webkitTextFillColor),
+      background: selection.backgroundColor, sameAsGlyphs: selection.backgroundColor === selection.webkitTextFillColor,
+    };
+  });
+  assert.ok(state.ran && state.start === 0 && state.end === state.length && state.length > 0, `Select All did not select the whole message: ${JSON.stringify(state)}`);
+  assert.ok(state.glyphAlpha > 0.5 && !state.sameAsGlyphs, `A composer selection must paint its text over a distinct colour: ${JSON.stringify(state)}`);
+  await browser.execute(() => {
+    const field = document.querySelector('textarea[data-chat-composer="true"]');
+    field.focus();
+    field.select();
+    document.execCommand("delete");
+  });
+  return state;
+}

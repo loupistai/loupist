@@ -334,7 +334,11 @@ function EarlierReply({ reply, question, onSelect }: { reply: ChatMessage; quest
   </li>;
 }
 
-const groupState = (status: ActivityGroup["status"]) => status === "succeeded" ? "ok" : status === "running" ? "running" : "bad";
+/** An empty result is its own outcome: the neutral dot, not the warning. */
+const groupState = (group: ActivityGroup) => group.status === "succeeded" ? "ok"
+  : group.status === "running" ? "running"
+  : group.steps.every((step) => step.empty) ? "empty"
+  : "bad";
 
 /** Up to three things the group read, then "+n". */
 function targetsLine(steps: readonly ActivityStep[]) {
@@ -349,7 +353,7 @@ function StepGroup({ group, execution }: { group: ActivityGroup; execution: Chat
   const listId = useId();
   const single = group.steps.length === 1 ? group.steps[0]! : null;
   const targets = targetsLine(group.steps);
-  return <li className="activity-step" data-state={groupState(group.status)} data-testid="activity-step-group">
+  return <li className="activity-step" data-state={groupState(group)} data-testid="activity-step-group">
     <i aria-hidden="true" />
     <div className="activity-step-copy">
       <span className="activity-step-title">

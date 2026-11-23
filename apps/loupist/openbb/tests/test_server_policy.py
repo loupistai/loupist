@@ -296,6 +296,17 @@ assert keyless["/api/v1/equity/fundamental/filings"] == ["tmx"]
 assert keyless["/api/v1/equity/fundamental/metrics"] == ["yfinance"]
 assert "finviz" not in with_keys["/api/v1/equity/fundamental/metrics"]
 assert "finviz" in keyless["/api/v1/equity/screener"]
+# FINRA's short interest blocks the server while it downloads its archive;
+# no other provider serves the route, and FINRA's other route stays.
+assert with_keys["/api/v1/equity/shorts/short_interest"] == []
+# EIA's petroleum report is over the host's frame limit; its outlook stays.
+assert with_keys["/api/v1/commodity/petroleum_status_report"] == []
+assert "eia" in with_keys["/api/v1/commodity/short_term_energy_outlook"]
+# So is the Svensson curve; the nominal yield curve stays.
+assert with_keys["/api/v1/fixedincome/government/svensson_yield_curve"] == []
+assert "federal_reserve" in keyless["/api/v1/fixedincome/government/yield_curve"]
+assert "finra" in keyless["/api/v1/equity/darkpool/otc"]
+assert "yfinance" in keyless["/api/v1/equity/price/quote"]
 assert all("sec" not in ids for ids in keyless.values())
 without_account_type = _available_route_providers(
     app, set(providers), fields - {"tradier_account_type"}, manifest["providers"]
@@ -333,6 +344,8 @@ async def check_surface():
         if provider.get("verification_probe")
     ]
     assert all(probe["tool"] in discovered_tools for probe in probes)
+    assert "equity_shorts_short_interest" not in discovered_tools
+    assert {"equity_darkpool_otc", "equity_price_quote"} <= discovered_tools
 
     registered = [
         tool

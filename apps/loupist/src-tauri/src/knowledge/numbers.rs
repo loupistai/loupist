@@ -986,6 +986,35 @@ struct Heading {
     /// ends the table before it and states nothing.
     unit: Option<Unit>,
     reach: Reach,
+    /// The heading's unit list names `%` beside another unit (`(단위 : 백만원, %)`):
+    /// the table's decimal cells are rates as well as plain numbers.
+    rates: bool,
+}
+
+/// Whether a unit list names `%` beside another unit.
+fn lists_rates(units: &str) -> bool {
+    units.contains('%') && units.contains([',', '、', '·'])
+}
+
+/// A row whose label pairs an expense with its opposite (`법인세비용(수익)`,
+/// `Income tax expense (benefit)`, `금융수익(비용)`): a negative amount is the
+/// opposite item, so a figure that names that item is positive.
+pub(crate) fn reversible_row(label: &str) -> bool {
+    let compact: String = label
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>()
+        .to_lowercase();
+    [
+        "비용(수익)",
+        "수익(비용)",
+        "expense(benefit)",
+        "benefit(expense)",
+        "(benefit)expense",
+        "(expense)benefit",
+    ]
+    .iter()
+    .any(|pair| compact.contains(pair))
 }
 
 fn is_hangul(c: char) -> bool {
@@ -1488,6 +1517,7 @@ fn stated_units<'a>(
                 end,
                 unit,
                 reach,
+                rates: unit.is_none() && lists_rates(content),
             }),
         }
     }
@@ -1513,6 +1543,7 @@ fn stated_units<'a>(
                         end: start + caption.len(),
                         unit,
                         reach,
+                        rates: false,
                     });
                 }
             }
@@ -1555,11 +1586,17 @@ fn stated_units<'a>(
                 Some((unit, consumed, list)) => ((!list).then_some(unit), phrase_at + consumed),
                 None => (None, phrase_at),
             };
+            let listed = &phrase[..phrase
+                .char_indices()
+                .nth(40)
+                .map_or(phrase.len(), |(at, _)| at)];
             headings.push(Heading {
                 start: at,
                 end,
                 unit,
                 reach: Reach::Table,
+                rates: unit.is_none()
+                    && lists_rates(listed.split([')', '\n']).next().unwrap_or_default()),
             });
             continue;
         }
@@ -1588,6 +1625,8 @@ fn stated_units<'a>(
     // The row's unit, with its numbers and the words before its first one.
     let mut row: Option<(Unit, usize, usize)> = None;
     let mut table: Option<Unit> = None;
+    // The table's unit list names `%`: its decimal cells read as rates too.
+    let mut rate_table = false;
     let mut mixed_filing = false;
     let mut columns = Vec::new();
     let mut table_label = None;
@@ -1602,6 +1641,7 @@ fn stated_units<'a>(
     let close_scopes = |gap: std::ops::Range<usize>,
                         row: &mut Option<(Unit, usize, usize)>,
                         table: &mut Option<Unit>,
+                        rate_table: &mut bool,
                         mixed_filing: bool| {
         let between = &text[gap.clone()];
         let lines: Vec<&str> = between.split('\n').collect();
@@ -1612,6 +1652,7 @@ fn stated_units<'a>(
         if blank || ends_sentence(text, gap) {
             *row = None;
             *table = None;
+            *rate_table = false;
         } else if between.contains(['\n', ';']) {
             *row = None;
         } else if let Some((_, count, words)) = row {
@@ -1638,6 +1679,7 @@ fn stated_units<'a>(
                 cursor.min(heading.start)..heading.start,
                 &mut row,
                 &mut table,
+                &mut rate_table,
                 mixed_filing,
             );
             let label = Some(text[heading.start..heading.end].trim());
@@ -1647,6 +1689,7 @@ fn stated_units<'a>(
                     section = FilingMeasure::Unspecified;
                     row_measure = FilingMeasure::Unspecified;
                     table = heading.unit;
+                    rate_table = heading.rates;
                     table_label = label;
                     let first = text[..heading.start].rfind('\n').map_or(0, |at| at + 1);
                     let caption_line = text[first..].lines().next().unwrap_or_default();
@@ -1699,7 +1742,7 @@ fn stated_units<'a>(
             continue;
         }
         let between = &text[gap.clone()];
-        close_scopes(gap, &mut row, &mut table, mixed_filing);
+        close_scopes(gap, &mut row, &mut table, &mut rate_table, mixed_filing);
         if table.is_none() && (section == FilingMeasure::Money || between.contains("\n\n")) {
             section = FilingMeasure::Unspecified;
         }
@@ -1715,7 +1758,9 @@ fn stated_units<'a>(
                 .unwrap_or_default()
                 .trim();
             if label.chars().any(char::is_alphabetic) {
-                row_outflow = line_nature(last_sentence(label)) == Some(LineNature::Outflow);
+                let label = last_sentence(label);
+                row_outflow =
+                    line_nature(label) == Some(LineNature::Outflow) || reversible_row(label);
             }
         }
         stated[index].outflow = row_outflow;
@@ -1799,6 +1844,14 @@ fn stated_units<'a>(
         if stated[index].unit.is_none()
             && number.unit == Unit::Plain
             && column_measure == FilingMeasure::Percent
+        {
+            stated[index].unit = Some(Unit::Percent);
+        }
+        // `(단위 : 백만원, %)`: amounts are whole millions, rates have a decimal.
+        if rate_table
+            && stated[index].unit.is_none()
+            && number.unit == Unit::Plain
+            && text[number.start..number.end].contains('.')
         {
             stated[index].unit = Some(Unit::Percent);
         }
@@ -1969,6 +2022,11 @@ fn identifier_key(key: &str) -> bool {
         "revision",
         "offset",
         "ord",
+        // A statement fact's row and order and its scale multiplier
+        // (`source_locator.row` 177 once matched "177억원").
+        "row",
+        "ordinal",
+        "scale",
         "seq",
         "page",
         "index",
@@ -2143,7 +2201,8 @@ fn mark_outflows(key: &str, label: Option<&str>, item: &Value, found: &mut [Cand
         "value" | "val" | "amount" => label,
         _ => Some(key),
     };
-    if named.and_then(line_nature) == Some(LineNature::Outflow) {
+    if named.and_then(line_nature) == Some(LineNature::Outflow) || named.is_some_and(reversible_row)
+    {
         for candidate in found.iter_mut().filter(|candidate| candidate.value < 0.0) {
             candidate.direction = Some(Direction::Outflow);
         }
@@ -3862,8 +3921,27 @@ mod tests {
                 "₩300",
                 Verdict::NotFound,
             ),
+            // A unit list naming % makes the table's decimal cells rates too
+            // (v0.1.6: DART's provisional-results tables print rates bare).
             (
                 "(단위: 원, %) 배당금 300 배당률 1.4",
+                "1.4%",
+                Verdict::Matched,
+            ),
+            (
+                "(단위: 원, %) 배당금 300 배당률 1.4",
+                "1.5%",
+                Verdict::NotFound,
+            ),
+            // A whole number in such a table is not read as a rate.
+            (
+                "(단위: 원, %) 배당금 300 배당률 1.4",
+                "300%",
+                Verdict::NotFound,
+            ),
+            // Without % in the list, a decimal stays plain.
+            (
+                "(단위: 원, 주) 배당금 300 비율 1.4",
                 "1.4%",
                 Verdict::NotFound,
             ),

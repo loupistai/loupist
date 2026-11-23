@@ -379,8 +379,20 @@ async function main() {
   try {
     const { focusNativeWindow } = await import("./native-window-focus.mjs");
     await focusNativeWindow(browser, session);
-    const result = await runNativeLayoutRegression(browser, { devUrl: session.devUrl ?? await browser.getUrl(),
-      artifactDir: resolve(dirname(fileURLToPath(import.meta.url)), "artifacts/layout"), ...options });
+    const { createPolicyWatch } = await import("./webdriver-helpers.mjs");
+    const { describeViolations } = await import("./release-renderer.mjs");
+    const policy = createPolicyWatch(browser);
+    let result;
+    try {
+      result = await runNativeLayoutRegression(browser, { devUrl: session.devUrl ?? await browser.getUrl(),
+        artifactDir: resolve(dirname(fileURLToPath(import.meta.url)), "artifacts/layout"), ...options });
+    } finally {
+      // Under the release renderer the shipped policy is enforced; a violation fails the run.
+      await policy.collect("native layout");
+      const lines = describeViolations(policy.violations());
+      if (lines.length) console.error(`Content-Security-Policy violations (${lines.length}):\n${lines.map((line, index) => `  ${index + 1}. ${line}`).join("\n")}`);
+    }
+    assert.equal(policy.violations().length, 0, "The layout preview broke the shipped Content-Security-Policy; see the list above.");
     console.log(`Native layout passed: ${result.cases.length} geometry and ${result.transitions.length} transition captures; ${result.skipped.length} skipped boundaries.`);
   } finally { await browser.deleteSession(); }
 }

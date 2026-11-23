@@ -20,7 +20,7 @@ import { readNoun } from "../../chat/progressLabels";
 import { failedReadReason } from "../../chat/chatRail";
 import { useExtensionAvailability } from "../../app/extensionAvailability";
 import { pausedByRule, planSections, refusedByRule, stepGlyph, type LedgerChip, type TurnSegment } from "../../chat/turnView";
-import { actionLabel, isActionItem as isAction, visibleTarget, withoutIdentifiers } from "../../chat/runStatus";
+import { actionLabel, emptyResult, isActionItem as isAction, visibleTarget, withoutIdentifiers } from "../../chat/runStatus";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -159,6 +159,7 @@ const ActionRow = memo(function ActionRow({
           <span className="chat-progress-target" data-testid="chat-progress-target" title={target}>{target}</span>
         ) : null}
         {paused ? <span className="chat-progress-status" data-paused=""><CirclePauseIcon aria-hidden="true" />{t("chatProgressTimeline.paused.status")}</span>
+          : emptyResult(item) ? <span className="chat-progress-status" data-outcome="empty">{t("chatProgressTimeline.noResult")}</span>
           : item.status === "failed" ? <span className="chat-progress-status"><TriangleAlertIcon aria-hidden="true" />{t("chatProgressTimeline.failed")}</span>
           : item.status === "stopped" ? <span className="chat-progress-status"><CircleStopIcon aria-hidden="true" />{t("chatProgressTimeline.stopped")}</span>
           : null}

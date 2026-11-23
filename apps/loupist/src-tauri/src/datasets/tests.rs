@@ -55,6 +55,121 @@ fn dataset_description_has_one_global_budget_and_preserves_section_pointers() {
     assert_eq!(exact["rows"][0]["value_0"], value);
 }
 
+/// Recorded OpenBB shapes: `equity_price_historical` (yfinance, AAPL, two
+/// years) returned 500 daily bars oldest first, 162,538 bytes; the yfinance
+/// income statement returned rows of 40 fields, `total_revenue` among the last.
+#[test]
+fn a_compacted_series_shows_its_latest_rows_and_every_statement_field() {
+    let store = fixture();
+    let bars = (0..500)
+        .map(|index| {
+            json!({"date": format!("bar-{index:03}"), "open": 228.06, "high": 230.72,
+                "low": 228.06, "close": 229.87 + index as f64, "volume": 38168300, "dividend": 0.0})
+        })
+        .collect::<Vec<_>>();
+    let history = json!({
+        "content": [{"type": "text", "text": "{\"results\":[…]}"}],
+        "isError": false,
+        "structuredContent": {"provider": "yfinance", "results": bars, "warnings": null},
+    });
+    let reference = store
+        .dataset_put("reader-a", "history", &history, json!({"producer": "mcp"}))
+        .unwrap();
+    let description = store
+        .dataset_describe("reader-a", &reference.dataset_id, 1)
+        .unwrap();
+    assert!(serde_json::to_vec(&description).unwrap().len() <= 64 * 1024);
+    let section = description["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|section| section["pointer"] == "/structuredContent/results")
+        .unwrap();
+    assert_eq!(section["rows"], 500);
+    assert_eq!(section["sample_rows"], 3);
+    assert_eq!(section["last_rows"]["offset"], 497);
+    let last = section["last_rows"]["rows"].as_array().unwrap();
+    assert_eq!(last.len(), 3);
+    assert_eq!(last[2]["date"], "bar-499");
+    assert_eq!(last[2]["close"], 229.87 + 499.0);
+    assert_eq!(
+        section["date_range"],
+        json!({"column": "date", "first": "bar-000", "last": "bar-499"})
+    );
+    // The one-row text block is wholly in the sample: no tail repeats it.
+    let content = description["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|section| section["pointer"] == "/content")
+        .unwrap();
+    assert_eq!(content["sample_rows"], 1);
+    assert!(content.get("last_rows").is_none());
+
+    let fields = [
+        "basic_earnings_per_share",
+        "cost_of_revenue",
+        "diluted_earnings_per_share",
+        "diluted_ni_availto_com_stockholders",
+        "ebit",
+        "ebitda",
+        "gross_profit",
+        "interest_expense",
+        "interest_expense_non_operating",
+        "interest_income",
+        "interest_income_non_operating",
+        "net_income",
+        "net_income_attributable_to_common_shareholders",
+        "net_income_continuous_operations",
+        "net_income_from_continuing_and_discontinued_operation",
+        "net_income_from_continuing_operation_net_minority_interest",
+        "net_income_including_noncontrolling_interests",
+        "net_interest_income",
+        "net_non_operating_interest_income_expense",
+        "normalized_ebitda",
+        "normalized_income",
+        "operating_expense",
+        "operating_income",
+        "operating_revenue",
+        "other_income_expense",
+        "other_non_operating_income_expenses",
+        "period_ending",
+        "reconciled_cost_of_revenue",
+        "reconciled_depreciation",
+        "research_and_development_expense",
+        "selling_general_and_admin_expense",
+        "tax_effect_of_unusual_items",
+        "tax_provision",
+        "tax_rate_for_calcs",
+        "total_expenses",
+        "total_operating_income_as_reported",
+        "total_pre_tax_income",
+        "total_revenue",
+        "weighted_average_basic_shares_outstanding",
+        "weighted_average_diluted_shares_outstanding",
+    ];
+    let row = fields
+        .iter()
+        .map(|field| (field.to_string(), json!(1)))
+        .collect::<serde_json::Map<_, _>>();
+    let statement = json!({"structuredContent": {"results": vec![Value::Object(row); 5]}});
+    let reference = store
+        .dataset_put("reader-a", "income", &statement, json!({"producer": "mcp"}))
+        .unwrap();
+    let description = store
+        .dataset_describe("reader-a", &reference.dataset_id, 1)
+        .unwrap();
+    let section = &description["sections"][0];
+    assert_eq!(section["columns"].as_array().unwrap().len(), 40);
+    assert!(section["columns"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("total_revenue")));
+    assert_eq!(section["columns_omitted"], 0);
+    assert_eq!(section["last_rows"]["offset"], 3);
+    assert_eq!(section["last_rows"]["rows"].as_array().unwrap().len(), 2);
+}
+
 #[test]
 fn replacing_a_dataset_rejects_stale_refs_and_keeps_only_current_bytes() {
     let store = fixture();

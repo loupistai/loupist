@@ -17,7 +17,7 @@ import { answerSources, type AnswerSource } from "./answerSources";
 import { citationSources, evidenceProvenance, sourceIdentityLabel } from "./evidence";
 import { exactMemoryReads, isInlineWorkEvidence } from "./memoryActivity";
 import { readNoun } from "./progressLabels";
-import { actionLabel, isActionItem, visibleTarget, withoutIdentifiers } from "./runStatus";
+import { actionLabel, emptyResult, isActionItem, visibleTarget, withoutIdentifiers } from "./runStatus";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -97,7 +97,7 @@ export type LedgerChip = { key: string; kind: "source" | "data" | "memory" | "ca
 export type LedgerView = {
   /** The step count while running; the receipt once settled. */
   text: string;
-  /** " · 1 failed attempt", in both states; never an alarm. */
+  /** " · 1 failed attempt", in both states; never an alarm. An empty result is not one. */
   failed: string | null;
   settled: boolean;
   chips: LedgerChip[];
@@ -290,7 +290,7 @@ function ledgerChips(actions: ActionItem[], evidenceById: Map<string, ChatEviden
 
 function ledgerView(ledger: Ledger, state: TurnState, running: boolean, durationMs: number | undefined, evidenceRefs: readonly ChatEvidenceRef[]): LedgerView {
   const actions = ledger.progress.items.filter(isCounted);
-  const failedCount = actions.filter((item) => item.status === "failed" && !pausedByRule(item)).length;
+  const failedCount = actions.filter((item) => item.status === "failed" && !pausedByRule(item) && !emptyResult(item)).length;
   const failed = failedCount > 0 ? t("turn.research.failedAttempt", { count: failedCount }) : null;
   const evidenceById = new Map(evidenceRefs.map((item) => [item.id, item]));
   const chips = ledgerChips(actions, evidenceById);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { FileUIPart } from "ai";
 import { createChatDraftSession, type ChatDraftSession } from "../chat/draftSession";
 import type { KnowledgePin } from "../types";
@@ -49,10 +49,6 @@ export function useChatDrafts() {
     draft.pins = draft.pins.filter((existing) => !sameKnowledgePin(existing, pin));
     refresh();
   }, [refresh]);
-  useEffect(() => {
-    const owned = drafts.current;
-    return () => { for (const draft of owned.values()) for (const file of draft.files) URL.revokeObjectURL(file.url); };
-  }, []);
   /** Chat keys whose composer holds unsent text; the sidebar marks them with a dot. */
   const unsentKeys = useCallback(() => {
     const keys = new Set<string>();

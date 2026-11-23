@@ -186,6 +186,33 @@ On macOS the worker is signed with the hardened runtime and `com.apple.security.
 
 Rust copies allowed guest writes back to the host, including writes made before cancellation or timeout. Copy-back preserves existing file permission bits and removes partial new files and replacement temporary files if a write fails. It reapplies the native path policy to every destination, including newly created names, and admits only ordinary workspace content. It uses descriptor-relative nofollow and openat checks and refuses symlink races, replaced parents and hard-link aliases. The host does not extract guest archives onto itself. If a host file changes during the call, copy-back does not overwrite it. The snapshot is limited to 2,000 files and 32 MiB. Large folders produce a partial snapshot: existing `outputs/` files first, then newer modification times, then path. Files that do not fit are omitted rather than rejecting the call. The result reports `snapshot_omitted_count`, up to eight `snapshot_omitted_paths`, and `snapshot_scan_truncated`; when a subtree could not be scanned, the count is a lower bound and the path ends in `/`. Omitted host files never become deletion candidates during copy-back. Snapshot selection retains at most 10,000 admitted entries and 32 directory levels; directory enumeration uses bounded candidate storage. Copy-back is limited to 256 changed files and 32 MiB, with an 8 MiB limit per file. Copy-back walks visit at most 10,000 entries and 32 directory levels; at most 256 writable roots, including `outputs`, are admitted. If the workspace already has an ordinary file named `outputs`, the call explains that it must be renamed before Python can run. Snapshot omissions and copy-back truncation are reported independently. Oversized output files and changed host files are reported individually so other allowed results survive. Removing or renaming an existing directory is reported as a conflict and leaves its original host subtree intact; remove individual files when needed.
 
+## Renderer Content-Security-Policy
+
+The window's page runs under `app.security.csp` in `apps/loupist/src-tauri/tauri.conf.json` (CSP).
+Tauri attaches it to every page it serves from `tauri://`, so a signed build enforces it in WKWebView:
+
+| Directive | Sources | Why |
+| --- | --- | --- |
+| `default-src` | `'self'` | Scripts, fonts and everything not listed below come only from the app bundle. There is no `'unsafe-eval'` and no `blob:`. |
+| `img-src` | `'self' data:` | Bundled images and image bytes the renderer already holds as `data:` URLs: attachment previews, favicons, chart and map captures. |
+| `style-src` | `'self' 'unsafe-inline'` | The bundle's stylesheets and React's `style` attributes. |
+| `connect-src` | `ipc: http://ipc.localhost` | The Tauri bridge only. The page fetches nothing else; Rust reads the web. |
+
+The renderer creates no object URLs. A file the user picks, drops or pastes is read once with
+`FileReader` into a `data:` URL, which is its preview, its saved draft copy and what `chat_send`
+receives (`prompt-input.tsx`); a `blob:` image or a `fetch` of a `blob:` URL is blocked. Code does not
+evaluate strings: the AI SDK's zod runs jitless (`src/lib/zodJitless.ts`, imported first by both
+entry points) and Vega charts use the expression interpreter (`ast: true`).
+
+Desktop `tauri dev` loads the Vite server directly and Tauri attaches the policy only to its own
+`tauri://` responses, so a development window, the native suites on Vite and the design preview run with
+no policy at all. The release renderer (`apps/loupist/e2e/release-renderer.mjs`) serves the built pages
+with this exact policy, plus a `report-uri` that changes no source, and fails a run on any violation:
+the web gate's `release-policy` step (Chrome, core scenarios) and `npm run test:native:release`
+(WKWebView, [Release renderer](../../apps/loupist/e2e/README.md#release-renderer)). Run both when the
+policy or what the renderer loads changes. Add a source only when a feature cannot work without it,
+and record the reason in this table.
+
 ## Residual risk
 
 - Python can modify files in an authorized workspace subfolder. That includes `outputs/` and any existing non-dot top-level directory the host grants. A file there may be instructions for another program, such as a build script or a hook outside `.git`. This boundary does not make those programs safe to run later.

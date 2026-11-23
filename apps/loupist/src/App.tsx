@@ -1,4 +1,3 @@
-import { attachmentDataUrl } from "./components/ai-elements/prompt-input";
 import { chatTitle as displayThreadTitle, scheduledSessionOrigin } from "./app/chatTitle";
 import { LaunchNotice } from "./components/onboarding/Notice";
 import { useInboxCounts } from "./components/briefings/useInboxCounts";
@@ -451,16 +450,10 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       }
     }).catch(() => {});
     activeDraft.onFilesChanged = files => {
-      // Start reading object URLs while the tray still owns them. Commit snapshots in edit order.
-      const snapshot = Promise.all(files.map(async file => {
-        const url = await attachmentDataUrl(file);
-        if (!url) throw new Error("draft_attachment_unreadable");
-        return { id: file.id, filename: file.filename ?? "attachment", mediaType: file.mediaType, url };
-      }));
-      const outcome = snapshot.then(value => ({ value }), () => ({ value: null }));
+      // The tray holds each file as the data: URL it read when the file was added. Commit snapshots in edit order.
+      const value = files.map(file => ({ id: file.id, filename: file.filename ?? "attachment", mediaType: file.mediaType, url: file.url }));
       fileWrites.current = fileWrites.current.then(async () => {
-        const { value } = await outcome;
-        if (!value) throw new Error("draft_attachment_unreadable");
+        if (value.some(file => !file.url.startsWith("data:"))) throw new Error("draft_attachment_unreadable");
         await bridge.chatDraftFilesWrite(identity, value);
       }).catch(() => { if (current) setBriefingToast(i18n.t("chat:messageSchedules.draftFilesFailed")); });
     };

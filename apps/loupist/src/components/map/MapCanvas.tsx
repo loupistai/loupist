@@ -315,8 +315,10 @@ export default function MapCanvas({ nodes, edges, scopeKey, selectedId, focalId,
   const firstPaint = useRef<{ start?: number; duration?: number }>({ start: dataArrivedAt });
   if (firstPaint.current.start !== dataArrivedAt) firstPaint.current = { start: dataArrivedAt };
   const camera = useRef(cameras.get(scopeKey));
-  const probeEnabled = import.meta.env.DEV && new URLSearchParams(location.search).get("probe") === "1";
-  const drawProbe = import.meta.env.DEV && new URLSearchParams(location.search).get("probe") === "draw";
+  // The design preview is never shipped, so its built copy (the release-renderer suites) keeps the probes.
+  const probeAllowed = import.meta.env.DEV || location.pathname.endsWith("/preview.html");
+  const probeEnabled = probeAllowed && new URLSearchParams(location.search).get("probe") === "1";
+  const drawProbe = probeAllowed && new URLSearchParams(location.search).get("probe") === "draw";
   // Leaving names stay in the drawing only while they fade.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the leaving names live in a ref; these values are its recompute triggers.
   const ghosts = useMemo(() => fadeLive() ? { nodes: scopeFade.current.leaving, edges: scopeFade.current.leavingEdges } : { nodes: [], edges: [] }, [nodes, edges, scopeFading]);

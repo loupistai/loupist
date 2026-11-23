@@ -212,7 +212,8 @@ button.grid-card-empty:focus-visible { outline: 2px solid var(--gg-color-focus);
 .workspace-grid-view .grid-card { margin-top: 0; }
 
 @media (max-width: 720px) {
-  .grid-card-actions:not(.conflict-card-actions) { display: none; }
+  /* Open in side panel stays; Copy, Export and Ask fold into the … menu. */
+  .grid-card-actions:not(.conflict-card-actions) > :not(.open-in-panel) { display: none; }
   .grid-card-more { display: block; }
   .grid-card-asset, .grid-card-asset-head { width: 128px; min-width: 128px; max-width: 128px; }
   .grid-card-table { --grid-first: 128px; }

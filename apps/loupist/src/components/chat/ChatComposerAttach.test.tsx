@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { useState, type ComponentProps } from "react";
+import { createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TooltipProvider } from "../ui/tooltip";
 import { ChatComposer } from "./ChatComposer";
@@ -7,7 +7,7 @@ import type { KnowledgePin } from "../../types";
 
 const pin = { kind: "source" as const, loupistId: "loupist", recordId: "sources", revisionId: "rev", objectId: "src-1", label: "Q3 operating review" };
 
-function MenuComposer({ status, onAddKnowledgePin }: { status: "ready" | "empty" | "closed"; onAddKnowledgePin: (value: KnowledgePin) => void }) {
+function MenuComposer({ status, onAddKnowledgePin, onSend = vi.fn() }: { status: "ready" | "empty" | "closed"; onAddKnowledgePin: (value: KnowledgePin) => void; onSend?: ComponentProps<typeof ChatComposer>["onSend"] }) {
   const [prompt, setPrompt] = useState("");
   return <TooltipProvider><ChatComposer
     prompt={prompt} onPromptChange={setPrompt}
@@ -15,7 +15,7 @@ function MenuComposer({ status, onAddKnowledgePin }: { status: "ready" | "empty"
     models={[{ id: "model", provider: "test", model: "model", name: "Model", input: ["text", "image"], reasoning: true, context_window: 10000, max_tokens: 1000, thinking_levels: ["medium"], thinking_level_map: {}, run_controls: [], credential_source: "saved" }]} providers={[]} modelSelection={{ model_profile_id: "model", thinking_level: "medium", run_options: {} }} modelIsDefault onChooseDefault={() => {}}
     skills={[]} plugins={[]}
     onPrivateChatChange={vi.fn()} onModelSelectionChange={vi.fn()}
-    onSend={vi.fn()} onFollowUp={vi.fn()} onAbort={vi.fn()}
+    onSend={onSend} onFollowUp={vi.fn()} onAbort={vi.fn()}
     mapScreenshot={{ status: () => status, take: async () => new File([new Uint8Array([1])], "world.png", { type: "image/png" }) }}
     evidenceSources={[{ key: "sources", label: pin.label, pin }]}
     onAddKnowledgePin={onAddKnowledgePin}
@@ -81,4 +81,81 @@ it("marks the + menu as opened by a press or by a key, so only keys get the focu
   await user.keyboard("{Enter}");
   expect(await screen.findByRole("menu")).toHaveAttribute("data-input", "keyboard");
   expect(trigger).toHaveAttribute("data-input", "keyboard");
+});
+
+/** A clipboard as WebKit hands it to a paste: its files as file items, and its text. */
+function clipboard(files: File[], text = "") {
+  return {
+    items: files.map((file) => ({ kind: "file", type: file.type, getAsFile: () => file })),
+    files,
+    types: [...(files.length ? ["Files"] : []), ...(text ? ["text/plain"] : [])],
+    getData: (type: string) => (type === "text/plain" ? text : ""),
+  };
+}
+const png = (name = "image.png", size = 8) => new File([new Uint8Array(size).fill(1)], name, { type: "image/png" });
+
+describe("⌘V in the composer", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("attaches a screenshot on the clipboard under a name of its own, and sends it", async () => {
+    const onSend = vi.fn();
+    render(<MenuComposer status="closed" onAddKnowledgePin={vi.fn()} onSend={onSend} />);
+    const message = screen.getByRole("textbox", { name: "Message Loupist" });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 23, 21, 4));
+    const paste = createEvent.paste(message, { clipboardData: clipboard([png()]) });
+    fireEvent(message, paste);
+    vi.useRealTimers();
+    expect(paste.defaultPrevented).toBe(true);
+    const thumb = await screen.findByRole("img", { name: "Pasted image 2026-11-23 21.04.png" });
+    expect(thumb).toHaveAttribute("src", expect.stringMatching(/^data:image\/png;base64,/));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(onSend).toHaveBeenCalledOnce());
+    expect(onSend.mock.calls[0][1]).toEqual([expect.objectContaining({ filename: "Pasted image 2026-11-23 21.04.png", mediaType: "image/png", url: expect.stringMatching(/^data:image\/png;base64,/) })]);
+  });
+
+  it("leaves a spreadsheet range's text to the textarea and attaches no picture of it", () => {
+    render(<MenuComposer status="closed" onAddKnowledgePin={vi.fn()} />);
+    const message = screen.getByRole("textbox", { name: "Message Loupist" });
+    const paste = createEvent.paste(message, { clipboardData: clipboard([png()], "Revenue\t1,204\nMargin\t31%") });
+    fireEvent(message, paste);
+    expect(paste.defaultPrevented).toBe(false);
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("attaches several images from one paste, numbered, up to the tray's four", async () => {
+    render(<MenuComposer status="closed" onAddKnowledgePin={vi.fn()} />);
+    const message = screen.getByRole("textbox", { name: "Message Loupist" });
+    fireEvent.paste(message, { clipboardData: clipboard([png(), png(), png(), png(), png()]) });
+    expect(await screen.findByText("4 attachments")).toBeInTheDocument();
+    expect(screen.getAllByRole("img").map((image) => image.getAttribute("alt"))).toEqual([
+      expect.stringMatching(/^Pasted image .+\.png$/), expect.stringMatching(/ \(2\)\.png$/), expect.stringMatching(/ \(3\)\.png$/), expect.stringMatching(/ \(4\)\.png$/),
+    ]);
+    expect(screen.getByRole("alert")).toHaveTextContent("Too many files. Some were not added.");
+  });
+
+  it("refuses a pasted image over the image limit with the existing message", async () => {
+    render(<MenuComposer status="closed" onAddKnowledgePin={vi.fn()} />);
+    const message = screen.getByRole("textbox", { name: "Message Loupist" });
+    fireEvent.paste(message, { clipboardData: clipboard([png("image.png", 5 * 1024 * 1024 + 1)]) });
+    expect(await screen.findByRole("alert")).toHaveTextContent("Image attachments must be 5 MB or smaller");
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("attaches a file copied in Finder, whose name is the clipboard's text, under its own name", async () => {
+    render(<MenuComposer status="closed" onAddKnowledgePin={vi.fn()} />);
+    const message = screen.getByRole("textbox", { name: "Message Loupist" });
+    const report = new File(["quarter"], "Q3 report.csv", { type: "text/csv" });
+    const chart = png("margin chart.png");
+    fireEvent.paste(message, { clipboardData: clipboard([report, chart], "Q3 report.csv\nmargin chart.png") });
+    expect(await screen.findByText("Q3 report.csv")).toBeVisible();
+    expect(screen.getByRole("img", { name: "margin chart.png" })).toBeInTheDocument();
+  });
+
+  it("attaches an image a browser copied with its address as text", async () => {
+    render(<MenuComposer status="closed" onAddKnowledgePin={vi.fn()} />);
+    const message = screen.getByRole("textbox", { name: "Message Loupist" });
+    fireEvent.paste(message, { clipboardData: clipboard([png()], "https://example.com/chart.png") });
+    expect(await screen.findByRole("img", { name: /^Pasted image / })).toBeInTheDocument();
+  });
 });

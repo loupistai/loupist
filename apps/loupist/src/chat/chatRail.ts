@@ -12,7 +12,7 @@ import { deliveredFiles } from "./deliveredFiles";
 import { answerSources, type AnswerSource } from "./answerSources";
 import { knownActivityLabel, readNounFor } from "./progressLabels";
 import { connectionText } from "@/lib/connectionCopy";
-import { actionLabel, visibleTarget } from "./runStatus";
+import { actionLabel, emptyResult, visibleTarget } from "./runStatus";
 
 /** `swatch` is the node's color on the Map, so a chip and its mark match. */
 export type NameChip = { id: string; label: string; swatch: string };
@@ -173,6 +173,8 @@ export type ActivityStep = {
   durationMs?: number;
   /** Why a step failed, stopped or was skipped, in plain words. */
   reason?: string;
+  /** Stored `empty_result` with no refusal. The sheet derives the neutral outcome from it. */
+  empty?: boolean;
   detailId?: string;
   outputRevision?: number;
   evidence: ChatEvidenceRef[];
@@ -315,6 +317,7 @@ export function activityTurn(message: ChatMessage): ActivityTurn {
     const step: ActivityStep = {
       id: item.id, label: activityStepLabel(item), target: activityTarget(item), href: item.href ?? undefined,
       status: item.status, category: item.category, operation: item.operation, durationMs: stepDuration(item), reason: stepReason(item, message),
+      empty: emptyResult(item),
       detailId: item.kind === "tool" ? item.detailId : undefined, outputRevision: item.kind === "tool" ? item.outputRevision : undefined,
       evidence: item.kind === "tool" ? (item.resultIds ?? []).flatMap((id) => evidenceById.get(id) ?? []) : [],
     };

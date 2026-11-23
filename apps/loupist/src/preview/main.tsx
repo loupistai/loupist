@@ -1,3 +1,4 @@
+import "../lib/zodJitless";
 import "../i18n";
 import { setPreviewLanguage } from "../i18n/useLanguage";
 import { createRoot } from "react-dom/client";

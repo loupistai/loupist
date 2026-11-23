@@ -1,17 +1,27 @@
 # Changelog
 
-## 0.1.6 - 2026-11-23
+## 0.1.6 - 2026-11-24
 
+- Attach files and images to a message again: the composer shows each image's thumbnail and sends the files, where every signed build until now refused to send them ("could not read or send the attached message") and showed no preview.
+- Paste an image with ⌘V: a screenshot, an image copied from a browser or Preview, several images at once, or files copied in Finder attach to the message under the same limits as the + menu, each pasted image under its own name ("Pasted image 2026-11-23 21.04.png"). Copying a spreadsheet range or a web page still pastes its text.
+- See what ⌘A selected in the message box: the selection now shows in the system selection colour with the text readable, instead of greying the text out so it looked as if nothing was selected.
 - Get a Korean company's statements from OpenDART: statements for every company and period OpenDART has are read again instead of failing as an invalid response, and a company that files only separate statements returns those, marked separate.
+- See a Korean company's statement figures cited to OpenDART and checked: a statements read too large to show whole now gives the AI every line item to read and cite, and the number checks no longer miss rates printed bare in a DART results table, a tax benefit on an expense (income) row, or count a row number as a figure.
+- Read a long OpenDART filing without paging through it: the first page gives its outline with the page of each section, a search finds a word or figure anywhere in the filing with its page, each page arrives whole, and a page you ask to keep is saved as a Source.
 - Name a Korean company by its ticker, its Korean or English name or its corp code in any OpenDART read: Loupist downloads OpenDART's company list once, keeps it on your Mac and refreshes it in the background, so a lookup no longer waits for it on every question.
 - See why an OpenDART read failed: no data for that period, a key OpenDART refused with its status, the daily limit, maintenance, a slow answer or a company list still downloading, each with what to change.
-- Read a long OpenDART filing, or a long list of filings, page by page.
 - Look up a Korean company by its ticker, corp code or exact name and get its overview from OpenDART too: CEO, market, industry code, address, homepage, founding date and fiscal year-end.
 - Read a Korean company's treasury shares, auditor and audit opinion, employees and salaries, and share issues and reductions from its annual, half-year or quarterly report.
 - Read a Korean company's lawsuits, split-mergers and overseas listing or delisting decisions from OpenDART, like its other capital decisions.
 - Read an insider ownership report OpenDART dates a day after its receipt number, instead of losing the whole list.
 - Keep using a saved key while several reads run at once: a read waits its turn instead of failing as "being changed right now", for OpenDART, other data connections, custom connections and the GitHub sharing account.
+- See a US company's income statement, balance sheet and cash flow read from SEC filings reach the answer with every period and line item, instead of arriving empty.
+- Get the latest rows of a long price or rate history in the answer: a result too large to show whole now gives the AI its last rows and date range as well as its first.
+- Keep market data working after a large request: a long price history no longer ends the market-data session for the rest of the reply. FINRA short interest, the petroleum status report and the Svensson yield curve are not offered for now, because one request to them stopped every other market-data read.
+- Read stablecoins pegged to currencies other than the dollar, get "no data" instead of an error for a World Bank year not published yet, and use a free Alpha Vantage key without being told it needs a paid plan.
 - Trust a fall a news passage states in words: a negative figure no longer warns of a sign mismatch when the passage says the market fell by that much, including when the point change comes first with the percent in brackets or one word ends a list of stocks, in new and already saved answers. A rise stated in words still flags a negative figure.
+- See a market-data read the source had nothing for as no result: the step says so, and the answer does not count it as a failed run.
+- Open a chart or table shown in an answer in the side panel beside the chat.
 - Keep price tables out of World: a saved price history, quote, exchange rate, index level or rate series, or a table of them, is kept and citable but spends no World requests and no longer delays the filings and articles behind it. The Library and the reader say "Price data · not added to World", and such Sources already waiting leave the queue.
 - Continue every Source paused at the request limit in one step: World says how many stopped there and offers Continue all, which first asks how many Sources it continues and how many model requests it can use at most. Each Source gets the same fresh allowance as its own Try again, which stays in the Library.
 - Keep World reading a Source while its model changes: when you pick another World model, or the recommended one follows an account you connect or disconnect, World reads the part it was on again with the new model instead of giving up, and Try again works on a Source that stopped after an earlier part failed.

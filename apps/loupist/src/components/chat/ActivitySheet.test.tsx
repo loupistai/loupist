@@ -203,6 +203,40 @@ it("heads files only when the chat has some", async () => {
   expect(screen.getByTestId("activity-sheet").querySelector("[data-activity-section=files]")).toBeNull();
 });
 
+it("does not count an empty result as a failed run in the activity header, and does not paint it as one", async () => {
+  const message = {
+    ...first,
+    id: "empty-mix",
+    progress: { startedAtMs: 0, finishedAtMs: 4_000, items: [
+      step("empty", "mcp__openbb__dart_financials", { status: "failed", failureReason: "empty_result", finishedAtMs: 2_100 }),
+      step("refused", "mcp__openbb__equity_fundamental_metrics", { status: "failed", failureReason: "invalid_input", finishedAtMs: 3_000 }),
+    ] },
+    evidence_refs: [], number_checks: [],
+  } as unknown as ChatMessage;
+  const view = render(<Harness messages={[question, message]} />);
+  openActivity({ messageId: "empty-mix" });
+  const sheet = screen.getByTestId("activity-sheet");
+  const header = sheet.querySelector("header")!;
+  const section = sheet.querySelector("[data-activity-section=steps] h3")!;
+  const groups = within(sheet).getAllByTestId("activity-step-group");
+  expect(groups.map((group) => group.getAttribute("data-state"))).toEqual(["empty", "bad"]);
+  expect(header).not.toHaveTextContent(/2 failed|실행 2건 실패/);
+  expect(section).not.toHaveTextContent(/2 failed|실행 2건 실패/);
+  expect(groups[0]).toHaveTextContent("The source had nothing for this request. It was not used in the answer.");
+  expect(groups[1]).toHaveTextContent("The source did not accept one of the request's values. It was not used in the answer.");
+  await act(async () => { await i18n.changeLanguage("ko"); });
+  try {
+    expect(header).not.toHaveTextContent("실행 2건 실패");
+    expect(section).not.toHaveTextContent("실행 2건 실패");
+    expect(groups[0]).toHaveTextContent("자료 제공처에 이 요청에 해당하는 내용이 없었습니다. 답변에 사용하지 않았습니다.");
+    expect(groups[0]).toHaveAttribute("data-state", "empty");
+    expect(groups[1]).toHaveAttribute("data-state", "bad");
+  } finally {
+    view.unmount();
+    await i18n.changeLanguage("en");
+  }
+});
+
 it("selects the asked-for answer: same-kind steps collapse with a count, failures keep their reason, sources and checks open", async () => {
   const user = userEvent.setup();
   render(<Harness />);

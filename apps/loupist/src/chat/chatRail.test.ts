@@ -101,6 +101,17 @@ describe("activity turn", () => {
     expect(JSON.stringify(turn.groups)).not.toMatch(/activate|news_company|mystery/u);
   });
 
+  it("marks an empty result and leaves a refused value a failure", () => {
+    const turn = activityTurn(reply([
+      step("empty", "mcp__openbb__dart_financials", { status: "failed", failureReason: "empty_result" }),
+      step("refused", "mcp__openbb__equity_fundamental_metrics", { status: "failed", failureReason: "invalid_input" }),
+    ]));
+    expect(turn.groups.map((group) => [group.status, group.steps[0]!.empty, group.steps[0]!.reason])).toEqual([
+      ["failed", true, "The source had nothing for this request. It was not used in the answer."],
+      ["failed", false, "The source did not accept one of the request's values. It was not used in the answer."],
+    ]);
+  });
+
   it("keeps zero and sub-second times and reads a row's safe failure reason", () => {
     const turn = activityTurn(reply([
       step("zero", "calculate", { finishedAtMs: 1000 }),

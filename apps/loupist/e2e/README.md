@@ -259,6 +259,8 @@ temporary state, so they never rewrite a development or persistent profile.
 | --- | --- |
 | `npm run test:native` | Credential-free notice-to-Loupist onboarding, the header profile strip, Chat, Lens and World panels, Loupist settings, Settings → Data connections, World empty state, and cold-start / Loupist-switch timings, map-probe frame times for the 1,000-node overview and the 150-name two-hop view, and the number chip's dotted underline as WebKit computes it. On macOS Apple Silicon it first runs a Bot hand-off from the knowledge fixture's World link with the scripted slow child (`LOUPIST_E2E_KNOWLEDGE_SEED=1 LOUPIST_E2E_SLOW_HANDOFF=1`, set by the runner): nothing in Bot while the session works and the link reading as researched, the session's sidebar row into the live session, leaving and joining again with Bot's draft kept, Guide from the session's composer, Stop, and Bot's one Stopped post with Look into it again on the link. Other hosts print it as skipped. |
 | `npm run test:native:full` | The core smoke plus connection filtering, appearance, updates, rejected retired commands and the minimum window |
+| `npm run test:native:release` | The core smoke on the [release renderer](#release-renderer): the built pages under the shipped Content-Security-Policy; any violation fails it |
+| `npm run test:persistence:release` | The persistence launches on one release-renderer build; the run fails on any reported violation |
 | `npm run test:persistence` | Five launches. **Seed**: fresh app data plus the knowledge fixture; through the UI it creates a Loupist, a Chat (Look back from a Journal entry, then rename the session), a Source and Journal entry in World Library, a principle in Lens, two new assets followed by name through Following's "Follow '{text}' as typed" (no listing search, so nothing leaves the Mac; one then unfollowed with its row's Stop following, the other opened, where the page says it has no price yet and a reason is saved), Loupist instructions, global and per-Loupist Chat defaults, the theme, and the display currency (KRW, written to the global `config.toml` without any rate read). Typing the exact name of a fixture asset opens its page and leaves one follow. **Restart**: the same app data shows all of it, with the notice acknowledgment, language and theme applied without setting them again and the display currency still selected; the typed asset is a Following row (found by its `data-row-key`) marked "Name only", the unfollowed one stays gone, the created Loupist's Following lists neither it nor the fixture asset (follows are per Loupist), and its page opens from the row with the reason and the no-price line. **Copy** and **fork**: a fresh app opens a copy of the Loupist folder; its Chats, Library, World, principle, revised method with Then/Now history, frozen Journal inputs, instructions, the typed asset's reason (in the Library's Journal) and Loupist preferences follow the copy, while its follows (kept by the old app for this Loupist), the other Loupist, global settings and the notice stay with the old app data. **Reconnect**: the fork's folder is put at the copy's registered path; the copy's app reports the folder unavailable, reconnects it through Reconnect folder, and finds the reason. A saved price read needs a model turn and is not covered here. |
 
 The Loupist switcher helpers read the trigger's expanded state and wait for
@@ -266,6 +268,13 @@ open menu content. A selection or Escape can leave the menu in the DOM during
 its exit animation. Helpers that select a Loupist or dismiss the menu wait
 for it to unmount before returning. The switch timing still ends when the
 header reports the new Loupist.
+
+On macOS Apple Silicon the smoke also attaches an image and a CSV through the composer's file input
+(what the + menu's Files… chooser fills; `native-attachments.mjs`), checks that the tray decodes the image
+from a `data:` URL, sends them with the fixture model (which accepts images) and finds both on the sent
+message. `assertComposerSelectAll` (`native-forms.mjs`) checks that the app menu's Edit carries enabled
+Undo, Redo, Cut, Copy, Paste and Select All (`selectAll:`, what ⌘A reaches in WKWebView), that WebKit's
+SelectAll selects the whole message and that the selection paints its text.
 
 `test:native` runs the Data connections controls with `LOUPIST_DEV_CUSTOM_CONNECTIONS=1`. Run `LOUPIST_DEV_CUSTOM_CONNECTIONS=0 npm run test:native` to assert that the custom section is absent. The live launcher enables the switch for the default set and explicit selections that include journey 6. The smoke and live runners forward it through the isolated debug launcher.
 
@@ -335,6 +344,22 @@ from a file needs the OS chooser (see the troubleshooting table) and is not part
 of persistence. Window checks compare the native size with
 `innerWidth`/`innerHeight`. Evidence stays under `artifacts/` (persistence:
 `artifacts/persistence/<run>/`).
+
+## Release renderer
+
+Desktop `tauri dev` loads Vite directly, and Tauri attaches `app.security.csp` only to its own
+`tauri://` responses, so every Vite-backed window runs with no policy. `release-renderer.mjs` builds
+`index.html` and `preview.html` with `vite build` and serves them with the exact policy from
+`tauri.conf.json` and a `report-uri`; a recorder script, first in every page, keeps each
+`securitypolicyviolation` in `sessionStorage`. Set `LOUPIST_E2E_RELEASE_RENDERER=<absolute report file>`
+for `run-app.sh` to launch on it (`LOUPIST_E2E_RELEASE_RENDERER_DIR` reuses a prebuilt folder).
+`run-native-smoke.sh --release-renderer`, `run-native-persistence.sh --release-renderer`, the layout suite
+and `capture-preview.mjs --release-policy` fail on any violation the page or the report file holds and
+list each blocked source. The built pages have no `/src` modules; `release-renderer.mjs` builds the few a
+suite imports by path (`src/bridge/tauriBridge.ts`) as entries and redirects to them. The web gate's
+`release-policy` step (`npm run preview:policy`) runs a core set of scenarios in Chrome:
+attachments, the lightbox, a chart, the grid export menu, a Source selection, print, the map export
+menu and the in-app browser. The policy and its reasons: [Renderer Content-Security-Policy](../../../docs/runtime/permissions.md#renderer-content-security-policy).
 
 ## Run native suites on Linux
 
