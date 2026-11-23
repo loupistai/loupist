@@ -119,7 +119,8 @@ describe("ChatComposer input", () => {
     const user = userEvent.setup();
     render(<RunningComposer isRunning={false} />);
     await user.upload(screen.getByLabelText("Upload files"), new File(["notes"], "notes.txt", { type: "text/plain" }));
-    const remove = screen.getByRole("button", { name: "Remove notes.txt" });
+    await screen.findByRole("button", { name: "Remove notes.txt" });
+    const remove = await screen.findByRole("button", { name: "Remove notes.txt" });
     remove.focus();
     await user.keyboard("{Enter}");
     expect(screen.queryByText("notes.txt")).toBeNull();
@@ -509,6 +510,7 @@ describe("Chat attachment submission recovery", () => {
     render(<RunningComposer isRunning={false} onSend={onSend} />);
     await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), "Keep this research draft");
     await user.upload(screen.getByLabelText("Upload files"), new File(["notes"], "notes.txt", { type: "text/plain" }));
+    await screen.findByRole("button", { name: "Remove notes.txt" });
     await screen.findByText("notes.txt");
     await user.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Your draft and files have been kept");
@@ -526,6 +528,7 @@ describe("Chat attachment submission recovery", () => {
     const prompt = screen.getByRole("textbox", { name: "Message Loupist" });
     await user.type(prompt, "Read the file");
     await user.upload(screen.getByLabelText("Upload files"), new File(["notes"], "notes.txt", { type: "text/plain" }));
+    await screen.findByRole("button", { name: "Remove notes.txt" });
     await screen.findByText("notes.txt");
     await user.click(screen.getByRole("button", { name: "Send" }));
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
@@ -534,6 +537,7 @@ describe("Chat attachment submission recovery", () => {
     expect(onSend).toHaveBeenCalledOnce();
     expect(onSend).toHaveBeenCalledWith("Read the file", [expect.objectContaining({ filename: "notes.txt", url: expect.stringMatching(/^data:text\/plain;base64,/) })], "Read the file");
     await user.upload(screen.getByLabelText("Upload files"), new File(["next"], "next.txt", { type: "text/plain" }));
+    await screen.findByRole("button", { name: "Remove next.txt" });
     await screen.findByText("next.txt");
     await act(async () => resolveSend());
     await waitFor(() => expect(screen.queryByText("notes.txt")).not.toBeInTheDocument());

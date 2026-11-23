@@ -90,6 +90,7 @@ describe("Loupist · Chat composer", () => {
     await togglePrivateChat();
     await chooseModelOption(user, "Max");
     await user.upload(screen.getByLabelText("Upload files"), new File(["original attachment"], "queued.txt", { type: "text/plain" }));
+    await screen.findByRole("button", { name: "Remove queued.txt" });
     await screen.findByText("queued.txt");
     await user.type(composer(), "Use this next");
     await user.click(screen.getByRole("button", { name: "Send next" }));
@@ -112,6 +113,7 @@ describe("Loupist · Chat composer", () => {
     await openApp(bridge);
     await togglePrivateChat();
     await user.upload(screen.getByLabelText("Upload files"), new File(["keep original"], "kept.txt", { type: "text/plain" }));
+    await screen.findByRole("button", { name: "Remove kept.txt" });
     await screen.findByText("kept.txt");
     await send(user, "Rejected request");
     await waitFor(() => expect(chatSend).toHaveBeenCalledOnce());
@@ -287,6 +289,7 @@ describe("Loupist · Chat composer", () => {
     await openApp(bridge);
     await chooseModelOption(user, "Claude Sonnet 4.5");
     await user.upload(screen.getByLabelText("Upload files"), new File(["margin bridge"], "notes.txt", { type: "text/plain" }));
+    await screen.findByRole("button", { name: "Remove notes.txt" });
     const chart = new File([new Uint8Array([137, 80, 78, 71])], "chart.png", { type: "image/png" });
     fireEvent.paste(composer(), { clipboardData: { items: [{ kind: "file", getAsFile: () => chart }] } });
     // Each file is read into the tray before it can go.

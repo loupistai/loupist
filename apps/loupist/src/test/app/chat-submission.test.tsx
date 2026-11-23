@@ -116,6 +116,7 @@ describe("Chat submission ownership", () => {
     await openApp(bridge);
     await user.upload(screen.getByLabelText("Upload files"), new File(["first"], "first.txt", { type: "text/plain" }));
     await screen.findByRole("button", { name: "Remove first.txt" });
+    await screen.findByRole("button", { name: "Remove first.txt" });
     await send(user, "Submitted snapshot");
     await waitFor(() => expect(chatSend).toHaveBeenCalledOnce());
     // The file went as the bytes read when it was added; no object URL is fetched on send.
@@ -123,6 +124,7 @@ describe("Chat submission ownership", () => {
     await user.clear(composer());
     await user.type(composer(), "Newer draft while sending");
     await user.upload(screen.getByLabelText("Upload files"), new File(["later"], "later.txt", { type: "text/plain" }));
+    await screen.findByRole("button", { name: "Remove later.txt" });
     await screen.findByRole("button", { name: "Remove later.txt" });
     await act(async () => admitted.open());
     await waitFor(() => expect(screen.queryByRole("button", { name: "Remove first.txt" })).toBeNull());
@@ -140,6 +142,7 @@ describe("Chat submission ownership", () => {
     await send(user, "First response");
     await waitFor(() => expect(chatSend).toHaveBeenCalledOnce());
     await user.upload(screen.getByLabelText("Upload files"), new File(["follow-up"], "follow-up.txt", { type: "text/plain" }));
+    await screen.findByRole("button", { name: "Remove follow-up.txt" });
     await screen.findByRole("button", { name: "Remove follow-up.txt" });
     await send(user, "Read this next", "Send next");
     await act(async () => running.open());
