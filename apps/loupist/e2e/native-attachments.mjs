@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { waitForNoLayers, waitForNoRuns } from "./native-shell.mjs";
 
 // A 2×2 PNG: small enough to inline, a real raster for WebKit to decode.
 const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGM4YaMBRAwQCgAjXgSxbgN+HAAAAABJRU5ErkJggg==";
@@ -58,5 +59,25 @@ export async function verifyComposerAttachments(browser, { message = "Read the a
   }, { timeout, interval: 200 }).catch((error) => {
     throw new Error(`The sent message did not show both attachments: ${JSON.stringify(sent)}`, { cause: error });
   });
+  await settleReply(browser);
   return { previewed, sent };
+}
+
+/**
+ * Leaves nothing behind: the reply to the sent message is stopped (the fixture model has nothing to
+ * say outside a hand-off), the host runs nothing, no menu or dialog is open and the composer offers Send
+ * again. A reply still running on a slow runner once made the next step's Remove Loupist refuse and keep
+ * its dialog over the header.
+ */
+async function settleReply(browser) {
+  const stop = '#main-panel-chat button[aria-label="Stop response"]';
+  if (await browser.$(stop).isDisplayed().catch(() => false)) await browser.$(stop).click().catch(() => {});
+  await browser.waitUntil(async () => !(await browser.$(stop).isDisplayed().catch(() => false)), {
+    timeout: 30_000, interval: 200, timeoutMsg: "The reply to the attachments did not stop",
+  });
+  await waitForNoRuns(browser);
+  await waitForNoLayers(browser);
+  await browser.$('form:has(textarea[data-chat-composer]) button[aria-label="Send"]').waitForDisplayed({
+    timeout: 10_000, timeoutMsg: "The composer did not return to Send",
+  });
 }

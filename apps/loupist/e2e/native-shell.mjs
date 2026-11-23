@@ -115,6 +115,34 @@ export async function openCustomConnections(browser) {
 }
 
 /** The settings sheet is also role=dialog, so the first dialog is not the confirmation. */
+/**
+ * Waits until the host runs nothing: no reply, Memory save or other run in any Loupist
+ * (`run_activity_list`). The host refuses to remove a Loupist while one of its runs is active, and a
+ * slow runner can still be finishing a reply an earlier step started.
+ */
+export async function waitForNoRuns(browser, timeout = 60_000) {
+  let runs = [];
+  await browser.waitUntil(async () => {
+    runs = await browser.execute(() => window.__TAURI_INTERNALS__.invoke("run_activity_list")).catch(() => null) ?? runs;
+    return Array.isArray(runs) && runs.length === 0;
+  }, { timeout, interval: 200 }).catch((error) => {
+    throw new Error(`Runs were still active: ${JSON.stringify(runs.map(({ kind, loupist_id }) => ({ kind, loupist_id })))}`, { cause: error });
+  });
+}
+
+/** Waits until no menu, popover or dialog is open, so the next control is not behind a layer. */
+export async function waitForNoLayers(browser, timeout = 10_000) {
+  let open = [];
+  await browser.waitUntil(async () => {
+    open = await browser.execute(() => [...document.querySelectorAll('[role="menu"], [role="dialog"], [role="alertdialog"], [data-radix-popper-content-wrapper]')]
+      .filter((element) => element.getClientRects().length && !element.closest("[data-sidebar=sidebar], [hidden]"))
+      .map((element) => element.getAttribute("role") ?? "popper"));
+    return open.length === 0;
+  }, { timeout, interval: 100 }).catch((error) => {
+    throw new Error(`Layers were still open: ${JSON.stringify(open)}`, { cause: error });
+  });
+}
+
 export async function dialogByTitle(browser, title, timeout = 20_000) {
   await browser.waitUntil(
     async () => browser.execute((expected) =>
