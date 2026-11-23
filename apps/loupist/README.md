@@ -20,6 +20,29 @@ sh scripts/stage-macos-arm64.sh
 npm run tauri dev
 ```
 
+## Linux
+
+Linux x86_64 can build and run the shell. Install the libraries in
+[Linux cloud development](../../docs/dev/checks.md#linux-cloud-development)
+(`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libayatana-appindicator3-dev`,
+`librsvg2-dev`, `libssl-dev`, `libxdo-dev`, and `xvfb` when there is no display).
+Then, from this directory:
+
+```sh
+sh scripts/setup.sh
+npm run tauri dev
+npm run tauri build
+```
+
+`npm run tauri build` writes `src-tauri/target/release/bundle/deb/*.deb`.
+The package depends on `libwebkit2gtk-4.1-0`, `libgtk-3-0` and
+`libayatana-appindicator3-1`. It is not a signed release.
+aarch64 Linux is not built. The package does not include the Pi or OpenBB
+programs, so the Chat shell opens and a model reply does not run. A Linux
+release build does not save data-connection keys. Those keys stay in the macOS Keychain.
+Debug builds keep them in process memory on every host. Linux does not install
+updates, register `loupist://` links, or open at login.
+
 Development builds keep their app state in `~/.loupist/development/`; installed
 builds use `~/.loupist/`. They do not open the installed app's database,
 credentials, or process state. An unsupported database is refused and left
@@ -77,8 +100,9 @@ npm run check
 `npm run verify` is the clean-checkout gate and installs every locked app
 dependency before running the same checks.
 
-The first release supports macOS 13 or newer on Apple Silicon only.
-Windows is not supported in this release.
+The signed release supports macOS 13 or newer on Apple Silicon only.
+Windows and Intel Macs are not supported. Linux x86_64 builds from source.
+See [Linux](#linux).
 Release builds require staged sidecars and the credentials selected by
 `release-profile.json` (Developer ID for the current Beta); the
 [release workflow](../../.github/workflows/release.yml) defines the required
