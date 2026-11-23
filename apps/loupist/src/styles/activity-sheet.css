@@ -55,6 +55,7 @@
 }
 .activity-step[data-state="ok"] > i { background: var(--gg-color-accent-ink); }
 .activity-step[data-state="bad"] > i { background: var(--gg-color-warning); }
+.activity-step[data-state="empty"] > i { background: var(--gg-color-text-disabled); }
 .activity-step[data-state="running"] > i { background: var(--gg-color-accent-ink); animation: activity-pulse 1.4s ease-out infinite; }
 .activity-step-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .activity-step-title { display: flex; align-items: baseline; gap: 6px; min-width: 0; }

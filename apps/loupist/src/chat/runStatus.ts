@@ -26,6 +26,15 @@ export const scrubIdentifiers = (value: string) =>
 export const isActionItem = (item: ChatProgressItem): item is ActionItem => item.kind !== "commentary";
 
 /**
+ * A valid request the source had nothing for. The host stores it as `failed`
+ * with `failureReason` `empty_result`. The label and the failed-run count
+ * derive from that stored reason, so an answer saved earlier shows them when
+ * it is opened again. A refusal stays a failure.
+ */
+export const emptyResult = (item: ActionItem) =>
+  item.kind === "tool" && item.status === "failed" && !item.refusal && item.failureReason === "empty_result";
+
+/**
  * A step's own words: running while it runs, paused when refused, its action
  * afterwards. A tool the catalog knows takes the catalog's localized label;
  * the host's wording stands only for a tool the catalog does not have.

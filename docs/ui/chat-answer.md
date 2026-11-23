@@ -60,8 +60,12 @@ than 560 px, then "+N"); when the turn settles the same line becomes the receipt
 sources are the answer's numbered sources, the list the footer's Sources (n) and the
 activity sheet hold, whether or not a step's results name them, so the two never disagree. A
 failed attempt is said in words (" · 1 failed attempt"), never in red, and the ledger
-never opens by itself. Its timeline holds the sources read, consulted notes, every step
-and note in order (label, target, Failed or Stopped, and a duration of a second or
+never opens by itself. A step whose stored `failureReason` is `empty_result` (the source
+had nothing for a valid request) is not one of them: the row says "No result" (결과 없음),
+in the same secondary colour and without the alert, and opening an answer saved before
+that label derives both the label and the count from the stored reason. A refused value
+(`invalid_input`) stays Failed and stays in the count. Its timeline holds the sources read, consulted notes, every step
+and note in order (label, target, No result, Failed or Stopped, and a duration of a second or
 more), and results. A step's label is the catalog's localized words, or for a bundled
 market-data read "Read {what it reads}" by the read nouns (`asOf.reads`, then
 `activitySheet.reads`, which name every data route of the bundled OpenBB runtime). A

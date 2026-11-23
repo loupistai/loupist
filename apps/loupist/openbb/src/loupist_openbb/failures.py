@@ -16,6 +16,9 @@ from urllib.error import URLError
 
 OFFLINE = {"loupist_error": {"kind": "offline"}}
 PAID_ALPHA_PLAN = {"loupist_error": {"kind": "alpha_vantage_paid_plan_required"}}
+ALPHA_RATE_LIMITED = {
+    "loupist_error": {"kind": "rate_limited", "provider": "alpha_vantage"}
+}
 SEC_CONTACT_REQUIRED = {
     "loupist_error": {"kind": "sec_contact_required", "provider": "sec"}
 }
@@ -131,6 +134,13 @@ class AlphaVantagePaidPlanRequired(Exception):
         super().__init__("alpha_vantage_paid_plan_required")
 
 
+class AlphaVantageRateLimited(Exception):
+    """A free key's one-request-per-second notice, still there after a retry."""
+
+    def __init__(self) -> None:
+        super().__init__("rate_limited")
+
+
 def _causes(error: BaseException) -> list[BaseException]:
     causes: list[BaseException] = []
     original = getattr(error, "original", None)
@@ -163,6 +173,8 @@ def provider_refusal(error: BaseException) -> dict[str, Any] | None:
             return YAHOO_ADJUSTMENT
         if isinstance(current, AlphaVantagePaidPlanRequired):
             return PAID_ALPHA_PLAN
+        if isinstance(current, AlphaVantageRateLimited):
+            return ALPHA_RATE_LIMITED
         if isinstance(current, SecContactRequired):
             return SEC_CONTACT_REQUIRED
         if isinstance(current, RequestValidationError):
@@ -180,6 +192,8 @@ def provider_refusal(error: BaseException) -> dict[str, Any] | None:
                 return YAHOO_ADJUSTMENT
             if body == PAID_ALPHA_PLAN:
                 return PAID_ALPHA_PLAN
+            if body == ALPHA_RATE_LIMITED:
+                return ALPHA_RATE_LIMITED
             if body == SEC_CONTACT_REQUIRED:
                 return SEC_CONTACT_REQUIRED
             for refusal in ARGUMENT_REFUSALS:
@@ -281,6 +295,7 @@ def _refusal_status(rejection):
         "sec_contact_required": 403,
         "empty_result": 404,
         "alpha_vantage_paid_plan_required": 402,
+        "rate_limited": 429,
     }.get(kind, 401)
 
 

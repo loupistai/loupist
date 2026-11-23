@@ -506,6 +506,19 @@ mod tests {
         assert!(error.to_string().contains("paid Alpha Vantage plan"));
         assert!(!error.to_string().contains("fixture-private-detail"));
         assert!(mcp_error_next(&error).is_none());
+        // Alpha Vantage's per-second notice, still there after one retry.
+        let limited = serde_json::from_value(json!({
+            "isError": true,
+            "content": [{"type":"text", "text":"rate_limited"}],
+            "structuredContent": {"loupist_error": {"kind": "rate_limited", "provider": "alpha_vantage"}},
+        }))
+        .unwrap();
+        let error = rejected_mcp_result(&limited);
+        assert!(error
+            .to_string()
+            .ends_with("The MCP provider reported a rate limit"));
+        assert!(!error.to_string().contains("paid"));
+        assert!(mcp_error_next(&error).is_some());
     }
 
     #[test]

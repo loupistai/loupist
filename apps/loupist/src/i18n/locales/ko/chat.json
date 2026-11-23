@@ -249,6 +249,7 @@
   },
   "chatProgressTimeline": {
     "failed": "실패",
+    "noResult": "결과 없음",
     "stopped": "중지됨",
     "runStatus": "응답 상태",
     "workProgress": "작업 진행 상황",
@@ -969,6 +970,7 @@
       "tableFormatCsv": "CSV",
       "tableFormatMarkdown": "마크다운",
       "tableFormatTsv": "TSV",
+      "openInSidePanel": "사이드 패널에서 열기",
       "viewFullscreen": "전체 화면으로 보기"
     }
   },
@@ -980,7 +982,8 @@
     "couldNotReadOrSendTheAttachedMessageYour": "첨부된 메시지를 읽거나 보내지 못했습니다. 초안과 파일은 유지되어 있습니다. 다시 시도하거나 파일을 제거한 뒤 다시 첨부하십시오.",
     "uploadFiles": "파일 업로드",
     "whatWouldYouLikeToKnow": "무엇이 궁금하십니까?",
-    "fileSizeLimit": "{{value1}}MB보다 큰 파일은 추가하지 않았습니다."
+    "fileSizeLimit": "{{value1}}MB보다 큰 파일은 추가하지 않았습니다.",
+    "pastedImageName": "붙여넣은 이미지 {{time}}"
   },
   "aiSdk": {
     "attachmentDataIsUnavailable": "첨부 파일 데이터를 사용할 수 없습니다.",

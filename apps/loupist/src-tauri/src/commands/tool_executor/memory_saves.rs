@@ -321,7 +321,17 @@ impl AppToolExecutor {
                 "This web result contains only part of the document. Save the delivered slice as included_excerpt or upstream_truncated; unseen pages cannot be retained".into(),
             ));
         }
-        let truncated = result.producer.origin == RunResultOrigin::Discovery
+        // A filing read delivers one page or the passages a find selected:
+        // part of the filing unless the filing has a single page.
+        let partial_filing = result.producer.tool_name == "dart_filing_read"
+            && (result.payload.pointer("/data/find").is_some()
+                || result
+                    .payload
+                    .pointer("/data/document/pages")
+                    .and_then(Value::as_u64)
+                    .is_none_or(|pages| pages > 1));
+        let truncated = partial_filing
+            || result.producer.origin == RunResultOrigin::Discovery
             || result.warnings.iter().any(|warning| {
                 warning.to_ascii_lowercase().contains("truncat")
                     || warning.to_ascii_lowercase().contains("snippet")

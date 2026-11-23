@@ -43,6 +43,7 @@ import {
   PromptInputFooter,
   PromptInputTextarea,
   PromptInputTools,
+  pastedImage,
   usePromptInputAttachments,
 } from "@/components/ai-elements/prompt-input";
 import { InputGroupButton } from "@/components/ui/input-group";
@@ -327,25 +328,11 @@ function ClipboardAttachmentAction({
     try {
       const items = await navigator.clipboard.read();
       const files: File[] = [];
+      const at = new Date();
       for (const item of items) {
         for (const mediaType of item.types) {
-          const blob = await item.getType(mediaType);
           if (!mediaType.startsWith("image/")) continue;
-          const extension =
-            mediaType === "image/png"
-              ? "png"
-              : mediaType === "image/jpeg"
-                ? "jpg"
-                : mediaType === "image/webp"
-                  ? "webp"
-                  : mediaType === "image/gif"
-                    ? "gif"
-                    : "img";
-          files.push(
-            new File([blob], `clipboard-${Date.now()}.${extension}`, {
-              type: mediaType,
-            }),
-          );
+          files.push(pastedImage(await item.getType(mediaType), at, files.length));
         }
       }
       if (files.length === 0) {

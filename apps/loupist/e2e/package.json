@@ -11,6 +11,8 @@
     "test:live-journeys": "./run-native-live-journeys.sh",
     "test:native": "./run-native-smoke.sh",
     "test:native:full": "./run-native-smoke.sh --full",
+    "test:native:release": "./run-native-smoke.sh --release-renderer",
+    "test:persistence:release": "./run-native-persistence.sh --release-renderer",
     "test:persistence": "./run-native-persistence.sh",
     "verify-security": "node verify-security.mjs"
   },

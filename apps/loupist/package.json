@@ -11,6 +11,7 @@
     "dev": "vite",
     "preview:capture": "node ./scripts/capture-preview.mjs",
     "preview:layout": "node ./scripts/capture-preview.mjs --chat-layout",
+    "preview:policy": "node ./scripts/capture-preview.mjs --release-policy --scenarios chat-empty,composer-attach-tray,chat-lightbox,chat-chart-revenue,chat-grid-export-menu,panel-source-selection,chat-print-view,map-export-menu,browser-ready --themes light --sizes 1280x820 --browser-scenarios 9",
     "preview:diff": "node ./scripts/visual-diff.mjs",
     "preview:baseline": "node ./scripts/visual-baseline.mjs",
     "tauri": "node ./scripts/tauri.mjs",

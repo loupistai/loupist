@@ -21,17 +21,22 @@ APP_PID=
 SMOKE_ARGS=
 E2E_STARTUP_TIMEOUT_MS=${LOUPIST_E2E_STARTUP_TIMEOUT_MS:-300000}
 
-case "${1:-}" in
-    --full)
-        SMOKE_ARGS=--full
-        ;;
-    "" )
-        ;;
-    *)
-        echo "usage: $0 [--full]" >&2
-        exit 1
-        ;;
-esac
+RELEASE_RENDERER=
+for argument in "$@"; do
+    case "$argument" in
+        --full)
+            SMOKE_ARGS=--full
+            ;;
+        --release-renderer)
+            # The built renderer under the shipped Content-Security-Policy (release-renderer.mjs).
+            RELEASE_RENDERER=1
+            ;;
+        *)
+            echo "usage: $0 [--full] [--release-renderer]" >&2
+            exit 1
+            ;;
+    esac
+done
 
 case "$E2E_STARTUP_TIMEOUT_MS" in
     *[!0-9]*|'')
@@ -64,6 +69,7 @@ cleanup() {
     fi
     rm -f -- "$SESSION_INFO"
     rm -f -- "$RUN_LOG"
+    if [ -n "$POLICY_REPORTS" ]; then rm -f -- "$POLICY_REPORTS"; fi
     exit "$status"
 }
 trap cleanup EXIT
@@ -73,7 +79,12 @@ trap 'exit 143' TERM
 
 RUN_LOG=$(mktemp "${TMPDIR:-/tmp}/loupist-native-e2e.XXXXXX")
 SESSION_INFO="$RUN_LOG.session.json"
+POLICY_REPORTS=
 rm -f -- "$SESSION_INFO"
+if [ -n "$RELEASE_RENDERER" ]; then
+    POLICY_REPORTS="$RUN_LOG.csp-reports.jsonl"
+    export LOUPIST_E2E_RELEASE_RENDERER="$POLICY_REPORTS"
+fi
 LOUPIST_E2E_SESSION_INFO="$SESSION_INFO" "$SCRIPT_DIR/run-app.sh" >"$RUN_LOG" 2>&1 &
 APP_PID=$!
 
@@ -86,4 +97,10 @@ if ! node "$SCRIPT_DIR/wait-session.mjs" \
     exit 1
 fi
 
-node "$SCRIPT_DIR/native-smoke.mjs" "$SESSION_INFO" $SMOKE_ARGS
+SMOKE_STATUS=0
+node "$SCRIPT_DIR/native-smoke.mjs" "$SESSION_INFO" $SMOKE_ARGS || SMOKE_STATUS=$?
+if [ -n "$POLICY_REPORTS" ]; then
+    # Reports the server received, including documents the in-page recorder never ran in.
+    node "$SCRIPT_DIR/release-renderer.mjs" check "$POLICY_REPORTS" || SMOKE_STATUS=1
+fi
+exit "$SMOKE_STATUS"

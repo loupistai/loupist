@@ -101,6 +101,19 @@ The composer's "+" menu opens above the composer, aligned to its left edge like 
 Files…, Paste image, Screenshot of World (disabled with a reason when World is not
 open or it is empty) and Add from Evidence (this chat's saved Sources as pins);
 dragging files over the chat column shows one drop overlay with the limits. The tray shows each file's size. Each file may be up to 25 MB (images 5 MB); Rust enforces it in `prepare_chat_attachments` and refuses a larger file with `attachment_too_large`, which the composer words in the reader's language.
+The composer reads each added file once, into a `data:` URL: that is the image's thumbnail, the draft's
+saved copy and what is sent, because the app's [Content-Security-Policy](../runtime/permissions.md#renderer-content-security-policy)
+blocks `blob:` images and reads. ⌘V attaches what the clipboard holds as files through the same checks
+(size, count of four, type): a screenshot or a copied image, several at once, or files copied in Finder
+under their own names. A clipboard image gets a name of its own, "Pasted image 2026-11-23 21.04.png"
+("붙여넣은 이미지 …"), numbered when one paste holds several. A copied spreadsheet range or web selection
+carries a picture of itself beside its text; the text is pasted and no image is attached, unless the only
+text is the image's own file name or address (a Finder copy, a browser's Copy Image). Rust takes an
+image's type from its bytes (PNG, JPEG, GIF, WebP), not from the clipboard's label. A paste while a reply
+runs adds to the tray like any file; Send next queues it.
+The message's text selection paints its own glyphs in the text colour on the system selection colour,
+as every other field: the message's glyphs are transparent over the highlight layer, so a transparent
+selection over the pale accent once read as no selection at all.
 
 The composer has `@` for existing context and `/` for commands and Skills.
 `@` searches files, knowledge, work and connections, including existing World
@@ -260,7 +273,9 @@ Three tabs:
   reply shows that artifact ("The change was not applied. The earlier version is
   shown.", matched by the step's title, unless a later publish of that title in the
   reply succeeded), or a generic "It ended with an error. It
-  was not used in the answer."). An SEC web or market-data read refused for a
+  was not used in the answer."). An empty result keeps that row and its reason,
+  with the neutral dot rather than the warning; the sheet's header and What it did
+  do not count it as a failed run. An SEC web or market-data read refused for a
   missing contact uses the `invalid_input` category and points to contact setup
   in Data connections. Stopped, skipped and safety refusals keep their
   reasons first. Labels come from the locale catalogs: the catalog's step label, a read's

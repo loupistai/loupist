@@ -751,11 +751,18 @@ impl AppToolExecutor {
     ) -> Result<Value, BrokerError> {
         let cutoff = effective_as_of(policy, &params)?;
         let _ = take_as_of(&mut params)?;
-        let object = exact_object(&params, &["rcept_no"], &["page"])?;
-        let query = json!({
+        let object = exact_object(&params, &["rcept_no"], &["page", "find", "occurrence"])?;
+        let mut query = json!({
             "rcept_no": object.get("rcept_no").cloned().unwrap_or(Value::Null),
-            "page": page_argument(object.get("page"))?,
         });
+        if object.contains_key("page") {
+            query["page"] = json!(page_argument(object.get("page"))?);
+        }
+        for field in ["find", "occurrence"] {
+            if let Some(value) = object.get(field) {
+                query[field] = value.clone();
+            }
+        }
         let credential = self.provider_credential(OPENDART).await?;
         let _permit = self.pace(OPENDART).await?;
         let mut output = self
@@ -928,6 +935,143 @@ impl AppToolExecutor {
     }
 }
 
+/// The most bytes the compact statements table of one read may take.
+const MAX_STATEMENT_TABLE_BYTES: usize = 24 * 1024;
+
+/// Every line item of each statement of a `dart_financials` result, for a
+/// delivery too large to send whole (v0.1.6 W16-001: the model was shown three
+/// facts and cited third-party copies). The rows are the result's own facts,
+/// which the number check reads in full; unit, period and basis are stated
+/// once. Over the budget, the least used statement goes to the dataset first.
+pub(super) fn dart_statement_table(result: &Value) -> Option<Value> {
+    let facts = result.pointer("/data/facts")?.as_array()?;
+    let separate_income = facts.iter().any(|fact| fact["statement"] == "IS");
+    // Kept in this order; a single comprehensive statement is the income statement.
+    let mut statements: Vec<(&str, Vec<Value>)> = vec![
+        ("income_statement", Vec::new()),
+        ("balance_sheet", Vec::new()),
+        ("cash_flow", Vec::new()),
+        ("comprehensive_income", Vec::new()),
+    ];
+    let table_unit = facts
+        .iter()
+        .find_map(|fact| fact["currency"].as_str())
+        .unwrap_or("KRW")
+        .to_owned();
+    let quarter = result.pointer("/data/period/report_period") != Some(&json!("annual"));
+    for fact in facts {
+        let slot = match (fact["statement"].as_str(), separate_income) {
+            (Some("IS"), _) | (Some("CIS"), false) => 0,
+            (Some("BS"), _) => 1,
+            (Some("CF"), _) => 2,
+            (Some("CIS"), true) => 3,
+            _ => continue,
+        };
+        if fact["value"].is_null() && fact["cumulative_value"].is_null() {
+            continue;
+        }
+        let mut row = vec![
+            fact["label"].clone(),
+            fact["canonical_concept"].clone(),
+            fact["value"].clone(),
+        ];
+        if quarter {
+            row.push(fact["cumulative_value"].clone());
+        }
+        // A row in another unit (EPS per share) says so; the rest are the table's unit.
+        if fact["unit"].as_str().is_some_and(|unit| unit != table_unit) {
+            row.push(fact["unit"].clone());
+        }
+        statements[slot].1.push(Value::Array(row));
+    }
+    let mut left_to_dataset = Vec::new();
+    let mut table = serde_json::Map::new();
+    for (name, rows) in &statements {
+        if !rows.is_empty() {
+            table.insert((*name).to_owned(), json!(rows));
+        }
+    }
+    let data = &result["data"];
+    let mut columns = vec!["label", "concept", "value"];
+    if quarter {
+        columns.push("cumulative_value");
+    }
+    let mut out = json!({
+        "unit": table_unit,
+        "period": data["period"],
+        "company": data["company"],
+        "columns": columns,
+        "statements": table,
+        "left_to_dataset": [],
+        "note": "Every line item of each statement as filed. Values are raw amounts in `unit`, not rescaled; a row with a fifth element names its own unit. In a quarterly read `value` is the quarter and `cumulative_value` the year to date; balance-sheet rows are at the period end. Write a figure from a row in the scale the answer uses and cite it with this result's citation_url: it is checked against the read's complete facts. Changes in equity and any statement named in left_to_dataset are in dataset_ref only."
+    });
+    while out.to_string().len() > MAX_STATEMENT_TABLE_BYTES {
+        let Some((name, _)) = statements
+            .iter()
+            .rev()
+            .find(|(name, rows)| !rows.is_empty() && out["statements"].get(*name).is_some())
+        else {
+            break;
+        };
+        out["statements"].as_object_mut()?.remove(*name);
+        left_to_dataset.push(*name);
+        out["left_to_dataset"] = json!(left_to_dataset);
+    }
+    out["statements"]
+        .as_object()
+        .filter(|table| !table.is_empty())?;
+    Some(out)
+}
+
+/// Every period of a market-data income statement, balance sheet or cash
+/// flow read (structuredContent.results, one object per period) as one table,
+/// for a delivery too large to send whole: the summary sample shows only the
+/// first three periods. The number check reads the complete retained result.
+pub(super) fn market_statement_table(result: &Value) -> Option<Value> {
+    let periods = result.pointer("/structuredContent/results")?.as_array()?;
+    let mut columns: Vec<String> = Vec::new();
+    for period in periods {
+        for (key, value) in period.as_object()? {
+            if (value.is_number()
+                || key == "period_ending"
+                || key == "fiscal_period"
+                || key == "fiscal_year")
+                && !columns.contains(key)
+            {
+                columns.push(key.clone());
+            }
+        }
+    }
+    // The period identity first, then the line items.
+    columns.sort_by_key(|key| match key.as_str() {
+        "period_ending" => 0,
+        "fiscal_year" => 1,
+        "fiscal_period" => 2,
+        _ => 3,
+    });
+    let rows = periods
+        .iter()
+        .map(|period| {
+            Value::Array(
+                columns
+                    .iter()
+                    .map(|key| period[key.as_str()].clone())
+                    .collect(),
+            )
+        })
+        .collect::<Vec<_>>();
+    if rows.is_empty() || columns.len() < 2 {
+        return None;
+    }
+    let out = json!({
+        "provider": result.pointer("/structuredContent/provider"),
+        "columns": columns,
+        "rows": rows,
+        "note": "Every period this read returned, one row each, in the provider's own unit, not rescaled. Write a figure from a row in the scale the answer uses and cite it with this result's citation_url: it is checked against the complete result, which is in dataset_ref."
+    });
+    (out.to_string().len() <= MAX_STATEMENT_TABLE_BYTES).then_some(out)
+}
+
 /// A dividend notice filed after the as-of date was not known then.
 fn leave_out_later_notice(output: &mut Value, cutoff: chrono::NaiveDate) {
     let Some(notice) = output.pointer_mut("/data/record_date") else {
@@ -1063,6 +1207,34 @@ mod tests {
         assert_eq!(dart_report_type(&json!("annual"), &["A"]).unwrap(), "A001");
         assert!(dart_report_type(&json!("annual"), &["B"]).is_err());
         assert!(dart_report_type(&json!("q3"), &[]).is_err());
+    }
+
+    /// A five-period yfinance income statement (field names as OpenBB returns
+    /// them; values fictional): the summary sample showed three periods.
+    #[test]
+    fn a_compacted_market_statement_read_lists_every_period() {
+        let periods = (0..5)
+            .map(|offset| {
+                json!({"period_ending": format!("{}-06-30", 2026 - offset), "fiscal_period": "FY",
+                    "total_revenue": 331839000000.0 - offset as f64 * 1e10, "operating_income": 155237000000.0 - offset as f64 * 1e9,
+                    "basic_earnings_per_share": 18.0 - offset as f64, "currency": "USD"})
+            })
+            .collect::<Vec<_>>();
+        let result = json!({"structuredContent": {"provider": "yfinance", "results": periods}, "dataset_ref": {"dataset_id": "ds", "revision": 1}});
+        let table = market_statement_table(&result).unwrap();
+        assert_eq!(table["rows"].as_array().unwrap().len(), 5);
+        assert_eq!(table["columns"][0], "period_ending");
+        assert!(table["columns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|column| column != "currency"));
+        assert!(table.to_string().contains("2022-06-30"));
+        assert!(table.to_string().contains("291839000000.0"));
+        assert_eq!(
+            market_statement_table(&json!({"structuredContent": {"results": []}})),
+            None
+        );
     }
 
     #[test]

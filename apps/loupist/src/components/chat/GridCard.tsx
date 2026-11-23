@@ -30,6 +30,7 @@ import { savedAssetTarget } from "../../chat/navigation";
 import { useAssetPageOpener } from "../assets/assetOpener";
 import type { AssetPageTarget } from "../../contracts/assets";
 import { titledExport } from "../../lib/exportTitle";
+import { OpenInPanelButton } from "./OpenInPanelButton";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -96,7 +97,7 @@ function EmptyCell({ cell, spoken, evidenceRefs }: { cell: GridEmptyCell; spoken
   </Popover.Root>;
 }
 
-type Actions = { onCopy: () => void; copied: boolean; onExport?: (kind: "csv" | "md") => void; onAsk?: () => void; askDisabled?: boolean; askLabel: string };
+type Actions = { onCopy: () => void; copied: boolean; onExport?: (kind: "csv" | "md") => void; onAsk?: () => void; askDisabled?: boolean; askLabel: string; artifact?: ChatArtifactRef };
 
 /** A menu opens on its first item, never with focus on the whole menu. */
 function useFirstItemFocus() {
@@ -108,12 +109,13 @@ function useFirstItemFocus() {
 }
 
 /** Copy, Export ▾ and Ask; at 700 px they fold into one ⋯ menu (§2.4). */
-function CardActions({ onCopy, copied, onExport, onAsk, askDisabled, askLabel }: Actions) {
+function CardActions({ onCopy, copied, onExport, onAsk, askDisabled, askLabel, artifact }: Actions) {
   useTranslation("chat");
   const exportMenu = useFirstItemFocus();
   const moreMenu = useFirstItemFocus();
   return <>
     <div className="grid-card-actions">
+      {artifact ? <OpenInPanelButton artifact={artifact} /> : null}
       <Button type="button" variant="ghost" size="sm" onClick={onCopy}>{copied ? t("grid.copied") : t("grid.copy")}</Button>
       {onExport ? <DropdownMenu onOpenChange={exportMenu.onOpenChange}>
         <DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="sm" data-grid-export>{t("grid.export")}<ChevronDownIcon aria-hidden="true" /></Button></DropdownMenuTrigger>
@@ -252,6 +254,8 @@ export type GridCardProps = {
   filled?: boolean;
   /** The Loupist a detached table belongs to, where no chat scope names it (Work). */
   loupistId?: string;
+  /** The revision this answer card shows. The panel's own copy of the card omits it. */
+  artifact?: ChatArtifactRef;
 };
 
 /**
@@ -259,7 +263,7 @@ export type GridCardProps = {
  * a number chip Rust checked, empty cells with their reason, sortable columns
  * and exports that keep each cell's source or formula.
  */
-export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabled, filled = false, loupistId }: GridCardProps) {
+export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabled, filled = false, loupistId, artifact }: GridCardProps) {
   useTranslation("chat");
   const go = useGo();
   const conversation = useConversationScroll();
@@ -388,7 +392,7 @@ export function GridCard({ title, grid, evidenceRefs, onExport, onAsk, askDisabl
         {shared ? <p className="grid-card-subtitle grid-card-shared-period">{shared}</p> : null}
       </div>
       <CardActions onCopy={copy} copied={copied} onExport={onExport ? (kind) => void save(kind) : undefined}
-        onAsk={onAsk} askDisabled={askDisabled} askLabel={t("chatBlock.askAbout", { title })} />
+        onAsk={onAsk} askDisabled={askDisabled} askLabel={t("chatBlock.askAbout", { title })} artifact={artifact} />
     </header>
     {saveFailed ? <p className="grid-card-error" role="alert">{t("grid.saveFailed")} <Button type="button" variant="link" size="sm" onClick={() => void save(saveFailed)}>{t("grid.retry")}</Button></p> : null}
     <div ref={scroll.ref} className="grid-card-scroll" role="region" tabIndex={0} aria-label={t("grid.scroll")}
@@ -541,7 +545,7 @@ export const ChatGridBlock = memo(function ChatGridBlock({ block, onAsk, askDisa
     if (payload.grid.layout === "conflict") {
       return <ConflictCard title={title} conflict={payload.grid} evidenceRefs={evidenceRefs} />;
     }
-    return <GridCard title={title} grid={payload.grid} evidenceRefs={evidenceRefs} filled={wasBuilding}
+    return <GridCard title={title} grid={payload.grid} evidenceRefs={evidenceRefs} filled={wasBuilding} artifact={chatArtifactRef(loaded)}
       onExport={(request) => scope.bridge.exportSave(titledExport(request))}
       onAsk={onAsk ? () => onAsk(chatArtifactRef(loaded)) : undefined} askDisabled={askDisabled} />;
   }

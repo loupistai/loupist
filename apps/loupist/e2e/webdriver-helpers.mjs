@@ -130,3 +130,26 @@ export function createWebdriverHelpers(browser, options = {}) {
     waitForAppReady,
   };
 }
+
+const VIOLATIONS_KEY = "loupist.cspViolations";
+
+/**
+ * Collects the Content-Security-Policy violations the release renderer's recorder kept in the
+ * window (release-renderer.mjs). A Vite dev server serves no policy and records nothing, so the
+ * same suite fails on a violation only where the shipped policy is enforced.
+ */
+export function createPolicyWatch(browser) {
+  const seen = new Map();
+  return {
+    async collect(step) {
+      const entries = await browser.execute((key) => {
+        try { return JSON.parse(sessionStorage.getItem(key) || "[]"); } catch { return []; }
+      }, VIOLATIONS_KEY).catch(() => []);
+      for (const entry of Array.isArray(entries) ? entries : []) {
+        const key = JSON.stringify(entry);
+        if (!seen.has(key)) seen.set(key, { ...entry, step });
+      }
+    },
+    violations: () => [...seen.values()],
+  };
+}

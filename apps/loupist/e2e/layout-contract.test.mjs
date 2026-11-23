@@ -6,8 +6,9 @@ import { assertShellLayout, measureShellLayout } from "./shell-layout.mjs";
 import { assertChatLayout, measureChatLayout } from "./native-layout.mjs";
 import { assertMapOverlays, measureMapOverlays } from "./map-layout.mjs";
 
-function measure(callback, html) {
+function measure(callback, html, { width = 700, height = 820, clampDocument = false } = {}) {
   const { window } = new JSDOM(html);
+  if (clampDocument) Object.defineProperty(window.document.documentElement, "scrollWidth", { configurable: true, get: () => width });
   window.HTMLElement.prototype.getBoundingClientRect = function () {
     const [x, y, width, height] = this.getAttribute("data-rect")?.split(",").map(Number) ?? [0, 0, 100, 40];
     return { x, y, left: x, top: y, width, height, right: x + width, bottom: y + height };
@@ -25,7 +26,7 @@ function measure(callback, html) {
   try {
     return vm.runInNewContext(`(${callback})()`, {
       document: window.document, getComputedStyle: window.getComputedStyle.bind(window),
-      innerWidth: 700, innerHeight: 820, location: { href: "http://localhost/preview.html" },
+      innerWidth: width, innerHeight: height, location: { href: "http://localhost/preview.html" },
     });
   } finally { window.close(); }
 }
@@ -72,11 +73,36 @@ test("collapsed rail rejects a control that covers a destination", () => {
   assert.throws(() => assertShellLayout(measure(measureShellLayout, html(true))), /collapsed rail item is covered by another control/);
 });
 
+/** Answer column at the 700×560 minimum window. `openX` places Open in side panel; More sits 32 px to its right. */
+function answerChart(openX) {
+  return `<div class="chat-workspace" data-rect="0,0,700,560">
+    <div class="chat-reading-pane" data-rect="0,0,700,496">
+      <div class="conversation-content" style="padding:0" data-rect="20,0,660,496">
+        <article class="chat-artifact-block" data-rect="20,40,660,300">
+          <header class="chat-artifact-block-header" data-rect="20,40,660,40">
+            <button class="open-in-panel" aria-label="Open in side panel" data-rect="${openX},46,28,28"></button>
+            <button class="chat-artifact-block-more" data-rect="${openX + 32},46,28,28"></button>
+          </header>
+        </article>
+      </div>
+    </div>
+    <div class="composer-shell" data-rect="20,496,660,64"></div>
+  </div>`;
+}
+
 test("chart toolbar measures native range selects and its More button", () => {
   const layout = measure(measureChatLayout, `<article class="chat-artifact-block">
     <div class="chart-local-toolbar"><span>NVDA</span><select><option>Start</option></select><select><option>End</option></select><button class="chart-more-trigger">…</button></div>
   </article>`);
   assert.equal(layout.cards[0].toolbars[0].controls.length, 3);
+  const fitted = measure(measureChatLayout, answerChart(600), { height: 560, clampDocument: true });
+  assert.equal(fitted.viewport.width, 700);
+  assert.equal(fitted.viewport.height, 560);
+  assert.equal(fitted.cards[0].toolbars[0].controls.length, 2);
+  assert.doesNotThrow(() => assertChatLayout(fitted, { scenario: "chat-chart-inline" }));
+  // The new button, or the control it pushes, outside the card fails at 700×560.
+  assert.throws(() => assertChatLayout(measure(measureChatLayout, answerChart(660), { height: 560, clampDocument: true }), { scenario: "chat-chart-inline" }), /toolbar control is clipped/);
+  assert.throws(() => assertChatLayout(measure(measureChatLayout, answerChart(628), { height: 560, clampDocument: true }), { scenario: "chat-chart-inline" }), /toolbar control is clipped/);
 });
 
 function chatLayout({ overlay = true, panelWidth = 700, chatWidth = 700 } = {}) {

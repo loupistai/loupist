@@ -106,9 +106,10 @@ describe("World and Lens in the single Chat flow", () => {
   it("isolates and restores unsent text, files and references across Chats and Loupists", async () => {
     const user = userEvent.setup();
     await openApp();
-    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:saved-draft");
     await user.type(composer(), "First draft");
     await user.upload(screen.getByLabelText("Upload files"), new File(["source"], "draft.txt", { type: "text/plain" }));
+    await screen.findByRole("button", { name: "Remove draft.txt" });
+    await screen.findByRole("button", { name: "Remove draft.txt" });
     await attachSource(user);
     const firstDraft = (composer() as HTMLTextAreaElement).value;
     expect(firstDraft).toContain("First draft");

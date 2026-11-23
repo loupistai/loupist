@@ -239,11 +239,14 @@ describe("ChatWorkspacePanel Work tab", () => {
     expect(onDockKind).not.toHaveBeenCalled();
     mounted.rerender(<ChatWorkspacePanel {...panelProps(bridge)} session={chart} onDockKind={onDockKind} onPlacementToggle={onPlacementToggle} />);
     expect(onDockKind).toHaveBeenLastCalledWith("chart");
+    expect(document.getElementById("workspace-panel")).toHaveAttribute("data-open-artifact", "chart");
+    expect(document.getElementById("workspace-panel")).toHaveAttribute("data-open-revision", "1");
     await user.click(screen.getByRole("button", { name: "Panel menu" }));
     await user.click(await screen.findByRole("menuitem", { name: "Dock at bottom" }));
     expect(onPlacementToggle).toHaveBeenCalledWith("bottom", "chart");
     mounted.rerender(<ChatWorkspacePanel {...panelProps(bridge)} session={reading} onDockKind={onDockKind} onPlacementToggle={onPlacementToggle} />);
     expect(onDockKind).toHaveBeenLastCalledWith("reading");
+    expect(document.getElementById("workspace-panel")).not.toHaveAttribute("data-open-artifact");
   });
 
   it("pins the placement for every kind from the Dock control's menu, naming it, and shows when it is on", async () => {

@@ -257,6 +257,7 @@
   },
   "chatProgressTimeline": {
     "failed": "Failed",
+    "noResult": "No result",
     "stopped": "Stopped",
     "runStatus": "Response status",
     "workProgress": "Work progress",
@@ -1007,6 +1008,7 @@
       "tableFormatCsv": "CSV",
       "tableFormatMarkdown": "Markdown",
       "tableFormatTsv": "TSV",
+      "openInSidePanel": "Open in side panel",
       "viewFullscreen": "View fullscreen"
     }
   },
@@ -1018,7 +1020,8 @@
     "couldNotReadOrSendTheAttachedMessageYour": "Could not read or send the attached message. Your draft and files have been kept. Try again, or remove and reattach the files.",
     "uploadFiles": "Upload files",
     "whatWouldYouLikeToKnow": "What would you like to know?",
-    "fileSizeLimit": "Files larger than {{value1}} MB were not added."
+    "fileSizeLimit": "Files larger than {{value1}} MB were not added.",
+    "pastedImageName": "Pasted image {{time}}"
   },
   "aiSdk": {
     "attachmentDataIsUnavailable": "Attachment data is unavailable.",

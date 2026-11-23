@@ -2,6 +2,57 @@ use super::*;
 use crate::store::SqliteStore;
 use rusqlite::{params, OptionalExtension};
 
+/// How many leading rows of the array at `pointer` the bounded sample shows.
+fn sample_rows(sample: &Value, pointer: &str) -> usize {
+    let omitted = json!({"omitted":"preview limit"});
+    sample
+        .pointer(pointer)
+        .and_then(Value::as_array)
+        .map_or(0, |rows| rows.iter().filter(|row| **row != omitted).count())
+}
+
+/// The first and last value of a row array's date column, in row order.
+fn date_range(payload: &Value, pointer: &str) -> Option<Value> {
+    const NAMED: [&str; 6] = [
+        "date",
+        "period_ending",
+        "period",
+        "filing_date",
+        "filed_at",
+        "datetime",
+    ];
+    let rows = payload.pointer(pointer)?.as_array()?;
+    let first = rows.first()?.as_object()?;
+    let column = NAMED
+        .iter()
+        .find(|name| first.get(**name).is_some_and(Value::is_string))
+        .map(|name| (*name).to_owned())
+        .or_else(|| {
+            first
+                .iter()
+                .find(|(key, value)| key.ends_with("date") && value.is_string())
+                .map(|(key, _)| key.clone())
+        })?;
+    let text = |row: Option<&Value>| {
+        row.and_then(|row| row.get(&column))
+            .and_then(Value::as_str)
+            .map(|text| text.chars().take(64).collect::<String>())
+    };
+    Some(json!({"column": column, "first": text(rows.first()), "last": text(rows.last())}))
+}
+
+/// The last rows of the array at `pointer` that the sample's first `shown`
+/// rows leave out (at most three), with the offset of the first one.
+fn last_rows(payload: &Value, pointer: &str, shown: usize) -> Option<Value> {
+    let rows = payload.pointer(pointer)?.as_array()?;
+    let count = rows.len().saturating_sub(shown).min(3);
+    if count == 0 {
+        return None;
+    }
+    let offset = rows.len() - count;
+    Some(json!({"offset": offset, "rows": preview(&Value::Array(rows[offset..].to_vec()), count)}))
+}
+
 impl SqliteStore {
     pub fn dataset_put(
         &self,
@@ -201,8 +252,28 @@ impl SqliteStore {
         id: &str,
         revision: u32,
     ) -> Result<Value, CommandError> {
+        self.dataset_describe_omitting(loupist, id, revision, &[])
+    }
+
+    /// The description without the members at `omitted` (JSON pointers):
+    /// provider bookkeeping that would otherwise take the sample's budget.
+    /// They stay in the retained dataset.
+    pub fn dataset_describe_omitting(
+        &self,
+        loupist: &str,
+        id: &str,
+        revision: u32,
+        omitted: &[&str],
+    ) -> Result<Value, CommandError> {
         const RESPONSE_BYTES: usize = 64 * 1024;
-        let (reference, payload, metadata) = self.dataset(loupist, id, revision)?;
+        let (reference, mut payload, metadata) = self.dataset(loupist, id, revision)?;
+        for pointer in omitted {
+            if let Some((parent, key)) = pointer.rsplit_once('/') {
+                if let Some(object) = payload.pointer_mut(parent).and_then(Value::as_object_mut) {
+                    object.remove(key);
+                }
+            }
+        }
         fn arrays(
             v: &Value,
             path: String,
@@ -222,7 +293,7 @@ impl SqliteStore {
                         fields
                             .keys()
                             .filter(|key| key.len() <= 256)
-                            .take(32)
+                            .take(80)
                             .cloned()
                             .collect::<Vec<_>>()
                     });
@@ -280,8 +351,26 @@ impl SqliteStore {
         let mut used = serde_json::to_vec(&result).map_err(error)?.len();
         let mut accepted = Vec::new();
         let mut omitted = 0;
-        for section in sections {
-            let bytes = serde_json::to_vec(&section).map_err(error)?.len() + 1;
+        for mut section in sections {
+            // The sample keeps the first rows of each array. A price or rate
+            // series ends with its latest rows, so a section also carries the
+            // rows after the sample when they fit the same budget.
+            let pointer = section["pointer"].as_str().unwrap_or_default().to_owned();
+            let shown = sample_rows(&result["sample"], &pointer);
+            section["sample_rows"] = json!(shown);
+            if let Some(range) = date_range(&payload, &pointer) {
+                section["date_range"] = range;
+            }
+            let mut bytes = serde_json::to_vec(&section).map_err(error)?.len() + 1;
+            if let Some(last) = last_rows(&payload, &pointer, shown) {
+                let mut with_last = section.clone();
+                with_last["last_rows"] = last;
+                let longer = serde_json::to_vec(&with_last).map_err(error)?.len() + 1;
+                if used.saturating_add(longer) <= RESPONSE_BYTES - 512 {
+                    section = with_last;
+                    bytes = longer;
+                }
+            }
             if used.saturating_add(bytes) > RESPONSE_BYTES - 512 {
                 omitted += 1;
                 truncated = true;

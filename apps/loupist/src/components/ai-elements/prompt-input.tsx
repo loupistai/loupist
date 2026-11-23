@@ -49,6 +49,11 @@ const t = i18n.getFixedT(null, "chat");
 // Helpers
 // ============================================================================
 
+/**
+ * The file's bytes as a data: URL. The app's Content-Security-Policy allows `data:` images and no
+ * `blob:` source, so an object URL could neither preview an image nor be fetched back on send
+ * (docs/runtime/permissions.md#renderer-content-security-policy).
+ */
 const readFileDataUrl = (blob: Blob): Promise<string | null> => {
     // FileReader uses callback-based API, wrapping in Promise is necessary
     // oxlint-disable-next-line eslint-plugin-promise(avoid-new)
@@ -63,26 +68,55 @@ const readFileDataUrl = (blob: Blob): Promise<string | null> => {
     });
 };
 
-const convertBlobUrlToDataUrl = async (url: string): Promise<string | null> => {
-  try {
-    const response = await fetch(url);
-    if (!response.ok) return null;
-    const blob = await response.blob();
-    return await readFileDataUrl(blob);
-  } catch {
-    return null;
-  }
+const IMAGE_EXTENSIONS: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/heic": "heic", "image/tiff": "tiff" };
+const two = (value: number) => String(value).padStart(2, "0");
+
+/**
+ * A pasted picture under a name of its own ("Pasted image 2026-11-23 21.04.png"): WebKit names every
+ * clipboard image "image.png", which would make several pasted images indistinguishable.
+ */
+export function pastedImage(file: Blob, at = new Date(), index = 0): File {
+  const time = `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())} ${two(at.getHours())}.${two(at.getMinutes())}`;
+  const name = `${t("promptInput.pastedImageName", { time })}${index ? ` (${index + 1})` : ""}.${IMAGE_EXTENSIONS[file.type] ?? "png"}`;
+  return new File([file], name, { type: file.type || "image/png", lastModified: at.getTime() });
+}
+
+/** The clipboard's own name for an image it holds, rather than a file someone named. */
+const unnamedClipboardImage = (file: File) => file.type.startsWith("image/") && (!file.name || /^image\.[a-z0-9]+$/iu.test(file.name));
+
+/**
+ * Text that only describes the files next to it: nothing, a file's own name (Finder puts it beside
+ * the file) or an address (a browser's Copy Image). Any other text is what the user copied.
+ */
+const textOnlyNamesFiles = (text: string, files: readonly File[]) => {
+  const value = text.trim();
+  if (!value) return true;
+  if (/^(?:https?|file):\/\/\S+$/iu.test(value)) return true;
+  const names = new Set(files.map((file) => file.name));
+  return value.split(/\r?\n/u).every((line) => names.has(line.trim()));
 };
 
-/** A file in the composer tray, with the size of the file the user picked. */
-export type AttachedFile = FileUIPart & { id: string; sizeBytes?: number };
-
-const originalFiles = new WeakMap<AttachedFile, File>();
-export function attachmentDataUrl(file: AttachedFile): Promise<string | null> {
-  const original = originalFiles.get(file);
-  if (original) return readFileDataUrl(original);
-  return file.url.startsWith("blob:") ? convertBlobUrlToDataUrl(file.url) : Promise.resolve(file.url);
+/**
+ * The files a paste attaches, or none when it is a text paste. A copied spreadsheet range or web
+ * selection carries a picture of itself next to its text; the text wins unless the clipboard holds
+ * only images (or their names or address). A copied non-image file always attaches.
+ */
+export function pastedFiles(data: Pick<DataTransfer, "items" | "files"> & Partial<Pick<DataTransfer, "getData">>, at = new Date()): File[] {
+  const fromItems = [...(data.items ?? [])].flatMap((item) => {
+    if (item.kind !== "file") return [];
+    const file = item.getAsFile();
+    return file ? [file] : [];
+  });
+  const files = fromItems.length ? fromItems : [...(data.files ?? [])];
+  if (!files.length) return [];
+  const imagesOnly = files.every((file) => file.type.startsWith("image/"));
+  if (imagesOnly && !textOnlyNamesFiles(data.getData?.("text/plain") ?? "", files)) return [];
+  let unnamed = 0;
+  return files.map((file) => unnamedClipboardImage(file) ? pastedImage(file, at, unnamed++) : file);
 }
+
+/** A file in the composer tray, with the size of the file the user picked. Its `url` is a data: URL of its bytes. */
+export type AttachedFile = FileUIPart & { id: string; sizeBytes?: number };
 
 export interface AttachmentsContext {
   isSubmitting: boolean;
@@ -260,23 +294,32 @@ export const PromptInput = ({
       }
       if (!sized.length) return;
 
-      const previous = filesRef.current;
-      const capacity = maxFiles === undefined ? sized.length : Math.max(0, maxFiles - previous.length);
-      const capped = sized.slice(0, capacity);
-      if (sized.length > capacity) {
-        onError?.({ code: "max_files", message: t("promptInput.tooManyFilesSomeWereNotAdded") });
-      }
-      // Blob URLs belong to an attachment event, never a replayable React updater.
-      const next: AttachedFile[] = capped.map((file) => ({
-        filename: file.name,
-        sizeBytes: file.size,
-        id: globalThis.crypto.randomUUID(),
-        mediaType: file.type,
-        type: "file",
-        url: URL.createObjectURL(file),
-      }));
-      next.forEach((attachment, i) => originalFiles.set(attachment, capped[i]));
-      if (next.length) updateFiles([...previous, ...next]);
+      // Read the bytes once, when the file is added: the data: URL is the image's preview, the draft's
+      // saved copy and what the host receives on send. The tray's count is checked when they are in.
+      void Promise.all(sized.map(readFileDataUrl)).then((urls) => {
+        if (!mountedRef.current) return;
+        const read = sized.flatMap((file, i) => {
+          const url = urls[i];
+          return url?.startsWith("data:") ? [{ file, url }] : [];
+        });
+        if (read.length < sized.length) {
+          onError?.({ code: "validation", message: t("promptInput.couldNotReadAnAttachedFileRemoveItAnd") });
+        }
+        const previous = filesRef.current;
+        const capacity = maxFiles === undefined ? read.length : Math.max(0, maxFiles - previous.length);
+        if (read.length > capacity) {
+          onError?.({ code: "max_files", message: t("promptInput.tooManyFilesSomeWereNotAdded") });
+        }
+        const next: AttachedFile[] = read.slice(0, capacity).map(({ file, url }) => ({
+          filename: file.name,
+          sizeBytes: file.size,
+          id: globalThis.crypto.randomUUID(),
+          mediaType: file.type,
+          type: "file",
+          url,
+        }));
+        if (next.length) updateFiles([...previous, ...next]);
+      });
     },
     [matchesAccept, maxFiles, maxFileSize, onError, updateFiles, validateFile]
   );
@@ -286,7 +329,6 @@ export const PromptInput = ({
       const previous = attachmentDraft?.files ?? filesRef.current;
       const found = previous.find((file) => file.id === id);
       if (!found) return;
-      URL.revokeObjectURL(found.url);
       updateFiles(previous.filter((file) => file.id !== id));
     },
     [attachmentDraft, updateFiles]
@@ -318,19 +360,6 @@ export const PromptInput = ({
       form.removeEventListener("drop", onDrop);
     };
   }, [add]);
-
-  useEffect(
-    () => () => {
-      if (attachmentDraft) return;
-      for (const file of filesRef.current) {
-        if (file.url) {
-          URL.revokeObjectURL(file.url);
-        }
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount-only cleanup; a draft-backed tray leaves its object URLs to the draft.
-    []
-  );
 
   const handleChange: ChangeEventHandler<HTMLInputElement> = useCallback(
     (event) => {
@@ -366,23 +395,12 @@ export const PromptInput = ({
       const text = (formData.get("message") as string) || "";
 
       try {
-        // Convert blob URLs to data URLs asynchronously
-        const convertedFiles: FileUIPart[] = await Promise.all(
-          files.map(async ({ id: _id, ...item }) => {
-            if (item.url?.startsWith("blob:")) {
-              const dataUrl = await convertBlobUrlToDataUrl(item.url);
-              if (!dataUrl) throw new Error(t("promptInput.couldNotReadAnAttachedFileRemoveItAnd"));
-              return {
-                ...item,
-                url: dataUrl,
-              };
-            }
-            return item;
-          })
-        );
-
-        if (!mountedRef.current) return;
-        const accepted = await onSubmit({ files: convertedFiles, text }, event);
+        // Each file was read into a data: URL when it was added (or restored as one with the draft).
+        const submitted: FileUIPart[] = files.map(({ id: _id, ...item }) => {
+          if (!item.url.startsWith("data:")) throw new Error(t("promptInput.couldNotReadAnAttachedFileRemoveItAnd"));
+          return item;
+        });
+        const accepted = await onSubmit({ files: submitted, text }, event);
         if (accepted !== false) {
           // Preserve any files added while this snapshot was being submitted.
           files.forEach((file) => remove(file.id));
@@ -501,29 +519,15 @@ export const PromptInputTextarea = ({
     [onKeyDown, isComposing, attachments]
   );
 
+  // ⌘V of a screenshot, a copied image or a file copied in Finder attaches it, through the same
+  // checks as the + menu and a drop (size, count, type). A text paste stays the textarea's own.
   const handlePaste: ClipboardEventHandler<HTMLTextAreaElement> = useCallback(
     (event) => {
-      const items = event.clipboardData?.items;
-
-      if (!items) {
-        return;
-      }
-
-      const files: File[] = [];
-
-      for (const item of items) {
-        if (item.kind === "file") {
-          const file = item.getAsFile();
-          if (file) {
-            files.push(file);
-          }
-        }
-      }
-
-      if (files.length > 0) {
-        event.preventDefault();
-        attachments.add(files);
-      }
+      if (!event.clipboardData) return;
+      const files = pastedFiles(event.clipboardData);
+      if (!files.length) return;
+      event.preventDefault();
+      attachments.add(files);
     },
     [attachments]
   );

@@ -17,6 +17,8 @@ pub(crate) use kis::KisAccountProfile;
 use kis::*;
 pub(crate) use percent_fields::is_percent_field;
 use provider_common::*;
+#[cfg(test)]
+pub(crate) use provider_korea::recorded_statements;
 pub(crate) use vendor::{native_vendor, serving_vendor, VendorCredential};
 
 /// The `dart_major_report` kind a 주요사항보고서 title names, if it is one the tool reads.

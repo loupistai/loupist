@@ -105,7 +105,14 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.composer .composer-prompt textarea::selection { color: transparent; background: var(--gg-color-accent-soft); }
+/* The textarea's own glyphs are transparent over the highlight layer, so a selection paints its text itself, in the
+   system selection colour every other field uses. A transparent selected text over the pale accent read as greyed
+   out, so ⌘A seemed to do nothing. */
+.composer .composer-prompt textarea::selection {
+  color: var(--gg-color-text-primary);
+  -webkit-text-fill-color: var(--gg-color-text-primary);
+  background: Highlight;
+}
 /* A selection made in the thread can reach past the composer; WebKit then fills the whole textarea with the colour
    above. Until it has focus the box takes no part in a page selection; a click focuses it before it selects. */
 .app-shell .composer .composer-prompt textarea:not(:focus) { -webkit-user-select: none; user-select: none; }

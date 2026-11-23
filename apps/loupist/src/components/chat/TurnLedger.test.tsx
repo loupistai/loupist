@@ -114,10 +114,16 @@ it("says under a failed market-data read why it was not used, by its failure kin
   ] };
   const rowOf = (text: string) => screen.getByText(text).closest<HTMLElement>("[data-testid='chat-progress-row']")!;
   const view = render(ledger(progress, "complete"));
-  await userEvent.setup().click(screen.getByRole("button", { name: /5 failed attempts/ }));
+  await userEvent.setup().click(screen.getByRole("button", { name: /4 failed attempts/ }));
   expect(rowOf("Read the earnings calendar")).toHaveTextContent("It ended with an error. It was not used in the answer.");
   expect(rowOf("Read key metrics")).toHaveTextContent("The source did not accept one of the request's values. It was not used in the answer.");
-  expect(rowOf("Read income statements")).toHaveTextContent("The source had nothing for this request. It was not used in the answer.");
+  expect(within(rowOf("Read key metrics")).getByText("Failed")).toBeVisible();
+  const empty = rowOf("Read income statements");
+  expect(empty).toHaveTextContent("The source had nothing for this request. It was not used in the answer.");
+  expect(within(empty).getByText("No result")).toBeVisible();
+  expect(within(empty).queryByText("Failed")).toBeNull();
+  expect(empty.querySelector(".chat-progress-status")).toHaveAttribute("data-outcome", "empty");
+  expect(empty.querySelector(".chat-progress-status svg")).toBeNull();
   expect(rowOf("Read current quote")).toHaveTextContent("The data provider could not be reached. It was not used in the answer.");
   // Other failed steps keep their quiet row.
   expect(rowOf("Read a web source")).not.toHaveTextContent("It was not used in the answer.");
@@ -125,12 +131,33 @@ it("says under a failed market-data read why it was not used, by its failure kin
   await i18n.changeLanguage("ko");
   try {
     render(ledger(progress, "complete"));
-    await userEvent.setup().click(screen.getByRole("button", { name: /실패/ }));
+    await userEvent.setup().click(screen.getByRole("button", { name: /실행 4건 실패/ }));
+    expect(screen.queryByRole("button", { name: /실행 5건 실패/ })).toBeNull();
     expect(rowOf("실적 발표 일정 읽음")).toHaveTextContent("오류로 끝났습니다. 답변에 사용하지 않았습니다.");
     expect(rowOf("주요 지표 읽음")).toHaveTextContent("자료 제공처가 요청의 값 하나를 받아들이지 않았습니다. 답변에 사용하지 않았습니다.");
+    expect(within(rowOf("주요 지표 읽음")).getByText("실패")).toBeVisible();
+    expect(within(rowOf("손익계산서 읽음")).getByText("결과 없음")).toBeVisible();
   } finally {
     await i18n.changeLanguage("en");
   }
+});
+
+it("counts one real failure beside an empty result as a single failed run", async () => {
+  await i18n.changeLanguage("ko");
+  try {
+    render(ledger({ startedAtMs: 1, finishedAtMs: 2000, items: [
+      { id: "empty", kind: "tool", toolName: "dart_financials", category: "finance", operation: "read", action: "Read financial statements", status: "failed", failureReason: "empty_result", target: "005930", href: null, startedAtMs: 0, finishedAtMs: 1_100 },
+      { id: "bad", kind: "tool", toolName: "run_python", category: "compute", operation: "execute", action: "Ran Python", status: "failed", failureReason: "invalid_input", target: null, href: null, startedAtMs: 0, finishedAtMs: null },
+    ] }, "complete"));
+    fireEvent.click(screen.getByRole("button", { name: "2초 작업 · 2단계 · 실행 1건 실패" }));
+    expect(screen.queryByRole("button", { name: /실행 2건 실패/ })).toBeNull();
+    const empty = screen.getByText("005930").closest<HTMLElement>(".chat-progress-row");
+    expect(empty).not.toBeNull();
+    expect(within(empty!).getByText("결과 없음")).toBeVisible();
+    expect(within(empty!).queryByText("실패")).toBeNull();
+    expect(empty).toHaveTextContent("자료 제공처에 이 요청에 해당하는 내용이 없었습니다. 답변에 사용하지 않았습니다.");
+    expect(within(screen.getByText("파이썬 실행함").closest<HTMLElement>(".chat-progress-row")!).getByText("실패")).toBeVisible();
+  } finally { await i18n.changeLanguage("en"); }
 });
 
 it("explains a step paused by the untrusted-text rule in the step, calmly and with no override (B92)", async () => {

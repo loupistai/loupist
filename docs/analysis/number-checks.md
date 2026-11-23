@@ -334,7 +334,17 @@ separate clauses. The status is the one the same digits would get with the sourc
 sign (`rounded` where the scale changes the shown precision). The check records
 `sourceSign: "outflow"`. For example, `설비투자는 $4.73bn` matches
 `Capital expenditures (4,732)` under `($ in millions …)`, and `$5.80bn` matches a
-dataset's `capital_expenditure: -5796000000`.
+dataset's `capital_expenditure: -5796000000`. A row whose label pairs an expense
+with its opposite (`법인세비용(수익)`, `금융수익(비용)`, `Income tax expense (benefit)`)
+counts the same way: its negative amount is the opposite item, so `124억원의 법인세수익`
+matches `법인세비용(수익) (12,359,747,436)`. `Net income (loss)` and
+`Other (expense) income, net` stay signed.
+
+A table whose unit heading lists `%` beside another unit (`(단위 : 백만원, %)`, as in
+DART's provisional-results notices) reads its decimal cells as rates as well as plain
+numbers, so `-25.4%` matches the bare `-25.4` of its 증감율 column; its whole numbers
+are not rates. A statement fact's `row`, `ordinal` and `scale` are positions and
+multipliers, never figures.
 
 The row-nature list lives in `knowledge/numbers/direction.rs` (`LINE_NATURES`).
 A row's label is the text before its first number, after the last sentence end,

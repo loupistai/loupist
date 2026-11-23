@@ -43,6 +43,10 @@ weekday as a session. From December it prints a notice for a next year the
 exchange has not published yet; the release workflow runs the same check.
 The `unused-files` step rejects renderer files outside the current app, preview,
 and external script import graph. See [Code cleanup](repository-guidance.md#code-cleanup).
+The `release-policy` step (`npm run preview:policy`, about 25 seconds) builds the renderer, serves it
+with the shipped Content-Security-Policy and opens a core set of preview scenarios in Chrome; any
+violation fails it ([Release renderer](../../apps/loupist/e2e/README.md#release-renderer)). It runs in
+the CI web job's second shard beside `chat-layout`, and needs the same browser.
 
 ```sh
 scripts/verify.sh --affected

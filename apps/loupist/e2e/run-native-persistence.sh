@@ -12,6 +12,18 @@ SESSION_INFO=
 RUN_LOG=
 APP_PID=
 E2E_STARTUP_TIMEOUT_MS=${LOUPIST_E2E_STARTUP_TIMEOUT_MS:-300000}
+RELEASE_RENDERER=
+case "${1:-}" in
+    --release-renderer)
+        # The built renderer under the shipped Content-Security-Policy (release-renderer.mjs).
+        RELEASE_RENDERER=1
+        ;;
+    "") ;;
+    *)
+        echo "usage: $0 [--release-renderer]" >&2
+        exit 1
+        ;;
+esac
 
 case "$E2E_STARTUP_TIMEOUT_MS" in
     *[!0-9]*|'')
@@ -88,6 +100,12 @@ trap 'exit 143' TERM
 STATE_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/loupist-persistence-e2e.XXXXXX")
 SESSION_INFO="$STATE_ROOT/session.json"
 RUN_LOG=$(mktemp "${TMPDIR:-/tmp}/loupist-persistence-log.XXXXXX")
+if [ -n "$RELEASE_RENDERER" ]; then
+    # One build serves every launch; each launch's server appends its reports to one file.
+    node "$SCRIPT_DIR/release-renderer.mjs" build "$STATE_ROOT/renderer"
+    export LOUPIST_E2E_RELEASE_RENDERER_DIR="$STATE_ROOT/renderer"
+    export LOUPIST_E2E_RELEASE_RENDERER="$STATE_ROOT/csp-reports.jsonl"
+fi
 
 # run_phase <seed|restart|copy|fork|reconnect> <state folder>
 run_phase() {
@@ -139,4 +157,7 @@ run_phase fork fork
 rm -rf "$STATE_ROOT/copy/workspace"
 cp -R "$STATE_ROOT/fork/workspace" "$STATE_ROOT/copy/workspace"
 run_phase reconnect copy
+if [ -n "$RELEASE_RENDERER" ]; then
+    node "$SCRIPT_DIR/release-renderer.mjs" check "$LOUPIST_E2E_RELEASE_RENDERER"
+fi
 echo "Loupist native persistence passed."

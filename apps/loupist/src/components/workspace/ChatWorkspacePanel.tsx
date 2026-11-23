@@ -631,8 +631,11 @@ function ScopedChatWorkspacePanel({
       <aside
         ref={panelRef}
         id="workspace-panel"
+        tabIndex={-1}
         className="artifact-panel workspace-panel"
         data-placement={placement}
+        data-open-artifact={openWork?.artifact.artifact_id}
+        data-open-revision={openWork ? String(openWork.artifact.revision) : undefined}
         data-expanded={expanded || undefined}
         data-resizing={resizing || undefined}
         style={

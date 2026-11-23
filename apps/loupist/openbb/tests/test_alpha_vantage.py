@@ -31,6 +31,15 @@ def check_daily_prices(scratch):
     day = date.today().isoformat()
     raw = f"timestamp,open,high,low,close,volume\n{day},1,3,1,2,12\n".encode()
     premium = json.dumps({"Information": "This is a premium endpoint."}).encode()
+    # Alpha Vantage's reply to a free key's second request within a second,
+    # recorded on 2026-11-23. It ends by offering premium endpoints.
+    burst = json.dumps(
+        {
+            "Information": "Thank you for using Alpha Vantage! Please consider spreading out your free API requests more sparingly (1 request per second). You may subscribe to any of the premium plans at https://www.alphavantage.co/premium/ to lift the free key rate limit (25 requests per day), raise the per-second burst limit, and instantly unlock all premium endpoints"
+        },
+        indent=4,
+    ).encode()
+    bursts = []
 
     class Response:
         def __init__(self, body):
@@ -50,6 +59,8 @@ def check_daily_prices(scratch):
         mode = (query["function"][0], query["outputsize"][0])
         requests.append(mode)
         body = raw if mode == ("TIME_SERIES_DAILY", "compact") else premium
+        if bursts:
+            body = bursts.pop()
         return await response_callback(Response(body), None)
 
     helpers.amake_request = request
@@ -99,6 +110,18 @@ def check_daily_prices(scratch):
                 assert refusal.is_error and refusal.structured_content == {
                     "loupist_error": {"kind": "alpha_vantage_paid_plan_required"}
                 }
+            # One burst notice is retried after a second; two in a row are a
+            # rate limit, not a paid plan.
+            started = asyncio.get_running_loop().time()
+            bursts.append(burst)
+            result = await client.call_tool(tool, base)
+            assert result.structured_content["results"][0]["close"] == 2
+            assert asyncio.get_running_loop().time() - started >= 1
+            bursts.extend([burst, burst])
+            refusal = await client.call_tool(tool, base, raise_on_error=False)
+            assert refusal.is_error and refusal.structured_content == {
+                "loupist_error": {"kind": "rate_limited", "provider": "alpha_vantage"}
+            }
             premium = (
                 "timestamp,open,high,low,close,adjusted_close,volume,dividend_amount,split_coefficient\n"
                 f"{day},1,3,1,2,2,12,0,1\n"
@@ -110,6 +133,7 @@ def check_daily_prices(scratch):
             ("TIME_SERIES_DAILY", "compact"),
             ("TIME_SERIES_DAILY_ADJUSTED", "full"),
             ("TIME_SERIES_DAILY", "full"),
+            *[("TIME_SERIES_DAILY", "compact")] * 4,
             ("TIME_SERIES_DAILY_ADJUSTED", "full"),
         ]
 

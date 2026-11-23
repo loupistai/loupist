@@ -41,7 +41,11 @@ pub(crate) const MCP_PROTOCOL_VERSION: &str = "2025-11-25";
 /// Revisions a server may answer with during `initialize` negotiation.
 pub(crate) const MCP_SUPPORTED_PROTOCOL_VERSIONS: &[&str] =
     &[MCP_PROTOCOL_VERSION, "2025-06-18", "2025-03-26"];
-const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
+/// One stdio line. A larger reply fails every pending call and ends the
+/// session, so this matches the 32 MiB that native vendor reads and retained
+/// datasets allow: a long daily price history or yield curve is delivered and
+/// compacted like any large result. The reader holds one frame at a time.
+const MAX_FRAME_BYTES: usize = 32 * 1024 * 1024;
 const MAX_BOOTSTRAP_BYTES: usize = 64 * 1024;
 const MAX_TOOLS: usize = 512;
 const MAX_TOOL_LIST_PAGES: usize = 64;
@@ -2494,6 +2498,19 @@ done
         .await
         .unwrap();
         assert!(!changed.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn a_frame_at_the_limit_is_read_whole() {
+        let (mut writer, reader) = duplex(64 * 1024);
+        let payload = vec![b'x'; MAX_FRAME_BYTES];
+        tokio::spawn(async move {
+            writer.write_all(&payload).await.unwrap();
+            writer.write_all(b"\n").await.unwrap();
+        });
+        let mut reader = BufReader::new(reader);
+        let frame = read_frame(&mut reader).await.unwrap().unwrap();
+        assert_eq!(frame.len(), 32 * 1024 * 1024);
     }
 
     #[tokio::test]

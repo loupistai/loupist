@@ -3,11 +3,13 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { remote } from "webdriverio";
-import { createWebdriverHelpers } from "./webdriver-helpers.mjs";
+import { createPolicyWatch, createWebdriverHelpers } from "./webdriver-helpers.mjs";
+import { describeViolations } from "./release-renderer.mjs";
 import { minimumWindowSize, setWindowSize, withWindowSize } from "./window-geometry.mjs";
 import { focusNativeWindow } from "./native-window-focus.mjs";
-import { assertComposerGrows, assertFormLegendsFit, assertNewLoupistPreviewShows, ComposerPreviewUnresponsive, composerMessageLayout, openComposerPreview } from "./native-forms.mjs";
+import { assertComposerGrows, assertComposerSelectAll, assertFormLegendsFit, assertNewLoupistPreviewShows, ComposerPreviewUnresponsive, composerMessageLayout, openComposerPreview } from "./native-forms.mjs";
 import { verifyNativeBrowserNavigation } from "./native-browser.mjs";
+import { verifyComposerAttachments } from "./native-attachments.mjs";
 import { assertShellLayout, measureShellLayout } from "./shell-layout.mjs";
 import { assertMapOverlays, measureMapOverlays } from "./map-layout.mjs";
 import {
@@ -73,11 +75,24 @@ const performanceReport = {
   budgets: {},
 };
 
+// Under the release renderer every step is checked against the shipped policy; the run lists all of them at the end.
+const policy = createPolicyWatch(browser);
 async function step(name, action) {
   process.stdout.write(`• ${name} ... `);
-  await action();
+  try {
+    await action();
+  } finally {
+    await policy.collect(name);
+  }
   console.log("passed");
 }
+const reportPolicyViolations = () => {
+  const violations = policy.violations();
+  if (!violations.length) return;
+  console.error(`Content-Security-Policy violations (${violations.length}):`);
+  for (const [index, line] of describeViolations(violations).entries()) console.error(`  ${index + 1}. ${line}`);
+  for (const entry of violations) console.error(`     step: ${entry.step}: ${entry.directive} ${entry.blocked}`);
+};
 
 const capture = (name) =>
   browser.saveScreenshot(resolve(artifactRoot, `native-smoke-${name}.png`));
@@ -307,6 +322,12 @@ try {
 
   // The knowledge fixture's Loupist holds the Map link; the next step removes it.
   if (slowHandoff) await step("a Bot hand-off runs on its own with nothing in Bot, streams into its session, takes guidance, stops and is posted once", runSlowHandoffJourney);
+  // The fixture model takes images; under --release-renderer this runs with the shipped policy enforced.
+  if (slowHandoff) await step("an image and a file from the + menu's file input are previewed, sent and shown on the sent message", async () => {
+    await openBot();
+    performanceReport.attachments = await verifyComposerAttachments(browser);
+    await capture("attachments-sent");
+  });
   else console.log("• a Bot hand-off journey ... skipped: LOUPIST_E2E_SLOW_HANDOFF needs a macOS Apple Silicon debug build");
 
   await step("English interface and a clear onboarding start", async () => {
@@ -709,6 +730,11 @@ try {
   const composerPreview = `${String(session.devUrl).replace(/\/$/, "")}/preview.html?scenario=composer-compact`;
   const composerWindow = await browser.getWindowSize();
 
+  await step("⌘A selects the whole composer message from the Edit menu and the selection shows its text", async () => {
+    await openComposerPreview(browser, `${composerPreview}&composerProbe=default`);
+    performanceReport.composerSelectAll = await assertComposerSelectAll(browser);
+  });
+
   // WKWebView has no `field-sizing: content`; the composer sizes its message itself.
   await step("the composer grows with its text, then scrolls with the caret in view", async () => {
     for (const size of [null, minimumWindowSize]) {
@@ -758,8 +784,11 @@ try {
     `${JSON.stringify(performanceReport, null, 2)}\n`,
   );
   await browser.saveScreenshot(resolve(artifactRoot, "native-release-smoke.png"));
+  reportPolicyViolations();
+  assert.equal(policy.violations().length, 0, "The app broke the shipped Content-Security-Policy; see the list above.");
   console.log(full ? "Loupist native release smoke passed." : "Loupist native core smoke passed.");
 } catch (error) {
+  if (!(error instanceof assert.AssertionError && /Content-Security-Policy/.test(error.message))) reportPolicyViolations();
   // A renderer that missed its script deadline cannot provide page diagnostics.
   if (error instanceof ComposerPreviewUnresponsive) {
     previewUnresponsive = true;

@@ -1966,6 +1966,7 @@ button.sent-image { cursor: zoom-in; }
 /* 25. Chart card actions match the table card: text-only, folded into "…" at the same width. */
 .chat-artifact-block-more { display: none; flex: none; margin-left: auto; }
 @media (max-width: 720px) {
-  .chat-artifact-block-actions { display: none; }
+  /* Open in side panel stays; the text actions fold into the … menu. */
+  .chat-artifact-block-actions > :not(.open-in-panel) { display: none; }
   .chat-artifact-block-more { display: block; }
 }

@@ -104,7 +104,8 @@ fn classify_probe_response(response: &McpCallResult) -> Result<(), McpCredential
             (Some("alpha_vantage_paid_plan_required"), _) => {
                 McpCredentialProbeError::PaidPlanRequired
             }
-            (Some("offline"), _) => McpCredentialProbeError::Unavailable,
+            // A per-second limit says nothing about the key.
+            (Some("offline" | "rate_limited"), _) => McpCredentialProbeError::Unavailable,
             (Some("credential_rejected"), Some("key_format")) => {
                 McpCredentialProbeError::RejectedFormat
             }
@@ -1123,6 +1124,15 @@ mod probe_tests {
             Err(McpCredentialProbeError::PaidPlanRequired)
         );
         assert_eq!(outcome(&paid), VerificationOutcome::TemporarilyUnavailable);
+        let limited = answer(
+            true,
+            Some(json!({"loupist_error": {"kind": "rate_limited", "provider": "alpha_vantage"}})),
+            "",
+        );
+        assert_eq!(
+            classify_probe_response(&limited),
+            Err(McpCredentialProbeError::Unavailable)
+        );
         assert_eq!(
             McpCredentialProbeError::PaidPlanRequired
                 .command_error()

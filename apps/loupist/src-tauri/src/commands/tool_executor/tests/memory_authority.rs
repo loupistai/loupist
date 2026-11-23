@@ -617,12 +617,13 @@ async fn a_saved_source_records_at_save_whether_it_may_ever_be_shared() {
             producer.tool_name,
             producer.provider.as_deref().unwrap_or_default()
         );
-        let result_ref = delivered(
-            &executor.capture,
-            producer,
-            json!({"source_id": "fixture", "data": [1, 2]}),
-        )
-        .await;
+        // A filing read is the whole filing only when the filing has one page.
+        let payload = if producer.tool_name == "dart_filing_read" {
+            json!({"source_id": "fixture", "data": {"document": {"page": 1, "pages": 1}}})
+        } else {
+            json!({"source_id": "fixture", "data": [1, 2]})
+        };
+        let result_ref = delivered(&executor.capture, producer, payload).await;
         let delivery = new_id("save");
         executor
             .stage_source_save(

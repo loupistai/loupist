@@ -137,7 +137,7 @@ pub(crate) fn prepare_chat_attachments(
         {
             return Err(CommandError::invalid("attachment filename is invalid"));
         }
-        let media_type = input.media_type.trim().to_ascii_lowercase();
+        let mut media_type = input.media_type.trim().to_ascii_lowercase();
         if media_type.len() > 127
             || !media_type.contains('/')
             || !media_type.bytes().all(|byte| {
@@ -164,6 +164,13 @@ pub(crate) fn prepare_chat_attachments(
         }
         if bytes.is_empty() {
             return Err(CommandError::invalid("attachment size is invalid"));
+        }
+        // A pasted or dropped image names its type from the clipboard or the file name; the bytes
+        // decide which raster it is, so the model never receives a PNG labelled as a JPEG.
+        if media_type.starts_with("image/") {
+            if let Some(sniffed) = crate::fs::workspace_files::raster_media_type(&bytes) {
+                media_type = sniffed.to_owned();
+            }
         }
         let is_image = media_type.starts_with("image/");
         if is_image && bytes.len() > MAX_CHAT_IMAGE_ATTACHMENT_BYTES {

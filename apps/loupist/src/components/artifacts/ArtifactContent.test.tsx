@@ -90,6 +90,12 @@ describe("ArtifactContent", () => {
 });
 
 
+it("does not offer Open in side panel on the panel's chart", () => {
+  render(<ArtifactContent view={chartView} theme="light" />);
+  expect(screen.getByText("financial-engine")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Open in side panel" })).toBeNull();
+});
+
 it("rejects an unsupported schema even when its view kind is still supported", () => {
   const view = structuredClone(chartView);
   (view.revision.payload as { schema: string }).schema = "loupist-chart/2";

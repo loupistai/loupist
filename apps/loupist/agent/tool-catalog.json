@@ -2953,7 +2953,7 @@
       "permission": "always",
       "component": "opendart",
       "label": "Read an OpenDART filing",
-      "description": "Read one official OpenDART filing by its 14-digit receipt number, as plain text from every document of the filing in order. The text comes in pages of 200,000 characters, up to 20 pages; a result states the page count and the next page, so read on only as far as the question needs. Every successful read returns a turn-local result_ref that source_save can retain.",
+      "description": "Read one official OpenDART filing by its 14-digit receipt number, as plain text from every document of the filing in order. A filing is long (an annual report runs past a hundred pages), so do not read it in order: page 1 carries the outline, each section heading with the page it starts on, and find returns the passages around a word or figure with their pages; read the page the outline or a passage points to. A result states the page count and the next page. Every successful read returns a turn-local result_ref; source_save retains the page that was read as an excerpt of the filing (coverage included_excerpt).",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -2972,7 +2972,19 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000,
-            "description": "Optional 1-based page of the filing's text (200,000 characters each); default 1. A result with more pages names the next one."
+            "description": "Optional 1-based page of the filing's text (about 4,000 Korean characters, up to 12,000 Latin ones); default 1, which also carries the outline. Not used together with find."
+          },
+          "find": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "Optional literal text to search for in the whole filing (a line item, a name, a figure as the filing prints it). Returns the number of matches and up to 8 passages with the page of each; pass occurrence to continue from a later match."
+          },
+          "occurrence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000,
+            "description": "Only with find: the index of the first match to return (0 for the first); a result names next_occurrence when more matches follow."
           },
           "as_of": {
             "type": "string",
@@ -3273,7 +3285,7 @@
       "permission": "always",
       "component": "opendart",
       "label": "Get OpenDART financial statements",
-      "description": "Fetch normalized OpenDART financial statements for one company, fiscal year, report period and basis (statements start with fiscal 2015). A quarter's income and cash-flow facts carry the quarter alone in value and the year to date in cumulative_value; balance-sheet facts are the period's closing amounts. When a company filed no consolidated statements for the period (it has no subsidiaries), a consolidated request returns its separate statements, marked with requested_basis and a warning: name the basis in the answer. An empty result means neither basis is filed for that period, often because the report is not due yet: read the latest filed period. A company name that fits several filers is refused with their corp_codes: pass one of them. Every successful read returns a turn-local result_ref.",
+      "description": "Fetch normalized OpenDART financial statements for one company, fiscal year, report period and basis (statements start with fiscal 2015). The result carries every line item of each statement in a table: take the answer's statement figures from it and cite them with this result's citation_url, which verifies them; a web copy of the same filing is not a better source for a figure this read holds. A rate of change between two of its figures is computed with calculate, not linked to a filing. A quarter's income and cash-flow facts carry the quarter alone in value and the year to date in cumulative_value; balance-sheet facts are the period's closing amounts. When a company filed no consolidated statements for the period (it has no subsidiaries), a consolidated request returns its separate statements, marked with requested_basis and a warning: name the basis in the answer. An empty result means neither basis is filed for that period, often because the report is not due yet: read the latest filed period. A company name that fits several filers is refused with their corp_codes: pass one of them. Every successful read returns a turn-local result_ref.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,

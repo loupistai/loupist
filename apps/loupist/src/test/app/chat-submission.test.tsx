@@ -107,33 +107,32 @@ describe("Chat submission ownership", () => {
     expect(composer()).toHaveValue("Draft before creation");
   });
 
-  it("sends the submitted snapshot while keeping newer edits and files during attachment conversion", async () => {
+  it("sends the submitted snapshot while keeping newer edits and files", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
-    const chatSend = vi.spyOn(bridge, "chatSend");
+    const native = bridge.chatSend.bind(bridge);
+    const admitted = gate();
+    const chatSend = vi.spyOn(bridge, "chatSend").mockImplementationOnce(async (...args) => { await admitted.promise; return native(...args); });
     await openApp(bridge);
-    vi.spyOn(URL, "createObjectURL").mockImplementation(() => `blob:${crypto.randomUUID()}`);
-    let release!: (response: Response) => void;
-    const fetch = vi.spyOn(globalThis, "fetch").mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
-    try {
-      await user.upload(screen.getByLabelText("Upload files"), new File(["first"], "first.txt", { type: "text/plain" }));
-      await send(user, "Submitted snapshot");
-      await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
-      await user.clear(composer());
-      await user.type(composer(), "Newer draft while loading");
-      await user.upload(screen.getByLabelText("Upload files"), new File(["later"], "later.txt", { type: "text/plain" }));
-      await act(async () => release({ ok: true, blob: async () => new Blob(["first"], { type: "text/plain" }) } as Response));
-      await waitFor(() => expect(chatSend).toHaveBeenCalledOnce());
-      expect(chatSend.mock.calls[0][0]).toMatchObject({ prompt: "Submitted snapshot", attachments: [{ filename: "first.txt" }] });
-      expect(composer()).toHaveValue("Newer draft while loading");
-      expect(screen.getByRole("button", { name: "Remove later.txt" })).toBeVisible();
-      expect(screen.queryByRole("button", { name: "Remove first.txt" })).toBeNull();
-    } finally {
-      fetch.mockRestore();
-    }
+    await user.upload(screen.getByLabelText("Upload files"), new File(["first"], "first.txt", { type: "text/plain" }));
+    await screen.findByRole("button", { name: "Remove first.txt" });
+    await screen.findByRole("button", { name: "Remove first.txt" });
+    await send(user, "Submitted snapshot");
+    await waitFor(() => expect(chatSend).toHaveBeenCalledOnce());
+    // The file went as the bytes read when it was added; no object URL is fetched on send.
+    expect(chatSend.mock.calls[0][0]).toMatchObject({ prompt: "Submitted snapshot", attachments: [{ filename: "first.txt", data_base64: btoa("first") }] });
+    await user.clear(composer());
+    await user.type(composer(), "Newer draft while sending");
+    await user.upload(screen.getByLabelText("Upload files"), new File(["later"], "later.txt", { type: "text/plain" }));
+    await screen.findByRole("button", { name: "Remove later.txt" });
+    await screen.findByRole("button", { name: "Remove later.txt" });
+    await act(async () => admitted.open());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Remove first.txt" })).toBeNull());
+    expect(composer()).toHaveValue("Newer draft while sending");
+    expect(screen.getByRole("button", { name: "Remove later.txt" })).toBeVisible();
   });
 
-  it("sends a queued attachment when its conversion finishes after the preceding response", async () => {
+  it("sends a queued attachment after the preceding response", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const native = bridge.chatSend.bind(bridge);
@@ -142,22 +141,14 @@ describe("Chat submission ownership", () => {
     await openApp(bridge);
     await send(user, "First response");
     await waitFor(() => expect(chatSend).toHaveBeenCalledOnce());
-    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:queued-file");
-    let finishFile!: (response: Response) => void;
-    const fetch = vi.spyOn(globalThis, "fetch").mockImplementationOnce(() => new Promise((resolve) => { finishFile = resolve; }));
-    try {
-      await user.upload(screen.getByLabelText("Upload files"), new File(["follow-up"], "follow-up.txt", { type: "text/plain" }));
-      await send(user, "Read this next", "Send next");
-      await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
-      await act(async () => running.open());
-      await waitFor(() => expect(screen.queryByRole("button", { name: "Stop response" })).toBeNull(), { timeout: 30_000 });
-      await act(async () => finishFile({ ok: true, blob: async () => new Blob(["follow-up"], { type: "text/plain" }) } as Response));
-      await waitFor(() => expect(chatSend).toHaveBeenCalledTimes(2), { timeout: 30_000 });
-      expect(chatSend.mock.calls[1][0]).toMatchObject({ prompt: "Read this next", attachments: [{ filename: "follow-up.txt" }] });
-    } finally {
-      fetch.mockRestore();
-    }
-    // A streamed reply and a file conversion both finish here; a loaded suite needs room.
+    await user.upload(screen.getByLabelText("Upload files"), new File(["follow-up"], "follow-up.txt", { type: "text/plain" }));
+    await screen.findByRole("button", { name: "Remove follow-up.txt" });
+    await screen.findByRole("button", { name: "Remove follow-up.txt" });
+    await send(user, "Read this next", "Send next");
+    await act(async () => running.open());
+    await waitFor(() => expect(chatSend).toHaveBeenCalledTimes(2), { timeout: 30_000 });
+    expect(chatSend.mock.calls[1][0]).toMatchObject({ prompt: "Read this next", attachments: [{ filename: "follow-up.txt", data_base64: btoa("follow-up") }] });
+    // A streamed reply finishes here; a loaded suite needs room.
   }, 60_000);
 
   it("dispatches each Chat's queued follow-up after its own background response", async () => {

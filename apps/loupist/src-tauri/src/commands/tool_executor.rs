@@ -1519,9 +1519,17 @@ impl AppToolExecutor {
                     .store
                     .dataset_describe(&self.loupist_id, &reference.dataset_id, reference.revision)
                     .map_err(command_error)?;
-                Some(
-                    json!({"dataset_ref":reference, "fetched_at":result.get("fetched_at"), "data_summary":description, "receipt":result.get("receipt"), "quality":result.get("quality"), "warnings":result.get("warnings"), "model_delivery":result.get("model_delivery")}),
-                )
+                let mut delivered = json!({"dataset_ref":reference, "fetched_at":result.get("fetched_at"), "data_summary":description, "receipt":result.get("receipt"), "quality":result.get("quality"), "warnings":result.get("warnings"), "model_delivery":result.get("model_delivery")});
+                // A statement read is too large to deliver whole, and its
+                // sample shows three rows; the model still sees every
+                // statement figure, compact, to read and cite. Market-data
+                // statements get theirs where MCP reads are shaped.
+                if method == ToolMethod::DartFinancials {
+                    if let Some(statements) = finance::dart_statement_table(&result) {
+                        delivered["statements"] = statements;
+                    }
+                }
+                Some(delivered)
             } else {
                 None
             }

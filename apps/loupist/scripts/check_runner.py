@@ -137,6 +137,8 @@ def web_plan(harness, install):
         step("unused-files", ["npm", "run", "check:unused"]),
         step("renderer-tests", ["npm", "test"]),
         step("chat-layout", ["npm", "run", "preview:layout"]),
+        # The built renderer under the shipped Content-Security-Policy; any violation fails it.
+        step("release-policy", ["npm", "run", "preview:policy"]),
         step("renderer-build", ["npm", "run", "build"]),
     ]
 
@@ -393,12 +395,12 @@ def execute(item, directory, timeout, cancelled, lock_fds=()):
         }
         if item["name"] == "python-syntax":
             environment["PYTHONPYCACHEPREFIX"] = str(Path(temporary) / "pycache")
-        if item["name"] == "chat-layout":
+        if item["name"] in ("chat-layout", "release-policy"):
             result["command"] = [
                 *item["command"],
                 "--",
                 "--out",
-                str(directory.resolve() / "chat-layout"),
+                str(directory.resolve() / item["name"]),
             ]
         try:
             process = subprocess.Popen(

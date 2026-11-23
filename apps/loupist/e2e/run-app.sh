@@ -178,10 +178,31 @@ if [ "$E2E_STARTUP_TIMEOUT_MS" -le 0 ]; then
     exit 1
 fi
 
+RELEASE_RENDERER=
+case "${LOUPIST_E2E_RELEASE_RENDERER:-}" in
+    '') ;;
+    /*)
+        if [ "${LOUPIST_E2E_REUSE_DEV_SERVER:-}" = "1" ]; then
+            echo "LOUPIST_E2E_RELEASE_RENDERER cannot be combined with LOUPIST_E2E_REUSE_DEV_SERVER." >&2
+            exit 1
+        fi
+        RELEASE_RENDERER=$LOUPIST_E2E_RELEASE_RENDERER
+        ;;
+    *)
+        echo "LOUPIST_E2E_RELEASE_RENDERER must be the absolute path of its violation report file." >&2
+        exit 1
+        ;;
+esac
+
 if [ "${LOUPIST_E2E_REUSE_DEV_SERVER:-}" != "1" ]; then
     DEV_SERVER_RECEIPT=$(mktemp "$E2E_STATE_ROOT/vite.XXXXXX")
     rm -f -- "$DEV_SERVER_RECEIPT"
-    "$NODE_BINARY" "$SCRIPT_DIR/dev-server.mjs" start "$E2E_DEV_PORT" "$DEV_SERVER_RECEIPT" &
+    if [ -n "$RELEASE_RENDERER" ]; then
+        # The built renderer under the exact tauri.conf.json policy, as a signed build enforces it.
+        "$NODE_BINARY" "$SCRIPT_DIR/release-renderer.mjs" start "$E2E_DEV_PORT" "$DEV_SERVER_RECEIPT" "$RELEASE_RENDERER" &
+    else
+        "$NODE_BINARY" "$SCRIPT_DIR/dev-server.mjs" start "$E2E_DEV_PORT" "$DEV_SERVER_RECEIPT" &
+    fi
     DEV_SERVER_PID=$!
     E2E_DEV_URL=$("$NODE_BINARY" "$SCRIPT_DIR/dev-server.mjs" wait "$DEV_SERVER_PID" "$DEV_SERVER_RECEIPT" "$E2E_STARTUP_TIMEOUT_MS")
 fi
@@ -259,6 +280,7 @@ if [ -n "$LIVE_PI_AGENT_DATA_DIR" ]; then
         LANG="${LANG:-C}" \
         ${RUSTUP_HOME:+"RUSTUP_HOME=$RUSTUP_HOME"} \
         ${CARGO_HOME:+"CARGO_HOME=$CARGO_HOME"} \
+        ${CARGO_TARGET_DIR:+"CARGO_TARGET_DIR=$CARGO_TARGET_DIR"} \
         ${DISPLAY:+"DISPLAY=$DISPLAY"} \
         ${XAUTHORITY:+"XAUTHORITY=$XAUTHORITY"} \
         ${WAYLAND_DISPLAY:+"WAYLAND_DISPLAY=$WAYLAND_DISPLAY"} \
@@ -285,6 +307,7 @@ else
         LANG="${LANG:-C}" \
         ${RUSTUP_HOME:+"RUSTUP_HOME=$RUSTUP_HOME"} \
         ${CARGO_HOME:+"CARGO_HOME=$CARGO_HOME"} \
+        ${CARGO_TARGET_DIR:+"CARGO_TARGET_DIR=$CARGO_TARGET_DIR"} \
         ${DISPLAY:+"DISPLAY=$DISPLAY"} \
         ${XAUTHORITY:+"XAUTHORITY=$XAUTHORITY"} \
         ${WAYLAND_DISPLAY:+"WAYLAND_DISPLAY=$WAYLAND_DISPLAY"} \

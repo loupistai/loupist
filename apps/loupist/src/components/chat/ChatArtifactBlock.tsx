@@ -17,6 +17,7 @@ import { ChartSnapshotContext, type ChartSnapshotSlot } from "../charts/chartSna
 import { useSaveChartPng } from "../charts/SaveChartPng";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { titledExport } from "../../lib/exportTitle";
+import { OpenInPanelButton } from "./OpenInPanelButton";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -161,6 +162,8 @@ export const ChatArtifactBlock = memo(function ChatArtifactBlock({ block, onAsk,
           {copyError ? <span className="chat-artifact-block-error" role="alert">{t("chatBlock.couldNotCopy")}</span>
             : png.failed ? <span className="chat-artifact-block-error" role="alert">{t("chartExport.couldNotSave")}</span> : null}
           <div className="chat-artifact-block-actions">
+            {/* Hidden once the card itself is expanded: the chart is already the large view. */}
+            {isExpanded ? null : <OpenInPanelButton artifact={chatArtifactRef(loaded)} />}
             {/* Its label says what a press does; a pressed state on top of it would read "Collapse, pressed". */}
             {wide ? <Button type="button" variant="ghost" size="sm" onClick={() => setExpanded((value) => !value)}>
               {isExpanded ? <Minimize2Icon aria-hidden="true" /> : <Maximize2Icon aria-hidden="true" />}

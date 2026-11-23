@@ -202,6 +202,44 @@ fn chat_attachments_are_validated_extracted_and_bounded_before_persistence() {
     }
 }
 
+/// A pasted image's type comes from its bytes, not from the clipboard's label;
+/// an image whose bytes are no known raster keeps its declared type.
+#[test]
+fn an_image_attachment_takes_its_type_from_its_bytes() {
+    let png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR";
+    let jpeg = [0xff, 0xd8, 0xff, 0xe0, 0, 0x10, b'J', b'F'];
+    let prepared = prepare_chat_attachments(&[
+        attachment_input("Pasted image 2026-11-23 21.04.png", "image/jpeg", png),
+        attachment_input("photo.png", "image/png", &jpeg),
+        attachment_input("diagram.svg", "image/svg+xml", b"<svg/>"),
+    ])
+    .unwrap();
+    let types: Vec<_> = prepared
+        .iter()
+        .map(|item| {
+            (
+                item.record.filename.as_str(),
+                item.record.media_type.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        types,
+        [
+            ("Pasted image 2026-11-23 21.04.png", "image/png"),
+            ("photo.png", "image/jpeg"),
+            ("diagram.svg", "image/svg+xml"),
+        ]
+    );
+    // The image limit and the generated name are the same as for any attached image.
+    let over = prepare_chat_attachments(&[attachment_input(
+        "Pasted image 2026-11-23 21.04.png",
+        "image/png",
+        &[png.as_slice(), &vec![0; MAX_CHAT_IMAGE_ATTACHMENT_BYTES]].concat(),
+    )]);
+    assert!(over.is_err());
+}
+
 /// Files up to 25 MB each are kept; a larger one is refused with a code the
 /// composer words in the reader's language (B83).
 #[test]
