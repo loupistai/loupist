@@ -31,6 +31,7 @@ import {
   waitForOnboardingStep,
   openMainTab,
   openCustomConnections,
+  waitForNoRuns,
   waitForShell,
 } from "./native-shell.mjs";
 
@@ -118,11 +119,19 @@ async function removeUntilOnboarding() {
     if ((await onboardingStep(browser)) === "1") return;
     const [removed] = await visibleLoupistTitles();
     if (!removed) break;
+    // The host refuses to remove a Loupist while one of its runs is active.
+    await waitForNoRuns(browser);
     await loupistSwitcherAction(browser, "settings");
     const sheet = await displayed("[data-testid=loupist-settings-page]");
     await clickButton("Remove Loupist", sheet);
     const dialog = await dialogByTitle(browser, "Remove Loupist?");
     await clickButton("Remove Loupist", dialog);
+    // A refused removal keeps the dialog open over the header with its reason; report that, not the header.
+    await browser.waitUntil(async () => !(await dialog.isExisting().catch(() => false)) || !(await dialog.isDisplayed().catch(() => false)), {
+      timeout: 30_000, interval: 150,
+    }).catch(async (error) => {
+      throw new Error(`Remove Loupist did not finish: ${await dialog.getText().catch(() => "")}`, { cause: error });
+    });
     // Settings opened for a Loupist that is still in the header close when the
     // refreshed list drops it.
     await browser.waitUntil(async () => (await onboardingStep(browser)) === "1"
