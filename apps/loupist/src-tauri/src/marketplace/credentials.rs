@@ -497,6 +497,7 @@ pub(super) fn credential_verification_outcome<T>(
     match result {
         Ok(_) => crate::finance_credentials::VerificationOutcome::Verified,
         Err(FinanceDataError::CredentialRejected(_))
+        | Err(FinanceDataError::DartKeyRefused(_))
         | Err(FinanceDataError::KisCredentialRejected(_))
         | Err(FinanceDataError::ServiceApprovalRequired { .. })
         | Err(FinanceDataError::InvalidQuery(_)) => {
@@ -524,6 +525,7 @@ pub(super) fn credential_verification_error(
             ),
         ),
         FinanceDataError::CredentialRejected(_)
+        | FinanceDataError::DartKeyRefused(_)
         | FinanceDataError::InvalidQuery(_)
         | FinanceDataError::ServiceApprovalRequired { .. } => CommandError::new(
             "credential_rejected",

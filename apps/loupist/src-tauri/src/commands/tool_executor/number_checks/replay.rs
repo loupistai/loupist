@@ -25,7 +25,7 @@ use std::{
 };
 
 const MAX_CACHED_PROJECTIONS: usize = 128;
-const CHECKER_VERSION: u32 = 4;
+const CHECKER_VERSION: u32 = 5;
 
 #[derive(Clone, Default)]
 pub(crate) struct ReplayCache(Arc<Mutex<CachedProjections>>);
@@ -1004,6 +1004,61 @@ mod tests {
         );
         assert!(dto.messages[1].number_checks.is_empty());
         assert_eq!(chat.messages[1].number_checks.len(), 1);
+    }
+
+    #[test]
+    fn stored_sign_conflicts_on_declines_in_words_clear_on_replay() {
+        let fixture = super::super::sign_tests::market_fixture();
+        let scratch = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(scratch.path().join("app"));
+        let mut chat = crate::test_fixtures::chat_session("chat-a", "loupist-a");
+        let names: Vec<_> = fixture["answers"].as_object().unwrap().keys().collect();
+        for name in &names {
+            let mut answer = message(name, fixture["answers"][name.as_str()].as_str().unwrap());
+            for source in fixture["sources"].as_object().unwrap().values() {
+                let mut evidence = saved_evidence(
+                    source["id"].as_str().unwrap(),
+                    "web_fetch",
+                    "original",
+                    source["excerpt"].as_str().unwrap(),
+                );
+                evidence.title = source["title"].as_str().unwrap().into();
+                answer.evidence_refs.push(evidence);
+            }
+            answer.number_checks =
+                serde_json::from_value(fixture["stored_checks"][name.as_str()].clone()).unwrap();
+            assert!(answer.number_checks.iter().all(unresolved));
+            chat.messages.push(answer);
+        }
+        let stored: usize = chat.messages[..4]
+            .iter()
+            .map(|answer| answer.number_checks.len())
+            .sum();
+        assert_eq!(stored, 11);
+
+        let dto = crate::commands::types::chat_dto_with_memory(&state, &chat).unwrap();
+        for (name, projected) in names.iter().zip(&dto.messages) {
+            // The stored flags are the figures the live check now reads.
+            let expected = super::super::sign_tests::market_expected(name);
+            let stored = &fixture["stored_checks"][name.as_str()];
+            let want: Vec<_> = stored
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|check| expected[check["link_index"].as_u64().unwrap() as usize])
+                .collect();
+            assert_eq!(
+                super::super::sign_tests::summary(&projected.number_checks),
+                want,
+                "{name}: {:#?}",
+                projected.number_checks
+            );
+        }
+        // Storage keeps what the answer was given.
+        assert!(chat
+            .messages
+            .iter()
+            .all(|answer| answer.number_checks.iter().all(unresolved)));
     }
 
     #[test]

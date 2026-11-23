@@ -28,7 +28,8 @@ import { MapList } from "./MapList";
 import { entityCategory, isMetricNode, nodeCategory } from "../../knowledge/mapKinds";
 import { isBasePerspective, isLensNode, lensAppliedEntities, lensDisplayTitle } from "./lensReading";
 import { claimDegree, entityLabel, isDrawnRelation, matchesMapQuery, projectClaim } from "../../knowledge/mapItems";
-import { sourceProcessingLabel, worldProcessing as deriveWorldProcessing, type WorldProcessing } from "../../knowledge/mapProcessing";
+import { waitingLabel, worldProcessing as deriveWorldProcessing, type WorldProcessing } from "../../knowledge/mapProcessing";
+import { ContinueStoppedSources } from "../knowledge/SourceRetry";
 import { frozenLayout } from "./layout";
 import { useMapData, useMapDetail, useWorldReads } from "./useMapData";
 import type { MapCanvasControls } from "./MapCanvas";
@@ -344,7 +345,8 @@ export function MapView({ initialAnchor, bridge, catalog, location: savedLocatio
       : activity.reason === "paused_budget" ? onManageProcessing && { label: t("sourceWorkspace.worldProcessingSettings"), run: onManageProcessing }
       : activity.reason === "model_unavailable" ? onUseRecommendedModel && { label: t("worldProcessingSettings.useTheRecommendedModel"), run: onUseRecommendedModel } : undefined;
   const processingStatus = activity.kind === "waiting" ? <>
-    <span>{sourceProcessingLabel(activity.reason)}</span>
+    <span>{waitingLabel(activity)}</span>
+    {activity.stopped?.length ? <ContinueStoppedSources bridge={bridge} loupistId={location.loupistId} recordIds={activity.stopped} onContinued={onChanged} /> : null}
     {waitingAction ? <Button variant="link" onClick={waitingAction.run}>{waitingAction.label}</Button> : null}
   </>
     : activity.kind === "building" && (!replay.active || replay.playing) ? <span className="map-updating"><i />{t("map.updating")}</span> : null;

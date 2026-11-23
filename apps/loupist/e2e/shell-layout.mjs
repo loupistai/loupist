@@ -10,16 +10,66 @@ export function measureShellLayout() {
     return { x: r.x, y: r.y, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
   };
   const rect = selector => box(document.querySelector(selector));
+  // :hover cannot be set from the page. The rail's options rule is :hover and :focus-within
+  // together, so focusing the destination stands in for both. Opacity 0 still hit-tests, so the
+  // resting probe is the pressed click as well. An open menu portaled on the body is a layer the
+  // user opened; a control swapped onto the icon stays inside the sidebar.
+  const focus = node => {
+    if (!node || typeof node.focus !== "function") return;
+    try { node.focus({ preventScroll: true }); } catch { try { node.focus(); } catch { /* not focusable */ } }
+  };
+  const nameOf = node => (node.getAttribute("aria-label") || node.getAttribute("class") || node.tagName || "").toString().trim().slice(0, 80);
+  const overlaps = (a, b) => a.x < b.right - 1 && a.right > b.x + 1 && a.y < b.bottom - 1 && a.bottom > b.y + 1;
+  const interactive = "button, a, input, select, textarea, summary, [role='button'], [role='link'], [tabindex]:not([tabindex='-1'])";
+  const railSelector = "[data-testid=loupist-header-identity],.navigation-search,[data-testid=loupist-chat-row][data-home] button[data-testid=loupist-chat-button],[data-sidebar-place] button,[data-testid=navigation-new],#main-tab-settings";
+  const hitOwned = (root, item) => {
+    const r = item.getBoundingClientRect();
+    const hit = typeof document.elementFromPoint === "function" ? document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) : null;
+    if (!hit || hit === document.body || hit === document.documentElement || !root.contains(hit)) return true;
+    return hit === item || item.contains(hit);
+  };
+  const blocks = (candidate, item) => {
+    if (candidate === item || item.contains(candidate) || candidate.contains(item)) return false;
+    const style = getComputedStyle(candidate);
+    if (style.display === "none" || style.visibility === "hidden" || style.pointerEvents === "none") return false;
+    const candidateBox = candidate.getBoundingClientRect();
+    return candidateBox.width > 0 && candidateBox.height > 0 && overlaps(candidateBox, item.getBoundingClientRect());
+  };
+  const probe = (root, item) => ({ hitOwned: hitOwned(root, item), overlap: [...root.querySelectorAll(interactive)].filter(candidate => blocks(candidate, item)).map(nameOf) });
   const shell = rect("[data-testid=app-shell]");
   if (!shell) return null; // Onboarding and print have no research shell.
+  const previousFocus = document.activeElement;
   const navigation = [...document.querySelectorAll('[data-slot="sidebar-container"], .settings-navigation[data-slot="sidebar"], [data-slot="sidebar"][data-mobile="true"]')]
     .flatMap(element => {
       const bounds = box(element);
-      return bounds ? [{ bounds, mobile: element.dataset.mobile === "true",
-        railButtons: element.closest('[data-collapsible="icon"]') ? [...element.querySelectorAll('[data-testid=loupist-header-identity],.navigation-search,[data-testid=loupist-chat-row][data-home] button[data-testid=loupist-chat-button],[data-sidebar-place] button,[data-testid=navigation-new],#main-tab-settings')].map(box).filter(Boolean) : [],
+      if (!bounds) return [];
+      const collapsed = Boolean(element.closest('[data-collapsible="icon"]'));
+      const railItems = collapsed ? [...element.querySelectorAll(railSelector)].filter(item => { const r = item.getBoundingClientRect(); return r.width && r.height; }) : [];
+      const resting = railItems.map(item => probe(element, item));
+      for (const item of railItems) focus(item);
+      const rowMenus = collapsed ? [] : [...element.querySelectorAll(".loupist-chat-row")].flatMap(row => {
+        const destination = row.querySelector(".loupist-chat-button");
+        const title = row.querySelector(".loupist-chat-title");
+        if (!destination || !title) return [];
+        const titleBox = title.getBoundingClientRect();
+        if (!titleBox.width || !titleBox.height) return [];
+        focus(destination);
+        const menu = row.querySelector(".loupist-chat-menu");
+        const menuBox = menu ? menu.getBoundingClientRect() : null;
+        const menuStyle = menu ? getComputedStyle(menu) : null;
+        const menuShown = Boolean(menuBox && menuBox.width && menuBox.height && menuStyle.display !== "none" && menuStyle.visibility !== "hidden");
+        const hit = typeof document.elementFromPoint === "function" ? document.elementFromPoint(titleBox.x + titleBox.width / 2, titleBox.y + titleBox.height / 2) : null;
+        const tested = Boolean(hit && hit !== document.body && hit !== document.documentElement && element.contains(hit));
+        return [{ label: nameOf(destination), titleHitOwned: !tested || hit === destination || destination.contains(hit), menuOverlapsTitle: Boolean(menuShown && overlaps(menuBox, titleBox)) }];
+      });
+      return [{ bounds, mobile: element.dataset.mobile === "true",
+        railButtons: railItems.map(box).filter(Boolean),
+        railCoverage: railItems.map((item, index) => ({ label: nameOf(item), resting: resting[index], focused: probe(element, item) })),
+        rowMenus,
         footer: box(element.querySelector('[data-slot="sidebar-footer"]')),
-        resizeHandle: box(element.querySelector("[data-sidebar-resize]")) }] : [];
+        resizeHandle: box(element.querySelector("[data-sidebar-resize]")) }];
     });
+  focus(previousFocus);
   const content = document.querySelector(".conversation-content");
   // Lists in the sidebar and the side panels whose rows pair a one-line title with a time, count or
   // status at the row's end: [row, title, what sits at its end].
@@ -74,6 +124,15 @@ export function assertShellLayout(layout, { label = "shell", tolerance = 1.5 } =
     for (const item of navigation.railButtons) {
       check(within(item, navigation.bounds) && near((item.x + item.right) / 2, (navigation.bounds.x + navigation.bounds.right) / 2),
         "collapsed sidebar control is off-center", { item, rail: navigation.bounds });
+    }
+    // After the centering check, so an off-center destination still reports that failure first.
+    for (const item of navigation.railCoverage ?? []) {
+      for (const state of [item.resting, item.focused]) {
+        check(state.hitOwned && state.overlap.length === 0, "collapsed rail item is covered by another control", { label: item.label, ...state });
+      }
+    }
+    for (const row of navigation.rowMenus ?? []) {
+      check(row.titleHitOwned && !row.menuOverlapsTitle, "row options cover its title", row);
     }
     if (navigation.footer) check(within(navigation.footer, navigation.bounds), "navigation footer is clipped", navigation);
     // The sidebar's width is the user's; its resize handle always sits on its right edge, inside it.

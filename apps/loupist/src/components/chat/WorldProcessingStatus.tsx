@@ -16,6 +16,7 @@ const labels = (): Record<string, string> => ({
   reconciled_without_retry: t("worldProcessingStatus.reconciled_without_retry"),
   cancelled_before_start: t("worldProcessingStatus.cancelled_before_start"),
   no_text: t("worldProcessingStatus.no_text"),
+  price_data: t("worldProcessingStatus.price_data"),
   disabled: t("worldProcessingStatus.disabled"),
   not_configured: t("worldProcessingStatus.not_configured"),
   saved: t("worldProcessingStatus.saved"),

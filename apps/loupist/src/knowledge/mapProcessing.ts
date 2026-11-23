@@ -1,4 +1,5 @@
 import i18n from "../i18n";
+import { formatNumber } from "../i18n/format";
 import type { GraphProcessingView, KnowledgeCatalog } from "../types";
 import { worldReadinessLabels, type WorldReadinessStatus } from "./worldReadiness";
 
@@ -6,7 +7,8 @@ type Readiness = GraphProcessingView["readiness"];
 type WaitingReason = Exclude<WorldReadinessStatus, "ready" | "recovering"> | "awaiting_provider" | "no_account" | "paused_budget" | "failed_before_mutation" | "reconcile_required";
 
 export type WorldProcessing = {
-  activity: { kind: "building"; sourceCount: number } | { kind: "waiting"; reason: WaitingReason } | { kind: "idle" };
+  /** A wait on the request limit names the Sources stopped there, by record: what "Continue all" continues. */
+  activity: { kind: "building"; sourceCount: number } | { kind: "waiting"; reason: WaitingReason; stopped?: string[] } | { kind: "idle" };
   readiness: Readiness | null;
   pending: boolean;
 };
@@ -41,7 +43,22 @@ export function worldProcessing(catalog: KnowledgeCatalog | null, readiness: Rea
   const blocked = statuses.has("queued") || statuses.has("paused") ? blockedReadiness(readiness) : undefined;
   const sourceReason = (["reconcile_required", "paused_budget", "failed_before_mutation", "paused"] as const).find(status => statuses.has(status));
   const reason = blocked ?? sourceReason;
+  if (reason === "paused_budget") return { activity: { kind: "waiting", reason, stopped: stoppedSources(catalog, readiness) }, readiness, pending };
   return { activity: reason ? { kind: "waiting", reason } : { kind: "idle" }, readiness, pending };
+}
+
+/** The Sources, by record, whose World building stopped at the request limit. */
+export function stoppedSources(catalog: KnowledgeCatalog | null, readiness: Readiness | null | undefined) {
+  return catalog?.sources
+    .filter(record => record.objects.some(object => sourceDisplayStatus(object.processing?.status, readiness) === "paused_budget"))
+    .map(record => record.recordId) ?? [];
+}
+
+/** What World's own status line says while it waits: how many Sources stopped at the limit, or the reason. */
+export function waitingLabel(activity: Extract<WorldProcessing["activity"], { kind: "waiting" }>) {
+  const count = activity.stopped?.length ?? 0;
+  if (activity.reason === "paused_budget" && count) return i18n.t("knowledge:sourceRetry.pausedAtLimit", { count, formattedCount: formatNumber(count) });
+  return sourceProcessingLabel(activity.reason);
 }
 
 export function sourceProcessingLabel(status?: string) {
@@ -59,6 +76,7 @@ export function sourceProcessingLabel(status?: string) {
     case "reconciled_without_retry": return i18n.t("knowledge:sourceWorkspace.sourceRetainedInterruptedProcessingWasNotRetried");
     case "cancelled_before_start": return i18n.t("knowledge:sourceWorkspace.worldProcessingCancelled");
     case "unsupported": case "no_text": return i18n.t("knowledge:sourceWorkspace.noTextForWorldProcessing");
+    case "price_data": return i18n.t("knowledge:sourceWorkspace.priceDataNotAddedToWorld");
     case "disabled": case "not_configured": return i18n.t("knowledge:sourceWorkspace.worldProcessingIsOff");
     default: return i18n.t("knowledge:sourceWorkspace.sourceSaved");
   }

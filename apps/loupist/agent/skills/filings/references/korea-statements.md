@@ -7,8 +7,9 @@ P/E and payout use net income attributable to owners of the parent
 (`net_income_attributable_to_owners`), not total net
 income. Use separate statements for the parent company alone and for
 dividend capacity, and always name the basis. A company with no subsidiaries
-files only separate statements: `dart_financials` then returns no data for
-`basis` consolidated and figures for `basis` separate over the same period. Use
+files only separate statements: a `dart_financials` request for `basis`
+consolidated then returns the separate statements of the same period, marked
+`requested_basis` consolidated with a warning. Use
 the separate figures for the whole answer and tell the user the company filed
 no consolidated statements for that period; that is the reason for the basis,
 and a lookup that returned nothing is not. Never mix bases in one ratio, table

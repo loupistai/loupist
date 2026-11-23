@@ -409,7 +409,11 @@ impl FollowedState {
             graph_jobs::JOB_RUNNING => Self::Running,
             graph_jobs::JOB_QUEUED => Self::Queued,
             graph_jobs::JOB_COMPLETED => Self::Done,
-            "disabled" | "paused" | graph_jobs::JOB_PAUSED | "no_text" => Self::Off,
+            "disabled"
+            | "paused"
+            | graph_jobs::JOB_PAUSED
+            | "no_text"
+            | graph_jobs::JOB_PRICE_DATA => Self::Off,
             "not_configured" | "saved" => Self::Waiting,
             _ => Self::Failed,
         }

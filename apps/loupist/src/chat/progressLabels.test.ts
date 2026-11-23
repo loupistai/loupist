@@ -45,4 +45,22 @@ describe("tool progress labels", () => {
     // A tool without a known noun keeps the host's wording.
     expect(actionLabel({ ...step("running"), toolName: "mcp__acme__widget_read", running: "Reading widgets" })).toBe("Reading widgets");
   });
+
+  it("titles a market-data read by the Activity sheet's noun when the as-of table has none", async () => {
+    const step = (tool: string, status: "running" | "failed") => ({
+      id: "read-2", kind: "tool" as const, toolName: `mcp__openbb__${tool}`, category: "finance" as const, operation: "read" as const,
+      action: "Read Equity calendar earnings", running: "Reading Equity calendar earnings", summary: "", target: null, href: null, status, startedAtMs: 0, finishedAtMs: null,
+    });
+    expect(actionLabel(step("equity_calendar_earnings", "failed"))).toBe("Read the earnings calendar");
+    expect(actionLabel(step("equity_fundamental_metrics", "running"))).toBe("Reading key metrics");
+    await i18n.changeLanguage("ko");
+    expect(actionLabel(step("equity_calendar_earnings", "failed"))).toBe("실적 발표 일정 읽음");
+    expect(actionLabel(step("equity_fundamental_metrics", "running"))).toBe("주요 지표 읽는 중");
+    expect(actionLabel(step("fixedincome_government_yield_curve", "failed"))).toBe("수익률 곡선 읽음");
+    // Every read noun has its Korean word.
+    const ko = i18n.getResourceBundle("ko", "chat") as { asOf: { reads: Record<string, string> }; activitySheet: { reads: Record<string, string> } };
+    const english = i18n.getResourceBundle("en", "chat") as typeof ko;
+    expect(Object.keys(ko.activitySheet.reads).sort()).toEqual(Object.keys(english.activitySheet.reads).sort());
+    expect(Object.keys(ko.asOf.reads).sort()).toEqual(Object.keys(english.asOf.reads).sort());
+  });
 });

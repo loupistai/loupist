@@ -103,6 +103,11 @@ an inline error and a selectable address.
 
 ## Citations and number chips
 
+A cited source is titled by its document's own title, else by what its read asked
+for (a symbol or query), else by its host and path, else by the tool's name
+(`project` in `commands/tool_executor/evidence.rs`); a provider's placeholder such
+as `N/A` never titles it.
+
 Text the user pasted into a Chat (evidence kind `user_provided`, or a saved read marked `user_provided`) is labelled "User-provided" ("사용자 제공") in its chip, card and number popover, and a capture with no saved title reads "Pasted text"; each capture is its own numbered source. Citation links preserve the answer’s visible text, including bare integers such as 100 and 79. A numeric label may be a value rather than a footnote, so it is never replaced with the retained source ordinal. The accessible name includes the visible label and the retained source title/ordinal. Host-matched number chips keep their value and verification status. A link written as `citation_url=#evidence-…` (the tool result's field name kept in the target) is read as that `#evidence-…` link. A number link whose evidence never arrived is an `unlinked` figure to check ([number checks](../analysis/number-checks.md#number-checks)). Any other link whose evidence has not arrived, or never will, is plain text, and a link the renderer refuses (such as `javascript:` or `data:`) keeps only its text, never a "[blocked]" marker. A citation or number link keeps what touches it on its line: the punctuation or Korean particle after it ("8.4%였고,", "[source].") and an opening bracket before it, so a period never starts a line alone.
 
 Citation chips open a card (title,
@@ -111,7 +116,11 @@ a click opens the page when the citation is a retrieved website with a credentia
 press and hold opens the card as a dialog that stays until a press elsewhere or Esc, and
 a tap still opens that same citation. The number stays inline; the press area is the 28px control size. A number chip ([what it shows](../analysis/surfaces.md#where-each-item-appears))
 is a button named by its value and source ("8.4 percent, calculated. Show the
-math"), with a status other than matched in its description. ⌘/Ctrl-click or a middle click on a number with a source address opens that page in the system browser and leaves the popover closed. The figure stays in the line; its press area is 28px tall. Its popover is a
+math"), with a status other than matched in its description. A figure taken from
+a dataset that a read earlier in the same reply fetched names that read's provider
+("…, from Market data platform"): Rust copies the provider onto the `dataset_query`
+or `dataset_describe` evidence (`dataset_read_provider`). A dataset read without one
+names Memory. ⌘/Ctrl-click or a middle click on a number with a source address opens that page in the system browser and leaves the popover closed. The figure stays in the line; its press area is 28px tall. Its popover is a
 non-modal dialog labelled by its title, whether it opened after 150 ms of hover (not
 in windows 720 px wide or narrower), on keyboard focus or on click. A click pins it
 and moves focus to its first action; an unpinned popover closes 120 ms after the

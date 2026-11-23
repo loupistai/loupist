@@ -60,6 +60,15 @@ describe("committed World status in research updates", () => {
     expect(screen.queryByRole("button", { name: "Refresh status" })).toBeNull();
   });
 
+  it("says a saved price table is not added to World and never polls its final row", async () => {
+    const read = vi.fn();
+    render(<WorldProcessingStatus jobId="job-1" initialStatus="price_data" readJob={read} retrySource={vi.fn()} />);
+    expect(screen.getByRole("status")).toHaveTextContent(/^Source saved · Price data, not added to World$/);
+    await act(async () => {});
+    expect(read).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
   it("ignores an old job response after navigating away", async () => {
     let resolve!: (value: GraphJobView) => void;
     const changed = vi.fn();

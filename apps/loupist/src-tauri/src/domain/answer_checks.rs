@@ -217,7 +217,7 @@ pub enum UnstatedScale {
     Answer,
 }
 
-/// How the source signs a matched amount that the answer states unsigned.
+/// Where a match takes its sign when one side prints none.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
@@ -225,6 +225,9 @@ pub enum SourceSign {
     /// Negative or in brackets, in a row or field that is spending or a
     /// deduction by nature.
     Outflow,
+    /// Printed without a sign, with a word stating the decline (`4.11% 내린`,
+    /// `down 4.11%`), which the answer's own minus sign agrees with.
+    Fall,
 }
 
 /// One number link in an answer, checked against the evidence it links.
@@ -300,7 +303,8 @@ pub struct NumberCheck {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub unstated_scale: Option<UnstatedScale>,
-    /// Present on a match the source prints as an outflow.
+    /// Present on a match whose sign comes from the source's row nature or
+    /// its words rather than a printed sign.
     #[serde(
         rename = "sourceSign",
         default,

@@ -100,6 +100,39 @@ it("keeps a failed step closed and quiet: the line says it in words, the row say
   expect(read).toHaveBeenCalledExactlyOnceWith({ loupist_id: "loupist", thread_id: "chat", detail_id: "report-attempt" });
 });
 
+it("says under a failed market-data read why it was not used, by its failure kind, in both languages", async () => {
+  const read = (id: string, tool: string, failureReason: "provider_error" | "invalid_input" | "empty_result" | "unreachable") => ({
+    id, kind: "tool" as const, toolName: `mcp__openbb__${tool}`, category: "finance" as const, operation: "read" as const, action: "Read Equity calendar earnings",
+    status: "failed" as const, failureReason, source: { kind: "connector" as const, name: "Nasdaq Data Link" }, target: null, href: null, startedAtMs: 0, finishedAtMs: null,
+  });
+  const progress: ChatProgress = { startedAtMs: 1, finishedAtMs: 2000, items: [
+    read("provider", "equity_calendar_earnings", "provider_error"),
+    read("refused", "equity_fundamental_metrics", "invalid_input"),
+    read("empty", "equity_fundamental_income", "empty_result"),
+    read("offline", "equity_price_quote", "unreachable"),
+    { id: "web", kind: "tool", toolName: "web_fetch", category: "web", operation: "read", action: "Read a web source", status: "failed", failureReason: "provider_error", target: null, href: null, startedAtMs: 0, finishedAtMs: null },
+  ] };
+  const rowOf = (text: string) => screen.getByText(text).closest<HTMLElement>("[data-testid='chat-progress-row']")!;
+  const view = render(ledger(progress, "complete"));
+  await userEvent.setup().click(screen.getByRole("button", { name: /5 failed attempts/ }));
+  expect(rowOf("Read the earnings calendar")).toHaveTextContent("It ended with an error. It was not used in the answer.");
+  expect(rowOf("Read key metrics")).toHaveTextContent("The source did not accept one of the request's values. It was not used in the answer.");
+  expect(rowOf("Read income statements")).toHaveTextContent("The source had nothing for this request. It was not used in the answer.");
+  expect(rowOf("Read current quote")).toHaveTextContent("The data provider could not be reached. It was not used in the answer.");
+  // Other failed steps keep their quiet row.
+  expect(rowOf("Read a web source")).not.toHaveTextContent("It was not used in the answer.");
+  view.unmount();
+  await i18n.changeLanguage("ko");
+  try {
+    render(ledger(progress, "complete"));
+    await userEvent.setup().click(screen.getByRole("button", { name: /실패/ }));
+    expect(rowOf("실적 발표 일정 읽음")).toHaveTextContent("오류로 끝났습니다. 답변에 사용하지 않았습니다.");
+    expect(rowOf("주요 지표 읽음")).toHaveTextContent("자료 제공처가 요청의 값 하나를 받아들이지 않았습니다. 답변에 사용하지 않았습니다.");
+  } finally {
+    await i18n.changeLanguage("en");
+  }
+});
+
 it("explains a step paused by the untrusted-text rule in the step, calmly and with no override (B92)", async () => {
   render(ledger({ startedAtMs: 1, finishedAtMs: 2000, items: [
     { id: "search", kind: "tool", toolName: "web_search", category: "web", operation: "search", action: "Searched the web", status: "succeeded", target: null, href: null, startedAtMs: 0, finishedAtMs: null },

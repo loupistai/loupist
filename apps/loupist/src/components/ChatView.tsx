@@ -24,7 +24,7 @@ import {
   type VisibleSteer,
 } from "../chat/visibleSteers";
 import type { LoupistUIMessage } from "../chat/ai-sdk";
-import { createChatDraftSession, MEMORY_BUSY, type QueueHold } from "../chat/draftSession";
+import { createChatDraftSession, MEMORY_BUSY, REPLY_FAILED, REPLY_STOPPED, type QueueHold } from "../chat/draftSession";
 import type {
   ChatArtifactRef,
   ChatMessage,
@@ -863,18 +863,8 @@ export function ChatView({
     if (draftSession.getSnapshot().holds[threadId]) return;
     const delivered = draftSession.getSnapshot().steers[threadId] ?? [];
     commitSteers(delivered);
-    if (lastStatus === "aborted") {
-      setQueueHoldByThread((current) => ({
-        ...current,
-        [threadId]: t("chatView.responseStoppedQueuedMessagesWereKept"),
-      }));
-      return;
-    }
-    if (lastStatus === "error") {
-      setQueueHoldByThread((current) => ({
-        ...current,
-        [threadId]: t("chatView.responseFailedQueuedMessagesWereKept"),
-      }));
+    if (lastStatus === "aborted" || lastStatus === "error") {
+      setQueueHoldByThread((current) => ({ ...current, [threadId]: lastStatus === "aborted" ? REPLY_STOPPED : REPLY_FAILED }));
       return;
     }
     if (lastStatus !== "complete") return;

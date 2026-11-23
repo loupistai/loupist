@@ -55,7 +55,7 @@ td:not([data-streamdown="table-cell"]) .number-chip { display: inline-block; min
 .citation-keep { display: inline-block; max-width: 100%; width: max-content; overflow-wrap: anywhere; }
 
 .number-chip-popover {
-  z-index: var(--gg-z-popover);
+  z-index: var(--gg-z-dialog);
   display: grid;
   gap: var(--gg-space-2);
   width: min(360px, calc(100vw - var(--gg-space-6)));
@@ -148,7 +148,7 @@ td:not([data-streamdown="table-cell"]) .number-chip { display: inline-block; min
 .as-of-note ul { display: grid; gap: 2px; margin: 0; padding-inline-start: var(--gg-space-4); }
 .chat-progress-row.skipped .chat-progress-action { color: var(--gg-color-text-secondary); }
 .chat-progress-node[data-status="skipped"] > svg { width: 16px; height: 16px; color: var(--gg-color-text-tertiary); }
-.chat-progress-skipped-detail { grid-column: 2 / -1; margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.chat-progress-skipped-detail, .chat-progress-failed-detail { grid-column: 2 / -1; margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .chat-progress-row[data-flash] { border-radius: var(--gg-radius-sm); background: var(--gg-color-accent-soft); transition: background-color var(--gg-motion-slow) var(--gg-ease-in-out); }
 .chat-artifact-block-asof { flex: none; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); }
 

@@ -1,6 +1,7 @@
 //! Host-owned model-provider state (providers spec §3.1): one row per provider
 //! in the global catalog database, the models a provider stopped offering, the
-//! background probe clock and the single pending "default changed" notice.
+//! names of models the catalog no longer lists, the background probe clock and
+//! the single pending "default changed" notice.
 //! Credentials never reach these tables.
 //!
 //! Each change is one transaction that writes only the columns it owns, so a
@@ -34,6 +35,20 @@ pub(crate) struct ModelNoticeRecord {
 /// At most this many gone models are remembered per provider.
 const MAX_GONE_PER_PROVIDER: i64 = 256;
 
+/// At most this many unlisted model names are kept per provider: the catalog's
+/// own limit, so one disconnect never drops a name it just removed.
+const MAX_UNLISTED_PER_PROVIDER: i64 = 4_096;
+
+/// A model the catalog listed and no longer does (its account disconnected, or
+/// the provider stopped offering it), by the name it last had.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct UnlistedModelRecord {
+    pub model_id: String,
+    pub provider: String,
+    pub model: String,
+    pub name: String,
+}
+
 fn initialize(connection: &Connection) -> StoreResult<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS provider_status (
@@ -59,6 +74,13 @@ fn initialize(connection: &Connection) -> StoreResult<()> {
             model_id TEXT PRIMARY KEY NOT NULL CHECK(length(model_id) BETWEEN 1 AND 640),
             provider TEXT NOT NULL CHECK(length(provider) BETWEEN 1 AND 128),
             gone_at_ms INTEGER NOT NULL
+         ) STRICT;
+         CREATE TABLE IF NOT EXISTS provider_unlisted_model (
+            model_id TEXT PRIMARY KEY NOT NULL CHECK(length(model_id) BETWEEN 1 AND 640),
+            provider TEXT NOT NULL CHECK(length(provider) BETWEEN 1 AND 128),
+            model TEXT NOT NULL,
+            name TEXT NOT NULL,
+            unlisted_at_ms INTEGER NOT NULL
          ) STRICT;
          CREATE TABLE IF NOT EXISTS provider_probe (
             provider TEXT PRIMARY KEY NOT NULL CHECK(length(provider) BETWEEN 1 AND 128),
@@ -289,14 +311,18 @@ impl SqliteStore {
         Ok(())
     }
 
-    pub(crate) fn gone_models_delete_unknown(
+    /// Gone models and unlisted model names of providers this build does not offer.
+    pub(crate) fn remembered_models_delete_unknown(
         &self,
         known: &dyn Fn(&str) -> bool,
     ) -> StoreResult<()> {
         let connection = self.lock()?;
         initialize(&connection)?;
         let providers = connection
-            .prepare("SELECT DISTINCT provider FROM provider_gone_model")?
+            .prepare(
+                "SELECT provider FROM provider_gone_model
+                 UNION SELECT provider FROM provider_unlisted_model",
+            )?
             .query_map([], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
         for provider in providers.iter().filter(|provider| !known(provider)) {
@@ -304,8 +330,73 @@ impl SqliteStore {
                 "DELETE FROM provider_gone_model WHERE provider = ?1",
                 [provider],
             )?;
+            connection.execute(
+                "DELETE FROM provider_unlisted_model WHERE provider = ?1",
+                [provider],
+            )?;
         }
         Ok(())
+    }
+
+    /// After a provider's catalog rows are replaced: the models it no longer
+    /// lists keep their names, and a model listed again needs none.
+    pub(crate) fn unlisted_models_update(
+        &self,
+        provider: &str,
+        removed: &[UnlistedModelRecord],
+        listed: &[&str],
+        at_ms: i64,
+    ) -> StoreResult<()> {
+        valid_provider(provider)?;
+        let mut connection = self.lock()?;
+        initialize(&connection)?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        for model_id in listed {
+            transaction.execute(
+                "DELETE FROM provider_unlisted_model WHERE model_id = ?1",
+                [model_id],
+            )?;
+        }
+        for model in removed {
+            transaction.execute(
+                "INSERT INTO provider_unlisted_model (model_id, provider, model, name, unlisted_at_ms)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(model_id) DO UPDATE SET provider = excluded.provider,
+                   model = excluded.model, name = excluded.name, unlisted_at_ms = excluded.unlisted_at_ms",
+                params![model.model_id, model.provider, model.model, model.name, at_ms],
+            )?;
+        }
+        transaction.execute(
+            "DELETE FROM provider_unlisted_model WHERE provider = ?1 AND model_id NOT IN (
+                SELECT model_id FROM provider_unlisted_model WHERE provider = ?1
+                ORDER BY unlisted_at_ms DESC, model_id LIMIT ?2)",
+            params![provider, MAX_UNLISTED_PER_PROVIDER],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn unlisted_model(
+        &self,
+        model_id: &str,
+    ) -> StoreResult<Option<UnlistedModelRecord>> {
+        let connection = self.lock()?;
+        initialize(&connection)?;
+        connection
+            .query_row(
+                "SELECT model_id, provider, model, name FROM provider_unlisted_model WHERE model_id = ?1",
+                [model_id],
+                |row| {
+                    Ok(UnlistedModelRecord {
+                        model_id: row.get(0)?,
+                        provider: row.get(1)?,
+                        model: row.get(2)?,
+                        name: row.get(3)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(Into::into)
     }
 
     /// Claims the one background attempt of this back-off window. True only
@@ -440,6 +531,46 @@ mod tests {
         assert!(store.provider_status_all().unwrap().is_empty());
         store.gone_models_clear("openai").unwrap();
         assert!(store.gone_models("openai").unwrap().is_empty());
+    }
+
+    #[test]
+    fn unlisted_model_names_survive_reopen_until_listed_again_or_their_provider_is_unknown() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("catalog.sqlite3");
+        let store = SqliteStore::open(&path).unwrap();
+        let unlisted = |provider: &str, model: &str, name: &str| UnlistedModelRecord {
+            model_id: format!("{provider}/{model}"),
+            provider: provider.into(),
+            model: model.into(),
+            name: name.into(),
+        };
+        let sol = unlisted("openai", "gpt-6.2-sol", "GPT-6.2-Sol");
+        let luna = unlisted("openai", "gpt-6-luna", "GPT-6-Luna");
+        store
+            .unlisted_models_update("openai", &[sol.clone(), luna.clone()], &[], 1)
+            .unwrap();
+        store
+            .unlisted_models_update("retired", &[unlisted("retired", "m", "M")], &[], 1)
+            .unwrap();
+        drop(store);
+        let store = SqliteStore::open(&path).unwrap();
+        assert_eq!(
+            store.unlisted_model(&sol.model_id).unwrap(),
+            Some(sol.clone())
+        );
+        store
+            .unlisted_models_update("openai", &[], &[&luna.model_id], 2)
+            .unwrap();
+        assert_eq!(store.unlisted_model(&luna.model_id).unwrap(), None);
+        assert_eq!(
+            store.unlisted_model(&sol.model_id).unwrap(),
+            Some(sol.clone())
+        );
+        store
+            .remembered_models_delete_unknown(&|provider| provider == "openai")
+            .unwrap();
+        assert_eq!(store.unlisted_model("retired/m").unwrap(), None);
+        assert_eq!(store.unlisted_model(&sol.model_id).unwrap(), Some(sol));
     }
 
     #[test]

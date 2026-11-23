@@ -535,7 +535,7 @@ fn destructive_change(method: ToolMethod, params: &Value) -> bool {
 /// text (company profiles, filings, transcripts, news, series titles) and
 /// raises the untrusted-text tier. Names come from the bundled runtime's route
 /// inventory; a route missing here fails closed by raising the tier.
-const NUMERIC_ONLY_OPENBB_TOOLS: &[&str] = &[
+pub(crate) const NUMERIC_ONLY_OPENBB_TOOLS: &[&str] = &[
     "cftc_cot",
     "commodity_price_spot",
     "commodity_psd_data",

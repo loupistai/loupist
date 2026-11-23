@@ -10,7 +10,7 @@ const catalog: ModelCatalog = { hidden_model_profile_ids: [], models: [luna, { .
 const empty = { model_profile_id: "", thinking_level: "", run_options: {} };
 
 it("uses the host identity and controls even when another model comes first in the catalog", () => {
-  expect(modelRunSelection({ model: catalog.models[1]!, thinking_level: "max", thinking_levels: ["max"], run_options: {}, run_controls: [], is_default: true, unavailable_reason: null, stored_unavailable: null }))
+  expect(modelRunSelection({ model: catalog.models[1]!, thinking_level: "max", thinking_levels: ["max"], run_options: {}, run_controls: [], is_default: true, unavailable_reason: null, stored_unavailable: null, stored_model: null }))
     .toEqual({ model_profile_id: "pi/sol", thinking_level: "max", run_options: {} });
   expect(modelRunSelection(undefined)).toEqual(empty);
 });
@@ -31,6 +31,7 @@ it("fills a model's omitted controls and keeps supplied choices", () => {
     unavailable_reason: null,
     run_options: {},
     stored_unavailable: null,
+    stored_model: null,
   };
   expect(modelRunSelection(resolved)).toMatchObject({ model_profile_id: luna.id, run_options: { performance: "standard" } });
   expect(modelRunSelection({ ...resolved, run_options: { performance: "fast" } }).run_options).toEqual({ performance: "fast" });

@@ -10,19 +10,29 @@ revenue, operating income, net income and net income attributable to owners,
 basic EPS, total assets, total liabilities, total equity and equity attributable
 to owners, operating cash flow and shares outstanding; repeats in other statements
 stay provider concepts. The requested basis is explicit and recorded as `fs_div`
-(`CFS` consolidated, `OFS` separate). Period dates come from the company's fiscal
-year-end (`acc_mt` in its OpenDART profile): December year-ends are dated; any
-other or unavailable year-end leaves periods undated with a warning.
+(`CFS` consolidated, `OFS` separate): `fnlttSinglAcntAll` rows carry no `fs_div`,
+company name or stock code, so the name and stock code come from the company's
+OpenDART profile. A consolidated request that OpenDART answers with no data (013) is
+read again on the separate basis, as a company without subsidiaries files only
+separate statements; the result keeps `query.basis` consolidated, reports
+`period.basis` separate, `fs_div` OFS and `requested_basis` consolidated, warns and adds
+a `basis_fallback` check. No data on either basis is `empty_result`. Period dates
+come from the company's fiscal year-end (`acc_mt` in its OpenDART profile): December
+year-ends are dated; any other or unavailable year-end leaves periods undated with a
+warning.
 
 `dart_major_report`, `dart_ownership` and `dart_dividends` (`finance_data/dart_events.rs`)
 read OpenDART's capital decisions (주요사항보고, DS005), ownership reports (DS004) and the
 annual report's dividend table (DS002). `company` is a corp_code, ticker or exact name,
 and every returned row must carry that corp_code. Rows are dated by their receipt
-(`filed_at`), so `as_of` keeps rows filed by the cutoff.
+(`filed_at`), so `as_of` keeps rows filed by the cutoff. An ownership report whose
+stated receipt date (`rcept_dt`) falls up to seven days from the date its receipt
+number begins with is dated by the later of the two; a wider gap is refused.
 
 - `dart_major_report {company, kind, start, end}` reads one kind (`rights_offering`,
   `bonus_issue`, `capital_reduction`, `convertible_bonds`, `bonds_with_warrants`,
-  `exchangeable_bonds`, `buyback`, `treasury_sale`, `merger`, `split`) over a receipt
+  `exchangeable_bonds`, `buyback`, `treasury_sale`, `merger`, `split`, `lawsuits`,
+  `split_merger`, `overseas_listing`, `overseas_delisting`) over a receipt
   range of at most 366 days from 2015, as up to 100 `loupist-dart-major-report/1` rows,
   newest first. Bond rows keep the face amount, conversion or exercise price, reset floor
   (최저 조정가액), coupon and maturity rates and payment date. `dilution_pct` is the
@@ -33,11 +43,22 @@ and every returned row must carry that corp_code. Rows are dated by their receip
   (face amount ÷ floor, `max_new_shares`) over the shares outstanding implied by the
   filing's own ratio (shares at the price ÷ the filed percentage), with the formulas and
   inputs in `dilution_calculation` and the filed figure kept as `dilution_filed_pct`.
-  Without a floor the filed ratio stays (`dilution_at: price`). OpenDART's rights-offering decision carries no issue
+  Without a floor the filed ratio stays (`dilution_at: price`). A lawsuit row keeps the
+  case, plaintiffs, claim, court, response plan and filing date, dated by the company's
+  confirmation (`decision_date`). Split-merger and overseas listing or delisting rows,
+  not yet recorded from a real filing, name their documented fields and keep every cell
+  as OpenDART sent it in `provider_fields`. OpenDART's rights-offering decision carries no issue
   price or payment date, and the result says to read the filing for them.
 - `dart_ownership {company, kind: major_holders | insiders, limit?}` returns up to 100
   (default 20) 5% holder or insider reports, newest first, with the ratio, its change
   and `ratio_before_pct` (the ratio minus its change).
+- `dart_report_items {company, kind, fiscal_year, report_period}` reads one section of a
+  periodic report (DS002) as `loupist-dart-report-items/1` rows with their units:
+  `treasury_shares` (shares at the start and end, acquired, disposed, retired, by class and
+  method), `auditor` (auditor, opinion, emphasis, key audit matters by period),
+  `employees` (regular, contract and total headcount, tenure in years, salaries in KRW by
+  division and sex) and `capital_changes` (each issue or reduction). OpenDART's 013 and a
+  section of only "-" cells are `empty_result`; fiscal years start in 2015.
 - `dart_dividends {company, year}` returns dividend per share, payout, yield and totals
   by share class and basis for that fiscal year and the two before, plus `record_date`
   (배당기준일) from the newest cash-dividend decision notice filed from November of that

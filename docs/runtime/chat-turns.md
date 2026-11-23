@@ -266,8 +266,11 @@ the save is applied, skipped or bounded, the stored reply with its receipt
 (`commands/chat_runtime/saves.rs`). The renderer reads the list after subscribing, so
 the wait shows on the reply after a reload. Each reply keeps "Saving to Memory ·
 waiting for …" and its own **Skip saving** (Stop of that run) until its receipt
-arrives. The wait stays in memory: writing it to the row would race the next turn. A
-crash leaves the checkpoint's activity and interrupted-save receipt.
+arrives. The line names the session it waits for; one whose first reply still runs
+has no title yet and is named from its request, as a stopped reply titles it
+(`waitedOnChatTitle` in `src/app/chatTitle.ts`, `src/lib/requestTitle.ts`). The wait
+stays in memory: writing it to the row would race the next turn. A crash leaves the
+checkpoint's activity and interrupted-save receipt.
 
 Every write of a pending save is scoped to its message ID and retries a lost Chat
 compare-and-swap after reading the row again. Steering, terminal replies and the

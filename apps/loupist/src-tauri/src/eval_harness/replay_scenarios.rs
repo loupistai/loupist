@@ -87,14 +87,25 @@ async fn eval_replay_tool_use_scenarios_through_native_broker() {
                 } else {
                     "separate"
                 };
-                let mut negative = call(
-                    "dart_financials",
-                    "dart.financials",
-                    json!({"company":code,"fiscal_year":2025,"report_period":"annual","basis":wrong_basis}),
-                    &["no matching data"],
-                );
-                negative.0["error"] = json!("no matching data");
-                cases.push(negative);
+                let wrong = json!({"company":code,"fiscal_year":2025,"report_period":"annual","basis":wrong_basis});
+                if wrong_basis == "consolidated" {
+                    // A separate-only filer's consolidated read returns its separate statements, marked.
+                    cases.push(call(
+                        "dart_financials",
+                        "dart.financials",
+                        wrong,
+                        &[revenue, "requested_basis"],
+                    ));
+                } else {
+                    let mut negative = call(
+                        "dart_financials",
+                        "dart.financials",
+                        wrong,
+                        &["No data was returned"],
+                    );
+                    negative.0["error"] = json!("No data was returned");
+                    cases.push(negative);
+                }
             }
             "T-018" => {
                 for query in ["별무리반도체", "990308"] {
@@ -143,9 +154,9 @@ async fn eval_replay_tool_use_scenarios_through_native_broker() {
                     "dart_filing_search",
                     "dart.filing_search",
                     json!({"company":"99030800","start":"2026-04-01","end":"2026-06-30","limit":20}),
-                    &["no matching data"],
+                    &["No data was returned"],
                 );
-                negative.0["error"] = json!("no matching data");
+                negative.0["error"] = json!("No data was returned");
                 cases.push(negative);
             }
             "T-019" | "T-020" => {
@@ -286,9 +297,9 @@ async fn eval_replay_tool_use_scenarios_through_native_broker() {
                     "dart_filing_search",
                     "dart.filing_search",
                     json!({"company":"990221","start":"2026-01-01","end":"2026-03-10","limit":100}),
-                    &["no matching data"],
+                    &["No data was returned"],
                 );
-                empty.0["error"] = json!("no matching data");
+                empty.0["error"] = json!("No data was returned");
                 cases.push(empty);
             }
             "T-034" => {
@@ -386,17 +397,23 @@ async fn eval_replay_tool_use_scenarios_through_native_broker() {
                     financials("99055200", "separate"),
                     &["128400000000", "7600000000", "4900000000", "separate"],
                 ));
+                // Iseul's consolidated read returns its separate statements, marked.
+                cases.push(call(
+                    "dart_financials",
+                    "dart.financials",
+                    financials("99055200", "consolidated"),
+                    &["128400000000", "requested_basis"],
+                ));
                 let mut no_data = |company: &str, basis: &str| {
                     let mut case = call(
                         "dart_financials",
                         "dart.financials",
                         financials(company, basis),
-                        &["no matching data"],
+                        &["No data was returned"],
                     );
-                    case.0["error"] = json!("no matching data");
+                    case.0["error"] = json!("No data was returned");
                     cases.push(case);
                 };
-                no_data("99055200", "consolidated");
                 if id == "T-041" {
                     cases.push(call(
                         "dart_financials",
@@ -537,14 +554,13 @@ async fn eval_replay_tool_use_scenarios_through_native_broker() {
                     financials("separate"),
                     &["128400000000", "7600000000", "separate"],
                 ));
-                let mut consolidated = call(
+                // The consolidated read returns the separate statements, marked.
+                cases.push(call(
                     "dart_financials",
                     "dart.financials",
                     financials("consolidated"),
-                    &["no matching data"],
-                );
-                consolidated.0["error"] = json!("no matching data");
-                cases.push(consolidated);
+                    &["128400000000", "requested_basis"],
+                ));
             }
             "T-047" => {
                 // Four annual dividend tables; only FY2025 has a readable decision notice.
@@ -578,9 +594,9 @@ async fn eval_replay_tool_use_scenarios_through_native_broker() {
                     "dart_dividends",
                     "dart.dividends",
                     json!({"company":"99022100","year":2021}),
-                    &["no matching data"],
+                    &["No data was returned"],
                 );
-                negative.0["error"] = json!("no matching data");
+                negative.0["error"] = json!("No data was returned");
                 cases.push(negative);
             }
             "T-049" => {
@@ -645,9 +661,9 @@ async fn eval_replay_tool_use_scenarios_through_native_broker() {
                     "dart_financials",
                     "dart.financials",
                     json!({"company":"99022100","fiscal_year":2019,"report_period":"annual","basis":"consolidated"}),
-                    &["no matching data"],
+                    &["No data was returned"],
                 );
-                negative.0["error"] = json!("no matching data");
+                negative.0["error"] = json!("No data was returned");
                 cases.push(negative);
             }
             "T-052" => {
@@ -702,21 +718,20 @@ async fn eval_replay_tool_use_scenarios_through_native_broker() {
                         &[revenue, income, net_income, basis, receipt, filed],
                     ));
                 }
-                let mut no_data = call(
+                // Iseul files separate statements only: the consolidated read returns them, marked.
+                cases.push(call(
                     "dart_financials",
                     "dart.financials",
                     json!({"company":"99055200","fiscal_year":2025,"report_period":"annual","basis":"consolidated"}),
-                    &["no matching data"],
-                );
-                no_data.0["error"] = json!("no matching data");
-                cases.push(no_data);
+                    &["128400000000", "requested_basis"],
+                ));
                 let mut negative = call(
                     "dart_financials",
                     "dart.financials",
                     json!({"company":"99022100","fiscal_year":2024,"report_period":"annual","basis":"consolidated"}),
-                    &["no matching data"],
+                    &["No data was returned"],
                 );
-                negative.0["error"] = json!("no matching data");
+                negative.0["error"] = json!("No data was returned");
                 cases.push(negative);
             }
             "T-053" => {
@@ -818,9 +833,9 @@ async fn eval_replay_tool_use_scenarios_through_native_broker() {
                     "dart_dividends",
                     "dart.dividends",
                     json!({"company":"99022100","year":2020}),
-                    &["no matching data"],
+                    &["No data was returned"],
                 );
-                negative.0["error"] = json!("no matching data");
+                negative.0["error"] = json!("No data was returned");
                 cases.push(negative);
             }
             "T-055" => {
@@ -843,9 +858,9 @@ async fn eval_replay_tool_use_scenarios_through_native_broker() {
                     "dart_financials",
                     "dart.financials",
                     json!({"company":"99022100","fiscal_year":2025,"report_period":"annual","basis":"separate"}),
-                    &["no matching data"],
+                    &["No data was returned"],
                 );
-                negative.0["error"] = json!("no matching data");
+                negative.0["error"] = json!("No data was returned");
                 cases.push(negative);
             }
             "T-056" => {

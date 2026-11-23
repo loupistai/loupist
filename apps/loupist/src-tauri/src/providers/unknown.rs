@@ -95,7 +95,7 @@ fn delete_with(state: &AppState, known: &dyn Fn(&str) -> bool) -> Result<(), Com
     }
     state
         .store
-        .gone_models_delete_unknown(known)
+        .remembered_models_delete_unknown(known)
         .map_err(map_store)?;
     clear_chat_default(state, known)?;
     clear_schedule_models(state, known);

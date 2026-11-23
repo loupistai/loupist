@@ -65,6 +65,7 @@ import type {
   JournalRecord,
   JournalSourceRead,
   GraphJobView,
+  SourcesRetried,
   GraphProcessingSettings,
   GraphProcessingView,
   KeepAwakeStatus,
@@ -369,6 +370,8 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
   knowledgeSourceRetain(request: KnowledgeSourceRetainRequest): Promise<RetainedSource>;
   knowledgeGraphJob(request: { loupistId: string; jobId: string }): Promise<GraphJobView>;
   knowledgeGraphRetrySource(request: { loupistId: string; recordId: string }): Promise<GraphJobView>;
+  /** The same retry for every Source the confirmation counted, under the allowance it named. */
+  knowledgeGraphRetrySources(request: { loupistId: string; recordIds: string[]; maxLlmCalls: number }): Promise<SourcesRetried>;
   knowledgeFollowedStatus(request: { loupistId: string }): Promise<import("./knowledge").FollowedStatus>;
   knowledgeGraphRecover(request: { loupistId: string }): Promise<GraphProcessingView>;
   knowledgeGraphPause(request: {

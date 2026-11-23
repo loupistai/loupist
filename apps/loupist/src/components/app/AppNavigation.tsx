@@ -25,7 +25,7 @@ import { shortcutFor, tabShortcut } from "../../app/shortcuts";
 import { matchesSetting, normalizeSetting, settingTranslations, type SettingResult } from "../settings/settingSearch";
 import { APP_DESTINATIONS } from "../../app/navigation";
 import type { ChatThread, LoupistSummary } from "../../types";
-import { sourceProcessingLabel, type WorldProcessing } from "../../knowledge/mapProcessing";
+import { waitingLabel, type WorldProcessing } from "../../knowledge/mapProcessing";
 import "../../styles/navigation.css";
 
 type Props = {
@@ -123,7 +123,7 @@ export function AppNavigation({
       case "provider_disconnected": mapActivity = i18n.t("app:shell.mapWaitingForModel"); break;
       case "paused": mapActivity = i18n.t("app:shell.mapBuildingPaused"); break;
       case "disabled": mapActivity = i18n.t("app:shell.mapBuildingOff"); break;
-      default: mapActivity = sourceProcessingLabel(mapProcessing.reason);
+      default: mapActivity = waitingLabel(mapProcessing);
     }
   }
   const scheduleActivity = scheduleRunning.length === 1

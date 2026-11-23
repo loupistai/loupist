@@ -104,18 +104,19 @@ it("shows recovery without a Source count and clears it when the host settles", 
 
 const providerMessage = "World is waiting for a model: connect the one chosen for World in Settings.";
 const accountMessage = "World is waiting for an AI account. Connect one in Settings > AI accounts.";
-const allowanceMessage = "World building paused for this source: it reached the request allowance set in World building settings.";
+// World's own lines count the Sources stopped at the limit; each Source's row keeps its own sentence.
+const allowanceMessage = "1 Source paused at the request limit";
 
 it.each([
   { readiness: "provider_disconnected", statuses: ["queued"], label: "World · waiting for a model", message: providerMessage },
   { readiness: "paused", statuses: ["paused"], label: "World · building paused", message: "World building paused" },
   { readiness: "disabled", statuses: ["queued"], label: "World · building is off", message: "World building is off" },
-  { readiness: "ready", statuses: ["paused_budget"], label: allowanceMessage, message: allowanceMessage, control: "World building settings" },
+  { readiness: "ready", statuses: ["paused_budget"], label: allowanceMessage, message: allowanceMessage, continueAll: true, control: "World building settings" },
   { readiness: "ready", statuses: ["failed_before_mutation"], label: "World building failed", message: "World building failed" },
   // No AI account at all, and accounts whose models exclude World's.
   { readiness: "model_unavailable", note: "no_account", statuses: ["queued"], label: accountMessage, message: accountMessage, control: "Manage AI accounts" },
   { readiness: "model_unavailable", note: "model_unavailable", statuses: ["queued"], label: "Choose another AI model", message: "Choose another AI model" },
-] as { readiness: WorldReadinessStatus; note?: GraphReadinessNote; statuses: string[]; label: string; message: string; control?: string }[])("keeps the sidebar and Library still when World waits ($label)", async ({ readiness, note, statuses, label, message, control }) => {
+] as { readiness: WorldReadinessStatus; note?: GraphReadinessNote; statuses: string[]; label: string; message: string; continueAll?: boolean; control?: string }[])("keeps the sidebar and Library still when World waits ($label)", async ({ readiness, note, statuses, label, message, continueAll, control }) => {
   const user = userEvent.setup();
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   mapJobs(bridge, [...statuses], readiness, note ?? null);
@@ -130,7 +131,7 @@ it.each([
   expect(stats).toHaveTextContent(message);
   expect(stats.querySelector(".map-updating")).toBeNull();
   // A reason the user can act on carries the control that opens the right settings.
-  expect(within(stats).queryAllByRole("button").map(button => button.textContent)).toEqual(control ? [control] : []);
+  expect(within(stats).queryAllByRole("button").map(button => button.textContent)).toEqual([...(continueAll ? ["Continue all"] : []), ...(control ? [control] : [])]);
   await user.click(await screen.findByRole("button", { name: "Library" }));
   await user.click(await screen.findByRole("tab", { name: "Sources" }));
   const library = within(screen.getByTestId("map-library"));
@@ -191,4 +192,33 @@ it("resumes the queued World status on a provider event with the World still clo
   await jobs.connectProvider();
   expect((await mapRow("World · building from 1 source")).querySelector("[data-slot=spinner]")).toBeVisible();
   expect(screen.queryByTestId("map-view")).toBeNull();
+});
+
+it("continues every Source paused at the request limit in one confirmed step", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const jobs = mapJobs(bridge, ["paused_budget", "paused_budget"]);
+  const stopped = (await bridge.knowledgeCatalog({ loupistId: LOUPIST })).sources.slice(0, 2).map(source => source.recordId);
+  const retry = vi.spyOn(bridge, "knowledgeGraphRetrySources").mockResolvedValue({ continued: 2, skipped: 0 });
+  render(<App bridge={bridge} />);
+  await user.click(await mapRow("2 Sources paused at the request limit"));
+  const stats = await screen.findByTestId("map-stats");
+  expect(stats).toHaveTextContent("2 Sources paused at the request limit");
+
+  // The confirmation names the count and the most requests it can spend; Cancel runs nothing.
+  await user.click(within(stats).getByRole("button", { name: "Continue all" }));
+  let dialog = await screen.findByRole("dialog", { name: "Continue reading 2 Sources?" });
+  expect(dialog).toHaveTextContent("This can use up to 64 model requests.");
+  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(retry).not.toHaveBeenCalled();
+
+  await user.click(within(stats).getByRole("button", { name: "Continue all" }));
+  dialog = await screen.findByRole("dialog", { name: "Continue reading 2 Sources?" });
+  await user.click(within(dialog).getByRole("button", { name: "Continue" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(retry).toHaveBeenCalledExactlyOnceWith({ loupistId: LOUPIST, recordIds: stopped, maxLlmCalls: 32 });
+  await jobs.change(["queued", "queued"]);
+  expect(await mapRow("World · building from 2 sources")).toBeVisible();
+  expect(within(screen.getByTestId("map-stats")).queryByRole("button", { name: "Continue all" })).toBeNull();
 });

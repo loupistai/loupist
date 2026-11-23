@@ -1,5 +1,6 @@
 import i18n from "@/i18n";
 import { scheduledTaskTitle } from "../components/briefings/scheduledPresentation";
+import { requestTitle } from "../lib/requestTitle";
 import type { ChatThread } from "../types";
 
 /**
@@ -10,6 +11,19 @@ export const chatTitle = (thread: Pick<ChatThread, "title" | "home"> & Partial<P
   if (thread.home) return i18n.t("app:thread.title");
   if (thread.messages?.find((message) => message.scheduled)?.scheduled?.task_kind === "briefing") return scheduledTaskTitle("briefing", thread.title);
   return thread.title.trim() ? thread.title : i18n.t("app:emptyChat.newChat");
+};
+
+/**
+ * A session another reply's save waits on. While its first reply runs it has no title yet, so it
+ * is named from its request, as the host titles it if that reply stops or fails: the last request
+ * that is not a steer, or its first file's name when it has no text.
+ */
+export const waitedOnChatTitle = (thread: Pick<ChatThread, "title" | "home"> & Partial<Pick<ChatThread, "messages">>): string => {
+  if (thread.home || thread.title.trim()) return chatTitle(thread);
+  const request = [...(thread.messages ?? [])].reverse().find((message) => message.role === "user" && !message.steer);
+  const file = request?.attachments?.[0];
+  const title = request ? requestTitle(file && !request.content ? file.filename : request.content) : "";
+  return title || chatTitle(thread);
 };
 
 /** A scheduled request opened this session, and the user has since continued it. */

@@ -30,9 +30,14 @@ pub struct ResolvedModelSelection {
     pub unavailable_reason: Option<ModelUnavailableReason>,
     pub thinking_level: Option<String>,
     pub run_options: BTreeMap<String, String>,
-    /// Why the stored model, still listed, cannot run now. The selection is
+    /// Why the stored model cannot run now: listed but its account signed out
+    /// or disconnected or it is hidden, or no longer listed (its account
+    /// disconnected, or its provider stopped offering it). The selection is
     /// then Auto in its place; the stored choice applies again once it can run.
     pub stored_unavailable: Option<ModelUnavailableReason>,
+    /// That stored model, by the name the catalog has or last had for it.
+    /// Configuration snapshots fill it in; None when no name is known.
+    pub stored_model: Option<ModelIdentity>,
 }
 
 /// The model one request runs on, decided at admission.
@@ -61,6 +66,7 @@ impl ResolvedModelSelection {
             thinking_level: None,
             run_options: BTreeMap::new(),
             stored_unavailable: None,
+            stored_model: None,
         }
     }
 
@@ -80,6 +86,7 @@ impl ResolvedModelSelection {
             thinking_level: Some(choice.thinking_level),
             run_options: choice.run_options,
             stored_unavailable: None,
+            stored_model: None,
         }
     }
 }
@@ -113,10 +120,36 @@ impl SelectionCatalog {
     ) -> ResolvedModelSelection {
         match self.admit(id, level, options) {
             Ok(admitted) => ResolvedModelSelection {
-                stored_unavailable: admitted.stored_unavailable,
+                stored_unavailable: admitted.stored_unavailable.or_else(|| {
+                    (admitted.is_default && !auto::uses_default(id)).then(|| self.unlisted(id))
+                }),
                 ..ResolvedModelSelection::available(admitted.choice, admitted.is_default)
             },
             Err(reason) => ResolvedModelSelection::unavailable(reason, true),
+        }
+    }
+
+    /// Why a stored model the catalog does not list cannot run: its account
+    /// has no credential (a disconnect removes the account's models), or its
+    /// provider no longer offers it.
+    fn unlisted(&self, id: &str) -> ModelUnavailableReason {
+        let provider = crate::providers::unknown::profile_provider(id);
+        let credential = self
+            .view
+            .providers
+            .iter()
+            .find(|option| option.id == provider)
+            .map(|option| option.credential_source)
+            .or_else(|| {
+                self.view
+                    .custom_providers
+                    .iter()
+                    .find(|option| option.id == provider)
+                    .map(|option| option.credential_source)
+            });
+        match credential {
+            Some(CredentialSource::Missing) => ModelUnavailableReason::AccountDisconnected,
+            _ => ModelUnavailableReason::CatalogUnavailable,
         }
     }
 

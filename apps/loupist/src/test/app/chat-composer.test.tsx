@@ -125,6 +125,17 @@ describe("Loupist · Chat composer", () => {
     expect(composer()).toHaveValue("Newer unsent thought");
   });
 
+  it("says only that the response stopped when nothing is queued", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 8_000 });
+    await openApp(bridge);
+    await send(user, "Start a long analysis");
+    await user.click(await screen.findByRole("button", { name: "Stop response" }));
+    const queue = await screen.findByLabelText("Pending chat instructions");
+    await waitFor(() => expect(within(queue).getByRole("status").firstElementChild).toHaveTextContent(/^Response stopped\.$/));
+    expect(screen.queryByText(/Queued messages were kept/)).toBeNull();
+  });
+
   it("keeps queued follow-ups when the active response is stopped", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 8_000 });

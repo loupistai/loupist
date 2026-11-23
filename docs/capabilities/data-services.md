@@ -39,6 +39,41 @@ the same refusal code. The MCP host preserves these typed errors after tool
 activation. Custom MCP connections recognize JSON-RPC Invalid params
 and structured bad-request tool errors without exposing remote error prose.
 
+OpenDART names companies by an 8-digit corp_code. Every DART tool resolves its
+`company` through one index of OpenDART's company list (`corpCode.xml`: every filer,
+listed or not, with its corp_code, Korean and English names and stock code; a 3.6 MB
+archive in November 2026). The host downloads it once, in its own task with a
+90-second limit, keeps the archive under the app's `cache/opendart` for up to 30 days
+and refreshes it in the background after a day; a call that has a copy never waits.
+The index matches a corp_code, a stock code, or a Korean or English name with spaces,
+punctuation and corporate-form words (Co., Ltd., Corp., (주), 주식회사) removed. A
+corp_code needs no list; a ticker or exact name resolves when one filer carries it,
+or one listed filer among several; otherwise the call names candidate corp_codes.
+Calls without a copy wait up to 25 seconds for the one download in flight, then
+return `provider_preparing` while it continues. A `dart_company_lookup` query that names one
+company that way also returns its overview as `company` (name, English and stock
+names, CEO, market, industry code, address, homepage, IR page, establishment date,
+fiscal year-end month) from one `company.json` read, cached a day with the profile
+statement reads use. Filing archives (`document.xml`) have
+a 60-second limit and stay in memory for ten minutes, two at a time, so a filing's
+other pages and its dividend notice read without a second download.
+
+OpenDART answers with a status in an HTTP 200 body. The host types each one:
+013 and 014 are `empty_result`; 010, 011, 012 and 901 are `credential_rejected` with
+the status; 020 is `rate_limited`; 800 is `provider_unavailable`; 021 and 100 are an
+argument refusal (OpenDART's message names no field, so arguments are validated
+before a request). A native read past its time limit is `provider_timeout`, which
+Activity shows as a timeout. `dart_filing_search` takes `page` (OpenDART's
+`page_no`, newest first) and `report_type` (`annual`, `half_year`, `quarterly`:
+`pblntf_detail_ty` A001 to A003); `dart_filing_read` takes `page`, 200,000 characters
+of text each, up to 20 pages. Results name the next page.
+
+Each native vendor row declares the query parameters that carry its credential
+(OpenDART's `crtfc_key`; the others send theirs in headers). A request URL becomes a
+locator only through `public_locator`, which removes them, and a native result whose
+`source_url` still carries one is refused before it can become a Source, citation or
+export.
+
 For Yahoo Finance income statements, balance sheets and cash flows, the query model
 accepts `annual` and `quarter` with a limit of at most five. Yahoo-only cards
 expose those periods and the maximum. A card shared with other providers keeps
@@ -64,7 +99,7 @@ market data. Static contracts are in `agent/tool-catalog.json`.
 | `onchain` | `defillama_read` |
 | `krx` | `krx_daily_quote` |
 | `koreainvestment` | `kis_operation_search`, `kis_read` |
-| `opendart` | `dart_company_lookup`, `dart_filing_search`, `dart_filing_read`, `dart_financials`, `dart_major_report`, `dart_ownership`, `dart_dividends` |
+| `opendart` | `dart_company_lookup`, `dart_filing_search`, `dart_filing_read`, `dart_financials`, `dart_major_report`, `dart_ownership`, `dart_dividends`, `dart_report_items` |
 | `web-research` | `web_search`, `web_fetch` |
 | `openfigi.lookup` | `asset_lookup` (core tool, gated by the Loupist’s grant) |
 
@@ -148,8 +183,10 @@ holding such text raise the tier again when they come back.
 
 Search and reading follow pi-web-access 0.47's behavior where it applies to a
 host-side reader. Exa results take `URL:` and `Published:` only from each result's
-header, so a date quoted in page text never dates a hit. An untitled hit is named
-by its host. A throttled Exa reply (`_meta["ai.exa/rateLimited"]`) counts as rate
+header, so a date quoted in page text never dates a hit. A hit without a usable
+title (none, punctuation alone, or a placeholder such as Exa's `N/A`) is named by
+its host and path (`source_title` in `web.rs`), and a fetched page keeps its own
+title, else that name. A throttled Exa reply (`_meta["ai.exa/rateLimited"]`) counts as rate
 limited and falls back like a 429. `web_fetch` (`apps/loupist/src-tauri/src/web.rs`)
 decodes text the way a browser picks an encoding: byte-order mark, HTTP charset,
 an HTML `<meta>` charset, UTF-8, then chardetng's guess. The guess reads

@@ -770,6 +770,17 @@ pub struct KnowledgeGraphRetrySourceRequest {
     pub record_id: String,
 }
 
+/// "Continue all": the Sources the user's confirmation counted and the
+/// request allowance it named for each.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct KnowledgeGraphRetrySourcesRequest {
+    pub loupist_id: String,
+    pub record_ids: Vec<String>,
+    pub max_llm_calls: u32,
+}
+
 #[derive(Debug, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -951,6 +962,33 @@ pub fn knowledge_graph_retry_source(
     })?;
     state.graph.wake();
     Ok(job)
+}
+
+/// One confirmed step for every Source paused at the request limit: the same
+/// retry as each Source's Try again ([`crate::knowledge::retry_sources_processing`]).
+#[tauri::command(async)]
+pub fn knowledge_graph_retry_sources(
+    request: KnowledgeGraphRetrySourcesRequest,
+    state: State<'_, AppState>,
+) -> Result<crate::knowledge::SourcesRetried, CommandError> {
+    let _activity = admit_mutation(state.inner(), &request.loupist_id)?;
+    if !state.graph.runtime_available() {
+        return Err(CommandError::invalid("World building is unavailable"));
+    }
+    let retried = with_loupist_knowledge(state.inner(), &request.loupist_id.clone(), |tx, _| {
+        let settings = crate::knowledge::load_settings(tx, &request.loupist_id)?;
+        crate::knowledge::retry_sources_processing(
+            tx,
+            &settings,
+            &request.loupist_id,
+            &request.record_ids,
+            request.max_llm_calls,
+        )
+    })?;
+    if retried.continued > 0 {
+        state.graph.wake();
+    }
+    Ok(retried)
 }
 
 #[tauri::command(async)]

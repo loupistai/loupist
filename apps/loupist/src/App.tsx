@@ -208,12 +208,24 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     }).catch(() => { if (active) setNoticeAcknowledgedVersion(0); });
     return () => { active = false; };
   }, [bridge]);
+  const [onboardingFinished, setOnboardingFinished] = useState(false);
   // A new profile has a default Loupist before onboarding finishes. After the
   // notice has been accepted, losing the last AI account must not hide saved research.
+  // Finishing onboarding ends the first run even when saving the acknowledgment fails.
   const needsOnboarding = model.resolved && noticeAcknowledgedVersion !== null && !loupist.loading && !loupist.error
-    && (loupists.length === 0 || (model.needsProviderSetup && noticeAcknowledgedVersion === 0));
-  useEffect(() => { if (needsOnboarding) setOnboardingActive(true); }, [needsOnboarding]);
+    && (loupists.length === 0 || (model.needsProviderSetup && noticeAcknowledgedVersion === 0 && !onboardingFinished));
+  // Onboarding opens when it becomes needed and stays open until it finishes, even when
+  // connecting an account or creating the Loupist clears the need on the way. This is
+  // set while rendering, not in an effect: without an AI account, creating the Loupist
+  // makes onboarding needed again until the notice is saved, and the effect of that
+  // commit could run after finishOnboarding and reopen the name step.
+  const [onboardingNeeded, setOnboardingNeeded] = useState(false);
+  if (needsOnboarding !== onboardingNeeded) {
+    setOnboardingNeeded(needsOnboarding);
+    if (needsOnboarding) setOnboardingActive(true);
+  }
   const finishOnboarding = useCallback(async () => {
+    setOnboardingFinished(true);
     // A failed save leaves the shell notice gate active, where the user can retry.
     await bridge.noticeAcknowledge().then(settings => setNoticeAcknowledgedVersion(settings.notice_acknowledged_version)).catch(() => {});
     setOnboardingActive(false);

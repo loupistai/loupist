@@ -679,7 +679,9 @@ async fn fetch_official(
     Ok(WebFetchSnapshot {
         source_id: source.source_id.clone(),
         content_sha256,
-        title: markdown_heading(&content).unwrap_or_else(|| source.title.clone()),
+        title: markdown_heading(&content)
+            .filter(|heading| usable_title(heading).is_some())
+            .unwrap_or_else(|| source_title(Some(&source.title), &source.url)),
         url: source.url.clone(),
         requested_url: source.url.clone(),
         representation_url: target.representation_url.to_string(),
@@ -722,7 +724,8 @@ async fn fetch_generic(
     let bytes = response.bytes;
     let raw_content_type = response.content_type.clone();
     let decode_content_type = content_type.clone();
-    let fallback_title = source.title.clone();
+    // A search result's placeholder title never names the fetched page.
+    let fallback_title = source_title(Some(&source.title), &source.url);
     let base_url = response.final_url.clone();
     let decoded = tokio::time::timeout(
         EXTRACT_TIMEOUT,
@@ -1147,11 +1150,7 @@ fn parse_search_results(text: &str) -> Result<Vec<WebSource>, WebError> {
             .filter_map(|result| {
                 let url = result.url?;
                 validate_source_url(&url).ok()?;
-                let title = result
-                    .title
-                    .as_deref()
-                    .filter(|value| !value.trim().is_empty())
-                    .map_or_else(|| untitled_label(&url), |title| bounded_text(title, 512));
+                let title = source_title(result.title.as_deref(), &url);
                 let snippet = result
                     .highlights
                     .filter(|items| !items.is_empty())
@@ -1208,13 +1207,8 @@ fn parse_search_results(text: &str) -> Result<Vec<WebSource>, WebError> {
             .map(str::trim)
             .filter(|value| !value.is_empty() && *value != "N/A")
             .map(|value| bounded_text(value, 128));
-        let title = if title.is_empty() {
-            untitled_label(url)
-        } else {
-            bounded_text(title, 512)
-        };
         sources.push(web_source(
-            title,
+            source_title(Some(title), url),
             url.to_owned(),
             bounded_text(snippet, 2_000),
             published_at,
@@ -1232,23 +1226,55 @@ fn parse_search_results(text: &str) -> Result<Vec<WebSource>, WebError> {
     }
 }
 
-/// A result without a title is labeled by its host, not a generic placeholder.
-fn untitled_label(url: &str) -> String {
-    Url::parse(url)
-        .ok()
-        .and_then(|url| url.host_str().map(str::to_owned))
-        .filter(|host| !host.is_empty())
+/// Strings providers send in place of a missing title (Exa's keyless search
+/// writes `Title: N/A`). They name nothing, so they never become a title.
+const PLACEHOLDER_TITLES: [&str; 6] = [
+    "n/a",
+    "null",
+    "none",
+    "undefined",
+    "untitled",
+    "untitled document",
+];
+
+/// A title that names something: not empty, not punctuation alone and not a
+/// provider's placeholder.
+pub(crate) fn usable_title(value: &str) -> Option<&str> {
+    let value = value.trim();
+    let placeholder = PLACEHOLDER_TITLES
+        .iter()
+        .any(|placeholder| value.eq_ignore_ascii_case(placeholder));
+    (!placeholder && value.chars().any(char::is_alphanumeric)).then_some(value)
+}
+
+/// A page without a usable title is named by its host and path
+/// (`kind.krx.co.kr/external/…/68155.htm`), never by a placeholder.
+pub(crate) fn locator_title(url: &str) -> Option<String> {
+    let url = Url::parse(url).ok()?;
+    let host = url.host_str().filter(|host| !host.is_empty())?;
+    let path = url.path().trim_end_matches('/');
+    let path = official::percent_decode(path).unwrap_or_else(|| path.to_owned());
+    Some(bounded_text(&format!("{host}{path}"), 512))
+}
+
+/// The best name for a web source: its own usable title, else its host and path.
+pub(crate) fn source_title(title: Option<&str>, url: &str) -> String {
+    title
+        .and_then(usable_title)
+        .map(|title| bounded_text(title, 512))
+        .or_else(|| locator_title(url))
         .unwrap_or_else(|| "Untitled source".into())
 }
 
 pub fn source_from_url(value: &str) -> Result<WebSource, WebError> {
     let url = validate_source_url(value)?;
-    let title = url
-        .host_str()
-        .filter(|value| !value.is_empty())
-        .unwrap_or("Untitled source")
-        .to_owned();
-    Ok(web_source(title, url.to_string(), String::new(), None))
+    let url = url.to_string();
+    Ok(web_source(
+        source_title(None, &url),
+        url,
+        String::new(),
+        None,
+    ))
 }
 
 pub fn validate_search_domain(value: &str) -> Result<String, WebError> {
@@ -1359,8 +1385,11 @@ fn decode_fetched_content(
         if is_script_shell(&document, &page.markdown) {
             warnings.push("javascript_required");
         }
+        let title = usable_title(&page.title)
+            .map(str::to_owned)
+            .unwrap_or_else(|| fallback_title.to_owned());
         (
-            page.title,
+            title,
             page.markdown,
             "readability",
             collect_alternates(&document, base_url),
@@ -2124,7 +2153,7 @@ mod tests {
         let quoted = "Title: \nURL: https://news.example.com/a\nPublished: 2026-03-01T00:00:00.000Z\nText: The memo said\nPublished: 1999-01-01\nURL: https://evil.example/\n---";
         let parsed = parse_search_results(quoted).unwrap();
         assert_eq!(parsed[0].url, "https://news.example.com/a");
-        assert_eq!(parsed[0].title, "news.example.com");
+        assert_eq!(parsed[0].title, "news.example.com/a");
         assert_eq!(
             parsed[0].published_at.as_deref(),
             Some("2026-03-01T00:00:00.000Z")
@@ -2138,7 +2167,85 @@ mod tests {
             r#"{"results":[{"url":"https://ir.example.com/q3","title":" "}]}"#,
         )
         .unwrap();
-        assert_eq!(json[0].title, "ir.example.com");
+        assert_eq!(json[0].title, "ir.example.com/q3");
+    }
+
+    /// The KRX disclosure a 0.1.5 answer cited as "Source 16: N/A": Exa's
+    /// keyless search wrote `Title: N/A`, and the fetched page has no title.
+    const KIND_URL: &str =
+        "https://kind.krx.co.kr/external/2026/09/17/000117/20260917000264/68155.htm";
+    const KIND_NAME: &str = "kind.krx.co.kr/external/2026/09/17/000117/20260917000264/68155.htm";
+
+    #[test]
+    fn a_placeholder_title_names_the_result_by_its_host_and_path() {
+        let text = format!(
+            "Title: N/A\nURL: {KIND_URL}\nPublished: N/A\nText: ```\n◎ 현대자동차(주) 변경상장(주식소각)\n```\n---\nTitle: 실시간주가정보 | 주식정보 | IR - 현대 월드와이드\nURL: https://www.hyundai.com/worldwide/ko/company/ir/stock-information/stock-information\nText: 주식 발행정보\n---"
+        );
+        let parsed = parse_search_results(&text).unwrap();
+        assert_eq!(parsed[0].title, KIND_NAME);
+        assert_eq!(parsed[0].published_at, None);
+        assert_eq!(
+            parsed[1].title,
+            "실시간주가정보 | 주식정보 | IR - 현대 월드와이드"
+        );
+        for placeholder in [
+            "N/A",
+            "n/a",
+            " null ",
+            "None",
+            "undefined",
+            "Untitled",
+            "-",
+            "—",
+        ] {
+            let json = format!(r#"{{"results":[{{"url":"{KIND_URL}","title":"{placeholder}"}}]}}"#);
+            assert_eq!(parse_search_results(&json).unwrap()[0].title, KIND_NAME);
+        }
+        // A path keeps its own characters, and a bare host stays a host.
+        assert_eq!(
+            locator_title("https://example.com/%EB%B3%B4%EA%B3%A0%EC%84%9C/q3/").as_deref(),
+            Some("example.com/보고서/q3")
+        );
+        assert_eq!(
+            locator_title("https://example.com/").as_deref(),
+            Some("example.com")
+        );
+        assert_eq!(source_from_url(KIND_URL).unwrap().title, KIND_NAME);
+        // A real short title is kept.
+        assert_eq!(usable_title(" NA "), Some("NA"));
+    }
+
+    #[tokio::test]
+    async fn a_fetched_page_without_a_usable_title_is_named_by_its_host_and_path() {
+        let page = "<html><head><meta charset=\"utf-8\"></head><body><pre>◎ 현대자동차(주) 변경상장(주식소각)\n① 상장종목\n   - 현대자동차보통주\n② 주식의 종류와 수(변경전 → 변경후)\n   ▶ 기명식 보통주 : 204,757,766주  →  203,466,492주</pre></body></html>";
+        for html in [
+            page.to_owned(),
+            page.replace("<head>", "<head><title>N/A</title>"),
+        ] {
+            let _guard = script::install(vec![(
+                KIND_URL,
+                vec![script::ok("text/html", html.into_bytes())],
+            )]);
+            let search = format!("Title: N/A\nURL: {KIND_URL}\nText: 변경상장\n---");
+            let source = parse_search_results(&search).unwrap().remove(0);
+            let fetched = fetch(&source).await.unwrap().page(0).unwrap();
+            assert_eq!(fetched.title, KIND_NAME);
+            assert!(fetched.content.contains("203,466,492주"));
+        }
+        // The search title names a page whose own title is a placeholder.
+        let titled = page.replace("<head>", "<head><title>N/A</title>");
+        let _guard = script::install(vec![(
+            KIND_URL,
+            vec![script::ok("text/html", titled.into_bytes())],
+        )]);
+        let source = web_source(
+            "현대자동차 변경상장".into(),
+            KIND_URL.into(),
+            String::new(),
+            None,
+        );
+        let fetched = fetch(&source).await.unwrap().page(0).unwrap();
+        assert_eq!(fetched.title, "현대자동차 변경상장");
     }
 
     #[test]

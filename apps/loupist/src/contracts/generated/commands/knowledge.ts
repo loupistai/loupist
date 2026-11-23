@@ -35,6 +35,16 @@ export type KnowledgeGraphPauseRequest = { loupistId: string, paused: boolean };
 
 export type KnowledgeGraphRetrySourceRequest = { loupistId: string, recordId: string };
 
+/**
+ * "Continue all": the Sources the user's confirmation counted and the
+ * request allowance it named for each.
+ */
+export type KnowledgeGraphRetrySourcesRequest = {
+  loupistId: string,
+  recordIds: Array<string>,
+  maxLlmCalls: number,
+};
+
 export type KnowledgeGraphSettingsRequest = { loupistId: string, settings: GraphPublicSettings };
 
 export type KnowledgeJournalReadRequest = { loupistId: string, journalId: string };

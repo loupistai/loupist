@@ -135,7 +135,7 @@ button.grid-card-name:focus-visible { outline: 2px solid var(--gg-color-focus); 
 button.grid-card-empty { cursor: help; text-decoration-line: underline; text-decoration-style: dotted; text-decoration-thickness: 1px; text-decoration-color: var(--gg-color-border-default); text-underline-offset: 3px; }
 button.grid-card-empty:focus-visible { outline: 2px solid var(--gg-color-focus); outline-offset: 1px; border-radius: var(--gg-radius-xs); }
 .grid-card-note {
-  z-index: var(--gg-z-popover);
+  z-index: var(--gg-z-dialog);
   max-width: 280px;
   padding: var(--gg-space-2) var(--gg-space-3);
   border: 1px solid var(--gg-color-border-subtle);

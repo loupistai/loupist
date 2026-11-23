@@ -167,3 +167,45 @@ async fn captured_result_size_is_preserved_when_reserved_delivered_and_discarded
     assert_eq!(capture.run_results.lock().await.bytes, bytes);
     assert!(capture.pending_deliveries.lock().await.is_empty());
 }
+
+#[tokio::test]
+async fn source_save_says_when_saved_price_data_will_not_reach_world() {
+    let temporary = tempfile::tempdir().unwrap();
+    let executor = executor_for(&seeded_state(&temporary), Arc::new(ToolCapture::default()));
+    let policy = policy(true, true);
+    let read = |rows: Value| {
+        json!({
+            "dataset_ref": {"dataset_id": "dataset-fixture", "revision": 1, "digest": "a".repeat(64)},
+            "structuredContent": {"results": rows},
+        })
+    };
+    let bars = delivered(
+        &executor.capture,
+        provider_result(),
+        read(json!([{"date": "2026-11-23", "open": 3005.2, "high": 3020.1, "low": 2999.0, "close": 3010.5, "volume": 1234.5}])),
+    )
+    .await;
+    let statement = delivered(
+        &executor.capture,
+        RunResultProducer {
+            tool_name: "equity_fundamental_income".into(),
+            ..provider_result()
+        },
+        read(json!([{"period_ending": "2025-12-31", "fiscal_year": 2025, "revenue": 3.0e11}])),
+    )
+    .await;
+    for (result_ref, graph) in [
+        (bars, "not_added_price_data"),
+        (statement, "after_turn_commit"),
+    ] {
+        let staged = executor
+            .execute(
+                &policy,
+                ToolMethod::SourceSave,
+                json!({"result_ref": result_ref, "title": "Saved read", "coverage": "included_full"}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(staged["graph"], graph);
+    }
+}

@@ -28,8 +28,15 @@ export type ResolvedModelSelection = {
   thinking_level: string | null,
   run_options: { [key in string]: string },
   /**
-   * Why the stored model, still listed, cannot run now. The selection is
+   * Why the stored model cannot run now: listed but its account signed out
+   * or disconnected or it is hidden, or no longer listed (its account
+   * disconnected, or its provider stopped offering it). The selection is
    * then Auto in its place; the stored choice applies again once it can run.
    */
   stored_unavailable: ModelUnavailableReason | null,
+  /**
+   * That stored model, by the name the catalog has or last had for it.
+   * Configuration snapshots fill it in; None when no name is known.
+   */
+  stored_model: ModelIdentity | null,
 };

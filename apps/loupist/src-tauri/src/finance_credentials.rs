@@ -1447,13 +1447,26 @@ pub(crate) fn read_timed_out(state: &AppState, entry_id: &str) -> bool {
     )
 }
 
+/// A read waits its turn behind another read of the same key instead of
+/// failing; only a change in progress reports Busy.
+fn reserve_read(
+    state: &AppState,
+    entry_id: &str,
+) -> Result<KeychainOperation, FinanceCredentialError> {
+    validate_entry_id(entry_id)?;
+    Ok(KeychainOperation::begin_read(
+        NATIVE_SERVICE,
+        native_account(&state.credential_environment, entry_id),
+    )?)
+}
+
 pub(crate) fn read_with_timeout<T: Send + 'static>(
     state: &AppState,
     entry_id: &str,
     timeout: std::time::Duration,
     action: impl FnOnce(&AppState, &str) -> Result<T, FinanceCredentialError> + Send + 'static,
 ) -> Result<T, FinanceCredentialError> {
-    let operation = reserve(state, entry_id)?;
+    let operation = reserve_read(state, entry_id)?;
     let state = state.clone();
     let entry_id = entry_id.to_owned();
     operation.read_with_timeout(timeout, move || {
@@ -1997,6 +2010,90 @@ mod session_gate_tests {
         for stored in [true, false] {
             late_native_save(stored);
         }
+    }
+
+    /// Pi runs tool calls in parallel; two reads of one saved key both read it.
+    #[test]
+    fn parallel_reads_of_one_saved_key_and_a_read_during_a_change_all_read_it() {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_persistent_test(temporary.path().join("app"));
+        let id = "opendart.disclosures";
+        let environment = state.credential_environment.clone();
+        let secrets = |value: &str| BTreeMap::from([("api_key".to_owned(), value.to_owned())]);
+        stage(&environment, id, &secrets("fixture-parallel-key")).unwrap();
+        let staged = candidate(&environment, id).unwrap().unwrap();
+        finish_verification(
+            &environment,
+            id,
+            staged.revision(),
+            VerificationOutcome::Verified,
+            10,
+            None,
+        )
+        .unwrap();
+        let read = |state: &AppState| {
+            let state = state.clone();
+            std::thread::spawn(move || {
+                get_for_state(&state, id).map(|bundle| {
+                    bundle.and_then(|bundle| bundle.get("api_key").map(str::to_owned))
+                })
+            })
+        };
+        let wait_for_reads = |count: usize| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while test_store::secret_reads(&environment, id) < count {
+                assert!(std::time::Instant::now() < deadline);
+                std::thread::yield_now();
+            }
+        };
+
+        let release = test_store::block_next_read(&environment, id);
+        let reads = test_store::secret_reads(&environment, id);
+        let first = read(&state);
+        wait_for_reads(reads + 1);
+        let second = read(&state);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        release.send(true).unwrap();
+        for reader in [first, second] {
+            assert_eq!(
+                reader.join().unwrap().unwrap().as_deref(),
+                Some("fixture-parallel-key")
+            );
+        }
+
+        // A change holds the key; a read waits for it and then reads.
+        let release = test_store::block_next_write(&environment, id);
+        let change = {
+            let state = state.clone();
+            std::thread::spawn(move || {
+                mutate(&state, id, |state, id| {
+                    stage(
+                        &state.credential_environment,
+                        id,
+                        &BTreeMap::from([(
+                            "api_key".to_owned(),
+                            "fixture-candidate-key".to_owned(),
+                        )]),
+                    )
+                    .map(|_| ())
+                })
+            })
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !operation_pending(&state, id).unwrap() {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        let during = read(&state);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        release.send(true).unwrap();
+        change.join().unwrap().unwrap();
+        // The staged candidate is not active until it is verified.
+        assert_eq!(
+            during.join().unwrap().unwrap().as_deref(),
+            Some("fixture-parallel-key")
+        );
+        delete(&environment, id).unwrap();
     }
 
     fn late_native_save(stored: bool) {

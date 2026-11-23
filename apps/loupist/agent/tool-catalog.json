@@ -503,7 +503,7 @@
       "permission": "memory_write",
       "component": "memory-save",
       "label": "Save a source",
-      "description": "Stage the exact delivered payload of a current-turn source result_ref. A workspace_capture retains a local user_file, not verified external origin. A pasted_capture retains a user_provided Source: the user's exact pasted text with the link and publisher they stated, none of it verified; give it a title, the date the user stated as publicationTime, and included_full only when the user pasted the whole document. Only a result that a read tool acquired from outside can be saved: a web page, a filing, a data provider's result. A dataset_query slice, a calculate or run_python result, a chart, a file you wrote and saved memory are derived and are refused here; their figures stay cited through the result they came from, so there is nothing to save. Summary-only bounded_sample results must be reread with a narrower request before saving. The host rejects an unknown coverage and will not store a snippet as a full original. Saving must be on. The host returns a saveRef with status staged, durable false, and graph after_turn_commit. It becomes durable only when the reply commits, then automatic World processing can begin. Never wait for graph completion inside this turn. At most 16 source saves per turn, and none in a Bot quick ask. Prioritize originals supplied by the user and evidence needed for the answer. Reuse an unchanged saved Source after reading it; do not fetch and save it again just to cite it.",
+      "description": "Stage the exact delivered payload of a current-turn source result_ref. A workspace_capture retains a local user_file, not verified external origin. A pasted_capture retains a user_provided Source: the user's exact pasted text with the link and publisher they stated, none of it verified; give it a title, the date the user stated as publicationTime, and included_full only when the user pasted the whole document. Only a result that a read tool acquired from outside can be saved: a web page, a filing, a data provider's result. A dataset_query slice, a calculate or run_python result, a chart, a file you wrote and saved memory are derived and are refused here; their figures stay cited through the result they came from, so there is nothing to save. Summary-only bounded_sample results must be reread with a narrower request before saving. The host rejects an unknown coverage and will not store a snippet as a full original. Saving must be on. The host returns a saveRef with status staged, durable false, and graph after_turn_commit, or graph not_added_price_data for price data (bars, quotes, exchange rates, index levels, rate series and tables made only of them): such a Source is kept, searchable and citable, and World reads nothing from it, so save it for its figures and never to teach World. A save becomes durable only when the reply commits, then automatic World processing can begin for the others. Never wait for graph completion inside this turn. At most 16 source saves per turn, and none in a Bot quick ask. Prioritize originals supplied by the user and evidence needed for the answer. Reuse an unchanged saved Source after reading it; do not fetch and save it again just to cite it.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -2818,7 +2818,7 @@
       "permission": "always",
       "component": "opendart",
       "label": "Look up a Korean company",
-      "description": "Resolve a Korean or registered English company name, 6-digit ticker, or 8-digit corp_code to OpenDART identifiers. Use this when a company argument is ambiguous.",
+      "description": "Resolve a Korean or English company name, a 6-digit ticker or an 8-digit corp_code to OpenDART identifiers. Spacing, punctuation and company-form words (Co., Ltd., Inc., 주식회사) do not matter. Matches are ranked: a corp_code or ticker match, then an exact name, then names that contain the query, listed companies first; a null symbol means the filer is unlisted. Use it when a company argument is ambiguous or another DART tool names several candidates. When the query names one company exactly (a corp_code, a ticker, or a name only one filer or one listed filer carries), the result also carries `company`, its overview as filed: names, CEO, market (KOSPI, KOSDAQ, KONEX, Other), industry code, address, homepage, date established and the month its fiscal year ends. The first use downloads OpenDART's company list once; a provider_preparing result means it is still downloading, so call again in a moment.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -2830,7 +2830,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 200,
-            "description": "Korean or registered English company name, 6-digit ticker, or 8-digit corp_code."
+            "description": "Korean or English company name, 6-digit ticker, or 8-digit corp_code."
           },
           "limit": {
             "type": "integer",
@@ -2856,7 +2856,7 @@
       "permission": "always",
       "component": "opendart",
       "label": "Search OpenDART filings",
-      "description": "Search official OpenDART filings for one company. An ambiguous company name returns candidates instead of filings. Search results are discovery; read one filing before citing it. Every successful read returns a turn-local result_ref.",
+      "description": "Search official OpenDART filings for one company, newest first. start and end are YYYY-MM-DD, at most 366 days apart, and end is no later than today in Seoul; search several ranges for a longer history. A result states how many filings match and over how many pages, and names the next page. A company name that fits several filers is refused with their corp_codes: pass one of them. Each row carries the receipt number, the report name, the filing date (YYYYMMDD) and whether it is an amendment. Search results are discovery; read one filing before citing it. Every successful read returns a turn-local result_ref.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -2901,10 +2901,25 @@
             ],
             "description": "Optional disclosure class. Omit to search every class."
           },
+          "report_type": {
+            "type": "string",
+            "enum": [
+              "annual",
+              "half_year",
+              "quarterly"
+            ],
+            "description": "Optional: only this periodic report (annual, half-year or quarterly). Omit filing_type or pass periodic with it."
+          },
           "limit": {
             "type": "integer",
             "minimum": 1,
             "maximum": 100
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Optional 1-based page of results, newest first; default 1. A result with more pages names the next one."
           },
           "as_of": {
             "type": "string",
@@ -2938,7 +2953,7 @@
       "permission": "always",
       "component": "opendart",
       "label": "Read an OpenDART filing",
-      "description": "Read one official OpenDART filing by its 14-digit receipt number. Every successful read returns a turn-local result_ref that source_save can retain.",
+      "description": "Read one official OpenDART filing by its 14-digit receipt number, as plain text from every document of the filing in order. The text comes in pages of 200,000 characters, up to 20 pages; a result states the page count and the next page, so read on only as far as the question needs. Every successful read returns a turn-local result_ref that source_save can retain.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -2952,6 +2967,12 @@
             "minLength": 14,
             "maxLength": 14,
             "description": "14-digit OpenDART receipt number from a filing search."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Optional 1-based page of the filing's text (200,000 characters each); default 1. A result with more pages names the next one."
           },
           "as_of": {
             "type": "string",
@@ -2985,7 +3006,7 @@
       "permission": "always",
       "component": "opendart",
       "label": "Read OpenDART capital decisions",
-      "description": "Read one kind of capital decision (a material-event report) a Korean company filed in a date range, as structured rows: rights offering (new shares, how they are offered, purpose; issue price and payment date are only in the filing), bonus issue, capital reduction, convertible bonds, bonds with warrants, exchangeable bonds (face amount, conversion or exercise price, the reset floor, coupon and maturity rates, payment date), buyback and treasury sale (planned shares, amount, period), merger and split. dilution_pct is the filing's own share ratio when it states one (dilution_basis filing), else new shares ÷ shares before calculated on the host (calculated). For convertible bonds and bonds with warrants with a reset floor, dilution_pct is the most: max_new_shares (face amount ÷ floor) over the shares outstanding the filed ratio implies, calculated on the host (dilution_at floor, dilution_price the floor, dilution_filed_pct the filed ratio at the starting price); without a floor it is the filed ratio at the starting price (dilution_at price). Exchangeable bonds hand over existing shares and have none. Allottees and lock-ups are not in this data: read the filing. Rows are dated by receipt. Every successful read returns a turn-local result_ref.",
+      "description": "Read one kind of material-event report a Korean company filed in a date range, as structured rows. Capital decisions: rights offering (new shares, how they are offered, purpose; issue price and payment date are only in the filing), bonus issue, capital reduction, convertible bonds, bonds with warrants, exchangeable bonds (face amount, conversion or exercise price, the reset floor, coupon and maturity rates, payment date), buyback and treasury sale (planned shares, amount, period), merger and split. Other events: lawsuits (case, plaintiffs, claim, court, the company's response, dates), split_merger (a split combined with a merger: method, ratio, counterparty, effective and listing dates), overseas_listing and overseas_delisting (exchange, shares, and for a delisting the reason); for these three kinds the named fields follow OpenDART's guide and provider_fields keeps every cell as sent, so read provider_fields when a named field is empty. No filing of the kind in the range returns no rows. dilution_pct is the filing's own share ratio when it states one (dilution_basis filing), else new shares ÷ shares before calculated on the host (calculated). For convertible bonds and bonds with warrants with a reset floor, dilution_pct is the most: max_new_shares (face amount ÷ floor) over the shares outstanding the filed ratio implies, calculated on the host (dilution_at floor, dilution_price the floor, dilution_filed_pct the filed ratio at the starting price); without a floor it is the filed ratio at the starting price (dilution_at price). Exchangeable bonds hand over existing shares and have none. Allottees and lock-ups are not in this data: read the filing. Rows are dated by receipt. Every successful read returns a turn-local result_ref.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -3014,7 +3035,11 @@
               "buyback",
               "treasury_sale",
               "merger",
-              "split"
+              "split",
+              "lawsuits",
+              "split_merger",
+              "overseas_listing",
+              "overseas_delisting"
             ]
           },
           "start": {
@@ -3170,12 +3195,85 @@
       }
     },
     {
+      "name": "dart_report_items",
+      "method": "dart.report_items",
+      "permission": "always",
+      "component": "opendart",
+      "label": "Read OpenDART periodic report items",
+      "description": "Read one section of a Korean company's periodic report (annual, half-year or quarterly) as rows: treasury_shares (shares held at the start and end, acquired, disposed and retired, by share class and method), auditor (auditor, opinion, emphasis and key audit matters, one row per period and audit), employees (regular, contract and total headcount, average tenure in years, total and average salary in KRW, by division and sex) or capital_changes (each issue or reduction of shares: date, form, class, shares, par value and price in KRW). Rows are dated by receipt. A section the report leaves empty returns an empty result: quarterly and half-year reports often leave the auditor and employee sections empty, and capital_changes is empty in a year without an issue or reduction, so read the annual report for those. Every successful read returns a turn-local result_ref.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "company",
+          "kind",
+          "fiscal_year",
+          "report_period"
+        ],
+        "properties": {
+          "company": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "8-digit corp_code, 6-digit ticker, or exact company name."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "treasury_shares",
+              "auditor",
+              "employees",
+              "capital_changes"
+            ]
+          },
+          "fiscal_year": {
+            "type": "integer",
+            "minimum": 2015,
+            "maximum": 2100,
+            "description": "Fiscal year of the report."
+          },
+          "report_period": {
+            "type": "string",
+            "enum": [
+              "annual",
+              "q1",
+              "half_year",
+              "q3"
+            ]
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "minLength": 10,
+            "maxLength": 10,
+            "description": "Optional YYYY-MM-DD cutoff. Later revisions are excluded."
+          },
+          "max_age": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2592000,
+            "description": "Optional whole seconds. Reuse this Loupist's saved result for the identical request when it was fetched at most this long ago; otherwise fetch again. Omit to always fetch."
+          }
+        }
+      },
+      "progress": {
+        "category": "finance",
+        "operation": "read",
+        "running": "Reading a periodic report",
+        "done": "Read a periodic report",
+        "target_args": [
+          "company"
+        ],
+        "source": "finance"
+      }
+    },
+    {
       "name": "dart_financials",
       "method": "dart.financials",
       "permission": "always",
       "component": "opendart",
       "label": "Get OpenDART financial statements",
-      "description": "Fetch normalized OpenDART financial statements for one company, period, and basis. An ambiguous company name returns candidates instead of figures. Every successful read returns a turn-local result_ref.",
+      "description": "Fetch normalized OpenDART financial statements for one company, fiscal year, report period and basis (statements start with fiscal 2015). A quarter's income and cash-flow facts carry the quarter alone in value and the year to date in cumulative_value; balance-sheet facts are the period's closing amounts. When a company filed no consolidated statements for the period (it has no subsidiaries), a consolidated request returns its separate statements, marked with requested_basis and a warning: name the basis in the answer. An empty result means neither basis is filed for that period, often because the report is not due yet: read the latest filed period. A company name that fits several filers is refused with their corp_codes: pass one of them. Every successful read returns a turn-local result_ref.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -3194,8 +3292,8 @@
           },
           "fiscal_year": {
             "type": "integer",
-            "minimum": 1994,
-            "maximum": 9999
+            "minimum": 2015,
+            "maximum": 2100
           },
           "report_period": {
             "type": "string",

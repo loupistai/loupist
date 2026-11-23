@@ -986,6 +986,8 @@ fn check_with_window(
     if verdict != Verdict::Differs {
         if found.outflow_for(&printed_number) {
             check.source_sign = Some(crate::domain::answer_checks::SourceSign::Outflow);
+        } else if found.stated_fall_for(&printed_number) {
+            check.source_sign = Some(crate::domain::answer_checks::SourceSign::Fall);
         }
         match &found.place {
             Place::Span { start, end } => {

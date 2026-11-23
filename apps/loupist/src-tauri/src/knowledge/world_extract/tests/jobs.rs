@@ -18,6 +18,8 @@ use crate::knowledge::{
     RetainMaterial, RetainSource, SealWorld, Selector, SourceClass, WorldSnapshotBody,
 };
 
+mod settings_changes;
+
 const LOUPIST: &str = "loupist-extract";
 const AT: i64 = 1_760_000_000_000;
 

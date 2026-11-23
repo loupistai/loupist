@@ -65,6 +65,9 @@ struct Inner {
     running: std::sync::Mutex<HashMap<String, Worker>>,
     /// Jobs that ran without progress; skipped until a wake from outside the loop.
     stalled: std::sync::Mutex<HashSet<String>>,
+    /// Waiting Source spans (`revision:span`) a queue pass has already read to
+    /// tell price data apart, so each is read once per process.
+    price_read: std::sync::Mutex<std::collections::BTreeSet<String>>,
     /// A wake from outside the loop (a save, a setting, a connection) may
     /// unblock a stalled job; a finished worker's wake does not.
     external: AtomicBool,
@@ -191,6 +194,7 @@ impl GraphSupervisor {
             control: Mutex::new(()),
             running: std::sync::Mutex::new(HashMap::new()),
             stalled: std::sync::Mutex::new(HashSet::new()),
+            price_read: std::sync::Mutex::new(std::collections::BTreeSet::new()),
             external: AtomicBool::new(false),
             attention: std::sync::Mutex::new(HashMap::new()),
             served: std::sync::Mutex::new(HashMap::new()),
@@ -227,14 +231,16 @@ impl GraphSupervisor {
     /// `None` at once, and searches rank by words and Map names alone: the
     /// first load takes seconds, and a search never waits for it.
     pub fn semantic_model(&self) -> Option<super::LocalModel> {
-        super::loaded_local_model(&self.semantic_assets()?)
+        self.semantic_lookup().model
     }
 
-    /// Whether the embedding model is still loading, so a search that just
-    /// ranked without it may miss what only the model would have found.
-    pub fn semantic_model_loading(&self) -> bool {
+    /// The model if it has loaded, and otherwise whether it is still loading,
+    /// in one look: a search that ranked without it says so even when the load
+    /// ends a moment later.
+    pub(crate) fn semantic_lookup(&self) -> super::ModelLookup {
         self.semantic_assets()
-            .is_some_and(|assets| super::local_model_loading(&assets))
+            .map(|assets| super::loaded_local_model(&assets))
+            .unwrap_or_default()
     }
 
     /// Start loading the embedding model on its own thread, off the launch path.
@@ -418,7 +424,7 @@ impl GraphSupervisor {
         // Local embeddings and SQLite only: no model call. While the model is
         // still loading, answer from the snapshot rather than wait for it.
         let assets = embed_assets(self.inner.resource_dir.as_deref());
-        if super::loaded_local_model(&assets).is_none() {
+        if super::loaded_local_model(&assets).model.is_none() {
             return canonical_snapshot(
                 &knowledge,
                 loupist_id,
@@ -736,7 +742,69 @@ impl Inner {
     /// The next World job to run, by [`schedule_rank`], among Loupists with no
     /// job in flight. The Loupist is marked running before this returns.
     /// Callers hold `control`.
+    /// Waiting work of price-data Sources leaves the queue before any of it can
+    /// be selected, without a model call ([`super::graph_jobs::retire_price_jobs`]).
+    /// A folder that cannot be read keeps its work for the next pass.
+    fn retire_price_jobs(&self) {
+        let known = self
+            .price_read
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
+        let Ok(waiting) = self.store.for_each_readable_database(|_, connection| {
+            let mut query = connection.prepare(
+                "SELECT DISTINCT loupist_id,
+                        json_extract(payload_json, '$.sourceBinding.sourceRevisionId') || ':' ||
+                        json_extract(payload_json, '$.sourceBinding.spanId')
+                 FROM knowledge_graph_outbox
+                 WHERE status IN ('queued', 'paused_budget', 'failed_before_mutation', 'cancelled_before_start')
+                   AND json_extract(payload_json, '$.episodeKind') = 'source_span'
+                   AND json_extract(payload_json, '$.sourceBinding.spanId') IS NOT NULL",
+            )?;
+            let rows = query
+                .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        }) else {
+            return;
+        };
+        let loupists: std::collections::BTreeSet<String> = waiting
+            .into_iter()
+            .flatten()
+            .filter(|(_, span)| !known.contains(span))
+            .map(|(loupist, _)| loupist)
+            .collect();
+        for loupist in loupists {
+            let Ok(knowledge) = loupist_knowledge(self.store.clone(), &loupist, &self.app_data)
+            else {
+                continue;
+            };
+            let Ok(found) = knowledge.transact(|write| {
+                super::graph_jobs::retire_price_jobs(
+                    write.tx,
+                    write.blobs,
+                    &loupist,
+                    &known,
+                    now_ms(),
+                )
+            }) else {
+                continue;
+            };
+            if found.retired > 0 {
+                eprintln!(
+                    "World queue: {} jobs for price-data Sources left the queue",
+                    found.retired
+                );
+            }
+            self.price_read
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .extend(found.classified);
+        }
+    }
+
     fn select_world_job(&self) -> KnowledgeResult<Option<Selected>> {
+        self.retire_price_jobs();
         let (attended, hot_chats) = self.attention_now(now_ms());
         let busy: HashSet<String> = self
             .running
@@ -958,6 +1026,7 @@ impl Inner {
         let shared_store = self.store.clone();
         let inference_loupist = job.loupist_id.clone();
         let frozen = settings.clone();
+        let started_with = settings.clone();
         let assets = embed_assets(self.resource_dir.as_deref());
         let callback_usage = usage.clone();
         let callback_calls = calls.clone();
@@ -1083,15 +1152,15 @@ impl Inner {
         if !self.stopped.load(Ordering::SeqCst) {
             merge_quarantine(&self.store, &job.loupist_id, &settings)?;
         }
-        driven.map(|view| {
-            // A queued job that could not be claimed, or that sent nothing, needs
-            // a settings change or another attempt to finish before this loop
-            // can make progress. A job queued again for its one retry, or after
-            // the Mac slept through it, did make progress.
-            let retrying = view.document.interrupted_attempts > job.document.interrupted_attempts
-                || view.document.host_interruptions > job.document.host_interruptions;
-            (view.status != super::graph_jobs::JOB_QUEUED || retrying).then_some(view.job_id)
-        })
+        // Settings saved since this attempt started are the change a requeued
+        // job waits for, so its next claim runs on them.
+        let moved_on = self
+            .store
+            .lock_loupist(&job.loupist_id)
+            .ok()
+            .and_then(|connection| load_settings(&connection, &job.loupist_id).ok())
+            .is_some_and(|saved| super::graph_inference::controls_changed(&saved, &started_with));
+        driven.map(|view| made_progress(&job, &view, moved_on).then_some(view.job_id))
     }
 
     async fn pump_schema(&self) -> KnowledgeResult<Option<String>> {
@@ -1394,7 +1463,24 @@ impl Inner {
     }
 }
 
-async fn current_inference(
+/// Whether a World attempt moved its job on. A queued job that could not be
+/// claimed, or that sent nothing, needs a settings change or another attempt
+/// before the loop can make progress. A job queued again for its one retry,
+/// after the Mac slept through it, or on settings that changed under it
+/// (`moved_on`, or calls spent on the way) did make progress.
+fn made_progress(
+    before: &super::graph_jobs::GraphJobView,
+    after: &super::graph_jobs::GraphJobView,
+    moved_on: bool,
+) -> bool {
+    after.status != super::graph_jobs::JOB_QUEUED
+        || after.document.interrupted_attempts > before.document.interrupted_attempts
+        || after.document.host_interruptions > before.document.host_interruptions
+        || after.document.extraction.max_llm_calls != before.document.extraction.max_llm_calls
+        || moved_on
+}
+
+pub(super) async fn current_inference(
     store: &SqliteStore,
     loupist_id: &str,
     frozen: &GraphProcessingSettings,
@@ -1409,14 +1495,8 @@ async fn current_inference(
     let Ok(settings) = settings else {
         return not_sent_reply(serde_json::json!({})).await;
     };
-    if settings.helper_provider != frozen.helper_provider
-        || settings.helper_model != frozen.helper_model
-        || settings.thinking_level != frozen.thinking_level
-        || settings.run_options != frozen.run_options
-        || settings.max_llm_calls != frozen.max_llm_calls
-        || settings.timeout_ms != frozen.timeout_ms
-    {
-        return not_sent_reply(serde_json::json!({})).await;
+    if super::graph_inference::controls_changed(&settings, frozen) {
+        return super::graph_inference::settings_changed_reply();
     }
     let request = request
         .get("params")

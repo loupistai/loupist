@@ -271,22 +271,34 @@ export function executionModelLock(
   };
 }
 
+export type MockModelIdentity = NonNullable<NonNullable<Contract.ModelCatalog["default_selection"]>["model"]>;
+/** The models a mock catalog dropped, by the name each last had (`provider_unlisted_model`). */
+type UnlistedModels = ReadonlyMap<string, MockModelIdentity>;
+
 /**
  * Preview projection of a scoped request using the fixture catalog. Like the
- * host, a stored model that cannot run (hidden, or its account signed out)
- * gives way to the default model, with that model's own controls.
+ * host, a stored model that cannot run (hidden, its account signed out or
+ * disconnected, or no longer listed) gives way to the default model, with that
+ * model's own controls; a configuration snapshot names it by the catalog or by
+ * the name it last had there.
  */
-export function mockModelSelection(catalog: Contract.ModelCatalog, request?: Pick<Contract.EffectiveConfig["chat"], "model_profile_id" | "thinking_level" | "run_options">): NonNullable<Contract.ModelCatalog["default_selection"]> {
+export function mockModelSelection(catalog: Contract.ModelCatalog, request?: Pick<Contract.EffectiveConfig["chat"], "model_profile_id" | "thinking_level" | "run_options">, unlisted?: UnlistedModels): NonNullable<Contract.ModelCatalog["default_selection"]> {
   const id = request?.model_profile_id;
   const hidden = catalog.hidden_model_profile_ids;
   const requested = catalog.models.find(model => model.id === id);
-  const storedUnavailable = !requested ? null : hidden.includes(requested.id) ? "model_hidden" as const : requested.credential_source === "missing" ? "account_disconnected" as const : null;
+  const provider = id ? [...catalog.providers, ...catalog.custom_providers].find(option => option.id === id.split("/")[0]) : undefined;
+  const storedUnavailable = !id || id === "auto" ? null
+    : !requested ? provider?.credential_source === "missing" ? "account_disconnected" as const : "catalog_unavailable" as const
+    : hidden.includes(requested.id) ? "model_hidden" as const : requested.credential_source === "missing" ? "account_disconnected" as const : null;
   const explicit = requested && !storedUnavailable ? requested : undefined;
   const model = explicit ?? catalog.models.find(model => !hidden.includes(model.id) && model.credential_source !== "missing");
   const connected = [...catalog.providers, ...catalog.custom_providers].some(option => option.credential_source !== "missing");
-  if (!model) return { model: null, is_default: true, unavailable_reason: connected ? "no_eligible_model" : "no_connected_account", thinking_levels: [], thinking_level: null, run_options: {}, run_controls: [], stored_unavailable: null };
-  const controls = explicit || !requested ? request : undefined;
+  if (!model) return { model: null, is_default: true, unavailable_reason: connected ? "no_eligible_model" : "no_connected_account", thinking_levels: [], thinking_level: null, run_options: {}, run_controls: [], stored_unavailable: null, stored_model: null };
+  const controls = explicit || !id || id === "auto" ? request : undefined;
+  // Configuration snapshots name the stored model (`unlisted` given); other projections do not.
+  const storedModel = !unlisted || !storedUnavailable || !id ? null
+    : requested ? { id: requested.id, name: requested.name, provider: requested.provider, model: requested.model } : unlisted.get(id) ?? null;
   return { model: { id: model.id, name: model.name, provider: model.provider, model: model.model }, is_default: !explicit, unavailable_reason: null,
     thinking_level: controls?.thinking_level && model.thinking_levels.includes(controls.thinking_level) ? controls.thinking_level : defaultThinkingLevel(model.thinking_levels), thinking_levels: model.thinking_levels,
-    run_controls: model.run_controls, run_options: { ...defaultRunOptions(model), ...controls?.run_options }, stored_unavailable: storedUnavailable };
+    run_controls: model.run_controls, run_options: { ...defaultRunOptions(model), ...controls?.run_options }, stored_unavailable: storedUnavailable, stored_model: storedModel };
 }

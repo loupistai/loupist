@@ -73,6 +73,14 @@ export type RecommendedWorldModel = {
   runOptions: { [key in string]: string },
 };
 
+/** What one "Continue all" did. */
+export type SourcesRetried = {
+  /** Sources given a fresh allowance and queued again. */
+  continued: number,
+  /** Sources [`retry_source_processing`] refused, left as they were. */
+  skipped: number,
+};
+
 export type WorldAnchor = { name: string, aliases: Array<string>, identifiers: Array<string> };
 
 /**

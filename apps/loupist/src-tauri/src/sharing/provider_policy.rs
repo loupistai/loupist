@@ -72,6 +72,7 @@ pub(crate) fn classify(identity: &str) -> DataPolicy {
             | "dart_major_report"
             | "dart_ownership"
             | "dart_dividends"
+            | "dart_report_items"
             | "worldbank_series" => PublicRecord,
             _ => Restricted,
         };

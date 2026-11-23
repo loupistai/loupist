@@ -687,6 +687,10 @@ impl ToolCapture {
         for (result_ref, captured) in std::mem::take(&mut pending.run_results) {
             if !pending.unlisted_results.contains(&result_ref) {
                 let mut snapshot = evidence::project(&captured.result);
+                if snapshot.provider.is_none() {
+                    snapshot.provider =
+                        evidence::dataset_read_provider(&registry, &captured.result);
+                }
                 if let Some(title) = pending
                     .local_file_title
                     .as_ref()
@@ -1326,6 +1330,7 @@ impl AppToolExecutor {
             ToolMethod::DartMajorReport => self.dart_major_report(policy, params).await,
             ToolMethod::DartOwnership => self.dart_ownership(policy, params).await,
             ToolMethod::DartDividends => self.dart_dividends(policy, params).await,
+            ToolMethod::DartReportItems => self.dart_report_items(policy, params).await,
             ToolMethod::McpConnect => self.mcp_connect(params).await,
             ToolMethod::McpCall => {
                 self.mcp_call_with_reuse(policy, params, delivery_id, true)

@@ -19,7 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 
-import { MEMORY_BUSY, type QueueHold } from "../../chat/draftSession";
+import { MEMORY_BUSY, REPLY_FAILED, REPLY_STOPPED, type QueueHold } from "../../chat/draftSession";
 
 const t = i18n.getFixedT(null, "chat");
 
@@ -81,7 +81,10 @@ export function ChatPendingQueue({
 
   const notice = holdReason && (
     <p className="chat-pending-hold" role="status">
-      <span>{holdReason === MEMORY_BUSY ? t("chatView.waitingForMemory") : holdReason}</span>
+      <span>{holdReason === MEMORY_BUSY ? t("chatView.waitingForMemory")
+        : holdReason === REPLY_STOPPED ? t(queued.length ? "chatView.responseStoppedQueuedMessagesWereKept" : "useLoupistChat.responseStopped")
+        : holdReason === REPLY_FAILED ? t(queued.length ? "chatView.responseFailedQueuedMessagesWereKept" : "useLoupistChat.responseFailed")
+        : holdReason}</span>
       {queued[0] && sendable ? <button type="button" className="chat-pending-resume" onClick={() => { leave(queued[0]!.id, 0); onSendNow(queued[0]!.id); }}>
         {t("chatPendingQueue.sendNextNow")}
       </button> : null}

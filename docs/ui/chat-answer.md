@@ -62,7 +62,12 @@ activity sheet hold, whether or not a step's results name them, so the two never
 failed attempt is said in words (" · 1 failed attempt"), never in red, and the ledger
 never opens by itself. Its timeline holds the sources read, consulted notes, every step
 and note in order (label, target, Failed or Stopped, and a duration of a second or
-more), and results. Memory reads with no step of their own place the ledger before the
+more), and results. A step's label is the catalog's localized words, or for a bundled
+market-data read "Read {what it reads}" by the read nouns (`asOf.reads`, then
+`activitySheet.reads`, which name every data route of the bundled OpenBB runtime). A
+failed market-data read adds the Activity sheet's reason for its failure kind under its
+row (the value refused, nothing for the request, the provider unreachable, a timeout,
+or for a provider error "It ended with an error. It was not used in the answer."). Memory reads with no step of their own place the ledger before the
 live answer, where it stays. A reply stored before the agent's `plan_update` tool was
 removed keeps its plan: the timeline still shows it with its nested steps, and its
 `plan_update` calls have no row. No new reply makes a plan. A chart or table

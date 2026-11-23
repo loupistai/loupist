@@ -12,6 +12,7 @@ mod vendor;
 mod world_bank;
 
 pub(crate) use defillama::DEFILLAMA_SOURCE_ID;
+pub(crate) use entity::DartResolution;
 pub(crate) use kis::KisAccountProfile;
 use kis::*;
 pub(crate) use percent_fields::is_percent_field;
@@ -111,8 +112,22 @@ pub enum FinanceDataError {
     /// One provider failing does not prove the device is offline.
     #[error("finance data provider {0} could not be reached")]
     Offline(&'static str),
+    /// The provider did not answer within the request's time limit.
+    #[error("finance data provider {0} did not answer in time")]
+    Timeout(&'static str),
     #[error("finance data provider credential was rejected: {0}")]
     CredentialRejected(&'static str),
+    /// OpenDART refused the saved key; the field is its status code (010
+    /// unregistered, 011 not usable, 012 this address is not allowed, 901
+    /// expired with the holder's data retention period).
+    #[error("OpenDART refused the saved key (status {0})")]
+    DartKeyRefused(&'static str),
+    /// OpenDART is stopped for maintenance (status 800).
+    #[error("finance data provider {0} is stopped for maintenance")]
+    ProviderMaintenance(&'static str),
+    /// OpenDART's company list is still downloading for a name or ticker.
+    #[error("OpenDART's company list is still being prepared")]
+    DirectoryPreparing,
     /// The provider approves services separately and this key lacks some.
     /// `next` is the provider's own instruction for getting them approved.
     #[error("{provider} needs approval for {}", .services.join(", "))]
@@ -177,12 +192,93 @@ impl SafeProviderDiagnostic {
 impl FinanceDataError {
     /// Classifies a failed send without keeping the transport error text.
     pub(crate) fn from_send(error: &reqwest::Error, provider: &'static str) -> Self {
-        if error.is_connect() {
+        if error.is_timeout() {
+            Self::Timeout(provider)
+        } else if error.is_connect() {
             Self::Offline(provider)
         } else {
             Self::NetworkSafe(provider)
         }
     }
+
+    /// The same failure for another waiter. A transport error keeps only its
+    /// host-owned class, as `finance_error` would.
+    pub(crate) fn duplicate(&self) -> Self {
+        match self {
+            Self::InvalidQuery(message) => Self::InvalidQuery(message),
+            Self::RejectedArguments { diagnostic, next } => Self::RejectedArguments {
+                diagnostic: diagnostic.clone(),
+                next,
+            },
+            Self::Network(_) => Self::NetworkSafe(OPENDART_SOURCE_ID),
+            Self::NetworkSafe(provider) => Self::NetworkSafe(provider),
+            Self::Offline(provider) => Self::Offline(provider),
+            Self::Timeout(provider) => Self::Timeout(provider),
+            Self::CredentialRejected(provider) => Self::CredentialRejected(provider),
+            Self::DartKeyRefused(status) => Self::DartKeyRefused(status),
+            Self::ProviderMaintenance(provider) => Self::ProviderMaintenance(provider),
+            Self::DirectoryPreparing => Self::DirectoryPreparing,
+            Self::ServiceApprovalRequired {
+                provider,
+                services,
+                next,
+            } => Self::ServiceApprovalRequired {
+                provider,
+                services: services.clone(),
+                next,
+            },
+            Self::KisCredentialRejected(diagnostic) => {
+                Self::KisCredentialRejected(diagnostic.clone())
+            }
+            Self::RateLimited(provider) => Self::RateLimited(provider),
+            Self::KisRateLimited(diagnostic) => Self::KisRateLimited(diagnostic.clone()),
+            Self::NoData(provider) => Self::NoData(provider),
+            Self::Provider(message) => Self::Provider(message.clone()),
+            #[cfg(feature = "eval-harness")]
+            Self::Replay(message) => Self::Replay(message.clone()),
+            Self::InvalidResponse => Self::InvalidResponse,
+            Self::KisResponseContract { operation, detail } => Self::KisResponseContract {
+                operation: operation.clone(),
+                detail: detail.clone(),
+            },
+            Self::Configuration(message) => Self::Configuration(message.clone()),
+        }
+    }
+}
+
+/// A request URL as a locator: every query parameter a native vendor declares
+/// as its credential is removed, so no result, Source, citation or export can
+/// carry one even when a caller passes the request URL by mistake.
+pub(crate) fn public_locator(url: &str) -> String {
+    let Ok(mut parsed) = Url::parse(url) else {
+        return url.to_owned();
+    };
+    let credential = |name: &str| {
+        vendor::credential_query_parameters().any(|parameter| parameter.eq_ignore_ascii_case(name))
+    };
+    if !parsed.query_pairs().any(|(name, _)| credential(&name)) {
+        return url.to_owned();
+    }
+    let kept = parsed
+        .query_pairs()
+        .filter(|(name, _)| !credential(name))
+        .map(|(name, value)| (name.into_owned(), value.into_owned()))
+        .collect::<Vec<_>>();
+    parsed.set_query(None);
+    if !kept.is_empty() {
+        parsed.query_pairs_mut().extend_pairs(kept);
+    }
+    parsed.to_string()
+}
+
+/// Whether a locator still carries a native vendor's credential parameter.
+pub(crate) fn locator_carries_credential(url: &str) -> bool {
+    Url::parse(url).is_ok_and(|parsed| {
+        parsed.query_pairs().any(|(name, _)| {
+            vendor::credential_query_parameters()
+                .any(|parameter| parameter.eq_ignore_ascii_case(&name))
+        })
+    })
 }
 
 impl std::fmt::Display for SafeProviderDiagnostic {
@@ -206,9 +302,15 @@ pub struct FinanceDataService {
     kis_tokens: Arc<Mutex<KisTokenCache>>,
     kis_tokens_invalidated: Arc<std::sync::atomic::AtomicBool>,
     entity_directories: Arc<Mutex<entity::EntityDirectoryCache>>,
+    dart_directory: entity::DartDirectorySettings,
+    /// Recently read filing archives by receipt number (see `opendart_document`).
+    dart_documents: Arc<Mutex<RecentDocuments>>,
     dart_fiscal_calendars: Arc<Mutex<provider_korea::DartFiscalCalendarCache>>,
     krx_daily_cache: Option<Arc<krx::KrxDailyCache>>,
 }
+
+/// Filing archives by receipt number, with when each was fetched.
+type RecentDocuments = std::collections::VecDeque<(String, DateTime<Utc>, RawProviderResponse)>;
 
 #[derive(Clone)]
 struct RawProviderResponse {
@@ -243,6 +345,8 @@ impl FinanceDataService {
             kis_tokens: Arc::new(Mutex::new(KisTokenCache::default())),
             kis_tokens_invalidated: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             entity_directories: Arc::new(Mutex::new(entity::EntityDirectoryCache::default())),
+            dart_directory: entity::DartDirectorySettings::default(),
+            dart_documents: Arc::default(),
             dart_fiscal_calendars: Arc::new(Mutex::new(
                 provider_korea::DartFiscalCalendarCache::default(),
             )),
@@ -389,7 +493,7 @@ impl FinanceDataService {
                     .map_err(|_| FinanceDataError::InvalidResponse)?,
                 RawProviderResponse {
                     bytes,
-                    source_url,
+                    source_url: public_locator(&source_url),
                     retrieved_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
                     continuation: response.continuation,
                 },
@@ -423,7 +527,7 @@ impl FinanceDataService {
         while let Some(chunk) = response
             .chunk()
             .await
-            .map_err(|_| FinanceDataError::NetworkSafe(provider))?
+            .map_err(|error| FinanceDataError::from_send(&error, provider))?
         {
             if bytes
                 .len()
@@ -440,7 +544,7 @@ impl FinanceDataService {
             status,
             RawProviderResponse {
                 bytes,
-                source_url,
+                source_url: public_locator(&source_url),
                 retrieved_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
                 continuation,
             },

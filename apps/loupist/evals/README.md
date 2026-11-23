@@ -433,6 +433,10 @@ DART statement fixtures include `company.json?corp_code=…` with the matching
 `corp_code` and `acc_mt` fiscal year-end month. Without that profile, the real
 normalizer leaves statement periods undated; the statement replay test checks
 the resulting fact dates through the provider parser.
+A fixture row has only fields the provider sends, as recorded from it. OpenDART's
+`fnlttSinglAcntAll` rows (recorded 2026-11-23) carry no `fs_div`, `corp_name`,
+`stock_code` or `thstrm_dt`; hand-written rows that had them let the parser require
+`fs_div` and fail every real statement read while every fixture passed.
 
 ```json
 {

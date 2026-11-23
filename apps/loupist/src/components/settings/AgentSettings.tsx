@@ -108,15 +108,19 @@ export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange,
   const field = (path: string, label: string, description?: string): FieldProps => ({ snapshot: snapshot!, path, label, description, disabled, onReset: reset });
   const models = visibleCatalogModels(catalog);
   const resolved = snapshot?.modelSelection;
-  // A stored model that cannot run now stays shown here; Chat uses Auto until it can.
-  const storedModel = resolved?.stored_unavailable ? catalog?.models.find((model) => model.id === snapshot?.effective.chat.model_profile_id) : undefined;
-  const selection = storedModel && snapshot
-    ? { model_profile_id: storedModel.id, thinking_level: snapshot.effective.chat.thinking_level ?? "", run_options: { ...defaultRunOptions(storedModel), ...snapshot.effective.chat.run_options } }
+  // A stored model that cannot run now stays shown here, by its name even after its
+  // account's models left the catalog; Chat uses Auto until it can run.
+  const storedId = resolved?.stored_unavailable ? snapshot?.effective.chat.model_profile_id || undefined : undefined;
+  const storedModel = storedId ? catalog?.models.find((model) => model.id === storedId) : undefined;
+  const selection = storedId && snapshot
+    ? { model_profile_id: storedId, thinking_level: snapshot.effective.chat.thinking_level ?? "", run_options: { ...(storedModel ? defaultRunOptions(storedModel) : {}), ...snapshot.effective.chat.run_options } }
     : modelRunSelection(resolved);
-  const optionModel = storedModel ?? models.find((model) => model.id === selection.model_profile_id);
+  const storedName = storedId ? storedModel?.name ?? resolved?.stored_model?.name ?? i18n.t("settings:agentSettings.unavailableModel") : undefined;
+  const optionModel = storedId ? storedModel : models.find((model) => model.id === selection.model_profile_id);
   const runOptions = snapshot?.scope.kind === "project" && snapshot.explicit?.chat?.model_profile_id && resolved?.model && !resolved.is_default
     ? resolved.run_options : snapshot?.effective.chat.run_options ?? {};
-  const unavailableOptions = Object.entries(runOptions).filter(([key, value]) => !optionModel?.run_controls.some((control) => control.id === key && control.choices.some((choice) => choice.id === value)));
+  // An unlisted stored model's controls are unknown until it is listed again.
+  const unavailableOptions = storedId && !storedModel ? [] : Object.entries(runOptions).filter(([key, value]) => !optionModel?.run_controls.some((control) => control.id === key && control.choices.some((choice) => choice.id === value)));
   const thinking = snapshot?.effective.chat.thinking_level;
   const thinkingLevels = optionModel?.thinking_levels ?? [...new Set(models.flatMap((model) => model.thinking_levels))];
   return <>
@@ -132,7 +136,7 @@ export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange,
         <SettingField {...field("chat.model_profile_id", i18n.t("settings:agentSettings.defaultModel"), i18n.t("settings:agentSettings.theModelToUseWhenStartingAChat"))}>
           {resolved?.unavailable_reason === "no_connected_account" ? <Button id="config-chat.model_profile_id" variant="outline" onClick={onConnectAccount}>{i18n.t("chat:chatModelMenu.noAccount")}</Button>
             : <ModelSelectionMenu triggerId="config-chat.model_profile_id" ariaLabel={i18n.t("settings:agentSettings.defaultModel")} disabled={disabled}
-                models={models} providers={catalog?.providers ?? []} selection={selection} modelName={storedModel?.name ?? resolved?.model?.name} isDefault={!storedModel && resolved?.is_default}
+                models={models} providers={catalog?.providers ?? []} selection={selection} modelName={storedName ?? resolved?.model?.name} isDefault={!storedId && resolved?.is_default}
                 onChooseDefault={() => reset("chat.model_profile_id")}
                 onSelectionChange={next => {
                   if (next.model_profile_id !== selection.model_profile_id) void saveModel(next);
@@ -141,7 +145,7 @@ export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange,
                   else void saveModel(next);
                 }} />}
         </SettingField>
-        {storedModel ? <p className="agent-config-description" role="note">{i18n.t("settings:agentSettings.storedModelUnavailable")}</p> : null}
+        {storedId ? <p className="agent-config-description" role="note">{i18n.t("settings:agentSettings.storedModelUnavailable")}</p> : null}
         <ProviderPlanLine className="agent-config-plan-line" provider={catalog?.providers.find((provider) => provider.id === optionModel?.provider)} onOpenUsage={(provider) => { void bridge.providerOpenUsage({ provider }).catch(() => {}); }} />
         <SettingField {...field("chat.thinking_level", i18n.t("settings:agentSettings.reasoningLevel"), i18n.t("settings:agentSettings.howMuchTimeTheModelSpendsThinkingBefore"))}><NativeSelect id="config-chat.thinking_level" aria-describedby="config-description-chat.thinking_level" disabled={disabled} value={thinking ?? "__automatic__"} onChange={(event) => event.target.value === "__automatic__" ? reset("chat.thinking_level") : void save("chat.thinking_level", event.target.value)}><option value="__automatic__">{scope.kind === "project" ? i18n.t("settings:agentSettings.useGlobalDefaultReasoningLevel") : i18n.t("settings:agentSettings.modelDefault")}</option>{thinking !== null && thinking !== undefined && !thinkingLevels.includes(thinking) ? <option value={thinking}>{i18n.t("settings:agentSettings.unavailableThinking", { level: thinking })}</option> : null}{thinkingLevels.map((level) => <option value={level} key={level}>{thinkingLabel(level) || i18n.t("settings:agentSettings.none")}</option>)}</NativeSelect></SettingField>
         <SettingField

@@ -26,7 +26,7 @@ import type { LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin, 
 import { errorMessage } from "../../lib/errors";
 import { pinForSource, type SourceOpen } from "../../knowledge/location";
 import { compactOrigin, sourceOrigin, sourceTitle } from "../../knowledge/hostSource";
-import { isMapProcessing, processingSourceCount, sourceDisplayStatus, sourceProcessingLabel, type WorldProcessing } from "../../knowledge/mapProcessing";
+import { isMapProcessing, processingSourceCount, sourceDisplayStatus, sourceProcessingLabel, waitingLabel, type WorldProcessing } from "../../knowledge/mapProcessing";
 import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
 import { relationName } from "../map/relations";
 import { SourceRetry } from "./SourceRetry";
@@ -297,7 +297,7 @@ export function SourceWorkspace({ bridge, catalog, worldProcessing, location, so
       <SegmentedControl value={filter} onValueChange={(value) => patchView({ sourceFilter: value as "all" | "processing" | "attention", sourceScrollTop: 0 })} aria-label={t("sourceWorkspace.sourceProcessingFilters")}><SegmentedControlItem value="all">{t("sourceWorkspace.all")}</SegmentedControlItem><SegmentedControlItem value="processing">{processingCount ? t("sourceWorkspace.processingCount", { countText: formatNumber(processingCount) }) : t("sourceWorkspace.processing")}</SegmentedControlItem><SegmentedControlItem value="attention">{t("sourceWorkspace.needsAttention")}</SegmentedControlItem></SegmentedControl></div>
       {compact ? <div className="source-library-heading library-section-label"><h2>{t("sourceWorkspace.savedSources")}</h2><span>{formatNumber(sources.length)}</span>{onAddSource ? <Button variant="outline" size="sm" className="library-add" onClick={onAddSource}>{t("map.addInLibrary")}</Button> : null}</div> : null}
       {showQueueStatus ? <div className="source-processing-status">
-        <p role="status">{buildingWithoutSources ? <Spinner /> : null}{sourceProcessingLabel(waiting ?? "running")}</p>
+        <p role="status">{buildingWithoutSources ? <Spinner /> : null}{activity?.kind === "waiting" ? waitingLabel(activity) : sourceProcessingLabel("running")}</p>
         {waiting ? statusControl(waiting) : null}
       </div> : null}
       {!sources.length ? <EmptyState title={search || filter !== "all" ? t("sourceWorkspace.noMatchingSources") : t("sourceWorkspace.noSourcesYet")} description={search || filter !== "all" ? t("sourceWorkspace.tryAnotherSearchOrChooseAll") : t("sourceWorkspace.addTextAFileOrALinkToUseIn")} /> : null}

@@ -102,8 +102,11 @@ shortcut in that state. With no AI account connected at all (readiness note
 `no_account`), they say "World is waiting for an AI account. Connect one in
 Settings > AI accounts.", and World's status line, the Library and the Source
 reader offer Manage AI accounts; "Choose another AI model" is for accounts whose
-models exclude World's. A Source paused at its request allowance carries the World
-building settings control in the status line ([allowance](../knowledge/worlds.md#queue-and-interruptions)). Connecting a provider refreshes the status with World
+models exclude World's. Sources paused at their request allowance are counted
+there ("3 Sources paused at the request limit"), and the status line offers Continue
+all, which asks first, beside the World building settings control
+([allowance](../knowledge/worlds.md#queue-and-interruptions)). A price-data Source
+never reads as updating ([price data](../knowledge/worlds.md#price-data)). Connecting a provider refreshes the status with World
 closed. The icon rail places the spinner in the corner of the World icon.
 Reduced motion keeps the ring still.
 The inspector's close control stays in the corner while the facts scroll. Below 900 px the inspector opens as a bottom sheet, and that control stays inside the sheet. An entity's name leads its inspector: the kind and Following sit above it in the side column and follow it on the sheet's first line.

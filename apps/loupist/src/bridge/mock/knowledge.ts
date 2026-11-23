@@ -956,6 +956,19 @@ export const knowledgeGraphRetrySource = async (state: MockBridgeState, request:
   return clone(job);
 };
 
+/** Like the host: one retry per named Source; a refusal is skipped and counted. */
+export const knowledgeGraphRetrySources = async (state: MockBridgeState, request: { loupistId: string; recordIds: string[]; maxLlmCalls: number }) => {
+  const store = ensure(state, request.loupistId);
+  if (store.settings.maxLlmCalls !== request.maxLlmCalls) throw new Error("the request allowance changed since this was confirmed");
+  let continued = 0;
+  let skipped = 0;
+  for (const recordId of new Set(request.recordIds)) {
+    try { await knowledgeGraphRetrySource(state, { loupistId: request.loupistId, recordId }); continued += 1; }
+    catch { skipped += 1; }
+  }
+  return { continued, skipped };
+};
+
 export const knowledgeGraphPause = async (
   state: MockBridgeState,
   request: { loupistId: string; paused: boolean },

@@ -190,6 +190,8 @@
   --gg-z-sticky: 10;
   --gg-z-sidebar: 20;
   --gg-z-panel: 30;
+  /* In-page layers only. A menu portaled to the body uses --gg-z-dialog, so the
+     one opened later paints on top: a list from a dialog shows, and a later dialog covers a menu. */
   --gg-z-popover: 40;
   --gg-z-dialog: 50;
   --gg-z-toast: 60;
