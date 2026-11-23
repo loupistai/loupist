@@ -574,6 +574,77 @@ jobs:
           rmdir "$MOUNT_DIR"
           trap - EXIT HUP INT TERM
 
+  package-linux:
+    needs: changes
+    if: needs.changes.outputs.packaging == 'true'
+    timeout-minutes: 60
+    name: Package (x86_64-unknown-linux-gnu)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Restore Linux package downloads
+        id: apt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: apt-package-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: apt-package-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install Linux build libraries
+        timeout-minutes: 15
+        run: |
+          mkdir -p "$HOME/apt-archives/partial"
+          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Dir::Cache::Archives=$HOME/apt-archives"
+          sudo apt-get $APT update
+          sudo apt-get $APT install -y --no-install-recommends \
+            build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev \
+            patchelf xvfb
+          sudo chown -R "$(id -u):$(id -g)" "$HOME/apt-archives"
+
+      - name: Save Linux package downloads
+        if: github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.apt-cache.outputs.cache-primary-key }}
+
+      - name: Install CI toolchains
+        uses: ./.github/actions/setup-toolchains
+        with:
+          node: "true"
+          node-cache: apps/loupist/package-lock.json
+          rust: "true"
+          rust-cache-key: package-linux
+
+      - name: Install renderer dependencies
+        working-directory: apps/loupist
+        run: npm ci
+
+      - name: Build unsigned Linux package
+        working-directory: apps/loupist
+        run: npm run tauri build
+
+      - name: Check the Debian package and that the app stays up
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          DEBS=(apps/loupist/src-tauri/target/release/bundle/deb/*.deb)
+          test "${#DEBS[@]}" -eq 1
+          dpkg-deb --info "${DEBS[0]}"
+          BIN=apps/loupist/src-tauri/target/release/loupist
+          test -x "$BIN"
+          set +e
+          timeout 45s xvfb-run -a -s '-screen 0 1280x820x24' "$BIN"
+          code=$?
+          set -e
+          echo "launch exit ${code}"
+          test "$code" -eq 124
+
   verify:
     name: Source and product contracts
     timeout-minutes: 5
@@ -586,6 +657,7 @@ jobs:
       - native-e2e-linux
       - native-e2e
       - package-smoke
+      - package-linux
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -605,6 +677,8 @@ jobs:
           NATIVE_RESULT: ${{ needs.native-e2e.result }}
           PACKAGE_REQUIRED: ${{ needs.changes.outputs.packaging == 'true' && needs.changes.outputs.macos == 'true' }}
           PACKAGE_RESULT: ${{ needs.package-smoke.result }}
+          PACKAGE_LINUX_REQUIRED: ${{ needs.changes.outputs.packaging }}
+          PACKAGE_LINUX_RESULT: ${{ needs.package-linux.result }}
         run: |
           set -euo pipefail
           test "${{ needs.changes.result }}" = success
@@ -621,3 +695,4 @@ jobs:
           require_scope "$NATIVE_LINUX_REQUIRED" "$NATIVE_LINUX_RESULT"
           require_scope "$NATIVE_REQUIRED" "$NATIVE_RESULT"
           require_scope "$PACKAGE_REQUIRED" "$PACKAGE_RESULT"
+          require_scope "$PACKAGE_LINUX_REQUIRED" "$PACKAGE_LINUX_RESULT"
