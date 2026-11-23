@@ -349,8 +349,8 @@ mod turns {
     }
 
     /// The Bot reply as its save left it, from the message-scoped channel.
-    fn settled_reply(run_id: &str) -> crate::commands::types::ChatMessageDto {
-        crate::commands::chat_runtime::saves::published(run_id)
+    fn settled_reply(state: &AppState, run_id: &str) -> crate::commands::types::ChatMessageDto {
+        crate::commands::chat_runtime::saves::published(state, run_id)
             .into_iter()
             .rev()
             .find_map(|(_, event)| event.message)
@@ -384,7 +384,9 @@ mod turns {
         // arrives with the reply's receipt once the save commits the hand-off.
         let source_turn = fixture.completions.lock().unwrap().clone();
         assert_eq!(source_turn.len(), 1, "{source_turn:?}");
-        assert!(settled_reply("bot-ok").research_session_id.is_some());
+        assert!(settled_reply(&fixture.state, "bot-ok")
+            .research_session_id
+            .is_some());
         let rows = fixture.settled_handoffs().await;
         let row = &rows[0];
         let session = fixture.state.store.get_chat(&row.chat_id).unwrap().unwrap();
@@ -466,7 +468,9 @@ mod turns {
             .iter()
             .all(|m| m.id == announced.id || m.research_session_id.is_none()));
         assert_eq!(
-            settled_reply("bot-1").research_session_id.as_deref(),
+            settled_reply(&fixture.state, "bot-1")
+                .research_session_id
+                .as_deref(),
             Some(row.chat_id.as_str())
         );
         let session = fixture.state.store.get_chat(&row.chat_id).unwrap().unwrap();

@@ -22,14 +22,17 @@ pub(super) struct ReleasedSave {
 
 impl ReleasedSave {
     fn publish(&self, pending: Option<ChatSaveState>, message: Option<ChatMessageDto>) {
-        publish(ChatSaveChanged {
-            loupist_id: self.loupist_id.clone(),
-            thread_id: self.thread_id.clone(),
-            message_id: self.message_id.clone(),
-            run_id: self.run_id.clone(),
-            pending,
-            message,
-        });
+        publish(
+            &self.state,
+            ChatSaveChanged {
+                loupist_id: self.loupist_id.clone(),
+                thread_id: self.thread_id.clone(),
+                message_id: self.message_id.clone(),
+                run_id: self.run_id.clone(),
+                pending,
+                message,
+            },
+        );
     }
 
     /// Reports the wait, and stores it for a renderer that asks later.
@@ -118,29 +121,34 @@ impl ChatEventSink {
     }
 }
 
+/// Every event this test process published, with the app data folder of the
+/// app that published it: tests run side by side and reuse run ids.
 #[cfg(test)]
-static PUBLISHED: std::sync::Mutex<Vec<ChatSaveChanged>> = std::sync::Mutex::new(Vec::new());
+static PUBLISHED: std::sync::Mutex<Vec<(std::path::PathBuf, ChatSaveChanged)>> =
+    std::sync::Mutex::new(Vec::new());
 
-/// What this test process published for one save, with each event's place
-/// among everything published.
+/// What this app published for one save, with each event's place among
+/// everything published.
 #[cfg(test)]
-pub(crate) fn published(run_id: &str) -> Vec<(usize, ChatSaveChanged)> {
+pub(crate) fn published(state: &AppState, run_id: &str) -> Vec<(usize, ChatSaveChanged)> {
     PUBLISHED
         .lock()
         .unwrap_or_else(|error| error.into_inner())
         .iter()
         .enumerate()
-        .filter(|(_, event)| event.run_id == run_id)
-        .map(|(index, event)| (index, event.clone()))
+        .filter(|(_, (app, event))| *app == state.artifacts.app_data_dir && event.run_id == run_id)
+        .map(|(index, (_, event))| (index, event.clone()))
         .collect()
 }
 
-fn publish(event: ChatSaveChanged) {
+fn publish(state: &AppState, event: ChatSaveChanged) {
     #[cfg(test)]
     PUBLISHED
         .lock()
         .unwrap_or_else(|error| error.into_inner())
-        .push(event.clone());
+        .push((state.artifacts.app_data_dir.clone(), event.clone()));
+    #[cfg(not(test))]
+    let _ = state;
     crate::briefings::desktop::emit(crate::events::CHAT_SAVE_CHANGED, event);
 }
 

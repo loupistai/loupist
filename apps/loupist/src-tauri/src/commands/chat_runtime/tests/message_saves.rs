@@ -65,8 +65,8 @@ impl Reply {
     }
 
     /// Where its resolution falls among everything published.
-    fn resolved_at(&self) -> usize {
-        saves::published(&self.run_id)
+    fn resolved_at(&self, state: &AppState) -> usize {
+        saves::published(state, &self.run_id)
             .into_iter()
             .find(|(_, event)| event.pending.is_none())
             .expect("the save published its receipt")
@@ -469,7 +469,7 @@ async fn successive_bot_replies_are_sent_at_once_and_save_in_order_after_the_rea
         }
         let order = replies
             .iter()
-            .map(|reply| reply.resolved_at())
+            .map(|reply| reply.resolved_at(&fixture.state))
             .collect::<Vec<_>>();
         assert!(order.windows(2).all(|pair| pair[0] < pair[1]), "{order:?}");
         for reply in &replies {
@@ -479,11 +479,27 @@ async fn successive_bot_replies_are_sent_at_once_and_save_in_order_after_the_rea
             assert_eq!(receipt.changes.len(), 1);
             assert!(fixture.principle_saved(reply));
             assert!(fixture.save_finished(reply).is_some());
-            let (_, settled) = saves::published(&reply.run_id).pop().unwrap();
+            // One save's events arrive in order: its waits, then one receipt,
+            // which carries the reply exactly as stored.
+            let mut events = saves::published(&fixture.state, &reply.run_id)
+                .into_iter()
+                .map(|(_, event)| event)
+                .collect::<Vec<_>>();
+            let settled = events.pop().unwrap();
+            assert!(events
+                .iter()
+                .all(|event| event.pending.is_some() && event.message.is_none()));
             assert!(settled.pending.is_none());
+            let stored =
+                crate::commands::types::chat_dto_with_memory(&fixture.state, &fixture.stored())
+                    .unwrap()
+                    .messages
+                    .into_iter()
+                    .find(|message| message.id == reply.message_id)
+                    .unwrap();
             assert_eq!(
-                settled.message.unwrap().memory_update.unwrap().status,
-                MemoryUpdateStatus::Applied
+                serde_json::to_value(settled.message.unwrap()).unwrap(),
+                serde_json::to_value(stored).unwrap()
             );
         }
         assert!(fixture.pending().is_empty());
@@ -512,7 +528,9 @@ async fn skipping_the_first_save_leaves_the_second_waiting_and_keeps_both_receip
     );
     assert!(fixture.save_finished(&first).is_some());
     assert!(!fixture.principle_saved(&first));
-    let (_, settled) = saves::published(&first.run_id).pop().unwrap();
+    let (_, settled) = saves::published(&fixture.state, &first.run_id)
+        .pop()
+        .unwrap();
     assert_eq!(
         settled.message.unwrap().memory_update.unwrap().skip_reason,
         Some(MemorySaveSkipReason::User)
@@ -1140,4 +1158,39 @@ async fn the_next_turn_does_not_see_an_entry_an_earlier_pending_save_forgets() {
         assert_eq!(next(), ["Quote prices in KRW"], "{change}");
         drop(reader);
     }
+}
+
+/// Tests run side by side and reuse run ids. A save's events are read by the app
+/// that published them: another app's later skip of the same run id is not this
+/// reply's receipt (the interleaving a Linux runner hit).
+#[tokio::test(start_paused = true)]
+async fn each_app_reads_only_the_save_events_it_published() {
+    let applied = Fixture::bot();
+    let mut saved = applied.send(0, Stage::Principle, None).await;
+    saved.saved().await;
+    let skipped = Fixture::bot();
+    let reader = skipped.reader();
+    let mut waiting = skipped.send(0, Stage::Principle, None).await;
+    waiting.stream_ended().await;
+    skipped
+        .state
+        .cancel_run(&waiting.run_id, RunKind::Chat)
+        .await
+        .unwrap();
+    waiting.saved().await;
+    drop(reader);
+    assert_eq!(saved.run_id, waiting.run_id);
+
+    let last = |fixture: &Fixture, reply: &Reply| {
+        let (_, event) = saves::published(&fixture.state, &reply.run_id)
+            .pop()
+            .unwrap();
+        assert!(event.pending.is_none());
+        event.message.unwrap().memory_update.unwrap()
+    };
+    assert_eq!(last(&applied, &saved).status, MemoryUpdateStatus::Applied);
+    assert_eq!(
+        last(&skipped, &waiting).skip_reason,
+        Some(MemorySaveSkipReason::User)
+    );
 }
