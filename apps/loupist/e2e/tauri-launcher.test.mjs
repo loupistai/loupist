@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,6 +67,9 @@ setInterval(() => {}, 1000);
 
   // Build does not consume the GUI lease and retains the real CLI exit code.
   assert.equal((await result(launch(["build"]))).code, 23);
+  if (process.platform === "linux") {
+    assert.equal((await stat(join(root, "src-tauri/resources/pi-runtime"))).isDirectory(), true);
+  }
   owner.kill("SIGTERM");
   assert.equal((await ownerResult).signal, "SIGTERM");
   owner = null;

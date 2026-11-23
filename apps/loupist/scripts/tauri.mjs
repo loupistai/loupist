@@ -69,6 +69,12 @@ async function main() {
     if (separator < 0) { separator = args.length; args.push("--"); }
     args.splice(separator + 1, 0, "--config", resolve(appRoot, "e2e/macos-dev-runner.toml"));
   }
+  // Release hashes resources/pi-runtime. That directory is gitignored, and the
+  // macOS Pi stager does not run on Linux. An empty directory satisfies the
+  // hash. It does not add a Pi program.
+  if (!isDev && process.platform === "linux") {
+    mkdirSync(resolve(appRoot, "src-tauri/resources/pi-runtime"), { recursive: true });
+  }
   const env = { ...process.env };
   if (isDev) {
     const port = await resolveWebdriverPort(preferred);

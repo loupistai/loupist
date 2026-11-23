@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Build and run Loupist on Linux x86_64. Install the WebKitGTK 4.1 development libraries, then run `npm run tauri build` in `apps/loupist` to produce a `.deb`.
-- The signed download remains macOS 13 or later on Apple Silicon. A Linux package does not save data-connection keys, install updates, register `loupist://` links, or open at login. It does not include the Pi or OpenBB programs, so a chat can open and a model reply cannot run.
+- The signed download remains macOS 13 or later on Apple Silicon. A Linux package does not save data-connection keys, install updates, register `loupist://` links, or open at login. It does not include the Pi or OpenBB programs, so a chat can open, a model reply cannot run, and an AI account key cannot be saved.
 
 ## 0.1.5 - 2026-11-23
 
