@@ -266,6 +266,24 @@ it("leaves the default Source saved status off a library row and shows any other
   expect(screen.getByRole("button", { name: /Report 2/ })).toHaveTextContent("World is updating");
 });
 
+it("says a price table is kept out of World and never counts it as building or needing attention", async () => {
+  const props = await fixture();
+  const catalog = { ...props.catalog, sources: ["price_data", "queued"].map((status, index) => ({ ...props.catalog.sources[0], recordId: `source-${index}`, objects: [{ id: `source-${index}`, title: `Report ${index}`, processing: { jobId: "job", status, error: null } }] })) };
+  function Harness() {
+    const [location, setLocation] = useState<KnowledgeLocation>({ loupistId: props.location.loupistId, surface: "source" });
+    return <SourceWorkspace {...props} catalog={catalog} location={location} onPatch={setLocation} />;
+  }
+  render(<Harness />);
+  const user = userEvent.setup();
+  const price = await screen.findByRole("button", { name: /Report 0/ });
+  expect(price.querySelector(".source-row-status")).toHaveTextContent(/^Price data · not added to World$/);
+  expect(price).not.toHaveTextContent("World is updating");
+  await user.click(screen.getByRole("radio", { name: /Processing/ }));
+  expect(screen.getAllByRole("button", { name: /Report \d/ }).map(row => row.textContent)).toEqual([expect.stringContaining("Report 1")]);
+  await user.click(screen.getByRole("radio", { name: "Needs attention" }));
+  expect(screen.queryByRole("button", { name: /Report 0/ })).not.toBeInTheDocument();
+});
+
 it("says World building is paused for the user's pause, and names the allowance a source reached by itself", async () => {
   const props = await fixture();
   const catalog = { ...props.catalog, sources: ["paused", "paused_budget"].map((status, index) => ({ ...props.catalog.sources[0], recordId: `source-${index}`, objects: [{ id: `source-${index}`, title: `Report ${index}`, processing: { jobId: "job", status, error: null } }] })) };

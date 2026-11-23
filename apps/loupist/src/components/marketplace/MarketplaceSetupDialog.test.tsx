@@ -86,6 +86,23 @@ describe("Marketplace setup feedback", () => {
     expect(save).not.toHaveBeenCalled();
   });
 
+  it("opens the account type list and chooses the other option", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const snapshot = await bridge.marketplaceSnapshot();
+    const entry = snapshot.catalog.entries.find((item) => item.id === "koreainvestment.market-data")!;
+    const connector = snapshot.connectors.find((item) => item.entry_id === entry.id);
+    render(<MarketplaceSetupDialog bridge={bridge} entry={entry} connector={connector} onClose={vi.fn()} onChanged={vi.fn()} />);
+    const trigger = screen.getByRole("combobox", { name: "Account type" });
+    expect(trigger).toHaveTextContent("Live");
+    await user.click(trigger);
+    const list = await screen.findByRole("listbox");
+    expect(within(list).getByRole("option", { name: "Live" })).toBeVisible();
+    await user.click(within(list).getByRole("option", { name: "Demo" }));
+    expect(trigger).toHaveTextContent("Demo");
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
   it("keeps an unsaved key when the device rejects the save", async () => {
     const user = userEvent.setup();
     const bridge = new MockLoupistBridge({ delay_ms: 0 });

@@ -249,15 +249,8 @@ answer's displayed precision. Monetary midpoints round away from zero. Thus `342
 in the cited material. A match alone does not identify a company, period or row.
 
 For a passage, a signed figure must agree with the sign the source prints or the
-direction its wording gives the unsigned number. The host recognizes common
-financial phrases in English, Korean, simplified and traditional Chinese, Japanese,
-German, French and Spanish. For example, `loss of $70`, `9% 줄었고`, `跌幅4.81%`,
-`70円安`, `fiel um 4.81 %`, `baisse de 4.81 %` and `cayó un 4.81%` state declines.
-The cue must touch the number or its unit, allowing up to two spaces. A clause
-boundary, a line break or intervening prose ends its reach. In `下跌70元，跌幅4.81%`
-each change gets its own direction. A comparison such as `not down 4.81%` or
-`跌幅收窄至4.81%` still names a decline of that magnitude. The check identifies
-the quoted figure and its direction.
+direction its wording gives the unsigned number
+([Direction words](#direction-words)).
 
 An unsigned answer can cite the magnitude of a decline stated in words. A
 positive source number without a direction cue supports a positive or unsigned
@@ -270,6 +263,62 @@ the original UTF-8 evidence range even for full-width digits, punctuation and
 signs (`－４．８１％`). Amounts can carry `元` or `円`, and `万`/`萬` and `亿`/`億`
 scale by ten thousand and one hundred million respectively. `元` alone does not
 identify a specific dollar or yuan currency.
+
+### Direction words
+
+`knowledge/numbers/direction.rs` reads the direction of each unsigned positive
+figure in a passage, and of an answer's own unsigned figure. The host recognizes
+common financial phrases in English, Korean, simplified and traditional Chinese,
+Japanese, German, French and Spanish, in both directions. For example,
+`loss of $70`, `9% 줄었고`, `1.58% 내린`, `跌幅4.81%`, `70円安`, `3%減`,
+`fiel um 4.81 %`, `baisse de 4.81 %` and `cayó un 4.81%` state declines, and
+`1.58% 오른`, `climbed 4.11%`, `4.11% higher`, `上涨4.11%`, `3.31%値上がり` and
+`3%増` state rises. The market-report verbs cover each language's ordinary
+forms: Korean 내리다 (내린, 내려, 내렸, 내리며, 내림), 급락, 폭락, 약세, 빠지다,
+밀리다, 뒷걸음, 후퇴, 하향 and 오르다, 올리다, 뛰다, 급등, 폭등, 강세, 반등,
+상향; English slid, tumbled, plunged, lost, shed, sank, eased and climbed,
+jumped, surged, soared, advanced, added, rallied, rebounded, each with its
+present forms where common; Japanese 値下がり, 下げ, 低下, 減, 反落, 急落,
+続落 and 値上がり, 上げ, 増, 反発, 急騰, 続伸, 高騰; Chinese 下滑, 回落, 走低,
+下挫, 降, 降幅 and 涨, 升, 升幅, 上升, 攀升, 回升, 走高, 反弹. A rise is evidence
+as much as a fall: `+1.58%` matches `1.58% 오른`, and `-1.58%` against it is a
+sign conflict.
+
+A direction word binds to the figure it governs:
+
+- It touches the figure, its unit or an index's point unit (`포인트`, `points`,
+  `ポイント`, `点`), allowing up to two spaces each. A clause boundary, a line
+  break or intervening prose ends its reach, and a word never reaches back into
+  an earlier clause or sentence. In `下跌70元，跌幅4.81%` each change gets its own
+  direction.
+- A word that introduces a number belongs to the number after it (`下跌2%`,
+  `declined by 2%`), and `to`, `from`, `至` and `到` introduce a level. A Korean
+  word follows the change it states, so in `1.58% 내린 635.45` or
+  `3.31% 하락 4,708.54` the rate takes the word and the level after it takes no
+  direction. In `코스피는 3.31% 내린 4,708.54에, 코스닥은 1.58% 오른 645.45에`
+  each rate takes its own word.
+- A figure in brackets right after another figure, with only a unit or the first
+  figure's own word between, restates the same change: `200.14포인트(4.11%) 내린`,
+  `down 200.14 points (4.11%)`, `200.14ポイント(4.11%)安`, `下跌200.14点(4.11%)` and
+  `200.14 points, or 4.11%, lower` give both figures one direction, from the
+  word before the first or after the bracket or comma. A bracketed rate after a
+  name is a level (`점유율(25%) 하락` gives 25% no direction).
+- The word after the last rate of a list governs every rate before it that has
+  no word of its own: `삼성전자 3.06%·SK하이닉스 2.52% 하락`,
+  `Samsung 3.06% and SK Hynix 2.52% lower`, `각각 3.06%, 2.52% 내렸다`. Items are
+  joined by `·`, `・`, `、`, a comma, `/`, `&`, `and`, `및`, `和`, `及` or `与`, and
+  each item's name is at most three words with no digits; a Latin name is
+  capitalized (`SK Hynix`, not `with stocks`). Only percents, percentage points and
+  basis points form a list, and a rate introduced by a word (`at 3.5%`, `내린 3.5%`) is
+  not an item. A word before a list's first figure reaches only that figure.
+- A bound word between keeps the figure bare: `3% 넘게 하락해` and `9% 이상 줄었다`
+  cite unsigned.
+
+A comparison such as `not down 4.81%` or `跌幅收窄至4.81%` still names a decline
+of that magnitude. A matched check whose minus sign comes from a decline in the
+source's words records `sourceSign: "fall"`. Stored answers are re-evaluated with
+these rules when read, so a flag from an earlier build clears without a new
+answer.
 
 ### Outflows stated as amounts
 

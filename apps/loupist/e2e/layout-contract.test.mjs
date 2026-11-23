@@ -10,9 +10,18 @@ function measure(callback, html) {
   const { window } = new JSDOM(html);
   window.HTMLElement.prototype.getBoundingClientRect = function () {
     const [x, y, width, height] = this.getAttribute("data-rect")?.split(",").map(Number) ?? [0, 0, 100, 40];
-    return { x, y, width, height, right: x + width, bottom: y + height };
+    return { x, y, left: x, top: y, width, height, right: x + width, bottom: y + height };
   };
   window.HTMLCanvasElement.prototype.getContext = () => ({ measureText: () => ({ width: 10 }) });
+  // Last element in tree order whose box contains the point. Ancestors match first; the control wins.
+  window.document.elementFromPoint = (x, y) => {
+    let found = null;
+    for (const el of window.document.querySelectorAll("*")) {
+      const r = el.getBoundingClientRect();
+      if (r.width && r.height && x >= r.x && x < r.right && y >= r.y && y < r.bottom) found = el;
+    }
+    return found;
+  };
   try {
     return vm.runInNewContext(`(${callback})()`, {
       document: window.document, getComputedStyle: window.getComputedStyle.bind(window),
@@ -46,6 +55,21 @@ test("collapsed shell rejects an off-center or clipped destination in each new s
   for (const place of places) for (const x of [0, 30]) {
     assert.throws(() => assertShellLayout(measure(measureShellLayout, html(place, x))), /collapsed sidebar control is off-center/, `${place} at ${x}`);
   }
+});
+
+test("collapsed rail rejects a control that covers a destination", () => {
+  const html = (covered) => `<main data-testid="app-shell" data-rect="0,0,700,820">
+    <div class="app-body" data-rect="0,0,700,820"><div class="app-frame" data-rect="76,0,624,820"></div>
+      <div data-collapsible="icon"><nav data-slot="sidebar-container" data-rect="0,0,76,820">
+        <button class="navigation-search" aria-label="Search" data-rect="18,40,40,34"></button>
+        <div data-testid="loupist-chat-row" data-home>
+          <button data-testid="loupist-chat-button" aria-label="Bot" data-rect="18,80,40,34"></button>
+          ${covered ? `<button class="loupist-chat-menu" aria-label="Options for Bot" data-rect="24,83,28,28"></button>` : ""}
+        </div>
+      </nav></div>
+    </div></main>`;
+  assert.doesNotThrow(() => assertShellLayout(measure(measureShellLayout, html(false))));
+  assert.throws(() => assertShellLayout(measure(measureShellLayout, html(true))), /collapsed rail item is covered by another control/);
 });
 
 test("chart toolbar measures native range selects and its More button", () => {

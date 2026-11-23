@@ -22,7 +22,9 @@ Japanese words, which are kept. The app starts the load on its own thread at
 launch, and nothing interactive waits for it. Until it finishes, knowledge search
 ranks by words and World names alone and `world_search` adds a warning that a Source
 in another language may be missing, while the World index answers from the snapshot
-with its unavailable warning. Only a search in the first seconds after launch meets
+with its unavailable warning. One look at the model cache gives both the model and
+whether it is still loading (`ModelLookup`), so a search that ranked without the
+model always carries the warning, even when the load ends a moment later. Only a search in the first seconds after launch meets
 this, and waiting would hold that turn for the rest of the load; the warning tells
 the model to search again rather than conclude that the material is absent. World
 jobs and local embedding callbacks, which run on blocking threads in the

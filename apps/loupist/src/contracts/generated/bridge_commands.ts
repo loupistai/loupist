@@ -18,7 +18,7 @@ import type { PickFileRequest } from "./commands/dialog";
 import type { ExportRequest } from "./commands/export_file";
 import type { FxDisplayRequest } from "./commands/fx_display";
 import type { ResearchHandoffReceipt, ResearchHandoffRequest } from "./commands/handoff";
-import type { JournalSourceReadDto, KnowledgeCatalogDto, KnowledgeCatalogRequest, KnowledgeConnectionRequest, KnowledgeGraphJobRequest, KnowledgeGraphLoupistRequest, KnowledgeGraphPauseRequest, KnowledgeGraphRetrySourceRequest, KnowledgeGraphSettingsRequest, KnowledgeJournalReadRequest, KnowledgeJournalSourceReadRequest, KnowledgeLensPagesForNodeRequest, KnowledgeLensReadRequest, KnowledgeLensSearchRequest, KnowledgeResearchPageDto, KnowledgeResearchSearchRequest, KnowledgeSourceReadRequest, KnowledgeSourceRetainRequest, LensSearchHitDto, MemoryLearnedRequest, MemoryOpUndoRequest, MemorySectionForgetRequest, SourceDetailDto, WorldQueryDto } from "./commands/knowledge";
+import type { JournalSourceReadDto, KnowledgeCatalogDto, KnowledgeCatalogRequest, KnowledgeConnectionRequest, KnowledgeGraphJobRequest, KnowledgeGraphLoupistRequest, KnowledgeGraphPauseRequest, KnowledgeGraphRetrySourceRequest, KnowledgeGraphRetrySourcesRequest, KnowledgeGraphSettingsRequest, KnowledgeJournalReadRequest, KnowledgeJournalSourceReadRequest, KnowledgeLensPagesForNodeRequest, KnowledgeLensReadRequest, KnowledgeLensSearchRequest, KnowledgeResearchPageDto, KnowledgeResearchSearchRequest, KnowledgeSourceReadRequest, KnowledgeSourceRetainRequest, LensSearchHitDto, MemoryLearnedRequest, MemoryOpUndoRequest, MemorySectionForgetRequest, SourceDetailDto, WorldQueryDto } from "./commands/knowledge";
 import type { FollowedStatusRequest } from "./commands/knowledge/followed";
 import type { JournalArchiveRequest, JournalCreateRequest, JournalListRequest, JournalUpdateRequest } from "./commands/knowledge/journal";
 import type { LensArchiveRequest } from "./commands/knowledge/lens_archive";
@@ -45,7 +45,7 @@ import type { FxDisplay } from "./finance_data/fx";
 import type { WorkspaceDocumentHandler, WorkspaceDocumentOpen, WorkspaceDocumentRequest } from "./fs/workspace_document";
 import type { WorkspaceDirectory, WorkspaceFile } from "./fs/workspace_files";
 import type { FollowedStatus } from "./knowledge/followed";
-import type { GraphJobView, GraphProcessingView } from "./knowledge/graph_jobs";
+import type { GraphJobView, GraphProcessingView, SourcesRetried } from "./knowledge/graph_jobs";
 import type { GrowthEventsPage, GrowthEventsQuery } from "./knowledge/growth";
 import type { LearningSettings, Review, ReviewQuery } from "./knowledge/learning";
 import type { LearnedDigest, PageRead, PageSummary } from "./knowledge/lens";
@@ -143,6 +143,10 @@ export type BridgeCommands = {
   knowledge_graph_retry_source: {
     request: KnowledgeGraphRetrySourceRequest,
     response: GraphJobView,
+  },
+  knowledge_graph_retry_sources: {
+    request: KnowledgeGraphRetrySourcesRequest,
+    response: SourcesRetried,
   },
   knowledge_graph_recover: { request: KnowledgeGraphLoupistRequest, response: GraphProcessingView },
   knowledge_graph_settings_get: {

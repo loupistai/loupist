@@ -54,6 +54,32 @@ const CUES: &[Cues] = &[
             "fall of",
             "outflow of",
             "outflows of",
+            "lower by",
+            "falls",
+            "falling",
+            "drops",
+            "dropping",
+            "declines",
+            "declining",
+            "lost",
+            "loses",
+            "losing",
+            "shed",
+            "sheds",
+            "slid",
+            "slides",
+            "slipped",
+            "slips",
+            "sank",
+            "sinks",
+            "tumbled",
+            "tumbles",
+            "plunged",
+            "plunges",
+            "plummeted",
+            "slumped",
+            "retreated",
+            "eased",
         ],
         after: &[
             "lower",
@@ -73,6 +99,11 @@ const CUES: &[Cues] = &[
             "loss",
             "outflow",
             "outflows",
+            "slide",
+            "slump",
+            "plunge",
+            "tumble",
+            "retreat",
         ],
     },
     Cues {
@@ -91,9 +122,45 @@ const CUES: &[Cues] = &[
             "increased by",
             "increase of",
             "grew by",
+            "higher by",
+            "grew",
+            "rises",
+            "rising",
+            "gains",
+            "gaining",
+            "increases",
+            "climbed",
+            "climbs",
+            "jumped",
+            "jumps",
+            "surged",
+            "surges",
+            "soared",
+            "advanced",
+            "advances",
+            "added",
+            "adds",
+            "rallied",
+            "rebounded",
         ],
         after: &[
-            "higher", "more", "above", "rise", "gain", "increase", "growth",
+            "higher",
+            "more",
+            "above",
+            "rise",
+            "rises",
+            "gain",
+            "gains",
+            "increase",
+            "increases",
+            "increased",
+            "growth",
+            "jump",
+            "surge",
+            "rally",
+            "climb",
+            "advance",
+            "rebound",
         ],
     },
     Cues {
@@ -112,17 +179,73 @@ const CUES: &[Cues] = &[
     Cues {
         boundary: Cjk,
         direction: Fall,
-        before: &["감소", "하락", "손실"],
+        before: &[
+            "감소",
+            "하락",
+            "손실",
+            "하락률",
+            "하락폭",
+            "낙폭",
+            "감소율",
+            "감소폭",
+        ],
         after: &[
-            "감소", "줄었", "줄어", "줄고", "줄인", "줄여", "하락", "떨어", "낮아", "낮은", "축소",
-            "급감", "급락", "손실", "유출",
+            "감소",
+            "줄었",
+            "줄어",
+            "줄고",
+            "줄인",
+            "줄여",
+            "줄며",
+            "하락",
+            "떨어",
+            "낮아",
+            "낮은",
+            "낮춰",
+            "낮췄",
+            "낮춘",
+            "축소",
+            "급감",
+            "급락",
+            "폭락",
+            "약세",
+            "후퇴",
+            "하향",
+            "손실",
+            "유출",
+            "내린",
+            "내려",
+            "내렸",
+            "내리",
+            "내림",
+            "빠진",
+            "빠졌",
+            "빠져",
+            "빠지",
+            "밀린",
+            "밀려",
+            "밀렸",
+            "밀리",
+            "뒷걸음",
         ],
     },
     Cues {
         boundary: Cjk,
         direction: Rise,
-        before: &["상승", "증가"],
-        after: &["상승", "증가", "늘었", "급등", "올랐"],
+        before: &[
+            "상승",
+            "증가",
+            "상승률",
+            "상승폭",
+            "오름폭",
+            "증가율",
+            "증가폭",
+        ],
+        after: &[
+            "상승", "증가", "늘었", "늘어", "늘고", "늘며", "늘린", "늘려", "급등", "폭등", "급증",
+            "올랐", "오른", "올라", "오르", "올린", "올려", "올렸", "뛰었", "뛴", "뛰어", "뛰며",
+            "치솟", "높아", "높은", "높여", "강세", "반등", "상향", "확대",
+        ],
     },
     // Chinese (traditional and simplified), including a narrowing decline.
     Cues {
@@ -133,32 +256,65 @@ const CUES: &[Cues] = &[
             "下跌",
             "跌幅",
             "跌",
+            "降幅",
             "下降",
+            "降",
+            "降低",
             "减少",
             "減少",
+            "下滑",
+            "回落",
+            "走低",
+            "挫",
             "亏损",
             "虧損",
         ],
-        after: &["下跌", "下降", "减少", "減少", "亏损", "虧損", "流出"],
+        after: &[
+            "下跌", "下降", "减少", "減少", "下滑", "回落", "走低", "亏损", "虧損", "流出",
+        ],
     },
     Cues {
         boundary: Cjk,
         direction: Rise,
-        before: &["上涨", "上漲", "涨幅", "漲幅", "增长", "增長"],
-        after: &["上涨", "上漲", "增长", "增長"],
+        before: &[
+            "上涨", "上漲", "涨", "漲", "涨幅", "漲幅", "升", "升幅", "增长", "增長", "增加",
+            "攀升", "回升", "走高", "反弹", "反彈",
+        ],
+        after: &[
+            "上涨", "上漲", "上升", "增长", "增長", "攀升", "回升", "走高", "反弹", "反彈",
+        ],
     },
     // Japanese (減少 is shared with Chinese).
     Cues {
         boundary: Cjk,
         direction: Fall,
-        before: &["下落", "赤字"],
-        after: &["下落", "赤字"],
+        before: &["下落", "下落率", "値下がり", "低下", "赤字"],
+        after: &[
+            "下落",
+            "値下がり",
+            "下げ",
+            "低下",
+            "減",
+            "反落",
+            "急落",
+            "続落",
+            "赤字",
+        ],
     },
     Cues {
         boundary: Cjk,
         direction: Rise,
-        before: &["上昇", "増加"],
-        after: &["上昇", "増加"],
+        before: &["上昇", "上昇率", "値上がり", "増加"],
+        after: &[
+            "上昇",
+            "値上がり",
+            "上げ",
+            "増",
+            "反発",
+            "急騰",
+            "続伸",
+            "高騰",
+        ],
     },
     Cues {
         boundary: PriceSuffix,
@@ -247,9 +403,63 @@ fn gap(c: char) -> bool {
     matches!(c, ' ' | '\u{a0}' | '\u{202f}' | '\u{3000}')
 }
 
+/// Which side of its figure a direction word stands on.
+#[derive(Clone, Copy, PartialEq)]
+enum Side {
+    Before,
+    After,
+}
+
+/// Units that name an index move in points (`200.14포인트`, `200.14 points`,
+/// `200.14ポイント`, `200.14点`): a direction word after the unit still
+/// touches the figure.
+const POINT_WORDS: &[&str] = &[
+    "points",
+    "point",
+    "pts",
+    "pt",
+    "포인트",
+    "ポイント",
+    "点",
+    "點",
+];
+
+fn hangul(c: char) -> bool {
+    matches!(c, '가'..='힣')
+}
+
+fn introduces_number(word: &str) -> bool {
+    CUES.iter().any(|cue| cue.before.contains(&word))
+}
+
+/// `text` without a leading point unit and up to two spaces after it.
+fn after_points(text: &str) -> &str {
+    for word in POINT_WORDS {
+        let Some(tail) = text
+            .get(..word.len())
+            .filter(|head| head.eq_ignore_ascii_case(word))
+            .map(|_| &text[word.len()..])
+        else {
+            continue;
+        };
+        if word.is_ascii() && tail.starts_with(char::is_alphanumeric) {
+            continue;
+        }
+        let rest = tail.trim_start_matches(gap);
+        if tail[..tail.len() - rest.len()].chars().count() <= 2 {
+            return rest;
+        }
+    }
+    text
+}
+
+pub(super) fn around(before: &str, after: &str) -> Option<Direction> {
+    read(before, after).map(|(direction, _)| direction)
+}
+
 // Bound both lookups even for a document without spaces. The longest cue is
 // shorter than the window, leaving room to check the adjoining word boundary.
-pub(super) fn around(before: &str, after: &str) -> Option<Direction> {
+fn read(before: &str, after: &str) -> Option<(Direction, Side)> {
     let before = &before[before
         .char_indices()
         .rev()
@@ -264,34 +474,46 @@ pub(super) fn around(before: &str, after: &str) -> Option<Direction> {
                     cue.boundary != Word || !head.ends_with(char::is_alphanumeric)
                 })
             }) {
-                return Some(cue.direction);
+                return Some((cue.direction, Side::Before));
             }
         }
     }
-    let after = &after[..after.char_indices().nth(24).map_or(after.len(), |(i, _)| i)];
+    following(after).map(|direction| (direction, Side::After))
+}
+
+/// The direction a word right after a figure (or after its point unit)
+/// gives it.
+fn following(after: &str) -> Option<Direction> {
+    let after = &after[..after.char_indices().nth(32).map_or(after.len(), |(i, _)| i)];
     let right = after.trim_start_matches(gap);
-    if after[..after.len() - right.len()].chars().count() > 2
-        || !right.starts_with(char::is_alphabetic)
-    {
+    if after[..after.len() - right.len()].chars().count() > 2 {
+        return None;
+    }
+    let right = after_points(right);
+    if !right.starts_with(char::is_alphabetic) {
         return None;
     }
     let right = right.to_lowercase();
     // In "100% declined by 4%" the verb and preposition introduce the
     // second number. The first is just the level from which it changed.
+    // A Korean word follows the change it states (`3.31% 하락 4,708.54`).
     if let Some(digit) = right.find(char::is_numeric) {
         let lead = &right[..digit];
         let lead = super::currency::before(lead)
             .map_or(lead, |(_, start)| &lead[..start])
             .trim_end_matches(gap);
-        if CUES.iter().any(|cue| cue.before.contains(&lead)) {
+        if introduces_number(lead) && !lead.starts_with(hangul) {
             return None;
         }
     }
     for cue in CUES {
         if cue.after.iter().any(|word| {
             right.strip_prefix(word).is_some_and(|tail| {
-                // A cue introducing the next number belongs to that number.
-                !tail.trim_start_matches(gap).starts_with(char::is_numeric)
+                // A word that introduces a number (`下跌2%`) belongs to the
+                // number after it, but not a Korean one (`1.58% 내린 635.45`).
+                !(tail.trim_start_matches(gap).starts_with(char::is_numeric)
+                    && introduces_number(word)
+                    && !word.starts_with(hangul))
                     && ![" to ", " from ", "至", "到"]
                         .iter()
                         .any(|link| tail.starts_with(link))
@@ -312,6 +534,171 @@ pub(super) fn around(before: &str, after: &str) -> Option<Direction> {
         }
     }
     None
+}
+
+/// One figure as the scanner read it.
+pub(super) struct Figure {
+    /// Where wording before the figure ends (before a currency prefix).
+    pub lead: usize,
+    pub end: usize,
+    /// A printed sign or a non-positive value: no word changes it.
+    pub fixed: bool,
+    /// A percent, points or basis points: a change rather than a level.
+    pub rate: bool,
+}
+
+/// The direction the wording gives each figure
+/// (docs/analysis/number-checks.md#direction-words). A word touching a figure
+/// governs it. A figure in brackets right after another figure restates the
+/// same change (`200.14포인트(4.11%) 내린`, `down 200.14 points (4.11%)`,
+/// `200.14 points, or 4.11%, lower`): the word of either governs both. A word
+/// after the last rate of a list governs every rate before it
+/// (`삼성전자 3.06%·SK하이닉스 2.52% 하락`). Nothing reaches across a clause or
+/// sentence end, or past a figure with a word of its own.
+pub(super) fn governing(text: &str, figures: &[Figure]) -> Vec<Option<Direction>> {
+    let mut read: Vec<Option<(Direction, Side)>> = figures
+        .iter()
+        .map(|figure| {
+            (!figure.fixed)
+                .then(|| text.get(..figure.lead).zip(text.get(figure.end..)))
+                .flatten()
+                .and_then(|(before, after)| self::read(before, after))
+        })
+        .collect();
+    for i in 1..figures.len() {
+        let (first, second) = (&figures[i - 1], &figures[i]);
+        if first.fixed || second.fixed {
+            continue;
+        }
+        let Some(close) = restatement(text, first, second) else {
+            continue;
+        };
+        let shared = read[i - 1].or(read[i]).or_else(|| {
+            text.get(close..)
+                .and_then(following)
+                .map(|direction| (direction, Side::After))
+        });
+        read[i - 1] = read[i - 1].or(shared);
+        read[i] = read[i].or(shared);
+    }
+    // One word between two figures states one change: a Korean word keeps
+    // the figure before it, and the level after it takes nothing.
+    for i in 1..figures.len() {
+        if let (Some((_, Side::After)), Some((_, Side::Before))) = (read[i - 1], read[i]) {
+            if text
+                .get(figures[i - 1].end..figures[i].lead)
+                .map(|between| between.trim_start_matches([')', '）']).trim_matches(gap))
+                .is_some_and(|word| !word.is_empty() && word.chars().all(hangul))
+            {
+                read[i] = None;
+            }
+        }
+    }
+    for i in (1..figures.len()).rev() {
+        let (item, last) = (&figures[i - 1], &figures[i]);
+        if read[i - 1].is_some() || item.fixed || !item.rate || !last.rate {
+            continue;
+        }
+        let Some((direction, Side::After)) = read[i] else {
+            continue;
+        };
+        if text.get(item.end..last.lead).is_some_and(listed)
+            && !text.get(..item.lead).is_some_and(introduced)
+        {
+            read[i - 1] = Some((direction, Side::After));
+        }
+    }
+    read.into_iter()
+        .map(|read| read.map(|(direction, _)| direction))
+        .collect()
+}
+
+/// Where a governing word may follow when `second` restates `first`: after
+/// the bracket that holds it, or after the comma that ends `, or 4.11%,`.
+fn restatement(text: &str, first: &Figure, second: &Figure) -> Option<usize> {
+    let between = text.get(first.end..second.lead)?;
+    if between.len() > 48 {
+        return None;
+    }
+    let head = after_points(between.trim_start_matches(gap));
+    let rest = text.get(second.end..)?;
+    if let Some(head) = head
+        .trim_end_matches(gap)
+        .strip_suffix(['(', '（'])
+        .map(|head| head.trim_end_matches(gap))
+    {
+        // Only the unit or the first figure's own word stands before the
+        // bracket: `점유율(25%) 하락` is a level, not a restatement.
+        let worded = head.is_empty()
+            || (!head.contains(gap)
+                && head.chars().count() <= 6
+                && head.chars().all(char::is_alphabetic)
+                && following(head).is_some());
+        // `4.11%(200.14포인트)`: the second figure's unit stays inside.
+        let inside = after_points(rest);
+        let close = inside.chars().next().filter(|c| matches!(c, ')' | '）'))?;
+        return worded.then_some(second.end + rest.len() - inside.len() + close.len_utf8());
+    }
+    let or = head
+        .strip_prefix(',')
+        .unwrap_or(head)
+        .trim_start_matches(gap);
+    let or = or.strip_prefix("or")?;
+    if !(or.starts_with(gap) && or.trim_start_matches(gap).is_empty()) {
+        return None;
+    }
+    Some(second.end + rest.strip_prefix(',').map_or(0, |_| 1))
+}
+
+/// Text between two rates of one list: a separator, then at most a short
+/// name (`·SK하이닉스 `, ` and SK Hynix `, `、`, `, `).
+fn listed(between: &str) -> bool {
+    let text = between.trim_start_matches(gap);
+    // Particles such as 와 or と also open a comparison (`3.06%와 비교해`).
+    let Some(name) = [
+        "·", "・", "･", "‧", "、", ",", "，", "/", "&", "和", "及", "与", "與",
+    ]
+    .iter()
+    .find_map(|separator| text.strip_prefix(separator))
+    .or_else(|| {
+        ["and", "및"].iter().find_map(|word| {
+            text.strip_prefix(word)
+                .filter(|rest| rest.is_empty() || rest.starts_with(gap))
+        })
+    }) else {
+        return false;
+    };
+    let name = name.trim_matches(gap);
+    let words: Vec<_> = name.split(gap).filter(|word| !word.is_empty()).collect();
+    words.len() <= 3
+        && name.chars().count() <= 24
+        && name
+            .chars()
+            .all(|c| c.is_alphabetic() || gap(c) || matches!(c, '-' | '&' | '\''))
+        // A Latin name is capitalized (`SK Hynix`), not prose (`with stocks`).
+        && words.iter().all(|word| {
+            !word.starts_with(|c: char| c.is_ascii_alphabetic())
+                || word.starts_with(|c: char| c.is_ascii_uppercase())
+        })
+}
+
+/// A rate introduced by a word, as a level is (`fell to 3.5%`, `내린 3.5%`).
+fn introduced(before: &str) -> bool {
+    let before = before.trim_end_matches(gap);
+    let before = &before[before
+        .char_indices()
+        .rev()
+        .nth(16)
+        .map_or(0, |(i, c)| i + c.len_utf8())..];
+    let before = before.to_lowercase();
+    CUES.iter()
+        .flat_map(|cue| cue.after.iter().chain(cue.before))
+        .chain(&["to", "at", "至", "到"])
+        .any(|word| {
+            before
+                .strip_suffix(word)
+                .is_some_and(|head| !word.is_ascii() || !head.ends_with(char::is_alphanumeric))
+        })
 }
 
 /// What a statement row, a data field or an answer's clause names, by its

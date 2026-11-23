@@ -311,7 +311,7 @@ fn load_item(
 ) -> Result<Option<Secrets>, ConnectionError> {
     require_available()?;
     let account = format!("{environment}:{id}");
-    let operation = KeychainOperation::begin(SERVICE, account.clone())?;
+    let operation = KeychainOperation::begin_read(SERVICE, account.clone())?;
     let environment = environment.to_owned();
     let id = id.to_owned();
     operation.read(move || {
@@ -460,6 +460,41 @@ mod tests {
             &MaintenanceCoordinator::default(),
             |_| Ok(()),
         )
+        .unwrap();
+    }
+
+    /// Parallel tool calls read one connection's secrets: a read waits for
+    /// another read or a change of the same item instead of failing as busy.
+    #[test]
+    fn a_read_waits_for_another_read_or_a_change_of_the_same_connection() {
+        let environment = uuid::Uuid::new_v4().to_string();
+        let id = "custom-parallel";
+        save(
+            &environment,
+            id,
+            &Secrets::default(),
+            &MaintenanceCoordinator::default(),
+            |_| Ok(()),
+        )
+        .unwrap();
+        let account = format!("{environment}:{id}");
+        type Hold = fn(&'static str, String) -> Result<KeychainOperation, KeychainError>;
+        for hold in [
+            KeychainOperation::begin_read as Hold,
+            KeychainOperation::begin,
+        ] {
+            let held = hold(SERVICE, account.clone()).unwrap();
+            let reader = {
+                let environment = environment.clone();
+                std::thread::spawn(move || load(&environment, id))
+            };
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            drop(held);
+            assert!(reader.join().unwrap().is_ok());
+        }
+        remove(&environment, id, &MaintenanceCoordinator::default(), |_| {
+            Ok(())
+        })
         .unwrap();
     }
 

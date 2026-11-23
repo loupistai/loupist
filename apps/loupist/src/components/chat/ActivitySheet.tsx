@@ -25,7 +25,7 @@ import { fileSize } from "../../chat/fileSize";
 import { knowledgeLocationFromMemoryChange } from "../../knowledge/location";
 import { worldReadinessLabels } from "../../knowledge/worldReadiness";
 import { modalDialogOpen } from "../../app/shortcuts";
-import { chatTitle } from "../../app/chatTitle";
+import { waitedOnChatTitle } from "../../app/chatTitle";
 import type { ChatEvidenceRef, ChatMessage, ChatThread, LoupistBridge, LoupistSummary, ChatSaveActivity, MemoryUpdateChange } from "../../types";
 import { focusWouldScroll } from "../../lib/revealFocused";
 
@@ -302,7 +302,7 @@ function SavingStep({ activity, threads, live, skipped }: { activity: ChatSaveAc
     <div className="activity-step-copy">
       <span className="activity-step-label">{t("memorySaving.label")}</span>
       {waited ? <small className="activity-step-target">{chat
-        ? t("memorySaving.waitedForChat", { duration: waited, title: chatTitle(chat) })
+        ? t("memorySaving.waitedForChat", { duration: waited, title: waitedOnChatTitle(chat) })
         : t("memorySaving.waitedForOthers", { duration: waited })}</small> : null}
     </div>
     {end === null ? <span className="activity-step-time">{t("memorySaving.unfinished")}</span>

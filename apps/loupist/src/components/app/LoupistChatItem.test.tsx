@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ChatMessage, ChatThread } from "../../types";
 import { LoupistChatItem } from "./LoupistChatItem";
 import { SidebarProvider } from "../ui/sidebar";
@@ -39,6 +40,25 @@ it("shows the app's spinner in the status slot while a reply runs, named once in
   rerender(inSidebar(row({ running: false, finished: true })));
   expect(button.querySelector("[data-slot=spinner]")).toBeNull();
   expect(button).toHaveAccessibleDescription("Finished while you were away");
+});
+
+it("opens Bot from the collapsed rail when its icon is hovered", async () => {
+  const user = userEvent.setup();
+  const onSelect = vi.fn();
+  const bot: ChatThread = { ...thread, id: "home-loupist", home: true, title: "Thread" };
+  render(inSidebar(row({ thread: bot, iconOnly: true, onSelect, onSchedule: vi.fn() })));
+  const icon = screen.getByRole("button", { name: "Bot" });
+  await user.hover(icon);
+  expect(screen.queryByRole("button", { name: "Options for Bot" })).toBeNull();
+  await user.click(icon);
+  expect(onSelect).toHaveBeenCalledOnce();
+  expect(onSelect).toHaveBeenCalledWith(bot);
+});
+
+it("keeps Bot's scheduled-work options on the expanded row", () => {
+  const bot: ChatThread = { ...thread, id: "home-loupist", home: true, title: "Thread" };
+  render(inSidebar(row({ thread: bot, onSchedule: vi.fn() })));
+  expect(screen.getByRole("button", { name: "Options for Bot" })).toBeInTheDocument();
 });
 
 it("keeps Bot's name and descriptor while it runs, in the rail too", () => {

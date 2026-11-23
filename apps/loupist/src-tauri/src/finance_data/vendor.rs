@@ -36,6 +36,9 @@ pub(crate) struct NativeVendor {
     /// (checked when the bundled catalog loads).
     pub(crate) hosts: &'static [&'static str],
     pub(crate) credential: VendorCredential,
+    /// Query parameters that carry its credential on a request URL. They are
+    /// removed from every locator (see `public_locator`) and refused in results.
+    pub(crate) credential_query: &'static [&'static str],
     /// Its agent read tools. A provider result of one must name `source_id`.
     pub(crate) tools: &'static [ToolMethod],
 }
@@ -45,12 +48,14 @@ pub(crate) static NATIVE_VENDORS: [NativeVendor; 6] = [
         source_id: ASSET_LOOKUP_SOURCE_ID,
         hosts: &["api.openfigi.com"],
         credential: VendorCredential::OptionalOpenFigiKey,
+        credential_query: &[],
         tools: &[],
     },
     NativeVendor {
         source_id: OPENDART_SOURCE_ID,
         hosts: &["opendart.fss.or.kr"],
         credential: VendorCredential::OpenDartKey,
+        credential_query: &["crtfc_key"],
         tools: &[
             ToolMethod::DartCompanyLookup,
             ToolMethod::DartFilingSearch,
@@ -59,12 +64,14 @@ pub(crate) static NATIVE_VENDORS: [NativeVendor; 6] = [
             ToolMethod::DartMajorReport,
             ToolMethod::DartOwnership,
             ToolMethod::DartDividends,
+            ToolMethod::DartReportItems,
         ],
     },
     NativeVendor {
         source_id: KRX_SOURCE_ID,
         hosts: &["data-dbg.krx.co.kr"],
         credential: VendorCredential::KrxKey,
+        credential_query: &[],
         tools: &[ToolMethod::KrxDailyQuote],
     },
     NativeVendor {
@@ -74,18 +81,21 @@ pub(crate) static NATIVE_VENDORS: [NativeVendor; 6] = [
             "openapivts.koreainvestment.com",
         ],
         credential: VendorCredential::KisAppKey,
+        credential_query: &[],
         tools: &[ToolMethod::KisOperationSearch, ToolMethod::KisRead],
     },
     NativeVendor {
         source_id: WORLD_BANK_SOURCE_ID,
         hosts: &["api.worldbank.org"],
         credential: VendorCredential::Keyless,
+        credential_query: &[],
         tools: &[ToolMethod::WorldbankSeries],
     },
     NativeVendor {
         source_id: DEFILLAMA_SOURCE_ID,
         hosts: &["api.llama.fi", "stablecoins.llama.fi"],
         credential: VendorCredential::Keyless,
+        credential_query: &[],
         tools: &[ToolMethod::DefillamaRead],
     },
 ];
@@ -94,6 +104,13 @@ pub(crate) fn native_vendor(source_id: &str) -> Option<&'static NativeVendor> {
     NATIVE_VENDORS
         .iter()
         .find(|vendor| vendor.source_id == source_id)
+}
+
+/// Every query parameter a native vendor declares as its credential.
+pub(crate) fn credential_query_parameters() -> impl Iterator<Item = &'static str> {
+    NATIVE_VENDORS
+        .iter()
+        .flat_map(|vendor| vendor.credential_query.iter().copied())
 }
 
 /// The vendor whose read `method` is.
@@ -176,6 +193,36 @@ mod tests {
                 "{root}"
             );
         }
+    }
+
+    /// No locator (a result's source_url, so its Source, citation and export)
+    /// and no log line may carry a parameter a vendor declares as its credential.
+    #[test]
+    fn no_locator_or_log_line_keeps_a_declared_credential_parameter() {
+        assert!(super::credential_query_parameters().any(|parameter| parameter == "crtfc_key"));
+        for vendor in &NATIVE_VENDORS {
+            for parameter in vendor.credential_query {
+                for name in [parameter.to_string(), parameter.to_ascii_uppercase()] {
+                    let url = format!(
+                        "https://{}/api/corpCode.xml?corp_code=00126380&{name}=fixture-secret-0000&page_no=2",
+                        vendor.hosts[0]
+                    );
+                    assert!(super::super::locator_carries_credential(&url), "{url}");
+                    let locator = super::super::public_locator(&url);
+                    assert!(!locator.contains("fixture-secret"), "{locator}");
+                    assert!(!super::super::locator_carries_credential(&locator));
+                    assert!(
+                        locator.contains("corp_code=00126380") && locator.contains("page_no=2")
+                    );
+                    // Run logs, diagnostics and shared text refuse such a line.
+                    assert!(crate::util::credential_text::contains_credential_text(
+                        &format!("GET {url} failed")
+                    ));
+                }
+            }
+        }
+        let public = "https://opendart.fss.or.kr/api/list.json?corp_code=00126380";
+        assert_eq!(super::super::public_locator(public), public);
     }
 
     #[test]

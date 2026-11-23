@@ -42,9 +42,10 @@ export function citationPageUrl(evidence: ChatEvidenceRef): string | null {
   return webEvidenceUrl(evidence) ?? (notRetained ? parseCredentialFreeHttpUrl(evidence.url!)?.href ?? null : null);
 }
 
+const isDatasetRead = (evidence: ChatEvidenceRef) => evidence.tool_name === "dataset_query" || evidence.tool_name === "dataset_describe";
+
 /** Execution output belongs to the work trace, even when an answer cites it. */
-const isExecutionEvidence = (evidence: ChatEvidenceRef) =>
-  evidence.kind === "derived" || evidence.tool_name === "dataset_query" || evidence.tool_name === "dataset_describe";
+const isExecutionEvidence = (evidence: ChatEvidenceRef) => evidence.kind === "derived" || isDatasetRead(evidence);
 
 const MEMORY_RECEIPT_TOOLS = new Set(["world_search", "world_read", "lens_search", "lens_read", "conversation_memory"]);
 
@@ -200,7 +201,9 @@ function directSourceIdentityLabel(evidence: ChatEvidenceRef) {
   if (evidence.tool_name.startsWith("world_")) return t("evidence.map");
   if (evidence.tool_name.startsWith("lens")) return t("evidence.lens");
   if (evidence.kind === "local_file") return t("evidence.files");
-  if (evidence.kind === "saved_context") return t("evidence.memory");
+  // A dataset read of a result fetched in this reply carries that read's provider (Rust sets it).
+  const fetchedThisReply = isDatasetRead(evidence) && Boolean(evidence.provider);
+  if (evidence.kind === "saved_context" && !fetchedThisReply) return t("evidence.memory");
   const connection = evidence.provider && connectionNames.get(evidence.provider);
   if (connection) return connectionText(connection);
   const host = displayHost(evidence.url);

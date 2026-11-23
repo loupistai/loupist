@@ -25,7 +25,7 @@ pub use graph_inference::LocalModel;
 pub(crate) use graph_inference::{
     embed_local_batch, fixture_model, InferenceDisposition, InferenceReply,
 };
-pub(crate) use graph_inference::{loaded_local_model, local_model, local_model_loading};
+pub(crate) use graph_inference::{loaded_local_model, local_model, ModelLookup};
 
 /// The staged bundled embedding model, for tests that need its real vectors.
 #[cfg(test)]
@@ -58,6 +58,7 @@ pub use map::{KnowledgeMap, KnowledgeMapQuery};
 mod model;
 pub mod numbers;
 mod present;
+pub(crate) mod price_data;
 mod research;
 mod revision;
 mod schema;
@@ -102,9 +103,10 @@ pub(crate) use graph_jobs::pause_copied_processing;
 pub use graph_jobs::SealedWorldIndex;
 pub use graph_jobs::{
     get_job, get_processing_job, list_jobs, load_settings, pause_processing, recover_world,
-    recovery_status, resume_processing, retry_source_processing, store_settings, GraphJobView,
-    GraphProcessingSettings, GraphProcessingView, GraphPublicSettings, GraphReadiness,
-    ReadinessNote, RecommendedWorldModel, WorldModel, WorldModelChoice,
+    recovery_status, resume_processing, retry_source_processing, retry_sources_processing,
+    store_settings, GraphJobView, GraphProcessingSettings, GraphProcessingView,
+    GraphPublicSettings, GraphReadiness, ReadinessNote, RecommendedWorldModel, SourcesRetried,
+    WorldModel, WorldModelChoice,
 };
 pub use graph_service::GraphSupervisor;
 pub use model::*;
@@ -1160,25 +1162,42 @@ impl KnowledgeWrite<'_> {
                 error: None,
             });
         }
-        let mut text_available = false;
+        let mut text_span = None;
         if let Some(revision_id) = record.revision_id {
             let revision = self.get_revision(loupist_id, &revision_id)?;
             let payload: SourceRecordPayload = serde_json::from_value(revision.payload)?;
-            text_available = payload
+            text_span = payload
                 .source
                 .captures
                 .iter()
                 .flat_map(|capture| &capture.representations)
-                .any(|rep| {
-                    (rep.media_type.starts_with("text/")
-                        || rep.media_type == "application/json"
-                        || rep.media_type.ends_with("+json"))
-                        && !rep.spans.is_empty()
-                });
+                .filter(|rep| graph_jobs::text_media_type(&rep.media_type))
+                .find_map(|rep| rep.spans.first())
+                .map(|span| (revision_id, span.span_id.clone()));
         }
+        // Price data reads as such whatever World building is set to do. A span
+        // that cannot be read here is not called price data.
+        let price_data = match &text_span {
+            Some((revision_id, span_id)) => {
+                match source::load_revision_span(
+                    self.tx,
+                    self.blobs,
+                    loupist_id,
+                    record_id,
+                    revision_id,
+                    span_id,
+                ) {
+                    Ok(material) => price_data::stored_price_data(self.tx, loupist_id, &material)?,
+                    Err(_) => false,
+                }
+            }
+            None => false,
+        };
         let settings = graph_jobs::load_settings(self.tx, loupist_id)?;
-        let status = if !text_available {
+        let status = if text_span.is_none() {
             "no_text"
+        } else if price_data {
+            graph_jobs::JOB_PRICE_DATA
         } else if !settings.enrichment_enabled {
             "disabled"
         } else if settings.helper_model.is_none() {

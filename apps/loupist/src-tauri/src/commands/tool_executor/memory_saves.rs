@@ -466,6 +466,29 @@ impl AppToolExecutor {
                 }
             }
         }
+        // The same reading the commit makes from the stored bytes
+        // (`knowledge::price_data`): a price-data Source never enters World.
+        let price_data = match staged.source_class {
+            crate::knowledge::SourceClass::UserFile => std::str::from_utf8(&staged.bytes)
+                .is_ok_and(|text| {
+                    crate::knowledge::price_data::price_file(&staged.media_type, text)
+                }),
+            crate::knowledge::SourceClass::ToolResult => {
+                let metadata = result
+                    .payload
+                    .pointer("/dataset_ref/dataset_id")
+                    .and_then(Value::as_str)
+                    .and_then(|dataset_id| {
+                        self.state
+                            .store
+                            .dataset_current_metadata(&self.loupist_id, dataset_id)
+                            .ok()
+                            .flatten()
+                    });
+                crate::knowledge::price_data::price_payload(&result.payload, metadata.as_ref())
+            }
+            _ => false,
+        };
         self.capture
             .pending_deliveries
             .lock()
@@ -478,7 +501,7 @@ impl AppToolExecutor {
             "status": "staged",
             "saveRef": save_ref,
             "durable": false,
-            "graph": "after_turn_commit",
+            "graph": if price_data { "not_added_price_data" } else { "after_turn_commit" },
             "result_ref": result_ref
         }))
     }

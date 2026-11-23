@@ -4,6 +4,9 @@
 //! dated by its receipt (`filed_at`), so an as-of cutoff applies to it.
 use super::*;
 
+/// The most days a report's stated receipt date may differ from its receipt number's.
+const MAX_RECEIPT_DATE_GAP_DAYS: i64 = 7;
+
 fn dividend_notice_dates(year: i32, now: DateTime<Utc>) -> Option<(NaiveDate, NaiveDate)> {
     let today = now.with_timezone(&chrono_tz::Asia::Seoul).date_naive();
     let start = NaiveDate::from_ymd_opt(year, 11, 1)?;
@@ -31,10 +34,14 @@ pub(super) enum DecisionKind {
     TreasurySale,
     Merger,
     Split,
+    Lawsuits,
+    SplitMerger,
+    OverseasListing,
+    OverseasDelisting,
 }
 
 impl DecisionKind {
-    const ALL: [(&'static str, Self); 10] = [
+    const ALL: [(&'static str, Self); 14] = [
         ("rights_offering", Self::RightsOffering),
         ("bonus_issue", Self::BonusIssue),
         ("capital_reduction", Self::CapitalReduction),
@@ -45,6 +52,10 @@ impl DecisionKind {
         ("treasury_sale", Self::TreasurySale),
         ("merger", Self::Merger),
         ("split", Self::Split),
+        ("lawsuits", Self::Lawsuits),
+        ("split_merger", Self::SplitMerger),
+        ("overseas_listing", Self::OverseasListing),
+        ("overseas_delisting", Self::OverseasDelisting),
     ];
 
     pub(super) fn parse(value: &str) -> Option<Self> {
@@ -75,6 +86,10 @@ impl DecisionKind {
             Self::TreasurySale => "tsstkDpDecsn.json",
             Self::Merger => "cmpMgDecsn.json",
             Self::Split => "cmpDvDecsn.json",
+            Self::Lawsuits => "lwstLg.json",
+            Self::SplitMerger => "cmpDvmgDecsn.json",
+            Self::OverseasListing => "ovLstDecsn.json",
+            Self::OverseasDelisting => "ovDlstDecsn.json",
         }
     }
 
@@ -91,6 +106,10 @@ impl DecisionKind {
             Self::TreasurySale => "자기주식처분결정",
             Self::Merger => "회사합병결정",
             Self::Split => "회사분할결정",
+            Self::Lawsuits => "소송등의제기",
+            Self::SplitMerger => "회사분할합병결정",
+            Self::OverseasListing => "해외증권시장주권등상장결정",
+            Self::OverseasDelisting => "해외증권시장주권등상장폐지결정",
         }
     }
 
@@ -389,6 +408,8 @@ fn decision_row(kind: DecisionKind, row: &Map<String, Value>) -> Result<Value, F
     let decided = match kind {
         DecisionKind::Buyback => "aq_dd",
         DecisionKind::TreasurySale => "dp_dd",
+        // A lawsuit has no board decision: the date the company confirmed it.
+        DecisionKind::Lawsuits => "cfd",
         _ => "bddd",
     };
     out.insert("decision_date".into(), date(row, decided));
@@ -550,8 +571,60 @@ fn decision_row(kind: DecisionKind, row: &Map<String, Value>) -> Result<Value, F
             out.insert("new_company".into(), bounded_text(row, "dvfcmp_cmpnm", 80));
             out.insert("split_effective_date".into(), date(row, "dvdt"));
         }
+        // Recorded from lwstLg.json on 2026-11-23.
+        DecisionKind::Lawsuits => {
+            out.insert("case_name".into(), bounded_text(row, "icnm", 200));
+            out.insert("plaintiffs".into(), bounded_text(row, "ac_ap", 200));
+            out.insert("claim".into(), bounded_text(row, "rq_cn", 600));
+            out.insert("court".into(), bounded_text(row, "cpct", 80));
+            out.insert("response_plan".into(), bounded_text(row, "ft_ctp", 400));
+            out.insert("lawsuit_filed_date".into(), date(row, "lgd"));
+        }
+        // No filing of these kinds in the three months before 2026-11-23: the
+        // named fields follow OpenDART's guide, and every cell is also kept as
+        // OpenDART sent it.
+        DecisionKind::SplitMerger => {
+            out.insert("method_text".into(), bounded_text(row, "dvmg_mth", 80));
+            out.insert("ratio_text".into(), bounded_text(row, "dvmg_rt", 120));
+            out.insert(
+                "counterparty".into(),
+                bounded_text(row, "mgptncmp_cmpnm", 80),
+            );
+            out.insert("effective_date".into(), date(row, "dvmgsc_dvmgdt"));
+            out.insert("listing_date".into(), date(row, "dvmgsc_nstklstprd"));
+            out.insert("provider_fields".into(), provider_fields(row));
+        }
+        DecisionKind::OverseasListing => {
+            out.insert("exchange".into(), bounded_text(row, "lstex_nt", 80));
+            out.insert("shares_common".into(), decimal(row, "lstprstk_ostk_cnt"));
+            out.insert("shares_other".into(), decimal(row, "lstprstk_estk_cnt"));
+            out.insert("provider_fields".into(), provider_fields(row));
+        }
+        DecisionKind::OverseasDelisting => {
+            out.insert("exchange".into(), bounded_text(row, "lstex_nt", 80));
+            out.insert("shares_common".into(), decimal(row, "dlststk_ostk_cnt"));
+            out.insert("shares_other".into(), decimal(row, "dlststk_estk_cnt"));
+            out.insert("reason".into(), bounded_text(row, "dlst_rs", 200));
+            out.insert("provider_fields".into(), provider_fields(row));
+        }
     }
     Ok(Value::Object(out))
+}
+
+/// Every cell of a decision row as OpenDART sent it, apart from identity and
+/// receipt, for kinds whose rows have not been recorded yet.
+fn provider_fields(row: &Map<String, Value>) -> Value {
+    let identity = ["rcept_no", "corp_cls", "corp_code", "corp_name"];
+    Value::Object(
+        row.keys()
+            .filter(|key| !identity.contains(&key.as_str()) && key.len() <= 40)
+            .take(80)
+            .filter_map(|key| {
+                let value = bounded_text(row, key, 200);
+                (!value.is_null()).then(|| (key.clone(), value))
+            })
+            .collect(),
+    )
 }
 
 fn company_of(records: &[Value], corp_code: &str) -> Value {
@@ -683,13 +756,17 @@ pub(super) fn normalize_dart_ownership(
             .ok_or(FinanceDataError::InvalidResponse)?;
         identity(object, corp_code)?;
         let (rcept_no, receipt_day) = receipt(object)?;
-        // The report's own receipt date (YYYYMMDD or YYYY-MM-DD); the receipt number agrees.
-        let filed = field(object, "rcept_dt")
+        // The report's own receipt date (YYYYMMDD or YYYY-MM-DD). OpenDART can
+        // date it a day or so after the date its receipt number begins with
+        // (20260310003125 received 2026-03-11, recorded 2026-11-23): the row
+        // is dated by the later of the two, a wider gap is refused.
+        let stated = field(object, "rcept_dt")
             .and_then(korean_date)
             .ok_or(FinanceDataError::InvalidResponse)?;
-        if filed != receipt_day {
+        if (stated - receipt_day).num_days().abs() > MAX_RECEIPT_DATE_GAP_DAYS {
             return Err(FinanceDataError::InvalidResponse);
         }
+        let filed = stated.max(receipt_day);
         let ratio = number(object, if major { "stkrt" } else { "sp_stock_lmp_rate" });
         let change = number(
             object,
@@ -979,6 +1056,227 @@ pub(super) struct OpenDartDividendsQuery {
     pub(super) year: i32,
 }
 
+/// One section of a periodic report (정기보고서 주요정보, DS002) that
+/// `dart_report_items` reads, by the tool's `kind`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ReportItemKind {
+    TreasuryShares,
+    Auditor,
+    Employees,
+    CapitalChanges,
+}
+
+impl ReportItemKind {
+    const ALL: [(&'static str, Self); 4] = [
+        ("treasury_shares", Self::TreasuryShares),
+        ("auditor", Self::Auditor),
+        ("employees", Self::Employees),
+        ("capital_changes", Self::CapitalChanges),
+    ];
+
+    pub(super) fn parse(value: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .find(|(name, _)| *name == value)
+            .map(|(_, kind)| *kind)
+    }
+
+    fn name(self) -> &'static str {
+        Self::ALL
+            .iter()
+            .find(|(_, kind)| *kind == self)
+            .map(|(name, _)| *name)
+            .expect("every report item kind has a name")
+    }
+
+    /// The DS002 endpoint (OpenDART guide: 자기주식 취득 및 처분 현황, 회계감사인의
+    /// 명칭 및 감사의견, 직원 현황, 증자(감자) 현황).
+    fn endpoint(self) -> &'static str {
+        match self {
+            Self::TreasuryShares => "tesstkAcqsDspsSttus.json",
+            Self::Auditor => "accnutAdtorNmNdAdtOpinion.json",
+            Self::Employees => "empSttus.json",
+            Self::CapitalChanges => "irdsSttus.json",
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct OpenDartReportItemsQuery {
+    pub(super) corp_code: String,
+    pub(super) kind: String,
+    pub(super) fiscal_year: i32,
+    pub(super) report_period: String,
+}
+
+/// One DS002 row in `loupist-dart-report-items/1` form, or none when OpenDART
+/// filled every value with "-" (its way of saying the report has nothing).
+fn report_item_row(
+    kind: ReportItemKind,
+    row: &Map<String, Value>,
+) -> Result<Option<Value>, FinanceDataError> {
+    let (rcept_no, filed) = receipt(row)?;
+    let mut values = Map::new();
+    match kind {
+        ReportItemKind::TreasuryShares => {
+            values.insert("share_class".into(), share_class(field(row, "stock_knd")));
+            let method = ["acqs_mth1", "acqs_mth2", "acqs_mth3"]
+                .into_iter()
+                .filter_map(|key| field(row, key))
+                .collect::<Vec<_>>();
+            values.insert(
+                "acquisition_method".into(),
+                if method.is_empty() {
+                    Value::Null
+                } else {
+                    json!(method.join(" / "))
+                },
+            );
+            values.insert("shares_at_start".into(), decimal(row, "bsis_qy"));
+            values.insert("shares_acquired".into(), decimal(row, "change_qy_acqs"));
+            values.insert("shares_disposed".into(), decimal(row, "change_qy_dsps"));
+            values.insert("shares_retired".into(), decimal(row, "change_qy_incnr"));
+            values.insert("shares_at_end".into(), decimal(row, "trmend_qy"));
+            values.insert("note".into(), bounded_text(row, "rm", 200));
+        }
+        ReportItemKind::Auditor => {
+            values.insert("period_label".into(), bounded_text(row, "bsns_year", 40));
+            values.insert("auditor".into(), bounded_text(row, "adtor", 80));
+            values.insert("opinion".into(), bounded_text(row, "adt_opinion", 80));
+            values.insert("emphasis".into(), bounded_text(row, "emphs_matter", 400));
+            values.insert(
+                "key_audit_matters".into(),
+                bounded_text(row, "core_adt_matter", 600),
+            );
+            values.insert(
+                "special_matters".into(),
+                bounded_text(row, "adt_reprt_spcmnt_matter", 400),
+            );
+        }
+        ReportItemKind::Employees => {
+            values.insert("division".into(), bounded_text(row, "fo_bbm", 60));
+            values.insert("sex".into(), bounded_text(row, "sexdstn", 20));
+            values.insert("regular".into(), decimal(row, "rgllbr_co"));
+            values.insert("contract".into(), decimal(row, "cnttk_co"));
+            values.insert("total".into(), decimal(row, "sm"));
+            values.insert(
+                "average_tenure_years".into(),
+                decimal(row, "avrg_cnwk_sdytrn"),
+            );
+            values.insert(
+                "annual_salary_total".into(),
+                decimal(row, "fyer_salary_totamt"),
+            );
+            values.insert("average_salary".into(), decimal(row, "jan_salary_am"));
+            values.insert("note".into(), bounded_text(row, "rm", 200));
+        }
+        ReportItemKind::CapitalChanges => {
+            values.insert("date".into(), date(row, "isu_dcrs_de"));
+            values.insert("form".into(), bounded_text(row, "isu_dcrs_stle", 80));
+            values.insert(
+                "share_class".into(),
+                share_class(field(row, "isu_dcrs_stock_knd")),
+            );
+            values.insert("shares".into(), decimal(row, "isu_dcrs_qy"));
+            values.insert(
+                "par_value_per_share".into(),
+                decimal(row, "isu_dcrs_mstvdv_fval_amount"),
+            );
+            values.insert(
+                "price_per_share".into(),
+                decimal(row, "isu_dcrs_mstvdv_amount"),
+            );
+        }
+    }
+    if values.values().all(Value::is_null) {
+        return Ok(None);
+    }
+    // Counts are shares or persons, money is KRW as filed, tenure in years.
+    let units = match kind {
+        ReportItemKind::TreasuryShares => json!({"shares": "shares"}),
+        ReportItemKind::Auditor => Value::Null,
+        ReportItemKind::Employees => {
+            json!({"headcount": "persons", "salary": "KRW", "tenure": "years"})
+        }
+        ReportItemKind::CapitalChanges => json!({"shares": "shares", "price": "KRW"}),
+    };
+    let mut out = Map::new();
+    out.insert("filing_id".into(), json!(rcept_no));
+    out.insert("filed_at".into(), json!(filed.to_string()));
+    out.insert("url".into(), json!(format!("{DART_VIEWER}{rcept_no}")));
+    out.insert("settlement_date".into(), date(row, "stlm_dt"));
+    out.insert("units".into(), units);
+    out.extend(values);
+    Ok(Some(Value::Object(out)))
+}
+
+pub(super) fn normalize_dart_report_items(
+    query: &OpenDartReportItemsQuery,
+    kind: ReportItemKind,
+    corp_code: &str,
+    raw: &RawProviderResponse,
+) -> Result<Value, FinanceDataError> {
+    let root = validate_dart_status(&raw.bytes)?;
+    let records = root
+        .get("list")
+        .and_then(Value::as_array)
+        .ok_or(FinanceDataError::InvalidResponse)?;
+    let mut rows = Vec::new();
+    for record in records.iter().take(MAX_FACT_ROWS) {
+        let object = record
+            .as_object()
+            .ok_or(FinanceDataError::InvalidResponse)?;
+        identity(object, corp_code)?;
+        if let Some(row) = report_item_row(kind, object)? {
+            rows.push(row);
+        }
+    }
+    // A report section of "-" cells has nothing for this period.
+    if rows.is_empty() {
+        return Err(FinanceDataError::NoData(OPENDART_SOURCE_ID));
+    }
+    let available = records.len();
+    let returned = rows.len();
+    let truncated = available > MAX_FACT_ROWS;
+    finance_result(
+        "dart_report_items",
+        "company.report_items",
+        OPENDART_SOURCE_ID,
+        json!({
+            "provider": OPENDART_SOURCE_ID,
+            "corp_code": corp_code,
+            "kind": kind.name(),
+            "fiscal_year": query.fiscal_year,
+            "report_period": query.report_period
+        }),
+        json!({
+            "schema": "loupist-dart-report-items/1",
+            "company": company_of(records, corp_code),
+            "kind": kind.name(),
+            "fiscal_year": query.fiscal_year,
+            "report_period": query.report_period,
+            "rows": rows
+        }),
+        raw,
+        "Financial Supervisory Service",
+        "OpenDART API",
+        true,
+        "official",
+        "provider_revisable",
+        if truncated { "warn" } else { "pass" },
+        json!([
+            {"code": "provider_success", "status": "pass"},
+            {"code": "schema_valid", "status": "pass"},
+            {"code": "response_identity", "status": "pass"}
+        ]),
+        Vec::new(),
+        returned,
+        available,
+        truncated,
+    )
+}
+
 impl FinanceDataService {
     fn dart_url(&self, endpoint: &str, pairs: &[(&str, String)]) -> Result<Url, FinanceDataError> {
         let mut url = fixed_url(OPENDART_API_ROOT, &["api", endpoint])?;
@@ -1076,6 +1374,40 @@ impl FinanceDataService {
     /// date from the newest cash-dividend decision notice filed from November
     /// of that year through April of the next (best effort: a failed notice
     /// read leaves the record date "in the notice").
+    /// One periodic-report section for a company, fiscal year and report.
+    pub async fn opendart_report_items(
+        &self,
+        params: Value,
+        api_key: &str,
+    ) -> Result<Value, FinanceDataError> {
+        validate_api_key(api_key)?;
+        let query: OpenDartReportItemsQuery =
+            strict_query(params, "expected the exact OpenDART report-items schema")?;
+        let corp_code = validate_digits(&query.corp_code, 8, "corp_code must be eight digits")?;
+        let kind = ReportItemKind::parse(&query.kind).ok_or(FinanceDataError::InvalidQuery(
+            "kind must be treasury_shares, auditor, employees or capital_changes",
+        ))?;
+        if query.fiscal_year < FIRST_DECISION_YEAR || query.fiscal_year > krx::seoul_today().year()
+        {
+            return Err(FinanceDataError::InvalidQuery(
+                "fiscal_year must be from 2015 through this year",
+            ));
+        }
+        let report_code = dart_report_code(&query.report_period)?;
+        let public_url = self.dart_url(
+            kind.endpoint(),
+            &[
+                ("corp_code", corp_code.clone()),
+                ("bsns_year", query.fiscal_year.to_string()),
+                ("reprt_code", report_code.to_owned()),
+            ],
+        )?;
+        let raw = self
+            .dart_get(public_url, api_key, MAX_PROVIDER_BYTES)
+            .await?;
+        normalize_dart_report_items(&query, kind, &corp_code, &raw)
+    }
+
     pub async fn opendart_dividends(
         &self,
         params: Value,
@@ -1151,21 +1483,13 @@ impl FinanceDataService {
                 dividend_decision_title(title).then(|| (rcept_no, filed, title.to_owned()))
             })
             .max_by(|a, b| a.0.cmp(&b.0))?;
-        let document = self
-            .dart_url("document.xml", &[("rcept_no", filing_id.clone())])
-            .ok()?;
         pacer().await;
-        let text = match self
-            .dart_get(document, api_key, MAX_LARGE_PROVIDER_BYTES)
+        let text = self
+            .opendart_document(&filing_id, api_key)
             .await
-        {
-            Ok(raw) if validate_dart_document_status(&raw.bytes).is_ok() => {
-                provider_korea::extract_dart_document(&raw.bytes)
-                    .ok()
-                    .map(|(text, _, _)| text)
-            }
-            _ => None,
-        };
+            .ok()
+            .and_then(|raw| provider_korea::extract_dart_document(&raw.bytes).ok())
+            .map(|(text, _, _)| text);
         Some(DividendNotice {
             filing_id,
             filed,
@@ -1382,15 +1706,290 @@ mod tests {
         );
     }
 
+    /// `elestock.json` rows as recorded on 2026-11-23 (identity fictional): the
+    /// newest report's stated receipt date is a day after its receipt number's.
+    #[test]
+    fn an_insider_report_dated_a_day_after_its_receipt_number_is_read() {
+        let row = |rcept_no: &str,
+                   rcept_dt: &str,
+                   shares: &str,
+                   change: &str,
+                   rate: &str,
+                   rate_change: &str| {
+            json!({"rcept_no": rcept_no, "rcept_dt": rcept_dt, "corp_code": "99030800",
+                   "corp_name": "별무리반도체", "repror": "홍길동", "isu_exctv_rgist_at": "등기임원",
+                   "isu_exctv_ofcps": "대표이사/회장", "isu_main_shrholdr": "최대주주 본인",
+                   "sp_stock_lmp_cnt": shares, "sp_stock_lmp_irds_cnt": change,
+                   "sp_stock_lmp_rate": rate, "sp_stock_lmp_irds_rate": rate_change})
+        };
+        let response = raw(
+            "https://opendart.fss.or.kr/api/elestock.json?corp_code=99030800",
+            json!({"status": "000", "message": "정상", "list": [
+                row("20251215990308", "2025-12-15", "12,053,802", "14,500", "25.50", "0.03"),
+                row("20260310990308", "2026-03-11", "427,577", "427,577", "0.92", "0.92"),
+            ]}),
+        );
+        let query = OpenDartOwnershipQuery {
+            corp_code: "99030800".into(),
+            kind: "insiders".into(),
+            limit: 5,
+        };
+        let result = normalize_dart_ownership(&query, "99030800", &response).unwrap();
+        let rows = result["data"]["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["filed_at"], "2026-03-11");
+        assert_eq!(rows[0]["shares"], "427577");
+        assert_eq!(rows[1]["ratio_before_pct"], "25.47");
+        let mut far = response.clone();
+        far.bytes = serde_json::to_vec(&json!({"status": "000", "list": [
+            row("20260310990308", "2026-04-11", "427,577", "427,577", "0.92", "0.92")
+        ]}))
+        .unwrap();
+        assert!(normalize_dart_ownership(&query, "99030800", &far).is_err());
+    }
+
+    fn report_items(kind: &str, period: &str, list: Value) -> Result<Value, FinanceDataError> {
+        let query = OpenDartReportItemsQuery {
+            corp_code: "99030800".into(),
+            kind: kind.into(),
+            fiscal_year: 2025,
+            report_period: period.into(),
+        };
+        let response = raw(
+            "https://opendart.fss.or.kr/api/report.json?corp_code=99030800",
+            json!({"status": "000", "message": "정상", "list": list}),
+        );
+        normalize_dart_report_items(
+            &query,
+            ReportItemKind::parse(kind).unwrap(),
+            "99030800",
+            &response,
+        )
+    }
+
+    /// DS002 rows as recorded on 2026-11-23 (field sets and value forms kept,
+    /// identity fictional), including OpenDART's all-"-" rows for an empty section.
+    fn ds002(fields: Value) -> Value {
+        let mut row = json!({"rcept_no": "20260310990308", "corp_cls": "K", "corp_code": "99030800",
+            "corp_name": "별무리반도체", "stlm_dt": "2025-12-31"});
+        row.as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        row
+    }
+
+    #[test]
+    fn treasury_shares_keep_counts_and_methods_and_skip_empty_rows() {
+        let result = report_items(
+            "treasury_shares",
+            "annual",
+            json!([
+                ds002(
+                    json!({"stock_knd": "보통주", "acqs_mth1": "배당가능이익범위 이내 취득",
+                "acqs_mth2": "직접취득", "acqs_mth3": "장내직접취득", "bsis_qy": "29,700,000",
+                "change_qy_acqs": "118,314,495", "change_qy_dsps": "6,040,880",
+                "change_qy_incnr": "50,144,628", "trmend_qy": "91,828,987", "rm": "-"})
+                ),
+                ds002(
+                    json!({"stock_knd": "우선주", "acqs_mth1": "배당가능이익범위 이내 취득",
+                "acqs_mth2": "신탁계약에 의한취득", "acqs_mth3": "수탁자보유물량", "bsis_qy": "-",
+                "change_qy_acqs": "-", "change_qy_dsps": "-", "change_qy_incnr": "-",
+                "trmend_qy": "-", "rm": "-"})
+                ),
+            ]),
+        )
+        .unwrap();
+        let rows = result["data"]["rows"].as_array().unwrap();
+        // A row with labels but no counts is still the report's row; only all-"-" rows go.
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["share_class"], "common");
+        assert_eq!(rows[0]["shares_at_start"], "29700000");
+        assert_eq!(rows[0]["shares_at_end"], "91828987");
+        assert_eq!(rows[0]["shares_retired"], "50144628");
+        assert_eq!(
+            rows[0]["acquisition_method"],
+            "배당가능이익범위 이내 취득 / 직접취득 / 장내직접취득"
+        );
+        assert_eq!(rows[0]["units"]["shares"], "shares");
+        assert_eq!(rows[0]["filed_at"], "2026-03-10");
+        assert_eq!(rows[0]["settlement_date"], "2025-12-31");
+        assert_eq!(result["data"]["company"]["market"], "KOSDAQ");
+        // A quarterly report's section of "-" cells is no data.
+        let empty = report_items(
+            "treasury_shares",
+            "q3",
+            json!([ds002(json!({"stock_knd": "-",
+            "acqs_mth1": "-", "acqs_mth2": "-", "acqs_mth3": "-", "bsis_qy": "-",
+            "change_qy_acqs": "-", "change_qy_dsps": "-", "change_qy_incnr": "-",
+            "trmend_qy": "-", "rm": "-"}))]),
+        );
+        assert!(matches!(empty, Err(FinanceDataError::NoData(_))));
+    }
+
+    #[test]
+    fn auditor_employees_and_capital_changes_read_their_recorded_fields() {
+        let auditor = report_items(
+            "auditor",
+            "annual",
+            json!([ds002(json!({
+            "bsns_year": "제57기 \n(당기)", "adtor": "가상회계법인", "adt_opinion": "적정의견",
+            "adt_reprt_spcmnt_matter": "-", "emphs_matter": "해당사항 없음",
+            "core_adt_matter": "1. 건설중인자산의 감가상각개시시점 평가\n2. 매출차감의 정확성"}))]),
+        )
+        .unwrap();
+        let row = &auditor["data"]["rows"][0];
+        assert_eq!(row["period_label"], "제57기 (당기)");
+        assert_eq!(row["opinion"], "적정의견");
+        assert_eq!(row["special_matters"], Value::Null);
+        assert!(row["key_audit_matters"]
+            .as_str()
+            .unwrap()
+            .starts_with("1. 건설중인자산"));
+        let quarterly = report_items(
+            "auditor",
+            "q3",
+            json!([ds002(json!({
+            "bsns_year": "-", "adtor": "-", "adt_reprt_spcmnt_matter": "-"}))]),
+        );
+        assert!(matches!(quarterly, Err(FinanceDataError::NoData(_))));
+
+        let employees = report_items("employees", "annual", json!([ds002(json!({
+            "sexdstn": "남", "fo_bbm": "성별합계", "reform_bfe_emp_co_rgllbr": "-",
+            "reform_bfe_emp_co_cnttk": "-", "reform_bfe_emp_co_etc": "-", "rgllbr_co": "93,800",
+            "rgllbr_abacpt_labrr_co": "-", "cnttk_co": "473", "cnttk_abacpt_labrr_co": "-",
+            "sm": "94,273", "avrg_cnwk_sdytrn": "      14.0",
+            "fyer_salary_totamt": "15,562,454,000,000", "jan_salary_am": "167,000,000", "rm": "-"}))]))
+        .unwrap();
+        let row = &employees["data"]["rows"][0];
+        assert_eq!(row["total"], "94273");
+        assert_eq!(row["average_tenure_years"], "14");
+        assert_eq!(row["average_salary"], "167000000");
+        assert_eq!(row["units"]["salary"], "KRW");
+
+        // Recorded: a year without issues or reductions is one row of "-".
+        let none = report_items(
+            "capital_changes",
+            "annual",
+            json!([ds002(json!({
+            "isu_dcrs_de": "-", "isu_dcrs_stle": "-", "isu_dcrs_stock_knd": "-", "isu_dcrs_qy": "-",
+            "isu_dcrs_mstvdv_fval_amount": "-", "isu_dcrs_mstvdv_amount": "-"}))]),
+        );
+        assert!(matches!(none, Err(FinanceDataError::NoData(_))));
+        // DART's documented fields for an issue (values fictional).
+        let issued = report_items(
+            "capital_changes",
+            "annual",
+            json!([ds002(json!({
+            "isu_dcrs_de": "2025.06.12", "isu_dcrs_stle": "유상증자(제3자배정)",
+            "isu_dcrs_stock_knd": "보통주", "isu_dcrs_qy": "1,250,000",
+            "isu_dcrs_mstvdv_fval_amount": "500", "isu_dcrs_mstvdv_amount": "8,000"}))]),
+        )
+        .unwrap();
+        let row = &issued["data"]["rows"][0];
+        assert_eq!(row["date"], "2025-06-12");
+        assert_eq!(row["shares"], "1250000");
+        assert_eq!(row["price_per_share"], "8000");
+        // A row for another company is refused.
+        let mut other = ds002(json!({"adtor": "가상회계법인"}));
+        other["corp_code"] = json!("99030801");
+        assert!(report_items("auditor", "annual", json!([other])).is_err());
+        assert!(ReportItemKind::parse("lawsuits").is_none());
+    }
+
+    /// lwstLg.json as recorded on 2026-11-23 (identity fictional), and the
+    /// other new kinds from OpenDART's documented fields (values fictional).
+    #[test]
+    fn lawsuits_split_mergers_and_overseas_listings_read_as_decision_rows() {
+        let read = |kind: &str, list: Value| {
+            let query = major(kind, "2026-10-01", "2026-11-23");
+            let response = raw(
+                "https://opendart.fss.or.kr/api/decision.json?corp_code=99030800",
+                json!({"status": "000", "message": "정상", "list": list}),
+            );
+            normalize_dart_major_report(
+                &query,
+                DecisionKind::parse(kind).unwrap(),
+                "99030800",
+                &response,
+            )
+            .unwrap()
+        };
+        let lawsuit = read(
+            "lawsuits",
+            json!([{"rcept_no": "20261118990308", "corp_cls": "K",
+            "corp_code": "99030800", "corp_name": "별무리반도체",
+            "ft_ctp": "당사는 법률대리인을 선임하여 적극 대응할 예정입니다.", "cpct": "서울남부지방법원",
+            "cfd": "2026년 11월 18일", "icnm": "전환사채발행금지 가처분(사건번호 : \n2026카합1708)",
+            "ac_ap": "- 김0태\n- 가상투자", "rq_cn": "[신청취지]\n1. 채무자는 전환사채를 발행하여서는 아니 된다.",
+            "lgd": "2026년 11월 16일"}]),
+        );
+        let row = &lawsuit["data"]["rows"][0];
+        assert_eq!(row["kind"], "lawsuits");
+        assert_eq!(row["title"], "주요사항보고서(소송등의제기)");
+        assert_eq!(row["decision_date"], "2026-11-18");
+        assert_eq!(row["lawsuit_filed_date"], "2026-11-16");
+        assert_eq!(row["court"], "서울남부지방법원");
+        assert_eq!(
+            row["case_name"],
+            "전환사채발행금지 가처분(사건번호 : 2026카합1708)"
+        );
+        assert!(row["claim"].as_str().unwrap().contains("전환사채"));
+
+        let delisting = read(
+            "overseas_delisting",
+            json!([{"rcept_no": "20261020990308",
+            "corp_cls": "Y", "corp_code": "99030800", "corp_name": "별무리반도체",
+            "dlststk_ostk_cnt": "1,200,000", "lstex_nt": "룩셈부르크 증권거래소(룩셈부르크)",
+            "dlst_rs": "거래량 저조", "bddd": "2026년 10월 20일", "dlst_prd": "2026년 12월 31일"}]),
+        );
+        let row = &delisting["data"]["rows"][0];
+        assert_eq!(row["shares_common"], "1200000");
+        assert_eq!(row["decision_date"], "2026-10-20");
+        assert_eq!(row["provider_fields"]["dlst_prd"], "2026년 12월 31일");
+        assert!(row["provider_fields"].get("corp_code").is_none());
+        // OpenDART's reply for a company with none (recorded): no rows.
+        let none = normalize_dart_major_report(
+            &major("split_merger", "2025-11-24", "2026-11-23"),
+            DecisionKind::SplitMerger,
+            "99030800",
+            &raw(
+                "https://opendart.fss.or.kr/api/cmpDvmgDecsn.json?corp_code=99030800",
+                json!({"status": "013", "message": "조회된 데이타가 없습니다."}),
+            ),
+        )
+        .unwrap();
+        assert!(none["data"]["rows"].as_array().unwrap().is_empty());
+        for (title, kind) in [
+            ("주요사항보고서(소송등의제기)", "lawsuits"),
+            ("주요사항보고서(회사분할합병결정)", "split_merger"),
+            (
+                "주요사항보고서(해외증권시장주권등상장결정)",
+                "overseas_listing",
+            ),
+            (
+                "주요사항보고서(해외증권시장주권등상장폐지결정)",
+                "overseas_delisting",
+            ),
+            ("주요사항보고서(회사분할결정)", "split"),
+            ("주요사항보고서(회사합병결정)", "merger"),
+        ] {
+            assert_eq!(
+                DecisionKind::from_report_title(title),
+                Some(kind),
+                "{title}"
+            );
+        }
+    }
+
     #[test]
     fn ownership_reports_state_the_ratio_before_and_after() {
         let response = raw(
             "https://opendart.fss.or.kr/api/majorstock.json?corp_code=99030800",
             json!({"status": "000", "list": [
-                {"rcept_no": "20260402990308", "rcept_dt": "20260402", "corp_code": "99030800", "corp_name": "별무리반도체",
+                {"rcept_no": "20260402990308", "rcept_dt": "2026-04-02", "corp_code": "99030800", "corp_name": "별무리반도체",
                  "report_tp": "일반", "repror": "가상자산운용", "stkqy": "2,600,000", "stkqy_irds": "300,000",
                  "stkrt": "5.20", "stkrt_irds": "0.60", "report_resn": "장내매수"},
-                {"rcept_no": "20261020990308", "rcept_dt": "20261020", "corp_code": "99030800", "corp_name": "별무리반도체",
+                {"rcept_no": "20261020990308", "rcept_dt": "2026-10-20", "corp_code": "99030800", "corp_name": "별무리반도체",
                  "report_tp": "일반", "repror": "가상자산운용", "stkqy": "2,400,000", "stkqy_irds": "-200,000",
                  "stkrt": "4.80", "stkrt_irds": "-0.40", "report_resn": "장내매도"}
             ]}),
@@ -1407,12 +2006,20 @@ mod tests {
         assert_eq!(row["ratio_before_pct"], "5.2");
         assert_eq!(row["reporter"], "가상자산운용");
         assert_eq!(result["page"]["truncated"], true);
-        let mut mismatched = response.clone();
-        mismatched.bytes = serde_json::to_vec(&json!({"status": "000", "list": [
+        // A stated receipt date a day after the receipt number's dates the row.
+        let mut late = response.clone();
+        late.bytes = serde_json::to_vec(&json!({"status": "000", "list": [
             {"rcept_no": "20261020990308", "rcept_dt": "20261021", "corp_code": "99030800"}
         ]}))
         .unwrap();
-        assert!(normalize_dart_ownership(&query, "99030800", &mismatched).is_err());
+        let late = normalize_dart_ownership(&query, "99030800", &late).unwrap();
+        assert_eq!(late["data"]["rows"][0]["filed_at"], "2026-10-21");
+        let mut other = response.clone();
+        other.bytes = serde_json::to_vec(&json!({"status": "000", "list": [
+            {"rcept_no": "20261020990308", "rcept_dt": "20261020", "corp_code": "99030801"}
+        ]}))
+        .unwrap();
+        assert!(normalize_dart_ownership(&query, "99030800", &other).is_err());
     }
 
     #[test]

@@ -278,7 +278,7 @@ fn doi_from_path(path: &str) -> Option<String> {
     (doi.starts_with("10.") && doi.contains('/')).then_some(doi)
 }
 
-fn percent_decode(value: &str) -> Option<String> {
+pub(super) fn percent_decode(value: &str) -> Option<String> {
     let bytes = value.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut index = 0;

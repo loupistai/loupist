@@ -342,9 +342,10 @@ async fn synchronous_scope_invalidation_prevents_reusing_tokens_and_cooldowns() 
     )
     .await
     .expect("invalidated token access must finish its bounded request");
+    // The unanswered request ends through its own time limit: a timeout.
     assert!(matches!(
         result,
-        Err(FinanceDataError::NetworkSafe(KIS_SOURCE_ID))
+        Err(FinanceDataError::Timeout(KIS_SOURCE_ID))
     ));
     let cache = service.kis_token_cache().await;
     assert!(cache.tokens.is_empty());

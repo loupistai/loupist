@@ -57,7 +57,12 @@ denied legacy item remains in the permission notice until an explicit check
 succeeds or the item is removed.
 
 Other native operations reserve only the item they touch and wait up to 30 seconds.
-A second request for that item reports that the operation is still pending.
+A read that finds its item held waits up to five seconds for its turn instead of
+failing, because parallel tool calls often read one key; reads take turns so macOS
+never stacks two prompts for one item. It reports the key as being changed only
+when a change still holds the item, and as unavailable when macOS has not answered
+an earlier read. A change, a presence check or another compound operation that
+finds the item held reports at once that the operation is still pending.
 While macOS is still answering a timed-out read, the connection shows its
 permission message and an explicit check action in Settings. The native call
 continues, and a late success refreshes the status so the next use can read
@@ -244,7 +249,9 @@ OpenFIGI key says what works without it. A result and the progress line sit righ
 the fields, and the title stays as the dialog opened even when a failed check leaves the key
 saved. When the control used goes away or is disabled
 (saving, Turn on, Delete), focus moves to the result. Done, Close, Escape and the dialog's
-other exits ask before discarding a key that is typed but not saved.
+other exits ask before discarding a key that is typed but not saved. A choice list opened
+from the dialog, such as Live or Demo, is portaled onto the page at the dialog's stacking
+level and paints above the dialog.
 
 ## Code
 

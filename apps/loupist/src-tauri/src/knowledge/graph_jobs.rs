@@ -63,6 +63,9 @@ pub const JOB_FAILED_BEFORE: &str = "failed_before_mutation";
 pub const JOB_RECONCILE: &str = "reconcile_required";
 pub const JOB_RECONCILED: &str = "reconciled_without_retry";
 pub const JOB_PAUSED: &str = "paused_budget";
+/// Final: the Source is price data, which World building does not read
+/// ([`super::price_data`]). No model call ran for it under this status and none will.
+pub const JOB_PRICE_DATA: &str = "price_data";
 
 const EPISODE_SPAN: &str = "source_span";
 const EPISODE_SEALED: &str = "sealed_snapshot";
@@ -300,6 +303,21 @@ pub fn load_settings(
     loupist_id: &str,
 ) -> KnowledgeResult<GraphProcessingSettings> {
     load_settings_in(connection, loupist_id, "main")
+}
+
+/// The saved settings, or None when this Loupist has saved none.
+pub(crate) fn saved_settings(
+    connection: &rusqlite::Connection,
+    loupist_id: &str,
+) -> KnowledgeResult<Option<GraphProcessingSettings>> {
+    let saved: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM app_settings WHERE id = ?1)",
+        [format!("world_processing:{loupist_id}")],
+        |row| row.get(0),
+    )?;
+    saved
+        .then(|| load_settings(connection, loupist_id))
+        .transpose()
 }
 
 fn load_settings_in(
@@ -546,6 +564,79 @@ impl super::KnowledgeWrite<'_> {
         let Some(span_id) = &retained.span_id else {
             return Ok(None);
         };
+        let payload: super::SourceRecordPayload =
+            serde_json::from_str(&source_revision.payload_json)?;
+        // A shared pack's reference Source enters the World only through its
+        // pack's own claims; it is never sent to a model for extraction.
+        let shared_pack = payload.source.provider_identity.starts_with("shared_pack:");
+        // UTF-8 alone does not make a file extracted text: PDF and other file
+        // formats can contain ASCII bytes that are not a readable source.
+        let text_representation = payload
+            .source
+            .captures
+            .iter()
+            .flat_map(|capture| &capture.representations)
+            .find(|representation| {
+                representation
+                    .spans
+                    .iter()
+                    .any(|span| span.span_id == *span_id)
+            })
+            .is_some_and(|representation| text_media_type(&representation.media_type));
+        // Read once here to tell price data apart. A span that cannot be read
+        // now is not price data; the path below reports it as before.
+        let material = (text_representation && !shared_pack)
+            .then(|| {
+                load_revision_span(
+                    self.tx,
+                    self.blobs,
+                    loupist_id,
+                    &source.record_id,
+                    &retained.revision_id,
+                    span_id,
+                )
+                .ok()
+            })
+            .flatten();
+        // Price data is kept and citable but never read by World building:
+        // its waiting work leaves the queue and a final row says why.
+        if let Some(material) = &material {
+            if super::price_data::stored_price_data(self.tx, loupist_id, material)? {
+                if retire_span_price_jobs(self.tx, loupist_id, span_id)? > 0 {
+                    super::learning::world_job_settled(self.tx, loupist_id, at_ms)?;
+                }
+                let configured = settings.enrichment_enabled
+                    && settings.save_learning
+                    && !settings.inactive_loupists.iter().any(|id| id == loupist_id)
+                    && settings
+                        .helper_model
+                        .as_deref()
+                        .is_some_and(|model| !model.is_empty());
+                if configured && !span_has_jobs(self.tx, loupist_id, span_id)? {
+                    if world.is_none() {
+                        *world = Some(self.enqueue_world_context(loupist_id, at_ms)?);
+                    }
+                    let world = world.as_ref().expect("loaded enqueue World");
+                    // World already holds what it read from this span.
+                    if !world
+                        .confirmed_spans
+                        .contains(&(source.record_id.clone(), span_id.clone()))
+                    {
+                        mark_price_span(
+                            self.tx,
+                            loupist_id,
+                            world,
+                            &source.record_id,
+                            &retained.revision_id,
+                            material,
+                            at_ms,
+                        )?;
+                        super::learning::world_job_settled(self.tx, loupist_id, at_ms)?;
+                    }
+                }
+                return Ok(None);
+            }
+        }
         let existing_ids = {
             let mut statement = self.tx.prepare(
                 "SELECT job_id FROM knowledge_graph_outbox WHERE loupist_id = ?1 AND json_extract(payload_json, '$.sourceBinding.spanId') = ?2 ORDER BY created_at_ms, job_id",
@@ -599,42 +690,20 @@ impl super::KnowledgeWrite<'_> {
         {
             return Ok(None);
         }
-        let payload: super::SourceRecordPayload =
-            serde_json::from_str(&source_revision.payload_json)?;
-        // A shared pack's reference Source enters the World only through its
-        // pack's own claims; it is never sent to a model for extraction.
-        if payload.source.provider_identity.starts_with("shared_pack:") {
+        if shared_pack || !text_representation {
             return Ok(None);
         }
-        let text_representation = payload
-            .source
-            .captures
-            .iter()
-            .flat_map(|capture| &capture.representations)
-            .find(|representation| {
-                representation
-                    .spans
-                    .iter()
-                    .any(|span| span.span_id == *span_id)
-            })
-            .is_some_and(|representation| {
-                representation.media_type.starts_with("text/")
-                    || representation.media_type == "application/json"
-                    || representation.media_type.ends_with("+json")
-            });
-        // UTF-8 alone does not make a file extracted text: PDF and other file
-        // formats can contain ASCII bytes that are not a readable source.
-        if !text_representation {
-            return Ok(None);
-        }
-        let material = load_revision_span(
-            self.tx,
-            self.blobs,
-            loupist_id,
-            &source.record_id,
-            &retained.revision_id,
-            span_id,
-        )?;
+        let material = match material {
+            Some(material) => material,
+            None => load_revision_span(
+                self.tx,
+                self.blobs,
+                loupist_id,
+                &source.record_id,
+                &retained.revision_id,
+                span_id,
+            )?,
+        };
         if !matches!(std::str::from_utf8(&material.bytes), Ok(body) if validate_text(body, 1_000_000, false, "graph source text").is_ok())
         {
             return Ok(None);
@@ -1460,7 +1529,8 @@ fn sources_awaiting_world(
 
 /// What the user sees for a Source. A running chunk takes precedence over
 /// later chunks waiting for it. A queued tail after a parked chunk cannot
-/// start on its own, even if a legacy receipt kept it marked queued.
+/// start on its own, even if a legacy receipt kept it marked queued. A chunk
+/// World read before its Source was known as price data outranks the rest.
 pub(super) fn source_status_job(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -1486,7 +1556,8 @@ pub(super) fn source_status_job(
              WHERE status != 'queued' OR NOT EXISTS (
                SELECT 1 FROM parked WHERE parked.episode_key = source_jobs.episode_key
              )
-             ORDER BY (status = 'running') DESC, (status = 'queued') DESC, created_at_ms DESC, job_id DESC
+             ORDER BY (status = 'running') DESC, (status = 'queued') DESC,
+                      (status = 'price_data') ASC, created_at_ms DESC, job_id DESC
              LIMIT 1",
             params![loupist_id, record_id],
             |row| row.get::<_, String>(0),
@@ -1684,6 +1755,11 @@ pub fn retry_source_processing(
             })
         })
         .collect::<Vec<_>>();
+    if jobs.iter().any(|job| job.status == JOB_PRICE_DATA) {
+        return Err(KnowledgeError::Invalid(
+            "Source is price data, which World building does not read",
+        ));
+    }
     // Never refill while this Source is active or needs reconciliation.
     if jobs.iter().any(|job| {
         matches!(job.status.as_str(), JOB_RUNNING | JOB_RECONCILE)
@@ -1695,6 +1771,9 @@ pub fn retry_source_processing(
             "Source processing is active or uncertain",
         ));
     }
+    // A stopped chunk can run once the one before it is settled for good:
+    // completed, or retired after reconciliation. A retired chunk stays as it
+    // ended; none of its calls run again.
     let mut head = jobs
         .iter()
         .find(|job| {
@@ -1707,7 +1786,10 @@ pub fn retry_source_processing(
                     .is_none_or(|key| {
                         jobs.iter().any(|previous| {
                             previous.document.episode_key == *key
-                                && previous.status == JOB_COMPLETED
+                                && matches!(
+                                    previous.status.as_str(),
+                                    JOB_COMPLETED | JOB_RECONCILED
+                                )
                         })
                     })
         })
@@ -1774,6 +1856,58 @@ pub fn retry_source_processing(
     }
     head = load_job(tx, &head.job_id)?;
     Ok(head)
+}
+
+/// The most Sources one "Continue all" may name.
+pub const MAX_CONTINUED_SOURCES: usize = 1_000;
+
+/// What one "Continue all" did.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct SourcesRetried {
+    /// Sources given a fresh allowance and queued again.
+    pub continued: u32,
+    /// Sources [`retry_source_processing`] refused, left as they were.
+    pub skipped: u32,
+}
+
+/// Explicit action only: [`retry_source_processing`] for each Source the user
+/// confirmed, in one transaction. The confirmation named `confirmed_llm_calls`
+/// requests per Source; when the saved allowance differs, nothing runs, so a
+/// batch never spends more than the user agreed to. A Source the single retry
+/// refuses (still queued after an earlier click, running, uncertain, retired,
+/// price data or gone) is skipped and counted. A paid or uncertain call is never
+/// repeated: each Source is the same retry its Try again makes.
+pub fn retry_sources_processing(
+    tx: &Transaction<'_>,
+    settings: &GraphProcessingSettings,
+    loupist_id: &str,
+    record_ids: &[String],
+    confirmed_llm_calls: u32,
+) -> KnowledgeResult<SourcesRetried> {
+    validate_loupist_id(loupist_id)?;
+    if record_ids.is_empty() || record_ids.len() > MAX_CONTINUED_SOURCES {
+        return Err(KnowledgeError::Invalid(
+            "name between 1 and 1000 Sources to continue",
+        ));
+    }
+    if settings.max_llm_calls != confirmed_llm_calls {
+        return Err(KnowledgeError::Invalid(
+            "the request allowance changed since this was confirmed",
+        ));
+    }
+    let mut retried = SourcesRetried::default();
+    let unique: BTreeSet<&str> = record_ids.iter().map(String::as_str).collect();
+    for record_id in unique {
+        match retry_source_processing(tx, settings, loupist_id, record_id) {
+            Ok(_) => retried.continued += 1,
+            // Every refusal comes before the retry writes anything.
+            Err(KnowledgeError::Invalid(_) | KnowledgeError::NotFound) => retried.skipped += 1,
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(retried)
 }
 
 /// Called once after acquiring the app-data lock and reclaiming orphaned processes.
@@ -1854,7 +1988,7 @@ pub(super) fn recover_expired(
             Unpublished {
                 paid: job.document.inference_attempted,
                 uncertain: job.document.usage_uncertain,
-                suspended: false,
+                ..Unpublished::default()
             },
             now_ms,
         )?;
@@ -2144,13 +2278,18 @@ pub struct Unpublished {
     pub paid: bool,
     /// The Mac slept while the attempt ran.
     pub suspended: bool,
+    /// The saved World settings stopped matching the ones the attempt started
+    /// with (model, thinking level, run options, request allowance or timeout),
+    /// so the host refused its next call or it ended while they differed.
+    pub settings_changed: bool,
 }
 
-/// End an attempt that published nothing. One that never sent a paid call costs
-/// nothing and runs again, up to [`UNSENT_RETRIES`] times, without touching the
-/// retry rule; after that it fails without quarantining the World. One the Mac's
-/// sleep cut short runs again within its host allowance. Anything else follows
-/// [`finish_job`].
+/// End an attempt that published nothing. One the World settings changed under
+/// runs again on the new settings, however often they change, without touching
+/// any retry rule. One that never sent a paid call costs nothing and runs again,
+/// up to [`UNSENT_RETRIES`] times, without touching the retry rule; after that it
+/// fails without quarantining the World. One the Mac's sleep cut short runs again
+/// within its host allowance. Anything else follows [`finish_job`].
 pub fn finish_unpublished(
     tx: &Transaction<'_>,
     settings: &mut GraphProcessingSettings,
@@ -2160,6 +2299,30 @@ pub fn finish_unpublished(
     now_ms: i64,
 ) -> KnowledgeResult<GraphJobView> {
     let job = active_attempt(tx, job_id, attempt_id)?;
+    if job.document.episode_kind == EPISODE_SPAN
+        && end.settings_changed
+        && !job.document.mutation_sent
+    {
+        // The host stopped the attempt. Its dispatched calls keep their
+        // reservations; the next claim takes the saved model and controls and
+        // the call count left (`claim_running`).
+        let mut document = job.document.clone();
+        document.inference_attempted = false;
+        document.usage_uncertain = false;
+        clear_lease(&mut document);
+        if !write_status(
+            tx,
+            job_id,
+            JOB_RUNNING,
+            requeued(settings, &document),
+            &document,
+        )? {
+            return Err(KnowledgeError::Invalid(
+                "graph job attempt is no longer active",
+            ));
+        }
+        return load_job(tx, job_id);
+    }
     let free = !end.paid && !end.uncertain && !job.document.mutation_sent;
     if job.document.episode_kind == EPISODE_SPAN && (free || end.suspended) {
         let mut document = job.document.clone();
@@ -2905,6 +3068,217 @@ fn row_to_job(row: &rusqlite::Row<'_>) -> rusqlite::Result<GraphJobView> {
     };
     job.host_may_redrive = host_may_redrive(&job);
     Ok(job)
+}
+
+/// A representation World building can read as text.
+pub(super) fn text_media_type(media_type: &str) -> bool {
+    media_type.starts_with("text/")
+        || media_type == "application/json"
+        || media_type.ends_with("+json")
+}
+
+/// Waiting work that leaves the queue when its Source is price data: queued,
+/// paused or stopped on its allowance, or ended before any paid call. Running
+/// work, and work that may have published, keep their status.
+fn price_retirable(job: &GraphJobView) -> bool {
+    job.document.episode_kind == EPISODE_SPAN
+        && (matches!(job.status.as_str(), JOB_QUEUED | JOB_PAUSED) || host_may_redrive(job))
+        && !job.document.mutation_sent
+        && job.document.lease_expires_at_ms.is_none()
+}
+
+const PRICE_RETIRABLE_STATUSES: &str =
+    "'queued', 'paused_budget', 'failed_before_mutation', 'cancelled_before_start'";
+
+/// Move a span's waiting work out of the queue as price data. Its calls already
+/// spent stay recorded on the row; none is refunded or sent again.
+fn retire_span_price_jobs(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    span_id: &str,
+) -> KnowledgeResult<u32> {
+    let mut statement = tx.prepare(&format!(
+        "SELECT job_id, loupist_id, world_record_id, world_revision_id, status, payload_json,
+                payload_digest, created_at_ms
+         FROM knowledge_graph_outbox
+         WHERE loupist_id = ?1 AND status IN ({PRICE_RETIRABLE_STATUSES})
+           AND json_extract(payload_json, '$.sourceBinding.spanId') = ?2"
+    ))?;
+    let jobs = statement
+        .query_map(params![loupist_id, span_id], row_to_job)?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut retired = 0;
+    for job in jobs.iter().filter(|job| price_retirable(job)) {
+        if write_status(tx, &job.job_id, &job.status, JOB_PRICE_DATA, &job.document)? {
+            retired += 1;
+        }
+    }
+    Ok(retired)
+}
+
+fn span_has_jobs(tx: &Transaction<'_>, loupist_id: &str, span_id: &str) -> KnowledgeResult<bool> {
+    Ok(tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM knowledge_graph_outbox
+         WHERE loupist_id = ?1 AND json_extract(payload_json, '$.sourceBinding.spanId') = ?2)",
+        params![loupist_id, span_id],
+        |row| row.get(0),
+    )?)
+}
+
+/// One final row for a price-data span, so the Source reads as price data and
+/// method learning counts it as read: World will add nothing from it. It holds
+/// no text and no allowance.
+fn mark_price_span(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    world: &EnqueueWorld,
+    source_record_id: &str,
+    source_revision_id: &str,
+    material: &super::source::SpanMaterial,
+    at_ms: i64,
+) -> KnowledgeResult<GraphJobView> {
+    let generation = generation_for(tx, loupist_id, &world.record_id)?;
+    let dedup_key = dedup_digest(&json!({
+        "loupistId": loupist_id,
+        "worldRecordId": world.record_id,
+        "episodeKind": EPISODE_SPAN,
+        "outcome": JOB_PRICE_DATA,
+        "spanId": material.span_id,
+        "sourceRecordId": source_record_id,
+        "sourceRevisionId": source_revision_id,
+        "payloadDigest": material.selected_digest,
+    }))?;
+    let (origin_chat_id, origin_message_id) =
+        source_chat_origin(tx, loupist_id, source_record_id, &material.capture_id)?;
+    let (name, source_label) = episode_context(
+        &material.title,
+        material.source_class.as_str(),
+        &material.provider_identity,
+        material.publication_time.as_ref(),
+    );
+    let document = JobDocument {
+        version: 1,
+        episode_kind: EPISODE_SPAN.into(),
+        generation_id: generation,
+        episode_key: format!("px_{}", &dedup_key[..16]),
+        previous_episode_key: None,
+        name,
+        body: String::new(),
+        source_binding: Some(StoredSourceBinding {
+            source_id: material.source_id.clone(),
+            capture_id: material.capture_id.clone(),
+            representation_id: material.representation_id.clone(),
+            span_id: material.span_id.clone(),
+            payload_digest: material.selected_digest.clone(),
+            binding_role: "extracted_from".into(),
+            attribution: material.provider_identity.clone(),
+            source_record_id: source_record_id.into(),
+            source_revision_id: source_revision_id.into(),
+        }),
+        origin_chat_id,
+        origin_message_id,
+        artifact_utf8: None,
+        logical_digest: None,
+        publication_time: material.publication_time.clone(),
+        effective_time: None,
+        reference_time: reference_time_for(
+            material.publication_time.as_ref(),
+            material.received_at_ms,
+        ),
+        source_label,
+        extraction: ExtractionBudget {
+            model_profile: "none".into(),
+            thinking_level: "off".into(),
+            run_options: Default::default(),
+            embedding_profile: super::graph_inference::LOCAL_EMBEDDING_PROFILE.into(),
+            max_llm_calls: 0,
+            max_embedding_calls: 0,
+            timeout_ms: DEFAULT_TIMEOUT_MS,
+        },
+        dedup_key: dedup_key.clone(),
+        mutation_sent: false,
+        inference_attempted: false,
+        usage_uncertain: false,
+        lease_expires_at_ms: None,
+        sealed_revision_id: Some(world.revision_id.clone()),
+        attempt_id: None,
+        interrupted_attempts: 0,
+        host_interruptions: 0,
+        unsent_attempts: 0,
+    };
+    let job = insert_job(
+        tx,
+        loupist_id,
+        &world.record_id,
+        &world.revision_id,
+        &dedup_key,
+        at_ms,
+        &document,
+    )?;
+    write_status(tx, &job.job_id, JOB_QUEUED, JOB_PRICE_DATA, &document)?;
+    load_job(tx, &job.job_id)
+}
+
+/// What one queue pass found among a Loupist's waiting Source work.
+#[derive(Debug, Default)]
+pub(crate) struct PriceRetirement {
+    /// Jobs that left the queue as price data.
+    pub retired: u32,
+    /// Every span this pass read (`revision:span`), price data or not.
+    pub classified: Vec<String>,
+}
+
+/// Move the waiting work of price-data Sources out of the queue, without a
+/// model call ([`super::price_data`]). Completed, running and uncertain work
+/// keeps its status. Spans in `known` were read by an earlier pass. Running it
+/// again changes nothing.
+pub(crate) fn retire_price_jobs(
+    tx: &Transaction<'_>,
+    blobs: &BlobStore,
+    loupist_id: &str,
+    known: &BTreeSet<String>,
+    at_ms: i64,
+) -> KnowledgeResult<PriceRetirement> {
+    validate_loupist_id(loupist_id)?;
+    let mut statement = tx.prepare(&format!(
+        "SELECT DISTINCT json_extract(payload_json, '$.sourceBinding.sourceRecordId'),
+                json_extract(payload_json, '$.sourceBinding.sourceRevisionId'),
+                json_extract(payload_json, '$.sourceBinding.spanId')
+         FROM knowledge_graph_outbox
+         WHERE loupist_id = ?1 AND status IN ({PRICE_RETIRABLE_STATUSES})
+           AND json_extract(payload_json, '$.episodeKind') = '{EPISODE_SPAN}'
+           AND json_extract(payload_json, '$.sourceBinding.spanId') IS NOT NULL"
+    ))?;
+    let spans = statement
+        .query_map([loupist_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut found = PriceRetirement::default();
+    for (record_id, revision_id, span_id) in spans {
+        let key = format!("{revision_id}:{span_id}");
+        if known.contains(&key) {
+            continue;
+        }
+        found.classified.push(key);
+        // A Source erased or unreadable since keeps its work as it is.
+        let Ok(material) =
+            load_revision_span(tx, blobs, loupist_id, &record_id, &revision_id, &span_id)
+        else {
+            continue;
+        };
+        if super::price_data::stored_price_data(tx, loupist_id, &material)? {
+            found.retired += retire_span_price_jobs(tx, loupist_id, &span_id)?;
+        }
+    }
+    if found.retired > 0 {
+        super::learning::world_job_settled(tx, loupist_id, at_ms)?;
+    }
+    Ok(found)
 }
 
 pub fn host_may_redrive(job: &GraphJobView) -> bool {

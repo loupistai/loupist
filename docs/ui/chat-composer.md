@@ -63,8 +63,9 @@ and reads as a "Guided: …" row between the question and its answer after the r
 stopped answer says what it kept. Queued messages sit in a compact list above the
 composer: a count, one short row each, and Edit, reorder, Remove, and Send now in that
 row's menu. When Send now cannot go, the menu says why under it (the running reply, offline,
-or what to reconnect). A stopped or failed reply holds the queue with a line that says so and
-offers Send next now. If another task is saving to this Loupist’s Memory, the queue shows a waiting line. When the host’s activity list clears its last Memory writer for that Loupist, the oldest queued instruction retries automatically. Send next now still retries immediately. Removing or sending a row from its menu moves focus to the row in its
+or what to reconnect). A stopped or failed reply holds the queue with a line that says so ("Response
+stopped." / "Response failed."), adds "Queued messages were kept." only while a message
+is queued, and offers Send next now. If another task is saving to this Loupist’s Memory, the queue shows a waiting line. When the host’s activity list clears its last Memory writer for that Loupist, the oldest queued instruction retries automatically. Send next now still retries immediately. Removing or sending a row from its menu moves focus to the row in its
 place, or to the message when none is left. The list can fold. It keeps queue order and the queued payload. Up to three
 next-step chips after the latest answer come from the conflicts and names it
 found and fill the composer without sending. A chip names only a company World
@@ -263,7 +264,8 @@ Three tabs:
   missing contact uses the `invalid_input` category and points to contact setup
   in Data connections. Stopped, skipped and safety refusals keep their
   reasons first. Labels come from the locale catalogs: the catalog's step label, a read's
-  noun ("Read current quote"), the connection's name in the interface language ("Used Web Research", "웹 리서치 사용"), or a
+  noun ("Read current quote"; every data route of the bundled OpenBB runtime has one in
+  `asOf.reads` or `activitySheet.reads`), the connection's name in the interface language ("Used Web Research", "웹 리서치 사용"), or a
   generic label for the step's kind; a tool's raw name and the host's English
   never show. When a tool result has no own title, its link also uses the locale
   catalogs. A duration shows only when the host stamped both ends of a step

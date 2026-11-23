@@ -17,6 +17,7 @@ import { formatAsOf } from "../../chat/asOf";
 import type { AnswerSource } from "../../chat/answerSources";
 import { evidenceTitle } from "../../chat/evidence";
 import { readNoun } from "../../chat/progressLabels";
+import { failedReadReason } from "../../chat/chatRail";
 import { useExtensionAvailability } from "../../app/extensionAvailability";
 import { pausedByRule, planSections, refusedByRule, stepGlyph, type LedgerChip, type TurnSegment } from "../../chat/turnView";
 import { actionLabel, isActionItem as isAction, visibleTarget, withoutIdentifiers } from "../../chat/runStatus";
@@ -91,6 +92,8 @@ const ActionRow = memo(function ActionRow({
   const action = skipped && asOf ? t("asOf.stepRefused", { tool: refusedRead(item) }) : actionLabel(item);
   const target = visibleTarget(item.target);
   const paused = pausedByRule(item);
+  // A failed market-data read says why it was not used, as the Activity sheet does.
+  const failedReason = failedReadReason(item);
   const duration = item.status === "succeeded" ? stepDuration(item) : null;
   const canOpen = Boolean((item.detailId && execution) || evidence.length || (skipped && asOf));
   const revealedHere = Boolean(revealedResult && evidence.some((result) => result.id === revealedResult.id));
@@ -170,7 +173,7 @@ const ActionRow = memo(function ActionRow({
         <p>{t("chatProgressTimeline.refused.protectedPath")}</p>
       </div> : refusedByRule(item) === "outside_workspace" ? <div className="chat-step-paused" role="note">
         <p>{t("chatProgressTimeline.refused.outsideWorkspace")}</p>
-      </div> : null}
+      </div> : failedReason ? <p className="chat-progress-failed-detail">{failedReason}</p> : null}
       {open && skipped && asOf ? <p id={detailsId} className="chat-progress-skipped-detail">{t("asOf.stepRefusedDetail", { date: formatAsOf(asOf) })}</p> : null}
       {open && item.detailId && execution ? <div id={detailsId} className="chat-execution-detail"><ChatActivityDetailView {...execution} detailId={item.detailId} outputRevision={item.kind === "tool" ? item.outputRevision : undefined} /></div> : null}
       {open ? evidence.map((result) => <ChatToolResult key={result.id} evidence={result} expanded={expandedResults.has(result.id)} comparison={revealedResult?.id === result.id ? revealedResult.comparison : undefined} focusRequest={rowExpanded && revealedResult?.id === result.id ? revealedResult.request : undefined} onToggle={() => onToggleResult(result.id)} />) : null}

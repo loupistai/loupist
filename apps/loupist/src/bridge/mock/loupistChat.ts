@@ -6,6 +6,7 @@ import type { ModelCatalog } from "../../contracts/model";
 import { commandError } from "./commandError";
 import { executionModelLock } from "./models";
 import { defaultRunOptions, defaultThinkingLevel } from "../../lib/modelSelection";
+import { requestTitle } from "../../lib/requestTitle";
 import type {
   AgentHarnessSnapshot,
   ChatArtifact,
@@ -582,23 +583,6 @@ const nvidiaAnswer = () => typeof document !== "undefined" && document.documentE
   ? "엔비디아는 금요일 162.85달러에 마감했습니다. 하루 2.01% 하락했습니다. 하락 원인으로 확인된 회사 뉴스는 없습니다."
   : "NVIDIA closed at $162.85 on Friday. It fell 2.01% on the day. No company news was found that explains the drop.";
 
-const mockChatTitle = (prompt: string) => {
-  const title = prompt.split("\n", 1)[0]!.trim().replace(/\s+/gu, " ");
-  const characters = Array.from(title);
-  if (characters.length <= 40) return title;
-
-  // Rust reserves the 40th code point for the ellipsis and keeps whole graphemes.
-  const budget = characters.slice(0, 39).join("").length;
-  let wordEnd: number | undefined;
-  let graphemeEnd = 0;
-  for (const { index, segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(title)) {
-    if (index > budget) break;
-    graphemeEnd = index;
-    if (segment.startsWith(" ")) wordEnd = index;
-  }
-  return title.slice(0, wordEnd ?? graphemeEnd) + "…";
-};
-
 export const chatSend = async (
   state: MockBridgeState,
   request: ChatSendRequest,
@@ -932,7 +916,7 @@ const streamChat = async (
     if (thread?.title === "") {
       setProgress("title", "Named this chat", "running");
       await wait(state.delay_ms, controller.signal);
-      const title = mockChatTitle(request.prompt);
+      const title = requestTitle(request.prompt);
       thread.title = title;
       observer({ type: "title", run_id, title });
       setProgress("title", "Named this chat", "succeeded");

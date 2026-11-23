@@ -2,7 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import type { ChatMessage, ChatSaveState, ChatStreamEvent } from "../../types";
+import type { ChatMessage, ChatSaveState, ChatStreamEvent, ChatThread } from "../../types";
 import { completedRun } from "../streamFixtures";
 
 // A reply whose save waits on its own (docs/runtime/chat-turns.md#saves-that-wait-on-their-own).
@@ -27,7 +27,7 @@ const stored = (id: string, content: string, skipped?: "user"): ChatMessage => (
     : { status: "no_change", commitId: null, changes: [] },
 });
 
-function setup(extra: ChatMessage[] = []) {
+function setup(extra: ChatMessage[] = [], blocker: Pick<ChatThread, "title" | "messages"> = { title: BLOCKER, messages: [] }) {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const selection = bridge.loupistSelect.bind(bridge);
   vi.spyOn(bridge, "loupistSelect").mockImplementation(async (id) => {
@@ -35,7 +35,7 @@ function setup(extra: ChatMessage[] = []) {
     const session = workspace.threads.find((thread) => thread.id === THREAD);
     if (session) {
       session.messages = [...session.messages, ...extra];
-      workspace.threads.push({ ...session, id: "chat-blocker", title: BLOCKER, messages: [] });
+      workspace.threads.push({ ...session, id: "chat-blocker", ...blocker });
     }
     return workspace;
   });
@@ -89,6 +89,22 @@ it("frees the conversation once the answer is stored and keeps the wait and Skip
   expect(first.getByRole("list", { name: "Not kept" })).toHaveTextContent("Margin notes");
   expect(first.queryByRole("button", { name: "Skip saving" })).toBeNull();
   expect(screen.getByText("Last year they held.")).toBeVisible();
+});
+
+it("names the session it waits on from that session's request while its first reply runs", async () => {
+  const user = userEvent.setup();
+  // The 0.1.5 acceptance run: the research session's first answer was still running, untitled.
+  const request = "Compare Coca-Cola and PepsiCo using each company's latest annual report on Form 10-K: revenue growth over the last three fiscal years, operating margin, and the three largest risk factors each one names.";
+  const bridge = setup([
+    { id: "ask-1", role: "user", content: "Why did margins fall?", created_at: new Date().toISOString(), status: "complete" },
+    stored("answer-1", "Margins fell on input costs."),
+  ], { title: "", messages: [{ id: "blocker-ask", role: "user", content: request, created_at: new Date().toISOString(), status: "complete" }] });
+  bridge.emitChatSave({ loupist_id: LOUPIST, thread_id: THREAD, message_id: "answer-1", run_id: "run-1", pending: pending("run-1", "answer-1") });
+  render(<App bridge={bridge} />);
+  await user.click(await screen.findByRole("button", { name: SESSION }));
+  const status = within((await screen.findByText("Margins fell on input costs.")).closest("article")!).getByRole("status");
+  await waitFor(() => expect(status).toHaveTextContent("Saving to Memory · waiting for “Compare Coca-Cola and PepsiCo using…” to finish"));
+  expect(within(status).getByRole("link", { name: "Compare Coca-Cola and PepsiCo using…" })).toBeVisible();
 });
 
 it("shows a save still waiting after the conversation is opened again, until its receipt arrives", async () => {

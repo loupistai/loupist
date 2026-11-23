@@ -253,6 +253,26 @@ it("renders a numeric link as a number chip and a non-numeric one as a numbered 
   expect(citation).toHaveTextContent("1");
 });
 
+it("names a price taken from a dataset fetched in the same reply by its tool, not Memory", async () => {
+  // The follow reply of Loupist 0.1.5: the price links to a dataset_query of the history it read.
+  const history = evidenceFixture({ id: "ev_history", title: "AAPL", tool_name: "equity_price_historical", provider: "yfinance", url: undefined, published_at: undefined,
+    excerpt: JSON.stringify({ results: [{ date: "2026-11-20", close: 342.55999755859375 }] }) });
+  const slice = (id: string, provider?: string) => evidenceFixture({ id, title: "Dataset slice", kind: "saved_context", tool_name: "dataset_query", provider, url: undefined, published_at: undefined,
+    upstream_evidence_ids: provider ? [history.id] : undefined, excerpt: JSON.stringify({ rows: [{ close: 342.55999755859375, date: "2026-11-20" }] }) });
+  const fetched = slice("ev_slice_fetched", "yfinance");
+  const kept = slice("ev_slice_kept");
+  const check = (evidence: ChatEvidenceRef, link_index: number, text: string): NumberCheck => ({ link_index, text, evidence_id: evidence.id, kind: "step", status: "matched", pointer: "/rows/0/close",
+    context: { text: "close · 2026-11-20 · 342.55999755859375", start: 23, end: 41 } });
+  renderAnswer(answer({
+    content: `The close was [$342.56](#evidence-${fetched.id}); a saved dataset says [$342.55](#evidence-${kept.id}).`,
+    evidence_refs: [history, fetched, kept],
+    number_checks: [check(fetched, 0, "$342.56"), check(kept, 1, "$342.55")],
+  }));
+  expect(await chip("$342.56")).toHaveAccessibleName("$342.56, from Market data platform");
+  // A dataset that no read of this reply fetched still names Memory.
+  expect(await chip("$342.55")).toHaveAccessibleName("$342.55, from Memory");
+});
+
 it("names pasted material as user-provided where a number was checked against it", async () => {
   const text = "솔숲식품은 2025년 3월 12일 현재 수주잔고 수치가 184.6이고 단위는 십억 원이라고 알렸다.";
   const start = new TextEncoder().encode(text.slice(0, text.indexOf("184.6"))).length;

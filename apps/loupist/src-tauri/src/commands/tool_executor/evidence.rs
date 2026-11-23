@@ -88,6 +88,11 @@ fn saved_user_provided(result: &RunResult) -> bool {
             == Some(crate::knowledge::SourceClass::UserProvided.as_str())
 }
 
+/// An address is a locator, not a name: it is named by its host and path.
+fn web_address(value: &str) -> bool {
+    reqwest::Url::parse(value).is_ok_and(|url| matches!(url.scheme(), "https" | "http"))
+}
+
 pub(super) fn safe_url(value: &str) -> Option<String> {
     let parsed = reqwest::Url::parse(value).ok()?;
     let normalized = parsed.to_string();
@@ -149,30 +154,57 @@ fn excerpt_match(result: &RunResult, excerpt: &str) -> Option<ChatEvidenceMatch>
         .then_some(ChatEvidenceMatch { start, end })
 }
 
+fn provider_of(result: &RunResult) -> Option<String> {
+    result.producer.provider.clone().or_else(|| {
+        string_at(
+            &result.payload,
+            &[
+                "/figure_sources/price/provider",
+                "/figure_sources/valuation/provider",
+                "/figure_sources/results/provider",
+            ],
+            128,
+        )
+    })
+}
+
+/// A dataset read names no provider of its own. When its dataset came from a
+/// read earlier in this reply, it names that read's provider, so a figure taken
+/// from it is labelled by the tool that fetched it, not as Memory.
+pub(super) fn dataset_read_provider(
+    registry: &RunResultRegistry,
+    result: &RunResult,
+) -> Option<String> {
+    let dataset_read = |result: &RunResult| {
+        matches!(
+            result.producer.tool_name.as_str(),
+            "dataset_query" | "dataset_describe"
+        )
+    };
+    let mut reads = vec![result];
+    // Upstream references name earlier delivered results, so the walk ends;
+    // the bound only keeps a long chain of dataset reads cheap.
+    for _ in 0..4 {
+        let upstream: Vec<&RunResult> = reads
+            .iter()
+            .filter(|read| dataset_read(read))
+            .flat_map(|read| read.upstream_result_refs.iter())
+            .filter_map(|reference| registry.get(reference))
+            .collect();
+        if let Some(provider) = upstream.iter().find_map(|read| provider_of(read)) {
+            return Some(provider);
+        }
+        if upstream.is_empty() {
+            return None;
+        }
+        reads = upstream;
+    }
+    None
+}
+
 pub(super) fn project(result: &RunResult) -> ChatEvidenceRef {
     let payload = &result.payload;
     let fx = result.producer.tool_name == "fx_rate";
-    let title = if result.producer.tool_name == "workspace_capture" {
-        payload["path"]
-            .as_str()
-            .and_then(crate::chat::local_files::ordinary_title)
-            .map(|title| bounded(&title, 512))
-            .unwrap_or_else(|| "Local file".into())
-    } else if fx {
-        format!(
-            "{}/{} · European Central Bank reference rates",
-            payload["from"].as_str().unwrap_or_default(),
-            payload["to"].as_str().unwrap_or_default()
-        )
-    } else {
-        string_at(
-            payload,
-            &["/title", "/name", "/path", "/metadata/title", "/data/title"],
-            512,
-        )
-        .or_else(|| result.origin.as_deref().map(|origin| bounded(origin, 512)))
-        .unwrap_or_else(|| result.producer.tool_name.replace('_', " "))
-    };
     let url = [
         "/final_url",
         "/url",
@@ -189,6 +221,41 @@ pub(super) fn project(result: &RunResult) -> ChatEvidenceRef {
     })
     .or_else(|| result.origin.as_deref().and_then(safe_url))
     .or_else(|| fx.then(|| crate::finance_data::fx::SOURCE_URL.to_owned()));
+    let title = if result.producer.tool_name == "workspace_capture" {
+        payload["path"]
+            .as_str()
+            .and_then(crate::chat::local_files::ordinary_title)
+            .map(|title| bounded(&title, 512))
+            .unwrap_or_else(|| "Local file".into())
+    } else if fx {
+        format!(
+            "{}/{} · European Central Bank reference rates",
+            payload["from"].as_str().unwrap_or_default(),
+            payload["to"].as_str().unwrap_or_default()
+        )
+    } else {
+        // A provider's placeholder ("N/A") names nothing. The document's own
+        // title, else what the read asked for (a symbol or query), else the
+        // page's host and path, else the tool's name.
+        ["/title", "/name", "/path", "/metadata/title", "/data/title"]
+            .iter()
+            .find_map(|pointer| {
+                payload
+                    .pointer(pointer)
+                    .and_then(Value::as_str)
+                    .and_then(crate::web::usable_title)
+            })
+            .or_else(|| {
+                result
+                    .origin
+                    .as_deref()
+                    .filter(|origin| !web_address(origin))
+                    .and_then(crate::web::usable_title)
+            })
+            .map(|title| bounded(title, 512))
+            .or_else(|| url.as_deref().and_then(crate::web::locator_title))
+            .unwrap_or_else(|| result.producer.tool_name.replace('_', " "))
+    };
     let text = string_at(
         payload,
         &[
@@ -231,17 +298,7 @@ pub(super) fn project(result: &RunResult) -> ChatEvidenceRef {
         title,
         kind,
         url,
-        provider: result.producer.provider.clone().or_else(|| {
-            string_at(
-                payload,
-                &[
-                    "/figure_sources/price/provider",
-                    "/figure_sources/valuation/provider",
-                    "/figure_sources/results/provider",
-                ],
-                128,
-            )
-        }),
+        provider: provider_of(result),
         tool_name: result.producer.tool_name.clone(),
         user_provided: saved_user_provided(result),
         calc_operation: (result.producer.tool_name == "calculate")
@@ -411,6 +468,42 @@ mod tests {
         assert!(project(&source(RunResultOrigin::AcquiredOriginal, saved))
             .read_ref
             .is_none());
+    }
+
+    #[test]
+    fn a_source_without_a_usable_title_is_named_by_its_page_then_its_read() {
+        // The KRX disclosure cited as "Source 16: N/A" in a 0.1.5 answer.
+        let url = "https://kind.krx.co.kr/external/2026/09/17/000117/20260917000264/68155.htm";
+        let mut fetched = source(
+            RunResultOrigin::AcquiredOriginal,
+            json!({"title":"N/A", "url":url, "source_id":"web:00588c2a68b92518f9072198",
+                "content":"◎ 현대자동차(주) 변경상장(주식소각)"}),
+        );
+        fetched.origin = None;
+        assert_eq!(
+            project(&fetched).title,
+            "kind.krx.co.kr/external/2026/09/17/000117/20260917000264/68155.htm"
+        );
+        // A read by address alone is named the same way, not by the raw URL.
+        fetched.payload = json!({"content":"◎ 현대자동차(주) 변경상장(주식소각)"});
+        fetched.origin = Some(url.into());
+        assert_eq!(
+            project(&fetched).title,
+            "kind.krx.co.kr/external/2026/09/17/000117/20260917000264/68155.htm"
+        );
+        // What the read asked for names a data result; with nothing, the tool does.
+        let mut quote = source(
+            RunResultOrigin::AcquiredOriginal,
+            json!({"name":"null", "results":[]}),
+        );
+        quote.producer.tool_name = "equity_price_quote".into();
+        quote.origin = Some("AAPL".into());
+        assert_eq!(project(&quote).title, "AAPL");
+        quote.origin = None;
+        assert_eq!(project(&quote).title, "equity price quote");
+        // The document's own title wins.
+        fetched.payload = json!({"title":"현대자동차 변경상장", "url":url, "content":"…"});
+        assert_eq!(project(&fetched).title, "현대자동차 변경상장");
     }
 
     #[test]

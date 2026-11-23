@@ -319,6 +319,8 @@ export type KnowledgeSourceRetainRequest = {
 
 /** One World processing job; the renderer never reads the job's stored document. */
 export type GraphJobView = Wire.GraphJobView;
+/** What one "Continue all" did: Sources queued again and Sources the single retry refused. */
+export type SourcesRetried = Wire.SourcesRetried;
 
 /** Recommended follows the bundled list and the connected accounts; Chosen keeps the user's pick. */
 export type WorldModelChoice = Wire.WorldModelChoice;

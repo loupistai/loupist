@@ -777,6 +777,15 @@ fn clone_error(error: &BrokerError) -> BrokerError {
         FrameTooLarge => FrameTooLarge,
         Execution(message) => Execution(message.clone()),
         EmptyResult => EmptyResult,
+        ProviderFailure {
+            kind,
+            message,
+            next,
+        } => ProviderFailure {
+            kind: *kind,
+            message: message.clone(),
+            next: next.clone(),
+        },
         SecContactRequired(message) => SecContactRequired(message),
         KeychainBusy => KeychainBusy,
         KeychainUnavailable => KeychainUnavailable,

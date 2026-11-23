@@ -4,7 +4,7 @@ import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { mockModelSelection, mockProviderStatus } from "../../bridge/mock/models";
 import type { ConfigScope, ConfigUpdateRequest } from "../../types";
-import { chooseLoupist, headerAction, mainTab, newChatButton, openApp, selectedLoupistButton, openChat, togglePrivateChat } from "../renderApp";
+import { chooseLoupist, headerAction, mainTab, newChatButton, openApp, openLoupistSwitcher, selectedLoupistButton, openChat, togglePrivateChat } from "../renderApp";
 
 const updateGlobal = async (bridge: MockLoupistBridge, set: ConfigUpdateRequest["set"]) => {
   const global = await bridge.configRead({ scope: { kind: "global" } });
@@ -167,6 +167,84 @@ describe.each(["Bot", "research"])("model-only Chat preferences in %s", (surface
     });
     expect(request.thread_id.startsWith("home-")).toBe(surface === "Bot");
   });
+});
+
+it("keeps naming each stored Chat default while its account is disconnected, in both languages, and applies it again on reconnect", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  await bridge.providerConfigure({ provider: "anthropic", api_key: "test-key" });
+  await bridge.providerConnect("openai", () => {});
+  await updateGlobal(bridge, { chat: { model_profile_id: "openai/gpt-5.6-terra" } });
+  const scope: ConfigScope = { kind: "project", loupistId: "loupist-quality" };
+  const loupist = await bridge.configRead({ scope });
+  await bridge.configUpdate({ scope, expectedRevision: loupist.revision, set: { chat: { model_profile_id: "openai/gpt-5.6-sol" } }, unset: [] });
+  const chatSend = vi.spyOn(bridge, "chatSend");
+  await openApp(bridge);
+  const words = {
+    en: { defaultModel: "Default model", back: "Back", loupistSettings: "Loupist settings", chatDefaults: "Chat defaults", caption: "Not available now. Chat uses the recommended model until it is." },
+    ko: { defaultModel: "기본 모델", back: "뒤로", loupistSettings: "루피스트 설정", chatDefaults: "대화 기본값", caption: "지금은 사용할 수 없습니다. 사용할 수 있을 때까지 채팅은 권장 모델을 씁니다." },
+  };
+  type Language = keyof typeof words;
+  /** The model a Chat defaults page names, and its caption. */
+  const shown = async (root: HTMLElement, language: Language) => {
+    const control = await waitFor(() => {
+      const found = root.querySelector<HTMLElement>("#config-chat\\.model_profile_id");
+      expect(found?.getAttribute("aria-label")).toMatch(new RegExp(` · ${words[language].defaultModel}$`));
+      return found!;
+    });
+    return { model: control.textContent, note: control.closest(".agent-config-fields")!.querySelector("[role=note]")?.textContent ?? null };
+  };
+  const openSettings = async (section: string) => {
+    const settings = document.getElementById("main-tab-settings");
+    if (settings) await user.click(settings);
+    await user.click(await waitFor(() => document.getElementById(`settings-section-${section}`)!));
+  };
+  /** Settings › Chat defaults, then this Loupist's own Chat defaults. */
+  const pages = async (language: Language) => {
+    await openSettings("agent");
+    const app = await shown(document.body, language);
+    await user.click(screen.getByRole("button", { name: words[language].back }));
+    await user.click(await waitFor(() => within(openLoupistSwitcher()).getByRole("menuitem", { name: words[language].loupistSettings })));
+    const page = await screen.findByRole("region", { name: words[language].loupistSettings });
+    await user.click(within(page).getByRole("button", { name: words[language].chatDefaults }));
+    return { app, loupist: await shown(page, language) };
+  };
+  const chooseLanguage = async (name: string) => {
+    await openSettings("appearance");
+    await user.click(await screen.findByRole("button", { name }));
+  };
+  await openSettings("model");
+  await user.click(await screen.findByRole("button", { name: "More actions for ChatGPT" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Disconnect ChatGPT" }));
+  await user.click(within(await screen.findByRole("dialog", { name: "Disconnect ChatGPT?" })).getByRole("button", { name: "Disconnect" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "More actions for ChatGPT" })).not.toBeInTheDocument());
+  // Each page names its own stored model, never the model Chat answers with meanwhile.
+  expect(await pages("en")).toEqual({
+    app: { model: "GPT-5.6 Terra", note: words.en.caption },
+    loupist: { model: "GPT-5.6 Sol", note: words.en.caption },
+  });
+  await chooseLanguage("한국어");
+  try {
+    expect(await pages("ko")).toEqual({
+      app: { model: "GPT-5.6 Terra", note: words.ko.caption },
+      loupist: { model: "GPT-5.6 Sol", note: words.ko.caption },
+    });
+  } finally {
+    await chooseLanguage("English");
+  }
+  // Chat answers with the recommended model meanwhile.
+  await user.click(await mainTab(/Chat/));
+  await user.type(await screen.findByRole("textbox", { name: "Message Loupist" }), "Answer while ChatGPT is away");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(chatSend).toHaveBeenCalledOnce());
+  expect(chatSend.mock.calls[0]![0]).toMatchObject({ model_profile_id: "" });
+  await screen.findByText("Response complete.");
+  // Connected again, the stored models apply and the captions go.
+  await bridge.providerConnect("openai", () => {});
+  act(() => window.dispatchEvent(new Event("focus")));
+  expect(await pages("en")).toEqual({ app: { model: "GPT-5.6 Terra · Medium", note: null }, loupist: { model: "GPT-5.6 Sol · Medium", note: null } });
+  await user.click(await mainTab(/Chat/));
+  await waitFor(() => expect(screen.getByRole("button", { name: /Model settings for this message/ })).toHaveAccessibleName(/^GPT-5\.6 Sol · /));
 });
 
 it("keeps saving appearance after Agent settings were saved with application pending", async () => {

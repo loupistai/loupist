@@ -21,6 +21,6 @@ Compare claims on the same entity, period and definition. Keep conflicting
 accounts and their attribution visible, distinguish a later correction from what
 was known at the cutoff, and keep a forecast labelled as one.
 
-To add to World, save a Source: World building extracts names and relationships after the reply. `world_job` reports committed processing only.
+To add to World, save a Source that says something in words (a filing, an article, a transcript): World building extracts names and relationships after the reply. Price data adds nothing to World. `world_job` reports committed processing only.
 
 Explain findings with attribution, dates, uncertainty and readable source titles.

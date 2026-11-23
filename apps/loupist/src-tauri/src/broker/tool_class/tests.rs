@@ -33,7 +33,7 @@ fn catalog_declares_max_age(method: ToolMethod) -> bool {
         .is_some_and(|tool| tool.pointer("/parameters/properties/max_age").is_some())
 }
 
-const NATIVE_FINANCE_READS: [ToolMethod; 12] = [
+const NATIVE_FINANCE_READS: [ToolMethod; 13] = [
     M::WorldbankSeries,
     M::DefillamaRead,
     M::KrxDailyQuote,
@@ -46,6 +46,7 @@ const NATIVE_FINANCE_READS: [ToolMethod; 12] = [
     M::DartMajorReport,
     M::DartOwnership,
     M::DartDividends,
+    M::DartReportItems,
 ];
 const SCHEDULE_CHANGES: [ToolMethod; 6] = [
     M::ScheduleCreate,
@@ -90,6 +91,7 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
         "dart_major_report",
         "dart_ownership",
         "dart_dividends",
+        "dart_report_items",
         "run_results_list",
         "web_search",
         "web_fetch",
@@ -213,6 +215,7 @@ fn every_method_keeps_its_reviewed_provenance_and_retention() {
         (M::DartMajorReport, "native-finance", AcquiredOriginal),
         (M::DartOwnership, "native-finance", AcquiredOriginal),
         (M::DartDividends, "native-finance", AcquiredOriginal),
+        (M::DartReportItems, "native-finance", AcquiredOriginal),
         (M::WebSearch, "native-web", Discovery),
         (M::WebFetch, "native-web", AcquiredOriginal),
         (M::ArtifactList, "artifact-store", Derived),
@@ -237,6 +240,7 @@ fn every_method_keeps_its_reviewed_provenance_and_retention() {
         M::DartMajorReport,
         M::DartOwnership,
         M::DartDividends,
+        M::DartReportItems,
         M::KrxDailyQuote,
         M::WorldbankSeries,
         M::DefillamaRead,

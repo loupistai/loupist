@@ -441,7 +441,8 @@ impl AppState {
         let finance_data = Arc::new(
             FinanceDataService::new()
                 .map_err(|error| CommandError::internal(error.to_string()))?
-                .with_krx_daily_cache(app_data_dir.join("cache").join("krx-daily")),
+                .with_krx_daily_cache(app_data_dir.join("cache").join("krx-daily"))
+                .with_dart_directory_cache(app_data_dir.join("cache").join("opendart")),
         );
         let store = Arc::new(store);
         let maintenance = MaintenanceCoordinator::default();
@@ -648,6 +649,10 @@ impl AppState {
             })
             .cloned()
             .collect::<Vec<_>>();
+        let listed = models
+            .iter()
+            .map(|model| model.id.clone())
+            .collect::<Vec<_>>();
         catalog.models.retain(|model| model.provider != provider);
         catalog.models.extend(models);
         catalog.models.sort_by(|left, right| {
@@ -657,6 +662,24 @@ impl AppState {
                 .then_with(|| left.model.cmp(&right.model))
         });
         self.set_model_catalog(catalog)?;
+        // Chat defaults keep naming a stored model while it is unlisted.
+        let unlisted = removed
+            .iter()
+            .map(|model| crate::store::provider_status::UnlistedModelRecord {
+                model_id: model.id.clone(),
+                provider: model.provider.clone(),
+                model: model.model.clone(),
+                name: model.name.clone(),
+            })
+            .collect::<Vec<_>>();
+        let listed = listed.iter().map(String::as_str).collect::<Vec<_>>();
+        if self
+            .store
+            .unlisted_models_update(provider, &unlisted, &listed, crate::commands::now_ms())
+            .is_err()
+        {
+            eprintln!("Loupist could not remember the names of models its catalog no longer lists");
+        }
         // A pruned Chat default falls back to Auto at its next use; say so once.
         crate::providers::auto::note_removed_default(self, &removed);
         Ok(())

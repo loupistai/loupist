@@ -27,7 +27,7 @@ import { MockScheduledTasks } from "./mock/scheduled";
 import { MockConfig, type MockExtensionFlags } from "./mock/config";
 import worldDefaults from "../../world-model-defaults.json";
 import { defaultRunOptions } from "../lib/modelSelection";
-import { executionModelLock, initialModelCatalog, listProviderModels, mockModelSelection, mockProviderStatus } from "./mock/models";
+import { executionModelLock, initialModelCatalog, listProviderModels, mockModelSelection, mockProviderStatus, type MockModelIdentity } from "./mock/models";
 import { commandError } from "./mock/commandError";
 
 /** The bundled Skills' own files, loaded on demand when a detail opens. */
@@ -155,7 +155,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     const workspace = scope.kind === "project" ? this.state.loupists.find((loupist) => loupist.id === scope.loupistId)?.workspace_path : undefined;
     if (scope.kind === "project" && !workspace) throw new Error("Loupist not found.");
     const snapshot = this.configuration.read(scope, workspace);
-    return { ...snapshot, modelSelection: mockModelSelection(this.modelCatalog, snapshot.effective.chat),
+    return { ...snapshot, modelSelection: mockModelSelection(this.modelCatalog, snapshot.effective.chat, this.unlistedModels),
       defaultModelChange: scope.kind === "project" ? this.modelChanges.get(scope.loupistId) : undefined };
   }
   async configUpdate(request: Contract.ConfigUpdateRequest) {
@@ -414,6 +414,15 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     return structuredClone(this.modelCatalog);
   }
 
+  /** Names of models the catalog dropped, as Rust keeps them for Chat defaults. */
+  private readonly unlistedModels = new Map<string, MockModelIdentity>();
+  private unlistProviderModels(provider: string) {
+    for (const model of this.modelCatalog.models) {
+      if (model.provider === provider) this.unlistedModels.set(model.id, { id: model.id, name: model.name, provider: model.provider, model: model.model });
+    }
+    this.modelCatalog.models = this.modelCatalog.models.filter((model) => model.provider !== provider);
+  }
+
   async providerDisconnect(provider: string) {
     const option = this.modelCatalog.providers.find(
       (item) => item.id === provider,
@@ -422,9 +431,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
       option.credential_source = "missing";
       option.status = mockProviderStatus("none");
     }
-    this.modelCatalog.models = this.modelCatalog.models.filter(
-      (model) => model.provider !== provider,
-    );
+    this.unlistProviderModels(provider);
     return structuredClone(this.modelCatalog);
   }
 
@@ -444,7 +451,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
 
   async providerCustomRemove(provider: string) {
     this.modelCatalog.custom_providers = this.modelCatalog.custom_providers.filter(item => item.id !== provider);
-    this.modelCatalog.models = this.modelCatalog.models.filter(model => model.provider !== provider);
+    this.unlistProviderModels(provider);
     return structuredClone(this.modelCatalog);
   }
 
@@ -1238,6 +1245,10 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
 
   knowledgeGraphRetrySource(request: { loupistId: string; recordId: string }) {
     return knowledge.knowledgeGraphRetrySource(this.state, request);
+  }
+
+  knowledgeGraphRetrySources(request: { loupistId: string; recordIds: string[]; maxLlmCalls: number }) {
+    return knowledge.knowledgeGraphRetrySources(this.state, request);
   }
 
   async knowledgeGraphPause(request: { loupistId: string; paused: boolean }) {

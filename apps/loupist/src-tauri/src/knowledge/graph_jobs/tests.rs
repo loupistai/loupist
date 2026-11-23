@@ -1,4 +1,6 @@
 use super::*;
+mod continue_all;
+mod price_data;
 mod publication;
 mod recovery;
 use crate::knowledge::{
@@ -1440,6 +1442,7 @@ fn sleep_through_an_attempt_runs_it_again_before_the_one_retry() {
         uncertain: true,
         paid: true,
         suspended: true,
+        settings_changed: false,
     };
     for expected in 1..=HOST_INTERRUPTION_RETRIES {
         let attempt = paid_attempt(&store, &settings, &job.job_id, T);
@@ -1479,6 +1482,7 @@ fn a_failure_while_awake_keeps_the_one_retry_rule() {
         uncertain: true,
         paid: true,
         suspended: false,
+        settings_changed: false,
     };
     let attempt = paid_attempt(&store, &settings, &job.job_id, T);
     let view = store
@@ -2253,6 +2257,100 @@ fn explicit_source_retry_funds_one_span_and_its_tail_once_per_action() {
     assert_eq!(
         store.graph_job("loupist-a", &first.job_id).unwrap().status,
         JOB_PAUSED
+    );
+}
+
+/// The tester's Amazon Q3 2026 release in Loupist 0.1.5: its first chunk was
+/// retired after two World setting changes, the second ran out of the calls it
+/// inherited, and the third was left unfunded. Try again was shown and refused.
+#[test]
+fn try_again_funds_the_tail_behind_a_retired_chunk_and_leaves_that_chunk_as_it_ended() {
+    let (_directory, store) = open();
+    let settings = enabled();
+    let first = queued(
+        &store,
+        &settings,
+        "loupist-a",
+        "A".repeat(EPISODE_CHUNK_CHARS * 3).as_bytes(),
+    );
+    let source = first
+        .document
+        .source_binding
+        .as_ref()
+        .unwrap()
+        .source_record_id
+        .clone();
+    let chain = |jobs: &[GraphJobView]| {
+        let mut ordered = vec![jobs
+            .iter()
+            .find(|job| job.document.previous_episode_key.is_none())
+            .unwrap()
+            .clone()];
+        while let Some(next) = jobs.iter().find(|job| {
+            job.document.previous_episode_key.as_ref()
+                == Some(&ordered.last().unwrap().document.episode_key)
+        }) {
+            ordered.push(next.clone());
+        }
+        ordered
+    };
+    let chunks = chain(&store.graph_jobs("loupist-a").unwrap());
+    assert_eq!(chunks.len(), 3);
+    // As stored: recovery moved the tail to a new generation.
+    let shape: [(&str, bool, u8, Option<&str>); 3] = [
+        (JOB_RECONCILED, true, 1, None),
+        (JOB_PAUSED, true, 0, Some("gen_recovered")),
+        (JOB_PAUSED, false, 0, Some("gen_recovered")),
+    ];
+    store
+        .transact(|write| {
+            for (job, (status, attempted, interrupted, generation)) in chunks.iter().zip(shape) {
+                let mut document = job.document.clone();
+                document.extraction.max_llm_calls = 0;
+                document.inference_attempted = attempted;
+                document.interrupted_attempts = interrupted;
+                if let Some(generation) = generation {
+                    document.generation_id = generation.into();
+                }
+                write_status(write.tx, &job.job_id, JOB_QUEUED, status, &document)?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    let retired = store.graph_job("loupist-a", &chunks[0].job_id).unwrap();
+
+    let retried = store
+        .transact(|write| retry_source_processing(write.tx, &settings, "loupist-a", &source))
+        .unwrap();
+    assert_eq!(retried.job_id, chunks[1].job_id);
+    assert_eq!(retried.status, JOB_QUEUED);
+    assert_eq!(
+        retried.document.extraction.max_llm_calls,
+        settings.max_llm_calls
+    );
+    assert!(!retried.document.inference_attempted);
+    let tail = store.graph_job("loupist-a", &chunks[2].job_id).unwrap();
+    assert_eq!(
+        (tail.status.as_str(), tail.document.extraction.max_llm_calls),
+        (JOB_QUEUED, 0)
+    );
+    // The retired chunk keeps its spent calls and never runs again.
+    assert_eq!(
+        store.graph_job("loupist-a", &chunks[0].job_id).unwrap(),
+        retired
+    );
+    // Repeating the action while the tail waits funds nothing more.
+    let after = store.graph_jobs("loupist-a").unwrap();
+    assert!(store
+        .transact(|write| retry_source_processing(write.tx, &settings, "loupist-a", &source))
+        .is_err());
+    assert_eq!(store.graph_jobs("loupist-a").unwrap(), after);
+    // Its own claim takes the fresh allowance; the retired chunk gives it nothing.
+    let running = claim(&store, &settings, &chunks[1].job_id, T);
+    assert_eq!(running.status, JOB_RUNNING);
+    assert_eq!(
+        running.document.extraction.max_llm_calls,
+        settings.max_llm_calls
     );
 }
 

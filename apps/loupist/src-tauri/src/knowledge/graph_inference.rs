@@ -24,6 +24,37 @@ pub struct InferenceReply {
     pub body: Value,
 }
 
+/// Why a call went unsent: the saved World settings no longer match the ones
+/// its attempt started with. The attempt is then requeued on the new settings
+/// ([`super::graph_jobs::Unpublished::settings_changed`]).
+const SETTINGS_CHANGED: &str = "settings_changed";
+
+/// The controls a World attempt keeps from its start. A saved change to any of
+/// them stops the attempt.
+pub(crate) fn controls_changed(
+    saved: &GraphProcessingSettings,
+    frozen: &GraphProcessingSettings,
+) -> bool {
+    saved.helper_provider != frozen.helper_provider
+        || saved.helper_model != frozen.helper_model
+        || saved.thinking_level != frozen.thinking_level
+        || saved.run_options != frozen.run_options
+        || saved.max_llm_calls != frozen.max_llm_calls
+        || saved.timeout_ms != frozen.timeout_ms
+}
+
+/// A call refused before dispatch because the World settings changed.
+pub(crate) fn settings_changed_reply() -> InferenceReply {
+    InferenceReply {
+        disposition: InferenceDisposition::NotSent,
+        body: json!({"status": "not_sent", "reason": SETTINGS_CHANGED}),
+    }
+}
+
+pub(crate) fn refused_for_settings(reply: &InferenceReply) -> bool {
+    reply.disposition == InferenceDisposition::NotSent && reply.body["reason"] == SETTINGS_CHANGED
+}
+
 /// World settings name the bundled local model by this id, whichever model
 /// is bundled. Stored vectors are tied to the asset fingerprint, not to it.
 pub(crate) const LOCAL_EMBEDDING_PROFILE: &str = "local-en-128";
@@ -331,21 +362,24 @@ pub(crate) fn local_model(assets: &Path) -> Result<LocalModel, String> {
     local_models().get(assets)
 }
 
-/// The model for `assets` if it is already loaded. Otherwise this starts one
-/// load on its own thread and returns `None` without waiting, so an
-/// interactive search can answer from words alone meanwhile. A load that
-/// failed is not retried until the asset files change.
-pub(crate) fn loaded_local_model(assets: &Path) -> Option<LocalModel> {
-    local_models().loaded(assets)
+/// What an interactive search can rank with now.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ModelLookup {
+    /// The loaded model, if it has loaded.
+    pub(crate) model: Option<LocalModel>,
+    /// No model yet, and a load is under way: one this lookup started or one
+    /// already running. A search without the model says so.
+    pub(crate) loading: bool,
 }
 
-/// Whether a load of the model for `assets` is under way.
-pub(crate) fn local_model_loading(assets: &Path) -> bool {
-    assets.canonicalize().is_ok_and(|assets| {
-        local_models()
-            .lock()
-            .is_ok_and(|cache| cache.loading.contains(&assets))
-    })
+/// The model for `assets` if it is already loaded. Otherwise this starts one
+/// load on its own thread and returns without waiting, so an interactive
+/// search can answer from words alone meanwhile. Both answers come from one
+/// look at the cache: a load that ends right after cannot make a search that
+/// ranked without the model look complete. A load that failed is not retried
+/// until the asset files change.
+pub(crate) fn loaded_local_model(assets: &Path) -> ModelLookup {
+    local_models().loaded(assets)
 }
 
 pub(crate) fn embed_local_batch(assets: &Path, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
@@ -470,15 +504,32 @@ impl LocalModels {
         self.load(assets)
     }
 
-    fn loaded(&'static self, assets: &Path) -> Option<LocalModel> {
-        let assets = assets.canonicalize().ok()?;
-        let stamps = asset_stamps(&assets).ok()?;
-        let mut cache = self.lock().ok()?;
+    fn loaded(&'static self, assets: &Path) -> ModelLookup {
+        let unavailable = ModelLookup::default();
+        let Ok(assets) = assets.canonicalize() else {
+            return unavailable;
+        };
+        let Ok(stamps) = asset_stamps(&assets) else {
+            return unavailable;
+        };
+        let Ok(mut cache) = self.lock() else {
+            return unavailable;
+        };
         if let Some(model) = cache.verified(&assets, &stamps) {
-            return Some(model);
+            return ModelLookup {
+                model: Some(model),
+                loading: false,
+            };
         }
-        if cache.failed.get(&assets) == Some(&stamps) || !cache.loading.insert(assets.clone()) {
-            return None;
+        if cache.failed.get(&assets) == Some(&stamps) {
+            return unavailable;
+        }
+        let loading = ModelLookup {
+            model: None,
+            loading: true,
+        };
+        if !cache.loading.insert(assets.clone()) {
+            return loading;
         }
         drop(cache);
         let background = assets.clone();
@@ -493,8 +544,9 @@ impl LocalModels {
                 models: self,
                 assets,
             });
+            return unavailable;
         }
-        None
+        loading
     }
 
     /// Verify and load `assets`, whose loading mark the caller set.
@@ -846,22 +898,28 @@ mod tests {
         fixture_model(directory.path());
         let models: &'static LocalModels = Box::leak(Box::default());
         let loading = || !models.lock().unwrap().loading.is_empty();
-        // The first lookup returns before the model exists and starts its load.
-        assert!(models.loaded(directory.path()).is_none());
-        let model = eventually(|| models.loaded(directory.path()));
+        let loaded = || models.loaded(directory.path()).model;
+        // The first lookup returns before the model exists, starts its load
+        // and says so, however soon that load ends.
+        let first = models.loaded(directory.path());
+        assert!(first.model.is_none() && first.loading);
+        let model = eventually(loaded);
+        assert!(first.loading);
+        assert!(!models.loaded(directory.path()).loading);
         assert!(model.same(&models.get(directory.path()).unwrap()));
         assert_eq!(verifications(models), 1);
-        // A failed load is not retried until the files change.
+        // A failed load is not retried until the files change, and is not loading.
         let config = directory.path().join("config.json");
         let saved = std::fs::read(&config).unwrap();
         std::fs::write(&config, b"{").unwrap();
-        assert!(models.loaded(directory.path()).is_none());
+        assert!(loaded().is_none());
         eventually(|| (verifications(models) == 2 && !loading()).then_some(()));
-        assert!(models.loaded(directory.path()).is_none());
+        let failed = models.loaded(directory.path());
+        assert!(failed.model.is_none() && !failed.loading);
         assert!(!loading());
         assert_eq!(verifications(models), 2);
         std::fs::write(&config, saved).unwrap();
-        assert!(eventually(|| models.loaded(directory.path())).same(&model));
+        assert!(eventually(loaded).same(&model));
         assert_eq!(verifications(models), 3);
     }
 

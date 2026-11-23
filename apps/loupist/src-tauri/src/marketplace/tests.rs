@@ -582,12 +582,25 @@ fn credential_verification_separates_rejection_from_outage() {
         )),
         crate::finance_credentials::VerificationOutcome::Rejected
     );
-    assert_eq!(
-        credential_verification_outcome::<()>(&Err(
-            crate::finance_data::FinanceDataError::NetworkSafe("provider"),
-        )),
-        crate::finance_credentials::VerificationOutcome::TemporarilyUnavailable
-    );
+    // OpenDART's own key statuses (unregistered, unusable, address, expired).
+    for status in ["010", "011", "012", "901"] {
+        assert_eq!(
+            credential_verification_outcome::<()>(&Err(
+                crate::finance_data::FinanceDataError::DartKeyRefused(status),
+            )),
+            crate::finance_credentials::VerificationOutcome::Rejected
+        );
+    }
+    for outage in [
+        crate::finance_data::FinanceDataError::NetworkSafe("provider"),
+        crate::finance_data::FinanceDataError::Timeout("provider"),
+        crate::finance_data::FinanceDataError::ProviderMaintenance("provider"),
+    ] {
+        assert_eq!(
+            credential_verification_outcome::<()>(&Err(outage)),
+            crate::finance_credentials::VerificationOutcome::TemporarilyUnavailable
+        );
+    }
 }
 
 #[test]
@@ -1144,9 +1157,10 @@ fn settings_shows_a_timed_out_read_until_keychain_finishes() {
             assert!(matches!(result, Err(FinanceCredentialError::Unavailable)));
             assert!(snapshot().locked);
             assert_eq!(test_store::secret_reads(environment, id), reads + 1);
+            // macOS still holds the timed-out read: not a key change in progress.
             assert!(matches!(
                 finance_credentials::get_for_state(&state, id),
-                Err(FinanceCredentialError::Busy)
+                Err(FinanceCredentialError::Unavailable)
             ));
             release.send(accepted).unwrap();
             let deadline = Instant::now() + Duration::from_secs(5);

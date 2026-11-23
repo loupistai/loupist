@@ -164,16 +164,22 @@ impl AppToolExecutor {
                 })
                 .collect()
         };
+        let (record_ids, companies, periods, source_types) = (
+            filter("records")?,
+            filter("companies")?,
+            filter("periods")?,
+            filter("source_types")?,
+        );
+        let lookup = self.state.graph.semantic_lookup();
+        let model_loading = lookup.loading;
         let options = crate::knowledge::SearchOptions {
-            record_ids: filter("records")?,
-            companies: filter("companies")?,
-            periods: filter("periods")?,
-            source_types: filter("source_types")?,
+            record_ids,
+            companies,
+            periods,
+            source_types,
             include_metadata: true,
-            semantic_model: self.state.graph.semantic_model(),
+            semantic_model: lookup.model,
         };
-        let model_loading =
-            options.semantic_model.is_none() && self.state.graph.semantic_model_loading();
         let state = self.state.clone();
         let loupist_id = policy.loupist_id.clone();
         let owned_query = query.clone();

@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.1.6 - 2026-11-23
+
+- Get a Korean company's statements from OpenDART: statements for every company and period OpenDART has are read again instead of failing as an invalid response, and a company that files only separate statements returns those, marked separate.
+- Name a Korean company by its ticker, its Korean or English name or its corp code in any OpenDART read: Loupist downloads OpenDART's company list once, keeps it on your Mac and refreshes it in the background, so a lookup no longer waits for it on every question.
+- See why an OpenDART read failed: no data for that period, a key OpenDART refused with its status, the daily limit, maintenance, a slow answer or a company list still downloading, each with what to change.
+- Read a long OpenDART filing, or a long list of filings, page by page.
+- Look up a Korean company by its ticker, corp code or exact name and get its overview from OpenDART too: CEO, market, industry code, address, homepage, founding date and fiscal year-end.
+- Read a Korean company's treasury shares, auditor and audit opinion, employees and salaries, and share issues and reductions from its annual, half-year or quarterly report.
+- Read a Korean company's lawsuits, split-mergers and overseas listing or delisting decisions from OpenDART, like its other capital decisions.
+- Read an insider ownership report OpenDART dates a day after its receipt number, instead of losing the whole list.
+- Keep using a saved key while several reads run at once: a read waits its turn instead of failing as "being changed right now", for OpenDART, other data connections, custom connections and the GitHub sharing account.
+- Trust a fall a news passage states in words: a negative figure no longer warns of a sign mismatch when the passage says the market fell by that much, including when the point change comes first with the percent in brackets or one word ends a list of stocks, in new and already saved answers. A rise stated in words still flags a negative figure.
+- Keep price tables out of World: a saved price history, quote, exchange rate, index level or rate series, or a table of them, is kept and citable but spends no World requests and no longer delays the filings and articles behind it. The Library and the reader say "Price data · not added to World", and such Sources already waiting leave the queue.
+- Continue every Source paused at the request limit in one step: World says how many stopped there and offers Continue all, which first asks how many Sources it continues and how many model requests it can use at most. Each Source gets the same fresh allowance as its own Try again, which stays in the Library.
+- Keep World reading a Source while its model changes: when you pick another World model, or the recommended one follows an account you connect or disconnect, World reads the part it was on again with the new model instead of giving up, and Try again works on a Source that stopped after an earlier part failed.
+- Have World add a relationship type to what it tracks only when it is a lasting relation between two names, not a reporting verb such as "announces" or "supports", and name it as a short noun in your language.
+- Get answers in the language you ask in: a Loupist whose name or focus is in another language no longer pulls the answer or its progress notes into that language.
+- Have a question that a saved Source answers read that Source first, before the web.
+- See your Chat default by its own name while its AI account is disconnected: Settings and the Loupist's Chat defaults show the stored model with "Not available now", not the model Chat uses meanwhile.
+- Choose Live or Demo when setting up a connection: the list opens on top of the setup dialog.
+- Open Bot from the icon rail: hovering its icon keeps the icon, and the click opens Bot.
+- Finish onboarding with one click on Create Loupist when no AI account is connected: the window no longer stays on the name step with Save and continue, and a notice that could not be saved is asked again in the app.
+- Stop a reply without hearing about queued messages that do not exist: the line mentions them only while one is waiting.
+- Read every market-data step in your interface language, and see under a failed one why it was not used.
+- Read more World relations in your language, "files reports with" among them.
+- See a cited web page that has no title of its own named by its address, instead of "N/A".
+- See a price read in the reply that follows an asset credited to the market data it came from, not to Memory.
+- See which research session a waiting save waits for, named from its question while its first answer still runs, instead of "Untitled research session".
+
 ## 0.1.5 - 2026-11-23
 
 - Chat again after connecting a ChatGPT or SuperGrok account: a Loupist whose Chat default names only a model no longer refuses every reply.

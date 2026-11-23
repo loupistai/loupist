@@ -124,16 +124,29 @@ paid calls or quarantining other Sources; resume does not replay its paid attemp
 or requeue its blocked followers.
 The explicit `knowledge_graph_retry_source` bridge action can retry one stopped
 span of the Source's current revision with a fresh allowance from current settings.
+The span runs once the chunk before it is settled for good: completed, or retired
+as `reconciled_without_retry`. A tail stopped behind a retired chunk is therefore
+retryable, and Sources already stopped that way become retryable with no data
+change, since the rule reads the stored statuses. The retired chunk stays as it
+ended: its text does not reach World and none of its calls runs again.
+This keeps the paid-call rule: a dispatched call, completed or uncertain, keeps its
+reservation and is never refunded or sent again. Work runs again only as a new
+attempt on the calls its chunk has left (the interruption rules below) or on a
+fresh allowance the user grants with Try again, which never reruns a retired
+chunk, a chunk whose outcome is uncertain or may have published, or a follower
+that already dispatched a call.
 It requeues only that span's unfunded tail, sharing the new allowance; it refuses
 active, uncertain, quarantined, stale-revision or user-paused work. Duplicate clicks
 while queued cannot refill it. If this attempt exhausts its allowance again it
 stops again; only another explicit Source retry can fund it. Resuming World building,
 settings changes and restarts never refill a spent allowance.
-Such a chunk never resumes by itself. Its Library row, the Source reader, World's
-status line and the sidebar's World row then read "World building paused for this
-source: it reached the request allowance set in World building settings.", without
-a spinner, and World's status line, the Library status and the reader carry the
-control that opens World building settings (Maximum model requests per source,
+Such a chunk never resumes by itself. Its Library row and the Source reader then
+read "World building paused for this source: it reached the request allowance set
+in World building settings.", without a spinner. World's status line, the Library's
+status line and the sidebar's World row count instead: "3 Sources paused at the
+request limit" (`waitingLabel` in `knowledge/mapProcessing.ts`). World's status
+line, the Library status and the reader carry the control that opens World building
+settings (Maximum model requests per source,
 1–64, default 32 per Loupist, since a clean run of a 20 KB filing needs up to 24 on
 every recommended model; there is no daily or token cap). World settings saved before
 Loupists recorded their World model choice that still hold the old default, 16, read
@@ -143,25 +156,51 @@ paused" only while the user has paused World building (`source_processing`
 and `knowledge_graph_job` report such a job as `paused`, an exhausted one keeps
 `paused_budget`). Chat reads parked jobs once on opening and offers Refresh status
 without scheduling work.
-Only in `paused_budget` do those three places offer a neutral "Try again", which
-uses one more allowance of model requests for that Source as set in World building.
-This is the only renderer caller of the bridge action
+Only in `paused_budget` do the Library row, the reader and Chat's save line offer a
+neutral "Try again", which uses one more allowance of model requests for that Source
+as set in World building. This is the only renderer caller of the bridge action
 (`components/knowledge/SourceRetry.tsx`). It is disabled while the host decides,
 shows the host's refusal inline, and on success refreshes the row or reader and
 follows the returned job like other World building progress. The reader's settings
 button continues to manage global processing.
+World's status line also offers "Continue all" for the Sources it counts
+(`ContinueStoppedSources`, bridge action `knowledge_graph_retry_sources`). It asks
+first, naming the count and the most model requests it can use, the Sources times
+the allowance saved when the question opens ("Continue reading 3 Sources? This can
+use up to 96 model requests."); nothing resumes without that click.
+`retry_sources_processing` then runs the single Source retry for each Source the
+question named, in one transaction, and refuses the whole step when the saved
+allowance no longer matches the one it named. A Source that retry refuses (still
+queued after an earlier click, running, uncertain, stopped behind a chunk that
+cannot settle, price data or gone) is skipped and counted. A second click while the
+batch waits therefore funds nothing, and once some Sources finish or stop again the
+line counts only those still stopped. When none of the named Sources can continue,
+the question says so and points to Try again in the Library's Needs attention list.
 Revision and growth-event timestamps reflect extraction completion.
 
-An attempt that publishes nothing ends one of three ways (`finish_unpublished` in
+An attempt that publishes nothing ends one of four ways (`finish_unpublished` in
 `knowledge/graph_jobs.rs`). Publication is one transaction, so World is unchanged
 in each case. Driver errors settle their claimed attempt. Each scheduler pass also
 settles expired leases that have no live host worker, using the same retry and
 quarantine rules, without restarting the app. Replacement attempts have a new
 identity: an old worker cannot record calls or publish after reclamation.
 
-- **Nothing paid was sent** (the provider went away, its settings changed under
-  it): the attempt cost nothing and queues again, up to three times, then fails
-  without quarantining World; Try again can run it. Enqueuing that Source or
+- **The World settings changed under it**: the model, thinking level, run
+  options, request allowance or timeout saved since the attempt started differ
+  from the ones it froze. The host refuses its next call (`current_inference`
+  answers `settings_changed`), or the attempt ends while they differ, for instance
+  after a call that was in flight when they changed. A Recommended model that
+  follows a newly connected or disconnected account counts the same way. This is a
+  host interruption, not a failure: the chunk queues again however often the
+  settings change, spends neither its one retry nor a host interruption, and is
+  never quarantined. Its next claim takes the saved model and controls and keeps
+  the call count it has left (`claim_running`'s rule for a requeued span); the
+  calls already dispatched, completed or uncertain, stay spent and are never
+  refunded. A chunk whose allowance ran out this way pauses at its next claim.
+  An attempt that may have published (`mutation_sent`) still follows the last rule.
+- **Nothing paid was sent** (the provider went away): the attempt cost nothing and
+  queues again, up to three times, then fails without quarantining World; Try
+  again can run it. Enqueuing that Source or
   backfilling saved Sources requeues its failed or cancelled chunks only when
   no paid or uncertain attempt remains, preserving their frozen allowances and
   binding them to the current generation.
@@ -183,6 +222,49 @@ Only a committed `reconcile_required` receipt may add a generation to quarantine
 a rolled-back attempt cannot leave a quarantine without a recovery receipt.
 Pausing processing pauses every queued chunk of a Source, including Sources saved
 while paused; recovery rebuilds remain runnable while extraction is paused.
+
+### Price data
+
+A retained Source that is a numeric market-data result of the price kind is never
+queued for World building. It stays kept, searchable and citable like any other
+Source; World building looks for names, facts and relationships, and a price table
+holds none of them. `knowledge/price_data.rs` decides from what the host recorded,
+never from the title:
+
+- **The producing tool**: a retained dataset whose recorded producer and request
+  name a price route, with the recorded `trust: numeric`. The price routes are the
+  bundled market-data routes for price history and bars at any interval, quotes,
+  snapshots and price performance, exchange rates, index and commodity levels, and
+  yield and rate series (`PRICE_OPENBB_TOOLS`, each on the reviewed numeric-only
+  list), the KRX daily quote, and the KIS operations that return prices, order books,
+  trades, bars or index levels.
+- **The result's shape**: rows whose columns are only dates, instrument identifiers
+  (symbol, ticker, pair, currency) and price fields (open, high, low, close, price,
+  bid, ask, rate, yield and the like, with volume and change beside them), with a
+  number in every price cell. This covers a stored bar table whose dataset row is
+  gone, and a table the model composed from such results and saved from the
+  workspace (CSV, TSV, a Markdown pipe table or JSON rows).
+
+Company statements and fundamentals (income statement, balance sheet, cash flow,
+metrics, ratios, estimates) stay queued, since their figures can be facts worth
+keeping, and so do economic statistics, screens and rankings, holdings, ownership
+and calendars.
+
+Saving such a Source writes one final `price_data` row instead of extraction jobs:
+no text, no allowance, no model call. Method learning counts the Source as read,
+since World will add nothing from it. Try again refuses it, and a chunk World
+read before the rule existed still shows as read. Without World building set up no
+row is written; the Library row and the Source reader still read "Price data · not
+added to World" (`source_processing`), Chat's save line reads "Source saved · Price
+data, not added to World", and What's new never lists it, since World gains
+nothing from it. `source_save` answers `graph: not_added_price_data` for it.
+
+Work queued before this rule leaves the queue on the graph worker's next pass,
+before it selects a job (`retire_price_jobs`): queued, paused and stopped chunks,
+and chunks that ended before any paid call, become `price_data`. Completed, running
+and possibly published work keeps its status; calls already spent stay recorded on
+the row and none is sent again. The pass reads each waiting span once per process,
+changes nothing when run again, and logs only how many jobs left the queue.
 
 ### Keeping the Mac awake
 

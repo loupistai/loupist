@@ -4,13 +4,16 @@
 use std::{
     cell::Cell,
     collections::{btree_map::Entry, BTreeMap},
-    sync::{mpsc, Arc, Mutex, OnceLock},
+    sync::{mpsc, Arc, Condvar, Mutex, OnceLock},
     time::{Duration, Instant},
 };
 
 use crate::runs::maintenance::{ActivityLease, MaintenanceActivityKind, MaintenanceCoordinator};
 
 pub(crate) const TIMEOUT: Duration = Duration::from_secs(30);
+/// How long a read waits for its turn while another operation holds its item.
+/// A keychain read answers in milliseconds unless macOS is asking the user.
+pub(crate) const READ_TURN_WAIT: Duration = Duration::from_secs(5);
 
 thread_local! {
     static DEADLINE: Cell<Option<Instant>> = const { Cell::new(None) };
@@ -70,10 +73,25 @@ struct Item {
     account: String,
 }
 
-fn pending() -> &'static Mutex<BTreeMap<Item, bool>> {
-    // The value records whether the caller's wait for this read expired.
-    static PENDING: OnceLock<Mutex<BTreeMap<Item, bool>>> = OnceLock::new();
+/// What holds an item. One operation at a time touches the native item:
+/// parallel reads would stack macOS prompts, so a read waits its turn.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Holder {
+    /// A read; `timed_out` when its caller stopped waiting before macOS answered.
+    Read { timed_out: bool },
+    /// A change, a presence probe or another compound operation.
+    Exclusive,
+}
+
+fn pending() -> &'static Mutex<BTreeMap<Item, Holder>> {
+    static PENDING: OnceLock<Mutex<BTreeMap<Item, Holder>>> = OnceLock::new();
     PENDING.get_or_init(Default::default)
+}
+
+/// Signalled whenever an item is released, for reads waiting their turn.
+fn released() -> &'static Condvar {
+    static RELEASED: Condvar = Condvar::new();
+    &RELEASED
 }
 
 struct Reservation {
@@ -85,6 +103,7 @@ impl Drop for Reservation {
         if let Ok(mut pending) = pending().lock() {
             pending.remove(&self.item);
         }
+        released().notify_all();
     }
 }
 
@@ -100,19 +119,64 @@ impl KeychainOperation {
     }
 
     pub(crate) fn read_timed_out(service: &'static str, account: String) -> bool {
-        pending()
-            .lock()
-            .is_ok_and(|pending| pending.get(&Item { service, account }) == Some(&true))
+        pending().lock().is_ok_and(|pending| {
+            pending.get(&Item { service, account }) == Some(&Holder::Read { timed_out: true })
+        })
     }
 
+    /// Exclusive use of an item: a change, or work that must not interleave
+    /// with any other operation on it. Fails at once when the item is held.
     pub(crate) fn begin(service: &'static str, account: String) -> Result<Self, KeychainError> {
         let item = Item { service, account };
         let mut pending = pending().lock().map_err(|_| KeychainError::Unavailable)?;
         let Entry::Vacant(slot) = pending.entry(item.clone()) else {
             return Err(KeychainError::Busy);
         };
-        slot.insert(false);
+        slot.insert(Holder::Exclusive);
         Ok(Self(Arc::new(Reservation { item })))
+    }
+
+    /// A read. Another read or a short operation on the same item is waited
+    /// for, up to `READ_TURN_WAIT`, instead of failing: Pi runs tool calls in
+    /// parallel and several may read one key. Busy means a change is still in
+    /// progress; Unavailable means macOS has not answered an earlier read.
+    pub(crate) fn begin_read(
+        service: &'static str,
+        account: String,
+    ) -> Result<Self, KeychainError> {
+        Self::begin_read_within(service, account, READ_TURN_WAIT)
+    }
+
+    fn begin_read_within(
+        service: &'static str,
+        account: String,
+        wait: Duration,
+    ) -> Result<Self, KeychainError> {
+        let item = Item { service, account };
+        let deadline = Instant::now() + wait;
+        let mut pending = pending().lock().map_err(|_| KeychainError::Unavailable)?;
+        loop {
+            let holder = match pending.get(&item) {
+                None => {
+                    pending.insert(item.clone(), Holder::Read { timed_out: false });
+                    return Ok(Self(Arc::new(Reservation { item })));
+                }
+                // A read whose caller gave up is still with macOS (often a prompt).
+                Some(Holder::Read { timed_out: true }) => return Err(KeychainError::Unavailable),
+                Some(holder) => *holder,
+            };
+            let now = Instant::now();
+            if now >= deadline {
+                return Err(match holder {
+                    Holder::Exclusive => KeychainError::Busy,
+                    Holder::Read { .. } => KeychainError::Unavailable,
+                });
+            }
+            pending = released()
+                .wait_timeout(pending, deadline - now)
+                .map_err(|_| KeychainError::Unavailable)?
+                .0;
+        }
     }
 
     pub(crate) fn read<T: Send + 'static>(
@@ -132,7 +196,10 @@ impl KeychainOperation {
         // actual result. Keep this transient marker off the durable record.
         if matches!(result, Err(KeychainError::TimedOut)) {
             let mut pending = pending().lock().map_err(|_| KeychainError::Unavailable)?;
-            pending.insert(self.0.item.clone(), true);
+            // Only while the worker still holds the item; it may have just finished.
+            if let Some(holder) = pending.get_mut(&self.0.item) {
+                *holder = Holder::Read { timed_out: true };
+            }
         }
         result
     }
@@ -226,6 +293,78 @@ pub(crate) fn delete_entry(entry: keyring::Entry) -> Result<(), KeychainError> {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[test]
+    fn reads_of_one_item_wait_their_turn_and_only_a_change_reports_busy() {
+        // A second read while the first is with macOS waits, then reads.
+        let first = KeychainOperation::begin_read("test", "shared".into()).unwrap();
+        let second = std::thread::spawn(|| {
+            let started = Instant::now();
+            let read = KeychainOperation::begin_read("test", "shared".into())
+                .map(|operation| operation.read(|| "second"));
+            (read, started.elapsed())
+        });
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(first.read(|| "first"), Ok("first"));
+        drop(first);
+        let (read, waited) = second.join().unwrap();
+        assert_eq!(read, Ok(Ok("second")));
+        assert!(waited >= Duration::from_millis(80), "{waited:?}");
+
+        // A change excludes reads: a read waits for it to finish, then reads.
+        let change = KeychainOperation::begin("test", "changing".into()).unwrap();
+        assert!(matches!(
+            KeychainOperation::begin("test", "changing".into()),
+            Err(KeychainError::Busy)
+        ));
+        let reader = std::thread::spawn(|| {
+            KeychainOperation::begin_read("test", "changing".into())
+                .map(|operation| operation.read(|| "after the change"))
+        });
+        std::thread::sleep(Duration::from_millis(50));
+        drop(change);
+        assert_eq!(reader.join().unwrap(), Ok(Ok("after the change")));
+
+        // Busy is reported only for a change still in progress after the wait.
+        let change = KeychainOperation::begin("test", "slow-change".into()).unwrap();
+        assert!(matches!(
+            KeychainOperation::begin_read_within(
+                "test",
+                "slow-change".into(),
+                Duration::from_millis(30)
+            ),
+            Err(KeychainError::Busy)
+        ));
+        drop(change);
+
+        // A read macOS has not answered is "unavailable", never "being changed".
+        let stuck = KeychainOperation::begin_read("test", "stuck".into()).unwrap();
+        let (release, gate) = mpsc::channel::<()>();
+        assert_eq!(
+            stuck.read_with_timeout(Duration::from_millis(20), move || {
+                let _ = gate.recv();
+            }),
+            Err(KeychainError::TimedOut)
+        );
+        assert!(matches!(
+            KeychainOperation::begin_read_within("test", "stuck".into(), Duration::from_millis(30)),
+            Err(KeychainError::Unavailable)
+        ));
+        drop(stuck);
+        release.send(()).unwrap();
+        let until = Instant::now() + Duration::from_secs(5);
+        let settled = loop {
+            match KeychainOperation::begin_read("test", "stuck".into()) {
+                Ok(operation) => break operation,
+                Err(KeychainError::Unavailable) => {
+                    assert!(Instant::now() < until);
+                    std::thread::yield_now();
+                }
+                Err(error) => panic!("{error}"),
+            }
+        };
+        assert_eq!(settled.read(|| 1), Ok(1));
+    }
 
     #[test]
     fn blocked_mutation_times_out_without_releasing_item_or_update_exclusion() {

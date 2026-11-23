@@ -358,10 +358,31 @@ pub(super) fn validate_provider_result(
             "provider result did not match its declared contract".into(),
         ));
     }
-    output
+    let provenance = output
         .get("provenance")
         .and_then(Value::as_object)
         .ok_or_else(|| BrokerError::Execution("provider result had no provenance".into()))?;
+    // A locator becomes a Source, a citation and an export: it must never
+    // carry a parameter a native vendor declares as its credential.
+    let locators = provenance
+        .get("source_url")
+        .into_iter()
+        .chain(
+            provenance
+                .get("source_urls")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten(),
+        )
+        .filter_map(Value::as_str);
+    for locator in locators {
+        if crate::finance_data::locator_carries_credential(locator) {
+            return Err(BrokerError::Execution(
+                "The finance provider returned protected credential data. This result cannot be used."
+                    .into(),
+            ));
+        }
+    }
     output
         .get("quality")
         .and_then(|quality| quality.get("status"))
@@ -376,6 +397,34 @@ pub(super) fn validate_provider_result(
 #[cfg(test)]
 mod as_of_tests {
     use super::*;
+
+    #[test]
+    fn a_provider_result_whose_locator_keeps_a_credential_is_refused() {
+        let result = |url: &str| {
+            json!({
+                "schema_version": "loupist-finance-result/1",
+                "tool": "dart_filing_read",
+                "source_id": crate::finance_data::OPENDART_SOURCE_ID,
+                "provenance": {"source_url": url, "source_urls": [url]},
+                "quality": {"status": "pass"}
+            })
+        };
+        let public = "https://opendart.fss.or.kr/api/document.xml?rcept_no=20261113000376";
+        validate_provider_result(
+            &result(public),
+            "dart_filing_read",
+            crate::finance_data::OPENDART_SOURCE_ID,
+        )
+        .unwrap();
+        let keyed = format!("{public}&crtfc_key=fixture-secret-0000");
+        let error = validate_provider_result(
+            &result(&keyed),
+            "dart_filing_read",
+            crate::finance_data::OPENDART_SOURCE_ID,
+        )
+        .unwrap_err();
+        assert!(!error.to_string().contains("fixture-secret"));
+    }
 
     #[test]
     fn as_of_arguments_reject_non_strings_instead_of_removing_the_cutoff() {

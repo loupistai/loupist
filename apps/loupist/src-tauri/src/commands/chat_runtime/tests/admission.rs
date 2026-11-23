@@ -387,6 +387,17 @@ mod stored_default_fallback {
     /// the model Auto falls back to does not.
     fn fixture() -> AdmissionFixture {
         let fixture = AdmissionFixture::new();
+        connect_both(&fixture);
+        let config = format!(
+            "[chat]\nmodel_profile_id = '{STORED}'\nthinking_level = 'xhigh'\n[chat.run_options]\nperformance = 'fast'\n"
+        );
+        let project = Path::new(&fixture.profile.workspace_root).join(".loupist");
+        std::fs::write(project.join("config.toml"), config).unwrap();
+        fixture
+    }
+
+    /// Both accounts connected, as Settings connects them: each lists its models.
+    fn connect_both(fixture: &AdmissionFixture) {
         fixture.connect(&[("openai", Some("gpt-6.2-sol")), ("xai", Some("grok-4.7"))]);
         let mut stored = fixture
             .state
@@ -404,12 +415,6 @@ mod stored_default_fallback {
             .state
             .replace_provider_models("openai", vec![stored])
             .unwrap();
-        let config = format!(
-            "[chat]\nmodel_profile_id = '{STORED}'\nthinking_level = 'xhigh'\n[chat.run_options]\nperformance = 'fast'\n"
-        );
-        let project = Path::new(&fixture.profile.workspace_root).join(".loupist");
-        std::fs::write(project.join("config.toml"), config).unwrap();
-        fixture
     }
 
     fn sign_in(fixture: &AdmissionFixture, providers: &[&str]) {
@@ -509,7 +514,7 @@ mod stored_default_fallback {
             fn(&AdmissionFixture),
             ModelUnavailableReason,
         );
-        let causes: [Cause; 3] = [
+        let causes: [Cause; 4] = [
             (
                 // The sign-in ended outside Loupist; its models are still listed.
                 "signed-out",
@@ -540,6 +545,25 @@ mod stored_default_fallback {
                 ModelUnavailableReason::AccountDisconnected,
             ),
             (
+                // Settings' Disconnect: the account's models leave the catalog.
+                "disconnected-unlisted",
+                |fixture| {
+                    sign_in(fixture, &["xai"]);
+                    status::record(
+                        &fixture.state,
+                        "openai",
+                        Trigger::Disconnected(status::UsedBy::default()),
+                    )
+                    .unwrap();
+                    fixture
+                        .state
+                        .replace_provider_models("openai", vec![])
+                        .unwrap();
+                },
+                connect_both,
+                ModelUnavailableReason::AccountDisconnected,
+            ),
+            (
                 "hidden",
                 |fixture| fixture.state.set_model_visible(STORED, false).unwrap(),
                 |fixture| fixture.state.set_model_visible(STORED, true).unwrap(),
@@ -551,6 +575,8 @@ mod stored_default_fallback {
             let stored = |scenario: &str| {
                 let selection = fixture.default_selection();
                 assert!(!selection.is_default, "{cause}");
+                assert_eq!(selection.stored_unavailable, None, "{cause}");
+                assert_eq!(selection.stored_model, None, "{cause}");
                 assert_eq!(selection.model.unwrap().id, STORED, "{cause}");
                 for (path, ran) in ["chat", "scheduled", "hand-off"]
                     .into_iter()
@@ -572,6 +598,12 @@ mod stored_default_fallback {
             let selection = fixture.default_selection();
             assert_eq!(selection.unavailable_reason, None, "{cause}: Chat can send");
             assert_eq!(selection.stored_unavailable, Some(reason), "{cause}");
+            // Chat defaults name the stored model, never the model Auto picked.
+            let named = selection.stored_model.as_ref().expect(cause);
+            assert_eq!(
+                (named.id.as_str(), named.name.as_str()),
+                (STORED, "gpt-6.2-sol")
+            );
             assert!(selection.is_default, "{cause}");
             assert_eq!(selection.model.unwrap().id, AUTO, "{cause}");
             for (path, (model, level, performance)) in ["chat", "scheduled", "hand-off"]
@@ -594,6 +626,31 @@ mod stored_default_fallback {
             restore(&fixture);
             stored(&format!("{cause}-after"));
         }
+    }
+
+    #[test]
+    fn a_stored_default_its_provider_stopped_offering_is_named_while_auto_answers() {
+        let fixture = fixture();
+        crate::providers::auto::prune_gone(&fixture.state, STORED);
+        let selection = fixture.default_selection();
+        assert_eq!(selection.unavailable_reason, None);
+        assert_eq!(
+            selection.stored_unavailable,
+            Some(ModelUnavailableReason::CatalogUnavailable)
+        );
+        assert_eq!(selection.stored_model.unwrap().name, "gpt-6.2-sol");
+        assert_eq!(selection.model.unwrap().id, AUTO);
+        // A stored model the catalog never listed has no name to show.
+        fixture.save_model_only_preference("openai/gpt-never-listed");
+        let selection = fixture.default_selection();
+        assert_eq!(
+            selection.stored_unavailable,
+            Some(ModelUnavailableReason::CatalogUnavailable)
+        );
+        assert_eq!(selection.stored_model, None);
+        // Listed again, the model needs no remembered name.
+        connect_both(&fixture);
+        assert_eq!(fixture.state.store.unlisted_model(STORED).unwrap(), None);
     }
 
     #[test]

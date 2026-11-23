@@ -330,11 +330,21 @@
     }
   },
   {
+    "name": "dart_report_items",
+    "method": "dart.report_items",
+    "args": {
+      "company": "005930",
+      "kind": "auditor",
+      "fiscal_year": 2025,
+      "report_period": "annual"
+    }
+  },
+  {
     "name": "dart_financials",
     "method": "dart.financials",
     "args": {
       "company": "005930",
-      "fiscal_year": 1994,
+      "fiscal_year": 2024,
       "report_period": "annual",
       "basis": "consolidated"
     }

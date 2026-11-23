@@ -175,6 +175,42 @@ async fn dataset_reads_are_citable_saved_context_with_exact_slice_and_lineage() 
         receipt.upstream_evidence_ids,
         [evidence::evidence_id(&upstream)]
     );
+    // The data was read in this reply, so its figures name that read's provider.
+    assert_eq!(receipt.kind, crate::domain::ChatEvidenceKind::SavedContext);
+    assert_eq!(receipt.provider.as_deref(), Some("issuer"));
+
+    // A dataset no read of this reply fetched names no provider.
+    let kept = executor
+        .state
+        .store
+        .dataset_put(
+            "loupist-a",
+            "kept-slice",
+            &json!({"data":{"rows":[{"year":2023,"value":5}]}}),
+            json!({}),
+        )
+        .unwrap();
+    let output = executor
+        .execute(
+            &policy(),
+            ToolMethod::DatasetQuery,
+            json!({"dataset_id":kept.dataset_id,"revision":kept.revision,
+                "pointer":"/data/rows","offset":0,"limit":1,"columns":["year","value"]}),
+        )
+        .await
+        .unwrap();
+    let kept_ref = output["result_ref"].as_str().unwrap();
+    let receipt = executor
+        .capture
+        .evidence_refs
+        .lock()
+        .await
+        .iter()
+        .find(|item| item.id == evidence::evidence_id(kept_ref))
+        .cloned()
+        .unwrap();
+    assert!(receipt.upstream_evidence_ids.is_empty());
+    assert_eq!(receipt.provider, None);
 }
 
 #[tokio::test]

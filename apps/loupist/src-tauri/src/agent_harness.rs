@@ -1437,7 +1437,7 @@ pub(crate) fn loupist_instructions(instructions: &str) -> String {
 /// The turn-context block holding the Loupist's research focus from its profile,
 /// the one place the agent reads it. It is definition, not Memory: present on
 /// every turn, empty when the user has set none.
-pub(crate) const LOUPIST_FOCUS_BLOCK: &str = "What this Loupist researches, in the user's words";
+pub(crate) const LOUPIST_FOCUS_BLOCK: &str = "What this Loupist researches";
 
 /// A focus is at most 280 characters on save (settings and `loupist_setup`);
 /// bound again at delivery so an imported profile cannot exceed it.

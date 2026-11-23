@@ -2084,7 +2084,13 @@ fn safe_web_source(source: &crate::web::WebSource) -> Option<(String, String)> {
     )
     .ok()?;
     let title = safe_web_title(&source.title).unwrap_or_else(|| host.to_owned());
-    Some((format!("{title} · {host}"), source.url.clone()))
+    // An untitled page is named by its host and path, which already says its host.
+    let target = if title.starts_with(host) {
+        title
+    } else {
+        format!("{title} · {host}")
+    };
+    Some((target, source.url.clone()))
 }
 
 fn safe_web_title(value: &str) -> Option<String> {

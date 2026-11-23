@@ -993,7 +993,8 @@ fn token_operation(environment: &str) -> Result<KeychainOperation, TokenStoreErr
 }
 
 pub(crate) fn try_load_token(environment: &str) -> Result<Option<String>, TokenStoreError> {
-    let operation = token_operation(environment)?;
+    let operation =
+        KeychainOperation::begin_read(TOKEN_SERVICE, format!("{environment}:github-sharing"))?;
     let environment = environment.to_owned();
     operation.read(move || {
         if refused()

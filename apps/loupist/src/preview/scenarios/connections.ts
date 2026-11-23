@@ -86,6 +86,39 @@ export const connectionScenarios: PreviewScenario[] = [
     setup: async bridge => { await prepareFixture(bridge); await prepare?.(bridge); },
   })),
 
+  // The list is portaled to the body. jsdom does not stack it, so the hit is Chrome-only.
+  {
+    ...base("connection-setup-account-type", "Korea Investment: the account type list opens above the setup dialog", () => select('[data-slot="select-content"] [role="option"]'), async root => {
+      await settings(root, "connections");
+      await click('[aria-labelledby="connection-koreainvestment.market-data"] button');
+      const trigger = await until(() => select('[id="marketplace-koreainvestment.market-data-environment"]'), "Account type did not load");
+      // Select opens on ArrowDown. A pointerdown without pointerType "mouse" does not (jsdom's PointerEvent).
+      (trigger as HTMLElement).focus();
+      trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+      const list = await until(() => select('[data-slot="select-content"]'), "Account type list did not open");
+      if (!hasLayout()) return;
+      // The open list marks the dialog aria-hidden, so the visibility helper skips it. It is still painted.
+      const dialog = document.querySelector<HTMLElement>('[data-slot="dialog-content"]');
+      if (!dialog) throw new Error("Setup dialog is not open");
+      const layer = list.closest<HTMLElement>("[data-radix-popper-content-wrapper]") ?? list;
+      const placed = await until(() => {
+        const listZ = Number(getComputedStyle(layer).zIndex);
+        return Number.isFinite(listZ) ? listZ : null;
+      }, "Account type list has no stacking level");
+      const dialogZ = Number(getComputedStyle(dialog).zIndex);
+      const follows = dialog !== null && (dialog.compareDocumentPosition(layer) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      if (!(placed > dialogZ || (placed === dialogZ && follows))) {
+        throw new Error(`Account type list paints behind the setup dialog (list z-index ${placed}, dialog ${dialogZ})`);
+      }
+      const listBox = list.getBoundingClientRect();
+      const hidden = [...list.querySelectorAll<HTMLElement>('[role="option"]')].filter((option) => {
+        const box = option.getBoundingClientRect();
+        return box.height < 1 || box.top < listBox.top - 1 || box.bottom > listBox.bottom + 1;
+      });
+      if (listBox.height < 1 || hidden.length) throw new Error("Account type options are outside the visible list");
+    }),
+  },
+
   {
     ...base("connections-off-here", "Connections: a ready connection that is off for this Loupist says so on its card", () => select(".marketplace-off-here"), async root => {
       await settings(root, "connections");

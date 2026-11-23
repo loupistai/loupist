@@ -1,5 +1,7 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import i18n from "@/i18n";
+import { REPLY_FAILED, REPLY_STOPPED } from "../../chat/draftSession";
 import { ChatPendingQueue } from "./ChatPendingQueue";
 
 const queued = (id: string, text: string) => ({ privateChat: false, modelProfileId: "test-model", thinkingLevel: "medium", runOptions: {}, files: [], id, text, createdAt: "2026-08-17T00:00:00Z", pins: [] });
@@ -100,7 +102,7 @@ it("says why Send now is unavailable: the running reply, or what to reconnect", 
 it("offers the next message after a stopped reply held the queue", async () => {
   const user = userEvent.setup();
   const props = handlers();
-  const { rerender } = render(<ChatPendingQueue models={[]} {...props} holdReason="Response stopped. Queued messages were kept." queued={[queued("q1", "First"), queued("q2", "Second")]} />);
+  const { rerender } = render(<ChatPendingQueue models={[]} {...props} holdReason={REPLY_STOPPED} queued={[queued("q1", "First"), queued("q2", "Second")]} />);
   await user.click(screen.getByRole("button", { name: "Send next now" }));
   expect(props.onSendNow).toHaveBeenCalledWith("q1");
   // Nothing to offer while the message cannot go: offline, or while a reply runs.
@@ -108,6 +110,29 @@ it("offers the next message after a stopped reply held the queue", async () => {
   expect(screen.queryByRole("button", { name: "Send next now" })).toBeNull();
   rerender(<ChatPendingQueue models={[]} {...props} canSendNow={false} holdReason="Reconnect the workspace folder before sending." queued={[queued("q1", "First")]} />);
   expect(screen.queryByRole("button", { name: "Send next now" })).toBeNull();
+});
+
+it("says queued messages were kept after a stopped or failed reply only while one is queued, in both languages", async () => {
+  // The notice's own words, without the Send next now button beside them.
+  const hold = () => screen.getByRole("status").firstElementChild?.textContent;
+  const { rerender } = render(<ChatPendingQueue models={[]} {...handlers()} holdReason={REPLY_STOPPED} queued={[queued("q1", "First")]} />);
+  expect(hold()).toBe("Response stopped. Queued messages were kept.");
+  // The last queued message removed: nothing is left to keep.
+  rerender(<ChatPendingQueue models={[]} {...handlers()} holdReason={REPLY_STOPPED} queued={[]} />);
+  expect(hold()).toBe("Response stopped.");
+  rerender(<ChatPendingQueue models={[]} {...handlers()} holdReason={REPLY_FAILED} queued={[]} />);
+  expect(hold()).toBe("Response failed.");
+  await act(async () => { await i18n.changeLanguage("ko"); });
+  try {
+    rerender(<ChatPendingQueue models={[]} {...handlers()} holdReason={REPLY_STOPPED} queued={[]} />);
+    expect(hold()).toBe("응답을 중지했습니다.");
+    rerender(<ChatPendingQueue models={[]} {...handlers()} holdReason={REPLY_STOPPED} queued={[queued("q1", "First")]} />);
+    expect(hold()).toBe("응답을 중지했습니다. 대기 중인 메시지는 유지되어 있습니다.");
+    rerender(<ChatPendingQueue models={[]} {...handlers()} holdReason={REPLY_FAILED} queued={[]} />);
+    expect(hold()).toBe("응답하지 못했습니다.");
+  } finally {
+    await act(async () => { await i18n.changeLanguage("en"); });
+  }
 });
 
 it("moves focus to the next row, then to the message, when a row's menu removes it", async () => {

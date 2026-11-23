@@ -78,11 +78,34 @@ pub(crate) fn present(
             });
         }
     }
-    let selection = catalog.selection(
+    let mut selection = catalog.selection(
         requested,
         chat.thinking_level.as_deref().unwrap_or_default(),
         &options,
     );
+    // Chat defaults name the stored model while Auto answers in its place: by
+    // its catalog name, or the name it had before the catalog dropped it.
+    if selection.stored_unavailable.is_some() {
+        selection.stored_model = match catalog.catalog.resolve(requested) {
+            Ok(model) => Some(crate::providers::selection::ModelIdentity {
+                id: model.id,
+                provider: model.provider,
+                model: model.model,
+                name: model.name,
+            }),
+            Err(_) => state
+                .store
+                .unlisted_model(requested)
+                .ok()
+                .flatten()
+                .map(|model| crate::providers::selection::ModelIdentity {
+                    id: model.model_id,
+                    provider: model.provider,
+                    model: model.model,
+                    name: model.name,
+                }),
+        };
+    }
     if let ConfigScope::Project { loupist_id } = &snapshot.scope {
         snapshot.default_model_change = state
             .store

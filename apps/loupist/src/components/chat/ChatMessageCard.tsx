@@ -9,7 +9,7 @@ import type { ChatThread, LoupistBridge } from "../../types";
 import { formatNumber, formatTime } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
 import { ContextTitle, titlePlaceholder } from "../ui/context-title";
-import { chatTitle } from "../../app/chatTitle";
+import { waitedOnChatTitle } from "../../app/chatTitle";
 import { Spinner } from "../ui/spinner";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { useConversationScroll } from "../ai-elements/conversation";
@@ -498,7 +498,7 @@ function ChatMessageCardComponent({
     <Spinner className="turn-live-glyph" aria-hidden="true" />
     {saving.waiting_for_other_chat
       ? blockingChat
-        ? <ContextTitle template={t("memorySaving.waitingForChat", { title: titlePlaceholder })} title={chatTitle(blockingChat)}><BlockingChatLink thread={blockingChat} /></ContextTitle>
+        ? <ContextTitle template={t("memorySaving.waitingForChat", { title: titlePlaceholder })} title={waitedOnChatTitle(blockingChat)}><BlockingChatLink thread={blockingChat} /></ContextTitle>
         : t("memorySaving.waitingForOthers")
       : t("memorySaving.inProgress")}
     {onSkipSave ? <button type="button" className="turn-live-skip" title={t("memorySaving.skipDetail")} disabled={skippingSave}
@@ -636,7 +636,7 @@ function ChatMessageCardComponent({
 
 function BlockingChatLink({ thread }: { thread: ChatThread }) {
   const go = useGo();
-  const title = chatTitle(thread);
+  const title = waitedOnChatTitle(thread);
   return go
     ? <a href="#" onClick={event => { event.preventDefault(); go({ kind: "chat", threadId: thread.id }); }}>{title}</a>
     : <span>{title}</span>;

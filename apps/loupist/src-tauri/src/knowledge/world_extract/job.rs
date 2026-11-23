@@ -257,6 +257,7 @@ where
     tokio::pin!(task);
     let mut uncertain = false;
     let mut blocked = false;
+    let mut settings_changed = false;
     // Calls the pipeline sends together are in flight together; each one's
     // reply goes back on its own channel, so the pipeline reads them in order.
     let mut in_flight = FuturesUnordered::new();
@@ -294,6 +295,7 @@ where
                 if response.disposition == InferenceDisposition::Uncertain {
                     uncertain = true;
                 }
+                settings_changed |= graph_inference::refused_for_settings(&response);
                 let _ = reply.send(Answered { reply: response, elapsed: received.elapsed() });
             }
         }
@@ -320,10 +322,19 @@ where
             });
         }
         Err(_) => {
+            // A refused call says the settings changed. A change that landed
+            // while the last call was in flight shows only in the saved row.
+            let settings_changed = settings_changed
+                || store
+                    .read(|read| graph_jobs::saved_settings(read.tx, &job.loupist_id))
+                    .ok()
+                    .flatten()
+                    .is_some_and(|saved| graph_inference::controls_changed(&saved, settings));
             let end = Unpublished {
                 uncertain,
                 paid: ran.paid,
                 suspended: suspended(wall_started, started),
+                settings_changed,
             };
             return store.graph_finish_unpublished(settings, job_id, &attempt_id, end, now_ms);
         }

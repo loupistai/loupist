@@ -84,3 +84,32 @@ async fn every_dart_statement_replay_returns_dated_facts() {
     }
     assert!(checked > 0);
 }
+
+/// A company without subsidiaries: OpenDART answers the consolidated request
+/// with no data (013), and the host serves the separate statements, marked.
+#[tokio::test]
+async fn a_consolidated_read_of_a_separate_only_filer_returns_its_separate_statements() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../evals/agent/suites/replay/opendart-iseul-basis.json");
+    let replay: replay::Replay = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let _guard = replay.install("dart-separate-fallback").unwrap();
+    let service = crate::finance_data::FinanceDataService::new().unwrap();
+    let pacer = || Box::pin(async {}) as futures_util::future::BoxFuture<'static, ()>;
+    let result = service
+        .opendart_company_facts(
+            json!({"corp_code": "99055200", "fiscal_year": 2025, "report_period": "annual",
+                   "basis": "consolidated"}),
+            "eval-placeholder",
+            &pacer,
+        )
+        .await
+        .unwrap();
+    assert_eq!(result["query"]["basis"], "consolidated");
+    assert_eq!(result["data"]["period"]["basis"], "separate");
+    assert_eq!(result["data"]["period"]["fs_div"], "OFS");
+    assert_eq!(result["data"]["period"]["requested_basis"], "consolidated");
+    assert_eq!(result["quality"]["status"], "warn");
+    let facts = result["data"]["facts"].as_array().unwrap();
+    assert!(!facts.is_empty());
+    assert!(facts.iter().all(|fact| fact["consolidation"] == "separate"));
+}

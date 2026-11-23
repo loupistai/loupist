@@ -190,8 +190,14 @@ listed but cannot run, because its account signed out or disconnected or the use
 hid it, also uses Auto, with the thinking level and run options Auto declares for
 the model it picks (`SelectionCatalog::admit`, `auto::stored_fallback`). The stored
 choice is not rewritten: it applies again once it can run. The snapshot reports it
-in `stored_unavailable`; Chat defaults and the Loupist's settings keep showing the
-stored model with "Not available now. Chat uses the recommended model until it is.",
+in `stored_unavailable`, also for a stored model the catalog no longer lists (a
+disconnect removes the account's models: `account_disconnected`; otherwise
+`catalog_unavailable`), and names it in `stored_model`: by the catalog's name, or by
+the name it had when the catalog dropped it (`provider_unlisted_model` in
+`catalog.sqlite3`, kept per provider until the model is listed again or its provider
+leaves the build). Chat defaults and the Loupist's settings keep showing the stored
+model by that name ("Unavailable model" when none is known), never the fallback as
+the choice, with "Not available now. Chat uses the recommended model until it is.",
 and the composer names the model that runs. Chat refuses only when no connected
 account can run any model ("No AI account"). A run records the model that ran. Connected providers rank by connection date,
 earliest first and Needs reconnect last; notices are ignored, so Auto never moves to another paid

@@ -126,6 +126,8 @@ button.needs-attention-more:hover { color: var(--gg-color-text-primary); }
 [data-collapsible="icon"] .navigation-search { flex: none; justify-content: center; width: 40px; padding: 0; }
 [data-collapsible="icon"] .loupist-list-heading { justify-content: center; margin-inline: 0; padding: 0; }
 [data-collapsible="icon"] :is(.loupist-chat-button, #main-tab-settings) { position: relative; justify-content: center; width: 40px !important; height: 34px !important; min-height: 34px; padding: 0 !important; }
+/* The options control belongs to the expanded row. Hiding it here keeps a copied menu off the icon and off the click. */
+[data-collapsible="icon"] .loupist-chat-menu { display: none; }
 [data-collapsible="icon"] :is(.loupist-navigation, .navigation-footer) [data-slot="sidebar-menu"] { width: fit-content; align-self: center; }
 [data-collapsible="icon"] .loupist-chat-row :is(.loupist-draft-dot, .loupist-status-dot, .thread-running, .loupist-private-mark) { position: absolute; top: var(--gg-space-1); right: var(--gg-space-1); margin: 0; }
 /* In the rail's corner the spinner takes the status dot's 8 px, clear of the icon, with a heavier stroke. */

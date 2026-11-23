@@ -404,6 +404,11 @@ impl Candidate {
     pub(crate) fn outflow_for(&self, printed: &Printed) -> bool {
         self.direction == Some(Direction::Outflow) && self.value_for(printed) != self.value
     }
+
+    /// The answer's printed minus meets a decline the source states in words.
+    pub(crate) fn stated_fall_for(&self, printed: &Printed) -> bool {
+        self.direction == Some(Direction::Fall) && self.value_for(printed) != self.value
+    }
 }
 
 /// A currency between figures can prefix the following figure, as in
@@ -529,15 +534,8 @@ struct Scanned {
     bare_scale: Option<f64>,
     /// A sign, triangle mark or accounting brackets came with the number.
     signed: bool,
-}
-
-impl Scanned {
-    fn direction(&self, text: &str) -> Option<Direction> {
-        if self.signed || self.value <= 0.0 {
-            return None;
-        }
-        direction::around(&text[..self.direction_start], &text[self.end..])
-    }
+    /// The direction the wording governing an unsigned figure states.
+    direction: Option<Direction>,
 }
 
 /// Fold numeric glyphs only. The scanner still indexes the original UTF-8
@@ -781,6 +779,7 @@ fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned>
             end: span_end,
             bare_scale,
             signed,
+            direction: None,
         });
     }
     // Join `1조 2,345억원`: a bare larger scale followed by a smaller Korean amount.
@@ -806,6 +805,18 @@ fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned>
             }
         }
         joined.push(next);
+    }
+    let figures: Vec<_> = joined
+        .iter()
+        .map(|found| direction::Figure {
+            lead: found.direction_start,
+            end: found.end,
+            fixed: found.signed || found.value <= 0.0,
+            rate: matches!(found.unit, Unit::Percent | Unit::Points | Unit::BasisPoints),
+        })
+        .collect();
+    for (found, governed) in joined.iter_mut().zip(direction::governing(text, &figures)) {
+        found.direction = governed;
     }
     joined
 }
@@ -853,7 +864,7 @@ fn text_numbers(text: &str, out: &mut Vec<Candidate>, amount: Option<&Printed>) 
         let direction = if outflow && found.value < 0.0 {
             Some(Direction::Outflow)
         } else {
-            found.direction(text)
+            found.direction
         };
         // A number printed bare keeps its plain reading beside the stated unit.
         let original = if let Some(printed) = amount {
@@ -2560,7 +2571,7 @@ pub(crate) fn diagnostic_tokens(
             direction: if cell.outflow && found.value < 0.0 {
                 Some(Direction::Outflow)
             } else {
-                found.direction(text)
+                found.direction
             },
             cell: None,
             place: Place::Span {
@@ -4394,6 +4405,279 @@ mod tests {
     fn spanish_direction() {
         check_direction("La cotización cayó un 4.81%.", "4.81%", Direction::Fall);
         check_direction("El precio subió un 4.81%.", "4.81%", Direction::Rise);
+    }
+
+    /// Each figure's direction in a passage, by value.
+    fn directions(passage: &str) -> Vec<(f64, Option<Direction>)> {
+        passage_candidates(passage)
+            .iter()
+            .map(|candidate| (candidate.value, candidate.direction))
+            .collect()
+    }
+
+    #[test]
+    fn market_report_verbs_state_falls_and_rises_in_every_language() {
+        use Direction::{Fall, Rise};
+        for (passage, magnitude, direction) in [
+            // Korean: 내리다 and the other falls of a market report.
+            ("코스닥은 1.58% 내린 635.45로", "1.58%", Fall),
+            ("지수가 1.58% 내려 635.45를", "1.58%", Fall),
+            ("지수가 1.58% 내렸다", "1.58%", Fall),
+            ("지수가 1.58% 내리며", "1.58%", Fall),
+            ("지수가 1.58% 내림세", "1.58%", Fall),
+            ("주가가 1.58% 급락했다", "1.58%", Fall),
+            ("주가가 1.58% 폭락했다", "1.58%", Fall),
+            ("1.58% 약세를 보였다", "1.58%", Fall),
+            ("1.58% 빠진 635.45", "1.58%", Fall),
+            ("1.58% 빠졌다", "1.58%", Fall),
+            ("1.58% 밀린 635.45", "1.58%", Fall),
+            ("1.58% 밀려 635.45", "1.58%", Fall),
+            ("1.58% 뒷걸음질했다", "1.58%", Fall),
+            ("하락률 1.58%", "1.58%", Fall),
+            ("코스닥은 1.58% 오른 645.45로", "1.58%", Rise),
+            ("1.58% 올라 645.45", "1.58%", Rise),
+            ("1.58% 올랐다", "1.58%", Rise),
+            ("1.58% 오르며", "1.58%", Rise),
+            ("1.58% 뛰었다", "1.58%", Rise),
+            ("1.58% 급등", "1.58%", Rise),
+            ("1.58% 강세", "1.58%", Rise),
+            ("1.58% 반등했다", "1.58%", Rise),
+            ("상승률 1.58%", "1.58%", Rise),
+            // English
+            ("The index slid 4.11% to 4,669.82", "4.11%", Fall),
+            ("Shares tumbled 4.11%", "4.11%", Fall),
+            ("Kospi lost 4.11%", "4.11%", Fall),
+            ("closed 4.11% lower at 4,669.82", "4.11%", Fall),
+            ("a 4.11% slump", "4.11%", Fall),
+            ("down 200.14 points to 4,669.82", "200.14", Fall),
+            ("200.14 points lower", "200.14", Fall),
+            ("The index climbed 4.11%", "4.11%", Rise),
+            ("Shares jumped 4.11%", "4.11%", Rise),
+            ("closed 4.11% higher at 4,669.82", "4.11%", Rise),
+            ("a 4.11% rally", "4.11%", Rise),
+            // Japanese
+            ("日経平均は3.31%下落した", "3.31%", Fall),
+            ("株価は3.31%値下がりした", "3.31%", Fall),
+            ("売上高は3%減の", "3%", Fall),
+            ("利回りは3%低下", "3%", Fall),
+            ("200.14ポイント安", "200.14", Fall),
+            ("株価は3.31%値上がりした", "3.31%", Rise),
+            ("売上高は3%増の", "3%", Rise),
+            ("株価は3.31%反発", "3.31%", Rise),
+            ("200.14ポイント高", "200.14", Rise),
+            // Chinese
+            ("指数跌幅4.11%", "4.11%", Fall),
+            ("指数下滑4.11%", "4.11%", Fall),
+            ("指数回落4.11%", "4.11%", Fall),
+            ("指数下挫4.11%", "4.11%", Fall),
+            ("同比降4.11%", "4.11%", Fall),
+            ("指数下跌200.14点", "200.14", Fall),
+            ("指数大涨4.11%", "4.11%", Rise),
+            ("指数上升4.11%", "4.11%", Rise),
+            ("指数攀升4.11%", "4.11%", Rise),
+            ("指数反弹4.11%", "4.11%", Rise),
+            ("指数升幅4.11%", "4.11%", Rise),
+        ] {
+            check_direction(passage, magnitude, direction);
+        }
+    }
+
+    #[test]
+    fn a_figure_restated_in_brackets_takes_the_word_of_its_change() {
+        use Direction::{Fall, Rise};
+        for (passage, expected) in [
+            (
+                "코스피 지수는 전장보다 200.14포인트(4.11%) 내린 4,669.82다.",
+                vec![(200.14, Some(Fall)), (4.11, Some(Fall)), (4669.82, None)],
+            ),
+            (
+                "코스닥 지수는 17.30포인트(2.68%) 오른 628.38이다.",
+                vec![(17.3, Some(Rise)), (2.68, Some(Rise)), (628.38, None)],
+            ),
+            (
+                "200.14포인트 하락(4.11%)",
+                vec![(200.14, Some(Fall)), (4.11, Some(Fall))],
+            ),
+            (
+                "4.11%(200.14포인트) 하락한 4,669.82",
+                vec![(4.11, Some(Fall)), (200.14, Some(Fall)), (4669.82, None)],
+            ),
+            (
+                "The Kospi was down 200.14 points (4.11%) at 4,669.82.",
+                vec![(200.14, Some(Fall)), (4.11, Some(Fall)), (4669.82, None)],
+            ),
+            (
+                "The Kospi closed 200.14 points, or 4.11%, lower at 4,669.82.",
+                vec![(200.14, Some(Fall)), (4.11, Some(Fall)), (4669.82, None)],
+            ),
+            (
+                "The Kospi fell 200.14 points, or 4.11%, to 4,669.82.",
+                vec![(200.14, Some(Fall)), (4.11, Some(Fall)), (4669.82, None)],
+            ),
+            (
+                "The Kospi rose 200.14 points (4.11%) to 5,069.82.",
+                vec![(200.14, Some(Rise)), (4.11, Some(Rise)), (5069.82, None)],
+            ),
+            (
+                "日経平均は200.14ポイント(4.11%)安の4669.82",
+                vec![(200.14, Some(Fall)), (4.11, Some(Fall)), (4669.82, None)],
+            ),
+            (
+                "日経平均は200.14ポイント（4.11%）高の5069.82",
+                vec![(200.14, Some(Rise)), (4.11, Some(Rise)), (5069.82, None)],
+            ),
+            (
+                "沪指下跌200.14点(4.11%)，报4669.82点",
+                vec![(200.14, Some(Fall)), (4.11, Some(Fall)), (4669.82, None)],
+            ),
+            (
+                "沪指上涨200.14点（4.11%），报5069.82点",
+                vec![(200.14, Some(Rise)), (4.11, Some(Rise)), (5069.82, None)],
+            ),
+        ] {
+            assert_eq!(directions(passage), expected, "{passage}");
+        }
+        let found = passage_candidates("전장보다 200.14포인트(4.11%) 내린 4,669.82다.");
+        assert_eq!(verdict("−4.11%", &found, false), Verdict::Matched);
+        assert_eq!(verdict("4.11%", &found, false), Verdict::Matched);
+        assert_eq!(verdict("+4.11%", &found, false), Verdict::NotFound);
+        assert_eq!(verdict("−200.14", &found, false), Verdict::Matched);
+        assert_eq!(verdict("4,669.82", &found, false), Verdict::Matched);
+        assert_eq!(verdict("−4,669.82", &found, false), Verdict::NotFound);
+    }
+
+    #[test]
+    fn a_word_after_a_list_of_rates_governs_each_of_them() {
+        use Direction::{Fall, Rise};
+        for (passage, expected) in [
+            (
+                "삼성전자 3.06%·SK하이닉스 2.52% 하락",
+                vec![(3.06, Some(Fall)), (2.52, Some(Fall))],
+            ),
+            (
+                "삼성전자는 3.06%, SK하이닉스는 2.52% 올랐다",
+                vec![(3.06, Some(Rise)), (2.52, Some(Rise))],
+            ),
+            (
+                "각각 3.06%, 2.52%, 1.10% 내렸다",
+                vec![(3.06, Some(Fall)), (2.52, Some(Fall)), (1.1, Some(Fall))],
+            ),
+            (
+                "Samsung 3.06% and SK Hynix 2.52% lower",
+                vec![(3.06, Some(Fall)), (2.52, Some(Fall))],
+            ),
+            (
+                "サムスン電子3.06%・SKハイニックス2.52%下落",
+                vec![(3.06, Some(Fall)), (2.52, Some(Fall))],
+            ),
+            (
+                "三星电子3.06%、SK海力士2.52%走高",
+                vec![(3.06, Some(Rise)), (2.52, Some(Rise))],
+            ),
+            // Each figure with its own word keeps it.
+            (
+                "코스피 1.2% 상승·코스닥 0.5% 하락",
+                vec![(1.2, Some(Rise)), (0.5, Some(Fall))],
+            ),
+        ] {
+            assert_eq!(directions(passage), expected, "{passage}");
+        }
+        let headline = passage_candidates("삼성전자 3.06%·SK하이닉스 2.52% 하락");
+        assert_eq!(verdict("−3.06%", &headline, false), Verdict::Matched);
+        assert_eq!(verdict("+3.06%", &headline, false), Verdict::NotFound);
+    }
+
+    #[test]
+    fn a_direction_word_binds_only_the_figure_it_governs() {
+        use Direction::{Fall, Rise};
+        for (passage, expected) in [
+            // Each figure takes its own word; the levels after them none.
+            (
+                "코스피는 3.31% 내린 4,708.54에, 코스닥은 1.58% 오른 645.45에 마감했다.",
+                vec![
+                    (3.31, Some(Fall)),
+                    (4708.54, None),
+                    (1.58, Some(Rise)),
+                    (645.45, None),
+                ],
+            ),
+            (
+                "3.31% 하락해 4708.54에 마감했다.",
+                vec![(3.31, Some(Fall)), (4708.54, None)],
+            ),
+            (
+                "코스피 3.31% 하락 4708.54 마감",
+                vec![(3.31, Some(Fall)), (4708.54, None)],
+            ),
+            (
+                "200.14포인트(4.11%) 하락 4,669.82",
+                vec![(200.14, Some(Fall)), (4.11, Some(Fall)), (4669.82, None)],
+            ),
+            // Another word between them leaves the second figure its own.
+            (
+                "매출 3% 증가 손실 50억원",
+                vec![(3.0, Some(Rise)), (50.0, Some(Fall))],
+            ),
+            // A word in another sentence, line or clause does not reach back.
+            (
+                "삼성전자 3.06%. SK하이닉스 2.52% 하락",
+                vec![(3.06, None), (2.52, Some(Fall))],
+            ),
+            (
+                "삼성전자 3.06%\nSK하이닉스 2.52% 하락",
+                vec![(3.06, None), (2.52, Some(Fall))],
+            ),
+            (
+                "삼성전자 3.06%였고, SK하이닉스는 2.52% 하락",
+                vec![(3.06, None), (2.52, Some(Fall))],
+            ),
+            (
+                "작년 3.06%와 비교해 2.52% 하락",
+                vec![(3.06, None), (2.52, Some(Fall))],
+            ),
+            (
+                "Rates held at 3.5%, Kosdaq 2.52% lower",
+                vec![(3.5, None), (2.52, Some(Fall))],
+            ),
+            (
+                "inflation 3%, with stocks 2.52% lower",
+                vec![(3.0, None), (2.52, Some(Fall))],
+            ),
+            (
+                "Samsung 3.06% and SK Hynix down 2.52%",
+                vec![(3.06, None), (2.52, Some(Fall))],
+            ),
+            // A bracketed rate after a name is a level, not a restatement.
+            ("점유율(25%) 하락", vec![(25.0, None)]),
+            ("market share (25%) fell", vec![(25.0, None)]),
+            // A word that introduces the next number belongs to it.
+            ("4.81%下跌2%", vec![(4.81, None), (2.0, Some(Fall))]),
+            (
+                "4.81% declined by 2%",
+                vec![(4.81, None), (2.0, Some(Fall))],
+            ),
+            // A bound word between keeps the figure bare.
+            (
+                "코스피가 23일 3% 넘게 하락해",
+                vec![(23.0, None), (3.0, None)],
+            ),
+        ] {
+            assert_eq!(directions(passage), expected, "{passage}");
+        }
+        let close = passage_candidates(
+            "코스피는 3.31% 내린 4,708.54에, 코스닥은 1.58% 오른 645.45에 마감했다.",
+        );
+        assert_eq!(verdict("−3.31%", &close, false), Verdict::Matched);
+        assert_eq!(verdict("+3.31%", &close, false), Verdict::NotFound);
+        assert_eq!(verdict("+1.58%", &close, false), Verdict::Matched);
+        assert_eq!(verdict("−1.58%", &close, false), Verdict::NotFound);
+        assert_eq!(verdict("−4,708.54", &close, false), Verdict::NotFound);
+        let bound = passage_candidates("코스피가 23일 3% 넘게 하락해");
+        assert_eq!(verdict("3%", &bound, false), Verdict::Matched);
+        let signed = passage_candidates("건설(-7.41%), 보험(-5.49%)");
+        assert_eq!(verdict("−7.41%", &signed, false), Verdict::Matched);
+        assert_eq!(verdict("−5.49%", &signed, false), Verdict::Matched);
+        assert_eq!(verdict("7.41%", &signed, false), Verdict::NotFound);
     }
 
     #[test]

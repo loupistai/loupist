@@ -93,7 +93,10 @@ export type NumberCheck = {
   /** Present on a matched citation that changes monetary scale exactly. */
   scale_conversion?: NumberCheckScaleConversion,
   unstated_scale?: UnstatedScale,
-  /** Present on a match the source prints as an outflow. */
+  /**
+   * Present on a match whose sign comes from the source's row nature or
+   * its words rather than a printed sign.
+   */
   sourceSign?: SourceSign,
   /** The matched or compared cell (JSON Pointer into the retained result). */
   pointer?: string,
@@ -161,8 +164,8 @@ export type NumberCheckScaleConversion = {
 
 export type NumberCheckStatus = "matched" | "rounded" | "not_found" | "differs" | "unlinked";
 
-/** How the source signs a matched amount that the answer states unsigned. */
-export type SourceSign = "outflow";
+/** Where a match takes its sign when one side prints none. */
+export type SourceSign = "outflow" | "fall";
 
 /** The side that leaves the scale of an exact digit match unstated. */
 export type UnstatedScale = "source" | "answer";

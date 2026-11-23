@@ -410,3 +410,120 @@ async fn a_reference_number_in_a_table_cell_is_a_citation_not_a_figure() {
     // under a unit is a figure.
     assert_eq!(texts, [(2, "2")], "{checks:#?}");
 }
+
+pub(super) fn market_fixture() -> Value {
+    serde_json::from_str(include_str!(
+        "../../tests/fixtures/market-declines-number-checks.json"
+    ))
+    .unwrap()
+}
+
+/// Each answer's checks as (status, the sign the source's words gave, why
+/// not found), in link order.
+pub(super) type Summary = Vec<(
+    NumberCheckStatus,
+    Option<SourceSign>,
+    Option<ComparisonReason>,
+)>;
+
+pub(super) fn summary(checks: &[NumberCheck]) -> Summary {
+    checks
+        .iter()
+        .map(|check| (check.status, check.source_sign, check.comparison_reason))
+        .collect()
+}
+
+/// What the current checker reads in the market fixture's answers.
+pub(super) fn market_expected(answer: &str) -> Summary {
+    let fall = (Matched, Some(SourceSign::Fall), None);
+    let signed = (Matched, None, None);
+    let conflict = (NotFound, None, Some(ComparisonReason::SignConflict));
+    match answer {
+        // 200.14포인트(4.11%) 내린, 17.30포인트(2.68%) 내린.
+        "intraday" => vec![fall, fall],
+        // 161.42포인트(3.31%) 내린 4,708.54에, 10.23포인트(1.58%) 내린.
+        "close" => vec![fall, fall],
+        // 1.58% 내린; 삼성전자 3.06%·SK하이닉스 2.52% 하락; 3.06% 내린, 2.52% 하락한.
+        "stocks" => vec![fall, fall, fall, fall, fall],
+        // The four index figures again, then the controls: signed sector
+        // rates, a bound (3% 넘게) cited unsigned, and 3.31% 하락해.
+        "summary" => vec![fall, fall, fall, fall, signed, signed, signed, fall],
+        // +4.11% against 4.11% 내린, a negative level, +3.06% against the
+        // list, +1.58% against 1.58% 내린.
+        "conflicts" => vec![conflict, conflict, conflict, conflict],
+        _ => unreachable!("{answer}"),
+    }
+}
+
+#[tokio::test]
+async fn declines_stated_in_words_meet_the_answers_minus_sign() {
+    let fixture = market_fixture();
+    let sources = fixture["sources"].as_object().unwrap();
+    for (name, answer) in fixture["answers"].as_object().unwrap() {
+        let results = sources
+            .iter()
+            .map(|(source, value)| {
+                (
+                    value["id"].as_str().unwrap(),
+                    passage(source, value["excerpt"].as_str().unwrap()),
+                )
+            })
+            .collect();
+        let checks = checked(answer.as_str().unwrap(), results).await;
+        assert_eq!(
+            summary(&checks),
+            market_expected(name),
+            "{name}: {checks:#?}"
+        );
+        for check in checks.iter().filter(|check| check.status == Matched) {
+            assert!(check.span.is_some(), "{check:?}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_rise_in_words_flags_a_negative_answer_and_supports_a_positive_one() {
+    for (source, answer, expected) in [
+        (
+            "코스닥은 1.58% 오른 645.45로",
+            "[-1.58%](#evidence-{id})",
+            NotFound,
+        ),
+        (
+            "코스닥은 1.58% 오른 645.45로",
+            "[+1.58%](#evidence-{id})",
+            Matched,
+        ),
+        (
+            "Kosdaq closed 1.58% higher",
+            "[−1.58%](#evidence-{id})",
+            NotFound,
+        ),
+        ("沪指上涨1.58%", "[-1.58%](#evidence-{id})", NotFound),
+        (
+            "日経平均は1.58%値上がり",
+            "[-1.58%](#evidence-{id})",
+            NotFound,
+        ),
+        (
+            "Kosdaq closed 1.58% lower",
+            "[−1.58%](#evidence-{id})",
+            Matched,
+        ),
+        (
+            "Kosdaq closed 1.58% lower",
+            "[+1.58%](#evidence-{id})",
+            NotFound,
+        ),
+    ] {
+        let check = one(source, answer).await;
+        assert_eq!(check.status, expected, "{source} / {answer}: {check:?}");
+        if expected == NotFound {
+            assert_eq!(
+                check.comparison_reason,
+                Some(ComparisonReason::SignConflict),
+                "{check:?}"
+            );
+        }
+    }
+}

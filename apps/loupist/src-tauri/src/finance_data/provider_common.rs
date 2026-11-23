@@ -229,7 +229,8 @@ pub(super) fn validate_ohlcv_strings(
     Ok(())
 }
 
-pub(super) fn extract_text(bytes: &[u8]) -> (String, bool) {
+/// Visible text of an HTML or XML document, up to `maximum` characters.
+pub(super) fn extract_text_within(bytes: &[u8], maximum: usize) -> (String, bool) {
     let decoded = String::from_utf8_lossy(bytes);
     let document = Html::parse_document(&decoded);
     let normalized = document
@@ -238,7 +239,7 @@ pub(super) fn extract_text(bytes: &[u8]) -> (String, bool) {
         .flat_map(str::split_whitespace)
         .collect::<Vec<_>>()
         .join(" ");
-    truncate_chars(normalized, MAX_DOCUMENT_TEXT_CHARS)
+    truncate_chars(normalized, maximum)
 }
 
 pub(super) fn truncate_chars(text: String, maximum: usize) -> (String, bool) {
@@ -292,16 +293,24 @@ fn rejected_provider_arguments(
 }
 
 /// An OpenDART status code that refuses the request; success (`000`) and
-/// no data (`013`) pass.
+/// no data (`013`) pass. OpenDART sends these in an HTTP 200 body; its 100
+/// message names no field (an unknown `reprt_code` is even echoed back as
+/// data), so the host validates arguments before a request instead.
 fn dart_status_error(status: Option<&str>) -> Result<(), FinanceDataError> {
     match status {
         Some("000" | "013") => Ok(()),
         Some("014") => Err(FinanceDataError::NoData(OPENDART_SOURCE_ID)),
-        Some("010" | "011" | "012" | "901") => {
-            Err(FinanceDataError::CredentialRejected(OPENDART_SOURCE_ID))
+        Some(code @ ("010" | "011" | "012" | "901")) => {
+            Err(FinanceDataError::DartKeyRefused(match code {
+                "010" => "010",
+                "011" => "011",
+                "012" => "012",
+                _ => "901",
+            }))
         }
         Some("020") => Err(FinanceDataError::RateLimited(OPENDART_SOURCE_ID)),
         Some(code @ ("021" | "100")) => Err(rejected_provider_arguments("OpenDART", code, None)),
+        Some("800") => Err(FinanceDataError::ProviderMaintenance(OPENDART_SOURCE_ID)),
         Some(_) => Err(FinanceDataError::Provider(
             "OpenDART returned a provider status error".to_owned(),
         )),
@@ -470,9 +479,12 @@ mod tests {
         assert_eq!(outcome(br#"{"status":"013","message":"no data"}"#), no_data);
         assert_eq!(outcome(br#"  {"status":"013"}"#), no_data);
         for (status, expected) in [
-            ("010", "finance data provider credential was rejected: opendart.disclosures"),
-            ("011", "finance data provider credential was rejected: opendart.disclosures"),
+            ("010", "OpenDART refused the saved key (status 010)"),
+            ("011", "OpenDART refused the saved key (status 011)"),
+            ("012", "OpenDART refused the saved key (status 012)"),
+            ("901", "OpenDART refused the saved key (status 901)"),
             ("020", "finance data provider rate limit was reached: opendart.disclosures"),
+            ("800", "finance data provider opendart.disclosures is stopped for maintenance"),
             ("100", "finance data request is invalid: OpenDART rejected a value in this request (code 100)."),
         ] {
             assert_eq!(outcome(xml(status).as_bytes()), Err(expected.to_owned()), "{status}");

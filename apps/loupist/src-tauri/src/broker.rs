@@ -254,6 +254,7 @@ pub enum ToolMethod {
     DartMajorReport,
     DartOwnership,
     DartDividends,
+    DartReportItems,
     McpConnect,
     McpCall,
     RunResultsList,
@@ -389,6 +390,14 @@ pub enum BrokerError {
     Execution(String),
     #[error("No data was returned for this request.")]
     EmptyResult,
+    /// A provider read failed for a reason the model can act on. The vendor's
+    /// mapping writes `message` and `next`; `kind` is the error code.
+    #[error("{message}")]
+    ProviderFailure {
+        kind: ProviderFailureKind,
+        message: String,
+        next: std::borrow::Cow<'static, str>,
+    },
     #[error("{0}")]
     SecContactRequired(&'static str),
     #[error("The saved key for this connection is being changed right now, so it was not read.")]
@@ -405,6 +414,33 @@ pub enum BrokerError {
     BudgetExceeded { tool: String, limit: u8 },
     #[error("{}", format!("This turn has reached its limit of {} documents, charts or tables, so this one was not published.", .limit))]
     ArtifactLimit { limit: usize },
+}
+
+/// Why a provider read failed, as the tool error's `code`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProviderFailureKind {
+    /// No answer within the request's time limit.
+    Timeout,
+    /// The provider refused the saved key.
+    CredentialRejected,
+    /// The provider's request limit for this key was reached.
+    RateLimited,
+    /// The provider is stopped, for example for maintenance.
+    Unavailable,
+    /// Data the read needs is still being prepared; the same call can succeed shortly.
+    Preparing,
+}
+
+impl ProviderFailureKind {
+    fn code(self) -> &'static str {
+        match self {
+            Self::Timeout => "provider_timeout",
+            Self::CredentialRejected => "credential_rejected",
+            Self::RateLimited => "rate_limited",
+            Self::Unavailable => "provider_unavailable",
+            Self::Preparing => "provider_preparing",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1553,6 +1589,9 @@ pub(crate) fn error_body(error: &BrokerError) -> Value {
             false,
         ),
         BrokerError::InvalidArguments { .. } | BrokerError::SecContactRequired(_) | BrokerError::EmptyResult => ("", false),
+        BrokerError::ProviderFailure { kind, next, .. } => {
+            (next.as_ref(), *kind == ProviderFailureKind::Preparing)
+        }
         BrokerError::FrameTooLarge => (
             "The result was too large. Request a smaller page or file instead of repeating this call.",
             false,
@@ -1631,6 +1670,7 @@ fn error_code(error: &BrokerError) -> &'static str {
         BrokerError::WithNext { source, .. } => error_code(source),
         BrokerError::Execution(message) => as_of_code(message).unwrap_or("execution_failed"),
         BrokerError::EmptyResult => "empty_result",
+        BrokerError::ProviderFailure { kind, .. } => kind.code(),
         BrokerError::SecContactRequired(_) => "sec_contact_required",
         BrokerError::KeychainBusy => "keychain_busy",
         BrokerError::KeychainUnavailable => "keychain_unavailable",

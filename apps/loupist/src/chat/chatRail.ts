@@ -270,12 +270,29 @@ function stepReason(item: ActionItem, message: ChatMessage): string | undefined 
   const refusal = item.kind === "tool" ? message.tool_refusals?.find((candidate) => sameTool(candidate.tool_name, item.toolName)) : undefined;
   if (refusal) return tDynamic(`activitySheet.reason.refusal.${refusal.reason}`);
   if (revisionKeptEarlier(item, message)) return tDynamic("activitySheet.reason.revisionNotApplied");
+  const kind = failureKindReason(item);
+  if (kind) return kind;
+  if (message.offline_reads && (item.category === "finance" || item.category === "web" || item.source?.kind === "connector")) return tDynamic("activitySheet.reason.offline");
+  return tDynamic("activitySheet.reason.generic");
+}
+
+/** The line a failed step's kind has of its own; undefined for a provider error or an unrecorded kind. */
+function failureKindReason(item: ActionItem): string | undefined {
   if (item.failureReason === "unreachable") return tDynamic("activitySheet.reason.offline");
   if (item.failureReason === "timeout") return tDynamic("chatMessageCard.provider_timeout");
   if (item.failureReason === "invalid_input") return tDynamic("activitySheet.reason.invalidInput");
   if (item.failureReason === "empty_result") return tDynamic("activitySheet.reason.emptyResult");
-  if (message.offline_reads && (item.category === "finance" || item.category === "web" || item.source?.kind === "connector")) return tDynamic("activitySheet.reason.offline");
-  return tDynamic("activitySheet.reason.generic");
+  return undefined;
+}
+
+/**
+ * Why a failed market-data read was not used, for its row in the answer's steps:
+ * the line its failure kind has, else the generic failure line. Undefined for
+ * any other step.
+ */
+export function failedReadReason(item: ActionItem): string | undefined {
+  if (item.kind !== "tool" || item.status !== "failed" || item.category !== "finance" || item.refusal) return undefined;
+  return failureKindReason(item) ?? tDynamic("activitySheet.reason.generic");
 }
 
 const stepDuration = (item: ActionItem) =>

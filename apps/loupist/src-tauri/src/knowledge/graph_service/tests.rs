@@ -122,23 +122,33 @@ async fn loupist_settings_pause_and_frozen_model_controls_are_checked_on_every_c
             ..original.clone()
         },
     );
+    use super::super::graph_inference::refused_for_settings;
     assert_eq!(dispatch("loupist-a").await.disposition, Completed);
-    assert_eq!(dispatch("loupist-b").await.disposition, NotSent);
-    // A saved model or control change after the job froze its inputs refuses the callback.
+    let paused = dispatch("loupist-b").await;
+    assert_eq!(paused.disposition, NotSent);
+    assert!(!refused_for_settings(&paused));
+    // A saved model or control change after the job froze its inputs refuses
+    // the callback, saying why, so the attempt is requeued on the new settings.
+    let edits: [fn(&mut GraphProcessingSettings); 5] = [
+        |changed| changed.helper_provider = Some("xai".into()),
+        |changed| changed.thinking_level = "high".into(),
+        |changed| changed.max_llm_calls = 48,
+        |changed| changed.timeout_ms = 120_000,
+        |changed| {
+            changed
+                .run_options
+                .insert("serviceTier".into(), "priority".into());
+        },
+    ];
     let mut changed = original.clone();
-    changed.helper_provider = Some("xai".into());
-    save("loupist-a", &changed);
-    assert_eq!(dispatch("loupist-a").await.disposition, NotSent);
-    let mut changed = original.clone();
-    changed.thinking_level = "high".into();
-    save("loupist-a", &changed);
-    assert_eq!(dispatch("loupist-a").await.disposition, NotSent);
-    let mut changed = original.clone();
-    changed
-        .run_options
-        .insert("serviceTier".into(), "priority".into());
-    save("loupist-a", &changed);
-    assert_eq!(dispatch("loupist-a").await.disposition, NotSent);
+    for edit in edits {
+        changed = original.clone();
+        edit(&mut changed);
+        save("loupist-a", &changed);
+        let refused = dispatch("loupist-a").await;
+        assert_eq!(refused.disposition, NotSent);
+        assert!(refused_for_settings(&refused));
+    }
     // An in-memory quarantine without a committed receipt must not escape a rollback.
     let driven = GraphProcessingSettings {
         quarantined_generations: vec!["gen_new".into()],
@@ -152,6 +162,59 @@ async fn loupist_settings_pause_and_frozen_model_controls_are_checked_on_every_c
         .unwrap()
         .quarantined_generations
         .is_empty());
+}
+
+#[test]
+fn a_job_requeued_on_changed_settings_counts_as_progress() {
+    use super::super::graph_jobs::{JOB_PAUSED, JOB_QUEUED};
+    let directory = tempfile::tempdir().unwrap();
+    let (_, knowledge) = supervised(directory.path(), None);
+    let loupist = "loupist-a";
+    let (source, digest, span) = retained_source(
+        &knowledge,
+        loupist,
+        b"Ada described the engine.",
+        1_700_000_000_000,
+    );
+    let (world, revision) = sealed_world(&knowledge, loupist, &source, &digest, &span);
+    let source_revision = knowledge
+        .read(|read| read.owned_record(loupist, &source))
+        .unwrap()
+        .revision_id
+        .unwrap();
+    let settings = GraphProcessingSettings {
+        enrichment_enabled: true,
+        helper_provider: Some("openai".to_string()),
+        helper_model: Some("gpt-test".to_string()),
+        ..GraphProcessingSettings::default()
+    };
+    let before = knowledge
+        .graph_accept_episode(
+            &settings,
+            AddToWorld {
+                loupist_id: loupist.to_string(),
+                world_record_id: world,
+                world_revision_id: revision,
+                source_record_id: source,
+                source_revision_id: source_revision,
+                span_id: span,
+                at_ms: 1_700_000_000_000,
+                binding_role: "extracted_from".to_string(),
+            },
+        )
+        .unwrap();
+    let mut after = before.clone();
+    // Queued again with nothing to show for it: wait for a change.
+    assert!(!made_progress(&before, &after, false));
+    // The settings it waited for were saved while it ran.
+    assert!(made_progress(&before, &after, true));
+    // Calls spent before the settings changed back.
+    after.document.extraction.max_llm_calls -= 1;
+    assert!(made_progress(&before, &after, false));
+    let mut parked = before.clone();
+    parked.status = JOB_PAUSED.into();
+    assert!(made_progress(&before, &parked, false));
+    assert_eq!(before.status, JOB_QUEUED);
 }
 
 fn retained_source(
@@ -773,5 +836,120 @@ fn reclaiming_a_paid_attempt_wakes_the_recovery_pump_even_without_a_candidate() 
     assert!(
         futures_util::FutureExt::now_or_never(supervisor.inner.notify.notified()).is_some(),
         "the newly quarantined attempt must wake the recovery controls"
+    );
+}
+
+/// Hourly bars as `source_save` stores a bundled market-data read.
+fn retained_price_table(
+    store: &KnowledgeStore,
+    loupist: &str,
+    at_ms: i64,
+) -> (String, String, String) {
+    let bytes = serde_json::to_vec(&serde_json::json!({
+        "dataset_ref": {"dataset_id": "dataset-eth", "revision": 1, "digest": "a".repeat(64)},
+        "structuredContent": {"results": [
+            {"close": 3010.5, "date": "2026-11-23T00:00:00+00:00", "high": 3020.1, "low": 2999.0, "open": 3005.2, "volume": 1234.5},
+            {"close": 3012.0, "date": "2026-11-23T01:00:00+00:00", "high": 3015.0, "low": 3001.3, "open": 3010.5, "volume": 980.0}
+        ]},
+    }))
+    .unwrap();
+    let record = store
+        .create_record(CreateRecord {
+            loupist_id: loupist.into(),
+            kind: RecordKind::Source,
+            title: "ETH-USD".into(),
+            at_ms,
+        })
+        .unwrap();
+    let retained = store
+        .retain_source(RetainSource {
+            origin: None,
+            loupist_id: loupist.into(),
+            record_id: record.record_id.clone(),
+            expected_revision_id: None,
+            at_ms,
+            source_id: None,
+            title: "ETH-USD hourly".into(),
+            source_class: SourceClass::ToolResult,
+            origin_locator: "ETH-USD".into(),
+            provider_identity: "yfinance".into(),
+            authorship: crate::knowledge::Authorship::Publisher,
+            coverage: crate::knowledge::Coverage::IncludedFull,
+            origin_chat_id: None,
+            request_ref: None,
+            declared_digest: None,
+            publication_time: None,
+            material: Some(RetainMaterial {
+                media_type: "application/json".into(),
+                role: crate::knowledge::RepresentationRole::ProviderPayload,
+                document_id: "tool.eth".into(),
+                parser_version: None,
+                parent_representation_id: None,
+                input_span_ids: Vec::new(),
+                bytes: bytes.clone(),
+                selector: Selector::ByteRange {
+                    start: 0,
+                    end: bytes.len() as u64,
+                },
+                context_note: "Exact delivered provider payload".into(),
+            }),
+        })
+        .unwrap();
+    (
+        record.record_id,
+        retained.revision_id,
+        retained.span_id.unwrap(),
+    )
+}
+
+#[tokio::test]
+async fn a_queue_pass_takes_price_tables_out_before_selecting_without_a_model_call() {
+    let directory = tempfile::tempdir().unwrap();
+    let (supervisor, knowledge) = supervised(directory.path(), None);
+    let loupist = "loupist-prices";
+    store_settings(
+        &supervisor.inner.store.lock().unwrap(),
+        loupist,
+        &fixture_settings(),
+    )
+    .unwrap();
+    let notes = queued_jobs(&knowledge, loupist, 1, 1_700_000_100_000);
+    let world = knowledge.graph_jobs(loupist).unwrap().remove(0);
+    // Queued before price data was told apart, ahead of the note.
+    let (record, revision, span) = retained_price_table(&knowledge, loupist, 1_700_000_000_000);
+    let price = knowledge
+        .graph_accept_episode(
+            &fixture_settings(),
+            AddToWorld {
+                loupist_id: loupist.into(),
+                world_record_id: world.world_record_id.clone(),
+                world_revision_id: world.world_revision_id.clone(),
+                source_record_id: record,
+                source_revision_id: revision,
+                span_id: span,
+                at_ms: 1_700_000_000_000,
+                binding_role: "extracted_from".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(price.status, super::super::graph_jobs::JOB_QUEUED);
+    // Selection never reaches inference; the price job is gone before it chooses.
+    assert_eq!(
+        select(&supervisor),
+        Some((loupist.into(), notes[0].clone()))
+    );
+    let after = knowledge
+        .graph_jobs(loupist)
+        .unwrap()
+        .into_iter()
+        .find(|job| job.job_id == price.job_id)
+        .unwrap();
+    assert_eq!(after.status, super::super::graph_jobs::JOB_PRICE_DATA);
+    assert!(!after.document.inference_attempted);
+    // The next pass still offers only the note.
+    finish_worker(&supervisor, loupist);
+    assert_eq!(
+        select(&supervisor),
+        Some((loupist.into(), notes[0].clone()))
     );
 }

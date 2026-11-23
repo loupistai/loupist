@@ -3,7 +3,9 @@ import i18n from "@/i18n";
 import { LoupistChatItem } from "@/components/app/LoupistChatItem";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { MockLoupistBridge } from "../bridge/mockBridge";
-import { chatTitle } from "./chatTitle";
+import { chatTitle, waitedOnChatTitle } from "./chatTitle";
+import { requestTitle } from "../lib/requestTitle";
+import type { ChatMessage } from "../types";
 import { emptyChatThread } from "./emptyChat";
 import { useAppDialogs } from "./AppDialogs";
 import { renderHook } from "@testing-library/react";
@@ -42,4 +44,27 @@ it("names the briefing's session as the briefing reads in the interface language
   expect(chatTitle({ ...briefing, title: "Morning notes" })).toBe("Morning notes");
   const custom = { ...request, scheduled: { ...request.scheduled, task_title: "Daily chip check", task_kind: "custom" } };
   expect(chatTitle({ title: "Daily chip check", home: false, messages: [custom] })).toBe("Daily chip check");
+});
+
+it("names a session whose first reply still runs from its request, as the host titles it", async () => {
+  // Requests and titles the host stored in the 0.1.5 acceptance run.
+  const request = (content: string, extra: Partial<ChatMessage> = {}): ChatMessage => ({ id: `ask-${content.length}`, role: "user", content, created_at: "2026-11-23T04:32:09Z", ...extra });
+  const running = (...messages: ChatMessage[]) => ({ title: "", home: false, messages });
+  expect(waitedOnChatTitle(running(request("Compare Coca-Cola and PepsiCo using each company's latest annual report on Form 10-K: revenue growth over the last three fiscal years, operating margin, and the three largest risk factors each one names. Read both filings before answering and finish with a comparison table."))))
+    .toBe("Compare Coca-Cola and PepsiCo using…");
+  expect(waitedOnChatTitle(running(request("Write a 3000-word primer on how to read a cash flow statement, section by section, with worked examples, without using any tools."))))
+    .toBe("Write a 3000-word primer on how to read…");
+  // The first line only, its spacing collapsed; a steer is not the request.
+  expect(waitedOnChatTitle(running(request("  Review   peer filings\nthen compare margins"), request("Also check Pepsi", { steer: true })))).toBe("Review peer filings");
+  // A request that is only a file takes the file's name.
+  expect(waitedOnChatTitle(running(request("", { attachments: [{ id: "file", filename: "annual-report.pdf", media_type: "application/pdf", size_bytes: 4 }] })))).toBe("annual-report.pdf");
+  // A cut never splits a grapheme.
+  expect(requestTitle(`${"a".repeat(38)}👩🏽‍💻bc`)).toBe(`${"a".repeat(38)}…`);
+  expect(requestTitle("x".repeat(40))).toBe("x".repeat(40));
+  // A title, the Bot and a session with no request keep their usual names.
+  expect(waitedOnChatTitle({ title: "Peer margins", home: false, messages: [request("Compare margins")] })).toBe("Peer margins");
+  expect(waitedOnChatTitle({ title: "", home: true, messages: [request("Compare margins")] })).toBe(chatTitle({ title: "", home: true }));
+  expect(waitedOnChatTitle(running())).toBe("Untitled research session");
+  await i18n.changeLanguage("ko");
+  expect(waitedOnChatTitle(running(request("   ")))).toBe("제목 없는 리서치 세션");
 });

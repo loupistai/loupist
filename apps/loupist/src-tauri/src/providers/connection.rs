@@ -1489,11 +1489,7 @@ fn native_search_result_to_hits(
         .into_iter()
         .map(|source| {
             crate::web::web_source(
-                if source.title.trim().is_empty() {
-                    "Untitled source".into()
-                } else {
-                    source.title
-                },
+                crate::web::source_title(Some(&source.title), &source.url),
                 source.url,
                 source.snippet.unwrap_or_default(),
                 source.published_at,

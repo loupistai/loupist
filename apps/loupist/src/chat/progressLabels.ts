@@ -28,9 +28,8 @@ export function catalogStepLabel(tool: string | undefined, form: "running" | "do
  * live line. Undefined for a tool without a known noun.
  */
 export function readStepLabel(tool: string | undefined, form: "running" | "done"): string | undefined {
-  const name = tool?.split("__").at(-1);
-  if (!name || !i18n.exists(`chat:asOf.reads.${name}`)) return undefined;
-  return tDynamic(`readStep.${form}`, { read: tDynamic(`asOf.reads.${name}`) });
+  const read = readNounFor(tool?.split("__").at(-1));
+  return read ? tDynamic(`readStep.${form}`, { read }) : undefined;
 }
 
 /**
@@ -41,8 +40,7 @@ export function readStepLabel(tool: string | undefined, form: "running" | "done"
  */
 export function readNoun(tool: string, options: { target?: string; connection?: string } = {}): string {
   const name = tool.split("__").at(-1) ?? tool;
-  const known = i18n.exists(`chat:asOf.reads.${name}`);
-  const read = known ? tDynamic(`asOf.reads.${name}`) : options.connection?.trim() || name.replaceAll("_", " ");
+  const read = readNounFor(name) ?? (options.connection?.trim() || name.replaceAll("_", " "));
   return options.target ? tDynamic("asOf.readFor", { read, target: options.target }) : read;
 }
 

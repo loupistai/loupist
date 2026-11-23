@@ -1,6 +1,6 @@
 # Onboarding
 
-Creating or importing a Loupist finishes in Bot. Failed creation leaves the name step open; a failed notice save leaves the shell notice gate available to retry. Onboarding opens with no Loupist, or for a new profile with neither an AI account nor an acknowledged notice. Removing the last AI account leaves saved Chats and research readable; new answers need an account.
+Creating or importing a Loupist finishes in Bot. Failed creation leaves the name step open; a failed notice save leaves the shell notice gate available to retry, with or without an AI account. Onboarding opens with no Loupist, or for a new profile with neither an AI account nor an acknowledged notice. Once open it stays open until it finishes, even when connecting an account or creating the Loupist clears that condition; once finished it opens again only when the last Loupist is removed. `App.tsx` latches it while rendering, not in an effect: without an AI account, creating the Loupist makes the condition true again until the notice is saved, and an effect of that commit can run after the notice reply and reopen the name step (seen in a background WKWebView window). Removing the last AI account leaves saved Chats and research readable; new answers need an account.
 
 Welcome requires acknowledgment of the AI notice and offers trusted folder import.
 Connect offers an AI account or Look around first. Back returns to the previous

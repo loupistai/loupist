@@ -161,6 +161,55 @@ it("lets a user without an AI account look around first, and goes back between s
   await waitFor(() => expect(acknowledge).toHaveBeenCalledTimes(1));
 });
 
+it("leaves the name step on the first Create without an AI account when the notice reply arrives before React's effects", async () => {
+  const bridge = await fresh(false);
+  const create = vi.spyOn(bridge, "loupistCreate");
+  const user = await start(bridge);
+  await user.click(screen.getByRole("button", { name: "Look around first" }));
+  await user.click(screen.getByRole("button", { name: /^US big tech/ }));
+  await user.click(screen.getByRole("button", { name: "Continue" }));
+  // As in a WKWebView window: the notice save's reply is handled right after the commit
+  // that shows the new Loupist, before React runs that commit's effects.
+  const acknowledge = bridge.noticeAcknowledge.bind(bridge);
+  vi.spyOn(bridge, "noticeAcknowledge").mockImplementation(() => new Promise(resolve => {
+    const created = () => screen.queryByRole("button", { name: "Saving…" });
+    if (created()) return resolve(acknowledge());
+    const observer = new MutationObserver(() => {
+      if (!created()) return;
+      observer.disconnect();
+      resolve(acknowledge());
+    });
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+  }));
+  // React yields to the host after each task, as it does once a commit outlasts its 5 ms slice.
+  let clock = performance.now();
+  const now = vi.spyOn(performance, "now").mockImplementation(() => (clock += 10));
+  try {
+    await user.click(screen.getByRole("button", { name: "Create Loupist" }));
+    expect(await screen.findByRole("button", { name: "No AI account" }, { timeout: 5_000 })).toBeVisible();
+  } finally {
+    now.mockRestore();
+  }
+  expect(screen.queryByRole("button", { name: "Save and continue" })).toBeNull();
+  expect(create).toHaveBeenCalledTimes(1);
+});
+
+it("opens the app with the notice gate when saving the notice fails without an AI account", async () => {
+  const bridge = await fresh(false);
+  vi.spyOn(bridge, "noticeAcknowledge").mockRejectedValueOnce(new Error("Storage unavailable"));
+  const user = await start(bridge);
+  await user.click(screen.getByRole("button", { name: "Look around first" }));
+  await createLoupist(user);
+  const dialog = await screen.findByRole("dialog", { name: "Before you start" });
+  expect(screen.queryByRole("button", { name: "Save and continue" })).toBeNull();
+  await waitFor(() => expect(within(dialog).getByRole("checkbox")).toBeEnabled());
+  await user.click(within(dialog).getByRole("checkbox"));
+  await user.click(within(dialog).getByRole("button", { name: "Continue" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Before you start" })).toBeNull());
+  expect(await bridge.noticeSettingsGet()).toEqual({ notice_acknowledged_version: 1 });
+  expect(screen.getByRole("button", { name: "No AI account" })).toBeVisible();
+});
+
 it("follows a template's starter by name once the first Loupist is created", async () => {
   const bridge = await fresh();
   const follow = vi.spyOn(bridge, "assetFollowName");

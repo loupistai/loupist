@@ -1,5 +1,5 @@
 import type { GraphProcessingView, KnowledgeCatalog } from "../types";
-import { sourceDisplayStatus, sourceProcessingLabel, worldProcessing } from "./mapProcessing";
+import { sourceDisplayStatus, sourceProcessingLabel, stoppedSources, waitingLabel, worldProcessing } from "./mapProcessing";
 
 function catalog(statuses: readonly string[]): KnowledgeCatalog {
   return {
@@ -33,7 +33,10 @@ it.each([
   { statuses: ["queued"], readiness: { status: "provider_disconnected", note: "no_account" }, expected: { kind: "waiting", reason: "no_account" }, pending: true },
   { statuses: ["queued"], readiness: { status: "model_unavailable", note: "model_unavailable" }, expected: { kind: "waiting", reason: "model_unavailable" }, pending: true },
   { statuses: ["queued"], readiness: { status: "reconciliation_required" }, expected: { kind: "waiting", reason: "reconciliation_required" }, pending: true },
-  { statuses: ["paused_budget"], readiness: ready, expected: { kind: "waiting", reason: "paused_budget" }, pending: false },
+  { statuses: ["paused_budget"], readiness: ready, expected: { kind: "waiting", reason: "paused_budget", stopped: ["s"] }, pending: false },
+  // Price data never enters the queue: World stays idle and counts nothing as building.
+  { statuses: ["price_data"], readiness: ready, expected: { kind: "idle" }, pending: false },
+  { statuses: ["price_data", "running"], readiness: ready, expected: { kind: "building", sourceCount: 1 }, pending: true },
   { statuses: ["failed_before_mutation"], readiness: ready, expected: { kind: "waiting", reason: "failed_before_mutation" }, pending: false },
   { statuses: ["reconcile_required"], readiness: ready, expected: { kind: "waiting", reason: "reconcile_required" }, pending: false },
   { statuses: ["running", "queued"], readiness: disconnected, expected: { kind: "building", sourceCount: 1 }, pending: true },
@@ -58,4 +61,24 @@ it("words a budget pause and a missing account where the status is shown", () =>
   expect(sourceProcessingLabel("paused_budget")).toBe("World building paused for this source: it reached the request allowance set in World building settings.");
   expect(sourceProcessingLabel("no_account")).toBe("World is waiting for an AI account. Connect one in Settings > AI accounts.");
   expect(sourceProcessingLabel("model_unavailable")).toBe("Choose another AI model");
+  expect(sourceProcessingLabel("price_data")).toBe("Price data · not added to World");
+});
+
+it("counts the Sources stopped at the request limit by record and says so on World's own lines", () => {
+  const records = (statuses: (string | undefined)[][]): KnowledgeCatalog => ({
+    ...catalog([]),
+    sources: statuses.map((objects, index) => ({ ...catalog([]).sources[0]!, recordId: `source-${index}`,
+      objects: objects.map((status, object) => ({ id: `${index}-${object}`, title: "", processing: status ? { status, jobId: null, error: null } : undefined })) })),
+  });
+  const several = records([["paused_budget"], ["paused_budget", "completed"], ["queued"], ["paused"], [undefined], ["paused_budget"]]);
+  expect(stoppedSources(several, ready)).toEqual(["source-0", "source-1", "source-5"]);
+  expect(waitingLabel({ kind: "waiting", reason: "paused_budget", stopped: stoppedSources(several, ready) })).toBe("3 Sources paused at the request limit");
+  expect(waitingLabel({ kind: "waiting", reason: "paused_budget", stopped: ["source-0"] })).toBe("1 Source paused at the request limit");
+  // Another reason keeps its own words; the reader and each row keep the Source's sentence.
+  expect(waitingLabel({ kind: "waiting", reason: "failed_before_mutation" })).toBe("World building failed");
+  expect(sourceProcessingLabel("paused_budget")).toMatch(/^World building paused for this source/);
+  // After partial completion only the Sources still stopped are counted.
+  const after = records([["completed"], ["paused_budget", "completed"], ["running"], ["paused"], [undefined], ["queued"]]);
+  expect(worldProcessing(after, ready).activity).toEqual({ kind: "building", sourceCount: 2 });
+  expect(stoppedSources(after, ready)).toEqual(["source-1"]);
 });

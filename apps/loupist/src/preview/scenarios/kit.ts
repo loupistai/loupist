@@ -151,6 +151,12 @@ export async function navigate(root: HTMLElement, tab: "map" | "lens" | "followi
     return;
   }
   if (tab === "schedule") {
+    // The rail has no options control. Schedule is its own place there; the menu stays on the expanded row.
+    if (document.querySelector('[data-collapsible="icon"]')) {
+      await openNavigation('[data-sidebar-place="schedule"] button');
+      await click('[data-sidebar-place="schedule"] button');
+      return;
+    }
     await openNavigation(".loupist-chat-row[data-home]");
     const more = await until(() => document.querySelector<HTMLButtonElement>("[data-bot-menu]"), "Bot menu did not initialize");
     more.focus();
