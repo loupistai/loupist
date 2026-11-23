@@ -577,7 +577,7 @@ jobs:
   package-linux:
     needs: changes
     if: needs.changes.outputs.packaging == 'true'
-    timeout-minutes: 60
+    timeout-minutes: 90
     name: Package (x86_64-unknown-linux-gnu)
     runs-on: ubuntu-24.04
     steps:
@@ -618,12 +618,17 @@ jobs:
         with:
           node: "true"
           node-cache: apps/loupist/package-lock.json
+          python: "true"
           rust: "true"
           rust-cache-key: package-linux
 
       - name: Install renderer dependencies
         working-directory: apps/loupist
         run: npm ci
+
+      - name: Stage pinned Linux Pi, OpenBB, embedding model, and Python worker
+        working-directory: apps/loupist
+        run: sh scripts/stage-linux-x64.sh
 
       - name: Build unsigned Linux package
         working-directory: apps/loupist
@@ -636,6 +641,25 @@ jobs:
           DEBS=(apps/loupist/src-tauri/target/release/bundle/deb/*.deb)
           test "${#DEBS[@]}" -eq 1
           dpkg-deb --info "${DEBS[0]}"
+          EXTRACT="${RUNNER_TEMP:-/tmp}/loupist-deb"
+          rm -rf "$EXTRACT"
+          dpkg-deb -x "${DEBS[0]}" "$EXTRACT"
+          PI=$(find "$EXTRACT" -type f -name loupist-pi -print -quit)
+          OPENBB=$(find "$EXTRACT" -type f -name loupist-openbb -print -quit)
+          test -n "$PI"
+          test -x "$PI"
+          test -n "$OPENBB"
+          test -x "$OPENBB"
+          file "$PI" | grep -q 'ELF 64-bit LSB executable, x86-64'
+          file "$OPENBB" | grep -q 'ELF 64-bit LSB executable, x86-64'
+          test "$("$PI" --version)" = "1.5.2"
+          set +e
+          timeout 8s "$OPENBB" </dev/null
+          openbb_code=$?
+          set -e
+          echo "openbb launch exit ${openbb_code}"
+          # 78 is the process starting and rejecting an empty bootstrap frame.
+          test "$openbb_code" -eq 78 -o "$openbb_code" -eq 124 -o "$openbb_code" -eq 0
           BIN=apps/loupist/src-tauri/target/release/loupist
           test -x "$BIN"
           set +e

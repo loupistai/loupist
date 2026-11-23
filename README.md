@@ -175,7 +175,7 @@ sh scripts/setup.sh && sh scripts/stage-macos-arm64.sh
 npm run tauri dev
 ```
 
-Development builds keep their data in `~/.loupist/development/` and never open the installed app's data. [Desktop development](apps/loupist/README.md) covers the rest, [native UI testing](apps/loupist/e2e/README.md) drives the real app, and the [repository guide](docs/README.md) maps every topic. On Linux x86_64, install the [WebKitGTK 4.1 build libraries](docs/dev/checks.md#linux-cloud-development) and run `sh scripts/setup.sh` and `npm run tauri dev` from `apps/loupist`. `npm run tauri build` writes a `.deb`. The signed release target remains macOS on Apple Silicon.
+Development builds keep their data in `~/.loupist/development/` and never open the installed app's data. [Desktop development](apps/loupist/README.md) covers the rest, [native UI testing](apps/loupist/e2e/README.md) drives the real app, and the [repository guide](docs/README.md) maps every topic. On Linux x86_64, install the [WebKitGTK 4.1 build libraries](docs/dev/checks.md#linux-cloud-development). From `apps/loupist`, run `sh scripts/setup.sh` for development, and `sh scripts/stage-linux-x64.sh` before `npm run tauri build`. That stages the pinned Linux Pi and OpenBB programs into the `.deb`. The signed release target remains macOS on Apple Silicon.
 
 `scripts/verify.sh` is the clean-checkout gate: it installs locked dependencies and runs the web, Rust and Python checks. With dependencies installed, `npm run check --prefix apps/loupist` runs the app checks without reinstalling. Before a pull request, run `scripts/verify.sh --affected` to check the scopes your change selects, as CI does. [Release acceptance](LOUPIST.md) lists the journeys a release must pass.
 

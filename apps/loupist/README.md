@@ -37,13 +37,21 @@ npm run tauri build
 `npm run tauri build` writes `src-tauri/target/release/bundle/deb/*.deb`.
 The package depends on `libwebkit2gtk-4.1-0`, `libgtk-3-0` and
 `libayatana-appindicator3-1`. It is not a signed release.
-aarch64 Linux is not built. The package does not include the Pi or OpenBB
-programs, so the Chat shell opens and a model reply does not run. Saving an
-AI account key also runs through Pi, so that save does not run either.
-`npm run tauri build` creates an empty `src-tauri/resources/pi-runtime` when
-the directory is missing. That lets the release hash finish. It does not add
-a Pi program. A Linux
-release build does not save data-connection keys. Those keys stay in the macOS Keychain.
+aarch64 Linux is not built. Before `npm run tauri build`, stage the pinned
+Linux programs:
+
+```sh
+sh scripts/stage-linux-x64.sh
+```
+
+That downloads Pi v1.5.2 `pi-linux-x64.tar.gz` (sha256
+`811c6f2c9e7aaee252b5404252e556fb713aa209c1f7f924226aa77d4ef70cb5`) and builds
+the OpenBB sidecar from the locked `openbb/uv.lock` with PyInstaller. The
+`.deb` bundles both. An AI account key is saved by Pi in `auth.json` under the
+app's private `pi/` directory (`~/.loupist/pi/auth.json` for an installed
+build). That is the same file macOS uses for AI keys. It is not the macOS
+Keychain. A Linux release build still does not save data-connection keys.
+Those keys stay in the macOS Keychain.
 Debug builds keep them in process memory on every host. Linux does not install
 updates, register `loupist://` links, or open at login.
 

@@ -69,11 +69,13 @@ async function main() {
     if (separator < 0) { separator = args.length; args.push("--"); }
     args.splice(separator + 1, 0, "--config", resolve(appRoot, "e2e/macos-dev-runner.toml"));
   }
-  // Release hashes resources/pi-runtime. That directory is gitignored, and the
-  // macOS Pi stager does not run on Linux. An empty directory satisfies the
-  // hash. It does not add a Pi program.
-  if (!isDev && process.platform === "linux") {
-    mkdirSync(resolve(appRoot, "src-tauri/resources/pi-runtime"), { recursive: true });
+  // Bundle the staged Pi, OpenBB, embedding model, and Python worker. The
+  // resource list is the same one the macOS package smoke uses. This flag
+  // belongs to the CLI, before any `--` runner arguments.
+  if (!isDev && process.platform === "linux" && !cliArgs.includes("--config")) {
+    const separator = args.indexOf("--");
+    const insertAt = separator < 0 ? args.length : separator;
+    args.splice(insertAt, 0, "--config", resolve(appRoot, "src-tauri/tauri.package-smoke.conf.json"));
   }
   const env = { ...process.env };
   if (isDev) {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,9 +36,13 @@ spec.loader.exec_module(module)
 module.run(sys.argv[1:], pathlib.Path(${JSON.stringify(join(root, "native-ui.lock"))}))
 `);
   const evidence = join(root, "dev-args.json");
+  const buildEvidence = join(root, "build-args.json");
   await writeFile(join(root, "node_modules/@tauri-apps/cli/tauri.js"), `
 const fs = require('node:fs');
-if (process.argv[2] === 'build') process.exit(23);
+if (process.argv[2] === 'build') {
+  fs.writeFileSync(${JSON.stringify(buildEvidence)}, JSON.stringify(process.argv.slice(2)));
+  process.exit(23);
+}
 fs.writeFileSync(${JSON.stringify(evidence)}, JSON.stringify(process.argv.slice(2)));
 fs.writeFileSync(${JSON.stringify(join(root, "cli-pid"))}, String(process.pid));
 console.log('fixture-ready');
@@ -68,7 +72,9 @@ setInterval(() => {}, 1000);
   // Build does not consume the GUI lease and retains the real CLI exit code.
   assert.equal((await result(launch(["build"]))).code, 23);
   if (process.platform === "linux") {
-    assert.equal((await stat(join(root, "src-tauri/resources/pi-runtime"))).isDirectory(), true);
+    assert.deepEqual(JSON.parse(await readFile(buildEvidence, "utf8")), [
+      "build", "--config", join(root, "src-tauri/tauri.package-smoke.conf.json"),
+    ]);
   }
   owner.kill("SIGTERM");
   assert.equal((await ownerResult).signal, "SIGTERM");

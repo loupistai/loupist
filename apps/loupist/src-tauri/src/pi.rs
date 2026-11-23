@@ -67,6 +67,9 @@ pub const PI_DARWIN_ARM64_ARCHIVE_SHA256: &str =
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 pub const PI_WINDOWS_X64_ARCHIVE_SHA256: &str =
     "e6adb8cb8c84eca14391ad24b363de9d2be98a89ca3ba3fdee1fa4de32b7f2e8";
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+pub const PI_LINUX_X64_ARCHIVE_SHA256: &str =
+    "811c6f2c9e7aaee252b5404252e556fb713aa209c1f7f924226aa77d4ef70cb5";
 const MAX_RPC_FRAME_BYTES: usize = 8 * 1024 * 1024;
 const PI_EVENT_BUFFER_CAPACITY: usize = 1_024;
 const MAX_HOST_CONTEXT_BYTES: usize = 64 * 1024;
@@ -975,7 +978,9 @@ fn collect_pi_runtime_tree(
 ) -> Result<(), PiError> {
     const MAX_ENTRIES: usize = 20_000;
     const MAX_DEPTH: usize = 64;
-    const MAX_BYTES: u64 = 512 * 1024 * 1024;
+    // The Linux OpenBB sidecar makes this tree about 560 MB. The bound stays
+    // a finite cap on a hostile directory.
+    const MAX_BYTES: u64 = 1024 * 1024 * 1024;
     if depth > MAX_DEPTH {
         return Err(PiError::UntrustedRuntime);
     }
@@ -1066,6 +1071,8 @@ fn pinned_pi_archive_sha256() -> Option<&'static str> {
     return Some(PI_DARWIN_ARM64_ARCHIVE_SHA256);
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
     return Some(PI_WINDOWS_X64_ARCHIVE_SHA256);
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return Some(PI_LINUX_X64_ARCHIVE_SHA256);
     #[allow(unreachable_code)]
     None
 }
