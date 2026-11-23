@@ -30,6 +30,17 @@ pub struct ResolvedModelSelection {
     pub unavailable_reason: Option<ModelUnavailableReason>,
     pub thinking_level: Option<String>,
     pub run_options: BTreeMap<String, String>,
+    /// Why the stored model, still listed, cannot run now. The selection is
+    /// then Auto in its place; the stored choice applies again once it can run.
+    pub stored_unavailable: Option<ModelUnavailableReason>,
+}
+
+/// The model one request runs on, decided at admission.
+pub(crate) struct Admitted {
+    pub choice: AutoChoice,
+    /// Auto answered, for an empty choice or one that cannot run.
+    pub is_default: bool,
+    pub stored_unavailable: Option<ModelUnavailableReason>,
 }
 
 impl ResolvedModelSelection {
@@ -49,6 +60,7 @@ impl ResolvedModelSelection {
             unavailable_reason: Some(reason),
             thinking_level: None,
             run_options: BTreeMap::new(),
+            stored_unavailable: None,
         }
     }
 
@@ -67,6 +79,7 @@ impl ResolvedModelSelection {
             unavailable_reason: None,
             thinking_level: Some(choice.thinking_level),
             run_options: choice.run_options,
+            stored_unavailable: None,
         }
     }
 }
@@ -79,40 +92,9 @@ pub(crate) struct SelectionCatalog {
 }
 
 impl SelectionCatalog {
-    pub fn selection(
-        &self,
-        id: &str,
-        level: &str,
-        options: &BTreeMap<String, String>,
-    ) -> ResolvedModelSelection {
-        if let Some(choice) = auto::explicit_choice(&self.catalog, id, level, options) {
-            if let Some(model) = self.view.models.iter().find(|model| model.id == id) {
-                if model.credential_source == CredentialSource::Missing {
-                    return ResolvedModelSelection::unavailable(
-                        ModelUnavailableReason::AccountDisconnected,
-                        false,
-                    );
-                }
-                if self
-                    .view
-                    .hidden_model_profile_ids
-                    .iter()
-                    .any(|hidden| hidden == id)
-                {
-                    return ResolvedModelSelection::unavailable(
-                        ModelUnavailableReason::ModelHidden,
-                        false,
-                    );
-                }
-                return ResolvedModelSelection::available(choice, false);
-            }
-        }
-        if let Some(choice) = self.default.clone() {
-            let choice = auto::default_controls(choice, id, level, options);
-            return ResolvedModelSelection::available(choice, true);
-        }
-        let connected = self
-            .view
+    /// Whether any built-in or custom AI account has a credential.
+    pub fn any_account_connected(&self) -> bool {
+        self.view
             .providers
             .iter()
             .any(|p| p.credential_source != CredentialSource::Missing)
@@ -120,15 +102,77 @@ impl SelectionCatalog {
                 .view
                 .custom_providers
                 .iter()
-                .any(|p| p.credential_source != CredentialSource::Missing);
-        ResolvedModelSelection::unavailable(
-            if connected {
-                ModelUnavailableReason::NoEligibleModel
-            } else {
-                ModelUnavailableReason::NoConnectedAccount
+                .any(|p| p.credential_source != CredentialSource::Missing)
+    }
+
+    pub fn selection(
+        &self,
+        id: &str,
+        level: &str,
+        options: &BTreeMap<String, String>,
+    ) -> ResolvedModelSelection {
+        match self.admit(id, level, options) {
+            Ok(admitted) => ResolvedModelSelection {
+                stored_unavailable: admitted.stored_unavailable,
+                ..ResolvedModelSelection::available(admitted.choice, admitted.is_default)
             },
-            true,
-        )
+            Err(reason) => ResolvedModelSelection::unavailable(reason, true),
+        }
+    }
+
+    /// An explicit model runs when it is offered, its account has a credential
+    /// and it is shown in Chat. Otherwise Auto answers: for an empty choice with
+    /// the requested controls the model supports, for an explicit one with the
+    /// controls Auto declares, so a stored choice's controls never reach a model
+    /// that does not declare them. Only no runnable model at all refuses.
+    pub(crate) fn admit(
+        &self,
+        id: &str,
+        level: &str,
+        options: &BTreeMap<String, String>,
+    ) -> Result<Admitted, ModelUnavailableReason> {
+        let mut stored_unavailable = None;
+        if let Some(choice) = auto::explicit_choice(&self.catalog, id, level, options) {
+            match self.cannot_run(&choice.model.id) {
+                None => {
+                    return Ok(Admitted {
+                        choice,
+                        is_default: false,
+                        stored_unavailable: None,
+                    })
+                }
+                reason => stored_unavailable = reason,
+            }
+        }
+        match self.default.clone() {
+            Some(choice) => Ok(Admitted {
+                choice: auto::default_controls(choice, id, level, options),
+                is_default: true,
+                stored_unavailable,
+            }),
+            None if self.any_account_connected() => Err(ModelUnavailableReason::NoEligibleModel),
+            None => Err(ModelUnavailableReason::NoConnectedAccount),
+        }
+    }
+
+    /// Why a model the catalog lists cannot run now: its account signed out or
+    /// disconnected, or the user hid it.
+    fn cannot_run(&self, id: &str) -> Option<ModelUnavailableReason> {
+        let Some(model) = self.view.models.iter().find(|model| model.id == id) else {
+            return Some(ModelUnavailableReason::CatalogUnavailable);
+        };
+        if model.credential_source == CredentialSource::Missing {
+            Some(ModelUnavailableReason::AccountDisconnected)
+        } else if self
+            .view
+            .hidden_model_profile_ids
+            .iter()
+            .any(|hidden| hidden == id)
+        {
+            Some(ModelUnavailableReason::ModelHidden)
+        } else {
+            None
+        }
     }
 }
 

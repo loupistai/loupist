@@ -283,3 +283,136 @@ async fn assert_follow_and_price_save(with_history: bool, wait: bool, conflict: 
     })
     .unwrap();
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_saved_read_without_a_currency_takes_its_listings_on_the_next_repeat() {
+    use crate::commands::assets::wire::{
+        AssetQuoteKind, AssetStoredPrice, CurrencySource, PriceFields, PriceReadState,
+        SavedPriceRead, SavedReadCall,
+    };
+    use crate::commands::tests::{profile, seed_profile};
+
+    let root = tempfile::tempdir().unwrap();
+    let state = AppState::for_folder_test(root.path().join("app"));
+    let profile = profile("price-currency", &root.path().join("workspace"), 1);
+    let loupist = profile.id.as_str();
+    seed_profile(&state.store, &profile);
+    let chat = crate::chat::home::ensure_home_thread(&state, loupist).unwrap();
+    state
+        .store
+        .set_connector_credential_status(
+            KRX_SOURCE_ID,
+            &json!({"Known": {
+                "status": crate::finance_credentials::CredentialStatus {
+                    stored: true,
+                    active: true,
+                    active_fields: ["api_key".into()].into(),
+                    verification: crate::finance_credentials::CredentialVerification::Verified,
+                    ..Default::default()
+                },
+                "active_revision": "fixture-readiness",
+            }})
+            .to_string(),
+        )
+        .unwrap();
+    state
+        .store
+        .save_loupist_capability(&crate::domain::LoupistCapabilityBinding {
+            loupist_id: loupist.into(),
+            entry_id: KRX_SOURCE_ID.into(),
+            enabled: true,
+            granted_permissions: vec!["execute".into()],
+            config: Default::default(),
+            updated_at_ms: now_ms(),
+        })
+        .unwrap();
+    let executor = AppToolExecutor {
+        state: state.clone(),
+        capture: Arc::new(ToolCapture::default()),
+        loupist_id: loupist.into(),
+        capability_ids: crate::commands::capture_chat_connector_authority(&state, loupist)
+            .unwrap()
+            .capability_ids
+            .into_iter()
+            .collect(),
+    };
+    let policy = ToolPolicy {
+        loupist_id: loupist.into(),
+        session_id: chat.id.clone(),
+        use_memory: true,
+        propose_memory_updates: true,
+        memory_proposal_budget: 1,
+        as_of: None,
+        display_currency: None,
+    };
+    // A Korean listing, and a saved read whose rows state no currency.
+    let asset = state
+        .store
+        .seed_followed_listing(loupist, "005930", "KS", Some("Samsung Electronics"))
+        .unwrap();
+    let request =
+        json!({"symbol":"005930","market":"kospi","start":"2026-03-03","end":"2026-03-04"});
+    let dataset = cache_krx(
+        &executor,
+        &policy,
+        &request,
+        json!([{"close":"73400","date":"2026-03-03"}]),
+    );
+    let read = saved_read::StagedPriceRead {
+        asset_id: asset.asset_id.clone(),
+        read: SavedPriceRead {
+            state: PriceReadState::Ready,
+            current: SavedReadCall {
+                tool: "krx_daily_quote".into(),
+                server: None,
+                arguments: request.clone(),
+                fields: PriceFields {
+                    value: "/close".into(),
+                    date: "/date".into(),
+                    currency: None,
+                    rows: Some("/data/bars".into()),
+                },
+                rolling: None,
+            },
+            history: None,
+            quoted_currency: None,
+        },
+        // Saved before the host completed currencies: none, and no source.
+        price: AssetStoredPrice {
+            kind: Some(AssetQuoteKind::Close),
+            value: 73400.0,
+            date: "2026-03-03".into(),
+            currency: None,
+            currency_source: CurrencySource::None,
+            provider: "KRX".into(),
+            source_url: None,
+            dataset,
+        },
+        history: Vec::new(),
+    };
+    with_assets(&state, loupist, true, |tx| {
+        crate::knowledge::assets::ensure_asset_page(tx, loupist, &asset, 1)?;
+        saved_read::save(tx, loupist, &read)
+    })
+    .unwrap();
+    cache_krx(
+        &executor,
+        &policy,
+        &request,
+        json!([{"close":"73900","date":"2026-03-04"}]),
+    );
+    replay_current(&state, loupist, &asset.asset_id, Some(30))
+        .await
+        .unwrap();
+    with_assets(&state, loupist, false, |tx| {
+        let price = saved_read::load(tx, loupist, &asset.asset_id)?
+            .unwrap()
+            .price
+            .unwrap();
+        assert_eq!(price.value, 73900.0);
+        assert_eq!(price.currency.as_deref(), Some("KRW"));
+        assert_eq!(price.currency_source, CurrencySource::Listing);
+        Ok(())
+    })
+    .unwrap();
+}

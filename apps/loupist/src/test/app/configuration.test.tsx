@@ -2,8 +2,9 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import type { ConfigUpdateRequest } from "../../types";
-import { chooseLoupist, mainTab, newChatButton, openApp, selectedLoupistButton, openChat, togglePrivateChat } from "../renderApp";
+import { mockModelSelection, mockProviderStatus } from "../../bridge/mock/models";
+import type { ConfigScope, ConfigUpdateRequest } from "../../types";
+import { chooseLoupist, headerAction, mainTab, newChatButton, openApp, selectedLoupistButton, openChat, togglePrivateChat } from "../renderApp";
 
 const updateGlobal = async (bridge: MockLoupistBridge, set: ConfigUpdateRequest["set"]) => {
   const global = await bridge.configRead({ scope: { kind: "global" } });
@@ -69,6 +70,103 @@ it("rereads defaults before sending and keeps composer choices out of configurat
   await user.keyboard("{Escape}");
   expect((await bridge.configRead({ scope: { kind: "global" } })).explicit?.chat?.thinking_level).toBe("high");
   expect((await bridge.configRead({ scope: { kind: "project", loupistId: "loupist-quality" } })).explicit).toEqual({});
+});
+
+it.each(["the app", "this Loupist"] as const)("lets a Chat default saved for %s replace the composer's earlier pick from the next reply", async (where) => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  await bridge.providerConfigure({ provider: "anthropic", api_key: "test-key" });
+  const chatSend = vi.spyOn(bridge, "chatSend");
+  await openApp(bridge);
+  const modelMenu = () => screen.getByRole("button", { name: /Model settings for this message/ });
+  await user.click(modelMenu());
+  await user.click(await screen.findByRole("menuitemradio", { name: "Claude Sonnet 4.5" }));
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(modelMenu()).toHaveAccessibleName(/^Claude Sonnet 4\.5 · /));
+  if (where === "the app") {
+    await user.click(await mainTab(/Settings/));
+    await user.click(screen.getByRole("button", { name: "Chat defaults" }));
+  } else {
+    await user.click(headerAction("Loupist settings"));
+    const page = await screen.findByRole("region", { name: "Loupist settings" });
+    await user.click(within(page).getByRole("button", { name: "Chat defaults" }));
+  }
+  const level = await screen.findByLabelText("Reasoning level");
+  await waitFor(() => expect(level).toBeEnabled());
+  await user.selectOptions(level, "high");
+  expect(await screen.findByText("Saved · Applies to new responses")).toBeInTheDocument();
+  await user.click(await mainTab(/Chat/));
+  // The chat that used the pick and a new one both answer with the saved default.
+  await waitFor(() => expect(modelMenu()).toHaveAccessibleName(/^GPT-5\.6 Luna · .* · High$/));
+  await user.click(newChatButton());
+  await screen.findByRole("heading", { name: "Untitled research session" });
+  expect(modelMenu()).toHaveAccessibleName(/^GPT-5\.6 Luna · .* · High$/);
+  await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), "Use the saved default");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(chatSend).toHaveBeenCalledOnce());
+  expect(chatSend.mock.calls[0]![0]).toMatchObject({ model_profile_id: "", thinking_level: "high" });
+});
+
+const planModels = {
+  openai: [
+    "gpt-6.1-sol", "gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.1-terra", "gpt-6-astra",
+    "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
+  ],
+  xai: ["grok-4.7", "grok-4.6", "grok-4.5", "grok-4.3"],
+} as const;
+
+describe.each(["Bot", "research"])("model-only Chat preferences in %s", (surface) => {
+  it.each([
+    { connected: ["xai"], saved: "xai/grok-4.7", expected: "xai/grok-4.7" },
+    { connected: ["xai", "openai"], saved: "openai/gpt-6.2-sol", expected: "openai/gpt-6.2-sol" },
+    { connected: ["openai"], saved: "openai/gpt-6.2-sol", expected: "openai/gpt-6.2-sol" },
+    { connected: ["xai"], saved: "openai/gpt-6.2-sol", expected: "" },
+    // A default still listed that cannot run answers like one that left: with Auto.
+    { connected: ["xai", "openai"], signedOut: ["openai"], saved: "openai/gpt-6.2-sol", expected: "", shows: "grok-4.7" },
+    { connected: ["xai", "openai"], hidden: ["openai/gpt-6.2-sol"], saved: "openai/gpt-6.2-sol", expected: "", shows: "grok-4.7" },
+  ] as { connected: readonly ("xai" | "openai")[]; signedOut?: string[]; hidden?: string[]; saved: string; expected: string; shows?: string }[])("sends $expected with $connected connected (signed out: $signedOut, hidden: $hidden)", async ({ connected, signedOut = [], hidden = [], saved, expected, shows }) => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const scope: ConfigScope = { kind: "project", loupistId: "loupist-quality" };
+    const snapshot = await bridge.configRead({ scope });
+    await bridge.configUpdate({ scope, expectedRevision: snapshot.revision, set: { chat: { model_profile_id: saved } }, unset: [] });
+    const initial = await bridge.modelCatalogGet();
+    const signedIn = (provider: string) => !signedOut.includes(provider);
+    const models = connected.flatMap((provider) => planModels[provider].map((model) => ({
+      ...initial.models[0]!, id: `${provider}/${model}`, provider, model, name: model, credential_source: signedIn(provider) ? "saved" as const : "missing" as const,
+    })));
+    const providers = initial.providers.map((provider) => connected.some((id) => id === provider.id) && signedIn(provider.id)
+      ? { ...provider, credential_source: "saved" as const, status: mockProviderStatus("plan") }
+      : { ...provider, credential_source: "missing" as const, status: mockProviderStatus("none") });
+    const catalog = { ...initial, models, providers, hidden_model_profile_ids: hidden };
+    vi.spyOn(bridge, "modelCatalogGet").mockResolvedValue({ ...catalog, default_selection: mockModelSelection(catalog) });
+    const read = bridge.configRead.bind(bridge);
+    vi.spyOn(bridge, "configRead").mockImplementation(async (request) => {
+      const next = await read(request);
+      const selection = mockModelSelection(catalog, next.effective.chat);
+      // The published host omitted controls when the requested model was explicit.
+      return { ...next, modelSelection: selection.is_default ? selection : { ...selection, run_options: {} } };
+    });
+    const chatSend = vi.spyOn(bridge, "chatSend").mockRejectedValue({ code: "invalid_request", message: "Request captured." });
+    render(<App bridge={bridge} />);
+    if (surface === "research") {
+      await user.click(await screen.findByRole("button", { name: "New research" }));
+      await screen.findByRole("heading", { name: "Untitled research session" });
+    }
+    const composer = await screen.findByRole("textbox", { name: "Message Loupist" });
+    // The composer names the model that will answer, and Chat can send.
+    if (shows) await waitFor(() => expect(screen.getByRole("button", { name: /Model settings for this message/ })).toHaveAccessibleName(new RegExp(`^${shows.replace(".", "\\.")} · `)));
+    await user.type(composer, "Hello");
+    await user.click(await screen.findByRole("button", { name: "Send" }));
+    await waitFor(() => expect(chatSend).toHaveBeenCalledOnce());
+    const request = chatSend.mock.calls[0]![0];
+    expect(request).toMatchObject({
+      model_profile_id: expected,
+      thinking_level: expected ? "medium" : "",
+      run_options: expected ? { performance: "standard" } : {},
+    });
+    expect(request.thread_id.startsWith("home-")).toBe(surface === "Bot");
+  });
 });
 
 it("keeps saving appearance after Agent settings were saved with application pending", async () => {

@@ -135,9 +135,16 @@ the host's English caption and the user wrote nothing. A Bot-initiated hand-off
 answers in the language of the original user request or the language it asks
 for. Its `interface.language` describes the app's screens.
 
+A turn whose previous reply in the Chat stored `unlinked` number checks
+([number checks](../analysis/number-checks.md#number-checks)) receives
+`previous_reply_unlinked_figures`: up to 20 of those numbers, each with the link
+it wrote, and a `hint` (`UNLINKED_FIGURES_HINT` in `agent_harness.rs`). A later
+turn whose previous reply has none receives no block.
+
 A custom scheduled run after the first also receives `previous_run`, after
 `chat_surface`, with its own `hint` (`PREVIOUS_RUN_HINT` in `agent_harness.rs`):
-the task's last finished run's `finished_at`, `status`, `quiet` and `summary`,
+the task's last finished run's `finished_at` (RFC 3339 at the user's offset then,
+the form `live_time.current_local` gives), `status`, `quiet` and `summary`,
 the first prose paragraph of its answer cut at 280 characters (left out when the
 run wrote none, including a quiet run's host placeholder), and `last_delivered`
 (`finished_at`, `summary`) for the last run whose answer reached the user when

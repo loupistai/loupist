@@ -213,7 +213,7 @@ pub async fn share_export(
     ))
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn share_reveal(
     request: LoupistRequest,
     state: State<'_, AppState>,

@@ -10,7 +10,7 @@ import { verifyChatTransitions } from "./native-chat-transitions.mjs";
 export const layoutWidths = [700, 800, 899, 900, 1061, 1280, 1680, 2560];
 export const layoutScenarios = [
   "shell-titlebar-grown", "chat-header-resuming",
-  "activity-sheet", "activity-sheet-panel", "chat-chart-inline", "chat-chart-failed", "chat-grid-card", "chat-step-paused",
+  "activity-sheet", "activity-sheet-earlier", "activity-sheet-panel", "chat-chart-inline", "chat-chart-failed", "chat-grid-card", "chat-step-paused",
   "chat-all-chats", "chat-status-pill", "chat-status-pill-idle",
 ];
 

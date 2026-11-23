@@ -141,6 +141,8 @@ pub(super) fn read_value(value: &str, unit: GridUnit) -> Option<Printed> {
         currency: None,
         precision: 0.5 * 10f64.powi(-(decimals as i32)),
         signed: trimmed.starts_with(['+', '-']),
+        line: None,
+        falls: false,
     })
 }
 
@@ -183,6 +185,7 @@ fn literal_check(
         link_index: link.index,
         text: link.text.clone(),
         evidence_id: link.evidence_id.clone(),
+        repaired_from: None,
         kind,
         status: if found {
             NumberCheckStatus::Matched
@@ -198,6 +201,7 @@ fn literal_check(
         exact: None,
         scale_conversion: None,
         unstated_scale: None,
+        source_sign: None,
         pointer: None,
         span: span.filter(|_| kind == NumberCheckKind::Passage),
         context: None,

@@ -63,6 +63,9 @@ it.each([
     const section = await screen.findByRole("region", { name: heading });
     const table = within(section).getByRole("table", { name: caption });
     expect(within(table).getByRole("columnheader", { name: "Population, total" })).toBeVisible();
+    // Economy names the rows, so it stays in view while the figures scroll.
+    expect(table).toHaveAttribute("data-row-labels");
+    expect(within(table).getAllByRole("cell", { name: "Japan" })[0]!.querySelector(".saved-passage-label")).toBeVisible();
     expect(within(table).getByRole("cell", { name: "2024" })).toBeVisible();
     expect(within(table).getByRole("cell", { name: trueLabel })).toBeVisible();
     const value = within(table).getByRole("cell", { name: "123,975,371" });
@@ -181,9 +184,9 @@ it("refreshes exact source relationships and processing errors without losing th
 });
 
 it.each([
-  ["en", false, "Facts from this Source", "Relationships"],
-  ["ko", true, "이 출처에서 추출한 사실", "관계"],
-] as const)("counts facts and distinct-name links separately in the %s Source reader", async (language, readerOnly, facts, relationships) => {
+  ["en", false, "Facts from this Source", "Relationships", "supplies to"],
+  ["ko", true, "이 출처에서 추출한 사실", "관계", "공급"],
+] as const)("counts facts and distinct-name links separately in the %s Source reader", async (language, readerOnly, facts, relationships, relation) => {
   const props = await fixture();
   const originalRead = props.bridge.knowledgeSourceRead.bind(props.bridge);
   const world = { worldRecordId: "shipment-world", worldRevisionId: "latest" };
@@ -192,7 +195,8 @@ it.each([
     relatedClaims: [
       { ...world, claimId: "january", proposition: "Ginkgo Rail reported 18 units", relation: "reports", isRelationship: false },
       { ...world, claimId: "february", proposition: "Ginkgo Rail reported 22 units", relation: "reports", isRelationship: false },
-      { ...world, claimId: "supplies", proposition: "Ginkgo Rail supplies North Line", relation: "supplies", isRelationship: true },
+      // An open relation the extraction named itself, labelled from the bundled table.
+      { ...world, claimId: "supplies", proposition: "Ginkgo Rail supplies North Line", relation: "SUPPLIES_TO", isRelationship: true },
     ],
   }));
   const previousLanguage = i18n.language;
@@ -208,6 +212,7 @@ it.each([
     expect(within(factGroup).getAllByRole("listitem")).toHaveLength(2);
     await user.click(within(relationshipGroup).getByText(relationships));
     expect(within(relationshipGroup).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(relationshipGroup).getByRole("listitem").querySelector("small")).toHaveTextContent(relation);
     await user.click(within(relationshipGroup).getByRole("button", { name: /Ginkgo Rail supplies North Line/u }));
     expect(props.onOpen).toHaveBeenCalledWith(expect.objectContaining({
       surface: "world", recordId: world.worldRecordId, revisionId: world.worldRevisionId, selection: { kind: "claim", id: "supplies" },
@@ -261,14 +266,14 @@ it("leaves the default Source saved status off a library row and shows any other
   expect(screen.getByRole("button", { name: /Report 2/ })).toHaveTextContent("World is updating");
 });
 
-it("says World building is paused only for the user's pause, and names a source that stopped by itself", async () => {
+it("says World building is paused for the user's pause, and names the allowance a source reached by itself", async () => {
   const props = await fixture();
   const catalog = { ...props.catalog, sources: ["paused", "paused_budget"].map((status, index) => ({ ...props.catalog.sources[0], recordId: `source-${index}`, objects: [{ id: `source-${index}`, title: `Report ${index}`, processing: { jobId: "job", status, error: null } }] })) };
   render(<SourceWorkspace {...props} catalog={catalog} location={{ loupistId: props.location.loupistId, surface: "source" }} />);
-  expect(await screen.findByRole("button", { name: /Report 0/ })).toHaveTextContent("World building paused");
-  const stopped = screen.getByRole("button", { name: /Report 1/ });
-  expect(stopped).toHaveTextContent("World building stopped for this source");
-  expect(stopped).not.toHaveTextContent("World building paused");
+  const paused = await screen.findByRole("button", { name: /Report 0/ });
+  expect(paused.querySelector(".source-row-status")).toHaveTextContent(/^World building paused$/);
+  const allowance = screen.getByRole("button", { name: /Report 1/ });
+  expect(allowance.querySelector(".source-row-status")).toHaveTextContent(/^World building paused for this source: it reached the request allowance set in World building settings\.$/);
 });
 
 it("opens an exact World relationship from its original source", async () => {
@@ -410,7 +415,7 @@ it("shows the What you follow Source in the interface language whatever title it
   }
 });
 
-describe("Try again for a Source whose World building stopped", () => {
+describe("Try again for a Source whose World building paused at its allowance", () => {
   const stoppedCatalog = (props: Awaited<ReturnType<typeof fixture>>, statuses: string[]) => ({ ...props.catalog, sources: statuses.map((status, index) => ({ ...props.catalog.sources[0], recordId: `source-${index}`, objects: [{ id: `source-${index}`, title: `Report ${index}`, processing: { jobId: `job-${index}`, status, error: null } }] })) });
   const graphJob = (status: string) => ({ jobId: "job-1", loupistId: "loupist-quality", worldRecordId: "world-protocols", worldRevisionId: "rev-owned-1", status, payloadDigest: "digest", createdAtMs: 0, hostMayRedrive: false });
 
@@ -464,14 +469,34 @@ describe("Try again for a Source whose World building stopped", () => {
       .mockImplementationOnce(async (request) => ({ ...await originalRead(request), processing: { jobId: "job-1", status: "paused_budget", error: null } }))
       .mockImplementation(async (request) => ({ ...await originalRead(request), processing: { jobId: "job-1", status: "queued", error: null } }));
     const retry = vi.spyOn(props.bridge, "knowledgeGraphRetrySource").mockResolvedValue(graphJob("queued"));
-    render(<SourceWorkspace {...props} readerOnly />);
+    const onManageProcessing = vi.fn();
+    render(<SourceWorkspace {...props} readerOnly onManageProcessing={onManageProcessing} />);
     const reader = await screen.findByRole("article", { name: "Source reader" });
-    expect(within(reader).getByRole("status")).toHaveTextContent("World building stopped for this source");
+    const status = within(reader).getByRole("status");
+    expect(status).toHaveTextContent("World building paused for this source: it reached the request allowance set in World building settings.");
+    expect(status.querySelector("[data-slot=spinner]")).toBeNull();
+    await userEvent.setup().click(within(reader).getByRole("button", { name: "World building settings" }));
+    expect(onManageProcessing).toHaveBeenCalledOnce();
     await userEvent.setup().click(within(reader).getByRole("button", { name: "Try again" }));
     expect(retry).toHaveBeenCalledWith({ loupistId: props.location.loupistId, recordId: props.location.recordId });
     expect(await within(reader).findByText("World is updating")).toBeVisible();
     expect(within(reader).queryByRole("button", { name: "Try again" })).toBeNull();
     expect(props.onChanged).toHaveBeenCalled();
+  });
+
+  it("says World waits for an AI account when none is connected, with the control that opens AI accounts", async () => {
+    const props = await fixture();
+    const originalRead = props.bridge.knowledgeSourceRead.bind(props.bridge);
+    vi.spyOn(props.bridge, "knowledgeSourceRead").mockImplementation(async (request) => ({ ...await originalRead(request), processing: { jobId: "job-1", status: "queued", error: null } }));
+    const onManageProviders = vi.fn(), onManageProcessing = vi.fn();
+    const readiness = { status: "model_unavailable", note: "no_account" } as const;
+    render(<SourceWorkspace {...props} readerOnly worldProcessing={{ activity: { kind: "waiting", reason: "no_account" }, readiness, pending: true }} onManageProviders={onManageProviders} onManageProcessing={onManageProcessing} />);
+    const reader = await screen.findByRole("article", { name: "Source reader" });
+    expect(within(reader).getByRole("status")).toHaveTextContent("World is waiting for an AI account. Connect one in Settings > AI accounts.");
+    expect(within(reader).queryByRole("button", { name: "World building settings" })).toBeNull();
+    await userEvent.setup().click(within(reader).getByRole("button", { name: "Manage AI accounts" }));
+    expect(onManageProviders).toHaveBeenCalledOnce();
+    expect(onManageProcessing).not.toHaveBeenCalled();
   });
 
   it("shows no action in the reader for any other status", async () => {
@@ -577,6 +602,37 @@ it("opens the cited table with its headers and figures, then steps to a distant 
     expect(screen.getAllByTestId("knowledge-passage")).toHaveLength(2);
     expect(screen.getByText("2 of 2")).toBeVisible();
   } finally { rect.mockRestore(); }
+});
+
+it("opens a cited figure in a wide table sideways too, beside its row labels", async () => {
+  const props = await citedFilingFixture();
+  // A 300 px reader over a 520 px table: row labels, then 2024 at 320 px and 2022 at 420 px.
+  const columnLeft = [0, 320, 420];
+  const original = HTMLElement.prototype.getBoundingClientRect;
+  const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    const scroller = this.closest<HTMLElement>(".saved-passage-table");
+    if (scroller && this === scroller) return new DOMRect(0, 0, 300, 120);
+    if (scroller && (this.tagName === "TD" || this.tagName === "TH")) {
+      const column = [...this.parentElement!.children].indexOf(this);
+      return new DOMRect(columnLeft[column]! - scroller.scrollLeft, 0, column ? 100 : 120, 30);
+    }
+    return original.call(this);
+  });
+  const widths = { clientWidth: 300, scrollWidth: 520 };
+  for (const [name, value] of Object.entries(widths)) Object.defineProperty(HTMLElement.prototype, name, { configurable: true, get(this: HTMLElement) { return this.classList.contains("saved-passage-table") ? value : 0; } });
+  try {
+    render(<SourceWorkspace {...props} readerOnly />);
+    const [passage] = await screen.findAllByTestId("knowledge-passage");
+    const scroller = passage!.querySelector<HTMLElement>(".saved-passage-table")!;
+    expect(scroller.querySelector("table")).toHaveAttribute("data-row-labels");
+    expect([...scroller.querySelectorAll(".saved-passage-label")].map(label => label.textContent!.trim())).toEqual(["Category", "Services", "Total net sales"]);
+    // The first cited figure, 96,169 under 2024, ends 12 px inside the reader's edge.
+    expect(scroller.scrollLeft).toBe(132);
+    expect(passage!.textContent).toBe(citedFiling.presentation!.text.slice(citedFiling.presentation!.text.indexOf("| Category"), citedFiling.presentation!.text.indexOf("394,328 |") + "394,328 |".length));
+  } finally {
+    rect.mockRestore();
+    for (const name of Object.keys(widths)) Reflect.deleteProperty(HTMLElement.prototype, name);
+  }
 });
 
 it("adds a library selection using offsets into the complete saved text", async () => {

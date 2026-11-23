@@ -103,6 +103,7 @@ where
         followed,
         assets,
         None,
+        None,
         on_inference,
     )
     .await
@@ -118,6 +119,7 @@ pub(crate) async fn drive_job_with_slots<F, Fut>(
     followed: &[FollowedInstrument],
     assets: &Path,
     call_slots: Option<Arc<Semaphore>>,
+    resolution: Option<ResolutionSlot>,
     on_inference: F,
 ) -> KnowledgeResult<GraphJobView>
 where
@@ -143,6 +145,7 @@ where
         followed,
         assets,
         call_slots,
+        resolution,
         on_inference,
         opened_at,
     )
@@ -178,6 +181,7 @@ async fn drive_claimed<F, Fut>(
     followed: &[FollowedInstrument],
     assets: &Path,
     call_slots: Option<Arc<Semaphore>>,
+    resolution: Option<ResolutionSlot>,
     mut on_inference: F,
     opened_at: SystemTime,
 ) -> KnowledgeResult<GraphJobView>
@@ -301,6 +305,9 @@ where
         return finish(store, settings, job, &attempt_id, true, now_ms);
     };
     write_stage_log(job_id, &ran.stages, started.elapsed(), &ran.result);
+    if let (Some(slot), Ok(extracted)) = (&resolution, &ran.result) {
+        *slot.lock().unwrap_or_else(|error| error.into_inner()) = Some(extracted.resolution);
+    }
     let uncertain = uncertain || ran.uncertain;
     if blocked {
         return finish(store, settings, job, &attempt_id, true, now_ms);
@@ -585,7 +592,11 @@ struct Extracted {
     artifact: String,
     digest: String,
     vectors: HashMap<String, Vec<f32>>,
+    resolution: pipeline::ResolutionTally,
 }
+
+/// Where a job's entity-resolution counts go for its run log.
+pub(crate) type ResolutionSlot = Arc<std::sync::Mutex<Option<pipeline::ResolutionTally>>>;
 
 struct Ran {
     result: Result<Extracted, Stop>,
@@ -980,6 +991,7 @@ fn extract(prepared: &Prepared, bridge: &mut Bridge<'_>) -> Result<Extracted, St
         artifact,
         digest,
         vectors,
+        resolution: output.resolution,
     })
 }
 

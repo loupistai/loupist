@@ -155,11 +155,22 @@ pub(super) fn observation_date(value: &Value) -> Option<chrono::NaiveDate> {
     None
 }
 
+/// The date a record counts on against an as-of cutoff. The cutoff is the end
+/// of the user's own day (`as_of.end_of_day` in the envelope), so an instant
+/// counts on the date the user's clock showed then; a date written without a
+/// time counts as written.
 pub(super) fn record_date(value: Option<&str>) -> Option<chrono::NaiveDate> {
+    record_date_at(value, crate::local_time::at)
+}
+
+fn record_date_at(
+    value: Option<&str>,
+    local: impl Fn(DateTime<Utc>) -> DateTime<chrono::FixedOffset>,
+) -> Option<chrono::NaiveDate> {
     let value = value?;
     DateTime::parse_from_rfc3339(value)
         .ok()
-        .map(|value| value.with_timezone(&Utc).date_naive())
+        .map(|value| local(value.with_timezone(&Utc)).date_naive())
         .or_else(|| observation_date(&json!({ "date": value })))
 }
 
@@ -444,10 +455,39 @@ mod as_of_tests {
             1
         );
         let cutoff = chrono::NaiveDate::from_ymd_opt(2024, 6, 30).unwrap();
-        assert!(!is_after_cutoff(Some("2024-06-30T23:59:59Z"), cutoff));
-        assert!(is_after_cutoff(Some("2024-07-01T00:00:00Z"), cutoff));
+        // On the cutoff's date or the day after it in every time zone.
+        assert!(!is_after_cutoff(Some("2024-06-30T00:00:00Z"), cutoff));
+        assert!(is_after_cutoff(Some("2024-07-01T12:00:00Z"), cutoff));
+        assert!(!is_after_cutoff(Some("2024-06-30"), cutoff));
         assert!(is_after_cutoff(Some("2025-01-01"), cutoff));
         assert!(is_after_cutoff(None, cutoff));
+    }
+
+    #[test]
+    fn the_cutoff_is_the_end_of_the_users_own_day_east_and_west_of_utc() {
+        let cutoff = chrono::NaiveDate::from_ymd_opt(2026, 11, 22).unwrap();
+        let in_zone = |hours: i32| {
+            let offset = chrono::FixedOffset::east_opt(hours * 3600).unwrap();
+            move |instant: DateTime<Utc>| instant.with_timezone(&offset)
+        };
+        let after = |value: &str, hours: i32| {
+            record_date_at(Some(value), in_zone(hours)).is_none_or(|date| date > cutoff)
+        };
+        // Seoul: 23:59:59 on the 22nd is within the day, midnight is not, though
+        // both are still the 22nd in UTC.
+        assert!(!after("2026-11-22T14:59:59Z", 9));
+        assert!(after("2026-11-22T15:00:00Z", 9));
+        // Los Angeles: 23:59:59 on the 22nd is within the day although UTC is
+        // already on the 23rd; its midnight is not.
+        assert!(!after("2026-11-23T07:59:59Z", -8));
+        assert!(after("2026-11-23T08:00:00Z", -8));
+        // An instant with its own offset is the same instant.
+        assert!(!after("2026-11-22T23:59:59-08:00", -8));
+        assert!(after("2026-11-23T00:00:00+09:00", 9));
+        // A date without a time is the date it states, in any zone.
+        assert!(!after("2026-11-22", 9));
+        assert!(!after("2026-11-22", -8));
+        assert!(after("2026-11-23", -8));
     }
 
     #[test]

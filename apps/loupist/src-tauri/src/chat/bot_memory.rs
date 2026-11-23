@@ -141,6 +141,60 @@ impl StagedBotMemory {
     }
 }
 
+/// What an earlier reply's pending save will take out of Bot memory: the
+/// entries it resolves or forgets by id, and the words it forgets by.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Leaving {
+    ids: BTreeSet<String>,
+    matching: Vec<String>,
+}
+
+impl Leaving {
+    pub(crate) fn of(staged: &[StagedBotMemory]) -> Self {
+        let mut leaving = Self::default();
+        for change in staged {
+            match &change.action {
+                BotMemoryAction::Resolve | BotMemoryAction::Forget => {
+                    leaving.ids.insert(change.entry_id.clone());
+                }
+                BotMemoryAction::ForgetMatching(words) => leaving.matching.push(words.clone()),
+                BotMemoryAction::Remember(_) | BotMemoryAction::Update { .. } => {}
+            }
+        }
+        leaving
+    }
+
+    pub(crate) fn extend(&mut self, other: Self) {
+        self.ids.extend(other.ids);
+        self.matching.extend(other.matching);
+    }
+
+    /// The stored entries this takes out of `memory`.
+    fn entries_in(&self, memory: &BotMemory) -> BTreeSet<String> {
+        let mut ids = self.ids.clone();
+        for words in &self.matching {
+            ids.extend(memory.matching(words));
+        }
+        ids
+    }
+}
+
+/// Why a staged change does not apply to the memory it meets.
+enum Refusal {
+    /// The memory moved under it: its entry is gone, or there is no room.
+    Stale(String),
+    /// The change itself cannot apply anywhere.
+    Invalid(String),
+}
+
+impl Refusal {
+    fn into_message(self) -> String {
+        match self {
+            Self::Stale(message) | Self::Invalid(message) => message,
+        }
+    }
+}
+
 /// What a Bot turn receives, and the review it was offered.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct BotMemoryContext {
@@ -289,58 +343,85 @@ impl BotMemory {
     ) -> Result<(), String> {
         let mut next = self.clone();
         for change in staged {
-            next.apply_one(messages, reply_id, at_ms, change)?;
+            next.apply_one(messages, reply_id, at_ms, change)
+                .map_err(Refusal::into_message)?;
         }
         *self = next;
         Ok(())
     }
 
+    /// Applies one reply's changes one at a time to memory an earlier reply's
+    /// save changed since they were checked. A change that no longer applies
+    /// (its entry is gone, or there is no room) is left out; the count of those
+    /// is returned. A malformed change still fails the whole reply.
+    fn apply_each(
+        &mut self,
+        messages: &[ChatMessage],
+        reply_id: &str,
+        at_ms: i64,
+        staged: &[StagedBotMemory],
+    ) -> Result<usize, String> {
+        let mut left_out = 0;
+        for change in staged {
+            match self.apply_one(messages, reply_id, at_ms, change) {
+                Ok(()) => {}
+                Err(Refusal::Stale(_)) => left_out += 1,
+                Err(Refusal::Invalid(message)) => return Err(message),
+            }
+        }
+        Ok(left_out)
+    }
+
+    /// A refused change leaves this memory as it was.
     fn apply_one(
         &mut self,
         messages: &[ChatMessage],
         reply_id: &str,
         at_ms: i64,
         staged: &StagedBotMemory,
-    ) -> Result<(), String> {
+    ) -> Result<(), Refusal> {
         let path = ShownPath::new(messages, Some(reply_id));
         let entries = self.entries(|change| path.replies.contains(change.reply_id.as_str()));
         let existing = entries.iter().find(|entry| entry.id == staged.entry_id);
         let shown = || {
             existing.ok_or_else(|| {
-                format!(
+                Refusal::Stale(format!(
                     "{} is not an entry the Bot keeps now; use an id from bot_memory.entries",
                     staged.entry_id
-                )
+                ))
             })
         };
-        let basis = |basis: &[String]| -> Result<(), String> {
+        let basis = |basis: &[String]| -> Result<(), Refusal> {
             match basis
                 .iter()
                 .find(|id| !path.user_messages.contains(id.as_str()))
             {
-                Some(id) => Err(format!(
+                Some(id) => Err(Refusal::Invalid(format!(
                     "basis {id} is not a message the user sent in this conversation"
-                )),
+                ))),
                 None => Ok(()),
             }
         };
         let note = match &staged.action {
             BotMemoryAction::Remember(note) => {
                 if existing.is_some() {
-                    return Err(format!("{} is already kept", staged.entry_id));
+                    return Err(Refusal::Invalid(format!(
+                        "{} is already kept",
+                        staged.entry_id
+                    )));
                 }
                 if entries.len() >= MAX_ENTRIES {
-                    return Err(format!(
+                    return Err(Refusal::Stale(format!(
                         "The Bot already keeps {MAX_ENTRIES} entries. Resolve or forget ones that no longer matter, or update one, before adding another."
-                    ));
+                    )));
                 }
-                check_text(&note.text)?;
+                check_text(&note.text).map_err(Refusal::Invalid)?;
                 basis(&note.basis)?;
                 Some(note.clone())
             }
             BotMemoryAction::Update { text, basis: ids } => {
                 let entry = shown()?;
-                check_text(text)?;
+                check_text(text).map_err(Refusal::Invalid)?;
                 basis(ids)?;
                 Some(BotMemoryNote {
                     kind: entry.kind,
@@ -358,10 +439,10 @@ impl BotMemory {
                     .iter()
                     .any(|change| change.entry_id == staged.entry_id)
                 {
-                    return Err(format!(
+                    return Err(Refusal::Stale(format!(
                         "{} is not stored; forget with match finds entries by their words",
                         staged.entry_id
-                    ));
+                    )));
                 }
                 self.forget(&BTreeSet::from([staged.entry_id.clone()]));
                 return Ok(());
@@ -537,27 +618,112 @@ pub(crate) fn settle_reply(
     reviewed: &[String],
     remembered_user_message: Option<&str>,
 ) -> Result<(), String> {
+    settle(
+        chat,
+        reply_id,
+        at_ms,
+        Batch::Whole(staged),
+        reviewed,
+        remembered_user_message,
+    )
+    .map(|_| ())
+}
+
+/// [`settle_reply`] for a reply whose changes were checked against Bot memory
+/// that an earlier reply's save has changed since. Each change applies on its
+/// own; one that no longer applies (its entry is gone, or memory is full) is
+/// left out, and the count of those is returned for the reply's receipt.
+pub(crate) fn settle_reply_after(
+    chat: &mut crate::domain::ChatSession,
+    reply_id: &str,
+    at_ms: i64,
+    staged: &[StagedBotMemory],
+    reviewed: &[String],
+    remembered_user_message: Option<&str>,
+) -> Result<usize, String> {
+    settle(
+        chat,
+        reply_id,
+        at_ms,
+        Batch::Each(staged),
+        reviewed,
+        remembered_user_message,
+    )
+}
+
+enum Batch<'a> {
+    Whole(&'a [StagedBotMemory]),
+    Each(&'a [StagedBotMemory]),
+}
+
+fn settle(
+    chat: &mut crate::domain::ChatSession,
+    reply_id: &str,
+    at_ms: i64,
+    batch: Batch<'_>,
+    reviewed: &[String],
+    remembered_user_message: Option<&str>,
+) -> Result<usize, String> {
     let mut memory = chat.bot_memory.clone();
-    memory.apply(&chat.messages, reply_id, at_ms, staged)?;
+    let left_out = match batch {
+        Batch::Whole(staged) => {
+            memory.apply(&chat.messages, reply_id, at_ms, staged)?;
+            0
+        }
+        Batch::Each(staged) => memory.apply_each(&chat.messages, reply_id, at_ms, staged)?,
+    };
     memory.unreviewed.retain(|id| !reviewed.contains(id));
     if let Some(id) = remembered_user_message {
-        memory.unreviewed.push(id.to_owned());
+        // A later reply's save can settle first; the queue stays oldest first.
+        let position = |id: &str| chat.messages.iter().position(|message| message.id == id);
+        let at = position(id);
+        let index = memory
+            .unreviewed
+            .iter()
+            .position(|queued| {
+                at.zip(position(queued))
+                    .is_some_and(|(at, queued)| queued > at)
+            })
+            .unwrap_or(memory.unreviewed.len());
+        memory.unreviewed.insert(index, id.to_owned());
     }
     memory.prune(&chat.messages, &chat.versions);
     chat.bot_memory = memory;
-    Ok(())
+    Ok(left_out)
 }
 
-/// The `bot_memory` envelope block for a Bot turn. `known` is the as-of rule
-/// for a reply; with a cutoff the memory reads as it stood then (forgotten
-/// entries never come back) and no review is offered.
+/// The context of a turn with no earlier reply's save pending.
+#[cfg(test)]
 pub(crate) fn context(
     chat: &crate::domain::ChatSession,
     known: Option<&dyn Fn(&ChatMessage) -> bool>,
 ) -> BotMemoryContext {
+    context_after(chat, known, &BTreeSet::new(), &Leaving::default())
+}
+
+/// The `bot_memory` envelope block for a Bot turn. `known` is the as-of rule
+/// for a reply; with a cutoff the memory reads as it stood then (forgotten
+/// entries never come back) and no review is offered. Messages that pending
+/// saves of earlier replies were offered (`pending_review`) are not offered again,
+/// and entries those saves resolve or forget (`leaving`) are not shown: the user
+/// asked for them to go. An entry such a save adds is not shown either, since
+/// the save may never apply.
+pub(crate) fn context_after(
+    chat: &crate::domain::ChatSession,
+    known: Option<&dyn Fn(&ChatMessage) -> bool>,
+    pending_review: &BTreeSet<String>,
+    leaving: &Leaving,
+) -> BotMemoryContext {
     let path = ShownPath::new(&chat.messages, None);
     let shown = |change: &BotMemoryChange| path.replies.contains(change.reply_id.as_str());
-    let today = chat.bot_memory.entries(shown);
+    let gone = leaving.entries_in(&chat.bot_memory);
+    let staying = |entries: Vec<BotMemoryEntry>| {
+        entries
+            .into_iter()
+            .filter(|entry| !gone.contains(&entry.id))
+            .collect::<Vec<_>>()
+    };
+    let today = staying(chat.bot_memory.entries(shown));
     let (entries, left_out) = match known {
         None => (today, BTreeSet::new()),
         Some(known) => {
@@ -567,9 +733,10 @@ pub(crate) fn context(
                 .filter(|message| message.role == ChatRole::Assistant && known(message))
                 .map(|message| message.id.as_str())
                 .collect::<BTreeSet<_>>();
-            let then = chat
-                .bot_memory
-                .entries(|change| replies.contains(change.reply_id.as_str()));
+            let then = staying(
+                chat.bot_memory
+                    .entries(|change| replies.contains(change.reply_id.as_str())),
+            );
             let left_out = today
                 .iter()
                 .filter(|entry| !then.contains(entry))
@@ -579,7 +746,7 @@ pub(crate) fn context(
         }
     };
     let review = if known.is_none() {
-        review_batch(chat)
+        review_batch(chat, pending_review)
     } else {
         Vec::new()
     };
@@ -642,7 +809,10 @@ pub(crate) fn attach(envelope: &str, block: Value) -> String {
 }
 
 /// The oldest queued messages, once the oldest has enough conversation after it.
-fn review_batch(chat: &crate::domain::ChatSession) -> Vec<&ChatMessage> {
+fn review_batch<'a>(
+    chat: &'a crate::domain::ChatSession,
+    pending_review: &BTreeSet<String>,
+) -> Vec<&'a ChatMessage> {
     let mut after = 0_usize;
     let mut followed = BTreeMap::<&str, usize>::new();
     for message in chat.messages.iter().rev() {
@@ -656,7 +826,9 @@ fn review_batch(chat: &crate::domain::ChatSession) -> Vec<&ChatMessage> {
         .messages
         .iter()
         .filter(|message| {
-            message.role == ChatRole::User && chat.bot_memory.unreviewed.contains(&message.id)
+            message.role == ChatRole::User
+                && chat.bot_memory.unreviewed.contains(&message.id)
+                && !pending_review.contains(&message.id)
         })
         .collect::<Vec<_>>();
     match queued.first() {
@@ -674,9 +846,10 @@ fn review_batch(chat: &crate::domain::ChatSession) -> Vec<&ChatMessage> {
     }
 }
 
+/// The user's calendar date, as `live_time.current_date_local` gives today.
 fn day(at_ms: i64) -> String {
-    chrono::DateTime::from_timestamp_millis(at_ms)
-        .map(|time| time.format("%Y-%m-%d").to_string())
+    crate::local_time::date_at_ms(at_ms)
+        .map(|date| date.to_string())
         .unwrap_or_default()
 }
 
@@ -687,6 +860,15 @@ mod tests {
     use crate::test_fixtures::{chat_message, chat_session};
 
     const DAY: i64 = 86_400_000;
+
+    /// The date this Mac's time zone gives `at_ms`, independent of `crate::local_time`.
+    fn local_day(at_ms: i64) -> String {
+        chrono::DateTime::from_timestamp_millis(at_ms)
+            .unwrap()
+            .with_timezone(&chrono::Local)
+            .date_naive()
+            .to_string()
+    }
 
     fn bot() -> ChatSession {
         chat_session("home-loupist", "loupist")
@@ -798,8 +980,8 @@ mod tests {
         assert_eq!(shown(&chat), [pair("bm-pref", "Quote prices in USD")]);
         assert_eq!(block["entries"][0]["kind"], "preference");
         assert_eq!(block["entries"][0]["basis"], json!(["u2"]));
-        assert_eq!(block["entries"][0]["since"], "1970-01-02");
-        assert_eq!(block["entries"][0]["updated"], "1970-01-03");
+        assert_eq!(block["entries"][0]["since"], local_day(DAY));
+        assert_eq!(block["entries"][0]["updated"], local_day(2 * DAY));
         assert_eq!(block["room"], MAX_ENTRIES - 1);
 
         turn(
@@ -992,7 +1174,8 @@ mod tests {
             .unwrap();
         assert_eq!(first["text"], "fact 0, take 399");
         assert_eq!(
-            first["since"], "1970-01-02",
+            first["since"],
+            local_day(DAY),
             "pruning keeps when it was first kept"
         );
         assert_eq!(shown(&chat).len(), MAX_ENTRIES);
@@ -1263,7 +1446,7 @@ mod tests {
         );
         assert_eq!(
             context(&chat, None).block["entries"][0]["since"],
-            "1970-01-02"
+            local_day(DAY)
         );
     }
 
@@ -1484,6 +1667,39 @@ mod tests {
             WebFetchTarget::Allowed(WebFetchGrant::Site),
             "an excerpt not delivered is not registered"
         );
+    }
+
+    #[test]
+    fn a_review_offered_to_a_pending_save_is_not_offered_again() {
+        let mut chat = bot();
+        let long_reply = "x".repeat(12 * 1024);
+        for n in 1..=12 {
+            turn(&mut chat, n, n as i64 * DAY, &long_reply, &[]);
+        }
+        let offered = context(&chat, None).reviewed;
+        assert_eq!(offered, ["u1", "u2", "u3", "u4", "u5", "u6", "u7", "u8"]);
+        let pending = offered.iter().cloned().collect::<BTreeSet<_>>();
+        let next = context_after(&chat, None, &pending, &Leaving::default()).reviewed;
+        assert!(next.iter().all(|id| !pending.contains(id)), "{next:?}");
+        // A skipped save leaves its batch queued for a later reply.
+        assert_eq!(context(&chat, None).reviewed, offered);
+    }
+
+    #[test]
+    fn a_later_reply_settling_first_keeps_the_review_queue_oldest_first() {
+        let mut chat = bot();
+        for n in 1..=2 {
+            chat.messages.push(chat_message(
+                &format!("u{n}"),
+                ChatRole::User,
+                &format!("message {n}"),
+            ));
+            chat.messages
+                .push(chat_message(&format!("r{n}"), ChatRole::Assistant, "ok"));
+        }
+        settle_reply(&mut chat, "r2", 2, &[], &[], Some("u2")).unwrap();
+        settle_reply(&mut chat, "r1", 1, &[], &[], Some("u1")).unwrap();
+        assert_eq!(chat.bot_memory.unreviewed, ["u1", "u2"]);
     }
 
     #[test]

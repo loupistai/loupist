@@ -178,9 +178,15 @@ pub(super) async fn launch(
         return Ok(());
     }
     let config = crate::commands::loupist_configuration(state, loupist)?;
-    let model = config.chat.model_profile_id.unwrap_or_default();
-    let thinking = config.chat.thinking_level.unwrap_or_default();
-    let run_options = config.chat.run_options;
+    let mut model = config.chat.model_profile_id.unwrap_or_default();
+    let mut thinking = config.chat.thinking_level.unwrap_or_default();
+    let mut run_options = config.chat.run_options;
+    // A Chat default that cannot run gives way to Auto, as in Chat.
+    if let Some(auto) =
+        crate::providers::auto::stored_fallback(state, &model, &thinking, &run_options)
+    {
+        (model, thinking, run_options) = (auto.model.id, auto.thinking_level, auto.run_options);
+    }
     let execution = state.pi_execution(&model, &thinking, &run_options)?;
     // An explicit model choice can still be configured after its account signs out.
     if crate::providers::catalog::provider_credential_kind(
@@ -200,6 +206,7 @@ pub(super) async fn launch(
         pi_session_id: uuid::Uuid::new_v4().to_string(),
         pi_session_cache: None,
         title: "Price setup".into(),
+        title_provisional: false,
         memory_policy: MemoryPolicy {
             use_memory: true,
             update_memory: true,

@@ -169,11 +169,7 @@ pub fn resolve(
     let choose = |model: &ConfiguredModelView, preferred: Option<&str>| {
         let configured = catalog.resolve(&model.id).ok()?;
         let thinking_level = default_level(&configured.thinking_levels, preferred)?;
-        let run_options = configured
-            .run_controls
-            .iter()
-            .map(|control| (control.id.clone(), control.default_choice.clone()))
-            .collect();
+        let run_options = configured.default_run_options();
         Some(AutoChoice {
             model: configured,
             thinking_level,
@@ -268,6 +264,31 @@ pub fn admit(
     ))
 }
 
+/// A stored choice (a Chat default, a scheduled task's model) as it runs now.
+/// A listed model that cannot run, because its account signed out or
+/// disconnected or the user hid it, gives way to Auto with the controls Auto
+/// declares, as a model that left the catalog does at admission. None keeps
+/// the stored choice: it can run, it is Auto already, or nothing can run. The
+/// stored choice is never rewritten, so it applies again once it can run.
+pub fn stored_fallback(
+    state: &crate::app::AppState,
+    model_profile_id: &str,
+    thinking_level: &str,
+    run_options: &BTreeMap<String, String>,
+) -> Option<AutoChoice> {
+    if uses_default(model_profile_id) {
+        return None;
+    }
+    let admitted = state
+        .selection_catalog()
+        .ok()?
+        .admit(model_profile_id, thinking_level, run_options)
+        .ok()?;
+    admitted.stored_unavailable?;
+    remember(state, &admitted.choice);
+    Some(admitted.choice)
+}
+
 pub(super) fn explicit_choice(
     catalog: &ModelCatalog,
     id: &str,
@@ -280,10 +301,14 @@ pub(super) fn explicit_choice(
     } else {
         level.to_owned()
     };
+    // A saved model preference need not name controls that use their defaults.
+    // Keep supplied choices intact so execution can still reject invalid values.
+    let mut run_options = model.default_run_options();
+    run_options.extend(options.clone());
     Some(AutoChoice {
         model,
         thinking_level,
-        run_options: options.clone(),
+        run_options,
     })
 }
 

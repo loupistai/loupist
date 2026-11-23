@@ -518,12 +518,15 @@ impl PreviousRun {
     }
 }
 
+/// When a run finished, at the user's offset then, as `live_time.current_local`
+/// gives the present: RFC 3339 with the numeric offset, which still names the
+/// instant.
 fn finished_at(run: &Run) -> Option<String> {
     if run.status == RunStatus::Running {
         return None;
     }
-    let finished = chrono::DateTime::from_timestamp_millis(run.finished_at_ms?)?;
-    Some(finished.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+    let finished = crate::local_time::at_ms(run.finished_at_ms?)?;
+    Some(finished.to_rfc3339_opts(chrono::SecondsFormat::Secs, false))
 }
 
 /// Read-only list projection; the latest occurrence is not stored in Task JSON.

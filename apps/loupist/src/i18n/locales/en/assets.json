@@ -139,6 +139,9 @@
       "ask": "Ask"
     },
     "storedValue": "Stored value",
+    "currencyUnknown": "Currency unknown",
+    "currency": "Currency",
+    "currencyFromListing": "{{currency}}, from the listing on {{exchange}}; the price result states none.",
     "none": "No price yet. Select Check now or Find a price to have {{loupist}} look for a way to read it. If it can't find one, it explains why in Bot.",
     "failed": "{{loupist}} couldn't read the price last time.",
     "failedKept": "The latest read from {{connection}} failed. This is the last price it read.",

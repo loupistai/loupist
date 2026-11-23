@@ -525,6 +525,25 @@ fn a_scheduled_briefing_reads_only_its_own_loupists_follows() {
 }
 
 #[test]
+fn a_briefing_dates_this_run_and_the_last_one_at_the_users_offset() {
+    let (_root, state, loupist) = state_fixture();
+    let (previous, now) = (1_799_000_000_000, 1_800_000_000_000);
+    let (prompt, _) = build_prompt(&state, &loupist, Some(previous), now).unwrap();
+    let data: serde_json::Value =
+        serde_json::from_str(prompt.strip_prefix(PROMPT).unwrap().trim()).unwrap();
+    let local = |at_ms| {
+        chrono::DateTime::from_timestamp_millis(at_ms)
+            .unwrap()
+            .with_timezone(&chrono::Local)
+            .to_rfc3339()
+    };
+    assert_eq!(data["date"], local(now));
+    assert_eq!(data["previousBriefingAt"], local(previous));
+    assert_eq!(data["timeSincePreviousBriefingMs"], now - previous);
+    assert!(data.get("previousBriefingAtMs").is_none());
+}
+
+#[test]
 fn research_titles_and_delivered_summaries_mark_omitted_text() {
     assert_eq!(
         crate::commands::fallback_chat_title(

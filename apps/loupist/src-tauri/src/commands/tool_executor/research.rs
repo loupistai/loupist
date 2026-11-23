@@ -690,9 +690,10 @@ mod paging_tests {
         let dates = [
             None,
             Some("not-a-date"),
-            Some("2020-01-02T23:59:00Z"),
+            // On the cutoff's date in every time zone, and after it in every one.
+            Some("2020-01-02T00:00:00Z"),
             Some("2020-01-03"),
-            Some("2020-01-02T23:59:00-05:00"),
+            Some("2020-01-03T23:00:00-05:00"),
         ];
         let mut sources = dates
             .into_iter()

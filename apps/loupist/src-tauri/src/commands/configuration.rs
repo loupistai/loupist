@@ -21,7 +21,7 @@ fn project_directory(
     }
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn config_read(
     request: ConfigReadRequest,
     state: State<'_, AppState>,
@@ -56,10 +56,32 @@ pub(crate) fn present(
         );
         return Ok(snapshot);
     };
+    let mut options = chat.run_options.clone();
+    if matches!(&snapshot.scope, ConfigScope::Project { .. })
+        && snapshot
+            .explicit
+            .as_ref()
+            .and_then(|config| config.chat.as_ref())
+            .is_some_and(|chat| chat.model_profile_id.is_some())
+    {
+        if let Ok(model) = catalog.catalog.resolve(requested) {
+            // A project model can inherit compatible controls. Controls saved
+            // alongside another global model do not apply to this choice.
+            options.retain(|id, choice| {
+                snapshot
+                    .sources
+                    .get(&format!("chat.run_options.{id}"))
+                    .is_none_or(|source| source != "global")
+                    || model.run_controls.iter().any(|control| {
+                        &control.id == id && control.choices.iter().any(|item| &item.id == choice)
+                    })
+            });
+        }
+    }
     let selection = catalog.selection(
         requested,
         chat.thinking_level.as_deref().unwrap_or_default(),
-        &chat.run_options,
+        &options,
     );
     if let ConfigScope::Project { loupist_id } = &snapshot.scope {
         snapshot.default_model_change = state
@@ -93,6 +115,8 @@ fn update_config(
     if display_changed {
         state.fx_reference.invalidate_display();
     }
+    // A Recommended World model tries the Chat default's provider first.
+    crate::commands::knowledge::follow_recommended_world_models_quietly(state);
     // Saving is complete before reconciliation. If invalidation fails the new
     // file remains the source of truth and the connection stays blocked.
     if matches!(request.scope, ConfigScope::Global) {
@@ -111,7 +135,7 @@ fn update_config(
     present(state, snapshot)
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn config_reveal(
     request: ConfigReadRequest,
     state: State<'_, AppState>,

@@ -12,7 +12,7 @@ A claim whose endpoints all identify the same node is a fact about that name.
 The inspector shows it in Key facts with its date and Source. Facts do not add
 to degree, relationship counts or the direct and two-hop scopes. The projection
 keeps bounded fact entries for What's new and disagreements, apart from the
-relationship budget. The status line names World and joins its parts (scope count, weekly count, disagreements, updating) with one " · " separator. On a narrow map it wraps inside the visible canvas, so each part stays whole.
+relationship budget. The status line names World and joins its parts (scope count, weekly count, disagreements, updating; the weekly count is What's new's name total for the last seven days, [growth](../knowledge/growth.md#in-world)) with one " · " separator. On a narrow map it wraps inside the visible canvas, so each part stays whole.
 World search, layout and replay use the drawable World items. The sidebar's Lens and World rows (⌘4, ⌘3) open Lens (research principles and methods) or World as full pages in the main area, each under its own page header ("Lens", "World"); a conversation keeps its own view of World in its side panel ([workspace panel](workspace-panel.md)). Deep links, the palette's names and principles, What's new and Bot cards open the same pages, and a link to an entity opens its direct connections and details. The Bot's sidebar contextual menu opens scheduled-task history. Lens shows its title on one row under the page header, with no Back button of its own; a page title that is read after opening takes focus without a ring. In a wide Lens page the rule/method/history list and its document stay in separate, independently scrolling columns; a long list cannot take away the document's height. In a compact Lens page, opening an item replaces the list, and Back restores it. Compact section tabs retain their full accessible names when the visible labels are shortened. This release leaves pack Share off that row ([This release](../knowledge/sharing.md#this-release)). Linked principles and methods open the shared reader. Corrections go to the Bot with the item attached. A newly added relationship can open directly from an answer in World; a relationship whose two ends are one thing (same node or a shared name) is not offered.
 
 Under **Filter**, **Highlight Lens applications** highlights the entities the host already recorded with
@@ -26,9 +26,11 @@ weights count turns, not correctness or causal influence. Per-kind
 total/shown/truncated counts make the bounded projection explicit. The standing
 perspective is the base view a Loupist starts from; its title shows as written and is
 marked as the base perspective in the application filter. In the Lens detail, the Pages
-list and the page reader, the English default heading of a suggested section key
-(Beliefs, Focus, ...) shows in the interface language (`knowledge/hostDefaults.ts`). A
-heading someone chose is kept. The seeded placeholder sentence is not
+list, the page reader, Lens History and a chat's filed-in-this-answer card, a section
+name the app generates shows in the interface language (`knowledge/hostDefaults.ts`):
+the English default heading of a suggested section key (Beliefs, Focus, ...; method
+learning writes Use when, Steps, Checks and Limits) and the Statement a principle save
+records (원칙, as the Lens page labels it). A heading the user or the model chose is kept. The seeded placeholder sentence is not
 presented as something the Loupist learned.
 
 Entities draw in eight categories, in legend and filter order: Company (World kind
@@ -43,8 +45,18 @@ entity as `localNames`. When the UI language is Korean,
 World shows the first Hangul one on the canvas, the tooltip, search, the list and the
 inspector, with the English canonical name under the inspector heading. Search
 matches the canonical name and every local name; "Ask about this" pins the canonical
-name. Core relation names have curated labels; other relation names stay readable
-English.
+name. Every surface that prints a relation (the inspector's connections and
+Relationships view, the canvas tooltip, the list, What's new and briefing rows, chat
+link and hand-off paths, answer receipts, the Source reader and pack review) names it
+with `relationName` (`components/map/relations.ts`): the reviewed types in
+`knowledge.relations` first, then the bundled table of common open relations in
+`knowledge.customRelations`, both keyed by the stored SCREAMING_SNAKE name. Any other
+name reads as lowercase English ("raised prices for") in every language. No
+model is called, and the stored name stays the relation's identity, so `world_read`
+and other model-facing reads keep the canonical English. The inspector groups
+connections by the label shown, so two stored names with one label share a heading.
+The curated template relations appear in the table with the labels What World tracks
+shows; labels a background review gives a new relation are not consulted yet.
 
 ### Notes on a name
 
@@ -86,7 +98,12 @@ queued Sources are ready to run, or World recovery is in progress. Its tooltip
 and accessible name include the same Source count as the Library's Processing
 filter when the host provides one. When processing needs the user, the sidebar,
 World status line and Library show the reason. The sidebar keeps its ordinary
-shortcut in that state. Connecting a provider refreshes the status with World
+shortcut in that state. With no AI account connected at all (readiness note
+`no_account`), they say "World is waiting for an AI account. Connect one in
+Settings > AI accounts.", and World's status line, the Library and the Source
+reader offer Manage AI accounts; "Choose another AI model" is for accounts whose
+models exclude World's. A Source paused at its request allowance carries the World
+building settings control in the status line ([allowance](../knowledge/worlds.md#queue-and-interruptions)). Connecting a provider refreshes the status with World
 closed. The icon rail places the spinner in the corner of the World icon.
 Reduced motion keeps the ring still.
 The inspector's close control stays in the corner while the facts scroll. Below 900 px the inspector opens as a bottom sheet, and that control stays inside the sheet. An entity's name leads its inspector: the kind and Following sit above it in the side column and follow it on the sheet's first line.

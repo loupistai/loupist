@@ -1056,6 +1056,53 @@ fn a_locked_key_shows_on_its_own_connection_and_the_rest_keep_loading() {
 }
 
 #[test]
+fn a_key_less_connection_shows_no_key_after_a_refused_read_unless_one_was_saved() {
+    use crate::finance_credentials::{self as credentials, test_store};
+    let temporary = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(temporary.path().join("app"));
+    let environment = state.credential_environment.to_string();
+    seed_loupist(&state, "g-keyless");
+    let id = ASSET_LOOKUP_SOURCE_ID;
+    let lookup = || {
+        let snapshot =
+            with_connector_lifecycle(&state, || marketplace_snapshot_for_state(&state)).unwrap();
+        snapshot
+            .connectors
+            .into_iter()
+            .find(|connector| connector.entry_id == id)
+            .unwrap()
+    };
+    // A profile with no keychain: no optional key can have been saved.
+    test_store::fail_with_security_status(&environment, id, -25307);
+    assert!(matches!(
+        credentials::get_for_state(&state, id),
+        Err(credentials::FinanceCredentialError::Locked)
+    ));
+    let connector = lookup();
+    assert!(connector
+        .credentials
+        .iter()
+        .all(|credential| !credential.locked && !credential.stored));
+    assert_eq!(connector.readiness, MarketplaceConnectorReadiness::Ready);
+
+    // A saved key that macOS will not release is still shown as locked.
+    test_store::restart(&environment, id);
+    credentials::mutate(&state, id, |state, _| {
+        credentials::save_lookup_key(&state.credential_environment, "test-keyless-fixture-key")
+    })
+    .unwrap();
+    test_store::restart(&environment, id);
+    test_store::fail_with_security_status(&environment, id, -25308);
+    assert!(credentials::get_for_state(&state, id).is_err());
+    assert!(lookup()
+        .credentials
+        .iter()
+        .all(|credential| credential.locked && credential.stored));
+    test_store::restart(&environment, id);
+    credentials::delete(&environment, id).unwrap();
+}
+
+#[test]
 fn settings_shows_a_timed_out_read_until_keychain_finishes() {
     crate::extension_availability::with_test_flags(false, false, || {
         use crate::finance_credentials::{self, test_store, FinanceCredentialError};

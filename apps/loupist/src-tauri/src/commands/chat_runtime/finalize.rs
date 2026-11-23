@@ -65,7 +65,8 @@ pub(super) async fn finalize_chat_turn(turn: LaunchedChatTurn, streamed: Streame
         envelope_compacted,
     } = streamed;
     let save_started_at_ms = now_ms();
-    if completed && !aborted {
+    // Interactive turns classify their settled work before showing a save.
+    if completed && !aborted && !capture.surface.as_ref().is_some_and(|s| s.interactive()) {
         let _ = on_event.send(ChatStreamEvent::Saving {
             run_id: task_run_id.clone(),
             waiting_for_other_chat: false,

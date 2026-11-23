@@ -24,6 +24,12 @@ export type AssetLookupCandidate = {
 
 export type AssetLookupRequest = { loupistId: string, query: string };
 
+/**
+ * One listing search. The key is optional: a saved key that could not be
+ * read leaves the public route, and `saved_key_unread` says so.
+ */
+export type AssetLookupResult = { candidates: Array<AssetLookupCandidate>, savedKeyUnread: boolean };
+
 export type AssetOpenRequest = {
   loupistId: string,
   assetId?: string | null,
@@ -79,12 +85,20 @@ export type AssetStoredPrice = {
   value: number,
   date: string,
   currency: string | null,
+  currencySource: CurrencySource,
   provider: string,
   sourceUrl: string | null,
   dataset: DatasetRef,
 };
 
 export type AssetsListRequest = { loupistId: string };
+
+/**
+ * Where a stored price's currency came from: the provider's result (the read
+ * itself, or a quote for the same symbol in the reply that saved it), the
+ * listing the asset is bound to, or nowhere, when the currency is unknown.
+ */
+export type CurrencySource = "result" | "listing" | "none";
 
 export type PriceFields = {
   value: string,
@@ -101,6 +115,11 @@ export type SavedPriceRead = {
   state: PriceReadState,
   current: SavedReadCall,
   history: SavedReadCall | null,
+  /**
+   * The currency a quote for the same symbol stated in the reply that saved
+   * this read, kept for repeats of a read whose own result states none.
+   */
+  quotedCurrency?: string,
 };
 
 export type SavedReadCall = {

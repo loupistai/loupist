@@ -1,5 +1,6 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import i18n from "../../i18n";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { MOCK_PACK_PREVIEW } from "../../bridge/mock/sharing";
 import type { PackOpenResult } from "../../contracts/sharing";
@@ -64,6 +65,18 @@ it("lists flagged map records and the pack's own words, not only counts", async 
   expect(within(page).getByText("3 more in World")).toBeVisible();
   const profile = within(page).getByRole("region", { name: "Profile" });
   expect(within(profile).getByText("Looks like an instruction to the AI")).toBeVisible();
+});
+
+it("names the relations a pack tracks as World does, once per label", async () => {
+  const preview = { ...MOCK_PACK_PREVIEW, world: { ...MOCK_PACK_PREVIEW.world, relations: ["SUPPLIES", "LISTED_ON", "LISTS_ON", "RAISED_PRICES_FOR"] } };
+  const { page } = await review({ kind: "preview", preview });
+  expect(within(page).getByText("Tracks fabs, equipment makers · supplies, listed on, lists on, raised prices for")).toBeVisible();
+  await act(async () => { await i18n.changeLanguage("ko"); });
+  try {
+    expect(within(page).getByText("다루는 것: fabs, equipment makers · 공급, 상장 거래소, raised prices for")).toBeVisible();
+  } finally {
+    await act(async () => { await i18n.changeLanguage("en"); });
+  }
 });
 
 it("adding to an existing Loupist leaves its profile and perspective alone", async () => {

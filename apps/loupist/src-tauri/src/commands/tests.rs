@@ -27,6 +27,7 @@ mod home_thread;
 mod home_vocabulary;
 mod loupist;
 mod loupist_setup;
+mod main_thread;
 mod research_handoff;
 mod run_session_release;
 mod scheduled_sessions;

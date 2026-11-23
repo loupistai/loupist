@@ -45,10 +45,16 @@ type Followed = { key: string; name: string; quote?: StoredAssetQuote };
 
 type Card = { key: string; label: string; hint?: string; run: () => void };
 
-function greetingKey(hour: number): "morning" | "afternoon" | "evening" {
-  if (hour >= 5 && hour < 12) return "morning";
-  if (hour >= 12 && hour < 18) return "afternoon";
-  return "evening";
+/**
+ * By the Mac's local hour: morning from 05:00, afternoon from 12:00, evening from 18:00 to
+ * midnight. Neither English nor Korean greets the small hours by name ("Good evening" at 03:38
+ * read wrong), so 00:00 to 05:00 takes the neutral heading an empty research session opens with.
+ */
+function greetingKey(hour: number) {
+  if (hour < 5) return "today.askGreeting";
+  if (hour < 12) return "bot.greeting.morning";
+  if (hour < 18) return "bot.greeting.afternoon";
+  return "bot.greeting.evening";
 }
 
 function principleHidden(loupistId: string) {
@@ -67,7 +73,9 @@ function hidePrinciple(loupistId: string) {
 export function BotGreeting({ bridge, loupistId, loupist, onAsk, accountConnected = true, onConnectAccount, onOpenFollowing, refreshRevision = 0 }: Props) {
   useTranslation("chat");
   const go = useGo();
-  const [opened] = useState(() => ({ nowMs: Date.now() }));
+  // The greeting and date are those of the moment Bot is shown, again each time it is shown.
+  const [opened, setOpened] = useState(() => ({ nowMs: Date.now(), revision: refreshRevision }));
+  if (opened.revision !== refreshRevision) setOpened({ nowMs: Date.now(), revision: refreshRevision });
   const [read, setRead] = useState<Read | null>(null);
   const [principleOff, setPrincipleOff] = useState(() => principleHidden(loupistId));
   // Hide takes its own button away: focus moves to the cards above it.
@@ -125,7 +133,7 @@ export function BotGreeting({ bridge, loupistId, loupist, onAsk, accountConnecte
   const asksLabel = followed.length ? t("bot.greeting.asks") : t("bot.greeting.start");
   // The principle step stays a quiet line once the user follows something, until it is done or hidden.
   const offerPrinciple = Boolean(read && followed.length && read.principles === 0 && !principleOff);
-  const greeting = t(`bot.greeting.${greetingKey(new Date(opened.nowMs).getHours())}`);
+  const greeting = t(greetingKey(new Date(opened.nowMs).getHours()));
   const today = formatDate(opened.nowMs, { year: undefined, month: "long", day: "numeric", weekday: "long" });
 
   return (
@@ -179,7 +187,9 @@ export function BotGreeting({ bridge, loupistId, loupist, onAsk, accountConnecte
                   onClick={() => go?.({ kind: "asset", target: { loupistId, assetId: item.key, name: item.name } })}>
                   <span className="bot-tile-name">{item.name}</span>
                   {/* Written as the asset page writes it: every stated digit of a price without a currency. */}
-                  <span id={priceId} className="bot-tile-price-line"><PriceText value={price.value} currency={price.currency?.trim() || undefined} digits="auto" size="body" className="bot-tile-price" /></span>
+                  <span id={priceId} className="bot-tile-price-line"><PriceText value={price.value} currency={price.currency?.trim() || undefined} digits="auto" size="body" className="bot-tile-price" />
+                    {/* As the asset page says it: a price whose currency nothing states is marked, never left bare. */}
+                    {price.currency?.trim() ? null : <> <span className="bot-tile-currency" data-price-currency="unknown">{i18n.t("assets:price.currencyUnknown")}</span></>}</span>
                   <span id={footId} className="bot-tile-foot" data-price-date={price.date}>{joinMeta([priceAsOf(price.date), provider])}</span>
                 </button>
               </li>;

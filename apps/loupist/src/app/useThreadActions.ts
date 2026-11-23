@@ -1,7 +1,7 @@
 import i18n, { useTranslation } from "@/i18n";
 import { useCallback, useState } from "react";
 import type { ChatThread, LoupistBridge } from "../types";
-import { errorMessage } from "../lib/errors";
+import { commandErrorCode, errorMessage } from "../lib/errors";
 import { chatSessionKey } from "../chat/sessionRegistry";
 import {
   EMPTY_CHAT_THREAD_ID,
@@ -153,7 +153,10 @@ export function useThreadActions(
       await removeSession(thread.loupist_id, thread.id).catch(() => undefined);
       return true;
     } catch (cause) {
-      setMutationError(errorMessage(cause, i18n.t("app:useThreadActions.couldNotDeleteThisSession")));
+      // A running reply or a save still waiting on one of its replies keeps the session.
+      setMutationError(commandErrorCode(cause) === "conflict"
+        ? i18n.t("app:useThreadActions.sessionStillWorking")
+        : errorMessage(cause, i18n.t("app:useThreadActions.couldNotDeleteThisSession")));
       return false;
     } finally {
       setMutationBusy(false);

@@ -967,10 +967,34 @@ async fn chat_followup_after_first_stop_gets_a_title_and_preserves_a_rename() {
     chat.title = "".into();
     state.store.create_chat(&chat).unwrap();
 
-    for (run_id, stop, expected_title) in [
-        ("first-stop", true, ""),
-        ("followup", false, "Read notes.txt."),
-        ("after-rename", false, "My research"),
+    let stopped = "Check the segment notes in the annual report before the call";
+    let titled = crate::commands::fallback_chat_title(stopped);
+    for (run_id, prompt, stop, expected_title, provisional) in [
+        // The stopped first reply titles the session from its request, with no model call.
+        ("first-stop", stopped, true, titled.as_str(), true),
+        // Another unfinished reply keeps that title.
+        (
+            "second-stop",
+            "Read notes.txt.",
+            true,
+            titled.as_str(),
+            true,
+        ),
+        // The first finished reply titles it as it would an untitled session.
+        (
+            "followup",
+            "Read notes.txt.",
+            false,
+            "Read notes.txt.",
+            false,
+        ),
+        (
+            "after-rename",
+            "Read notes.txt.",
+            false,
+            "My research",
+            false,
+        ),
     ] {
         if run_id == "after-rename" {
             let before = state.store.get_chat(&chat.id).unwrap().unwrap();
@@ -979,7 +1003,12 @@ async fn chat_followup_after_first_stop_gets_a_title_and_preserves_a_rename() {
             state.store.replace_chat(&before, &renamed).unwrap();
         }
         let stop_state = state.clone();
+        let titles = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = titles.clone();
         let sink = ChatEventSink::new(move |event| {
+            if let ChatStreamEvent::Title { title, .. } = &event {
+                seen.lock().unwrap().push(title.clone());
+            }
             if stop && matches!(event, ChatStreamEvent::Started { .. }) {
                 stop_state
                     .cancel_run(run_id, RunKind::Chat)
@@ -990,7 +1019,7 @@ async fn chat_followup_after_first_stop_gets_a_title_and_preserves_a_rename() {
             Ok(())
         });
         send_chat(
-            send_request(run_id, &profile.id, &chat.id, "Read notes.txt."),
+            send_request(run_id, &profile.id, &chat.id, prompt),
             sink,
             &state,
             None,
@@ -999,7 +1028,19 @@ async fn chat_followup_after_first_stop_gets_a_title_and_preserves_a_rename() {
         .unwrap();
         drain(&state).await;
         let stored = state.store.get_chat(&chat.id).unwrap().unwrap();
-        assert_eq!(stored.title, expected_title);
+        assert_eq!(stored.title, expected_title, "{run_id}");
+        assert_eq!(stored.title_provisional, provisional, "{run_id}");
+        // The renderer learns a title only when this reply gave one.
+        let given = matches!(run_id, "first-stop" | "followup");
+        assert_eq!(
+            *titles.lock().unwrap(),
+            if given {
+                vec![expected_title.to_owned()]
+            } else {
+                vec![]
+            },
+            "{run_id}"
+        );
         let expected_status = if stop {
             ChatMessageStatus::Aborted
         } else {
@@ -1286,7 +1327,8 @@ async fn chat_launch_failure_persists_a_sanitized_terminal_error() {
         &profile.id,
         "Distinguish reported facts from assumptions.",
     );
-    let chat = chat("chat-launch-failure", &profile.id, 1);
+    let mut chat = chat("chat-launch-failure", &profile.id, 1);
+    chat.title.clear();
     state.store.create_chat(&chat).unwrap();
 
     let app = mock_app(state);
@@ -1320,6 +1362,16 @@ async fn chat_launch_failure_persists_a_sanitized_terminal_error() {
     // The renderer hides the placeholder by this flag, never by its text.
     assert_eq!(terminal["placeholder"], true);
     let stored = state.store.get_chat(&chat.id).unwrap().unwrap();
+    // A failed first reply titles the untitled session from its request.
+    let title =
+        crate::commands::fallback_chat_title("Persist this request before Pi launch fails.");
+    assert_eq!(
+        (stored.title.as_str(), stored.title_provisional),
+        (title.as_str(), true)
+    );
+    assert!(events
+        .iter()
+        .any(|event| event["type"] == "title" && event["title"] == title.as_str()));
     assert_eq!(stored.messages.len(), 2);
     let error = &stored.messages[1];
     assert_eq!(error.status, ChatMessageStatus::Error);
@@ -1895,6 +1947,7 @@ async fn finished_answers_store_number_checks_and_the_as_of_date() {
         .contains(&format!("```md\n[9.1%](citation_url:{url})\n```")));
 
     // Every number link was checked against the calculation; "the calculation" is not a number.
+    // A link one character off this reply's id is stored rebound; one naming no read is unlinked.
     let checks: Vec<_> = answer
         .number_checks
         .iter()
@@ -1913,8 +1966,26 @@ async fn finished_answers_store_number_checks_and_the_as_of_date() {
                 NumberCheckKind::Calculated,
                 NumberCheckStatus::Differs
             ),
+            (
+                "8.42%",
+                NumberCheckKind::Calculated,
+                NumberCheckStatus::Matched
+            ),
+            (
+                "7.7%",
+                NumberCheckKind::Passage,
+                NumberCheckStatus::Unlinked
+            ),
         ]
     );
+    let repaired = &answer.number_checks[2];
+    assert_eq!(repaired.evidence_id, answer.evidence_refs[0].id);
+    let written = repaired.repaired_from.as_deref().unwrap();
+    assert_ne!(written, repaired.evidence_id);
+    assert!(answer
+        .content
+        .contains(&format!("It held at [8.42%]({url}) after the [7.7%](#evidence-ev_0123456789abcdef0123456789abcdef) low.")));
+    assert!(!answer.content.contains(written));
     assert_eq!(answer.number_checks[1].nearest.as_deref(), Some("8.42%"));
     let calc = answer.number_checks[0].calc.as_ref().unwrap();
     assert_eq!(
@@ -1926,6 +1997,30 @@ async fn finished_answers_store_number_checks_and_the_as_of_date() {
     let dto = crate::commands::chat_dto(&stored).unwrap();
     let wire = serde_json::to_value(dto.messages.last().unwrap()).unwrap();
     assert_eq!(wire["number_checks"][1]["status"], "differs");
+    assert_eq!(wire["number_checks"][2]["repairedFrom"], written);
+    assert_eq!(wire["number_checks"][3]["status"], "unlinked");
     assert_eq!(wire["as_of"], "2026-03-03");
     assert_eq!(wire["as_of_report"]["cutoff"], "2026-03-03");
+
+    // The next reply's envelope names the number its previous reply could not link.
+    send_chat(
+        send_request("answer-checks-2", &profile.id, &chat.id, "And now?"),
+        ChatEventSink::new(|_| Ok(())),
+        &state,
+        None,
+    )
+    .await
+    .unwrap();
+    drain(&state).await;
+    let prompt = fs::read_to_string(temporary.path().join("prompt.txt")).unwrap();
+    assert!(
+        prompt.contains("previous_reply_unlinked_figures"),
+        "{prompt}"
+    );
+    assert!(prompt.contains(r#""number":"7.7%""#), "{prompt}");
+    assert!(
+        prompt.contains(r##""link":"#evidence-ev_0123456789abcdef0123456789abcdef""##),
+        "{prompt}"
+    );
+    assert!(!prompt.contains(written), "{prompt}");
 }

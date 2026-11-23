@@ -269,7 +269,8 @@ mod runtime {
         let sink = ChatEventSink::new(move |event| {
             let _ = &lifetime;
             if let ChatStreamEvent::Completed { message_id, .. } = event {
-                handoff::finish_done_fixture(&finish_state, &owner, card_id, message_id).unwrap();
+                handoff::finish_done_fixture(&finish_state, &owner, card_id, Some(message_id))
+                    .unwrap();
             }
             Ok(())
         });

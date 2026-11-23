@@ -809,15 +809,24 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     return structuredClone(this.workspaceUi);
   }
 
-  /** Mirrors Rust: the first connected World default model, if any. */
+  /** Mirrors Rust's recommendation in the list's order over the connected accounts; a hidden model is never recommended. */
   private async worldDefaultModel() {
-    const catalog = await this.modelCatalogGet();
-    catalog.models = catalog.models.filter((model) => worldDefaults.some((entry) => entry.provider === model.provider) && model.input.includes("text") && model.credential_source !== "missing" && catalog.providers.some((provider) => provider.id === model.provider && provider.credential_source !== "missing"));
+    const all = await this.modelCatalogGet();
+    const catalog = { ...all, models: all.models.filter((model) => worldDefaults.some((entry) => entry.provider === model.provider) && model.input.includes("text") && model.credential_source !== "missing" && all.providers.some((provider) => provider.id === model.provider && provider.credential_source !== "missing")) };
     const selection = worldDefaults.flatMap((entry) => entry.models.map((candidate) => {
-      const model = catalog.models.find((item) => item.provider === entry.provider && item.model === candidate.id && item.thinking_levels.includes(candidate.thinking_level));
+      const model = catalog.models.find((item) => item.provider === entry.provider && item.model === candidate.id && item.thinking_levels.includes(candidate.thinking_level) && !catalog.hidden_model_profile_ids?.includes(item.id));
       return model ? { model_profile_id: model.id, thinking_level: candidate.thinking_level, run_options: defaultRunOptions(model) } : null;
     })).find(Boolean) ?? null;
     return { catalog, selection };
+  }
+
+  private async recommendedWorldModel(): Promise<Contract.RecommendedWorldModel | null> {
+    const { selection } = await this.worldDefaultModel();
+    return selection ? { modelProfileId: selection.model_profile_id, thinkingLevel: selection.thinking_level, runOptions: selection.run_options } : null;
+  }
+
+  private async worldView(loupistId: string, settings: Contract.GraphProcessingSettings) {
+    return knowledge.graphProcessingView(settings, await this.modelCatalogGet(), await knowledge.knowledgeGraphJobs(this.state, { loupistId }), await this.recommendedWorldModel());
   }
 
   loupistProfileUpdate(request: Contract.LoupistProfileUpdateRequest) { return loupistChat.loupistProfileUpdate(this.state, request); }
@@ -837,7 +846,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     if (selection && !catalog.models.some((model) => model.id === selection.model_profile_id)) throw new Error("The World model is no longer connected or supported. Choose another model.");
     const loupist = await loupistChat.loupistCreate(this.state, request);
     const settings = await knowledge.knowledgeGraphSettingsGet(this.state, { loupistId: loupist.id });
-    await knowledge.knowledgeGraphSettingsSet(this.state, { loupistId: loupist.id, settings: { ...settings, enrichmentEnabled: true, helperModelProfileId: selection?.model_profile_id ?? null, thinkingLevel: selection?.thinking_level ?? "off", runOptions: selection?.run_options ?? {}, researchFocus: request.focus ?? "" } });
+    await knowledge.knowledgeGraphSettingsSet(this.state, { loupistId: loupist.id, settings: { ...settings, enrichmentEnabled: true, worldModelChoice: "recommended", helperModelProfileId: selection?.model_profile_id ?? null, thinkingLevel: selection?.thinking_level ?? "off", runOptions: selection?.run_options ?? {}, researchFocus: request.focus ?? "" } });
     const seeded = curatedSeedView(request.template);
     if (seeded) this.loupistWorldSchema.install(loupist.id, seeded);
     loupist.enabled_skill_ids = (await this.agentSkillCatalog(loupist.id)).filter((skill) => !skill.fixed && skill.enabled).map((skill) => skill.id);
@@ -1065,6 +1074,26 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     return loupistChat.chatAbort(this.state, run_id);
   }
 
+  private readonly saveListeners = new Set<(event: Contract.ChatSaveChangedEvent) => void>();
+  /** Replies whose saves wait on their own, by Loupist, as Rust lists them. */
+  private readonly pendingSaves = new Map<string, Contract.ChatSaveState[]>();
+
+  async chatSaves(request: { loupist_id: string }): Promise<Contract.ChatSaveState[]> {
+    return structuredClone(this.pendingSaves.get(request.loupist_id) ?? []);
+  }
+
+  onChatSaveChanged(handler: (event: Contract.ChatSaveChangedEvent) => void) {
+    this.saveListeners.add(handler);
+    return () => { this.saveListeners.delete(handler); };
+  }
+
+  /** What Rust emits when a reply's own save waits or resolves (tests and previews). */
+  emitChatSave(event: Contract.ChatSaveChangedEvent) {
+    const others = (this.pendingSaves.get(event.loupist_id) ?? []).filter((save) => save.run_id !== event.run_id);
+    this.pendingSaves.set(event.loupist_id, event.pending ? [...others, event.pending] : others);
+    for (const handler of this.saveListeners) handler(structuredClone(event));
+  }
+
   async runActivityList(): Promise<Contract.RunActivity[]> {
     return structuredClone(
       [...this.state.run_activities.values()].sort(
@@ -1204,7 +1233,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
 
 
   async knowledgeGraphRecover(request: { loupistId: string }) {
-    return knowledge.graphProcessingView(await knowledge.knowledgeGraphRecover(this.state, request), await this.modelCatalogGet(), await knowledge.knowledgeGraphJobs(this.state, request));
+    return this.worldView(request.loupistId, await knowledge.knowledgeGraphRecover(this.state, request));
   }
 
   knowledgeGraphRetrySource(request: { loupistId: string; recordId: string }) {
@@ -1212,18 +1241,22 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   }
 
   async knowledgeGraphPause(request: { loupistId: string; paused: boolean }) {
-    return knowledge.graphProcessingView(await knowledge.knowledgeGraphPause(this.state, request), await this.modelCatalogGet(), await knowledge.knowledgeGraphJobs(this.state, request));
+    return this.worldView(request.loupistId, await knowledge.knowledgeGraphPause(this.state, request));
   }
 
   async knowledgeGraphSettingsGet(request: { loupistId: string }) {
-    return knowledge.graphProcessingView(await knowledge.knowledgeGraphSettingsGet(this.state, request), await this.modelCatalogGet(), await knowledge.knowledgeGraphJobs(this.state, request));
+    const saved = await knowledge.knowledgeGraphSettingsGet(this.state, request);
+    const followed = knowledge.followRecommended(saved, await this.recommendedWorldModel());
+    if (JSON.stringify(followed) !== JSON.stringify(saved)) await knowledge.knowledgeGraphSettingsSet(this.state, { loupistId: request.loupistId, settings: followed });
+    return this.worldView(request.loupistId, followed);
   }
 
   async knowledgeGraphSettingsSet(request: {
     loupistId: string;
     settings: Contract.GraphProcessingSettings;
   }) {
-    return knowledge.graphProcessingView(await knowledge.knowledgeGraphSettingsSet(this.state, request), await this.modelCatalogGet(), await knowledge.knowledgeGraphJobs(this.state, request));
+    const settings = knowledge.followRecommended(request.settings, await this.recommendedWorldModel());
+    return this.worldView(request.loupistId, await knowledge.knowledgeGraphSettingsSet(this.state, { ...request, settings }));
   }
 
   worldKeepAwakeGet() {

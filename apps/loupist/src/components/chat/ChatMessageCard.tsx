@@ -186,6 +186,10 @@ type Props = {
   workspacePath?: string;
   progressFocus?: string | null;
   blockingChat?: ChatThread;
+  /** A reply whose save waits on its own: Skip saving on the reply itself. */
+  onSkipSave?: (runId: string) => void;
+  /** Its skip was asked for and has not resolved yet. */
+  skippingSave?: boolean;
   guiding?: readonly string[];
   /** Set on the latest finished answer: follow-up questions go into the composer. */
   onNextStep?: (question: string) => void;
@@ -278,6 +282,8 @@ function ChatMessageCardComponent({
   workspacePath,
   progressFocus,
   blockingChat,
+  onSkipSave,
+  skippingSave = false,
   guiding,
   onNextStep,
   onFillComposer,
@@ -495,6 +501,8 @@ function ChatMessageCardComponent({
         ? <ContextTitle template={t("memorySaving.waitingForChat", { title: titlePlaceholder })} title={chatTitle(blockingChat)}><BlockingChatLink thread={blockingChat} /></ContextTitle>
         : t("memorySaving.waitingForOthers")
       : t("memorySaving.inProgress")}
+    {onSkipSave ? <button type="button" className="turn-live-skip" title={t("memorySaving.skipDetail")} disabled={skippingSave}
+      onClick={() => onSkipSave(saving.run_id)}>{t("memorySaving.skip")}</button> : null}
   </div> : undefined;
   const copyAction = copyText !== null ? <div className="message-actions">
     <AnswerActionTooltip label={copyState === "copied" ? t("chatMessageCard.copied") : t("chatMessageCard.copyAnswer")}>

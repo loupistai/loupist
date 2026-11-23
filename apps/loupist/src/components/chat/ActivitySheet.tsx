@@ -326,7 +326,7 @@ function EarlierReply({ reply, question, onSelect }: { reply: ChatMessage; quest
   const at = reply.progress?.startedAtMs ?? Date.parse(reply.created_at);
   return <li>
     <i aria-hidden="true" />
-    <button type="button" className="activity-earlier-row" onClick={() => onSelect(reply.id)}>
+    <button type="button" className="activity-earlier-row" title={question || undefined} onClick={() => onSelect(reply.id)}>
       <span className="activity-step-label">{question || formatTime(at)}</span>
       <small>{steps ? t("activitySheet.turn.steps", { count: steps, formattedCount: formatNumber(steps) }) : t("activitySheet.turn.noSteps")}</small>
     </button>
@@ -451,7 +451,7 @@ function ChecksSection({ turn, loupistId, message }: { turn: ActivityTurn; loupi
       <ul className="activity-checks">
         {turn.checks.map(({ check, evidence }) => <li key={`${check.link_index}:${check.evidence_id}`} data-status={check.status}>
           <span className="activity-check-figure">{check.text}</span>
-          <span className="activity-check-status">{t(`activitySheet.checked.status.${check.status}`)}</span>
+          <span className="activity-check-status">{check.status === "unlinked" ? t("numberChip.unlinked") : t(`activitySheet.checked.status.${check.status}`)}</span>
           {evidence ? <span className="activity-check-source"><EvidenceLink evidence={evidence} to={savedSourceFigure(loupistId, message, evidence, check)} /></span> : null}
         </li>)}
       </ul>

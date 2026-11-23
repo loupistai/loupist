@@ -61,7 +61,8 @@
   "useThreadActions": {
     "couldNotCreateANewChat": "Could not start new research.",
     "couldNotRenameThisSession": "Could not rename this session.",
-    "couldNotDeleteThisSession": "Could not delete this session."
+    "couldNotDeleteThisSession": "Could not delete this session.",
+    "sessionStillWorking": "This session is still answering or saving to Memory. Delete it when that finishes."
   },
   "appNavigation": {
     "settingsNavigation": "Settings navigation",

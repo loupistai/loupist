@@ -1051,7 +1051,7 @@ async fn c011_calculated_input_uses_the_same_source_after_chat_reload() {
     assert!(original.iter().any(|evidence| evidence.id == evidence_id));
     let calc_url = result["result"]["citation_url"].as_str().unwrap();
     let answer = format!("Observed increase of [10%]({calc_url}).");
-    let checks = capture.number_checks(&answer, &original).await;
+    let checks = capture.number_checks(&answer, &original).await.checks;
     let inputs = &checks[0].calc.as_ref().unwrap().inputs;
     assert!(inputs
         .iter()

@@ -34,6 +34,12 @@ pub const LOCAL_OPERATION_BUDGET_MS: u64 = 600_000;
 /// Per-request World model limit. A high-thinking extraction of a full episode
 /// can take minutes; the shared provider path accepts up to five.
 pub const DEFAULT_TIMEOUT_MS: u64 = 240_000;
+/// Model requests a new Source span may use. A clean run of a 20 KB filing
+/// needs up to 24 on every recommended World model.
+pub const DEFAULT_LLM_CALLS: u32 = 32;
+/// The default before 32, in rows saved before Loupists recorded their World
+/// model choice.
+const LEGACY_DEFAULT_LLM_CALLS: u64 = 16;
 pub const MAX_TIMEOUT_MS: u64 = 300_000;
 /// Sequential model waves in one episode (entities, entity resolution with
 /// relations, relation resolution with attributes, summaries) plus one spare.
@@ -185,8 +191,10 @@ pub struct GraphProcessingSettings {
     pub inactive_loupists: Vec<String>,
     pub quarantined_generations: Vec<String>,
     pub helper_model_profile_id: Option<String>,
-    /// Only new Loupists created before a suitable model is connected may auto-fill it.
-    pub awaiting_default_model: bool,
+    /// Recommended follows the bundled list and the connected accounts: the
+    /// host rewrites the model fields whenever its recommendation changes, and
+    /// they are empty while no account offers one. Chosen keeps them as saved.
+    pub world_model_choice: WorldModelChoice,
     pub thinking_level: String,
     pub run_options: std::collections::BTreeMap<String, String>,
     /// What this Loupist researches. Empty leaves extraction unfocused.
@@ -204,6 +212,27 @@ pub struct GraphProcessingSettings {
     /// Item delivery and removal controls share the existing per-Loupist JSON row.
     #[serde(default)]
     pub memory_controls: super::memory_controls::MemoryControls,
+}
+
+/// Whether a Loupist's World model follows the bundled list
+/// (`world-model-defaults.json`) or stays the one the user picked.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum WorldModelChoice {
+    #[default]
+    Recommended,
+    Chosen,
+}
+
+/// The model World building sends to, with its effort and run options.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorldModel {
+    pub profile_id: String,
+    pub provider: String,
+    pub model: String,
+    pub thinking_level: String,
+    pub run_options: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -226,13 +255,13 @@ impl Default for GraphProcessingSettings {
             helper_provider: None,
             helper_model: None,
             embedding_profile: super::graph_inference::LOCAL_EMBEDDING_PROFILE.to_string(),
-            max_llm_calls: 16,
+            max_llm_calls: DEFAULT_LLM_CALLS,
             max_embedding_calls: 64,
             timeout_ms: DEFAULT_TIMEOUT_MS,
             inactive_loupists: Vec::new(),
             quarantined_generations: Vec::new(),
             helper_model_profile_id: None,
-            awaiting_default_model: false,
+            world_model_choice: WorldModelChoice::Recommended,
             thinking_level: "off".to_string(),
             run_options: Default::default(),
             research_focus: String::new(),
@@ -286,13 +315,48 @@ fn load_settings_in(
             |row| row.get(0),
         )
         .optional()?;
-    let mut settings: GraphProcessingSettings = data
-        .map(|value| serde_json::from_str(&value))
+    let mut settings = data
+        .map(|value| parse_settings(&value))
         .transpose()?
         .unwrap_or_default();
     settings.extension = super::world_schema::live_extension_in(connection, loupist_id, schema)?;
     settings.validate()?;
     Ok(settings)
+}
+
+/// Settings JSON as stored. Rows written before Loupists recorded their World
+/// model choice name a model without saying who picked it: one an earlier
+/// bundled list could have saved counts as Recommended, any other as Chosen.
+/// Such a row that still holds the old request allowance default (16) takes the
+/// current one; a row saved since keeps what it holds, 16 included. Allowances
+/// already frozen into queued or paused jobs do not change.
+pub(crate) fn parse_settings(json: &str) -> KnowledgeResult<GraphProcessingSettings> {
+    let mut value: Value = serde_json::from_str(json)?;
+    if let Some(stored) = value.as_object_mut() {
+        stored.remove("awaitingDefaultModel");
+        if !stored.contains_key("worldModelChoice")
+            && stored.get("maxLlmCalls").and_then(Value::as_u64) == Some(LEGACY_DEFAULT_LLM_CALLS)
+        {
+            stored.insert("maxLlmCalls".into(), DEFAULT_LLM_CALLS.into());
+        }
+        if !stored.contains_key("worldModelChoice") {
+            let text = |key: &str| stored.get(key).and_then(Value::as_str);
+            let choice = match (text("helperProvider"), text("helperModel")) {
+                (Some(provider), Some(model))
+                    if !crate::providers::world_defaults::an_earlier_list_chose(
+                        provider,
+                        model,
+                        text("thinkingLevel").unwrap_or_default(),
+                    ) =>
+                {
+                    WorldModelChoice::Chosen
+                }
+                _ => WorldModelChoice::Recommended,
+            };
+            stored.insert("worldModelChoice".into(), serde_json::to_value(choice)?);
+        }
+    }
+    Ok(serde_json::from_value(value)?)
 }
 
 pub fn store_settings(
@@ -350,6 +414,31 @@ struct EnqueueWorld {
 }
 
 impl super::KnowledgeWrite<'_> {
+    /// Point a Recommended Loupist at the model the host recommends now; a
+    /// Chosen one is left alone. As after a saved model change, Sources saved
+    /// while it waited and work the old model could not do are offered to the
+    /// new one. True when the saved model changed.
+    pub fn follow_recommended_world_model(
+        &self,
+        loupist_id: &str,
+        recommended: Option<&WorldModel>,
+        at_ms: i64,
+    ) -> KnowledgeResult<bool> {
+        let mut settings = load_settings(self.tx, loupist_id)?;
+        let current = settings.world_model();
+        if settings.world_model_choice != WorldModelChoice::Recommended
+            || current.as_ref() == recommended
+        {
+            return Ok(false);
+        }
+        settings.set_world_model(recommended);
+        store_settings(self.tx, loupist_id, &settings)?;
+        if recommended.is_some() {
+            self.enqueue_existing_sources(loupist_id, &settings, at_ms)?;
+        }
+        Ok(true)
+    }
+
     /// Sources whose relationships are not on the Map yet ([`sources_awaiting_world`]).
     pub fn sources_awaiting_world(&self, loupist_id: &str) -> KnowledgeResult<BTreeSet<String>> {
         sources_awaiting_world(self.tx, loupist_id)
@@ -2240,6 +2329,9 @@ pub struct GraphPublicSettings {
     pub enrichment_enabled: bool,
     pub paused: bool,
     pub helper_model_profile_id: Option<String>,
+    /// Recommended ignores the model, thinking level and run options sent with
+    /// it: the host saves what it recommends.
+    pub world_model_choice: WorldModelChoice,
     pub max_llm_calls: u32,
     pub timeout_ms: u64,
     pub thinking_level: String,
@@ -2264,6 +2356,8 @@ pub enum ReadinessNote {
     Recovering,
     RuntimeUnavailable,
     AwaitingProvider,
+    /// No AI account is connected at all.
+    NoAccount,
     ChooseModel,
     ModelUnavailable,
     ConnectProvider,
@@ -2282,12 +2376,25 @@ pub struct GraphReadiness {
     pub auth_kind: Option<String>,
 }
 
+/// What the bundled list recommends for this Loupist with the accounts
+/// connected now, whichever choice the Loupist has.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct RecommendedWorldModel {
+    pub model_profile_id: String,
+    pub thinking_level: String,
+    pub run_options: std::collections::BTreeMap<String, String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct GraphProcessingView {
     pub settings: GraphPublicSettings,
     pub readiness: GraphReadiness,
+    /// Empty while no connected account offers a listed model.
+    pub recommended: Option<RecommendedWorldModel>,
 }
 
 impl GraphProcessingSettings {
@@ -2296,6 +2403,7 @@ impl GraphProcessingSettings {
             enrichment_enabled: self.enrichment_enabled,
             paused: self.paused,
             helper_model_profile_id: self.helper_model_profile_id.clone(),
+            world_model_choice: self.world_model_choice,
             max_llm_calls: self.max_llm_calls,
             timeout_ms: self.timeout_ms,
             thinking_level: self.thinking_level.clone(),
@@ -2369,21 +2477,37 @@ impl GraphProcessingSettings {
         Ok(())
     }
 
-    pub fn apply_public(
-        &mut self,
-        incoming: &GraphPublicSettings,
-        model: Option<&crate::providers::catalog::ConfiguredModel>,
-    ) {
-        self.awaiting_default_model = false;
-        self.enrichment_enabled = incoming.enrichment_enabled;
-        self.paused = incoming.paused;
-        self.helper_model_profile_id = incoming.helper_model_profile_id.clone();
+    /// The saved World model, if any.
+    pub fn world_model(&self) -> Option<WorldModel> {
+        Some(WorldModel {
+            profile_id: self.helper_model_profile_id.clone()?,
+            provider: self.helper_provider.clone()?,
+            model: self.helper_model.clone()?,
+            thinking_level: self.thinking_level.clone(),
+            run_options: self.run_options.clone(),
+        })
+    }
+
+    /// Save `model` as the World model; None leaves World waiting for one.
+    pub fn set_world_model(&mut self, model: Option<&WorldModel>) {
+        self.helper_model_profile_id = model.map(|model| model.profile_id.clone());
         self.helper_provider = model.map(|model| model.provider.clone());
         self.helper_model = model.map(|model| model.model.clone());
+        if let Some(model) = model {
+            self.thinking_level = model.thinking_level.clone();
+            self.run_options = model.run_options.clone();
+        }
+    }
+
+    /// `model` is the one the host resolved for `incoming`: the user's pick
+    /// for Chosen, its current recommendation for Recommended.
+    pub fn apply_public(&mut self, incoming: &GraphPublicSettings, model: Option<&WorldModel>) {
+        self.world_model_choice = incoming.world_model_choice;
+        self.set_world_model(model);
+        self.enrichment_enabled = incoming.enrichment_enabled;
+        self.paused = incoming.paused;
         self.max_llm_calls = incoming.max_llm_calls;
         self.timeout_ms = incoming.timeout_ms;
-        self.thinking_level = incoming.thinking_level.clone();
-        self.run_options = incoming.run_options.clone();
         self.research_focus = incoming.research_focus.clone();
         self.relation_hints = incoming.relation_hints.clone();
         self.anchors = incoming.anchors.clone();
@@ -2843,7 +2967,11 @@ pub fn publish_and_complete(
     }
     let current = super::revision::load_revision(write.tx, &job.world_revision_id)?;
     let previous: WorldSnapshotBody = serde_json::from_str(&current.payload_json)?;
-    let (nodes, claims, mut annotations) = project_worker_artifact(artifact_utf8, &previous.nodes)?;
+    let (mut nodes, mut claims, mut annotations) =
+        project_worker_artifact(artifact_utf8, &previous.nodes)?;
+    // Resolution from before identifying codes were held left wrong aliases
+    // and duplicate nodes; each publication repairs what it finds.
+    super::entity_codes::repair::repair_world(write.tx, &job.loupist_id, &mut nodes, &mut claims)?;
     carry_forward_annotations(&previous, &mut annotations);
     let mut spans = evidence_spans(&claims, &annotations);
     if let Some(binding) = &job.document.source_binding {

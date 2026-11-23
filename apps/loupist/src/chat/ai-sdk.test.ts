@@ -125,6 +125,21 @@ describe("native stream transport", () => {
     expect(sent[1]).toEqual({ ...sent[0], run_id: expect.any(String) });
   });
 
+  it("titles the session from a stopped first reply's title event, even after Stop", async () => {
+    const onTitle = vi.fn();
+    const controller = new AbortController();
+    const chat = new TauriChatTransport({ chatSend: vi.fn(async ({ run_id }: ChatSendRequest, emit: (event: ChatStreamEvent) => void) => {
+      emit({ type: "started", run_id });
+      controller.abort();
+      emit({ type: "title", title: "Read this.", run_id });
+      emit({ type: "aborted", run_id });
+      return { run_id };
+    }), chatAbort: vi.fn(async () => undefined) } as unknown as LoupistBridge, onTitle);
+    const stream = await chat.sendMessages({ ...request, body, abortSignal: controller.signal });
+    void project(stream as ReadableStream<never>).catch(() => undefined);
+    await vi.waitFor(() => expect(onTitle).toHaveBeenCalledExactlyOnceWith("loupist-a", "chat-a", "Read this."));
+  });
+
   it("shows one answer under one key in every projection while a draft settles, then a second turn joins it", async () => {
     const preamble = { kind: "commentary" as const, id: "note", text: "Checking." };
     const draft = { kind: "commentary" as const, id: "draft", text: "Finished." };

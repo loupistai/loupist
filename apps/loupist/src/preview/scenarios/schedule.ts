@@ -47,6 +47,7 @@ export const scheduleScenarios: PreviewScenario[] = [
     ["schedule-empty", "Nothing scheduled yet", ".schedule-list .schedule-empty"],
     ["schedule-create", "Request scheduled work in Bot", ".composer-shell textarea"],
     ["schedule-active-filter", "Active filter hides a paused task", "[data-schedule-filter='active']"],
+    ["schedule-briefing-off", "Custom tasks and the built-in briefing, still off, with Turn on in its row", "[data-schedule-briefing='off']"],
     ["schedule-dialog", "Saved briefing cadence and run history", ".schedule-task-detail"],
     ["briefing-structured", "A briefing's sections above its answer", ".briefing-sections"],
     ["briefing-failed", "A briefing that could not finish", ".briefings-failure"],
@@ -99,6 +100,10 @@ export const scheduleScenarios: PreviewScenario[] = [
       const entity = (node: { id: string }, index: number) => ({ eventId: `briefing-growth-${index}`, loupistId: "loupist-quality", originChatId: "preview-chat", originMessageId: "preview-answer", atMs: Date.now(), kind: "entity_added" as const, subjectId: node.id, recordId: "preview-world", actor: "loupist" as const, summary: "", beforeSummary: null, afterSummary: null });
       const disputed = id === "briefing-suggested" ? [{ ...entity({ id: "map-claim-28" }, 9), kind: "claim_disputed" as const, subjectId: "map-claim-28", atMs: Date.now() + 3_600_000 }] : [];
       bridge.knowledgeGrowthEvents = async () => ({ events: [...map.nodes.filter(node => node.kind === "entity").slice(0, 3).map(entity), ...disputed], nextCursor: null });
+      if (id === "schedule-briefing-off") {
+        const list = bridge.scheduledTasksList.bind(bridge);
+        bridge.scheduledTasksList = async request => (await list(request)).filter(task => task.kind !== "briefing");
+      }
       if (id === "schedule-task-failed") {
         const list = bridge.scheduledTasksList.bind(bridge);
         bridge.scheduledTasksList = async request => (await list(request)).map(task => task.id === "preview-task-0" && task.latest_run

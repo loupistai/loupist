@@ -66,6 +66,7 @@ mod search_index;
 pub use search_index::{
     query_group_count, PreparedSearch, SearchOptions, SEARCH_LIMIT, SEARCH_WINDOW_LIMIT,
 };
+mod entity_codes;
 mod entity_name;
 mod schema_writer;
 pub(crate) mod shared_pack;
@@ -103,7 +104,7 @@ pub use graph_jobs::{
     get_job, get_processing_job, list_jobs, load_settings, pause_processing, recover_world,
     recovery_status, resume_processing, retry_source_processing, store_settings, GraphJobView,
     GraphProcessingSettings, GraphProcessingView, GraphPublicSettings, GraphReadiness,
-    ReadinessNote,
+    ReadinessNote, RecommendedWorldModel, WorldModel, WorldModelChoice,
 };
 pub use graph_service::GraphSupervisor;
 pub use model::*;

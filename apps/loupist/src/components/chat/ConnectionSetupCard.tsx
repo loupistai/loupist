@@ -22,6 +22,19 @@ type CardState =
   | { status: "ready"; live: Live }
   | { status: "unavailable"; name?: string };
 
+/**
+ * What setup asks the user to type, read from the connection's own fields: a key (a credential
+ * field, kept in the Keychain), and values that are not secret but are sent to the service with
+ * each request, such as SEC EDGAR's contact email. A choice made from a list starts on its first
+ * option and goes nowhere, so it is neither.
+ */
+export function setupNeeds(entry: MarketplaceEntry) {
+  return {
+    key: Boolean(entry.setup?.credential_fields.length),
+    values: (entry.setup?.config_fields ?? []).filter((field) => field.required && field.kind !== "select").map((field) => connectionText(field.label)),
+  };
+}
+
 async function readState(bridge: LoupistBridge, loupistId: string, entryId: string): Promise<CardState> {
   const [snapshot, bindings] = await Promise.all([bridge.marketplaceSnapshot(), bridge.loupistCapabilityList(loupistId)]);
   const entry = snapshot.catalog.entries.find((candidate) => candidate.id === entryId);
@@ -97,6 +110,7 @@ export function ConnectionSetupCard({ bridge, loupistId, entryId, onAskAgain }: 
     return () => window.clearTimeout(timer);
   }, [state.status, dialogOpen]);
   const live = "live" in state ? state.live : undefined;
+  const needs = live ? setupNeeds(live.entry) : undefined;
   const name = live ? connectionText(live.entry.name) : state.status === "unavailable" ? state.name ?? entryId : entryId;
   const closeDialog = () => {
     setDialogOpen(false);
@@ -107,8 +121,11 @@ export function ConnectionSetupCard({ bridge, loupistId, entryId, onAskAgain }: 
     {state.status === "loading" ? <p className="connection-setup-card-note">{t("connectionSetupCard.loading", { name })}</p> : null}
     {state.status === "unavailable" ? <p>{t("connectionSetupCard.unavailable", { name })}</p> : null}
     {state.status === "needs_setup" ? <>
-      <p>{t("connectionSetupCard.needsSetup", { name })}</p>
-      <p className="connection-setup-card-note">{t("connectionSetupCard.keyNote")}</p>
+      {needs?.values.length
+        ? <p>{t("connectionSetupCard.needsValue", { name, fields: needs.values.join(", ") })}</p>
+        : <p>{t("connectionSetupCard.needsSetup", { name })}</p>}
+      {needs?.values.length ? <p className="connection-setup-card-note">{t("connectionSetupCard.valueNote", { service: name })}</p> : null}
+      {needs?.key ? <p className="connection-setup-card-note">{t("connectionSetupCard.keyNote")}</p> : null}
       <div className="connection-setup-card-actions">
         <Button type="button" onClick={() => { keepFocus.current = true; setDialogOpen(true); }}>{t("connectionSetupCard.setUp")}</Button>
       </div>

@@ -14,12 +14,22 @@ export type GraphJobView = {
   hostMayRedrive: boolean,
 };
 
-export type GraphProcessingView = { settings: GraphPublicSettings, readiness: GraphReadiness };
+export type GraphProcessingView = {
+  settings: GraphPublicSettings,
+  readiness: GraphReadiness,
+  /** Empty while no connected account offers a listed model. */
+  recommended: RecommendedWorldModel | null,
+};
 
 export type GraphPublicSettings = {
   enrichmentEnabled: boolean,
   paused: boolean,
   helperModelProfileId: string | null,
+  /**
+   * Recommended ignores the model, thinking level and run options sent with
+   * it: the host saves what it recommends.
+   */
+  worldModelChoice: WorldModelChoice,
   maxLlmCalls: number,
   timeoutMs: number,
   thinkingLevel: string,
@@ -47,9 +57,26 @@ export type ReadinessNote =
   | "recovering"
   | "runtime_unavailable"
   | "awaiting_provider"
+  | "no_account"
   | "choose_model"
   | "model_unavailable"
   | "connect_provider"
   | UnreadyReason;
 
+/**
+ * What the bundled list recommends for this Loupist with the accounts
+ * connected now, whichever choice the Loupist has.
+ */
+export type RecommendedWorldModel = {
+  modelProfileId: string,
+  thinkingLevel: string,
+  runOptions: { [key in string]: string },
+};
+
 export type WorldAnchor = { name: string, aliases: Array<string>, identifiers: Array<string> };
+
+/**
+ * Whether a Loupist's World model follows the bundled list
+ * (`world-model-defaults.json`) or stays the one the user picked.
+ */
+export type WorldModelChoice = "recommended" | "chosen";

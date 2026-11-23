@@ -25,8 +25,8 @@ from loupist_openbb.failures import (
     OFFLINE,
     PAID_ALPHA_PLAN,
     SEC_CONTACT_REQUIRED,
-    INVALID_ARGUMENTS,
     FRED_INVALID_ARGUMENTS,
+    INVALID_ARGUMENTS,
     FRED_INVALID_SYMBOL,
     InvalidProviderArguments,
     AlphaVantagePaidPlanRequired,
@@ -139,7 +139,13 @@ def test_network_failure_crosses_openbb_rest_and_mcp_without_private_text() -> N
                 "/api/v1/equity/price/quote", params={"provider": "fixture"}
             )
             assert invalid.status_code == 422
-            assert invalid.json() == INVALID_ARGUMENTS
+            assert invalid.json() == {
+                "loupist_error": {
+                    "kind": "invalid_arguments",
+                    "provider": "fixture",
+                    "field": "failure",
+                },
+            }
         async with Client(server) as client:
             await client.call_tool(
                 "activate_tools", {"tool_names": ["equity_price_quote"]}

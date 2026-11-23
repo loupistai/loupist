@@ -4,15 +4,6 @@ import type { LoupistBridge, KnowledgeLocation, WorldGraphView, WorldGraphQuery 
 import { readWithWorldRetry } from "../../knowledge/readWithWorldRetry";
 import type { KnowledgeMap } from "../../contracts/knowledge";
 
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-
-/** Nodes on the canvas whose first appearance is inside the last seven days. */
-export function weeklyDrawnCount(nodes: { firstSeenAtMs?: number }[], now = Date.now()) {
-  const start = now - WEEK_MS;
-  const count = nodes.filter(node => node.firstSeenAtMs != null && node.firstSeenAtMs >= start && node.firstSeenAtMs <= now).length;
-  return Math.min(count, nodes.length);
-}
-
 export function useMapData(bridge: LoupistBridge, loupistId: string, refreshKey: unknown, active = true, catalogRevision?: string) {
   const [result, setResult] = useState<{ loupistId: string; map: KnowledgeMap; arrivedAt: number }>();
   const [error, setError] = useState(false);

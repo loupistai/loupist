@@ -776,6 +776,7 @@ fn clone_error(error: &BrokerError) -> BrokerError {
         Authentication => Authentication,
         FrameTooLarge => FrameTooLarge,
         Execution(message) => Execution(message.clone()),
+        EmptyResult => EmptyResult,
         SecContactRequired(message) => SecContactRequired(message),
         KeychainBusy => KeychainBusy,
         KeychainUnavailable => KeychainUnavailable,

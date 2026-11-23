@@ -21,7 +21,7 @@ pub struct ResetRequest {
     pub expected: ResetCounts,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_memory_controls(
     state: State<'_, AppState>,
     request: KnowledgeCatalogRequest,
@@ -31,7 +31,7 @@ pub fn knowledge_memory_controls(
         storage::load(tx, &request.loupist_id)
     })
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_lens_pause(
     state: State<'_, AppState>,
     request: PauseRequest,
@@ -41,7 +41,7 @@ pub fn knowledge_lens_pause(
         storage::pause(tx, &request.loupist_id, &request.record_id, request.paused)
     })
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_memory_reset_preview(
     state: State<'_, AppState>,
     request: KnowledgeCatalogRequest,
@@ -51,7 +51,7 @@ pub fn knowledge_memory_reset_preview(
         memory_reset::preview(tx, &request.loupist_id)
     })
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_memory_reset(
     state: State<'_, AppState>,
     request: ResetRequest,

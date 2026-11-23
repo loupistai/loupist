@@ -1979,6 +1979,16 @@ pub(crate) fn step_failure_reason(
     .into_iter()
     .find_map(|p| value.pointer(p).and_then(Value::as_str))
     .or_else(|| host_error.and_then(|error| error["code"].as_str()));
+    // Pi can refuse a call against the advertised schema before it reaches
+    // the broker. Its fixed validation prefix also drives the tool repair hint.
+    if code.is_none()
+        && result
+            .pointer("/content/0/text")
+            .and_then(Value::as_str)
+            .is_some_and(|text| text.starts_with("Validation failed for tool \""))
+    {
+        return InvalidInput;
+    }
     match code {
         Some("timeout" | "provider_timeout" | "request_timeout" | "tool_timeout") => Timeout,
         Some("offline" | "unreachable" | "io_failed" | "connection_failed") => Unreachable,

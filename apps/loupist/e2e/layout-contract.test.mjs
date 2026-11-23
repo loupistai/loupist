@@ -83,6 +83,19 @@ test("a resized sidebar keeps its handle on its right edge", () => {
   assert.throws(() => assertShellLayout(measure(measureShellLayout, html(180))), /resize handle is not on the sidebar's right edge/);
 });
 
+test("a long row title stops before its time or badge, in the activity sheet and the sidebar", () => {
+  const html = (titleWidth, sessionWidth = 140) => `<main data-testid="app-shell" data-rect="0,0,700,820">
+    <div class="app-body" data-rect="0,0,700,820"><div class="app-frame" data-rect="0,0,700,820"></div></div>
+    <ol class="activity-earlier"><li data-rect="328,600,340,44"><i></i><button data-rect="352,600,${titleWidth},44"><span class="activity-step-label" data-rect="352,600,${titleWidth},20">A long question</span><small></small></button><time data-rect="600,600,60,20">8:50 AM</time></li></ol>
+    <ul><li class="loupist-chat-row" data-rect="8,300,232,32"><button><span class="loupist-chat-title" data-rect="16,306,${sessionWidth},20">A long session title</span><span class="loupist-status-dot" data-state="finished" data-rect="220,312,8,8"></span></button></li></ul>
+  </main>`;
+  const layout = measure(measureShellLayout, html(240));
+  assert.deepEqual(Array.from(layout.titledRows, row => row.list), [".activity-earlier > li", ".loupist-chat-row"]);
+  assert.doesNotThrow(() => assertShellLayout(layout));
+  assert.throws(() => assertShellLayout(measure(measureShellLayout, html(316))), /row title runs under its time or badge/);
+  assert.throws(() => assertShellLayout(measure(measureShellLayout, html(240, 220))), /row title runs under its time or badge/);
+});
+
 test("World controls sit beside What's new, the Library or a sheet, never under them", () => {
   const map = ({ panel = "", stats = "8,8,300,30", legend = "8,660,800,32" } = {}) => `<div data-testid="map-view" data-rect="0,0,900,700">
     <div class="map-body" data-rect="0,0,900,700"><div class="map-stage" data-rect="0,0,900,700">

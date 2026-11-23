@@ -81,7 +81,7 @@ function hanulMove(kind: "weakening" | "crossed"): AssetMove {
 
 /** A stored price as a replay of a bundled read leaves it. */
 const stored = (value: number, date: string, currency: string | null, provider: string): AssetStoredPrice =>
-  ({ value, date, currency, provider, sourceUrl: null, dataset: { dataset_id: `preview-${provider}`, revision: 1, digest: "preview" } });
+  ({ value, date, currency, currencySource: currency ? "result" : "none", provider, sourceUrl: null, dataset: { dataset_id: `preview-${provider}`, revision: 1, digest: "preview" } });
 
 /** Hanul Precision: Weakening (or Broken by a crossed line), two reasons, one line, a Map match and a won price with three months of points. */
 export function hanulFixture(state: "weakening" | "crossed" = "weakening"): AssetFixture {
@@ -140,12 +140,12 @@ export function needsConnectionFixture(): AssetFixture {
   return { ...fixture, price: { ...fixture.price!, savedRead: mockSavedRead("needs_connection"), replay: "needs_connection" } };
 }
 
-/** A fund whose result states no currency: the price shows without one, and no display-currency line. */
+/** A fund whose result and listing state no currency: the price says the currency is unknown, with no display-currency line. */
 export function noCurrencyFixture(): AssetFixture {
   const assetId = mockAssetId("BBG000PREV03");
   const points = previewPoints({ last: 12.84, days: 30, seed: 11, volatility: 0.006 });
   return {
-    asset: { assetId, name: "Harbor Fund", ticker: "HRBF", exchange: "US", figi: "BBG000PREV03", securityType: "Open-End Fund" },
+    asset: { assetId, name: "Harbor Fund", ticker: "HRBF", exchange: "LN", figi: "BBG000PREV03", securityType: "Open-End Fund" },
     price: { price: stored(12.84, points.at(-1)!.date, null, "fmp"), savedRead: mockSavedRead("ready", "fund_nav"), points },
   };
 }

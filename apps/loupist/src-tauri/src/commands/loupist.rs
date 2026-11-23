@@ -30,7 +30,7 @@ pub async fn loupist_list(state: State<'_, AppState>) -> Result<Vec<LoupistSumma
     list_available_loupists(&state).await
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn agent_skill_catalog(
     loupist_id: String,
     state: State<'_, AppState>,
@@ -80,8 +80,8 @@ pub async fn loupist_select(
     state: State<'_, AppState>,
 ) -> Result<LoupistWorkspace, CommandError> {
     state.ensure_loupist_available(&loupist_id)?;
-    if super::knowledge::complete_pending_world_model(state.inner(), &loupist_id).is_err() {
-        eprintln!("Could not complete pending World model setup for {loupist_id}");
+    if super::knowledge::follow_recommended_world_model(state.inner(), &loupist_id).is_err() {
+        eprintln!("Could not update the recommended World model for {loupist_id}");
     }
     // What this Loupist followed while it was closed or unavailable reaches its Map now.
     if super::knowledge::sync_followed_assets(state.inner(), &loupist_id).is_err() {

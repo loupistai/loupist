@@ -6,9 +6,15 @@ A turn freezes its authority in Rust, then Pi runs in the selected workspace. Th
 
 Chat admission returns `memory_busy` while a Memory writer holds the Loupist.
 A queued submission can retry when that active `memory_write` leaves the run list.
-Completed chats waiting their turn to save keep their thread reserved and leave
-other conversations free to start. A same-thread conflict or a full worker pool
-keeps its own refusal.
+An interactive reply waiting its turn to save frees its conversation once its answer
+is stored ([saves that wait on their own](#saves-that-wait-on-their-own)); a scheduled
+or hand-off reply keeps its thread reserved until its save resolves. Either leaves other
+conversations free to start. A same-thread conflict or a full worker pool keeps its own
+refusal.
+
+Chat acknowledges a submission once the user turn is durable. If host setup
+refuses it earlier, the composer retains the request for retry and shows the
+refusal. Local diagnostics record the failed phase and a fixed reason code.
 
 SQLite owns the transcript. Pi JSONL is a derived cache. Rust prepares the turn
 once in `commands/chat_runtime/setup.rs`, capturing model, Memory policy, connectors,
@@ -30,6 +36,13 @@ On the host's first locked open of a Loupist folder, Rust settles an admitted
 request that still lacks a terminal reply. This happens during startup for
 available folders and when an unavailable folder is opened again. The
 transcript gets one stopped reply and keeps the request and accepted guidance.
+An untitled session takes the title that request would have given it on
+completion (its first line shortened to 40 characters, or its first file's name),
+without a model call. A reply the user stops, or that fails, does the same when it
+settles (`ChatSession::title_unfinished_reply`, sent to the renderer as a `title`
+event, applied after Stop too). Such a title is provisional (`titleProvisional`): the
+next finished reply titles the session as it would an untitled one, and a rename
+keeps the user's title. Bot and sessions that already have a title keep theirs.
 A saved draft or other terminal reply stays as written. Live chunks and pending
 question or approval controls are process-local. The session, history and export
 all use the stored status. An independent Bot post can arrive after the stop and
@@ -126,12 +139,26 @@ messages stay in the history and are skipped when choosing that request; local f
 Rust independently gates Memory reads and writes. Search, Skill selection and
 renderer inspection do not grant exact-read or write authority. Broker delivery
 uses acknowledgment and a commit barrier; an indeterminate barrier aborts the turn.
-After Pi settles, Chat stores the generated answer, checked numbers, and
-published artifacts before waiting to save Memory. The live saving state
+
+An interactive Bot or research turn can finish directly from reader admission
+when it has a settled answer, no staged Memory change, including a Source or
+price read, no explicit Bot memory edit, no staged research hand-off, and no
+Memory tool read or Lens link to apply. One Chat transaction records the answer,
+evidence, artifacts, final checks, automatic Lens delivery receipts and the Bot
+review queue. The composer returns to Send on completion. The receipt records
+no Memory change with saving on and omits the Memory update with saving off.
+An orderly quit drains a direct commit that already owns completion. After a
+crash, an uncommitted answer follows stopped-turn recovery and a committed one
+reopens as complete.
+
+For turns using Memory save admission, Chat stores the generated answer, checked
+numbers, and published artifacts before waiting to save Memory. The live saving state
 separates remaining storage work from writing the reply. The save waits in FIFO
 order and takes exclusive admission in the same coordinator step that confirms
 every reader has drained. **Skip saving** ends the wait and keeps the answer
-and its outputs. The wait
+and its outputs. An interactive reply's save then waits on its own, and the reply
+shows its wait and **Skip saving** itself
+([saves that wait on their own](#saves-that-wait-on-their-own)). The wait
 also ends at ten minutes. If the app exits before saving, the stored answer
 and artifacts carry the interrupted-save receipt. Scheduled results and
 research hand-offs still deliver the completed answer with its skip reason.
@@ -202,11 +229,13 @@ and eval trace; the host never copies the raw storage error into that category.
 
 Pi's `agent_settled` remains the completion barrier; a visible final text chunk
 alone cannot commit Chat or Memory, bypass Stop, or discard acknowledged steering.
-While saving, Chat keeps the session active and lets the reader copy the answer
-and open its citations, figures, files and Activity. The status names and opens
-a single identified blocking conversation. New messages queue, and feedback and
-edits wait for the turn to finish. Other conversations can start during the
-wait. The Memory busy notice applies during the exclusive transaction.
+While saving, the reader can copy the answer and open its citations, figures, files
+and Activity. The status names and opens a single identified blocking conversation.
+Feedback on the saving reply, and edits that would set it aside, wait for its
+receipt. A reply that saves on its stream (a host-composed receipt) keeps the session
+active and the composer's **Skip saving**, and new messages queue behind it. Other
+conversations can start during the wait. The Memory busy notice applies during the
+exclusive transaction.
 
 On completion the receipt shows any skip reason. The warning also appears on
 delivered Bot results and in the Schedule run reader. Reasons include a user
@@ -217,11 +246,67 @@ input. A cancelled or deferred attempt leaves no successful or failed compaction
 answer's progress. Compaction before a prompt and between tool rounds retains its
 normal error, timeout and cancellation handling.
 
+#### Saves that wait on their own
+
+An interactive Bot or research reply that needs a Memory save and has answer text
+gives its conversation back once the answer checkpoint is stored. The coordinator
+queues the save and releases the thread in one step (`runs/coordinator.rs`): the
+save keeps its FIFO place among the Loupist's writers and keeps waiting for every
+reader, including a new turn of its own conversation. The reply takes its title
+with the answer, and its stream ends there with a `completed` event that has no
+receipt. The composer returns to Send, results that waited for the Thread are posted,
+and the next message runs as a normal turn. That turn reads Memory as committed at
+that moment, with the earlier answer in its history and none of its pending changes.
+Its own save queues behind the earlier one. Scheduled, hand-off, price-setup and
+host-composed turns keep their thread through the save.
+
+Pending saves are listed by message: `chat_saves` returns each one's run, thread,
+message, wait and save activity, and `chat-save-changed` reports a new wait or, once
+the save is applied, skipped or bounded, the stored reply with its receipt
+(`commands/chat_runtime/saves.rs`). The renderer reads the list after subscribing, so
+the wait shows on the reply after a reload. Each reply keeps "Saving to Memory ·
+waiting for …" and its own **Skip saving** (Stop of that run) until its receipt
+arrives. The wait stays in memory: writing it to the row would race the next turn. A
+crash leaves the checkpoint's activity and interrupted-save receipt.
+
+Every write of a pending save is scoped to its message ID and retries a lost Chat
+compare-and-swap after reading the row again. Steering, terminal replies and the
+answer checkpoint retry in the same way. A new turn's request write retries when only
+receipts changed. The Memory transaction finds its own reply by ID and never appends
+it. It keeps a rating, seals its Pi cache only while its reply is still the last
+message, and otherwise leaves the newer turn's cache. A Bot turn that began before an
+earlier save changed Bot memory seals no cache, because its envelope holds the older
+entries. Its Bot memory changes were checked against that older memory, so at its save
+each applies on its own: one whose entry the earlier save resolved or forgot, or a new
+entry past the limit, is left out and listed as Bot memory under Not kept, and the rest
+of the reply's Memory saves. A malformed change or a storage error still fails the save.
+
+This is the one place a pending save shapes a later turn: the next turn's Bot memory
+envelope leaves out the entries a pending save of its conversation resolves or forgets,
+and that save's review batch, since the user asked for them to go. Entries the save adds
+or rewrites are not shown until it applies. A skipped save leaves those entries and its
+batch as they were, and the remembered request is queued in transcript order.
+
+History rewrites wait for a pending save rather than skipping it, because an edit
+does not discard what the reply saved. A save counts as pending until its receipt is on
+its reply, including a skip, deadline or failure receipt. The host refuses, with the refusal a running
+reply gives, an edit fork or version switch that would set the reply aside,
+deleting its conversation, and feedback on it. Rename, setting Memory aside and
+Try again on a later failed or stopped reply proceed. A saving reply is complete, so
+Try again never regenerates it. The renderer keeps those controls disabled until the
+receipt arrives. **Skip saving** resolves the save at once with the existing
+reason; once the save is already writing, Skip is refused quietly and the receipt
+follows. Quit ends each pending save as interrupted, and a kill leaves each stored
+answer with its interrupted-save receipt; reopening stops only a newer unfinished
+turn. Each pending save holds its activity lease, so the update gate still waits
+for it.
+
 ### Research hand-offs
 
 A successful Bot reply can commit one acknowledged `research_open` request.
-Its assistant message and live completion carry the new research session’s ID
-from the same transaction.
+Its assistant message carries the new research session’s ID from the same
+transaction, and the reply's receipt brings it to the renderer: on its stream when the
+save finishes there, otherwise with `chat-save-changed`.
 The child model receives the user's original message in Bot. Rust resolves it
 by Loupist, thread and message ID, including retained Chat versions. Bot's title,
 question and optional brief arrive separately in the hand-off note. The transcript

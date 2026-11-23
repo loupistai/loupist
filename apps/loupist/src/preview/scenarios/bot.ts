@@ -28,7 +28,7 @@ function followPrototypeAssets(bridge: PreviewBridge) {
   ] as const) {
     const assetId = mockAssetId(english);
     bridge.assets.installAsset({ assetId, name: ko ? local : english, ticker, exchange });
-    if (price) bridge.assets.installPrice(LOUPIST, assetId, { price: { ...price, sourceUrl: null, dataset: { dataset_id: ticker, revision: 1, digest: "preview" } }, savedRead: mockSavedRead("ready") });
+    if (price) bridge.assets.installPrice(LOUPIST, assetId, { price: { ...price, currencySource: price.currency ? "result" : "none", sourceUrl: null, dataset: { dataset_id: ticker, revision: 1, digest: "preview" } }, savedRead: mockSavedRead("ready") });
   }
 }
 

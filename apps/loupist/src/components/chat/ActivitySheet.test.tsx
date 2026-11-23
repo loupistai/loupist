@@ -223,8 +223,13 @@ it("selects the asked-for answer: same-kind steps collapse with a count, failure
   expect(within(sheet.querySelector("[data-activity-section=checks]") as HTMLElement).getByText("NVDA quote")).toBeInTheDocument();
   expect(sheet).toHaveTextContent("1 figure checked against its source");
   expect(sheet).toHaveTextContent("$162.85Matches");
-  // Earlier answers switch the sheet to that answer.
-  await user.click(within(sheet).getByRole("button", { name: /How is NVIDIA doing/ }));
+  // Earlier answers switch the sheet to that answer. A question too long for its line ends in an
+  // ellipsis; its whole text stays in the row's accessible name and native title.
+  const earlier = within(sheet).getByRole("button", { name: /How is NVIDIA doing/ });
+  const question = earlier.querySelector(".activity-step-label")!.textContent!;
+  expect(earlier).toHaveAttribute("title", question);
+  expect(earlier).toHaveAccessibleName(expect.stringContaining(question));
+  await user.click(earlier);
   expect(sheet).toHaveTextContent("Searched the web");
 });
 

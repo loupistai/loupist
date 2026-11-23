@@ -5,6 +5,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[path = "src/providers/world_model_list.rs"]
+mod world_model_list;
+
 fn main() {
     println!("cargo:rustc-check-cfg=cfg(loupist_release_build)");
     if release_profile() {
@@ -23,7 +26,18 @@ fn main() {
     println!("cargo:rerun-if-env-changed=LOUPIST_GALLERY_TERMS_URL");
     embed_pi_runtime_tree_digest();
     embed_marketplace_bundle();
+    check_world_model_list();
     tauri_build::build()
+}
+
+/// A broken World model list stops the build, not the first World job.
+fn check_world_model_list() {
+    let path = Path::new("../world-model-defaults.json");
+    println!("cargo:rerun-if-changed={}", path.display());
+    let json = fs::read_to_string(path).expect("read the World model list");
+    if let Err(problem) = world_model_list::check(&json) {
+        panic!("{}: {problem}", path.display());
+    }
 }
 
 fn embed_marketplace_bundle() {

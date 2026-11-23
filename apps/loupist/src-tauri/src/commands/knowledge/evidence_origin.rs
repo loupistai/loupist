@@ -255,12 +255,105 @@ pub(super) fn stored_read(
     ))
 }
 
+/// Recover the exact web result retained by this answer, including bytes
+/// beyond its bounded evidence excerpt.
+pub(in crate::commands) fn retained_web_payload(
+    state: &AppState,
+    loupist_id: &str,
+    chat_id: &str,
+    message_id: &str,
+    evidence: &ChatEvidenceRef,
+    budget: usize,
+) -> Option<(Value, usize)> {
+    use rusqlite::params;
+
+    with_loupist_knowledge(state, loupist_id, |tx, blobs| {
+        let mut query = tx.prepare(
+            "SELECT o.record_id, s.span_id, l.request_ref
+             FROM knowledge_chat_origins o
+             JOIN knowledge_source_captures c USING (record_id, capture_id)
+             JOIN knowledge_capture_lineage l USING (record_id, capture_id)
+             JOIN knowledge_source_spans s USING (record_id, capture_id)
+             JOIN knowledge_source_representations r USING (record_id, capture_id, representation_id)
+             JOIN knowledge_growth_events g ON g.record_id=o.record_id
+                 AND g.origin_chat_id=o.chat_id AND g.at_ms=c.received_at_ms
+             WHERE o.loupist_id=?1 AND o.chat_id=?2 AND g.loupist_id=?1
+                 AND g.origin_message_id=?3 AND g.kind='source_retained'
+                 AND l.chat_id=o.chat_id AND l.request_ref IS NOT NULL
+                 AND c.material_digest=?4 AND r.digest=?4 AND s.selected_digest=?4
+                 AND r.media_type='application/json' AND r.byte_length <= ?5",
+        )?;
+        let span = query
+            .query_and_then(
+                params![loupist_id, chat_id, message_id, evidence.content_sha256, budget as i64],
+                |row| -> rusqlite::Result<_> {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+                },
+            )?
+            .find_map(|candidate| match candidate {
+                Ok((record_id, span_id, result_ref))
+                    if crate::commands::tool_executor::evidence_id(&result_ref) == evidence.id =>
+                {
+                    Some(Ok((record_id, span_id)))
+                }
+                Ok(_) => None,
+                Err(error) => Some(Err(error)),
+            })
+            .transpose()?;
+        let Some((record_id, span_id)) = span else {
+            return Ok(None);
+        };
+        let (bytes, _) = KnowledgeWrite::bind(tx, blobs)
+            .read_revision_span_bytes(&record_id, &span_id, &evidence.content_sha256)?;
+        let Ok(payload) = serde_json::from_slice::<Value>(&bytes) else {
+            return Ok(None);
+        };
+        Ok(payload["content"]
+            .as_str()
+            .filter(|content| content.starts_with(&evidence.excerpt))
+            .map(|content| (serde_json::json!({"content": content}), bytes.len())))
+    })
+    .ok()
+    .flatten()
+}
+
 fn saved_data_record(
     write: &KnowledgeWrite<'_>,
     loupist_id: &str,
     evidence: &ChatEvidenceRef,
     read: &MemoryRefSnapshot,
 ) -> Option<Value> {
+    serde_json::from_slice(&saved_record_bytes(write, loupist_id, evidence, read)?).ok()
+}
+
+/// Recover the exact saved tool result an exact Source read returned,
+/// including bytes beyond its bounded evidence excerpt.
+pub(in crate::commands) fn saved_source_text(
+    state: &AppState,
+    loupist_id: &str,
+    evidence: &ChatEvidenceRef,
+    read: &MemoryRefSnapshot,
+    budget: usize,
+) -> Option<(String, usize)> {
+    with_loupist_knowledge(state, loupist_id, |tx, blobs| {
+        let write = KnowledgeWrite::bind(tx, blobs);
+        Ok(saved_record_bytes(&write, loupist_id, evidence, read)
+            .filter(|bytes| bytes.len() <= budget)
+            .and_then(|bytes| {
+                let length = bytes.len();
+                String::from_utf8(bytes).ok().map(|text| (text, length))
+            }))
+    })
+    .ok()
+    .flatten()
+}
+
+fn saved_record_bytes(
+    write: &KnowledgeWrite<'_>,
+    loupist_id: &str,
+    evidence: &ChatEvidenceRef,
+    read: &MemoryRefSnapshot,
+) -> Option<Vec<u8>> {
     if evidence.tool_name != "world_read"
         || read.kind != "source"
         || read.receipt_id.as_deref() != Some(read.read_ref.as_str())
@@ -303,7 +396,7 @@ fn saved_data_record(
     {
         return None;
     }
-    serde_json::from_slice(&bytes).ok()
+    Some(bytes)
 }
 
 fn project_message(

@@ -196,6 +196,7 @@ pub(super) async fn launch_chat_turn(
             .as_ref()
             .map(|memory| memory.reviewed.clone())
             .unwrap_or_default();
+        capture.bot_memory_basis = surface.is_bot().then(|| chat.bot_memory.clone());
         capture.schedule_context =
             Some(crate::commands::tool_executor::schedules::ScheduleContext {
                 research_model: surface.is_bot().then(|| pi_execution.model_lock()),
@@ -326,6 +327,7 @@ pub(super) async fn launch_chat_turn(
     let is_handoff = handoff_trust.is_some();
     let turn_envelope =
         crate::commands::attachments::attach_handoff_note(&turn_envelope, chat.messages.last());
+    let turn_envelope = agent_harness::attach_unlinked_figures(&turn_envelope, &chat.messages);
     let pi_config = match pi_config
         .with_skills(skill_files)
         .and_then(|config| config.with_host_context(host_context))
@@ -647,10 +649,8 @@ pub(super) async fn build_turn_envelope(
     let lens_catalog = host_memory
         .as_ref()
         .map(|memory| (memory.lens_shown, memory.lens_total));
-    #[cfg(feature = "eval-harness")]
-    let now = crate::eval_harness::clock::now();
-    #[cfg(not(feature = "eval-harness"))]
-    let now = Utc::now();
+    // Scheduled runs and hand-offs read the clock here too, as their turn starts.
+    let now = crate::local_time::now();
     let turn_envelope = agent_harness::turn_envelope_block(
         now,
         use_memory,

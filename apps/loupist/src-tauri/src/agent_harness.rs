@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, FixedOffset, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -1215,6 +1215,45 @@ pub(crate) fn attach_previous_run(
     serde_json::to_string(&value).unwrap_or_else(|_| envelope.to_owned())
 }
 
+pub(crate) const UNLINKED_FIGURES_HINT: &str = "In your previous reply these numbers carried a citation link that no read of that reply had returned (a mistyped citation_url, or one from an earlier reply), so the app shows each with no linked source. A citation_url is copied whole from a result of the same reply. If the user relies on one of these numbers, read its source again in this reply and cite the citation_url that read returns.";
+const MAX_UNLINKED_FIGURES: usize = 20;
+
+/// The previous reply's numbers whose links named no result of that reply,
+/// so the next reply can read the source again and cite it.
+pub(crate) fn attach_unlinked_figures(
+    envelope: &str,
+    history: &[crate::domain::ChatMessage],
+) -> String {
+    let Some(previous) = history
+        .iter()
+        .rev()
+        .find(|message| message.role == crate::domain::ChatRole::Assistant)
+    else {
+        return envelope.to_owned();
+    };
+    let figures: Vec<Value> = previous
+        .number_checks
+        .iter()
+        .filter(|check| check.status == crate::domain::NumberCheckStatus::Unlinked)
+        .take(MAX_UNLINKED_FIGURES)
+        .map(|check| json!({"number": check.text, "link": format!("#evidence-{}", check.evidence_id)}))
+        .collect();
+    if figures.is_empty() {
+        return envelope.to_owned();
+    }
+    let Ok(mut value) = serde_json::from_str::<Value>(envelope) else {
+        return envelope.to_owned();
+    };
+    let Some(object) = value.as_object_mut() else {
+        return envelope.to_owned();
+    };
+    object.insert(
+        "previous_reply_unlinked_figures".into(),
+        json!({"figures": figures, "hint": UNLINKED_FIGURES_HINT}),
+    );
+    value.to_string()
+}
+
 /// User-written turns only carry the currency. Host-started turns also carry the
 /// admitted language and bundled names; the turn hint says when the answer follows it.
 pub(crate) fn attach_interface(
@@ -1260,12 +1299,19 @@ pub fn attach_as_of(envelope: &str, cutoff: &str) -> String {
     serde_json::to_string(&value).unwrap_or_else(|_| envelope.to_owned())
 }
 
-pub fn live_time_envelope(current_utc: DateTime<Utc>) -> Value {
+/// The turn's clock from `crate::local_time::now()`: UTC, and the user's own
+/// date, weekday and offset. The offset is all that says where the user is.
+pub fn live_time_envelope(now: DateTime<FixedOffset>) -> Value {
+    let current_utc = now.with_timezone(&Utc);
     json!({
         "schema": "loupist-live-time/1",
         "authority": "rust_host_wall_clock",
         "current_utc": current_utc.to_rfc3339_opts(SecondsFormat::Millis, true),
         "current_date_utc": current_utc.format("%Y-%m-%d").to_string(),
+        "current_local": now.to_rfc3339_opts(SecondsFormat::Millis, false),
+        "current_date_local": now.format("%Y-%m-%d").to_string(),
+        "current_weekday_local": now.format("%A").to_string(),
+        "utc_offset": now.format("%:z").to_string(),
         "applies_to": "live_chat_only",
         "not_evidence": true
     })
@@ -1336,7 +1382,7 @@ pub fn attach_world_kinds(envelope: &str, kinds: &Value) -> String {
 
 #[allow(clippy::too_many_arguments)]
 pub fn turn_envelope_block(
-    current_utc: DateTime<Utc>,
+    now: DateTime<FixedOffset>,
     use_memory: bool,
     learned_index: &[LearnedMemoryIndexEntry],
     charter: Option<&str>,
@@ -1346,7 +1392,7 @@ pub fn turn_envelope_block(
     mentioned: &[MentionedConnection],
 ) -> Result<String, AgentHarnessError> {
     let mut envelope = json!({
-        "live_time": live_time_envelope(current_utc)
+        "live_time": live_time_envelope(now)
     });
     if !mentioned.is_empty() {
         envelope["mentioned_connections"] = json!(mentioned);
@@ -1934,8 +1980,17 @@ mod tests {
     fn the_memory_envelope_carries_world_kinds_only_while_memory_is_active() {
         let kinds = json!({"core": {"types": {"Technology": "a science"}}, "version": 0});
         for memory in [false, true] {
-            let base =
-                turn_envelope_block(Utc::now(), memory, &[], None, None, None, None, &[]).unwrap();
+            let base = turn_envelope_block(
+                crate::local_time::now(),
+                memory,
+                &[],
+                None,
+                None,
+                None,
+                None,
+                &[],
+            )
+            .unwrap();
             let value: Value = serde_json::from_str(&attach_world_kinds(&base, &kinds)).unwrap();
             assert_eq!(value.get("memory_protocol").is_some(), memory);
             if memory {
@@ -1944,9 +1999,185 @@ mod tests {
         }
     }
 
+    /// `instant` in `zone`, as `crate::local_time::at` gives it for this Mac's zone.
+    fn live_time_in(instant: &str, zone: chrono_tz::Tz) -> Value {
+        let instant = DateTime::parse_from_rfc3339(instant).unwrap();
+        live_time_envelope(instant.with_timezone(&zone).fixed_offset())
+    }
+
+    #[test]
+    fn live_time_gives_the_users_own_date_weekday_and_offset() {
+        use chrono_tz::{America, Asia};
+        // 02:00 on Monday in Seoul is still Sunday in UTC and in Los Angeles. Late
+        // Monday in UTC is Tuesday in Kolkata; early Tuesday is Monday in Los Angeles.
+        for (instant, zone, local, date, weekday, offset) in [
+            (
+                "2026-11-22T17:00:00Z",
+                Asia::Seoul,
+                "2026-11-23T02:00:00.000+09:00",
+                "2026-11-23",
+                "Monday",
+                "+09:00",
+            ),
+            (
+                "2026-11-22T17:00:00Z",
+                America::Los_Angeles,
+                "2026-11-22T09:00:00.000-08:00",
+                "2026-11-22",
+                "Sunday",
+                "-08:00",
+            ),
+            (
+                "2026-11-23T20:30:00Z",
+                Asia::Kolkata,
+                "2026-11-24T02:00:00.000+05:30",
+                "2026-11-24",
+                "Tuesday",
+                "+05:30",
+            ),
+            (
+                "2026-11-24T03:00:00Z",
+                America::Los_Angeles,
+                "2026-11-23T19:00:00.000-08:00",
+                "2026-11-23",
+                "Monday",
+                "-08:00",
+            ),
+        ] {
+            let block = live_time_in(instant, zone);
+            let case = format!("{instant} in {}", zone.name());
+            assert_eq!(block["current_local"], local, "{case}");
+            assert_eq!(block["current_date_local"], date, "{case}");
+            assert_eq!(block["current_weekday_local"], weekday, "{case}");
+            assert_eq!(block["utc_offset"], offset, "{case}");
+            assert_eq!(
+                block["current_utc"],
+                DateTime::parse_from_rfc3339(instant)
+                    .unwrap()
+                    .with_timezone(&Utc)
+                    .to_rfc3339_opts(SecondsFormat::Millis, true)
+            );
+            assert_eq!(block["current_date_utc"], &instant[..10]);
+            // An offset only: no zone name or place reaches the model.
+            let text = block.to_string();
+            assert!(
+                !text.contains(zone.name())
+                    && !text.contains("Seoul")
+                    && !text.contains("Los_Angeles")
+            );
+        }
+        let utc = live_time_envelope(DateTime::parse_from_rfc3339("2026-11-22T17:00:00Z").unwrap());
+        assert_eq!(utc["utc_offset"], "+00:00");
+        assert_eq!(utc["current_local"], "2026-11-22T17:00:00.000+00:00");
+        let mut fields = utc.as_object().unwrap().keys().collect::<Vec<_>>();
+        fields.sort();
+        assert_eq!(
+            fields,
+            [
+                "applies_to",
+                "authority",
+                "current_date_local",
+                "current_date_utc",
+                "current_local",
+                "current_utc",
+                "current_weekday_local",
+                "not_evidence",
+                "schema",
+                "utc_offset"
+            ]
+        );
+    }
+
+    #[test]
+    fn live_time_keeps_each_instants_own_offset_across_a_daylight_saving_change() {
+        use chrono_tz::America::New_York;
+        // New York leaves daylight time at 06:00 UTC on 1 November 2026.
+        for (instant, local, date, weekday, offset) in [
+            (
+                "2026-11-01T05:30:00Z",
+                "2026-11-01T01:30:00.000-04:00",
+                "2026-11-01",
+                "Sunday",
+                "-04:00",
+            ),
+            (
+                "2026-11-01T06:30:00Z",
+                "2026-11-01T01:30:00.000-05:00",
+                "2026-11-01",
+                "Sunday",
+                "-05:00",
+            ),
+            // Under the summer offset this would already be Monday.
+            (
+                "2026-11-02T04:30:00Z",
+                "2026-11-01T23:30:00.000-05:00",
+                "2026-11-01",
+                "Sunday",
+                "-05:00",
+            ),
+            // It enters daylight time at 07:00 UTC on 8 March 2026.
+            (
+                "2026-03-08T06:59:00Z",
+                "2026-03-08T01:59:00.000-05:00",
+                "2026-03-08",
+                "Sunday",
+                "-05:00",
+            ),
+            (
+                "2026-03-08T07:00:00Z",
+                "2026-03-08T03:00:00.000-04:00",
+                "2026-03-08",
+                "Sunday",
+                "-04:00",
+            ),
+            (
+                "2026-03-09T03:30:00Z",
+                "2026-03-08T23:30:00.000-04:00",
+                "2026-03-08",
+                "Sunday",
+                "-04:00",
+            ),
+        ] {
+            let block = live_time_in(instant, New_York);
+            assert_eq!(block["current_local"], local, "{instant}");
+            assert_eq!(block["current_date_local"], date, "{instant}");
+            assert_eq!(block["current_weekday_local"], weekday, "{instant}");
+            assert_eq!(block["utc_offset"], offset, "{instant}");
+        }
+    }
+
+    #[test]
+    fn the_turn_envelope_reads_this_macs_clock() {
+        let base = turn_envelope_block(
+            crate::local_time::now(),
+            false,
+            &[],
+            None,
+            None,
+            None,
+            None,
+            &[],
+        )
+        .unwrap();
+        let block = serde_json::from_str::<Value>(&base).unwrap()["live_time"].clone();
+        let now = chrono::Local::now();
+        let local = DateTime::parse_from_rfc3339(block["current_local"].as_str().unwrap()).unwrap();
+        assert!((local - now.fixed_offset()).num_seconds().abs() < 2);
+        assert_eq!(*local.offset(), *now.offset());
+        assert_eq!(block["utc_offset"], now.format("%:z").to_string());
+        assert_eq!(
+            block["current_date_local"],
+            local.format("%Y-%m-%d").to_string()
+        );
+    }
+
     #[test]
     fn turn_envelope_gates_memory_and_bounds_loupist_context() {
-        let now = Utc.with_ymd_and_hms(2026, 8, 10, 1, 2, 3).unwrap();
+        // West of UTC, the user's day is still the one before.
+        let now = Utc
+            .with_ymd_and_hms(2026, 8, 10, 1, 2, 3)
+            .unwrap()
+            .with_timezone(&FixedOffset::west_opt(7 * 3600).unwrap());
         let followed = json!({"hint": FOLLOWED_HINT,"assets":[]});
         let instructions = "한😀".repeat(2_500);
         let focus = format!(" {}", "Semiconductor supply chain ".repeat(20));
@@ -1983,6 +2214,13 @@ mod tests {
             );
             let value: Value = serde_json::from_str(&full).unwrap();
             assert_eq!(value["live_time"]["current_date_utc"], "2026-08-10");
+            assert_eq!(value["live_time"]["current_date_local"], "2026-08-09");
+            assert_eq!(value["live_time"]["current_weekday_local"], "Sunday");
+            assert_eq!(value["live_time"]["utc_offset"], "-07:00");
+            assert_eq!(
+                value["live_time"]["current_local"],
+                "2026-08-09T18:02:03.000-07:00"
+            );
             assert_eq!(
                 value["Instructions from the user for this Loupist"]
                     .as_str()
@@ -2070,9 +2308,17 @@ mod tests {
             },
         ] {
             for use_memory in [false, true] {
-                let base =
-                    turn_envelope_block(Utc::now(), use_memory, &[], None, None, None, None, &[])
-                        .unwrap();
+                let base = turn_envelope_block(
+                    crate::local_time::now(),
+                    use_memory,
+                    &[],
+                    None,
+                    None,
+                    None,
+                    None,
+                    &[],
+                )
+                .unwrap();
                 let base = attach_chat_surface(&base, &surface);
                 for language in ["en", "ko", "fr"] {
                     let mut admitted = appearance(language);

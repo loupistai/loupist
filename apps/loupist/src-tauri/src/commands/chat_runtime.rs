@@ -9,6 +9,7 @@ mod model_gone;
 mod pi_dispatch;
 mod pi_launch;
 mod progress;
+pub(crate) mod saves;
 mod setup;
 mod stream;
 mod terminal;
@@ -33,15 +34,13 @@ use std::{
 };
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-#[cfg(not(feature = "eval-harness"))]
-use chrono::Utc;
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
 use tauri::{ipc::Channel, State};
 
 use crate::{
     agent_harness::{self, AgentHarnessSnapshot},
-    app::{AppState, CommandError},
+    app::{AppState, CommandError, CommandErrorCode},
     broker::{start_tool_broker, tool_broker_endpoint},
     chat::control::{
         chat_control_channel, AcceptedChatControl, ChatControlError, ChatControlReceiver,
@@ -62,6 +61,7 @@ use crate::{
     pi::{PiError, PiEvent, PiImageContent, PiLaunchConfig, PiProcess},
     providers::catalog::ExecutionModelLock,
     runs::coordinator::{RunKind, RunRegistration, RunTarget},
+    runs::log::{ChatStartFailure, ChatStartPhase},
 };
 use tokio::time::{timeout, Instant};
 
@@ -521,6 +521,32 @@ impl ChatAdmission {
     }
 }
 
+#[derive(Debug)]
+struct ChatStartError {
+    phase: ChatStartPhase,
+    error: CommandError,
+}
+
+impl ChatStartError {
+    fn user_error(self) -> CommandError {
+        use CommandErrorCode::*;
+        let mut error = self.error;
+        let message = match (self.phase, &error.code) {
+            (_, InvalidConfiguration | ConfigurationUnavailable) => {
+                "Correct the configuration file in Loupist settings → Chat defaults before sending."
+            }
+            (ChatStartPhase::Model, InvalidRequest) => {
+                "Choose an available model in Chat or Loupist settings → Chat defaults."
+            }
+            (_, Internal | Io | PrivateStorage | Unlisted(_)) => "Could not start the response. Try again; if it keeps happening, quit Loupist and open it again.",
+            _ => return error,
+        };
+        error.message = message.into();
+        error.detail = None;
+        error
+    }
+}
+
 /// One execution path for interactive and scheduled Chat turns. The sink owns
 /// presentation delivery; admission, persistence and tool authority stay here.
 pub(crate) async fn send_chat(
@@ -542,26 +568,28 @@ pub(crate) async fn send_chat(
     record.chat_id = Some(request.thread_id.clone());
     *on_event.run_log.lock().unwrap_or_else(|e| e.into_inner()) =
         Some((state.store.clone(), record));
-    let result = send_chat_inner(request, on_event.clone(), state, admission).await;
-    if let Err(error) = &result {
-        if let Some((store, mut record)) = on_event
-            .run_log
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
-        {
-            record.finish(
-                "failed",
-                Some(&crate::runs::log::enum_name(&classify_turn_failure(
-                    error,
-                    ChatFailureKind::Other,
-                ))),
-            );
-            record.notes.push("Chat admission or setup failed.".into());
-            record.record(store.as_ref());
-        }
-    }
-    result
+    send_chat_inner(request, on_event.clone(), state, admission)
+        .await
+        .map_err(|failure| {
+            if let Some((store, mut record)) = on_event
+                .run_log
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take()
+            {
+                record.finish(
+                    "failed",
+                    Some(&crate::runs::log::enum_name(&classify_turn_failure(
+                        &failure.error,
+                        ChatFailureKind::Other,
+                    ))),
+                );
+                record.chat_start_failure =
+                    Some(ChatStartFailure::new(failure.phase, &failure.error.code));
+                record.record(store.as_ref());
+            }
+            failure.user_error()
+        })
 }
 
 /// Runs one Chat turn through its phases. Setup and launch run inline, so a
@@ -572,13 +600,23 @@ async fn send_chat_inner(
     on_event: ChatEventSink,
     state: &AppState,
     admission: Option<ChatAdmission>,
-) -> Result<RunStarted, CommandError> {
-    crate::app::off_main_thread(state, crate::marketplace::reconcile_credential_presence).await?;
+) -> Result<RunStarted, ChatStartError> {
+    crate::app::off_main_thread(state, crate::marketplace::reconcile_credential_presence)
+        .await
+        .map_err(|error| ChatStartError {
+            phase: ChatStartPhase::CredentialPresence,
+            error,
+        })?;
     let admitted = match setup::admit_chat_turn(request, on_event, state, admission)? {
         ControlFlow::Continue(admitted) => admitted,
         ControlFlow::Break(settled) => return Ok(settled),
     };
-    let mut launched = match launch::launch_chat_turn(admitted, state).await? {
+    let mut launched = match launch::launch_chat_turn(admitted, state)
+        .await
+        .map_err(|error| ChatStartError {
+            phase: ChatStartPhase::Launch,
+            error,
+        })? {
         ControlFlow::Continue(launched) => launched,
         ControlFlow::Break(settled) => return Ok(settled),
     };
@@ -633,7 +671,7 @@ pub struct ChatRetryReceipt {
 /// preserving accepted steers, then clears the derived Pi cache. The caller
 /// sends the returned prompt again. Workspace files already written by that
 /// turn stay. Pins are not stored on the message.
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn chat_retry_last(
     request: ChatRetryRequest,
     state: State<'_, AppState>,
@@ -664,6 +702,7 @@ pub fn chat_retry_last(
             crate::domain::DomainError::Invalid(message) => message,
         })
     })?;
+    saves::ensure_saves_kept(&state, &request.loupist_id, &request.thread_id, Some(&next))?;
     let as_of = chat
         .messages
         .iter()

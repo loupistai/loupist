@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { newChatButton, openApp, privateChatOn, togglePrivateChat } from "../renderApp";
@@ -198,6 +198,57 @@ describe("Loupist · Chat composer", () => {
     await send(user, "Use the fast tier");
     await waitFor(() => expect(chatSend).toHaveBeenCalledTimes(2));
     expect(chatSend.mock.calls[1][0]).toMatchObject({ model_profile_id: "model-test", thinking_level: "medium", run_options: { performance: "fast" } });
+  });
+
+  it("answers with the Loupist's default once the picked model's account is disconnected, in this chat and a new one", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    await bridge.providerConfigure({ provider: "anthropic", api_key: "test-key" });
+    const chatSend = vi.spyOn(bridge, "chatSend");
+    await openApp(bridge);
+    await chooseModelOption(user, "Claude Sonnet 4.5");
+    expect(modelMenuButton()).toHaveAccessibleName(/^Claude Sonnet 4\.5 · /);
+    await bridge.providerDisconnect("anthropic");
+    act(() => window.dispatchEvent(new Event("focus")));
+    // The control names the model now in use; nothing else is added.
+    await waitFor(() => expect(modelMenuButton()).toHaveAccessibleName(/^GPT-5\.6 Luna · /));
+    await send(user, "Answer in this chat");
+    await waitFor(() => expect(chatSend).toHaveBeenCalledTimes(1));
+    await screen.findByText("Response complete.");
+    await user.click(newChatButton());
+    await screen.findByRole("heading", { name: "Untitled research session" });
+    expect(modelMenuButton()).toHaveAccessibleName(/^GPT-5\.6 Luna · /);
+    // The pick stays dropped when the account comes back.
+    await bridge.providerConfigure({ provider: "anthropic", api_key: "test-key" });
+    act(() => window.dispatchEvent(new Event("focus")));
+    await send(user, "Answer in a new chat");
+    await waitFor(() => expect(chatSend).toHaveBeenCalledTimes(2));
+    expect(chatSend.mock.calls.map(([request]) => request.model_profile_id)).toEqual(["", ""]);
+    expect(modelMenuButton()).toHaveAccessibleName(/^GPT-5\.6 Luna · /);
+  });
+
+  it("moves to the Loupist's default when the picked model is hidden, and leads to account setup once no account is left", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    await bridge.providerConfigure({ provider: "anthropic", api_key: "test-key" });
+    await bridge.providerConfigure({ provider: "google", api_key: "test-key" });
+    // This Loupist's own default is neither the picked model nor the catalog's first one.
+    const scope = { kind: "project", loupistId: "loupist-quality" } as const;
+    const config = await bridge.configRead({ scope });
+    await bridge.configUpdate({ scope, expectedRevision: config.revision, set: { chat: { model_profile_id: "google/google-default" } }, unset: [] });
+    const chatSend = vi.spyOn(bridge, "chatSend");
+    await openApp(bridge);
+    await chooseModelOption(user, "Claude Sonnet 4.5");
+    await bridge.modelVisibilityUpdate({ model_profile_id: "anthropic/claude-sonnet-4-5", visible_in_chat: false });
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(modelMenuButton()).toHaveAccessibleName(/^google default · /));
+    await send(user, "Still sendable");
+    await waitFor(() => expect(chatSend).toHaveBeenCalledOnce());
+    expect(chatSend.mock.calls[0]![0]).toMatchObject({ model_profile_id: "google/google-default" });
+    await screen.findByText("Response complete.");
+    for (const provider of ["anthropic", "google", "openai"]) await bridge.providerDisconnect(provider);
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(screen.getByTestId("composer-model-menu")).toHaveAccessibleName("No AI account"));
   });
 
   it("keeps the exact thinking level across turns when Memory authority changes", async () => {

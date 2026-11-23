@@ -647,7 +647,7 @@ pub struct ModelNoticeAckRequest {
 }
 
 /// The "Now using …" line was shown (sent or dismissed); it does not return.
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn model_notice_ack(
     request: ModelNoticeAckRequest,
     state: State<'_, AppState>,
@@ -710,6 +710,8 @@ pub async fn provider_disconnect(
     );
     state.replace_provider_models(&request.provider, Vec::new())?;
     drop(admission);
+    // Recommended World models move to an account still connected.
+    crate::commands::knowledge::follow_recommended_world_models_quietly(&state);
     state.graph.wake();
     state.model_catalog_view()
 }
@@ -1048,7 +1050,7 @@ fn publish_provider_models(
         ));
     }
     state.replace_provider_models(provider, models)?;
-    crate::commands::knowledge::complete_pending_world_models(state)?;
+    crate::commands::knowledge::follow_recommended_world_models(state)?;
     state
         .provider_model_cache
         .record(provider, expected_generation.to_owned());

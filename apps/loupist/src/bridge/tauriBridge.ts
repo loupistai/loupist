@@ -208,6 +208,8 @@ const bridge = (): StrictBridge => ({
   researchHandoffStart: request("research_handoff_start"),
   knowledgeConnectionDismiss: request("knowledge_connection_dismiss"),
   chatAbort: (run_id) => call("chat_abort", { run_id }),
+  chatSaves: request("chat_saves"),
+  onChatSaveChanged: (handler) => subscribe(BRIDGE_EVENTS.chatSaveChanged, handler),
   runActivityList: () => call("run_activity_list"),
 
   knowledgeCatalog: request("knowledge_catalog"),

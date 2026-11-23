@@ -50,6 +50,8 @@ fn config() -> GraphProcessingSettings {
         helper_provider: Some("openai-codex".into()),
         helper_model: Some("gpt-6.1-sol".into()),
         thinking_level: "medium".into(),
+        // These cases count spend against a 16-request allowance.
+        max_llm_calls: 16,
         ..Default::default()
     }
 }

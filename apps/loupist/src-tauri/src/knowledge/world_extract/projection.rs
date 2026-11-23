@@ -12,6 +12,7 @@ use std::collections::{HashMap, HashSet};
 use serde_json::{json, Map, Value};
 
 use super::pipeline::{Edge, Node, Time};
+use crate::knowledge::entity_codes::Codes;
 use crate::knowledge::lens::fold_lens_title;
 use crate::util::sha256;
 
@@ -255,14 +256,23 @@ pub(crate) fn project_extraction(
             }
         }
         // A spelling the resolver confirmed as this node stays an alias, within
-        // the cap, unless a name or alias already folds to it.
+        // the cap, unless a name or alias already folds to it or it carries an
+        // identifying code that differs from the node's own.
         let mut folds: HashSet<String> = std::iter::once(&node.name)
             .chain(&aliases)
             .map(|text| fold_lens_title(text))
             .collect();
+        let own = Codes::of_node(
+            &node.name,
+            &kind,
+            properties.iter().map(|(key, value)| (key.as_str(), value)),
+        );
         for spelling in &node.spellings {
             if aliases.len() >= ALIAS_CAP {
                 break;
+            }
+            if Codes::of_name(spelling, &kind).refuses(&own) {
+                continue;
             }
             if folds.insert(fold_lens_title(spelling)) {
                 aliases.push(spelling.clone());
@@ -434,6 +444,54 @@ pub(crate) fn project_extraction(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_spelling_the_host_refuses_is_no_alias() {
+        let no_nodes = HashMap::new();
+        let no_claims = HashMap::new();
+        let context = Context {
+            source_role: "source",
+            binding: Binding {
+                span_id: "spn_00000000000000000000000000000001",
+                binding_role: "extracted_from",
+                attribution: "companiesmarketcap.com",
+            },
+            publication_time: &Value::Null,
+            effective_time: None,
+            recorded_at_ms: 1,
+            prior_nodes: &no_nodes,
+            prior_claims: &no_claims,
+            episode_runtime: "ep_test",
+        };
+        let node = Node {
+            uuid: "runtime-dongfeng".into(),
+            name: "Dongfeng Motor 0489.HK".into(),
+            labels: vec!["Entity".into(), "Organization".into()],
+            summary: String::new(),
+            attributes: vec![("ticker".into(), json!("0489.HK"))],
+            name_embedding: None,
+            spellings: vec![
+                "Stellantis STLA".into(),
+                "Dongfeng Motor (HKEX:489)".into(),
+                "Dongfeng Motor Group".into(),
+            ],
+        };
+        // Codes that differ under an agreeing name are another listing the
+        // resolver may well be right about.
+        let toyota = Node {
+            uuid: "runtime-toyota".into(),
+            name: "Toyota TM".into(),
+            attributes: vec![("ticker".into(), json!("TM"))],
+            spellings: vec!["Toyota 7203.T".into(), "Honda HMC".into()],
+            ..node.clone()
+        };
+        let projected = project_extraction(&context, &[node, toyota], &[]);
+        assert_eq!(
+            projected.nodes[0]["aliases"],
+            json!(["Dongfeng Motor (HKEX:489)", "Dongfeng Motor Group"])
+        );
+        assert_eq!(projected.nodes[1]["aliases"], json!(["Toyota 7203.T"]));
+    }
 
     #[test]
     fn relations_normalize_like_the_worker() {

@@ -1,6 +1,8 @@
 use super::*;
 use crate::{
-    commands::assets::wire::{AssetRow, PriceReadState, SavedPriceRead, SavedReadCall},
+    commands::assets::wire::{
+        AssetRow, CurrencySource, PriceReadState, SavedPriceRead, SavedReadCall,
+    },
     datasets::DatasetRef,
     domain::{MemoryUpdateChange, PRICE_READ_CHANGE_KIND},
     knowledge::assets::saved_read::{self, SaveRequest, StagedPriceRead},
@@ -45,6 +47,42 @@ fn identity(payload: &Value, fallback: Option<&str>) -> (String, Option<String>)
 }
 
 impl AppToolExecutor {
+    /// The one currency that quotes delivered in this reply state for the read's
+    /// symbol; none when no quote states one or quotes disagree.
+    async fn quoted_currency(&self, arguments: &Value) -> Option<String> {
+        let symbol = arguments.get("symbol")?.as_str()?.trim();
+        if symbol.is_empty() || symbol.contains(',') {
+            return None;
+        }
+        let quotes: Vec<Value> = {
+            let results = self.capture.run_results.lock().await;
+            results
+                .values()
+                .filter(|result| {
+                    result.producer.origin == RunResultOrigin::AcquiredOriginal
+                        && result.producer.tool_name.ends_with("quote")
+                })
+                .map(|result| result.payload.clone())
+                .collect()
+        };
+        let mut stated = BTreeSet::new();
+        for quote in quotes {
+            let Ok((payload, _, _)) = self.retained_price_payload(&quote) else {
+                continue;
+            };
+            stated.extend(
+                saved_read::quoted_currencies(&payload, symbol)
+                    .into_iter()
+                    .map(str::to_owned),
+            );
+        }
+        let mut stated = stated.into_iter();
+        match (stated.next(), stated.next()) {
+            (Some(currency), None) => Some(currency),
+            _ => None,
+        }
+    }
+
     fn retained_price_payload(
         &self,
         result: &Value,
@@ -169,8 +207,18 @@ impl AppToolExecutor {
                 .map_err(knowledge_error)?;
             current.rolling = Some(rolling);
         }
-        let price = saved_read::price(&payload, &current.fields, provider, source_url, dataset)
+        let mut price = saved_read::price(&payload, &current.fields, provider, source_url, dataset)
             .map_err(knowledge_error)?;
+        let quoted_currency = if price.currency.is_none() {
+            self.quoted_currency(&current.arguments).await
+        } else {
+            None
+        };
+        saved_read::complete_currency(
+            &mut price,
+            quoted_currency.as_deref(),
+            asset.reference.as_ref().map(|reference| &reference.fields),
+        );
         let (history, points) = if let Some(input) = input.history {
             let (mut history, payload, _, _, _) =
                 self.cited_price_call(&input.citation_url).await?;
@@ -193,13 +241,20 @@ impl AppToolExecutor {
                 state: PriceReadState::Ready,
                 current,
                 history,
+                quoted_currency,
             },
             price,
             history: points,
         };
         // Staged: stored with this reply's save. The tool card says so, and the
         // receipt names the read as kept or discarded.
-        let result = json!({"assetId":saved.asset_id,"price":saved.price,"savedRead":saved.read});
+        let mut result =
+            json!({"assetId":saved.asset_id,"price":saved.price,"savedRead":saved.read});
+        result["currencyNote"] = json!(match saved.price.currency_source {
+            CurrencySource::Result => "The provider's result states this currency; write the price with it.",
+            CurrencySource::Listing => "The saved read states no currency, so the app took this one from the exchange of the asset's listing; write the price with it and do not add a symbol of your own.",
+            CurrencySource::None => "Neither the saved read nor the asset's listing states a currency, so the page shows the currency as unknown: say so and write no currency symbol. A quote read that states its currency, saved in place of this one, or a follow that records the listing's exchange, gives the page a currency.",
+        });
         self.capture
             .stage(delivery_id, |pending| {
                 pending.price_reads.push((asset, saved))
@@ -459,6 +514,119 @@ mod tests {
                 .unwrap_err(),
             PriceReadState::NeedsConnection
         );
+    }
+
+    #[tokio::test]
+    async fn a_price_without_a_currency_takes_a_same_reply_quote_then_the_listing_or_none() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(root.path().join("app"));
+        let loupist = "loupist-a";
+        crate::commands::tests::seed_profile(
+            &state.store,
+            &crate::commands::tests::profile(loupist, &root.path().join("workspace"), 1),
+        );
+        let chat = crate::chat::home::ensure_home_thread(&state, loupist).unwrap();
+        let executor =
+            AppToolExecutor::for_host(&state, loupist, [KRX_SOURCE_ID.to_owned()].into());
+        let policy = ToolPolicy {
+            loupist_id: loupist.into(),
+            session_id: chat.id,
+            use_memory: true,
+            propose_memory_updates: true,
+            memory_proposal_budget: 4,
+            as_of: None,
+            display_currency: None,
+        };
+        // Tesla as Bot followed it: a ticker and no exchange. Nvidia names its exchange.
+        let tesla = state
+            .store
+            .seed_followed_listing(loupist, "TSLA", "", Some("Tesla"))
+            .unwrap();
+        let nvidia = state
+            .store
+            .seed_followed_listing(loupist, "NVDA", "NASDAQ", Some("Nvidia"))
+            .unwrap();
+        let stage = |delivery: &'static str, symbol: &str, data: Value| {
+            let executor = &executor;
+            let request =
+                json!({"symbol":symbol,"market":"kospi","start":"2026-11-10","end":"2026-11-22"});
+            async move {
+                let (dataset, _) = executor
+                    .retain_dataset(delivery, &data, json!({"request":request}))
+                    .unwrap();
+                let mut delivered = data;
+                delivered["dataset_ref"] = json!(dataset);
+                let reference = executor
+                    .capture
+                    .stage_run_result_with_delivery(
+                        delivery,
+                        run_result_producer(ToolMethod::KrxDailyQuote, &request, &delivered)
+                            .unwrap(),
+                        &request,
+                        delivered,
+                        Vec::new(),
+                        None,
+                    )
+                    .await
+                    .unwrap();
+                executor.capture.commit_delivery(delivery).await;
+                evidence::citation_url(&reference)
+            }
+        };
+        // A history read states no currency, as yfinance's does.
+        let bars = json!({"data":{"bars":[{"close":"341.10","date":"2026-11-19"},{"close":"345.82","date":"2026-11-20"}]}});
+        let save = |asset: &AssetRow, url: String| {
+            executor.execute(
+                &policy,
+                ToolMethod::PriceReadSave,
+                json!({"assetId":asset.asset_id,"citation_url":url,
+                    "fields":{"rows":"/data/bars","value":"/close","date":"/date"}}),
+            )
+        };
+        let history = stage("tesla-history", "TSLA", bars.clone()).await;
+        let unknown = save(&tesla, history.clone()).await.unwrap();
+        assert_eq!(unknown["price"]["currency"], Value::Null);
+        assert_eq!(unknown["price"]["currencySource"], "none");
+        assert!(unknown["currencyNote"].is_string());
+        assert!(unknown["savedRead"].get("quotedCurrency").is_none());
+
+        // A quote for the same symbol in this reply states the currency; another symbol's does not count.
+        stage("other-quote", "GM", json!({"structuredContent":{"results":[{"symbol":"GM","currency":"CAD","last_price":55.1}]}})).await;
+        stage("tesla-quote", "TSLA", json!({"structuredContent":{"results":[{"symbol":"TSLA","currency":"USD","last_price":345.8}]}})).await;
+        let quoted = save(&tesla, history).await.unwrap();
+        assert_eq!(quoted["price"]["currency"], "USD");
+        assert_eq!(quoted["price"]["currencySource"], "result");
+        assert_eq!(quoted["savedRead"]["quotedCurrency"], "USD");
+
+        // Without a quote, the listing's exchange gives it.
+        let listed = stage("nvidia-history", "NVDA", bars).await;
+        let listing = save(&nvidia, listed).await.unwrap();
+        assert_eq!(listing["price"]["currency"], "USD");
+        assert_eq!(listing["price"]["currencySource"], "listing");
+        assert_ne!(listing["currencyNote"], quoted["currencyNote"]);
+        assert_ne!(listing["currencyNote"], unknown["currencyNote"]);
+
+        // The page and Bot read the same stored price.
+        let reads = executor.capture.staged_price_reads.lock().await.clone();
+        crate::commands::assets::with_assets(&state, loupist, true, |tx| {
+            commit_price_reads(
+                tx,
+                loupist,
+                2,
+                reads.iter().map(|(asset, read)| (asset, read)),
+            )?;
+            for (asset, currency, source) in [
+                (&tesla, "USD", CurrencySource::Result),
+                (&nvidia, "USD", CurrencySource::Listing),
+            ] {
+                let stored = saved_read::load(tx, loupist, &asset.asset_id)?.unwrap();
+                let price = stored.price.unwrap();
+                assert_eq!(price.currency.as_deref(), Some(currency));
+                assert_eq!(price.currency_source, source);
+            }
+            Ok(())
+        })
+        .unwrap();
     }
 
     #[cfg(feature = "eval-harness")]

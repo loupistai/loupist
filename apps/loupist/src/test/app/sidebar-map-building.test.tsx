@@ -1,14 +1,15 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { tabShortcut } from "../../app/shortcuts";
 import type { WorldReadinessStatus } from "../../knowledge/worldReadiness";
+import type { GraphReadinessNote } from "../../types";
 import { chooseLoupist } from "../renderApp";
 
 const LOUPIST = "loupist-quality";
 
-function mapJobs(bridge: MockLoupistBridge, initial: string[], initialReadiness: WorldReadinessStatus = "ready") {
+function mapJobs(bridge: MockLoupistBridge, initial: string[], initialReadiness: WorldReadinessStatus = "ready", note: GraphReadinessNote | null = null) {
   let statuses = initial;
   let readiness = initialReadiness;
   const catalog = bridge.knowledgeCatalog.bind(bridge);
@@ -27,7 +28,7 @@ function mapJobs(bridge: MockLoupistBridge, initial: string[], initialReadiness:
   vi.spyOn(bridge, "knowledgeGraphSettingsGet").mockImplementation(async request => {
     const view = await graph(request);
     return request.loupistId === LOUPIST
-      ? { ...view, readiness: { ...view.readiness, status: readiness, note: null } }
+      ? { ...view, readiness: { ...view.readiness, status: readiness, note } }
       : view;
   });
   const listeners = new Set<Parameters<MockLoupistBridge["onWorldSchemaChanged"]>[0]>();
@@ -39,6 +40,7 @@ function mapJobs(bridge: MockLoupistBridge, initial: string[], initialReadiness:
     async change(next: string[], status: WorldReadinessStatus = "ready") {
       statuses = next;
       readiness = status;
+      note = null;
       await act(async () => { for (const listener of listeners) listener({ loupistId: LOUPIST }); });
     },
     async connectProvider() {
@@ -101,17 +103,22 @@ it("shows recovery without a Source count and clears it when the host settles", 
 });
 
 const providerMessage = "World is waiting for a model: connect the one chosen for World in Settings.";
+const accountMessage = "World is waiting for an AI account. Connect one in Settings > AI accounts.";
+const allowanceMessage = "World building paused for this source: it reached the request allowance set in World building settings.";
 
 it.each([
   { readiness: "provider_disconnected", statuses: ["queued"], label: "World · waiting for a model", message: providerMessage },
   { readiness: "paused", statuses: ["paused"], label: "World · building paused", message: "World building paused" },
   { readiness: "disabled", statuses: ["queued"], label: "World · building is off", message: "World building is off" },
-  { readiness: "ready", statuses: ["paused_budget"], label: "World building stopped for this source", message: "World building stopped for this source" },
+  { readiness: "ready", statuses: ["paused_budget"], label: allowanceMessage, message: allowanceMessage, control: "World building settings" },
   { readiness: "ready", statuses: ["failed_before_mutation"], label: "World building failed", message: "World building failed" },
-] as const)("keeps the sidebar and Library still when World waits ($label)", async ({ readiness, statuses, label, message }) => {
+  // No AI account at all, and accounts whose models exclude World's.
+  { readiness: "model_unavailable", note: "no_account", statuses: ["queued"], label: accountMessage, message: accountMessage, control: "Manage AI accounts" },
+  { readiness: "model_unavailable", note: "model_unavailable", statuses: ["queued"], label: "Choose another AI model", message: "Choose another AI model" },
+] as { readiness: WorldReadinessStatus; note?: GraphReadinessNote; statuses: string[]; label: string; message: string; control?: string }[])("keeps the sidebar and Library still when World waits ($label)", async ({ readiness, note, statuses, label, message, control }) => {
   const user = userEvent.setup();
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
-  mapJobs(bridge, [...statuses], readiness);
+  mapJobs(bridge, [...statuses], readiness, note ?? null);
   render(<App bridge={bridge} />);
   const row = await mapRow(label);
   expect(row).toHaveAttribute("title", label);
@@ -122,16 +129,40 @@ it.each([
   const stats = await screen.findByTestId("map-stats");
   expect(stats).toHaveTextContent(message);
   expect(stats.querySelector(".map-updating")).toBeNull();
+  // A reason the user can act on carries the control that opens the right settings.
+  expect(within(stats).queryAllByRole("button").map(button => button.textContent)).toEqual(control ? [control] : []);
   await user.click(await screen.findByRole("button", { name: "Library" }));
   await user.click(await screen.findByRole("tab", { name: "Sources" }));
   const library = within(screen.getByTestId("map-library"));
   expect(await library.findByRole("status")).toHaveTextContent(message);
   expect(library.queryByText("World is updating")).toBeNull();
   expect(library.getByRole("radio", { name: "Processing" })).toBeVisible();
-  if (readiness === "provider_disconnected") {
+  expect(library.queryByRole("button", { name: "Manage AI accounts" }) !== null).toBe(control === "Manage AI accounts");
+  if (readiness === "provider_disconnected" || control === "World building settings") {
     await user.click(library.getByRole("button", { name: "World building settings" }));
     expect(await screen.findByRole("form", { name: "World building settings" })).toBeVisible();
   }
+  if (control === "Manage AI accounts") {
+    await user.click(library.getByRole("button", { name: "Manage AI accounts" }));
+    expect(await screen.findByRole("heading", { name: "AI accounts", level: 1 })).toBeVisible();
+  }
+});
+
+it("offers the recommended model where World says a chosen model is unavailable", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const { settings } = await bridge.knowledgeGraphSettingsGet({ loupistId: LOUPIST });
+  await bridge.knowledgeGraphSettingsSet({ loupistId: LOUPIST, settings: { ...settings, enrichmentEnabled: true, worldModelChoice: "chosen", helperModelProfileId: "anthropic/claude-gone" } });
+  mapJobs(bridge, ["queued"], "model_unavailable", "model_unavailable");
+  const save = vi.spyOn(bridge, "knowledgeGraphSettingsSet");
+  render(<App bridge={bridge} />);
+  await user.click(await mapRow("Choose another AI model"));
+  const stats = await screen.findByTestId("map-stats");
+  expect(stats).toHaveTextContent("Choose another AI model");
+  await user.click(within(stats).getByRole("button", { name: "Use the recommended model" }));
+  await waitFor(() => expect(save).toHaveBeenCalledExactlyOnceWith({ loupistId: LOUPIST, settings: expect.objectContaining({ worldModelChoice: "recommended" }) }));
+  await waitFor(() => expect(within(screen.getByTestId("map-stats")).queryByRole("button", { name: "Use the recommended model" })).toBeNull());
+  expect((await bridge.knowledgeGraphSettingsGet({ loupistId: LOUPIST })).settings).toMatchObject({ worldModelChoice: "recommended", helperModelProfileId: "model-test" });
 });
 
 it("keeps a running World job visible even when the provider blocks the next Source", async () => {

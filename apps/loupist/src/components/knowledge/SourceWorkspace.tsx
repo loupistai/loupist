@@ -1,6 +1,7 @@
 import { SavedPassage } from "./SavedPassage";
 import { readWithWorldRetry } from "../../knowledge/readWithWorldRetry";
 import { SavedSourceData } from "./SavedSourceData";
+import { revealTableCell } from "./revealTableCell";
 import { readableCitedPassages } from "./citedPassages";
 import { QuoteAsk } from "../chat/QuoteAsk";
 import { useSettledScroll } from "./settledScroll";
@@ -61,9 +62,9 @@ function ProvidedNote({ provided }: { provided: NonNullable<SourceDetail["provid
   </p>;
 }
 
-type Props = { bridge: LoupistBridge; catalog: KnowledgeCatalog; worldProcessing?: WorldProcessing; location: KnowledgeLocation; sourceOpen?: SourceOpen; query?: string; onQueryChange?: (query: string) => void; onManageProcessing?: () => void; onAddSource?: () => void; readerOnly?: boolean; compact?: boolean; onOpen: (location: KnowledgeLocation) => void; onPatch?: (location: KnowledgeLocation) => void; onAsk: (pin: KnowledgePin) => void; onChanged: () => void; onOpenLink?: (url: string) => void | Promise<void>; opensLinksInPanel?: boolean; quoteCitedSelections?: boolean };
+type Props = { bridge: LoupistBridge; catalog: KnowledgeCatalog; worldProcessing?: WorldProcessing; location: KnowledgeLocation; sourceOpen?: SourceOpen; query?: string; onQueryChange?: (query: string) => void; onManageProcessing?: () => void; onManageProviders?: () => void; onAddSource?: () => void; readerOnly?: boolean; compact?: boolean; onOpen: (location: KnowledgeLocation) => void; onPatch?: (location: KnowledgeLocation) => void; onAsk: (pin: KnowledgePin) => void; onChanged: () => void; onOpenLink?: (url: string) => void | Promise<void>; opensLinksInPanel?: boolean; quoteCitedSelections?: boolean };
 
-export function SourceWorkspace({ bridge, catalog, worldProcessing, location, sourceOpen, query = "", onQueryChange, onManageProcessing, onAddSource, readerOnly = false, compact = false, onOpen, onPatch = onOpen, onAsk, onChanged, onOpenLink, opensLinksInPanel, quoteCitedSelections }: Props) {
+export function SourceWorkspace({ bridge, catalog, worldProcessing, location, sourceOpen, query = "", onQueryChange, onManageProcessing, onManageProviders, onAddSource, readerOnly = false, compact = false, onOpen, onPatch = onOpen, onAsk, onChanged, onOpenLink, opensLinksInPanel, quoteCitedSelections }: Props) {
   const { t } = useTranslation("knowledge");
   const selected = location.selection?.kind === "source" ? location.selection : undefined;
   const sourceRecord = catalog.sources.find((item) => item.recordId === location.recordId);
@@ -173,6 +174,9 @@ export function SourceWorkspace({ bridge, catalog, worldProcessing, location, so
     const target = passage.offsetHeight > scroller.clientHeight - toolbarHeight && focused ? focused : passage;
     scroller.scrollTop = Math.max(0, scroller.scrollTop + target.getBoundingClientRect().top
       - scroller.getBoundingClientRect().top - toolbarHeight);
+    // A cited figure in a wide table also comes into view sideways, beside its row's label.
+    const cited = focused ?? passage.querySelector("mark.evidence-match");
+    if (cited) revealTableCell(cited);
   }, [detail?.sourceId, span?.spanId, hasCitedPassages, currentPassage, wholeSavedText]);
 
   useLayoutEffect(() => {
@@ -247,6 +251,10 @@ export function SourceWorkspace({ bridge, catalog, worldProcessing, location, so
   const sources = matching.filter(({ status }) => filter === "all" || (filter === "processing" ? isMapProcessing(status) : needsAttention(status)));
   const readerProcessing = sourceDisplayStatus(processing, readiness);
   const processingSettings = onManageProcessing ? <Button variant="ghost" size="icon-sm" aria-label={t("sourceWorkspace.worldProcessingSettings")} title={t("sourceWorkspace.worldProcessingSettings")} onClick={onManageProcessing}><Settings2Icon /></Button> : null;
+  // With no AI account at all, the control opens AI accounts instead of World building settings.
+  const statusControl = (status?: string) => status === "no_account"
+    ? onManageProviders ? <Button variant="ghost" size="xs" onClick={onManageProviders}>{t("worldProcessingSettings.manageProviders")}</Button> : null
+    : processingSettings;
   const originalUrl = (() => { try { const url = new URL(detail?.originLabel ?? ""); return url.protocol === "https:" || url.protocol === "http:" ? url.href : null; } catch { return null; } })();
   const retainedSource = readerOnly && detail && span ? {
     loupistId: location.loupistId, recordId: detail.recordId, revisionId: detail.revisionId,
@@ -290,7 +298,7 @@ export function SourceWorkspace({ bridge, catalog, worldProcessing, location, so
       {compact ? <div className="source-library-heading library-section-label"><h2>{t("sourceWorkspace.savedSources")}</h2><span>{formatNumber(sources.length)}</span>{onAddSource ? <Button variant="outline" size="sm" className="library-add" onClick={onAddSource}>{t("map.addInLibrary")}</Button> : null}</div> : null}
       {showQueueStatus ? <div className="source-processing-status">
         <p role="status">{buildingWithoutSources ? <Spinner /> : null}{sourceProcessingLabel(waiting ?? "running")}</p>
-        {waiting ? processingSettings : null}
+        {waiting ? statusControl(waiting) : null}
       </div> : null}
       {!sources.length ? <EmptyState title={search || filter !== "all" ? t("sourceWorkspace.noMatchingSources") : t("sourceWorkspace.noSourcesYet")} description={search || filter !== "all" ? t("sourceWorkspace.tryAnotherSearchOrChooseAll") : t("sourceWorkspace.addTextAFileOrALinkToUseIn")} /> : null}
       <ul ref={listRef} aria-label={t("sourceWorkspace.sources")}>
@@ -349,7 +357,7 @@ export function SourceWorkspace({ bridge, catalog, worldProcessing, location, so
         </section> : <p>{t("sourceWorkspace.onlyTheSourceDetailsWereSavedNoPassageIsAvailable")}</p>}
         {span && !textMedia(span.mediaType) ? <div className="knowledge-inspector-actions"><Button variant="outline" disabled={exporting} onClick={() => void exportFile()}>{exporting ? t("sourceWorkspace.exporting") : detail.material === "original" ? t("sourceWorkspace.exportOriginalFile") : t("sourceWorkspace.exportSavedFile")}</Button>{exported ? <span role="status">{t("sourceWorkspace.fileExported")}</span> : null}{exportError ? <p role="alert">{exportError}</p> : null}</div> : null}
         {detail.spans.length > 1 ? <div className="knowledge-inspector-actions" aria-label={t("sourceWorkspace.sourcePassages")}>{detail.spans.map((item, index) => <Button key={item.spanId} variant={item.spanId === span?.spanId ? "secondary" : "ghost"} onClick={() => onOpen({ ...location, selection: { ...selected, kind: "source", sourceId: detail.sourceId, spanId: item.spanId } })}>{t("sourceWorkspace.passage", { index: formatNumber(index + 1) })}</Button>)}</div> : null}
-        <div className="source-processing-status" data-attention={needsAttention(readerProcessing) || undefined}><div><span className="source-reader-eyebrow">{t("sourceWorkspace.worldProcessing")}</span><p role="status">{isMapProcessing(readerProcessing) ? <Spinner /> : null}{sourceProcessingLabel(readerProcessing)}</p>{detail.processing?.error ? <p className="knowledge-hint">{detail.processing.error}</p> : null}{processing === "paused_budget" ? <SourceRetry retry={retrySource(detail.recordId)} onRetried={readerRetried} /> : null}</div>{processingSettings}</div>
+        <div className="source-processing-status" data-attention={needsAttention(readerProcessing) || undefined}><div><span className="source-reader-eyebrow">{t("sourceWorkspace.worldProcessing")}</span><p role="status">{isMapProcessing(readerProcessing) ? <Spinner /> : null}{sourceProcessingLabel(readerProcessing)}</p>{detail.processing?.error ? <p className="knowledge-hint">{detail.processing.error}</p> : null}{processing === "paused_budget" ? <SourceRetry retry={retrySource(detail.recordId)} onRetried={readerRetried} /> : null}</div>{statusControl(readerProcessing)}</div>
         {detailRefreshError ? <div className="knowledge-inspector-actions"><p role="alert">{detailRefreshError}</p><Button variant="outline" disabled={detailRefreshing} onClick={() => void refreshDetail()}>{detailRefreshing ? t("sourceWorkspace.refreshingSource") : t("sourceWorkspace.refreshSourceDetails")}</Button></div> : null}
         {claimGroups.map(({ kind, label, claims }) => claims.length ? <details key={kind} className="source-related-claims" aria-label={label}>
           <summary>{label}<span>{formatNumber(claims.length)}</span></summary>

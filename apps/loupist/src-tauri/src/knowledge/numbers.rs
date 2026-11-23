@@ -23,6 +23,7 @@ mod currency;
 mod direction;
 pub(crate) use currency::{agrees as currencies_agree, Currency};
 use direction::Direction;
+pub(crate) use direction::{line_nature, says_outflow, LineNature};
 use serde_json::{Map, Value};
 
 /// Candidates read from one payload; bounds the work on large datasets.
@@ -69,6 +70,76 @@ const CJK_SCALES: &[(&str, f64)] = &[
     ("亿", 1e8),
     ("億", 1e8),
 ];
+
+/// Rate units shared by answer labels, passage tokens and structured units.
+const RATE_UNITS: &[(Unit, &[&str])] = &[
+    (
+        Unit::Points,
+        &[
+            "percentage points",
+            "percentage point",
+            "percentagepoints",
+            "percentagepoint",
+            "% points",
+            "% point",
+            "퍼센트포인트",
+            "%포인트",
+            "个百分点",
+            "個百分點",
+            "百分點",
+            "百分点",
+            "パーセントポイント",
+            "%pts",
+            "%pt",
+            "%p",
+            "ppts",
+            "ppt",
+            "pp",
+        ],
+    ),
+    (
+        Unit::BasisPoints,
+        &[
+            "basis points",
+            "basis point",
+            "basispoints",
+            "basispoint",
+            "베이시스포인트",
+            "ベーシスポイント",
+            "基点",
+            "基點",
+            "bps",
+            "bp",
+        ],
+    ),
+    (
+        Unit::Percent,
+        &["percent", "percentage", "pct", "퍼센트", "%", "％"],
+    ),
+];
+
+fn rate_unit(text: &str) -> Option<Unit> {
+    RATE_UNITS
+        .iter()
+        .find_map(|(unit, aliases)| aliases.contains(&text).then_some(*unit))
+}
+
+fn rate_suffix(rest: &str) -> Option<(Unit, usize)> {
+    let tail = rest.trim_start_matches(|c| UNIT_SPACES.contains(&c) || c == '\t');
+    // Case folding and tab replacement preserve the source byte offsets.
+    let lower = tail.to_ascii_lowercase().replace('\t', " ");
+    for (unit, aliases) in RATE_UNITS {
+        for alias in *aliases {
+            let Some(after) = lower.strip_prefix(alias) else {
+                continue;
+            };
+            if matches!(*alias, "%" | "％") || !after.starts_with(is_word_char) {
+                return Some((*unit, rest.len() - tail.len() + alias.len()));
+            }
+        }
+    }
+    None
+}
 
 /// The currency a monetary unit names, including a shared sign if unresolved.
 pub(crate) fn stated_currency(text: &str) -> Option<Currency> {
@@ -166,17 +237,11 @@ impl Unit {
         };
         let text = ungrouped(&raw.to_lowercase());
         let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
-        match compact.as_str() {
-            "%" | "％" | "percent" | "pct" | "percentage" | "퍼센트" => {
-                return Ok(Self::Percent)
-            }
-            "%p" | "%pt" | "%pts" | "pp" | "ppt" | "ppts" | "percentagepoint"
-            | "percentagepoints" | "%포인트" | "퍼센트포인트" => return Ok(Self::Points),
-            "bp" | "bps" | "basispoint" | "basispoints" | "베이시스포인트" => {
-                return Ok(Self::BasisPoints)
-            }
-            "x" | "times" | "multiple" | "배" => return Ok(Self::Multiple),
-            _ => {}
+        if let Some(unit) = rate_unit(&text).or_else(|| rate_unit(&compact)) {
+            return Ok(unit);
+        }
+        if matches!(compact.as_str(), "x" | "times" | "multiple" | "배") {
+            return Ok(Self::Multiple);
         }
         if let Some(scale) = cjk_amount(raw).or_else(|| {
             CJK_SCALES
@@ -305,15 +370,39 @@ pub struct Candidate {
     pub(crate) inferred_scale: bool,
     /// Direction stated by the wording governing an unsigned figure.
     pub(crate) direction: Option<Direction>,
+    /// The run of numbers the candidate stands in, as a table row prints them
+    /// with nothing but cell separators between, and its column in that run.
+    pub(crate) cell: Option<(u32, u32)>,
 }
 
 impl Candidate {
+    /// The value the printed figure is compared with. An explicit sign meets
+    /// a fall the source states in words. An unsigned figure meets an outflow
+    /// row's negative value unless its own clause names another line, and any
+    /// negative value when its words state a loss, an outflow or a decline.
     pub(crate) fn value_for(&self, printed: &Printed) -> f64 {
-        if printed.signed && self.direction == Some(Direction::Fall) {
-            -self.value
-        } else {
-            self.value
+        if printed.signed {
+            return match self.direction {
+                Some(Direction::Fall) => -self.value,
+                _ => self.value,
+            };
         }
+        match self.direction {
+            Some(Direction::Outflow) => {
+                if printed.line.is_none_or(|line| line == LineNature::Outflow) {
+                    self.value.abs()
+                } else {
+                    self.value
+                }
+            }
+            _ if printed.falls && self.value < 0.0 => -self.value,
+            _ => self.value,
+        }
+    }
+
+    /// The match rests on an outflow row's sign rather than its digits alone.
+    pub(crate) fn outflow_for(&self, printed: &Printed) -> bool {
+        self.direction == Some(Direction::Outflow) && self.value_for(printed) != self.value
     }
 }
 
@@ -388,42 +477,8 @@ fn suffix_unit(rest: &str, prefixed: bool) -> (Unit, usize, Option<f64>) {
         .chars()
         .take_while(|c| c.is_alphanumeric() || matches!(c, '%' | '％'))
         .collect();
-    for phrase in [
-        "percentage points",
-        "percentage point",
-        "% points",
-        "% point",
-    ] {
-        if trimmed.starts_with(phrase) {
-            return (Unit::Points, gap + phrase.len(), None);
-        }
-    }
-    for prefix in ["%포인트", "%pts", "%pt", "%p"] {
-        if word.starts_with(prefix) {
-            return (Unit::Points, gap + prefix.len(), None);
-        }
-    }
-    if word == "pp" {
-        return (Unit::Points, gap + 2, None);
-    }
-    if let Some(first) = word.chars().next().filter(|c| matches!(c, '%' | '％')) {
-        return (Unit::Percent, gap + first.len_utf8(), None);
-    }
-    if matches!(word.as_str(), "percent" | "pct") {
-        return (Unit::Percent, gap + word.len(), None);
-    }
-    for phrase in ["basis points", "basis point"] {
-        if trimmed.starts_with(phrase) {
-            return (Unit::BasisPoints, gap + phrase.len(), None);
-        }
-    }
-    for suffix in ["bps", "bp"] {
-        if trimmed
-            .strip_prefix(suffix)
-            .is_some_and(|rest| !rest.starts_with(is_word_char))
-        {
-            return (Unit::BasisPoints, gap + suffix.len(), None);
-        }
+    if let Some((unit, length)) = rate_suffix(rest) {
+        return (unit, length, None);
     }
     let multiple = word == "배"
         || (word.starts_with('배') && word.chars().count() == 2 && !word.starts_with("배당"));
@@ -567,12 +622,12 @@ fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned>
             && after.is_some_and(|c| c.is_alphabetic())
             || (following.is_some_and(|c| c.is_ascii_alphabetic())
                 && after.is_some_and(|c| c.is_ascii_digit()));
-        let prefix_end = if matches!(previous, Some('-' | '−' | '+' | '△' | '▽' | '▼' | '▲'))
-        {
-            byte(start - 1)
-        } else {
-            byte(start)
-        };
+        let prefix_end =
+            if previous.is_some_and(|c| is_minus(c) || c == '+' || triangle_sign(c).is_some()) {
+                byte(start - 1)
+            } else {
+                byte(start)
+            };
         let prefix = currency::before(&text[..prefix_end]);
         if joined || points > 1 || (glued_before && prefix.is_none()) || identifier_after {
             continue;
@@ -595,7 +650,7 @@ fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned>
         let mut span_start = byte(start);
         let mut signed = false;
         // A sign can touch a CJK label. An ASCII identifier still needs a word boundary.
-        if matches!(previous, Some('-' | '−' | '+'))
+        if previous.is_some_and(|c| is_minus(c) || c == '+')
             && (prefix.is_some()
                 || before.is_some_and(|c| {
                     is_hangul(c) || matches!(c, 'ぁ'..='ヿ' | '㐀'..='䶿' | '一'..='鿿')
@@ -607,8 +662,10 @@ fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned>
             }
             span_start = byte(start - 1);
             signed = true;
-        } else if let Some(mark) = previous.and_then(triangle_sign) {
-            // Korean statements print a loss as `△1,234`; `▲` marks a rise.
+        } else if let Some(mark) =
+            previous.and_then(|mark| statement_triangle(mark, &text[..byte(start)]))
+        {
+            // Korean and Japanese statements print a loss as `△1,234`.
             value *= mark;
             span_start = byte(start - 1);
             signed = true;
@@ -657,7 +714,7 @@ fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned>
             // An explicit sign before a currency prefix belongs to the amount.
             if let Some((at, sign)) = text[..offset].char_indices().next_back() {
                 if !signed
-                    && matches!(sign, '-' | '−' | '－' | '+' | '＋')
+                    && (is_minus(numeric_char(sign)) || matches!(sign, '+' | '＋'))
                     && !text[..at].ends_with(is_word_char)
                 {
                     if !matches!(sign, '+' | '＋') {
@@ -680,7 +737,13 @@ fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned>
                 && text[span_end..]
                     .strip_prefix(")%")
                     .is_some_and(|rest| rest.trim_start_matches([' ', '\t']).starts_with('|'));
-            if accounting_percent || (grouped && matches!(unit, Unit::Plain | Unit::Amount(_))) {
+            let accounting_cell = text[..opening].trim_end_matches([' ', '\t']).ends_with('|')
+                && text[span_end + 1..]
+                    .trim_start_matches([' ', '\t'])
+                    .starts_with('|');
+            if accounting_percent
+                || ((grouped || accounting_cell) && matches!(unit, Unit::Plain | Unit::Amount(_)))
+            {
                 value = -value;
                 span_start = opening;
                 span_end += 1;
@@ -689,6 +752,21 @@ fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned>
                     span_end += 1;
                 }
                 signed = true;
+            }
+        }
+        // A trailing minus (`1,234-`, `1,234−`) after a grouped or decimal amount.
+        if !signed && (grouped || points == 1) {
+            if let Some(sign) = text[span_end..].chars().next().filter(|c| is_minus(*c)) {
+                let rest = &text[span_end + sign.len_utf8()..];
+                if rest
+                    .chars()
+                    .next()
+                    .is_none_or(|c| c.is_whitespace() || matches!(c, '|' | ')' | ',' | ';'))
+                {
+                    value = -value;
+                    span_end += sign.len_utf8();
+                    signed = true;
+                }
             }
         }
         scanned.push(Scanned {
@@ -716,10 +794,9 @@ fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned>
                     && currencies_agree(last.currency, next.currency)
                     && between.chars().all(char::is_whitespace)
                     && between.chars().count() <= 1
-                    && last.value >= 0.0
-                    && next.value >= 0.0
+                    && !next.signed
                 {
-                    last.value = last.value * large / small + next.value;
+                    last.value = last.value * large / small + last.value.signum() * next.value;
                     last.unit = Unit::Amount(small);
                     last.currency = currency::contextual(next.currency, last.currency);
                     last.end = next.end;
@@ -753,11 +830,13 @@ fn text_numbers(text: &str, out: &mut Vec<Candidate>, amount: Option<&Printed>) 
         amount.is_some(),
     );
     let stated = stated_units(text, &joined, amount.is_some());
-    for (found, cell) in joined.into_iter().zip(stated) {
+    let cells = table_cells(text, &joined);
+    for ((found, cell), position) in joined.into_iter().zip(stated).zip(cells) {
         let CellUnit {
             unit: stated,
             measure,
             heading,
+            outflow,
         } = cell;
         let price_heading = (found.unit == Unit::Plain)
             .then(|| preceding_price_unit(text, found.start))
@@ -771,7 +850,11 @@ fn text_numbers(text: &str, out: &mut Vec<Candidate>, amount: Option<&Printed>) 
             start: found.start,
             end: found.end,
         };
-        let direction = found.direction(text);
+        let direction = if outflow && found.value < 0.0 {
+            Some(Direction::Outflow)
+        } else {
+            found.direction(text)
+        };
         // A number printed bare keeps its plain reading beside the stated unit.
         let original = if let Some(printed) = amount {
             if matches!(measure, FilingMeasure::Shares | FilingMeasure::Count)
@@ -821,10 +904,39 @@ fn text_numbers(text: &str, out: &mut Vec<Candidate>, amount: Option<&Printed>) 
                         && (found.unit == Unit::Amount(1.0)
                             || (found.unit == Unit::Plain && amount.is_some())),
                     direction,
+                    cell: Some(position),
                 });
             }
         }
     }
+}
+
+/// Each number's run and column: numbers separated only by spacing, `|` or a
+/// placeholder dash (`-`, `–`, `—`, which takes a column of its own) on one
+/// line are cells of one row.
+fn table_cells(text: &str, numbers: &[Scanned]) -> Vec<(u32, u32)> {
+    let mut out = Vec::with_capacity(numbers.len());
+    let (mut run, mut column) = (0u32, 0u32);
+    for (index, number) in numbers.iter().enumerate() {
+        if let Some(previous) = index.checked_sub(1).map(|at| &numbers[at]) {
+            let gap = text.get(previous.end..number.start).unwrap_or("x");
+            let separators = gap
+                .chars()
+                .all(|c| matches!(c, '|' | '-' | '–' | '—') || (c.is_whitespace() && c != '\n'));
+            if separators {
+                let dashes = gap
+                    .split(|c: char| c.is_whitespace() || c == '|')
+                    .filter(|cell| !cell.is_empty())
+                    .count() as u32;
+                column += 1 + dashes;
+            } else {
+                run += 1;
+                column = 0;
+            }
+        }
+        out.push((run, column));
+    }
+    out
 }
 
 /// For an amount with a magnitude word and no stated source scale, align
@@ -1133,6 +1245,7 @@ fn filing_amount_label(label: &str) -> bool {
 enum FilingMeasure {
     Unspecified,
     Money,
+    Outflow,
     Shares,
     Count,
     PerShare,
@@ -1168,15 +1281,7 @@ fn filing_measure(label: &str, currency: Option<Currency>) -> FilingMeasure {
             .any(|label| lower.contains(label))
     {
         FilingMeasure::Count
-    } else if lower.contains("per share")
-        || lower.contains("per-share")
-        || ["주당", "株当たり", "株あたり"]
-            .iter()
-            .any(|label| lower.contains(label))
-        || lower
-            .split(|c: char| !c.is_ascii_alphabetic())
-            .any(|word| word == "eps")
-    {
+    } else if per_share_label(label) {
         FilingMeasure::PerShare
     } else if lower.trim_matches(|c: char| !c.is_ascii_alphabetic()) == "shares"
         || (currency.is_none()
@@ -1185,11 +1290,46 @@ fn filing_measure(label: &str, currency: Option<Currency>) -> FilingMeasure {
                 .any(|word| word == "shares"))
     {
         FilingMeasure::Shares
+    } else if line_nature(last_sentence(label)) == Some(LineNature::Outflow) {
+        FilingMeasure::Outflow
     } else if filing_amount_label(label) {
         FilingMeasure::Money
     } else {
         FilingMeasure::Unspecified
     }
+}
+
+/// The words of a label run after its last sentence end: a PDF row label can
+/// follow a footnote (`… have been adjusted. Capital expenditures – TTM`).
+fn last_sentence(label: &str) -> &str {
+    label
+        .char_indices()
+        .rev()
+        .find(|&(at, c)| {
+            matches!(c, '.' | '!' | '?' | ';' | '。')
+                && label[at + c.len_utf8()..].starts_with(char::is_whitespace)
+        })
+        .map_or(label, |(at, c)| &label[at + c.len_utf8()..])
+}
+
+/// Wording touching a figure that states a decline or a loss (`loss of`,
+/// `감소`, `下跌`), read the same way as in a source.
+pub(crate) fn states_fall(before: &str, after: &str) -> bool {
+    direction::around(before, after) == Some(Direction::Fall)
+}
+
+/// A label naming a per-share figure (`EPS`, `per share`, `주당`, `每股`),
+/// which a table's monetary scale never reaches.
+pub(crate) fn per_share_label(label: &str) -> bool {
+    let lower = label.to_lowercase();
+    lower.contains("per share")
+        || lower.contains("per-share")
+        || ["주당", "株当たり", "株あたり", "每股"]
+            .iter()
+            .any(|label| lower.contains(label))
+        || lower
+            .split(|c: char| !c.is_ascii_alphabetic())
+            .any(|word| word == "eps")
 }
 
 fn table_edge(c: char) -> bool {
@@ -1231,6 +1371,8 @@ struct CellUnit<'a> {
     unit: Option<Unit>,
     measure: FilingMeasure,
     heading: Option<&'a str>,
+    /// The number's row label names an outflow, whatever the figure's unit.
+    outflow: bool,
 }
 
 /// Units the text states apart from its plain numbers, one per number:
@@ -1247,7 +1389,8 @@ fn stated_units<'a>(
         CellUnit {
             unit: None,
             measure: FilingMeasure::Unspecified,
-            heading: None
+            heading: None,
+            outflow: false,
         };
         numbers.len()
     ];
@@ -1349,14 +1492,18 @@ fn stated_units<'a>(
             .get(..3)
             .is_some_and(|start| start.eq_ignore_ascii_case("in "))
         {
-            if let Some((unit @ Some(_), Reach::Filing)) = bracket_unit(caption) {
-                let start = line_at + line.len() - head.len();
-                headings.push(Heading {
-                    start,
-                    end: start + caption.len(),
-                    unit,
-                    reach: Reach::Filing,
-                });
+            if let Some((unit @ Some(Unit::Amount(_)), reach)) = bracket_unit(caption) {
+                // A PDF can put its monetary caption in the first table cell
+                // without parentheses or a separate unit marker.
+                if reach == Reach::Filing || line.trim_start().starts_with('|') {
+                    let start = line_at + line.len() - head.len();
+                    headings.push(Heading {
+                        start,
+                        end: start + caption.len(),
+                        unit,
+                        reach,
+                    });
+                }
             }
         }
         line_at += line.len();
@@ -1436,6 +1583,7 @@ fn stated_units<'a>(
     let mut row_label = None;
     let mut section = FilingMeasure::Unspecified;
     let mut row_measure = FilingMeasure::Unspecified;
+    let mut row_outflow = false;
     let mut headings = headings.into_iter().peekable();
     let mut cursor = 0;
     let mut previous_number = 0;
@@ -1547,6 +1695,19 @@ fn stated_units<'a>(
         if between.contains('\n') {
             row_measure = section;
         }
+        // The nearest label before a number names its row, in any table or text.
+        for line in between.split_inclusive('\n') {
+            let label = line
+                .trim_matches(table_edge)
+                .split('|')
+                .next()
+                .unwrap_or_default()
+                .trim();
+            if label.chars().any(char::is_alphabetic) {
+                row_outflow = line_nature(last_sentence(label)) == Some(LineNature::Outflow);
+            }
+        }
+        stated[index].outflow = row_outflow;
         let governing_currency = number.currency.or_else(|| {
             row.and(row_label)
                 .or(table.and(table_label))
@@ -1564,7 +1725,11 @@ fn stated_units<'a>(
             if label.chars().any(char::is_alphabetic) {
                 let measure = filing_measure(label, governing_currency);
                 if label.ends_with(':') || section_row {
-                    section = measure;
+                    section = if measure == FilingMeasure::Outflow {
+                        FilingMeasure::Money
+                    } else {
+                        measure
+                    };
                 } else if measure != FilingMeasure::Unspecified {
                     section = FilingMeasure::Unspecified;
                 }
@@ -1616,7 +1781,7 @@ fn stated_units<'a>(
                     || (!excluded(measure)
                         && !next_cell.starts_with('%')
                         && (!mixed_filing
-                            || measure == FilingMeasure::Money
+                            || matches!(measure, FilingMeasure::Money | FilingMeasure::Outflow)
                             || number.currency.is_some()))
             })
         });
@@ -1705,6 +1870,23 @@ fn triangle_sign(mark: char) -> Option<f64> {
     }
 }
 
+/// Minus signs printed before or after an amount: `-` (with its full-width
+/// form, which [`numeric_char`] folds), `−`, `–`, `‒` and `﹣`.
+fn is_minus(c: char) -> bool {
+    matches!(c, '-' | '−' | '–' | '‒' | '﹣')
+}
+
+/// A triangle before a number in text. Japanese statements print a negative
+/// as `▲1,234` as well as `△1,234`; elsewhere `▲` marks a rise.
+fn statement_triangle(mark: char, before: &str) -> Option<f64> {
+    let window = &before[before.floor_char_boundary(before.len().saturating_sub(512))..];
+    if mark == '▲' && window.chars().any(|c| matches!(c, '\u{3041}'..='\u{30ff}')) {
+        Some(-1.0)
+    } else {
+        triangle_sign(mark)
+    }
+}
+
 /// A field whose whole value is one number (`"41,200"`, `"-3.1"`, `"−3.1"`,
 /// the accounting negatives `"(1,234)"` and `"△1,234"`); dates, identifiers
 /// with inner hyphens and codes with a leading zero are not.
@@ -1724,8 +1906,10 @@ fn field_number(text: &str) -> Option<f64> {
     } else if let Some(sign) = text.chars().next().and_then(triangle_sign) {
         let mark = text.chars().next().map_or(0, char::len_utf8);
         (text[mark..].trim_start(), sign)
-    } else if let Some(unsigned) = text.strip_prefix(['-', '−']) {
+    } else if let Some(unsigned) = text.strip_prefix(is_minus) {
         (unsigned, -1.0)
+    } else if let Some(unsigned) = text.strip_suffix(is_minus) {
+        (unsigned.trim_end(), -1.0)
     } else {
         (text, 1.0)
     };
@@ -1870,6 +2054,7 @@ fn collect(
                     place: Place::Pointer(pointer.clone()),
                     inferred_scale: unit.is_none() && amount.is_some(),
                     direction: None,
+                    cell: None,
                 });
             }
         }
@@ -1900,6 +2085,7 @@ fn collect(
         }
         Value::Object(map) => {
             let row = row_unit(map);
+            let label = row_label(map);
             for (key, item) in map {
                 if matches!(key.as_str(), "unit" | "scale" | "currency") || identifier_key(key) {
                     continue;
@@ -1907,12 +2093,54 @@ fn collect(
                 let length = pointer.len();
                 pointer.push('/');
                 pointer.push_str(&pointer_token(key));
+                let start = out.len();
                 collect_field(key, item, row, pointer, out, text_budget, amount);
+                mark_outflows(key, label, item, &mut out[start..]);
                 pointer.truncate(length);
             }
         }
         _ => {}
     }
+}
+
+/// The line a structured row names for its generic value fields.
+fn row_label(row: &Map<String, Value>) -> Option<&str> {
+    [
+        "label",
+        "line_item",
+        "metric",
+        "concept",
+        "account_nm",
+        "item",
+        "name",
+    ]
+    .iter()
+    .find_map(|key| row.get(*key)?.as_str())
+}
+
+/// A field named for an outflow (`capital_expenditure`,
+/// `investments_in_property_plant_and_equipment`), or a generic value whose
+/// row label names one, gives its negative number the outflow direction.
+fn mark_outflows(key: &str, label: Option<&str>, item: &Value, found: &mut [Candidate]) {
+    if item.is_object()
+        || item.is_array()
+        || (item.is_string() && field_number_text(item).is_none())
+    {
+        return;
+    }
+    let named = match key {
+        "value" | "val" | "amount" => label,
+        _ => Some(key),
+    };
+    if named.and_then(line_nature) == Some(LineNature::Outflow) {
+        for candidate in found.iter_mut().filter(|candidate| candidate.value < 0.0) {
+            candidate.direction = Some(Direction::Outflow);
+        }
+    }
+}
+
+fn field_number_text(item: &Value) -> Option<f64> {
+    item.as_str().and_then(field_number)
 }
 
 /// One field of a row (`pointer` already names it), in the unit its key or
@@ -1940,6 +2168,7 @@ fn collect_field(
                 place: Place::Pointer(pointer.clone()),
                 inferred_scale: unit.is_none() && amount.is_some(),
                 direction: None,
+                cell: None,
             });
         }
     } else {
@@ -2068,11 +2297,13 @@ pub(crate) fn query_candidates(payload: &Value) -> Vec<Candidate> {
         }
         if let Some(row) = row.as_object() {
             let stated = row_unit(row);
+            let label = row_label(row);
             for (key, item) in row {
                 if identifier_key(key) || matches!(key.as_str(), "unit" | "currency" | "scale") {
                     continue;
                 }
                 let unit = named_units.get(key.as_str()).copied().flatten().or(stated);
+                let start = out.len();
                 collect_field(
                     key,
                     item,
@@ -2082,10 +2313,12 @@ pub(crate) fn query_candidates(payload: &Value) -> Vec<Candidate> {
                     &mut budget,
                     None,
                 );
+                mark_outflows(key, label, item, &mut out[start..]);
             }
         } else if let (Some(cells), Some(columns)) = (row.as_array(), &indexed) {
             for (column, (item, &(key, dimension, unit))) in cells.iter().zip(columns).enumerate() {
                 if !dimension {
+                    let start = out.len();
                     collect_field(
                         key,
                         item,
@@ -2095,6 +2328,7 @@ pub(crate) fn query_candidates(payload: &Value) -> Vec<Candidate> {
                         &mut budget,
                         None,
                     );
+                    mark_outflows(key, None, item, &mut out[start..]);
                 }
             }
         } else {
@@ -2207,6 +2441,7 @@ pub(crate) fn fred_observations(payload: &Value, printed: Option<&Printed>) -> V
                 )),
                 inferred_scale: stated.is_none(),
                 direction: None,
+                cell: None,
             });
         }
     }
@@ -2322,7 +2557,12 @@ pub(crate) fn diagnostic_tokens(
             unit: cell.unit.unwrap_or(found.unit),
             currency: currency::contextual(found.currency, cell.heading.and_then(stated_currency)),
             inferred_scale: cell.unit.is_none() && found.unit == Unit::Amount(1.0),
-            direction: found.direction(text),
+            direction: if cell.outflow && found.value < 0.0 {
+                Some(Direction::Outflow)
+            } else {
+                found.direction(text)
+            },
+            cell: None,
             place: Place::Span {
                 start: found.start,
                 end: found.end,
@@ -2376,6 +2616,11 @@ pub struct Printed {
     /// The figure carries its own sign (`+`, `-`, `−`, a triangle mark or
     /// accounting brackets), which a fall stated in words must agree with.
     pub signed: bool,
+    /// The line the answer's own clause or table row names for the figure.
+    pub(crate) line: Option<LineNature>,
+    /// The answer's words state the unsigned figure as a loss, an outflow or
+    /// a decline.
+    pub(crate) falls: bool,
 }
 
 /// Leading digits with `,` grouping and one decimal point: the value, the
@@ -2417,7 +2662,7 @@ fn leading_number(text: &str) -> Option<(f64, usize, bool, usize)> {
 /// The text after a leading sign, whether the sign is a minus (`-`, `−`,
 /// `–`), and whether there was one.
 fn strip_sign(text: &str) -> (&str, bool, bool) {
-    if let Some(rest) = text.strip_prefix(['-', '−', '–']) {
+    if let Some(rest) = text.strip_prefix(is_minus) {
         (rest, true, true)
     } else if let Some(rest) = text.strip_prefix('+') {
         (rest, false, true)
@@ -2553,6 +2798,8 @@ pub(crate) fn parse_with_unit(
             currency: currency::contextual(currency, context),
             precision,
             signed,
+            line: None,
+            falls: false,
         });
     }
     let value = sign * first;
@@ -2574,14 +2821,7 @@ pub(crate) fn parse_with_unit(
             Unit::Plain
         }
         "person" | "persons" | "people" | "명" if currency.is_none() => Unit::Plain,
-        "%" | "％" | "percent" | "pct" if currency.is_none() => Unit::Percent,
-        "%p" | "%pt" | "%pts" | "pp" | "ppt" | "ppts" | "percentage point"
-        | "percentage points" | "% point" | "% points" | "%포인트"
-            if currency.is_none() =>
-        {
-            Unit::Points
-        }
-        "bp" | "bps" | "basis point" | "basis points" if currency.is_none() => Unit::BasisPoints,
+        rate if currency.is_none() && rate_unit(rate).is_some() => rate_unit(rate)?,
         "x" if !gap && currency.is_none() => Unit::Multiple,
         "×" | "times" | "배" if currency.is_none() => Unit::Multiple,
         _ => {
@@ -2609,6 +2849,8 @@ pub(crate) fn parse_with_unit(
             .flatten(),
         precision,
         signed,
+        line: None,
+        falls: false,
     })
 }
 
@@ -2732,9 +2974,20 @@ fn check_with_scale_policy(
     calculated: bool,
     allow_unstated_scale: bool,
 ) -> (Verdict, Option<usize>) {
-    let mut exact_conversion = None;
-    let mut same_digits = None;
-    let mut rounded = None;
+    // The first candidate of the best tier wins. The figure in the source's
+    // own sign and stated scale, exact or rounded, outranks one read through
+    // a sign the source states apart from its digits (an outflow row, a fall
+    // in words). Both outrank a scale inferred from the digits alone, where
+    // a sign the source states still comes first.
+    const EXACT_CONVERSION: usize = 0;
+    const SAME_DIGITS: usize = 1;
+    const ROUNDED: usize = 2;
+    const FLIPPED_MATCH: usize = 3;
+    const FLIPPED_CONVERSION: usize = 4;
+    const FLIPPED_ROUNDED: usize = 5;
+    const FLIPPED_INFERRED: usize = 6;
+    const INFERRED: usize = 7;
+    let mut tiers: [Option<(Verdict, usize)>; 8] = [None; 8];
     let mut nearest: Option<(f64, usize)> = None;
     for (index, candidate) in candidates.iter().enumerate() {
         if !currencies_agree(printed.currency, candidate.currency) {
@@ -2743,8 +2996,10 @@ fn check_with_scale_policy(
         // A figure's own sign meets a fall the evidence states in words; an
         // unsigned figure compares the magnitude, its own words stating the fall.
         let stated = candidate.value_for(printed);
+        let flipped = stated != candidate.value;
         if allow_unstated_scale && unstated_scale(printed, candidate).is_some() {
-            same_digits.get_or_insert(index);
+            tiers[if flipped { FLIPPED_MATCH } else { SAME_DIGITS }]
+                .get_or_insert((Verdict::Matched, index));
             continue;
         }
         if allow_unstated_scale
@@ -2781,14 +3036,28 @@ fn check_with_scale_policy(
                 && (gap - printed.precision).abs() <= slack;
             if gap <= printed.precision + slack && (!midpoint || printed.value.abs() > value.abs())
             {
-                if !converted {
-                    return (Verdict::Matched, Some(index));
-                }
-                if exact_scale_conversion(printed, candidate).is_some() {
-                    exact_conversion.get_or_insert(index);
-                } else {
-                    rounded.get_or_insert(index);
-                }
+                let tier = match (converted, flipped) {
+                    (false, false) => return (Verdict::Matched, Some(index)),
+                    (false, true) => (FLIPPED_MATCH, Verdict::Matched),
+                    (true, _) if exact_scale_conversion(printed, candidate).is_some() => (
+                        if flipped {
+                            FLIPPED_CONVERSION
+                        } else {
+                            EXACT_CONVERSION
+                        },
+                        Verdict::Rounded,
+                    ),
+                    (true, _) => (
+                        match (candidate.inferred_scale, flipped) {
+                            (false, false) => ROUNDED,
+                            (false, true) => FLIPPED_ROUNDED,
+                            (true, false) => INFERRED,
+                            (true, true) => FLIPPED_INFERRED,
+                        },
+                        Verdict::Rounded,
+                    ),
+                };
+                tiers[tier.0].get_or_insert((tier.1, index));
             }
             let relative = gap / printed.value.abs().max(1e-12);
             if nearest.is_none_or(|(best, _)| relative < best) {
@@ -2796,14 +3065,8 @@ fn check_with_scale_policy(
             }
         }
     }
-    if let Some(index) = exact_conversion {
-        return (Verdict::Rounded, Some(index));
-    }
-    if let Some(index) = same_digits {
-        return (Verdict::Matched, Some(index));
-    }
-    if let Some(index) = rounded {
-        return (Verdict::Rounded, Some(index));
+    if let Some((verdict, index)) = tiers.into_iter().flatten().next() {
+        return (verdict, Some(index));
     }
     if calculated {
         let fallback = (!candidates.is_empty()).then_some(0);
@@ -2817,6 +3080,179 @@ fn check_with_scale_policy(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn line_natures_read_statement_rows_fields_and_clauses() {
+        use LineNature::*;
+        for (label, nature) in [
+            ("Capital expenditures", Some(Outflow)),
+            ("Capital\texpenditures\t–\tTTM\t(", Some(Outflow)),
+            ("capital_expenditure", Some(Outflow)),
+            ("investments_in_property_plant_and_equipment", Some(Outflow)),
+            ("Purchases of property and equipment", Some(Outflow)),
+            ("Repayments of debt", Some(Outflow)),
+            ("repurchase_of_capital_stock", Some(Outflow)),
+            ("common_stock_dividend_paid", Some(Outflow)),
+            ("Net cash used in investing activities", Some(Outflow)),
+            ("Income taxes paid", Some(Outflow)),
+            ("Cost of revenues", Some(Outflow)),
+            ("최근 12개월 설비투자는 ", Some(Outflow)),
+            ("유형자산 투자 항목은 ", Some(Outflow)),
+            ("배당금의 지급", Some(Outflow)),
+            (
+                "购建固定资产、无形资产和其他长期资产支付的现金",
+                Some(Outflow),
+            ),
+            ("有形固定資産の取得による支出", Some(Outflow)),
+            (
+                "Net cash provided by (used in) investing activities",
+                Some(Signed),
+            ),
+            ("Change in capital expenditures", Some(Signed)),
+            ("Capex increased by", Some(Signed)),
+            ("Other (expense) income, net", Some(Signed)),
+            ("Net income (loss)", Some(Signed)),
+            ("Free cash flow", Some(Signed)),
+            ("Net cash provided by operating activities", Some(Signed)),
+            ("영업이익률", Some(Signed)),
+            ("희석 EPS", Some(Signed)),
+            ("Net loss", Some(Loss)),
+            ("순손실", Some(Loss)),
+            ("Revenue", Some(Other)),
+            ("매출", Some(Other)),
+            ("Additional paid-in capital", None),
+            ("Exchange rate", None),
+            ("1년 전 ", None),
+        ] {
+            assert_eq!(line_nature(label), nature, "{label}");
+        }
+    }
+
+    #[test]
+    fn outflow_fields_and_rows_give_their_negative_values_the_outflow_direction() {
+        let payload = json!({"rows": [
+            {"capital_expenditure": -5796000000.0, "free_cash_flow": -1099000000.0,
+             "investments_in_property_plant_and_equipment": "-5,789,000,000"},
+            {"label": "Purchases of property and equipment", "value": -4732},
+            {"label": "Net income (loss)", "value": -4732},
+        ]});
+        let outflows = |candidates: Vec<Candidate>| {
+            candidates
+                .into_iter()
+                .map(|candidate| {
+                    let Place::Pointer(pointer) = candidate.place else {
+                        unreachable!()
+                    };
+                    (pointer, candidate.direction == Some(Direction::Outflow))
+                })
+                .collect::<Vec<_>>()
+        };
+        let expected = [
+            ("/rows/0/capital_expenditure".to_owned(), true),
+            ("/rows/0/free_cash_flow".to_owned(), false),
+            (
+                "/rows/0/investments_in_property_plant_and_equipment".to_owned(),
+                true,
+            ),
+            ("/rows/1/value".to_owned(), true),
+            ("/rows/2/value".to_owned(), false),
+        ];
+        assert_eq!(outflows(data_candidates(&payload)), expected);
+        assert_eq!(outflows(query_candidates(&payload)), expected);
+    }
+
+    #[test]
+    fn exact_same_sign_candidates_outrank_signs_and_signs_outrank_digit_alignment() {
+        let candidate = |value: f64, unit: Unit, inferred_scale: bool, outflow: bool| Candidate {
+            value,
+            unit,
+            place: Place::Pointer(format!("/{value}")),
+            currency: None,
+            inferred_scale,
+            direction: outflow.then_some(Direction::Outflow),
+            cell: None,
+        };
+        let printed = parse_printed("$4.73bn").unwrap();
+        let flipped = candidate(-4732.0, Unit::Amount(1e6), false, true);
+        let same = candidate(4728.0, Unit::Amount(1e6), false, false);
+        let aligned = candidate(473.0, Unit::Amount(1e7), true, false);
+        let flipped_aligned = candidate(-473.0, Unit::Amount(1e7), true, true);
+        for (candidates, expected) in [
+            (vec![flipped.clone(), same.clone()], 1),
+            (vec![aligned.clone(), flipped.clone()], 1),
+            (vec![aligned.clone(), flipped_aligned.clone()], 1),
+            (vec![flipped.clone(), aligned.clone()], 0),
+        ] {
+            assert_eq!(
+                check(&printed, &candidates, false),
+                (Verdict::Rounded, Some(expected)),
+                "{candidates:?}"
+            );
+        }
+        let mut revenue = printed;
+        revenue.line = Some(LineNature::Other);
+        assert_eq!(
+            check(&revenue, std::slice::from_ref(&flipped), false).0,
+            Verdict::NotFound
+        );
+        let mut loss = printed;
+        loss.falls = true;
+        let signed = candidate(-4732.0, Unit::Amount(1e6), false, false);
+        assert_eq!(
+            check(&loss, std::slice::from_ref(&signed), false).0,
+            Verdict::Rounded
+        );
+        assert_eq!(check(&printed, &[signed], false).0, Verdict::NotFound);
+    }
+
+    #[test]
+    fn every_negative_notation_reads_as_one_negative() {
+        let values = |text: &str| {
+            let mut values: Vec<f64> = passage_candidates(text)
+                .into_iter()
+                .map(|candidate| candidate.value)
+                .collect();
+            values.dedup();
+            values
+        };
+        // Japanese statements print a negative with either triangle.
+        assert_eq!(
+            values("有形固定資産の取得による支出 △348,680 ▲510,803"),
+            [-348680.0, -510803.0]
+        );
+        // Korean and Chinese market tables use `▲` for a rise.
+        assert_eq!(values("전일 대비 ▲1,200원"), [1200.0]);
+        for text in [
+            "Capex (1,234)",
+            "Capex -1,234",
+            "Capex −1,234",
+            "Capex –1,234",
+            "Capex ‒1,234",
+            "Capex ﹣1,234",
+            "Capex －1,234",
+            "Capex 1,234-",
+            "Capex 1,234− | next",
+            "유형자산의취득(1,234)",
+            "유형자산의 취득 △1,234",
+        ] {
+            assert_eq!(values(text), [-1234.0], "{text}");
+        }
+        for text in ["2024–2025 range", "pages 12–13", "Q3-2025", "1,234-5,678"] {
+            assert!(values(text).iter().all(|value| *value >= 0.0), "{text}");
+        }
+        assert_eq!(field_number("1,234-"), Some(-1234.0));
+        assert_eq!(field_number("–1,234"), Some(-1234.0));
+    }
+
+    #[test]
+    fn table_cells_number_runs_and_columns() {
+        let text = "A\t1\t2\t-\t3\tB\t4\n| 5 | 6 |\n| 7 |";
+        let scanned = scan_numbers(text, 100, true);
+        assert_eq!(
+            table_cells(text, &scanned),
+            [(0, 0), (0, 1), (0, 3), (1, 0), (2, 0), (2, 1), (3, 0)]
+        );
+    }
+
     #[test]
     fn v008_currency_and_scale_orders_work_in_passages_and_answers() {
         for (text, base, currency) in [
@@ -3537,6 +3973,8 @@ mod tests {
             unit: Unit::Plain,
             precision: 0.5,
             signed: false,
+            line: None,
+            falls: false,
         };
         assert_eq!(check(&plain(52.0), &filing, false).0, Verdict::NotFound);
         let printed = as_printed(&filing);
@@ -3672,6 +4110,7 @@ mod tests {
                 place: Place::Pointer("/values/0".into()),
                 inferred_scale: false,
                 direction: None,
+                cell: None,
                 currency: None,
             },
             Candidate {
@@ -3680,6 +4119,7 @@ mod tests {
                 place: Place::Pointer("/inputs/0".into()),
                 inferred_scale: false,
                 direction: None,
+                cell: None,
                 currency: None,
             },
             Candidate {
@@ -3688,6 +4128,7 @@ mod tests {
                 place: Place::Pointer("/inputs/9".into()),
                 inferred_scale: false,
                 direction: None,
+                cell: None,
                 currency: None,
             },
         ];

@@ -196,6 +196,56 @@ fn margins_ratios_payout_and_leverage_match_hand_values() {
 }
 
 #[test]
+fn a_ratio_per_something_keeps_its_unit_and_a_margin_is_always_a_percentage() {
+    let per_share = run(json!({"operation": "ratio", "unit": "USD per share",
+        "inputs": {"numerator": 345.82000732421875, "denominator": 100}}))
+    .unwrap();
+    assert_eq!(per_share["values"][0]["unit"], "USD per share");
+    assert_eq!(value(&per_share, "ratio"), 3.45820007324219);
+    assert_eq!(
+        formulas(&per_share),
+        ["numerator / denominator = 345.82 / 100 = 3.4582 USD per share"]
+    );
+    assert_eq!(
+        per_share["inputs"][0]["unit"],
+        json!({"kind": "amount", "currency": "USD"})
+    );
+    assert_eq!(per_share["inputs"][1]["unit"], json!({"kind": "number"}));
+    for unit in ["KRW/share", "vehicles per store", "원/주"] {
+        let result = run(json!({"operation": "ratio", "unit": unit,
+            "inputs": {"numerator": 120, "denominator": 8}}))
+        .unwrap();
+        assert_eq!(result["values"][0]["unit"], unit);
+        assert!(
+            formulas(&result)[0].ends_with(&format!("= 15 {unit}")),
+            "{result}"
+        );
+    }
+    // Two amounts in one unit stay a multiple, or a percentage.
+    let multiple = run(json!({"operation": "ratio", "unit": "USD millions",
+        "inputs": {"numerator": 4732, "denominator": 28046}}))
+    .unwrap();
+    assert_eq!(multiple["values"][0]["unit"], "x");
+    assert_eq!(multiple["inputs"][1]["unit"]["kind"], "amount");
+    let error = run(
+        json!({"operation": "ratio", "unit": "USD per share", "as_percent": true,
+        "inputs": {"numerator": 345.82, "denominator": 100}}),
+    )
+    .unwrap_err();
+    assert_eq!(error.field(), "as_percent");
+
+    let plain = json!({"operation": "margin", "inputs": {"profit": 718, "revenue": 28046}});
+    let mut asked = plain.clone();
+    asked["as_percent"] = json!(true);
+    assert_eq!(run(asked).unwrap(), run(plain.clone()).unwrap());
+    let mut refused = plain;
+    refused["as_percent"] = json!(false);
+    let error = run(refused).unwrap_err();
+    assert_eq!(error.field(), "as_percent");
+    assert!(error.detail().contains("always a percentage"), "{error}");
+}
+
+#[test]
 fn undefined_denominators_and_bases_are_typed_errors() {
     for (request, field) in [
         (

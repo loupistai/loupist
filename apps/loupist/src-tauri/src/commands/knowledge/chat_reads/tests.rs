@@ -146,7 +146,7 @@ fn legacy_research(state: &AppState, chat_id: &str, observations: &str, at_ms: i
 
 fn envelope(context: &HostMemoryContext, enabled: bool) -> Value {
     let base = turn_envelope_block(
-        chrono::Utc::now(),
+        crate::local_time::now(),
         enabled,
         &[],
         None,

@@ -14,6 +14,7 @@ import type {
   GraphNode,
   GraphProcessingSettings,
   GraphProcessingView,
+  RecommendedWorldModel,
   KeepAwakeStatus,
   KnowledgeCatalog,
   KnowledgeCatalogRequest,
@@ -779,9 +780,10 @@ const defaultSettings = (): GraphProcessingSettings => ({
   enrichmentEnabled: false,
   paused: false,
   helperModelProfileId: null,
+  worldModelChoice: "recommended",
   thinkingLevel: "off",
   runOptions: {},
-  maxLlmCalls: 16,
+  maxLlmCalls: 32,
   timeoutMs: 240_000,
   researchFocus: "",
   relationHints: [],
@@ -900,12 +902,20 @@ export const knowledgeGraphJob = async (
   return clone({ ...job, status: job.status === "paused_budget" && store.settings.paused ? "paused" : job.status });
 };
 
-export const graphProcessingView = (settings: GraphProcessingSettings, catalog: ModelCatalog, jobs: GraphJobView[] = []): GraphProcessingView => {
+export const graphProcessingView = (settings: GraphProcessingSettings, catalog: ModelCatalog, jobs: GraphJobView[] = [], recommended: RecommendedWorldModel | null = null): GraphProcessingView => {
   const model = catalog.models.find((item) => item.id === settings.helperModelProfileId);
   const provider = catalog.providers.find((item) => item.id === model?.provider);
   const status = jobs.some((job) => job.status === "reconcile_required") ? "reconciliation_required" : !settings.enrichmentEnabled ? "disabled" : settings.paused ? "paused" : !settings.helperModelProfileId ? "model_required" : !model ? "model_unavailable" : model.credential_source === "missing" || provider?.credential_source === "missing" ? "provider_disconnected" : "ready";
-  return { settings, readiness: { status, providerName: provider?.label ?? null, modelName: model?.name ?? null, authKind: provider?.api_key === false && provider?.oauth ? "oauth" : model ? "api_key" : null, note: null } };
+  // Like the host, a Recommended model waiting for an account says it waits for one.
+  const note = status === "model_required" ? settings.worldModelChoice === "recommended" ? "awaiting_provider" : "choose_model" : status === "model_unavailable" ? "model_unavailable" : null;
+  return { settings, readiness: { status, providerName: provider?.label ?? null, modelName: model?.name ?? null, authKind: provider?.api_key === false && provider?.oauth ? "oauth" : model ? "api_key" : null, note }, recommended };
 };
+
+/** A Recommended Loupist names what the list recommends now, as the host saves it. */
+export const followRecommended = (settings: GraphProcessingSettings, recommended: RecommendedWorldModel | null): GraphProcessingSettings =>
+  settings.worldModelChoice !== "recommended" ? settings : recommended
+    ? { ...settings, helperModelProfileId: recommended.modelProfileId, thinkingLevel: recommended.thinkingLevel, runOptions: { ...recommended.runOptions } }
+    : { ...settings, helperModelProfileId: null };
 
 export const knowledgeGraphRecover = async (state: MockBridgeState, request: { loupistId: string }) => {
   await shortPause(state);

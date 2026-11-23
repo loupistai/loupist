@@ -183,11 +183,21 @@ impl AppToolExecutor {
         let input: Input = serde_json::from_value(params).map_err(|_| BrokerError::Malformed)?;
         let source = crate::finance_data::openfigi::SOURCE_ID;
         self.require_capability(source)?;
-        let candidates =
+        let lookup =
             crate::finance_data::openfigi::search(&self.state, &self.loupist_id, &input.query)
                 .await
                 .map_err(command_error)?;
-        Ok(json!({"candidates":candidates,"source_id":source,"provider":"OpenFIGI"}))
+        if let Some(status) = lookup.keychain_status {
+            self.capture
+                .tool_trace
+                .record_connector_keychain_status(status);
+        }
+        let mut result =
+            json!({"candidates":lookup.candidates,"source_id":source,"provider":"OpenFIGI"});
+        if lookup.saved_key_unread {
+            result["notice"] = json!("The user's saved OpenFIGI API key could not be read, so this search used OpenFIGI's public route, which answers the same way at a lower rate limit. The results stand as they are; mention the key only if a search fails for its limit, and then point the user to Connections to allow access to it.");
+        }
+        Ok(result)
     }
 
     pub(super) fn evidence_day(
@@ -367,7 +377,7 @@ impl AppToolExecutor {
                 )
             }
         };
-        let today = chrono::Local::now().date_naive();
+        let today = crate::local_time::today();
         let registry = self.capture.run_results.lock().await;
         let mut evidence = Vec::new();
         let mut dates = Vec::new();

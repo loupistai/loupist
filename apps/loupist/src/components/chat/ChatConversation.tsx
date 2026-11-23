@@ -47,7 +47,12 @@ type Props = {
   loupistAvatar?: LoupistAvatarId;
   workspacePath?: string;
   progressFocus?: string | null;
-  blockingChat?: ChatThread;
+  /** The Loupist's conversations, to name the one a saving reply waits for. */
+  threads?: readonly ChatThread[];
+  /** Skips one reply's pending save, by its run (a reply's own Skip saving). */
+  onSkipSave?: (runId: string) => void;
+  /** Saves whose skip was asked for and has not resolved yet. */
+  skippingSaves?: ReadonlySet<string>;
   /** Guidance sent while the latest reply runs; shown in its timeline. */
   guiding?: readonly string[];
   onReadWorldJob?: (jobId: string) => Promise<GraphJobView>;
@@ -104,7 +109,9 @@ export function ChatConversation({
   loupistAvatar,
   workspacePath,
   progressFocus,
-  blockingChat,
+  threads,
+  onSkipSave,
+  skippingSaves,
   guiding,
   onReadWorldJob,
   onWorldChanged,
@@ -275,6 +282,8 @@ export function ChatConversation({
   // The latest turn keeps a viewport of room below its question while it is the one being read.
   const reserve = Boolean(shell) || last?.status === "streaming" || (lastUserIndex >= 0 && !openedWith.has(latestPromptKey));
   const lastAssistantIndex = messages.reduce((last, message, index) => (message.role === "assistant" ? index : last), -1);
+  // Editing a request sets aside every reply after it; one still saving to Memory waits for its receipt.
+  const lastSavingIndex = messages.reduce((last, message, index) => (message.memorySaving ? index : last), -1);
   // The user's question each answer replies to, offered again by a setup card once the connection is ready.
   const previousQuestions = useMemo(() => {
     let question: string | undefined;
@@ -341,7 +350,10 @@ export function ChatConversation({
               bridge={bridge}
               active={active}
               message={message}
-              blockingChat={message.memorySaving ? blockingChat : undefined}
+              blockingChat={message.memorySaving?.blocking_chat_id ? threads?.find(thread => thread.id === message.memorySaving?.blocking_chat_id) : undefined}
+              // A reply whose stream has ended carries its own Skip saving; a live one has the composer's.
+              onSkipSave={message.memorySaving && message.status !== "streaming" ? onSkipSave : undefined}
+              skippingSave={Boolean(message.memorySaving && skippingSaves?.has(message.memorySaving.run_id))}
               loupistAvatar={message.role === "bot_handoff" ? loupistAvatar : undefined}
               researchSession={home && message.role === "assistant" && message.research_session_id
                 ? researchSessions?.find(thread => thread.id === message.research_session_id && thread.loupist_id === loupistId && !thread.home) : undefined}
@@ -368,7 +380,7 @@ export function ChatConversation({
               mentionPlugins={mentionPlugins}
               // A chosen action has no words of the user's to edit.
               onEditUser={message.role === "user" && !message.handoff_action && !message.scheduled && onEditUser ? editUser : undefined}
-              editDisabled={message.role === "user" && Boolean(run?.running)}
+              editDisabled={message.role === "user" && (Boolean(run?.running) || index < lastSavingIndex)}
               onEarlierVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "earlier", onSwitchVersion) : undefined}
               onLaterVersion={message.role === "user" && onSwitchVersion ? versionAt(index, "later", onSwitchVersion) : undefined}
               onRetry={message.role === "assistant" && index === lastTurnIndex && (message.status === "error" || message.status === "aborted") && lastRequest?.role === "user" && !lastRequestScheduled ? onRetry : undefined}

@@ -76,6 +76,8 @@ type Props = {
   onOpenMarketplace: (entryId?: string) => void;
   onManageProviders: () => void;
   onConnectAccount?: () => void;
+  /** A Chat default was saved here; the composer's earlier pick yields to it. */
+  onChatDefaultSaved?: (scope: ConfigScope) => void;
   onDraftSkill?: (scope: ConfigScope, brief: string) => void | Promise<void>;
   onDelete: () => Promise<void>;
   onAgentUpdated: (agent: LoupistSummary) => void;
@@ -93,7 +95,7 @@ export function LoupistSettings({
   initialSection,
   initialRemove = false,
   onOpenMarketplace,
-  onManageProviders, onConnectAccount,
+  onManageProviders, onConnectAccount, onChatDefaultSaved,
   onDraftSkill,
   onDelete,
   onAgentUpdated,
@@ -385,7 +387,7 @@ export function LoupistSettings({
             <LoupistProfileEditor key={selectedAgent.id} bridge={bridge} loupist={selectedAgent} disabled={mutationBusy || !available} onUpdated={onAgentUpdated} />
             {available ? <>
               <Disclosure title={i18n.t("settings:loupistSettings.chatPreferences")} defaultOpen={initialSection === "chat"} data-loupist-section="chat">
-                <AgentSettings onConnectAccount={onConnectAccount} bridge={bridge} loupists={[selectedAgent]} catalog={catalog} scope={{ kind: "project", loupistId: selectedAgent.id }} />
+                <AgentSettings onConnectAccount={onConnectAccount} onChatDefaultSaved={onChatDefaultSaved} bridge={bridge} loupists={[selectedAgent]} catalog={catalog} scope={{ kind: "project", loupistId: selectedAgent.id }} />
               </Disclosure>
               <Disclosure title={i18n.t("knowledge:memoryPage.about.learning")} data-loupist-section="learning">
                 <LoupistLearningSettings key={selectedAgent.id} bridge={bridge} loupistId={selectedAgent.id} onChanged={onChanged} />

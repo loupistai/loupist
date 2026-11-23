@@ -404,6 +404,7 @@ fn new_chat(state: &AppState, loupist_id: &str, title: &str) -> Result<ChatSessi
         pi_session_id: uuid::Uuid::new_v4().to_string(),
         pi_session_cache: None,
         title: title.into(),
+        title_provisional: false,
         memory_policy: MemoryPolicy::default(),
         set_aside_memory: Vec::new(),
         versions: Vec::new(),

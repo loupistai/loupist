@@ -154,7 +154,7 @@ pub(crate) fn remove(
     Ok(removed)
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn pack_remove(
     request: PackRemoveRequest,
     state: State<'_, AppState>,
@@ -187,7 +187,7 @@ pub struct PackImportRequest {
     import_id: String,
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn pack_report(
     request: PackImportRequest,
     state: State<'_, AppState>,
@@ -218,7 +218,7 @@ pub struct PackOriginRequest {
     subject_id: String,
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub fn pack_origin(
     request: PackOriginRequest,
     state: State<'_, AppState>,

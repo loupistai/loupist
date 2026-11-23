@@ -580,6 +580,33 @@ it("keeps a legacy figure flagged and shows it in the receipt list", async () =>
   expect(screen.getByRole("dialog")).toHaveTextContent("This number isn't in the cited source as written.");
 });
 
+it("marks a number whose link named no read of its reply, lists it to check and never draws it as a citation", async () => {
+  const user = userEvent.setup();
+  const written = "ev_a736684a94e3c46462331372b53d709d";
+  const message = answer({
+    content: `Total revenues were [81,462백만 달러](#evidence-${written}) in 2022.`,
+    evidence_refs: [guide],
+    number_checks: [{ link_index: 0, text: "81,462백만 달러", evidence_id: written, kind: "passage", status: "unlinked" }],
+    memory_update: { status: "no_change", commitId: null, changes: [] },
+  });
+  const { view } = renderAnswer(message);
+  const figure = await waitFor(() => { const element = view.container.querySelector<HTMLElement>('.number-chip[data-status="unlinked"]'); expect(element).not.toBeNull(); return element!; });
+  expect(figure).toHaveTextContent("81,462백만 달러 No source is linked to this number in this reply.");
+  expect(figure).toHaveAttribute("title", "No source is linked to this number in this reply.");
+  expect(figure.querySelector(".number-chip-unmatched")).not.toBeNull();
+  // Not a citation, not a number chip that opens a source, not the plain unavailable text.
+  expect(view.container.querySelector("button.loupist-citation, button.number-chip, .loupist-unavailable-citation")).toBeNull();
+  expect(chatReceipt(message).numbersToCheck).toBe(1);
+  await user.click(screen.getByRole("button", { name: "1 number to check" }));
+  const list = await screen.findByRole("dialog");
+  expect(list).toHaveTextContent("81,462백만 달러");
+  expect(list).toHaveTextContent("No source is linked to this number in this reply.");
+  expect(within(list).queryByRole("button", { name: "Open the source" })).toBeNull();
+  const markdown = chatMarkdown({ id: "chat", loupist_id: "l", title: "Revenue", updated_at: "", use_memory: true, update_memory: true, messages: [message] }, "Quality", Date.parse("2026-03-20"));
+  expect(markdown).toContain("Total revenues were 81,462백만 달러[^1] in 2022.");
+  expect(markdown).toContain("[^1]: No source is linked to this number in this reply.");
+});
+
 it("keeps number links pending while streaming and plain numbered citations without a check", async () => {
   renderAnswer(answer({ status: "streaming", number_checks: undefined }));
   await waitFor(() => expect(document.querySelectorAll('.number-chip[data-status="pending"]').length).toBe(3));

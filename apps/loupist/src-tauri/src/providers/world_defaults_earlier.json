@@ -1,0 +1,182 @@
+[
+  {
+    "provider": "openai",
+    "id": "gpt-6-luna",
+    "thinking_level": "high"
+  },
+  {
+    "provider": "openai",
+    "id": "gpt-5.6-luna",
+    "thinking_level": "high"
+  },
+  {
+    "provider": "openai",
+    "id": "gpt-5.6-terra",
+    "thinking_level": "high"
+  },
+  {
+    "provider": "openai",
+    "id": "gpt-5.4-mini",
+    "thinking_level": "high"
+  },
+  {
+    "provider": "openai",
+    "id": "gpt-4.1-mini",
+    "thinking_level": "off"
+  },
+  {
+    "provider": "openai",
+    "id": "gpt-5-mini",
+    "thinking_level": "high"
+  },
+  {
+    "provider": "anthropic",
+    "id": "claude-haiku-4-5",
+    "thinking_level": "low"
+  },
+  {
+    "provider": "anthropic",
+    "id": "claude-haiku-4-5-20251001",
+    "thinking_level": "low"
+  },
+  {
+    "provider": "anthropic",
+    "id": "claude-sonnet-4-6",
+    "thinking_level": "low"
+  },
+  {
+    "provider": "anthropic",
+    "id": "claude-sonnet-4-5",
+    "thinking_level": "low"
+  },
+  {
+    "provider": "deepseek",
+    "id": "deepseek-flash",
+    "thinking_level": "low"
+  },
+  {
+    "provider": "xai",
+    "id": "grok-4.3",
+    "thinking_level": "medium"
+  },
+  {
+    "provider": "xai",
+    "id": "grok-4.5",
+    "thinking_level": "medium"
+  },
+  {
+    "provider": "xai",
+    "id": "grok-4.6",
+    "thinking_level": "medium"
+  },
+  {
+    "provider": "xai",
+    "id": "grok-4.7",
+    "thinking_level": "medium"
+  },
+  {
+    "provider": "groq",
+    "id": "openai/gpt-oss-120b",
+    "thinking_level": "medium"
+  },
+  {
+    "provider": "groq",
+    "id": "llama-3.3-70b-versatile",
+    "thinking_level": "off"
+  },
+  {
+    "provider": "groq",
+    "id": "qwen/qwen3.8-27b",
+    "thinking_level": "medium"
+  },
+  {
+    "provider": "cerebras",
+    "id": "gpt-oss-120b",
+    "thinking_level": "medium"
+  },
+  {
+    "provider": "cerebras",
+    "id": "qwen-3.8-27b",
+    "thinking_level": "medium"
+  },
+  {
+    "provider": "baseten",
+    "id": "openai/gpt-oss-120b",
+    "thinking_level": "medium"
+  },
+  {
+    "provider": "baseten",
+    "id": "deepseek-ai/DeepSeek-V4.1-Flash",
+    "thinking_level": "low"
+  },
+  {
+    "provider": "baseten",
+    "id": "deepseek-ai/DeepSeek-V4-Flash-0731",
+    "thinking_level": "low"
+  },
+  {
+    "provider": "together",
+    "id": "openai/gpt-oss-120b",
+    "thinking_level": "medium"
+  },
+  {
+    "provider": "together",
+    "id": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    "thinking_level": "off"
+  },
+  {
+    "provider": "together",
+    "id": "deepseek-ai/DeepSeek-V4.1-Flash",
+    "thinking_level": "high"
+  },
+  {
+    "provider": "minimax",
+    "id": "MiniMax-M3",
+    "thinking_level": "off"
+  },
+  {
+    "provider": "kimi-coding",
+    "id": "kimi-for-coding",
+    "thinking_level": "low"
+  },
+  {
+    "provider": "kimi-coding",
+    "id": "k3",
+    "thinking_level": "low"
+  },
+  {
+    "provider": "kimi-coding",
+    "id": "k3-256k",
+    "thinking_level": "low"
+  },
+  {
+    "provider": "baseten",
+    "id": "deepseek-ai/DeepSeek-V4.1-Flash",
+    "thinking_level": "high"
+  },
+  {
+    "provider": "anthropic",
+    "id": "claude-haiku-5-5",
+    "thinking_level": "medium"
+  },
+  {
+    "provider": "anthropic",
+    "id": "claude-sonnet-5-5",
+    "thinking_level": "low"
+  },
+  {
+    "provider": "baseten",
+    "id": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    "thinking_level": "high"
+  },
+  {
+    "provider": "minimax",
+    "id": "MiniMax-M3.1-Flash",
+    "thinking_level": "low"
+  },
+  {
+    "provider": "openai",
+    "id": "gpt-6.1-terra",
+    "thinking_level": "high"
+  }
+]

@@ -44,6 +44,12 @@ export type ModelSelectionMenuProps = {
    * model's default; the composer stores "" so each surface resolves its own.
    */
   levelOnModelPick?: (model: ConfiguredModel) => string;
+  /**
+   * A first entry that follows a recommendation instead of naming a model
+   * (World building). While it is selected, `selection` is the model it
+   * resolves to and that model's options are shown but not editable.
+   */
+  recommended?: { label: string; selected: boolean; onSelect: () => void };
 };
 
 type ProviderModels = {
@@ -98,6 +104,7 @@ export function ModelSelectionMenu({
   triggerId,
   planLine,
   levelOnModelPick = (model) => defaultThinkingLevel(model.thinking_levels),
+  recommended,
 }: ModelSelectionMenuProps) {
   useTranslation(["settings", "chat"]);
   const [open, setOpen] = useState(false);
@@ -128,7 +135,8 @@ export function ModelSelectionMenu({
     );
     return choice && choice.id !== control.default_choice ? [runChoiceLabel(control, choice)] : [];
   }) ?? [];
-  const name = modelName ?? selectedModel?.name;
+  const following = recommended?.selected === true;
+  const name = following ? recommended.label : modelName ?? selectedModel?.name;
   const triggerLabel = name && selection.thinking_level
     ? i18n.t(selectedOptionLabels.length ? "settings:modelSelectionMenu.selectionWithOptions" : "settings:modelSelectionMenu.selection", {
         model: name, thinking: thinkingLabel(selection.thinking_level), options: selectedOptionLabels.join(" · "),
@@ -198,13 +206,19 @@ export function ModelSelectionMenu({
               }} />{query ? <Button variant="ghost" size="icon-sm" aria-label={i18n.t("settings:modelSelectionMenu.clearSearch")} onClick={() => setQuery("")}><XIcon /></Button> : null}</div> : null}
           </div>
           <div className="model-menu-catalog" role="menu" aria-label={i18n.t("settings:modelSelectionMenu.availableModels")}>
+          {recommended && !query.trim() ? <>
+            <DropdownMenuRadioGroup value={following ? "recommended" : ""} onValueChange={() => recommended.onSelect()}>
+              <DropdownMenuRadioItem value="recommended" onSelect={keepMenuOpen}><span className="model-menu-name">{recommended.label}</span></DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            {catalog.length ? <DropdownMenuSeparator /> : null}
+          </> : null}
           {catalog.length === 0 ? (
             <DropdownMenuItem disabled>{models.length ? i18n.t("settings:modelSelectionMenu.noMatchingModels") : i18n.t("settings:modelSelectionMenu.noConnectedModels")}</DropdownMenuItem>
           ) : (
             catalog.map((provider, index) => (
               <DropdownMenuRadioGroup
                 key={provider.id}
-                value={selection.model_profile_id}
+                value={following ? "" : selection.model_profile_id}
                 onValueChange={(profileId) => {
                   const model = provider.models.find((item) => item.id === profileId);
                   if (model && isDefault && model.id === selection.model_profile_id && onChooseDefault) onChooseDefault();
@@ -255,6 +269,7 @@ export function ModelSelectionMenu({
                     <DropdownMenuRadioItem
                       key={level}
                       value={level}
+                      disabled={following}
                       onSelect={keepMenuOpen}
                     >
                       {thinkingLabel(level)}
@@ -282,6 +297,7 @@ export function ModelSelectionMenu({
                         key={choice.id}
                         value={choice.id}
                         title={runChoiceDescription(control, choice)}
+                        disabled={following}
                         onSelect={keepMenuOpen}
                       >
                         {runChoiceLabel(control, choice)}

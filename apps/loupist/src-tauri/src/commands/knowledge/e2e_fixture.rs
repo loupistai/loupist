@@ -224,6 +224,7 @@ pub(crate) fn seed_e2e_knowledge_fixture(state: &AppState) -> Result<(), Command
         pi_session_id: "123e4567-e89b-42d3-a456-426614174010".into(),
         pi_session_cache: None,
         title: "Authoring chat".into(),
+        title_provisional: false,
         memory_policy: crate::domain::MemoryPolicy {
             use_memory: true,
             update_memory: true,
@@ -450,6 +451,7 @@ fn seed_handoff_fixture(state: &AppState, loupist_id: &str) -> Result<(), Comman
             pi_session_id: uuid::Uuid::new_v4().to_string(),
             pi_session_cache: None,
             title: title.into(),
+            title_provisional: false,
             memory_policy: MemoryPolicy {
                 use_memory: false,
                 update_memory: false,

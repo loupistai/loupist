@@ -39,22 +39,10 @@ first use. Local inference callbacks encode their texts in bounded batches,
 sharing one model lookup for the batch.
 
 Fresh folders receive World processing settings from Rust. New Loupist uses these
-defaults; Loupist settings → World building exposes enablement and model selection.
-Focusing a field there scrolls it into the settings column.
-Defaults prefer connected,
-supported text models using the ordered policy in
-[`world-model-defaults.json`](../../apps/loupist/world-model-defaults.json).
-The exact model/effort pair must exist in the catalog. Each provider lists its
-newest low-cost model first and keeps older ones as fallbacks; flagship models are
-never recommended. `agent/world-model-defaults.test.mjs` sends every pair through
-Pi's request serializer and response parser. GPT-6 Luna stays at high effort: on the
-World ontology corpus, medium was 42% faster but stored 14–18% fewer claims. Existing folders keep their
-saved choices; changing the Chat model does not change World building.
-
-An enabled new Loupist without a suitable default stores a pending marker. Connecting
-or reloading a supported provider can complete that setup once. Explicitly saving
-World building preferences clears the marker. Processing consumes the selected provider's
-usage and sends retained text to it; account disconnection leaves Sources readable.
+defaults; Loupist settings → World building exposes enablement and the model
+([World building model](#world-building-model)). Focusing a field there scrolls it
+into the settings column. Processing consumes the provider's usage and sends
+retained text to it; account disconnection leaves Sources readable.
 [Shared providers](../runtime/providers.md#shared-providers-and-world-processing) owns
 credential and isolated inference boundaries.
 
@@ -79,6 +67,66 @@ of uncertain work, and preserves pause/uncertainty state. A confirmed rebuild le
 untouched queued work continue. World processing publishes World; a shared pack's
 Add and Remove also publish it, without a model ([Sharing](sharing.md#sharing)). Method learning
 is a separate review, described under [Method learning](lens.md#method-learning).
+
+## World building model
+
+A Loupist's World model is **Recommended** unless the user picks one in Settings,
+which makes it **Chosen** (`worldModelChoice` in its World settings). New Loupists
+start Recommended.
+
+Recommended resolves whenever the host uses it, never once at creation: the first
+model in [`world-model-defaults.json`](../../apps/loupist/world-model-defaults.json),
+in the list's provider and model order, that a connected account offers with the
+listed thinking level, that supports isolated inference and that the user has not
+hidden. The provider of the Loupist's Chat default goes first (the account the user
+evidently uses; a Loupist's own Chat default before the app's), then the list's
+order. With two accounts, OpenAI and Anthropic, the list picks OpenAI's first listed
+model; with Anthropic's Claude as the Chat default it picks Anthropic's. With no
+such account World waits, saying it waits for a supported AI account. Rust saves the
+resolved model on the Loupist when an account, the catalog, a model's visibility or
+the Chat default changes, at startup, when the Loupist opens or its World settings
+are read, and again before each World job, schema review and method-learning
+review. So the next job uses what the list says for the accounts connected then,
+and World building's status and the run log name that model. A change between two
+jobs asks nothing of the user. Sources saved while it waited, and work the old
+model could not do, are offered to the new model as after a saved model change.
+
+Chosen never changes by itself. When its model is gone or its account is
+disconnected, World says "Choose another AI model", and Settings and the World
+status line offer **Use the recommended model**. A disconnect keeps the provider's
+status row only for Chosen models ([Shared providers](../runtime/providers.md#shared-providers-and-world-processing)).
+Settings › World building puts **Recommended (model)** first in the model control,
+then the connected accounts' models. The thinking level and run options shown for
+Recommended are the list's and become editable once a model is chosen; picking the
+recommended model itself makes it Chosen. New Loupist exposes no World model.
+
+World settings saved before this record have no `worldModelChoice`. A model, with
+its thinking level, that any earlier list named
+([`world_defaults_earlier.json`](../../apps/loupist/src-tauri/src/providers/world_defaults_earlier.json),
+every entry of every version in `git log -- apps/loupist/world-model-defaults.json`,
+frozen) reads as Recommended, as does no model; anything else reads as Chosen. A
+Loupist created under one provider and now used with another therefore follows the
+connected account, unless its model or effort was changed by hand.
+
+### The World model list
+
+`world-model-defaults.json` is one comment-free JSON array: each provider once, with
+its models in preference order as `{"id", "thinking_level"}`. `build.rs` refuses a
+list with another field, an empty provider, an id listed twice for a provider or a
+thinking level Pi does not accept (`providers/world_model_list.rs`). To add a model:
+
+- Name the exact provider model id Pi reports; Loupist never guesses one, and the
+  exact model and effort pair must be in the catalog to be recommended.
+- List a provider's newest low-cost model first and keep older ones after it as
+  fallbacks. Flagship and specialist models are never listed.
+- Give the effort measured on World extraction, not the model's default: GPT-6
+  Luna stays at high, because medium was 42% faster but stored 14–18% fewer claims
+  on the World ontology corpus.
+- `agent/world-model-defaults.test.mjs` sends every pair through Pi's request
+  serializer and response parser; it must pass.
+
+Recommended Loupists follow a changed list from the next startup. Chosen ones and
+the earlier lists' record do not change.
 
 ## Names across languages
 
@@ -133,6 +181,6 @@ adopted together (the last row).
 
 ## Code
 
-- World defaults: `src-tauri/src/providers/world_defaults.rs`, `src-tauri/src/commands/knowledge/world_setup.rs`
+- World building model: `src-tauri/src/providers/world_defaults.rs` (resolution), `src-tauri/src/providers/world_model_list.rs` (list rules, also run by `build.rs`), `src-tauri/src/commands/knowledge/world_setup.rs` (following the recommendation), `settings_for_work` in `src-tauri/src/knowledge/graph_service.rs` (before each job)
 - Knowledge search, rank fusion and names across languages: `src-tauri/src/knowledge/search_index.rs`
 - Loading and sharing the embedding model: `src-tauri/src/knowledge/graph_inference.rs`; staging and pins: `apps/loupist/scripts/stage-embed-assets.py`, `src/knowledge/embed_assets/pin.json`

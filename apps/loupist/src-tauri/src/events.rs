@@ -31,6 +31,27 @@ pub(crate) const FX_CHANGED: &str = "fx-changed";
 pub(crate) const PROVIDER_STATUS: &str = "provider-status";
 /// No payload. Background discovery published a provider's models.
 pub(crate) const MODEL_CATALOG_CHANGED: &str = "model-catalog-changed";
+/// Payload: [`ChatSaveChanged`].
+pub(crate) const CHAT_SAVE_CHANGED: &str = "chat-save-changed";
+
+/// A reply's own Memory save moved on: a new wait, or its receipt once the
+/// save is applied or skipped. Its stream ended when the answer was stored.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "ChatSaveChangedEvent"))]
+pub(crate) struct ChatSaveChanged {
+    pub loupist_id: String,
+    pub thread_id: String,
+    pub message_id: String,
+    pub run_id: String,
+    /// The wait, while the save has not resolved.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub pending: Option<crate::commands::types::ChatSaveState>,
+    /// The stored reply with its receipt, once the save resolved.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub message: Option<crate::commands::types::ChatMessageDto>,
+}
 
 /// A learning review finished, failed or was deferred.
 #[derive(Clone, Debug, Serialize)]

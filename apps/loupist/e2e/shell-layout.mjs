@@ -21,6 +21,20 @@ export function measureShellLayout() {
         resizeHandle: box(element.querySelector("[data-sidebar-resize]")) }] : [];
     });
   const content = document.querySelector(".conversation-content");
+  // Lists in the sidebar and the side panels whose rows pair a one-line title with a time, count or
+  // status at the row's end: [row, title, what sits at its end].
+  const titledRows = [
+    [".activity-earlier > li", ".activity-step-label", ":scope > time"],
+    [".loupist-chat-row", ".loupist-chat-title",
+      ".loupist-draft-dot, .thread-running, .loupist-status-dot, .loupist-private-mark, .shell-unread"],
+    [".schedule-running > li", ".schedule-running-title", ":scope > time"],
+    [".workspace-file-entry", ":scope > span", ":scope > small"],
+  ].flatMap(([row, title, end]) => [...document.querySelectorAll(row)].flatMap(element => {
+    const titleBox = box(element.querySelector(title));
+    const ends = [...element.querySelectorAll(end)].map(box).filter(Boolean);
+    return titleBox && ends.length ? [{ list: row, text: element.querySelector(title).textContent.trim().slice(0, 40),
+      row: box(element), title: titleBox, end: ends.reduce((first, next) => next.x < first.x ? next : first) }] : [];
+  }));
   return {
     viewport: { x: 0, y: 0, right: innerWidth, bottom: innerHeight, width: innerWidth, height: innerHeight },
     shell, header: rect(".app-header"), body: rect(".app-body"), frame: rect(".app-frame"), navigation,
@@ -30,6 +44,7 @@ export function measureShellLayout() {
     heading: rect(".workspace-heading"),
     titleColumn: rect(".workspace-chat-title"), readingColumn: box(content),
     headingItems: [...document.querySelectorAll(".thread-statuses")].map(box).filter(Boolean),
+    titledRows,
     chatWidth: rect(".chat-workspace")?.width,
     chatGutter: content ? parseFloat(getComputedStyle(content).paddingLeft) : null,
     titleGutter: document.querySelector(".workspace-chat-title")
@@ -79,6 +94,11 @@ export function assertShellLayout(layout, { label = "shell", tolerance = 1.5 } =
       check(Math.min(item.right, next.right) - Math.max(item.x, next.x) <= tolerance,
         "chat header items overlap", { item, next });
     }
+  }
+  // A long title ends in an ellipsis before the time or badge at its row's end; neither runs past the row.
+  for (const item of layout.titledRows ?? []) {
+    check(item.title.right <= item.end.x + tolerance, "row title runs under its time or badge", item);
+    check(item.title.x >= item.row.x - tolerance && item.end.right <= item.row.right + tolerance, "row title or its time escapes the row", item);
   }
   if (layout.chatGutter !== null && layout.chatWidth != null) {
     // The compact gutter must respond to chat width, even beside a docked panel.

@@ -3,6 +3,7 @@ import { cleanup, render, screen, within, fireEvent } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { KnowledgeLocation } from "../../types";
+import type { GrowthEvent } from "../../contracts/knowledge";
 import { setPreviewLanguage } from "../../i18n/useLanguage";
 import { MapView } from "./MapView";
 const canvasFailure = vi.hoisted(() => ({ active: false }));
@@ -222,4 +223,27 @@ it("keeps the World readable as a list when its canvas throws", async () => {
     await setup();
     expect(await screen.findByRole("table", { name: "List view" })).toBeVisible();
   } finally { canvasFailure.active = false; error.mockRestore(); }
+});
+it("counts new this week as What's new does for its last seven days", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const catalog = await bridge.knowledgeCatalog({ loupistId: 'loupist-quality' });
+  const map = await bridge.knowledgeMap({ loupistId: catalog.loupistId });
+  const day = 86_400_000, now = Date.now();
+  const names = map.nodes.filter(node => node.kind === 'entity');
+  // Ten names arrived this week, from two Sources; the rest are older, and one of them was added again this week.
+  names.forEach((node, index) => { node.firstSeenAtMs = index < 10 ? now - 2 * day : now - 20 * day; });
+  map.generatedAtMs = now;
+  vi.spyOn(bridge, 'knowledgeMap').mockResolvedValue(map);
+  const source = (index: number) => ({ revisionId: `world-${index % 2}`, source: { recordId: `source-${index % 2}`, revisionId: 'r', sourceId: `source-${index % 2}`, title: `Source ${index % 2}` } });
+  const events = [...names.slice(0, 10).map((node, index) => ({ index, node, atMs: now - 2 * day })), { index: 2, node: names[20]!, atMs: now - day }]
+    .map(({ index, node, atMs }): GrowthEvent => ({ eventId: `added-${node.id}`, loupistId: catalog.loupistId, atMs, kind: 'entity_added', recordId: 'world', subjectId: node.id, originChatId: null, originMessageId: null, actor: 'processing', summary: node.label, beforeSummary: null, afterSummary: null, publication: source(index) }));
+  vi.spyOn(bridge, 'knowledgeGrowthEvents').mockImplementation(async ({ sinceMs, untilMs }) => ({
+    events: events.filter(item => item.atMs >= (sinceMs ?? 0) && item.atMs <= (untilMs ?? Infinity)), nextCursor: null,
+  }));
+  const user = userEvent.setup();
+  render(<MapView bridge={bridge} catalog={catalog} location={{ loupistId: catalog.loupistId, surface: 'world', recordId: catalog.worlds[0]?.recordId, revisionId: catalog.worlds[0]?.revisionId }} onPatch={vi.fn()} onOpen={vi.fn()} onAsk={vi.fn()} />);
+  expect(await screen.findByText('10 new this week')).toBeVisible();
+  await user.click(screen.getByRole('button', { name: "What's new" }));
+  expect(await screen.findByRole('button', { name: '7 days', pressed: true })).toBeVisible();
+  expect(document.querySelector('.map-whats-new-summary')).toHaveTextContent('+10 in World');
 });

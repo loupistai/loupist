@@ -18,8 +18,20 @@ export and completed delivery, so all see the same plain targets.
 `commands/tool_executor/number_checks.rs` then reads the answer's
 `[text](#evidence-…)` links outside code, in order, and checks each one whose whole
 text reads as one number against the result it links, from this turn's retained
-results. A link to a result the turn did not retain is skipped and renders as
-"Source isn't available in this reply". The answer stores at most 200 checks as
+results. A number link that names neither a retained result nor an evidence item
+of this reply is resolved or reported, never left to read like a citation. When
+exactly one retained id of this reply is within two character edits of the written
+id, the link is inline and the number check against that result does not fail
+(`matched` or `rounded`), the host rebinds the stored answer's link to that id and
+records the written id as `repairedFrom`; the reader sees an ordinary citation.
+Two near candidates, a failing check, a reference-style link or a third edit keep
+the link as written, with status `unlinked`. An `unlinked` number is drawn as a
+figure to check: Activity lists it under the figures checked, the reply's receipt
+counts it, and its line reads "No source is linked to this number in this reply."
+The next reply's envelope carries `previous_reply_unlinked_figures` with each such
+number and the link it wrote, so the model can read the source again and cite it.
+A link that is not a number keeps rendering as "Source unavailable in this reply".
+A link to a read made in an earlier reply is not citable and is `unlinked` too. The answer stores at most 200 checks as
 `number_checks` ([turn authority](../runtime/chat-turns.md#turn-authority-and-finalization));
 later links stay numbered citations. Host-composed and failed replies have none.
 Model text cannot set a status, and the renderer never rechecks. Each check names
@@ -29,22 +41,33 @@ link at its index, and only when the evidence and text still agree. A repeated
 figure keeps each occurrence's own check, and a link past the bound has none.
 
 On read, the host rechecks saved unresolved numbers against the cited excerpt
-or its pinned dataset revision. The answer, receipt, grid and export receive
-the same projected result. Verified checks and checks with unavailable evidence
-retain their saved results. The in-memory cache uses checker version, reply or
-artifact identity, and evidence digests. Replay uses the existing per-turn data
-budget and never writes the message, artifact, Memory or a source.
+or its pinned dataset revision. If a truncated web excerpt still leaves a warning,
+the host can also use the exact web result saved by the same reply. The chat and
+reply provenance, result ID, digest and excerpt prefix must agree. A truncated
+`world_read` excerpt is checked against the saved Source span its exact read
+returned, as the live check read it, when that span is the excerpt's JSON
+continuation. A match outside the excerpt carries context from the saved result. The answer, receipt, grid and
+export receive the same projected result. Verified checks and checks with
+unavailable evidence retain their saved results. The in-memory cache uses checker
+version, reply or artifact identity, and evidence digests. Projections that consult
+a saved web result check its availability on each read. Replay uses the existing
+per-turn data budget and never writes the message, artifact, Memory or a source.
 
 A link's text is a number when it is, within 64 bytes, an optional sign (`+`, `-`,
 `−`) or accounting negative (`(1,234)` with grouped digits, `△1,234`; `▲` is a rise), a
 currency symbol, `US$`-style prefix or ISO code, digits with `,` grouping and one
-decimal point, then at most one unit: `%`, points (`pp`, `%p`, `% points`), `bp`, a
+decimal point, then at most one unit: `%`, points (`pp`, `%p`, `percentage points`,
+`퍼센트포인트`, `百分点`, `パーセントポイント`), basis points (`bp`, `bps`,
+`basis points`, `베이시스포인트`, `基點`, `ベーシスポイント`), a
 multiple (`x` glued to the number, `×`, `times`, `배`), an English scale (`thousand`,
 `mn`, `million`, `bn`, `tn`; `k`, `m`, `b`, `t` only glued to the number or after a
 currency), Korean scales including compounds in decreasing order (`1조 2,300억원`),
 and a trailing currency word or code or "per share". Words, dates, tickers, a bare
 year from 1900 to 2100 and a bare integer of one to three digits (a numbered
-citation) are not numbers.
+citation) are not numbers. A unit stated for its table cell or sentence makes such
+an integer a figure, except a reference marker: a bare integer that trails text in
+its cell or clause with only spacing or punctuation after it (`숫자 없음 [2]`) stays
+a citation. Read-time replay drops a stored unresolved check of such a link.
 
 While the answer streams, a complete currency link stays underlined as one figure. When both amounts in a stored warning state different currencies, the warning names them.
 
@@ -78,7 +101,9 @@ can state the fall or distance below. The checker first tries the ordinary signe
 match, then the negative magnitude with the same unit and precision rules. An
 explicit plus/minus sign, accounting parentheses or triangle mark must agree with
 the source. This exception never applies to passages, derived steps or
-`calculate` results; text states a sign only with the number or in adjacent financial wording ([Number matching](#number-matching)).
+`calculate` results; text states a sign only with the number or in adjacent financial wording ([Number matching](#number-matching)),
+and a row or field states it by its nature
+([Outflows stated as amounts](#outflows-stated-as-amounts)).
 
 For a FRED series read, the host checks the dated observation in the named series
 column. OpenBB supplies its units at `extra.results_metadata.<series>.units`.
@@ -161,9 +186,21 @@ leading zero (`005930`) and six-digit tickers in brackets or with an exchange su
 sign; currency-code prefixes, including glued FX pairs (`USDKRW`), must begin at a
 word boundary (`fraud 12` has no AUD amount) and precede the number by at most two
 spaces without a line break; `−` (U+2212) is a minus in text and in a provider's
-text field (`"−1.20"`) as in a figure; `(1,234)` and `△1,234` are negatives; and
-`1조 2,345억원` is one amount. Reading
-is bounded to 50,000 candidates and 1 MiB of text per result.
+text field (`"−1.20"`) as in a figure, as are `–`, `‒`, `﹣` and full-width `－`
+touching the number; a minus after a grouped or decimal amount (`1,234-`) also
+negates it; `(1,234)` and `△1,234` are negatives; `1조 2,345억원` is one amount.
+The filled triangle `▲` is a negative only in Japanese-context text, where
+statements print negatives with either triangle: with kana within 512 bytes
+before it, `有形固定資産の取得による支出 ▲510,803` reads −510,803. Elsewhere `▲`
+marks a rise, as in a Korean price table: `전일 대비 ▲1,200원` reads +1,200원.
+Answer text keeps `▲` as a rise. Reading is bounded to 50,000 candidates and
+1 MiB of text per result.
+
+Percentage points and basis points share a quantity. The checker converts
+100 basis points to one percentage point and compares at the answer's printed
+precision. For example, a tab-delimited `−265 bp` in a PDF table verifies
+`−2.7%p` as rounded. Percent levels and relative percent changes keep their own
+unit.
 
 A numeric link can inherit a scale explicitly stated in its Markdown table
 caption, column header, row label or sentence. Column units take priority over
@@ -191,6 +228,17 @@ The checker reads the decoded content with its original line breaks. Share count
 cannot support a monetary figure, and per-share rows cannot support an aggregate
 expressed in millions or 억.
 
+Korean magnitude words `만`, `억` and `조` scale the attached currency.
+In a compound such as `$1조 5,407억`, the smaller component sets the displayed
+precision. A TTM amount printed by the source is a passage check. If the amount
+is only a sum of quarterly values, the answer can cite a retained calculation
+that supplies the sum.
+
+A row label that names a per-share figure (`EPS`, `per share`, `주당`,
+`1株当たり`, `每股`) keeps the answer's figure in its own unit. A table caption
+such as `단위는 십억 달러입니다` scales the table's other rows, not `$0.22`
+in a `희석 EPS` row.
+
 When the passage or stdout states no scale, compare the digits as printed. For
 an answer with a magnitude word, align the significant digits by moving the
 decimal point. Accept the reading only when the signed value agrees at the
@@ -213,11 +261,84 @@ the quoted figure and its direction.
 
 An unsigned answer can cite the magnitude of a decline stated in words. A
 positive source number without a direction cue supports a positive or unsigned
-answer. An explicitly printed sign takes precedence over wording. Receipts keep
+answer. The answer's own wording counts the same way: an unsigned figure whose
+clause names a loss (`net loss`, `순손실`), says it flowed out (`outflow`,
+`유출`) or carries a decline or outflow cue touching it (`loss of`, `감소`,
+`$1.2bn outflow`, `1,022,379백만 엔 유출`) can cite a negative source value of the
+same magnitude. An explicitly printed sign takes precedence over wording. Receipts keep
 the original UTF-8 evidence range even for full-width digits, punctuation and
 signs (`－４．８１％`). Amounts can carry `元` or `円`, and `万`/`萬` and `亿`/`億`
 scale by ten thousand and one hundred million respectively. `元` alone does not
 identify a specific dollar or yuan currency.
+
+### Outflows stated as amounts
+
+Prose states spending and deductions as positive amounts; statements and data
+providers print them negative or in brackets. An unsigned answer figure matches a
+negative or bracketed source value of the same magnitude when the source's own row
+label or field name is an outflow by nature, unless the answer's own clause names
+a line of another nature. A generic `value`, `val` or `amount` field takes its
+row's `label`, `line_item`, `metric`, `concept`, `account_nm`, `item` or `name`.
+The answer's line is its table row label, or else the nearest clause before the
+figure, within its sentence, that names a line; links and clause punctuation
+separate clauses. The status is the one the same digits would get with the source's
+sign (`rounded` where the scale changes the shown precision). The check records
+`sourceSign: "outflow"`. For example, `설비투자는 $4.73bn` matches
+`Capital expenditures (4,732)` under `($ in millions …)`, and `$5.80bn` matches a
+dataset's `capital_expenditure: -5796000000`.
+
+The row-nature list lives in `knowledge/numbers/direction.rs` (`LINE_NATURES`).
+A row's label is the text before its first number, after the last sentence end,
+whatever the figure's unit. Every negative notation above (`(1,906,811)`,
+`△510,803`, `-1,234`, `1,234-`) is the same negative. Phrases are lowercased,
+with whitespace and `_` read as one space (`Capital\texpenditures`,
+`capital_expenditure`). Latin phrases match whole words and CJK phrases match
+inside words. The first group with a phrase in the label decides:
+
+| Order | Nature | Meaning | Phrases (abridged) |
+| --- | --- | --- | --- |
+| 1 | Signed | Either sign; the sign is the meaning | change, increase, decrease, growth, margin, provided by, (used in), (loss), (gain), gain, (expense), (income), (benefit), YoY, variance; 증감, 증가, 감소, 변동, 이익률, 손익; 增减, 变动, 增加, 减少, 利润率, 损益, 同比; 増減, 増加, 利益率, 前年比 |
+| 2 | Outflow | Spending or a deduction | capital expenditure(s), capex, expenditure, spending, outflow, purchase(s) of, payment(s) of/for/to, repayment, repurchase, buyback, dividends paid, taxes paid, interest paid, cash used in, investments in property, additions to, acquisitions, expense(s), cost of, costs, research and development, SG&A; 설비투자, 자본적 지출, 현금유출, 지출, 취득 (유형자산의취득), 유형자산 투자, 자사주 매입, 배당금 지급, 상환, 매출원가, 판매비와관리비, 비용; 资本支出, 购建固定资产, 支付, 购买, 偿还债务, 分配股利, 回购, 现金流出, 营业成本, 支出; 設備投資, 取得 (有形固定資産の取得による支出), 購入, 支払, 借入金の返済, 売上原価 |
+| 3 | Loss | A loss named as such | net loss, operating loss, loss, deficit; 순손실, 영업손실, 손실, 적자; 净亏损, 亏损, 赤字; 純損失, 営業損失, 損失 |
+| 4 | Signed | A line whose sign carries its meaning | net income, operating income, income from operations, EBIT(DA), free cash flow, operating cash flow, cash flow, cash from operations, EPS, net debt, net cash, income, profit, earnings, return; 순이익, 영업이익, 이익, 잉여현금흐름, 현금흐름; 净利润, 营业利润, 自由现金流, 现金流, 每股收益; 純利益, 営業利益, キャッシュフロー |
+| 5 | Other | Never spending | revenue, sales, assets, liabilities, equity, cash and cash equivalents, deliveries, production, debt, price, shares, dividend; 매출, 자산, 부채, 자본, 주가, 배당; 营收, 收入, 资产, 负债, 股价; 売上, 収益, 資産, 株価 |
+
+Order 1 lets `Net cash provided by (used in) investing activities`,
+`Change in capital expenditures` and `Other (expense) income, net` take either
+sign, while `Net cash used in investing activities` and `Income taxes paid` are
+outflows. Rows of orders 1, 3 and 4 never take the exception: an unsigned positive
+figure against `Net income (loss) (1,234)`, `Free cash flow (1,092)` or a negative
+growth rate stays a warning, while `net loss of $1.23bn`, `−$1.23bn` or
+`declined 4.8%` matches it ([Number matching](#number-matching)). An answer clause
+that names another line, such as `Revenue was $4.73bn` or a `| 희석 EPS |` row,
+never matches an outflow row of the same magnitude.
+
+A known boundary is left for a deliberate decision: the working-capital rows of a
+cash-flow statement. The statement prints an increase in an asset as a negative
+cash effect, and an answer that states the increase stays a warning. A stored
+research answer wrote `혼다는 금융채권 증가 904,344백만 엔` against Honda's
+`資産及び負債の増減` row `金融サービスに係る債権 △1,454,357 △904,344`, and
+`운용리스자산 690,110백만 엔` against `オペレーティング・リース資産12,661 △690,110`.
+Neither row label names an outflow, and the answer states no fall.
+
+### Choosing among candidates
+
+Each candidate tier is tried in order, and the first candidate in the best tier
+supports the figure:
+
+1. The figure in the source's own sign and stated scale: exact, an exact scale
+   conversion, equal digits with one scale unstated, then rounded.
+2. The same, read through a sign the source states apart from its digits: an
+   outflow row, or a fall stated in words for a signed figure.
+3. A scale inferred by aligning the digits, a sign the source states first.
+
+A literal passage selection is tried before the rest of the window. When the
+figure sits in a Markdown table row of the answer, candidates are ordered by how
+many of the row's other figures stand at the same column offsets in the
+candidate's source row (numbers separated only by spacing, `|` or a placeholder
+dash on one line). That order picks among candidates of the same tier, so the
+reproduced row wins over an equal value in another row or period. It never makes
+a lower tier win.
 
 A shared alias table reads ISO codes, words and symbols before or after a
 figure on either side of the check. A scale can follow the currency within
@@ -274,6 +395,14 @@ For `dcf_grid` and `reverse_dcf`, numeric grid cells use the grid's unit and
 WACC and terminal growth axes use percentages. Unsolved cells supply no number.
 `reverse_dcf` also verifies the formula's implied enterprise value from the
 retained price, shares and net debt.
+
+A `calculate` value keeps the unit it states. A `ratio` stated per something
+(`USD per share`) is an amount in that unit, so `3.46달러` matches
+`345.82 / 100 = 3.4582 USD per share`; a ratio of two amounts is a multiple (`x`)
+or, with `as_percent`, a percentage ([Calculation](calculation.md#calculation-1)).
+A stored ratio result that states a multiple stays a multiple on read: results
+saved before the unit was kept print `345.82 / 100 = 3.46x`, so `3.46달러` stays
+`differs`. Replay never reads a unit back from tool-call arguments.
 
 For a link to a `calculate convert` result, the sole candidate is the converted
 output in base units of the target currency.

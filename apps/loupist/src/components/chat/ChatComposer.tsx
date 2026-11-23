@@ -1164,11 +1164,12 @@ export function ChatComposer({
           )}
           </PromptInputTools>
         </PromptInputFooter>
-        {/* What applies to this message (private chat, Skill modes, the as-of date) sits under the row. */}
-        {privateChat ? <div className="composer-private-status"><span className="composer-private-chip" title={t("chatComposer.privateStatus")} aria-description={t("chatComposer.privateStatus")}>
+        {/* What applies to this message (private chat, Skill modes, the as-of date) sits under the row.
+            Private chat says in visible text, under its chip, what it keeps and what still leaves the Mac. */}
+        {privateChat ? <div className="composer-private-status"><span className="composer-private-chip">
           <EyeOffIcon aria-hidden="true" /><span>{t("chatComposer.privateChip")}</span>
           <button type="button" aria-label={t("chatComposer.privateOff")} onClick={() => { onPrivateChatChange(false); keepComposerFocus(); }}><XIcon aria-hidden="true" /></button>
-        </span></div> : null}
+        </span><p className="composer-private-note">{t("chatComposer.privateStatus")}</p></div> : null}
         <ComposerChipTray
           chips={ownedChips.filter(chip => chip.kind === "skill")}
           asOf={asOf}

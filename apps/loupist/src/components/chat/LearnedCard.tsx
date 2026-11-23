@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import i18n, { useTranslation } from "@/i18n";
 import type { LearnedDigest, LoupistBridge, PageView, SectionView } from "../../types";
 import { learnedSummary } from "../../chat/receipt";
+import { defaultSectionHeading, displaySectionHeading } from "../../knowledge/hostDefaults";
 import { errorMessage } from "../../lib/errors";
 import { Button } from "../ui/button";
 import { useFixMemory } from "../memory/fixMemory";
@@ -81,7 +82,9 @@ export function LearnedCard({ id, bridge, loupistId, digest, onChanged }: {
           {changes.map(change => {
             const section = current(page.recordId, change.key);
             const gone = forgotten.has(cell(page.recordId, change.key));
-            const heading = section?.heading ?? forgotten.get(cell(page.recordId, change.key))?.heading ?? change.key;
+            // A heading the app wrote (a principle's statement, a learned method's steps) reads in the interface language.
+            const heading = section ? displaySectionHeading(change.key, section.heading)
+              : forgotten.get(cell(page.recordId, change.key))?.heading ?? defaultSectionHeading(change.key) ?? change.key;
             const pending = busy === cell(page.recordId, change.key);
             return <li key={change.opId} data-outcome={change.outcome} data-forgotten={gone || undefined}>
               <div className="learned-section">

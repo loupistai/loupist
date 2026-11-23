@@ -62,7 +62,8 @@
   "useThreadActions": {
     "couldNotCreateANewChat": "새 리서치를 시작하지 못했습니다. 다시 시도하십시오.",
     "couldNotRenameThisSession": "리서치 세션 이름을 바꾸지 못했습니다. 다시 시도하십시오.",
-    "couldNotDeleteThisSession": "리서치 세션을 삭제하지 못했습니다. 다시 시도하십시오."
+    "couldNotDeleteThisSession": "리서치 세션을 삭제하지 못했습니다. 다시 시도하십시오.",
+    "sessionStillWorking": "이 세션은 아직 답변 중이거나 메모리에 저장 중입니다. 끝난 뒤에 삭제하십시오."
   },
   "appNavigation": {
     "settingsNavigation": "설정 탐색",

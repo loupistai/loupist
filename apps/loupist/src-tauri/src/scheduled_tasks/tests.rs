@@ -20,6 +20,13 @@ use super::{
 
 mod regressions;
 
+/// An instant as `previous_run` gives it: at the user's offset then.
+fn local(value: &str) -> String {
+    crate::local_time::at_ms(at(value))
+        .unwrap()
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
+}
+
 fn at(value: &str) -> i64 {
     DateTime::parse_from_rfc3339(value)
         .unwrap()
@@ -1161,7 +1168,7 @@ fn a_run_is_given_how_its_tasks_last_run_ended_and_what_last_reached_the_user() 
         previous(&second),
         Some(PreviousRun {
             memory_save_skip: Some(crate::domain::MemorySaveSkipReason::User),
-            finished_at: "2026-11-17T23:01:00Z".into(),
+            finished_at: local("2026-11-17T23:01:00Z"),
             status: RunStatus::Succeeded,
             quiet: false,
             summary: "SK hynix crossed its 52-week low.".into(),
@@ -1199,7 +1206,7 @@ fn a_run_is_given_how_its_tasks_last_run_ended_and_what_last_reached_the_user() 
         quiet.last_delivered,
         Some(DeliveredRun {
             memory_save_skip: Some(crate::domain::MemorySaveSkipReason::User),
-            finished_at: "2026-11-17T23:01:00Z".into(),
+            finished_at: local("2026-11-17T23:01:00Z"),
             summary: "SK hynix crossed its 52-week low.".into(),
         })
     );
@@ -1218,9 +1225,9 @@ fn a_run_is_given_how_its_tasks_last_run_ended_and_what_last_reached_the_user() 
     assert_eq!(
         serde_json::to_value(previous(&fourth).unwrap()).unwrap(),
         serde_json::json!({
-            "finished_at": "2026-11-19T23:00:05Z", "status": "failed", "quiet": false,
+            "finished_at": local("2026-11-19T23:00:05Z"), "status": "failed", "quiet": false,
             "last_delivered": {
-                "finished_at": "2026-11-17T23:01:00Z",
+                "finished_at": local("2026-11-17T23:01:00Z"),
                 "summary": "SK hynix crossed its 52-week low.",
                 "memory_save_skip": "user"
             },
@@ -1256,7 +1263,7 @@ fn a_run_is_given_how_its_tasks_last_run_ended_and_what_last_reached_the_user() 
     let fifth = claim(at("2026-11-22T08:00:00+09:00"));
     assert_eq!(
         previous(&fifth).unwrap().finished_at,
-        "2026-11-20T23:00:05Z"
+        local("2026-11-20T23:00:05Z")
     );
     store
         .scheduled_task_finish(

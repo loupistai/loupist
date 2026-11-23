@@ -17,6 +17,9 @@ use crate::{
 pub const MAX_MODEL_WORKERS: usize = 4;
 const CHAT_SAVE_WAIT: Duration = Duration::from_secs(10 * 60);
 const CHAT_READER_RESUME_WAIT: Duration = Duration::from_secs(30);
+/// Activity kind of a released save waiting its turn. It is not a Chat run:
+/// its conversation accepts a new message.
+pub const CHAT_SAVE_ACTIVITY: &str = "chat_save";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RunKind {
@@ -90,6 +93,40 @@ struct ActiveRun {
     tools_running: usize,
     tools_parked: usize,
     skip_save: bool,
+    /// An interactive reply whose answer is stored and whose save waits on its
+    /// own: its conversation is free for the next turn.
+    released: Option<SavingMessage>,
+    /// The released save's last reported wait.
+    save_wait: SaveWait,
+    /// The released save's receipt is on its message. Until then the save
+    /// counts as pending, also after its skip, deadline or failure settled it.
+    receipt_written: bool,
+}
+
+/// What a released save last reported while it waits.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct SaveWait {
+    pub waiting_for_other_chat: bool,
+    pub activity: Option<crate::chat::progress::ChatSaveActivity>,
+}
+
+/// The stored reply a released save belongs to, and the Bot review it was offered.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SavingMessage {
+    pub thread_id: String,
+    pub message_id: String,
+    pub reviewed: Vec<String>,
+    /// Bot memory entries the save resolves or forgets; a newer turn of the
+    /// conversation does not see them.
+    pub leaving: crate::chat::bot_memory::Leaving,
+}
+
+/// A released save that has not resolved yet.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PendingSave {
+    pub run_id: String,
+    pub message: SavingMessage,
+    pub wait: SaveWait,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -117,6 +154,12 @@ impl ActiveRun {
 
     fn writes_memory(&self) -> bool {
         self.spec.kind == RunKind::MemoryWrite || self.chat_access == ChatAccess::Saving
+    }
+
+    /// Whether this run holds its target. A released save leaves the thread
+    /// to the next turn while it keeps its place in the writer queue.
+    fn holds_target(&self) -> bool {
+        self.released.is_none()
     }
 }
 
@@ -315,7 +358,13 @@ impl RunCoordinator {
         }
     }
 
-    pub(crate) fn queue_chat_save(&self, run_id: &str) -> Result<(), CommandError> {
+    /// Queues the save in FIFO order. With `release`, the same step frees the
+    /// conversation for a new turn: the save then belongs to its message.
+    pub(crate) fn queue_chat_save(
+        &self,
+        run_id: &str,
+        release: Option<SavingMessage>,
+    ) -> Result<(), CommandError> {
         let mut table = self.table()?;
         let run = table
             .runs
@@ -329,7 +378,13 @@ impl RunCoordinator {
         {
             return Err(CommandError::conflict("Chat is not ready to save"));
         }
+        if release.as_ref().is_some_and(|message| {
+            !matches!(&run.spec.target, RunTarget::ChatThread(id) if *id == message.thread_id)
+        }) {
+            return Err(CommandError::internal("released save names another thread"));
+        }
         run.chat_access = ChatAccess::PendingSave;
+        run.released = release;
         let loupist_id = run.spec.loupist_id.clone();
         table
             .writer_queues
@@ -432,6 +487,68 @@ impl RunCoordinator {
         Ok(SaveAdmission::Waiting(blocker))
     }
 
+    /// Released saves of a Loupist (optionally one thread) whose receipt is not
+    /// on their message yet: waiting, saving, or settled with the receipt still
+    /// to write.
+    pub(crate) fn pending_saves(
+        &self,
+        loupist_id: &str,
+        thread_id: Option<&str>,
+    ) -> Result<Vec<PendingSave>, CommandError> {
+        let table = self.table()?;
+        let mut saves = table
+            .runs
+            .values()
+            .filter(|run| {
+                run.spec.loupist_id == loupist_id
+                    && !run.receipt_written
+                    && matches!(
+                        run.chat_access,
+                        ChatAccess::PendingSave | ChatAccess::Saving | ChatAccess::Settled
+                    )
+            })
+            .filter_map(|run| {
+                let message = run.released.clone()?;
+                thread_id
+                    .is_none_or(|thread| message.thread_id == thread)
+                    .then(|| {
+                        (
+                            run.started_at_ms,
+                            PendingSave {
+                                run_id: run.spec.run_id.clone(),
+                                message,
+                                wait: run.save_wait.clone(),
+                            },
+                        )
+                    })
+            })
+            .collect::<Vec<_>>();
+        saves.sort_by(|left, right| {
+            left.0
+                .cmp(&right.0)
+                .then_with(|| left.1.run_id.cmp(&right.1.run_id))
+        });
+        Ok(saves.into_iter().map(|(_, save)| save).collect())
+    }
+
+    /// Records the wait a released save reports, for a renderer that asks later.
+    pub(crate) fn note_save_wait(&self, run_id: &str, wait: SaveWait) {
+        if let Ok(mut table) = self.table() {
+            if let Some(run) = table.runs.get_mut(run_id) {
+                run.save_wait = wait;
+            }
+        }
+    }
+
+    /// The released save's receipt is on its message: it is no longer pending.
+    pub(crate) fn note_receipt_written(&self, run_id: &str) {
+        if let Ok(mut table) = self.table() {
+            if let Some(run) = table.runs.get_mut(run_id) {
+                run.receipt_written = true;
+            }
+        }
+    }
+
     pub(crate) fn finish_chat_save(&self, run_id: &str) {
         self.change_tool_state(run_id, |run| {
             run.chat_access = ChatAccess::Settled;
@@ -495,6 +612,9 @@ impl RunCoordinator {
                 tools_running: 0,
                 tools_parked: 0,
                 skip_save: false,
+                released: None,
+                save_wait: SaveWait::default(),
+                receipt_written: false,
             },
         );
         drop(table);
@@ -526,6 +646,7 @@ impl RunCoordinator {
                 .values()
                 .find(|run| {
                     run.spec.kind == RunKind::Chat
+                        && run.holds_target()
                         && run.spec.loupist_id == loupist_id
                         && matches!(
                             &run.spec.target,
@@ -573,7 +694,7 @@ impl RunCoordinator {
             .filter(|active| active.spec.loupist_id == incoming.loupist_id);
         if local
             .clone()
-            .any(|active| active.spec.target == incoming.target)
+            .any(|active| active.holds_target() && active.spec.target == incoming.target)
         {
             return Err(CommandError::conflict(
                 "this Loupist target already has an active run",
@@ -756,11 +877,12 @@ impl RunCoordinator {
                 run_id: run.spec.run_id.clone(),
                 loupist_id: run.spec.loupist_id.clone(),
                 kind: if run.chat_access == ChatAccess::Saving {
-                    RunKind::MemoryWrite
+                    RunKind::MemoryWrite.as_str()
+                } else if run.released.is_some() {
+                    CHAT_SAVE_ACTIVITY
                 } else {
-                    run.spec.kind
+                    run.spec.kind.as_str()
                 }
-                .as_str()
                 .into(),
                 target: run.spec.target.value().into(),
                 started_at_ms: run.started_at_ms,
@@ -861,7 +983,7 @@ mod tests {
         let second = add("second").unwrap();
         for id in ["first", "second"] {
             assert!(coordinator.claim_completion(id, RunKind::Chat).unwrap());
-            coordinator.queue_chat_save(id).unwrap();
+            coordinator.queue_chat_save(id, None).unwrap();
         }
         let later = add("later").unwrap();
         assert!(coordinator
@@ -917,7 +1039,7 @@ mod tests {
         assert!(coordinator
             .claim_completion("saver", RunKind::Chat)
             .unwrap());
-        coordinator.queue_chat_save("saver").unwrap();
+        coordinator.queue_chat_save("saver", None).unwrap();
         assert!(tokio::time::timeout(
             Duration::from_millis(1),
             coordinator.wait_for_chat_save("saver", |_| {})
@@ -949,6 +1071,120 @@ mod tests {
         drop(writer);
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn a_released_save_frees_its_thread_and_keeps_its_place_and_reader_wait() {
+        let coordinator = RunCoordinator::default();
+        let message = |id: &str| SavingMessage {
+            thread_id: "bot".into(),
+            message_id: format!("reply-{id}"),
+            reviewed: vec![format!("ask-{id}")],
+            leaving: Default::default(),
+        };
+        let reader = coordinator
+            .register(spec("reader", RunKind::Chat, "other"), || Ok(()))
+            .unwrap();
+        let (control, _receiver) = crate::chat::control::chat_control_channel();
+        let first = coordinator
+            .register_chat(spec("first", RunKind::Chat, "bot"), control, || Ok(()))
+            .unwrap();
+        assert!(coordinator
+            .claim_completion("first", RunKind::Chat)
+            .unwrap());
+        assert!(coordinator
+            .queue_chat_save(
+                "first",
+                Some(SavingMessage {
+                    thread_id: "other".into(),
+                    ..message("first")
+                })
+            )
+            .is_err());
+        coordinator
+            .queue_chat_save("first", Some(message("first")))
+            .unwrap();
+        // The conversation takes its next turn; steering reaches only that turn.
+        let (control, _receiver) = crate::chat::control::chat_control_channel();
+        let second = coordinator
+            .register_chat(spec("second", RunKind::Chat, "bot"), control, || Ok(()))
+            .unwrap();
+        assert!(coordinator
+            .register(spec("third", RunKind::Chat, "bot"), || Ok(()))
+            .is_err());
+        let kinds = coordinator
+            .activities()
+            .unwrap()
+            .into_iter()
+            .map(|activity| (activity.run_id, activity.kind))
+            .collect::<HashMap<_, _>>();
+        assert_eq!(kinds["first"], CHAT_SAVE_ACTIVITY);
+        assert_eq!(kinds["second"], "chat");
+        assert_eq!(
+            coordinator.pending_saves("loupist-a", Some("bot")).unwrap(),
+            [PendingSave {
+                run_id: "first".into(),
+                message: message("first"),
+                wait: SaveWait::default(),
+            }]
+        );
+        // The new turn of its own conversation is a reader the save waits for.
+        drop(reader);
+        assert!(tokio::time::timeout(
+            Duration::from_millis(1),
+            coordinator.wait_for_chat_save("first", |_| {})
+        )
+        .await
+        .is_err());
+        assert!(coordinator
+            .claim_completion("second", RunKind::Chat)
+            .unwrap());
+        coordinator
+            .queue_chat_save("second", Some(message("second")))
+            .unwrap();
+        assert!(tokio::time::timeout(
+            Duration::from_millis(1),
+            coordinator.wait_for_chat_save("second", |_| {})
+        )
+        .await
+        .is_err());
+        assert_eq!(
+            coordinator
+                .wait_for_chat_save("first", |_| {})
+                .await
+                .unwrap(),
+            None
+        );
+        coordinator.finish_chat_save("first");
+        // Settled, a save stays pending until its receipt is on its message.
+        assert_eq!(
+            coordinator.pending_saves("loupist-a", None).unwrap().len(),
+            2
+        );
+        coordinator.note_receipt_written("first");
+        assert_eq!(
+            coordinator.pending_saves("loupist-a", None).unwrap().len(),
+            1
+        );
+        coordinator.cancel("second", RunKind::Chat).await.unwrap();
+        assert_eq!(
+            coordinator
+                .wait_for_chat_save("second", |_| {})
+                .await
+                .unwrap(),
+            Some(MemorySaveSkipReason::User)
+        );
+        assert_eq!(
+            coordinator.pending_saves("loupist-a", None).unwrap().len(),
+            1
+        );
+        coordinator.note_receipt_written("second");
+        assert!(coordinator
+            .pending_saves("loupist-a", None)
+            .unwrap()
+            .is_empty());
+        drop((first, second));
+        assert_eq!(coordinator.active_count(), 0);
+    }
+
     #[tokio::test]
     async fn stop_or_quit_ends_pending_save_before_it_can_claim_the_writer() {
         for (shutdown, expected) in [
@@ -965,7 +1201,7 @@ mod tests {
             assert!(coordinator
                 .claim_completion("saver", RunKind::Chat)
                 .unwrap());
-            coordinator.queue_chat_save("saver").unwrap();
+            coordinator.queue_chat_save("saver", None).unwrap();
             if shutdown {
                 coordinator.request_shutdown().unwrap();
             } else {

@@ -1,0 +1,546 @@
+{
+  "about": "Minimal passages, rows and calculations copied from two stored Tesla answers whose twelve number-check warnings were wrong (2026-11-22). Each source keeps the rows the checks compared; the answers keep the sentences around each flagged figure.",
+  "sources": {
+    "highlights": {
+      "id": "ev_43cc26c8017531413f7dce79c1bd1d84",
+      "title": "Tesla Q3 2026 8-K and Update — highlights and operating data",
+      "content": "F\tI\tN\tA\tN\tC\tI\tA\tL\tS\tU\tM\tM\tA\tR\tY\t(Unaudited)\t($\tin\tmillions,\texcept\tpercentages\tand\tper\tshare\tdata)\tQ3-2025\tQ4-2025\tQ1-2026\tQ2-2026\tQ3-2026\tYoY\tTotal\tautomotive\trevenues\t21,205\t17,693\t16,234\t20,516\t20,560\t-\tEnergy\tgeneration\tand\tstorage\trevenue\t3,415\t3,837\t2,408\t3,139\t2,881\t-\tServices\tand\tother\trevenue\t3,475\t3,371\t3,745\t4,581\t4,605\tTotal\trevenues\t28,095\t24,901\t22,387\t28,236\t28,046\tTotal\tgross\tprofit\t5,054\t5,009\t4,720\t4,751\t5,494\tTotal\tGAAP\tgross\tmargin\t160\tbp\tOperating\texpenses\t3,430\t3,600\t3,779\t4,353\t4,776\tIncome\tfrom\toperations\t1,624\t1,409\t941\t398\t718\t-\tOperating\tmargin\t-322\tbp\tAdjusted\tEBITDA\t4,227\t4,154\t3,668\t3,273\t3,900\t-\tAdjusted\tEBITDA\tmargin\t-114\tbp\tNet\tincome\tattributable\tto\tcommon\tstockholders\t(GAAP)\t1,373\t840\t477\t1,114\t787\t-\tNet\tincome\tattributable\tto\tcommon\tstockholders\t(non-GAAP)\t1,770\t1,761\t1,453\t1,153\t1,697\t-\tEPS\tattributable\tto\tcommon\tstockholders,\tdiluted\t(GAAP)\t0.39\t0.24\t0.13\t0.32\t0.22\tEPS\tattributable\tto\tcommon\tstockholders,\tdiluted\t(non-GAAP)\t0.50\t0.41\t0.33\t0.48\t-\tNet\tcash\tprovided\tby\toperating\tactivities\t6,238\t3,813\t3,937\t4,697\t6,263\tCapital\texpenditures\t(2,248)\t(2,393)\t(2,493)\t(5,789)\t(4,732)\tFree\tcash\tflow\t3,990\t1,420\t1,444\t(1,092)\t1,531\t-\tCash,\tcash\tequivalents\tand\tshort-term\tinvestments\t41,647\t44,059\t44,743\t43,524\t45,447",
+      "excerpt_ends_after": "Net\tin"
+    },
+    "statements": {
+      "id": "ev_0e849b921212993cdd923eb7f1aaca98",
+      "title": "Tesla Q3 2026 Update — financial statements and reconciliations",
+      "content": "Vehicle\tDeliveries\t(millions\tof\tunits)\tK\tE\tY\tM\tE\tT\tR\tI\tC\tS\tQ\tU\tA\tR\tT\tE\tR\tL\tY\t(Unaudited)\tOperating\tCash\tFlow\t($B)\tFree\tCash\tFlow\t($B)\t(1)\tNet\tIncome\t($B)\t(2)\tAdjusted\tEBITDA\t($B)\t(2)\t(3)\t23\t(1)\tBeginning\tin\tQ1'25,\tCapital\texpenditures\tis\tpresented\tinclusive\tof\tpurchases\tof\tenergy\tgeneration\tand\tstorage\tsystems\tand\tall\tprior\tperiods\thave\tbeen\tadjusted.\t(2)\tAs\ta\tresult\tof\tthe\tadoption\tof\tthe\tnew\tcrypto\tassets\tstandard,\tthe\tpreviously\treported\tquarterly\tperiods\tin\t2024\thave\tbeen\trecast.\t(3)\tBeginning\tin\tQ1'25,\tAdjusted\tEBITDA\t(non-GAAP)\tis\tpresented\tnet\tof\tdigital\tassets\tgains\tand\tlosses\tand\tall\tprior\tperiods\thave\tbeen\tadjusted.\tIn\tmillions\tof\tUSD\tCapital\texpenditures\t–\tTTM\t(1)\t(8,899)\t(9,603)\t(9,815)\t(10,869)\t(11,342)\t(10,057)\t(10,179)\t(8,914)\t(8,527)\t(9,528)\t(12,923)\t(15,407)\tFree\tcash\tflow\t–\tTTM\t(non-GAAP)\t(1)\t4,357\t1,382\t1,717\t3,610\t3,581\t6,780\t5,586\t6,834\t6,220\t7,000\t5,762\t3,303",
+      "excerpt_ends_after": "In\tmillions\tof\tUSD\t"
+    }
+  },
+  "dataset": {
+    "id": "ev_5c4ca582a00d95c846554d2749364483",
+    "payload": {
+      "coverage": "selected dataset slice",
+      "dataset_ref": {
+        "dataset_id": "dataset-755397b393be4c1e8c6e35a84039e857",
+        "digest": "380b1fbdac6c02964f193fa594a33331177ddd3ffe4ff6bba49ae8c0de61c377",
+        "revision": 2
+      },
+      "fetched_at": "2026-11-22T19:06:19.680Z",
+      "metadata": {
+        "fetched_at": "2026-11-22T19:06:19.680Z",
+        "model_coverage": "bounded_sample",
+        "producer": "mcp",
+        "publication_policy": "provider-declared; unknown availability is not point-in-time evidence",
+        "request": {
+          "arguments": {
+            "limit": 5,
+            "period": "quarter",
+            "provider": "yfinance",
+            "symbol": "TSLA"
+          },
+          "server_id": "openbb",
+          "tool_name": "equity_fundamental_cash"
+        },
+        "trust": "numeric"
+      },
+      "next_offset": null,
+      "offset": 0,
+      "ref": {
+        "dataset_id": "dataset-755397b393be4c1e8c6e35a84039e857",
+        "digest": "380b1fbdac6c02964f193fa594a33331177ddd3ffe4ff6bba49ae8c0de61c377",
+        "revision": 2
+      },
+      "rows": [
+        {
+          "capital_expenditure": -4732000000.0,
+          "end_cash_position": 19006000000.0,
+          "free_cash_flow": 1531000000.0,
+          "investments_in_property_plant_and_equipment": -4732000000.0,
+          "operating_cash_flow": 6263000000.0,
+          "period_ending": "2026-09-30",
+          "stock_based_compensation": 1165000000.0
+        },
+        {
+          "capital_expenditure": -5796000000.0,
+          "end_cash_position": 16425000000.0,
+          "free_cash_flow": -1099000000.0,
+          "investments_in_property_plant_and_equipment": -5789000000.0,
+          "operating_cash_flow": 4697000000.0,
+          "period_ending": "2026-06-30",
+          "stock_based_compensation": 1151000000.0
+        },
+        {
+          "capital_expenditure": -2493000000.0,
+          "end_cash_position": 17655000000.0,
+          "free_cash_flow": 1444000000.0,
+          "investments_in_property_plant_and_equipment": -2493000000.0,
+          "operating_cash_flow": 3937000000.0,
+          "period_ending": "2026-03-31",
+          "stock_based_compensation": 1030000000.0
+        },
+        {
+          "capital_expenditure": -2393000000.0,
+          "end_cash_position": 17616000000.0,
+          "free_cash_flow": 1420000000.0,
+          "investments_in_property_plant_and_equipment": -2393000000.0,
+          "operating_cash_flow": 3813000000.0,
+          "period_ending": "2025-12-31",
+          "stock_based_compensation": 954000000.0
+        },
+        {
+          "capital_expenditure": -2248000000.0,
+          "end_cash_position": 19584000000.0,
+          "free_cash_flow": 3990000000.0,
+          "investments_in_property_plant_and_equipment": -2248000000.0,
+          "operating_cash_flow": 6238000000.0,
+          "period_ending": "2025-09-30",
+          "stock_based_compensation": 663000000.0
+        }
+      ],
+      "selection": {
+        "columns": [
+          "period_ending",
+          "operating_cash_flow",
+          "capital_expenditure",
+          "free_cash_flow",
+          "investments_in_property_plant_and_equipment",
+          "stock_based_compensation",
+          "end_cash_position"
+        ],
+        "limit": 100,
+        "offset": 0,
+        "pointer": "/structuredContent/results"
+      },
+      "title": "Dataset slice",
+      "total": 5
+    }
+  },
+  "ratios": [
+    {
+      "id": "ev_957731340fdf295f950dbd3721c0974c",
+      "request": {
+        "input_sources": {
+          "numerator": "#evidence-ev_787a772a6fcd43e231f50a797b20b3f8"
+        },
+        "inputs": {
+          "denominator": 100,
+          "numerator": 345.82000732421875
+        },
+        "operation": "ratio",
+        "unit": "USD per share"
+      },
+      "stored": {
+        "arithmetic": "IEEE-754 binary64; values rounded to 15 significant digits, display text rounded further",
+        "formulas": [
+          "numerator / denominator = 345.82 / 100 = 3.46x"
+        ],
+        "inputs": [
+          {
+            "display": "345.82",
+            "label": "numerator",
+            "name": "numerator",
+            "provenance": {
+              "evidence_id": "ev_787a772a6fcd43e231f50a797b20b3f8",
+              "kind": "cited",
+              "status": "matched"
+            },
+            "unit": {
+              "currency": "USD",
+              "kind": "amount"
+            },
+            "value": 345.820007324219
+          },
+          {
+            "display": "100",
+            "label": "denominator",
+            "name": "denominator",
+            "provenance": {
+              "kind": "provided"
+            },
+            "unit": {
+              "currency": "USD",
+              "kind": "amount"
+            },
+            "value": 100.0
+          }
+        ],
+        "operation": "ratio",
+        "title": "Ratio",
+        "values": [
+          {
+            "display": "3.46x",
+            "name": "ratio",
+            "unit": "x",
+            "value": 3.45820007324219
+          }
+        ]
+      }
+    },
+    {
+      "id": "ev_3de4fd421129c969e549ace843800875",
+      "request": {
+        "input_sources": {
+          "numerator": "#evidence-ev_787a772a6fcd43e231f50a797b20b3f8"
+        },
+        "inputs": {
+          "denominator": 75,
+          "numerator": 345.82000732421875
+        },
+        "operation": "ratio",
+        "unit": "USD per share"
+      },
+      "stored": {
+        "arithmetic": "IEEE-754 binary64; values rounded to 15 significant digits, display text rounded further",
+        "formulas": [
+          "numerator / denominator = 345.82 / 75 = 4.61x"
+        ],
+        "inputs": [
+          {
+            "display": "345.82",
+            "label": "numerator",
+            "name": "numerator",
+            "provenance": {
+              "evidence_id": "ev_787a772a6fcd43e231f50a797b20b3f8",
+              "kind": "cited",
+              "status": "matched"
+            },
+            "unit": {
+              "currency": "USD",
+              "kind": "amount"
+            },
+            "value": 345.820007324219
+          },
+          {
+            "display": "75",
+            "label": "denominator",
+            "name": "denominator",
+            "provenance": {
+              "kind": "provided"
+            },
+            "unit": {
+              "currency": "USD",
+              "kind": "amount"
+            },
+            "value": 75.0
+          }
+        ],
+        "operation": "ratio",
+        "title": "Ratio",
+        "values": [
+          {
+            "display": "4.61x",
+            "name": "ratio",
+            "unit": "x",
+            "value": 4.61093343098958
+          }
+        ]
+      }
+    },
+    {
+      "id": "ev_1b32feb16a79fa378741095297f31c2d",
+      "request": {
+        "input_sources": {
+          "numerator": "#evidence-ev_787a772a6fcd43e231f50a797b20b3f8"
+        },
+        "inputs": {
+          "denominator": 50,
+          "numerator": 345.82000732421875
+        },
+        "operation": "ratio",
+        "unit": "USD per share"
+      },
+      "stored": {
+        "arithmetic": "IEEE-754 binary64; values rounded to 15 significant digits, display text rounded further",
+        "formulas": [
+          "numerator / denominator = 345.82 / 50 = 6.92x"
+        ],
+        "inputs": [
+          {
+            "display": "345.82",
+            "label": "numerator",
+            "name": "numerator",
+            "provenance": {
+              "evidence_id": "ev_787a772a6fcd43e231f50a797b20b3f8",
+              "kind": "cited",
+              "status": "matched"
+            },
+            "unit": {
+              "currency": "USD",
+              "kind": "amount"
+            },
+            "value": 345.820007324219
+          },
+          {
+            "display": "50",
+            "label": "denominator",
+            "name": "denominator",
+            "provenance": {
+              "kind": "provided"
+            },
+            "unit": {
+              "currency": "USD",
+              "kind": "amount"
+            },
+            "value": 50.0
+          }
+        ],
+        "operation": "ratio",
+        "title": "Ratio",
+        "values": [
+          {
+            "display": "6.92x",
+            "name": "ratio",
+            "unit": "x",
+            "value": 6.91640014648438
+          }
+        ]
+      }
+    }
+  ],
+  "answers": {
+    "grok": "분기 비교의 기준은 2026년 10월 21일 발행사 업데이트입니다. 아래 표는 발행사 GAAP입니다. 단위는 십억 달러입니다.\n\n| 항목 | Q3 2025 | Q4 2025 | Q1 2026 | Q2 2026 | Q3 2026 |\n|---|---:|---:|---:|---:|---:|\n| 희석 EPS | [$0.39](#evidence-ev_43cc26c8017531413f7dce79c1bd1d84) | [$0.24](#evidence-ev_43cc26c8017531413f7dce79c1bd1d84) | [$0.13](#evidence-ev_43cc26c8017531413f7dce79c1bd1d84) | [$0.32](#evidence-ev_43cc26c8017531413f7dce79c1bd1d84) | [$0.22](#evidence-ev_43cc26c8017531413f7dce79c1bd1d84) |\n| 잉여현금흐름 | [$3.99bn](#evidence-ev_43cc26c8017531413f7dce79c1bd1d84) | [$1.42bn](#evidence-ev_43cc26c8017531413f7dce79c1bd1d84) | [$1.44bn](#evidence-ev_43cc26c8017531413f7dce79c1bd1d84) | [−$1.09bn](#evidence-ev_43cc26c8017531413f7dce79c1bd1d84) | [$1.53bn](#evidence-ev_43cc26c8017531413f7dce79c1bd1d84) |\n\n3분기 영업현금흐름은 [$6.26bn](#evidence-ev_43cc26c8017531413f7dce79c1bd1d84), 설비투자는 [$4.73bn](#evidence-ev_43cc26c8017531413f7dce79c1bd1d84), 잉여현금흐름은 [$1.53bn](#evidence-ev_43cc26c8017531413f7dce79c1bd1d84)입니다. 최근 12개월 설비투자는 [$15.4bn](#evidence-ev_0e849b921212993cdd923eb7f1aaca98)으로, 1년 전 [$8.91bn](#evidence-ev_0e849b921212993cdd923eb7f1aaca98)보다 큽니다. 2026년 2분기 설비투자는 발행사 [$5.79bn](#evidence-ev_43cc26c8017531413f7dce79c1bd1d84)을 씁니다. 벤더 capital expenditure는 [$5.80bn](#evidence-ev_5c4ca582a00d95c846554d2749364483), 유형자산 투자 항목은 [$5.79bn](#evidence-ev_5c4ca582a00d95c846554d2749364483)입니다. 2분기 잉여현금흐름은 발행사 [−$1.09bn](#evidence-ev_43cc26c8017531413f7dce79c1bd1d84), 벤더 [−$1.10bn](#evidence-ev_5c4ca582a00d95c846554d2749364483)이라 발행사를 씁니다.\n\n영업이익률은 2%대로 내려왔고, 주식보상이 회계 이익보다 크며, 설비투자는 최근 12개월 [$15.4bn](#evidence-ev_0e849b921212993cdd923eb7f1aaca98)입니다.\n\n잉여현금흐름이 [$3.30bn](#evidence-ev_0e849b921212993cdd923eb7f1aaca98) 근처에 머물고 분기 설비투자가 3분기 수준인 [$4.73bn](#evidence-ev_43cc26c8017531413f7dce79c1bd1d84) 위에 있으면 관망을 더 유지합니다.",
+    "gpt": "| 가정한 PER | 현재 주가를 뒷받침하는 연간 희석 EPS |\n|---:|---:|\n| 100배 | [3.46달러](#evidence-ev_957731340fdf295f950dbd3721c0974c) |\n| 75배 | [4.61달러](#evidence-ev_3de4fd421129c969e549ace843800875) |\n| 50배 | [6.92달러](#evidence-ev_1b32feb16a79fa378741095297f31c2d) |"
+  },
+  "stored_checks": {
+    "grok": [
+      {
+        "link_index": 4,
+        "text": "$0.22",
+        "evidence_id": "ev_43cc26c8017531413f7dce79c1bd1d84",
+        "kind": "passage",
+        "status": "not_found",
+        "nearest": "(2,248)",
+        "comparedValue": "(2,248)",
+        "comparisonReason": "sign_conflict",
+        "context": {
+          "text": "\t0.50\t0.41\t0.33\t0.48\t-\tNet\tcash\tprovided\tby\toperating\tactivities\t6,238\t3,813\t3,937\t4,697\t6,263\tCapital\texpenditures\t(2,248)\t(2,393)\t(2,493)\t(5,789)\t(4,732)\tFree\tcash\tflow\t3,990\t1,420\t1,444\t(1,092)\t1,531\t-\tCash,\tcash\tequivalents\tand\tshort-te",
+          "start": 116,
+          "end": 123
+        }
+      },
+      {
+        "link_index": 11,
+        "text": "$4.73bn",
+        "evidence_id": "ev_43cc26c8017531413f7dce79c1bd1d84",
+        "kind": "passage",
+        "status": "not_found",
+        "nearest": "(4,732)",
+        "comparedValue": "(4,732)",
+        "comparisonReason": "sign_conflict",
+        "context": {
+          "text": "provided\tby\toperating\tactivities\t6,238\t3,813\t3,937\t4,697\t6,263\tCapital\texpenditures\t(2,248)\t(2,393)\t(2,493)\t(5,789)\t(4,732)\tFree\tcash\tflow\t3,990\t1,420\t1,444\t(1,092)\t1,531\t-\tCash,\tcash\tequivalents\tand\tshort-term\tinvestments\t41,647\t44,059\t44,",
+          "start": 116,
+          "end": 123
+        }
+      },
+      {
+        "link_index": 13,
+        "text": "$15.4bn",
+        "evidence_id": "ev_0e849b921212993cdd923eb7f1aaca98",
+        "kind": "passage",
+        "status": "not_found",
+        "nearest": "(15,407)",
+        "comparedValue": "(15,407)",
+        "comparisonReason": "sign_conflict",
+        "context": {
+          "text": "expenditures\t–\tTTM\t(1)\t(8,899)\t(9,603)\t(9,815)\t(10,869)\t(11,342)\t(10,057)\t(10,179)\t(8,914)\t(8,527)\t(9,528)\t(12,923)\t(15,407)\tFree\tcash\tflow\t–\tTTM\t(non-GAAP)\t(1)\t4,357\t1,382\t1,717\t3,610\t3,581\t6,780\t5,586\t6,834\t6,220\t7,000\t5,762\t3,303\tIn\tmill",
+          "start": 118,
+          "end": 126
+        }
+      },
+      {
+        "link_index": 14,
+        "text": "$8.91bn",
+        "evidence_id": "ev_0e849b921212993cdd923eb7f1aaca98",
+        "kind": "passage",
+        "status": "not_found",
+        "nearest": "(8,914)",
+        "comparedValue": "(8,914)",
+        "comparisonReason": "sign_conflict",
+        "context": {
+          "text": "747\t16,528\t18,685\t18,710\tCapital\texpenditures\t–\tTTM\t(1)\t(8,899)\t(9,603)\t(9,815)\t(10,869)\t(11,342)\t(10,057)\t(10,179)\t(8,914)\t(8,527)\t(9,528)\t(12,923)\t(15,407)\tFree\tcash\tflow\t–\tTTM\t(non-GAAP)\t(1)\t4,357\t1,382\t1,717\t3,610\t3,581\t6,780\t5,586\t6,83",
+          "start": 118,
+          "end": 125
+        }
+      },
+      {
+        "link_index": 15,
+        "text": "$5.79bn",
+        "evidence_id": "ev_43cc26c8017531413f7dce79c1bd1d84",
+        "kind": "passage",
+        "status": "not_found",
+        "nearest": "(5,789)",
+        "comparedValue": "(5,789)",
+        "comparisonReason": "sign_conflict",
+        "context": {
+          "text": "et\tcash\tprovided\tby\toperating\tactivities\t6,238\t3,813\t3,937\t4,697\t6,263\tCapital\texpenditures\t(2,248)\t(2,393)\t(2,493)\t(5,789)\t(4,732)\tFree\tcash\tflow\t3,990\t1,420\t1,444\t(1,092)\t1,531\t-\tCash,\tcash\tequivalents\tand\tshort-term\tinvestments\t41,647\t44",
+          "start": 116,
+          "end": 123
+        }
+      },
+      {
+        "link_index": 16,
+        "text": "$5.80bn",
+        "evidence_id": "ev_5c4ca582a00d95c846554d2749364483",
+        "kind": "step",
+        "status": "not_found",
+        "nearest": "-5796000000.0",
+        "comparedValue": "-5796000000.0",
+        "comparisonReason": "sign_conflict",
+        "pointer": "/rows/1/capital_expenditure"
+      },
+      {
+        "link_index": 17,
+        "text": "$5.79bn",
+        "evidence_id": "ev_5c4ca582a00d95c846554d2749364483",
+        "kind": "step",
+        "status": "not_found",
+        "nearest": "-5789000000.0",
+        "comparedValue": "-5789000000.0",
+        "comparisonReason": "sign_conflict",
+        "pointer": "/rows/1/investments_in_property_plant_and_equipment"
+      },
+      {
+        "link_index": 20,
+        "text": "$15.4bn",
+        "evidence_id": "ev_0e849b921212993cdd923eb7f1aaca98",
+        "kind": "passage",
+        "status": "not_found",
+        "nearest": "(15,407)",
+        "comparedValue": "(15,407)",
+        "comparisonReason": "sign_conflict",
+        "context": {
+          "text": "expenditures\t–\tTTM\t(1)\t(8,899)\t(9,603)\t(9,815)\t(10,869)\t(11,342)\t(10,057)\t(10,179)\t(8,914)\t(8,527)\t(9,528)\t(12,923)\t(15,407)\tFree\tcash\tflow\t–\tTTM\t(non-GAAP)\t(1)\t4,357\t1,382\t1,717\t3,610\t3,581\t6,780\t5,586\t6,834\t6,220\t7,000\t5,762\t3,303\tIn\tmill",
+          "start": 118,
+          "end": 126
+        }
+      },
+      {
+        "link_index": 22,
+        "text": "$4.73bn",
+        "evidence_id": "ev_43cc26c8017531413f7dce79c1bd1d84",
+        "kind": "passage",
+        "status": "not_found",
+        "nearest": "(4,732)",
+        "comparedValue": "(4,732)",
+        "comparisonReason": "sign_conflict",
+        "context": {
+          "text": "provided\tby\toperating\tactivities\t6,238\t3,813\t3,937\t4,697\t6,263\tCapital\texpenditures\t(2,248)\t(2,393)\t(2,493)\t(5,789)\t(4,732)\tFree\tcash\tflow\t3,990\t1,420\t1,444\t(1,092)\t1,531\t-\tCash,\tcash\tequivalents\tand\tshort-term\tinvestments\t41,647\t44,059\t44,",
+          "start": 116,
+          "end": 123
+        }
+      }
+    ],
+    "gpt": [
+      {
+        "link_index": 0,
+        "text": "3.46달러",
+        "evidence_id": "ev_957731340fdf295f950dbd3721c0974c",
+        "kind": "calculated",
+        "status": "differs",
+        "nearest": "100",
+        "calc": {
+          "operation": "ratio",
+          "title": "Ratio",
+          "formulas": [
+            "numerator / denominator = 345.82 / 100 = 3.46x"
+          ],
+          "inputs": [
+            {
+              "name": "numerator",
+              "label": "numerator",
+              "unit": {
+                "kind": "amount",
+                "currency": "USD"
+              },
+              "display": "345.82",
+              "evidence_id": "ev_787a772a6fcd43e231f50a797b20b3f8",
+              "status": "matched"
+            },
+            {
+              "name": "denominator",
+              "label": "denominator",
+              "unit": {
+                "kind": "amount",
+                "currency": "USD"
+              },
+              "display": "100"
+            }
+          ]
+        }
+      },
+      {
+        "link_index": 1,
+        "text": "4.61달러",
+        "evidence_id": "ev_3de4fd421129c969e549ace843800875",
+        "kind": "calculated",
+        "status": "differs",
+        "nearest": "75",
+        "calc": {
+          "operation": "ratio",
+          "title": "Ratio",
+          "formulas": [
+            "numerator / denominator = 345.82 / 75 = 4.61x"
+          ],
+          "inputs": [
+            {
+              "name": "numerator",
+              "label": "numerator",
+              "unit": {
+                "kind": "amount",
+                "currency": "USD"
+              },
+              "display": "345.82",
+              "evidence_id": "ev_787a772a6fcd43e231f50a797b20b3f8",
+              "status": "matched"
+            },
+            {
+              "name": "denominator",
+              "label": "denominator",
+              "unit": {
+                "kind": "amount",
+                "currency": "USD"
+              },
+              "display": "75"
+            }
+          ]
+        }
+      },
+      {
+        "link_index": 2,
+        "text": "6.92달러",
+        "evidence_id": "ev_1b32feb16a79fa378741095297f31c2d",
+        "kind": "calculated",
+        "status": "differs",
+        "nearest": "50",
+        "calc": {
+          "operation": "ratio",
+          "title": "Ratio",
+          "formulas": [
+            "numerator / denominator = 345.82 / 50 = 6.92x"
+          ],
+          "inputs": [
+            {
+              "name": "numerator",
+              "label": "numerator",
+              "unit": {
+                "kind": "amount",
+                "currency": "USD"
+              },
+              "display": "345.82",
+              "evidence_id": "ev_787a772a6fcd43e231f50a797b20b3f8",
+              "status": "matched"
+            },
+            {
+              "name": "denominator",
+              "label": "denominator",
+              "unit": {
+                "kind": "amount",
+                "currency": "USD"
+              },
+              "display": "50"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -387,6 +387,8 @@ pub enum BrokerError {
     FrameTooLarge,
     #[error("tool execution failed: {0}")]
     Execution(String),
+    #[error("No data was returned for this request.")]
+    EmptyResult,
     #[error("{0}")]
     SecContactRequired(&'static str),
     #[error("The saved key for this connection is being changed right now, so it was not read.")]
@@ -1550,7 +1552,7 @@ pub(crate) fn error_body(error: &BrokerError) -> Value {
             "Correct the request fields before calling again.",
             false,
         ),
-        BrokerError::InvalidArguments { .. } | BrokerError::SecContactRequired(_) => ("", false),
+        BrokerError::InvalidArguments { .. } | BrokerError::SecContactRequired(_) | BrokerError::EmptyResult => ("", false),
         BrokerError::FrameTooLarge => (
             "The result was too large. Request a smaller page or file instead of repeating this call.",
             false,
@@ -1628,6 +1630,7 @@ fn error_code(error: &BrokerError) -> &'static str {
         BrokerError::Malformed => "malformed_request",
         BrokerError::WithNext { source, .. } => error_code(source),
         BrokerError::Execution(message) => as_of_code(message).unwrap_or("execution_failed"),
+        BrokerError::EmptyResult => "empty_result",
         BrokerError::SecContactRequired(_) => "sec_contact_required",
         BrokerError::KeychainBusy => "keychain_busy",
         BrokerError::KeychainUnavailable => "keychain_unavailable",

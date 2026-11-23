@@ -99,6 +99,7 @@ fn roots(collector: &mut Collector<'_>) {
         crate::chat::chart::AnalyticChartType,
         crate::app::CommandError,
         crate::events::LearningReviewFinished,
+        crate::events::ChatSaveChanged,
         crate::commands::assets::wire::AssetOpenRequest,
         crate::commands::assets::wire::AssetLookupCandidate,
         crate::commands::assets::wire::AssetPricePoint,
@@ -386,7 +387,7 @@ commands! {
         assets_list: crate::commands::assets::wire::AssetsListRequest => Vec<crate::commands::assets::wire::AssetRow>;
         asset_follow_name: crate::commands::assets::wire::AssetFollowNameRequest => crate::commands::assets::wire::AssetRow;
         asset_unfollow: crate::commands::assets::wire::AssetIdRequest => ();
-        asset_lookup: crate::commands::assets::wire::AssetLookupRequest => Vec<crate::commands::assets::wire::AssetLookupCandidate>;
+        asset_lookup: crate::commands::assets::wire::AssetLookupRequest => crate::commands::assets::wire::AssetLookupResult;
         asset_price_check: crate::commands::assets::wire::AssetIdRequest => crate::commands::assets::wire::ThinAssetPageView;
         asset_follow: crate::commands::assets::wire::AssetIdRequest => crate::commands::assets::wire::AssetRow;
         asset_entity_set: crate::commands::assets::AssetEntitySetRequest => crate::commands::assets::wire::ThinAssetPageView;
@@ -399,6 +400,7 @@ commands! {
         attention_notify: crate::commands::attention::NotifyRequest => bool;
         chat_abort: () => ();
         chat_retry_last: crate::commands::chat_runtime::ChatRetryRequest => crate::commands::chat_runtime::ChatRetryReceipt;
+        chat_saves: crate::commands::types::ChatSavesRequest => Vec<crate::commands::types::ChatSaveState>;
         chat_send: crate::commands::types::ChatSendRequest => crate::commands::types::RunStarted;
         chat_steer: crate::commands::types::ChatControlRequestDto => crate::commands::types::ChatControlReceiptDto;
         chat_unwatch: crate::commands::types::ChatWatchRequest => ();
@@ -608,8 +610,7 @@ async fn command_signatures() {
     let _: Result<Vec<wire::AssetRow>, CommandError> = assets::assets_list(any(), any());
     let _: Result<wire::AssetRow, CommandError> = assets::asset_follow_name(any(), any());
     let _: Result<(), CommandError> = assets::asset_unfollow(any(), any());
-    let _: Result<Vec<wire::AssetLookupCandidate>, CommandError> =
-        assets::asset_lookup(any(), any()).await;
+    let _: Result<wire::AssetLookupResult, CommandError> = assets::asset_lookup(any(), any()).await;
     let _: Result<wire::ThinAssetPageView, CommandError> =
         assets::asset_price_check(any(), any()).await;
     let _: Result<crate::finance_data::fx::FxDisplay, CommandError> =
@@ -721,6 +722,11 @@ async fn command_signatures() {
         any(),
     );
     let _: Result<(), CommandError> = crate::commands::chat_runtime::chat_abort(any(), any()).await;
+    let _: Result<Vec<crate::commands::types::ChatSaveState>, CommandError> =
+        crate::commands::chat_runtime::saves::chat_saves(
+            any::<crate::commands::types::ChatSavesRequest>(),
+            any(),
+        );
     let _: Result<crate::commands::chat_runtime::ChatRetryReceipt, CommandError> =
         crate::commands::chat_runtime::chat_retry_last(
             any::<crate::commands::chat_runtime::ChatRetryRequest>(),

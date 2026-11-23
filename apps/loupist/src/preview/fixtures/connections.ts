@@ -56,8 +56,11 @@ export async function prepareCustomConnectionFixture(bridge: PreviewBridge, scen
   }
 }
 
-/** The answer set up FRED from Chat: its `connection_setup` step leaves a card whose state the card reads live. */
-export async function prepareConnectionSetupFixture(bridge: PreviewBridge, state: "needs_setup" | "ready") {
+/**
+ * The answer set up FRED (a key) or SEC EDGAR (a contact email) from Chat: its `connection_setup`
+ * step leaves a card whose state the card reads live.
+ */
+export async function prepareConnectionSetupFixture(bridge: PreviewBridge, state: "needs_setup" | "ready", entry: "fred.macro" | "sec.edgar" = "fred.macro") {
   await prepareFixture(bridge, "answer");
   if (state === "ready") {
     await bridge.marketplaceCredentialSave({ entry_id: "fred.macro", secrets: { api_key: "preview-fred-key-0123" } });
@@ -69,7 +72,7 @@ export async function prepareConnectionSetupFixture(bridge: PreviewBridge, state
     const workspace = await select(loupistId);
     const answer = workspace.threads[0].messages.find(item => item.id === "preview-answer");
     if (answer) Object.assign(answer, { progress: { startedAtMs: FIXTURE_TIME - 8000, finishedAtMs: FIXTURE_TIME - 2000, items: [
-      { id: "preview-setup", kind: "tool", toolName: "connection_setup", category: "capability", operation: "generic", action: "Prepared a connection", running: "Preparing a connection", target: "fred.macro", source: { kind: "connector", name: "FRED" }, status: "succeeded", startedAtMs: FIXTURE_TIME - 8000, finishedAtMs: FIXTURE_TIME - 7000, href: null },
+      { id: "preview-setup", kind: "tool", toolName: "connection_setup", category: "capability", operation: "generic", action: "Prepared a connection", running: "Preparing a connection", target: entry, source: { kind: "connector", name: entry === "sec.edgar" ? "SEC EDGAR" : "FRED" }, status: "succeeded", startedAtMs: FIXTURE_TIME - 8000, finishedAtMs: FIXTURE_TIME - 7000, href: null },
     ] } });
     return workspace;
   };

@@ -1,0 +1,185 @@
+{
+  "about": "Minimal statement rows and sentences copied from a stored three-company research answer (2026-11-22): ten sign-conflict warnings on Japanese and Korean negative notations and English outflow rows. citation_marker is the six-year Tesla table cell whose reference link was checked as a figure.",
+  "sources": {
+    "toyota": {
+      "id": "ev_3c4173e9883268f7d62e5b7a3c3aa87d",
+      "title": "global.toyota",
+      "excerpt": "4. Unaudited Consolidated Statement of Cash Flows Yen in millions \nFor the year ended For the year ended March 31, 2024 March 31, 2025 \nCash flows from operating activities \nNet income 5,071,421 4,789,755 \nDepreciation and amortization 2,087,066 2,251,233 \nInterest income and interest costs related to financial services, net (713,506) (747,742)\nShare of profit (loss) of investments accounted for using the equity method (763,137) (591,219)\nIncome tax expense 1,893,665 1,624,835 \nChanges in operating assets and liabilities, and other (3,975,836) (2,815,549)\n(Increase) decrease in trade accounts and other receivables (859,239) 55,139 \n(Increase) decrease in receivables related to financial services (3,398,434) (2,389,665)\n(Increase) decrease in inventories (207,529) (70,654)\n(Increase) decrease in other current assets (326,365) (462,114)\nIncrease (decrease) in trade accounts and other payables 560,737 362,924 \nIncrease (decrease) in other current liabilities 666,513 659,088 \nIncrease (decrease) in retirement benefit liabilities (161) 17,377 \nOther, net (411,358) (987,645)\nInterest received 2,292,156 2,672,724 \nDividends received 587,259 623,295 \nInterest paid (1,148,392) (1,609,083)\nIncome taxes paid, net of refunds (1,124,322) (2,501,315)\nNet cash provided by (used in) operating activities 4,206,373 3,696,934 \nCash flows from investing activities \nAdditions to fixed assets excluding equipment leased to others (1,846,447) (1,906,811)\nAdditions to equipment leased to others (2,867,660) (2,996,920)\nProceeds from sales of fixed assets excluding equipment leased to others 154,985 70,821 \nProceeds from sales of equipment leased to others 2,008,634 1,707,899 \nAdditions to intangible assets (334,287) (354,196)\n"
+    },
+    "toyota_financial_services": {
+      "id": "ev_5206702b3554d9ab72e180e73af70c1a",
+      "title": "www2.jpx.co.jp",
+      "excerpt": "Changes in operating assets and liabilities, and other (4,100,301) (2,405,422)\nInterest received 1,858,816 2,332,296 \nDividends received 5,236 5,651 \nInterest paid (1,065,757) (1,531,190)\nIncome taxes paid, net of refunds (90,874) (153,692)\nNet cash provided by (used in) operating activities (2,782,318) (1,022,379)\n"
+    },
+    "honda": {
+      "id": "ev_0ce25a912211781f3229f4db9ac82049",
+      "title": "global.honda",
+      "excerpt": "（４）連結キャッシュ・フロー計算書\n(単位：百万円)\n\n前年度 当年度\n(自2023年４月１日(自2024年４月１日\n至2024年３月31日)至2025年３月31日)\n営業活動によるキャッシュ・フロー\n税引前利益1,642,384 1,317,640\n減価償却費、償却費及び減損損失\n794,366 742,863\n(オペレーティング・リース資産除く)\n持分法による投資損益 △110,817 △982\n金融収益及び金融費用 △141,250 △169,976\n金融サービスに係る利息収益及び利息費用 △152,041 △171,854\n資産及び負債の増減\n営業債権 △138,323 69,199\n棚卸資産 △67,833 △79,464\n営業債務36,516 112,635\n未払費用157,582 72,803\n引当金及び退職給付に係る負債263,593 128,447\n金融サービスに係る債権 △1,454,357 △904,344\nオペレーティング・リース資産12,661 △690,110\nその他資産及び負債58,325 △58,502\nその他(純額) △48,219 22,065\n配当金の受取額158,092 126,343\n利息の受取額560,709 737,648\n利息の支払額 △283,447 △439,081\n法人所得税の支払及び還付額 △540,663 △523,178\n営業活動によるキャッシュ・フロー747,278 292,152\n\n投資活動によるキャッシュ・フロー\n有形固定資産の取得による支出 △348,680 △510,803\n無形資産の取得及び内部開発による支出 △259,985 △336,632\n"
+    },
+    "hyundai": {
+      "id": "ev_09099e341a980d202e3b3163a54c7b9f",
+      "title": "www.hyundai.com",
+      "excerpt": "(단위 : 백만원)\n\n   \n제 58 기\n제 57 기\n제 56 기\n\n영업활동으로인한현금\n              (5,991,270) (5,661,641) (2,518,760)\n흐름\n유형자산의처분 246,102 171,731 144,338\n무형자산의처분 28,987 125,885 2,333\n공동기업및관계기업\n                  26,155 13,056 19,650\n투자의처분\n종속기업의취득(86,643) 0 0\n기타금융자산(비유동\n               (883,445) (1,290,519) (862,570)\n)의증가\n기타채권의증가(56,924) (513,604) (89,586)\n장기금융상품의증가(69,019) (34,179) (73,150)\n유형자산의취득(8,366,764) (8,061,333) (7,070,758)\n무형자산의취득(2,703,092) (2,306,122) (1,780,423)\n"
+    }
+  },
+  "answer": "| 구분 | 도요타 | 혼다 | 현대차 |\n|---|---:|---:|---:|\n| 기준·통화 | IFRS, 백만 엔 | IFRS, 백만 엔 | K-IFRS, 백만 원 |\n| 연결 영업현금흐름 | [3,696,934](#evidence-ev_3c4173e9883268f7d62e5b7a3c3aa87d) | [292,152](#evidence-ev_0ce25a912211781f3229f4db9ac82049) | [-5,991,270](#evidence-ev_09099e341a980d202e3b3163a54c7b9f) |\n| 설비투자(유형자산 취득) | [1,906,811](#evidence-ev_3c4173e9883268f7d62e5b7a3c3aa87d) | [510,803](#evidence-ev_0ce25a912211781f3229f4db9ac82049) | [8,366,764](#evidence-ev_09099e341a980d202e3b3163a54c7b9f) |\n\n도요타의 타인 리스용 자산 취득은 [2,996,920백만 엔](#evidence-ev_3c4173e9883268f7d62e5b7a3c3aa87d)으로, 위 설비투자에 넣지 않았습니다. 무형자산 취득은 도요타 [354,196백만 엔](#evidence-ev_3c4173e9883268f7d62e5b7a3c3aa87d), 혼다 [336,632백만 엔](#evidence-ev_0ce25a912211781f3229f4db9ac82049), 현대차 [2,703,092백만 원](#evidence-ev_09099e341a980d202e3b3163a54c7b9f)입니다.\n\n도요타 금융 부문 영업현금흐름은 [1,022,379백만 엔](#evidence-ev_5206702b3554d9ab72e180e73af70c1a) 유출이라, 연결 잉여현금흐름이 비금융 기준보다 작습니다. 혼다는 금융채권 증가 [904,344백만 엔](#evidence-ev_0ce25a912211781f3229f4db9ac82049)과 운용리스자산 [690,110백만 엔](#evidence-ev_0ce25a912211781f3229f4db9ac82049)이 영업현금 안에 있어 연결 잉여현금흐름이 마이너스입니다.",
+  "stored_checks": [
+    {
+      "link_index": 3,
+      "text": "1,906,811",
+      "evidence_id": "ev_3c4173e9883268f7d62e5b7a3c3aa87d",
+      "kind": "passage",
+      "status": "not_found",
+      "nearest": "(1,906,811)",
+      "comparedValue": "(1,906,811)",
+      "comparisonReason": "sign_conflict",
+      "span": {
+        "start": 2123,
+        "end": 2134
+      }
+    },
+    {
+      "link_index": 4,
+      "text": "510,803",
+      "evidence_id": "ev_0ce25a912211781f3229f4db9ac82049",
+      "kind": "passage",
+      "status": "not_found",
+      "nearest": "△510,803",
+      "comparedValue": "△510,803",
+      "comparisonReason": "sign_conflict",
+      "span": {
+        "start": 7776,
+        "end": 7786
+      }
+    },
+    {
+      "link_index": 5,
+      "text": "8,366,764",
+      "evidence_id": "ev_09099e341a980d202e3b3163a54c7b9f",
+      "kind": "passage",
+      "status": "not_found",
+      "nearest": "(8,366,764)",
+      "comparedValue": "(8,366,764)",
+      "comparisonReason": "sign_conflict",
+      "span": {
+        "start": 3909,
+        "end": 3920
+      }
+    },
+    {
+      "link_index": 6,
+      "text": "2,996,920백만 엔",
+      "evidence_id": "ev_3c4173e9883268f7d62e5b7a3c3aa87d",
+      "kind": "passage",
+      "status": "not_found",
+      "nearest": "(2,996,920)",
+      "comparedValue": "(2,996,920)",
+      "comparisonReason": "sign_conflict",
+      "span": {
+        "start": 2187,
+        "end": 2198
+      }
+    },
+    {
+      "link_index": 7,
+      "text": "354,196백만 엔",
+      "evidence_id": "ev_3c4173e9883268f7d62e5b7a3c3aa87d",
+      "kind": "passage",
+      "status": "not_found",
+      "nearest": "(354,196)",
+      "comparedValue": "(354,196)",
+      "comparisonReason": "sign_conflict",
+      "span": {
+        "start": 2400,
+        "end": 2409
+      }
+    },
+    {
+      "link_index": 8,
+      "text": "336,632백만 엔",
+      "evidence_id": "ev_0ce25a912211781f3229f4db9ac82049",
+      "kind": "passage",
+      "status": "not_found",
+      "nearest": "△336,632",
+      "comparedValue": "△336,632",
+      "comparisonReason": "sign_conflict",
+      "span": {
+        "start": 7853,
+        "end": 7863
+      }
+    },
+    {
+      "link_index": 9,
+      "text": "2,703,092백만 원",
+      "evidence_id": "ev_09099e341a980d202e3b3163a54c7b9f",
+      "kind": "passage",
+      "status": "not_found",
+      "nearest": "(2,703,092)",
+      "comparedValue": "(2,703,092)",
+      "comparisonReason": "sign_conflict",
+      "span": {
+        "start": 3966,
+        "end": 3977
+      }
+    },
+    {
+      "link_index": 10,
+      "text": "1,022,379백만 엔",
+      "evidence_id": "ev_5206702b3554d9ab72e180e73af70c1a",
+      "kind": "passage",
+      "status": "not_found",
+      "nearest": "(1,022,379)",
+      "comparedValue": "(1,022,379)",
+      "comparisonReason": "sign_conflict",
+      "span": {
+        "start": 4313,
+        "end": 4324
+      }
+    },
+    {
+      "link_index": 11,
+      "text": "904,344백만 엔",
+      "evidence_id": "ev_0ce25a912211781f3229f4db9ac82049",
+      "kind": "passage",
+      "status": "not_found",
+      "nearest": "△904,344",
+      "comparedValue": "△904,344",
+      "comparisonReason": "sign_conflict",
+      "span": {
+        "start": 7284,
+        "end": 7294
+      }
+    },
+    {
+      "link_index": 12,
+      "text": "690,110백만 엔",
+      "evidence_id": "ev_0ce25a912211781f3229f4db9ac82049",
+      "kind": "passage",
+      "status": "not_found",
+      "nearest": "△690,110",
+      "comparedValue": "△690,110",
+      "comparisonReason": "sign_conflict",
+      "span": {
+        "start": 7344,
+        "end": 7354
+      }
+    }
+  ],
+  "citation_marker": {
+    "answer": "| 회계연도 | 매출 | 보고 영업이익 | 표준화 영업이익 | 순이익 (보통주 귀속) |\n|---|---:|---:|---:|---:|\n| 2020 | 반환되지 않음 | 반환되지 않음 | 반환되지 않음 | 반환되지 않음 |\n| 2021 | 숫자 없음 [2](#evidence-ev_690068e97ef9a41dddadcaabde147d11) | 숫자 없음 | 숫자 없음 | 숫자 없음 |",
+    "evidence": {
+      "id": "ev_690068e97ef9a41dddadcaabde147d11",
+      "title": "Dataset slice",
+      "tool_name": "dataset_query",
+      "excerpt": "{\n  \"coverage\": \"selected dataset slice\",\n  \"dataset_ref\": {\n    \"dataset_id\": \"dataset-ea74587e8cf145879b21c3b23582f24b\",\n    \"digest\": \"39bce309200c077bac21cf47112b7317b243fc945a39a4241e3657aaf48891ed\",\n    \"revision\": 3\n  },\n  \"fetched_at\": \"2026-11-22T20:23:37.296Z\",\n  \"metadata\": {\n    \"fetched_at\": \"2026-11-22T20:23:37.296Z\",\n    \"model_coverage\": \"bounded_sample\",\n    \"producer\": \"mcp\",\n    \"publication_policy\": \"provider-declared; unknown availability is not point-in-time evidence\",\n    \"request\": {\n      \"arguments\": {\n        \"limit\": 5,\n        \"period\": \"annual\",\n        \"provider\": \"yfinance\",\n        \"symbol\": \"TSLA\"\n      },\n      \"server_id\": \"openbb\",\n      \"tool_name\": \"equity_fundamental_income\"\n    },\n    \"trust\": \"numeric\"\n  },\n  \"next_offset\": null,\n  \"offset\": 4,\n  \"ref\": {\n    \"dataset_id\": \"dataset-ea74587e8cf145879b21c3b23582f24b\",\n    \"digest\": \"39bce309200c077bac21cf47112b7317b243fc945a39a4241e3657aaf48891ed\",\n    \"revision\": 3\n  },\n  \"rows\": [\n    {\n      \"average_dilution_earnings\": 9000000.0,\n      \"basic_earnings_per_share\": null,\n      \"cost_of_revenue\": null,\n      \"diluted_earnings_per_share\": null,\n      \"diluted_ni_availto_com_stockholders\": null,\n      \"ebit\": null,\n      \"ebitda\": null,\n      \"gross_profit\": null,\n      \"interest_expense\": null,\n      \"interest_expense_non_operating\": null,\n      \"interest_income\": null,\n      \"interest_income_non_operating\": null,\n      \"minority_interests\": null,\n      \"net_income\": null,\n      \"net_income_attributable_to_common_shareholders\": null,\n      \"net_income_continuous_operations\": null,\n      \"net_income_from_continuing_and_discontinued_operation\": null,\n      \"net_income_from_continuing_operation_net_minority_interest\": null,\n      \"net_income_including_noncontrolling_interests\": null,\n      \"net_interest_income\": null,\n      \"net_non_operating_interest_income_expense\": null,\n      \"normalized_ebitda\": null,\n      \"normalized_income\": null,\n      \"operating_expense\": null,\n      \"operating_income\": null,\n      \"operating_revenue\": null,\n      \"other_income_expense\": null,\n      \"other_non_operating_income_expenses\": null,\n      \"otherunder_preferred_stock_dividend\": -5000000.0,\n      \"period_ending\": \"2021-12-31\",\n      \"reconciled_cost_of_revenue\": null,\n      \"reconciled_depreciation\": null,\n      \"rent_expense_supplemental\": 978000000.0,\n      \"research_and_development_expense\": null,\n      \"restructuring_and_mergern_acquisition\": null,\n      \"selling_general_and_admin_expense\": null,\n      \"special_income_charges\": null,\n      \"tax_effect_of_unusual_items\": null,\n      \"tax_provision\": null,\n      \"tax_rate_for_calcs\": null,\n      \"total_expenses\": null,\n      \"total_operating_income_as_reported\": null,\n      \"total_pre_tax_income\": null,\n      \"total_revenue\": null,\n      \"total_unusual_items\": null,\n      \"total_unusual_items_excluding_goodwill\": null,\n      \"weighted_average_basic_shares_outstanding\": null,\n      \"weighted_average_diluted_shares_outstanding\": null\n    }\n  ],\n  \"selection\": {\n    \"columns\": [],\n    \"limit\": 1,\n    \"offset\": 4,\n    \"pointer\": \"/structuredContent/results\"\n  },\n  \"title\": \"Dataset slice\",\n  \"total\": 5\n}"
+    },
+    "stored_check": {
+      "link_index": 0,
+      "text": "2",
+      "evidence_id": "ev_690068e97ef9a41dddadcaabde147d11",
+      "kind": "step",
+      "status": "not_found",
+      "comparisonReason": "no_candidate"
+    }
+  }
+}

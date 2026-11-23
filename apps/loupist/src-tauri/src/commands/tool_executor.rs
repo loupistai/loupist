@@ -208,6 +208,9 @@ pub(super) struct ToolCapture {
     pub(in crate::commands) staged_bot_memory: Mutex<bot_memory::BotMemoryReservations>,
     /// Messages this Bot turn was offered for review (`chat::bot_memory`).
     pub(in crate::commands) bot_memory_review: Vec<String>,
+    /// Bot memory as this Bot turn began. An earlier reply's save that changes
+    /// it meanwhile keeps this turn from sealing a Pi cache with the old entries.
+    pub(in crate::commands) bot_memory_basis: Option<crate::chat::bot_memory::BotMemory>,
     /// Pages and ops each `lens_file` delivery reserved from the turn's
     /// budget; an undelivered call frees its share.
     lens_file_budget: Mutex<BTreeMap<String, (usize, usize)>>,

@@ -1,0 +1,1073 @@
+{
+ "note": "Organization nodes, Japan and China, and the claims on the duplicate automakers, from a v0.1.5 tester World after CompaniesMarketCap ranking pages; descriptions kept only for the duplicates. firstSeen is each node's first entity_added.",
+ "nodes": [
+  {
+   "id": "nod_00d0d74969f6f61705c87684dac1b211",
+   "name": "Honda HMC",
+   "aliases": [
+    "Honda"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "HMC"
+   }
+  },
+  {
+   "id": "nod_00f7b5283b886032c7e5342c39e8f252",
+   "name": "FAW Car",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "000800.SZ"
+   }
+  },
+  {
+   "id": "nod_0397a9971a48e0ed63b5c6a33ec0a588",
+   "name": "Ford F",
+   "aliases": [
+    "F",
+    "Ford",
+    "Ford Motor Company"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "identifier": "0000037996",
+    "ticker": "F"
+   }
+  },
+  {
+   "id": "nod_096aac54ee74c6d69c08b0c99240e57d",
+   "name": "Chongqing Changan 000625.SZ",
+   "aliases": [
+    "Li Auto LI"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "000625.SZ"
+   }
+  },
+  {
+   "id": "nod_0a20dee258501f284fe84a029ae51e1e",
+   "name": "Hyundai 005380.KS",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "005380.KS"
+   }
+  },
+  {
+   "id": "nod_0e5ec98ceb6fe48939fb8d1b79cbdd13",
+   "name": "Ferrari RACE",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "RACE"
+   }
+  },
+  {
+   "id": "nod_0f382e854e3a40a9591a7d88180c02e6",
+   "name": "Mazda 7261.T",
+   "aliases": [
+    "Mazda"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "7261.T"
+   }
+  },
+  {
+   "id": "nod_10018f875d96599836fe5636f7f8c9ec",
+   "name": "Polaris",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "PII"
+   }
+  },
+  {
+   "id": "nod_188ff743694de8b57485949166158310",
+   "name": "Ford Credit",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {}
+  },
+  {
+   "id": "nod_19a6f236445d44088da76e89d4b5b536",
+   "name": "Dongfeng Motor 0489.HK",
+   "aliases": [
+    "Stellantis STLA"
+   ],
+   "description": "Dongfeng Motor 0489.HK is located in China.",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "0489.HK"
+   }
+  },
+  {
+   "id": "nod_1a6c4793e29dacf6841f3257e2ba11f9",
+   "name": "Stellantis STLA",
+   "aliases": [
+    "Isuzu 7202.T"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "STLA"
+   }
+  },
+  {
+   "id": "nod_1ad3d5ccfb10ecc4542f8f3580521c0e",
+   "name": "Geely 0175.HK",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "0175.HK"
+   }
+  },
+  {
+   "id": "nod_1b4a89abe65d0e1a92a209b1f020efde",
+   "name": "Tata Motors TATAMOTORS.NS",
+   "aliases": [
+    "Tata Motors"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "TATAMOTORS.NS"
+   }
+  },
+  {
+   "id": "nod_27da2043432f60ea209b785c33a69456",
+   "name": "BlueOval SK",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {}
+  },
+  {
+   "id": "nod_28800b81e38207e526b22e15bc5faff4",
+   "name": "Japan",
+   "aliases": [],
+   "description": "",
+   "kind": "Place",
+   "sourceRole": "source",
+   "properties": {}
+  },
+  {
+   "id": "nod_2c0768f67511f3234e715397e6a02966",
+   "name": "Kia 000270.KS",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "000270.KS"
+   }
+  },
+  {
+   "id": "nod_2d69b68255b1f7fe81fd7ae614cbeb1c",
+   "name": "Subaru 7270.T",
+   "aliases": [
+    "Seres Group 601127.SS"
+   ],
+   "description": "Subaru 7270.T ranks 27 with $0.57 B earnings (TTM). Price $16.98, daily change 2.79%. Japan.\nSubaru 7270.T is located in Japan.",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "7270.T"
+   }
+  },
+  {
+   "id": "nod_32d74625383eb4ee1947a6e30eb459a7",
+   "name": "BMW BMW.DE",
+   "aliases": [
+    "BMW"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "BMW.DE"
+   }
+  },
+  {
+   "id": "nod_341c0769f68f4d9766347a3804111e4f",
+   "name": "NYSE",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {}
+  },
+  {
+   "id": "nod_37affddb244c429c1c5a8dc2e4901884",
+   "name": "Nissan 7201.T",
+   "aliases": [
+    "Nissan"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "7201.T"
+   }
+  },
+  {
+   "id": "nod_3c40c93f1e174bdfaf626b8f0de9cc2c",
+   "name": "Aptera Motors",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "SEV"
+   }
+  },
+  {
+   "id": "nod_3c92f46ad814a67deebe5d5f199a3a8b",
+   "name": "Jiangling Motors Corporation (JMC)",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {}
+  },
+  {
+   "id": "nod_3fe3f1122acc755fe026e6c820435d3c",
+   "name": "Nissan Shatai",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "7222.T"
+   }
+  },
+  {
+   "id": "nod_473676aed5a24c0f2370c783875405ad",
+   "name": "Hotai Motor 2207.TW",
+   "aliases": [
+    "Renault RNO.PA"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "2207.TW"
+   }
+  },
+  {
+   "id": "nod_478b535b92397152c1c5ec03c21f120a",
+   "name": "China",
+   "aliases": [],
+   "description": "",
+   "kind": "Place",
+   "sourceRole": "source",
+   "properties": {}
+  },
+  {
+   "id": "nod_4bc5df666b4f253889d70b0bf31081a4",
+   "name": "Maruti Suzuki India MARUTI.NS",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "MARUTI.NS"
+   }
+  },
+  {
+   "id": "nod_4f8374610d29e9484fe582a81f480edb",
+   "name": "Xiaomi XIACF",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "XIACF"
+   }
+  },
+  {
+   "id": "nod_54413b45790ea52a203dbc8be3ca8147",
+   "name": "JAC Motors",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "600418.SS"
+   }
+  },
+  {
+   "id": "nod_5b9e4b4e4358018b678f5eccb524cad5",
+   "name": "Lucid Motors (LCID)",
+   "aliases": [
+    "Lucid Motors"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "LCID"
+   }
+  },
+  {
+   "id": "nod_5e17c1ef53601af0673d0dff08dc9e6b",
+   "name": "Phoenix Motor",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "PEV"
+   }
+  },
+  {
+   "id": "nod_6023b79a30e6015d4e1b38acea09d7f5",
+   "name": "GM Financial",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {}
+  },
+  {
+   "id": "nod_6da5bdda132a5c53ce07c238fa560218",
+   "name": "Ford Otosan FROTO.IS",
+   "aliases": [
+    "Ford Otosan"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "FROTO.IS"
+   }
+  },
+  {
+   "id": "nod_6e051617cb9ae5a8d9a8050982ed5d01",
+   "name": "Mahindra & Mahindra M&M.NS",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "M&M.NS"
+   }
+  },
+  {
+   "id": "nod_6f05d675de1e49de5348a64281a542ed",
+   "name": "Chery Automobile 9973.HK",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "9973.HK"
+   }
+  },
+  {
+   "id": "nod_7839dde8476b0af2b3047919108a8470",
+   "name": "NIO",
+   "aliases": [
+    "NIO (NIO)"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "NIO"
+   }
+  },
+  {
+   "id": "nod_7a2edbe41e9233b23387e7f84b7b7d7c",
+   "name": "SpaceX",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {}
+  },
+  {
+   "id": "nod_7b385fb07baf249ee98d4443912de51e",
+   "name": "yfinance",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {}
+  },
+  {
+   "id": "nod_7ce2848d65a1587a792dfd22380b455f",
+   "name": "Subaru 7270.T",
+   "aliases": [],
+   "description": "Subaru 7270.T ranks 25 with market cap $11.70 B, price $16.98 up 2.79% today, based in Japan.",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "7270.T"
+   }
+  },
+  {
+   "id": "nod_7d107fb204ebebc5a8233a54a80d3098",
+   "name": "BYD 002594.SZ",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "002594.SZ"
+   }
+  },
+  {
+   "id": "nod_7d757331b482fe5ea92e502d4a07041b",
+   "name": "Nasdaq Global Select Market",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {}
+  },
+  {
+   "id": "nod_7fd453a6fcc015ce29903924c69c9d28",
+   "name": "Tofaş Türk Otomobil Fabrikası TOASO.IS",
+   "aliases": [
+    "Tofaş Türk Otomobil Fabrikası"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "TOASO.IS"
+   }
+  },
+  {
+   "id": "nod_824237ded7f3353f13162b855670f239",
+   "name": "REE Automotive",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "REE"
+   }
+  },
+  {
+   "id": "nod_83105ceaa2c58a513d6dec38951cb9a5",
+   "name": "VinFast Auto",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "VFS"
+   }
+  },
+  {
+   "id": "nod_83e3ea2b8a8e8b5ce0c8ebe1aa3c0383",
+   "name": "Force Motors FORCEMOT.NS",
+   "aliases": [
+    "Force Motors"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "FORCEMOT.NS"
+   }
+  },
+  {
+   "id": "nod_891a410ab82567a60d887e8ccad06984",
+   "name": "GAC (Guangzhou Automobile Group) 601238.SS",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "601238.SS"
+   }
+  },
+  {
+   "id": "nod_8ae08898902aa4570e07c1a82cc6cbc1",
+   "name": "Securities and Exchange Commission",
+   "aliases": [
+    "SEC",
+    "U.S. Securities and Exchange Commission",
+    "United States Securities and Exchange Commission"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {}
+  },
+  {
+   "id": "nod_8b6fb5b8cee51930286050a4ea84adac",
+   "name": "Cruise",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {}
+  },
+  {
+   "id": "nod_8e8d35da6c8c36e8dd485304b9760881",
+   "name": "Dongfeng Motor 0489.HK",
+   "aliases": [],
+   "description": "Dongfeng Motor 0489.HK ranks 29 with market cap $10.05 B, price $1.22 up 1.71% today, based in China.",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "0489.HK"
+   }
+  },
+  {
+   "id": "nod_969e3c46998d9887dd196c7b29114949",
+   "name": "Lotus Technology",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "LOT"
+   }
+  },
+  {
+   "id": "nod_9e3aabd3c9956f80b18921384fa64276",
+   "name": "Porsche P911.DE",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "P911.DE"
+   }
+  },
+  {
+   "id": "nod_9f33c9c5f2cd4b125374052daf0335b8",
+   "name": "Yulon Motor Company 2201",
+   "aliases": [
+    "Yulon Motor Company",
+    "Yulon Motor Company 2201.TW"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "2201.TW"
+   }
+  },
+  {
+   "id": "nod_a2d138d7794a086149d082e087e89234",
+   "name": "Volvo Car VOLCAR-B.ST",
+   "aliases": [
+    "Volvo Car"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "VOLCAR-B.ST"
+   }
+  },
+  {
+   "id": "nod_a3372d1a51184a05855b7c4cbcb7edda",
+   "name": "Novelis",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {}
+  },
+  {
+   "id": "nod_a39cf94f4f7ced38fa2d44d8241d7355",
+   "name": "Isuzu 7202.T",
+   "aliases": [
+    "Hotai Motor 2207.TW"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "7202.T"
+   }
+  },
+  {
+   "id": "nod_a3cc229135e3efd663ba8f8585fbcee3",
+   "name": "Rivian RIVN",
+   "aliases": [
+    "Rivian (RIVN)"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "RIVN"
+   }
+  },
+  {
+   "id": "nod_a5acf9c8ded9c20e08957348f5c385ed",
+   "name": "Volkswagen VOW3.DE",
+   "aliases": [
+    "Volkswagen",
+    "Volkswagen Group"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "VOW3.DE"
+   }
+  },
+  {
+   "id": "nod_aaf7f07f79f76c17fc531a7f67cb350b",
+   "name": "Polestar",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "PSNY"
+   }
+  },
+  {
+   "id": "nod_b3cb7d0c769d79658b27254811dce63d",
+   "name": "Cenntro Inc.",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "CENN"
+   }
+  },
+  {
+   "id": "nod_b93cb1d3cc86ac4446e84427cb60684d",
+   "name": "SAIC General Motors Sales Co., Ltd.",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {}
+  },
+  {
+   "id": "nod_b995e9632e4e867a9c2329b9db7797f4",
+   "name": "Leapmotor 9863.HK",
+   "aliases": [
+    "Leapmotor"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "9863.HK"
+   }
+  },
+  {
+   "id": "nod_c163138ef65dac3d0afd8dcab20c6eba",
+   "name": "SAIC Motor 600104.SS",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "600104.SS"
+   }
+  },
+  {
+   "id": "nod_c1b90c922948d108575ae1a95908b03d",
+   "name": "KG Mobility (SsangYong Motor) 003620.KS",
+   "aliases": [
+    "KG Mobility (SsangYong Motor)"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "003620.KS"
+   }
+  },
+  {
+   "id": "nod_c27859071772fc0986bc5473a385e5b7",
+   "name": "Kandi Technologies Group",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "KNDI"
+   }
+  },
+  {
+   "id": "nod_c4b65ec1956d6186bdce6903b53b5204",
+   "name": "Tesla, Inc.",
+   "aliases": [
+    "TSLA",
+    "Tesla",
+    "Tesla (TSLA)",
+    "Tesla TSLA",
+    "테슬라"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "exchange": "The Nasdaq Global Select Market",
+    "identifier": "001-34756",
+    "original_name": "테슬라",
+    "ticker": "TSLA"
+   }
+  },
+  {
+   "id": "nod_c900d1342edf8f20e156fc965ded583a",
+   "name": "Mitsubishi Motors 7211.T",
+   "aliases": [
+    "Mitsubishi Motors"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "7211.T"
+   }
+  },
+  {
+   "id": "nod_ce012bb49e07dd483534b2bb988a5adf",
+   "name": "Apple (AAPL)",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "AAPL"
+   }
+  },
+  {
+   "id": "nod_cffba057e1ea50a3a54b6e65ec4dafd4",
+   "name": "Faraday Future",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "FFAI"
+   }
+  },
+  {
+   "id": "nod_d2bcd6c1fa814fe4d672e34a04a26353",
+   "name": "Toyota TM",
+   "aliases": [
+    "Toyota"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "TM"
+   }
+  },
+  {
+   "id": "nod_d4805a5df57f0cca70c3912c0c0854b2",
+   "name": "Quartr",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {}
+  },
+  {
+   "id": "nod_d7a8adf7c5ab79fcbf4ae89d21e26125",
+   "name": "Seres Group 601127.SS",
+   "aliases": [
+    "Chongqing Changan 000625.SZ"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "601127.SS"
+   }
+  },
+  {
+   "id": "nod_e05ca38b99a87f722a2f39054afef2b9",
+   "name": "Great Wall Motors 601633.SS",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "601633.SS"
+   }
+  },
+  {
+   "id": "nod_e5b742ee89ce6abd94da0629706d5d08",
+   "name": "Hyundai Motor India HYUNDAI.NS",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "HYUNDAI.NS"
+   }
+  },
+  {
+   "id": "nod_e635ed12288ce9c64a9bd6e1112b4881",
+   "name": "SAIC GM Wuling Automobile Co., Ltd.",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {}
+  },
+  {
+   "id": "nod_e7b7790a487c093e6179b251455357a7",
+   "name": "U.S. Government",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {}
+  },
+  {
+   "id": "nod_f5f1dc0bc2f8504af27eb7b3d6fc8311",
+   "name": "Aston Martin",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "AML.L"
+   }
+  },
+  {
+   "id": "nod_f765ca96fd6ec5cd1cb531968f6d6291",
+   "name": "Renault RNO.PA",
+   "aliases": [
+    "Renault",
+    "XPeng XPEV"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "RNO.PA"
+   }
+  },
+  {
+   "id": "nod_f7c505fe0f831011e7b9833f36606d94",
+   "name": "Mercedes-Benz MBG.DE",
+   "aliases": [
+    "Mercedes-Benz"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "MBG.DE"
+   }
+  },
+  {
+   "id": "nod_fa7a054ddf0d5b194815bc2a0bdee46d",
+   "name": "Suzuki Motor 7269.T",
+   "aliases": [],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "ticker": "7269.T"
+   }
+  },
+  {
+   "id": "nod_fc0b6ba6773d251e11c05f7204141fc4",
+   "name": "General Motors GM",
+   "aliases": [
+    "GM",
+    "General Motors",
+    "General Motors Company"
+   ],
+   "description": "",
+   "kind": "Organization",
+   "sourceRole": "source",
+   "properties": {
+    "exchange": "NYSE",
+    "ticker": "GM"
+   }
+  }
+ ],
+ "claims": [
+  {
+   "attribution": "companiesmarketcap.com",
+   "effectiveTime": null,
+   "endpoints": [
+    {
+     "nodeId": "nod_19a6f236445d44088da76e89d4b5b536",
+     "role": "source"
+    },
+    {
+     "nodeId": "nod_478b535b92397152c1c5ec03c21f120a",
+     "role": "target"
+    }
+   ],
+   "evidence": [
+    {
+     "attribution": "companiesmarketcap.com",
+     "role": "extracted_from",
+     "spanId": "spn_9b1da88de4864c7da54a80b62aafa31f"
+    }
+   ],
+   "expiredAt": null,
+   "id": "clm_8382596462673e58e43c817850a8078f",
+   "invalidAt": null,
+   "proposition": "Dongfeng Motor 0489.HK is located in China.",
+   "publicationTime": {
+    "approximate": false,
+    "precision": "month",
+    "value": "2026-11"
+   },
+   "qualifiers": [],
+   "recordedAtMs": 1795376069962,
+   "relation": "LOCATED_IN",
+   "status": "active",
+   "validAt": null
+  },
+  {
+   "attribution": "companiesmarketcap.com",
+   "effectiveTime": null,
+   "endpoints": [
+    {
+     "nodeId": "nod_2d69b68255b1f7fe81fd7ae614cbeb1c",
+     "role": "source"
+    },
+    {
+     "nodeId": "nod_28800b81e38207e526b22e15bc5faff4",
+     "role": "target"
+    }
+   ],
+   "evidence": [
+    {
+     "attribution": "companiesmarketcap.com",
+     "role": "extracted_from",
+     "spanId": "spn_9b1da88de4864c7da54a80b62aafa31f"
+    }
+   ],
+   "expiredAt": null,
+   "id": "clm_a2742607e41125725644b981953d7f41",
+   "invalidAt": null,
+   "proposition": "Subaru 7270.T is located in Japan.",
+   "publicationTime": {
+    "approximate": false,
+    "precision": "month",
+    "value": "2026-11"
+   },
+   "qualifiers": [],
+   "recordedAtMs": 1795376069962,
+   "relation": "LOCATED_IN",
+   "status": "active",
+   "validAt": null
+  }
+ ],
+ "firstSeen": {
+  "nod_00d0d74969f6f61705c87684dac1b211": 1795375826654,
+  "nod_00f7b5283b886032c7e5342c39e8f252": 1795376843306,
+  "nod_0397a9971a48e0ed63b5c6a33ec0a588": 1795375826654,
+  "nod_096aac54ee74c6d69c08b0c99240e57d": 1795375530484,
+  "nod_0a20dee258501f284fe84a029ae51e1e": 1795375530484,
+  "nod_0e5ec98ceb6fe48939fb8d1b79cbdd13": 1795375530484,
+  "nod_0f382e854e3a40a9591a7d88180c02e6": 1795375530484,
+  "nod_10018f875d96599836fe5636f7f8c9ec": 1795376843306,
+  "nod_188ff743694de8b57485949166158310": 1795377093271,
+  "nod_19a6f236445d44088da76e89d4b5b536": 1795376070003,
+  "nod_1a6c4793e29dacf6841f3257e2ba11f9": 1795375826654,
+  "nod_1ad3d5ccfb10ecc4542f8f3580521c0e": 1795375530484,
+  "nod_1b4a89abe65d0e1a92a209b1f020efde": 1795375530484,
+  "nod_27da2043432f60ea209b785c33a69456": 1795379200315,
+  "nod_28800b81e38207e526b22e15bc5faff4": 1795374911671,
+  "nod_2c0768f67511f3234e715397e6a02966": 1795375530484,
+  "nod_2d69b68255b1f7fe81fd7ae614cbeb1c": 1795375530484,
+  "nod_32d74625383eb4ee1947a6e30eb459a7": 1795375530484,
+  "nod_341c0769f68f4d9766347a3804111e4f": 1795378168297,
+  "nod_37affddb244c429c1c5a8dc2e4901884": 1795375826654,
+  "nod_3c40c93f1e174bdfaf626b8f0de9cc2c": 1795376843306,
+  "nod_3c92f46ad814a67deebe5d5f199a3a8b": 1795379200315,
+  "nod_3fe3f1122acc755fe026e6c820435d3c": 1795376843306,
+  "nod_473676aed5a24c0f2370c783875405ad": 1795375530484,
+  "nod_478b535b92397152c1c5ec03c21f120a": 1795376070003,
+  "nod_4bc5df666b4f253889d70b0bf31081a4": 1795375530484,
+  "nod_4f8374610d29e9484fe582a81f480edb": 1795375530484,
+  "nod_54413b45790ea52a203dbc8be3ca8147": 1795376843306,
+  "nod_5b9e4b4e4358018b678f5eccb524cad5": 1795376354097,
+  "nod_5e17c1ef53601af0673d0dff08dc9e6b": 1795376843306,
+  "nod_6023b79a30e6015d4e1b38acea09d7f5": 1795377244915,
+  "nod_6da5bdda132a5c53ce07c238fa560218": 1795375530484,
+  "nod_6e051617cb9ae5a8d9a8050982ed5d01": 1795375530484,
+  "nod_6f05d675de1e49de5348a64281a542ed": 1795375530484,
+  "nod_7839dde8476b0af2b3047919108a8470": 1795376206170,
+  "nod_7a2edbe41e9233b23387e7f84b7b7d7c": 1795374737624,
+  "nod_7b385fb07baf249ee98d4443912de51e": 1795374436036,
+  "nod_7ce2848d65a1587a792dfd22380b455f": 1795376206170,
+  "nod_7d107fb204ebebc5a8233a54a80d3098": 1795375530484,
+  "nod_7d757331b482fe5ea92e502d4a07041b": 1795374362415,
+  "nod_7fd453a6fcc015ce29903924c69c9d28": 1795375530484,
+  "nod_824237ded7f3353f13162b855670f239": 1795376843306,
+  "nod_83105ceaa2c58a513d6dec38951cb9a5": 1795376843306,
+  "nod_83e3ea2b8a8e8b5ce0c8ebe1aa3c0383": 1795375530484,
+  "nod_891a410ab82567a60d887e8ccad06984": 1795376206170,
+  "nod_8ae08898902aa4570e07c1a82cc6cbc1": 1795374362415,
+  "nod_8b6fb5b8cee51930286050a4ea84adac": 1795377364819,
+  "nod_8e8d35da6c8c36e8dd485304b9760881": 1795376206170,
+  "nod_969e3c46998d9887dd196c7b29114949": 1795376843306,
+  "nod_9e3aabd3c9956f80b18921384fa64276": 1795375530484,
+  "nod_9f33c9c5f2cd4b125374052daf0335b8": 1795375530484,
+  "nod_a2d138d7794a086149d082e087e89234": 1795375826654,
+  "nod_a3372d1a51184a05855b7c4cbcb7edda": 1795377093271,
+  "nod_a39cf94f4f7ced38fa2d44d8241d7355": 1795375530484,
+  "nod_a3cc229135e3efd663ba8f8585fbcee3": 1795376206170,
+  "nod_a5acf9c8ded9c20e08957348f5c385ed": 1795375530484,
+  "nod_aaf7f07f79f76c17fc531a7f67cb350b": 1795376843306,
+  "nod_b3cb7d0c769d79658b27254811dce63d": 1795376843306,
+  "nod_b93cb1d3cc86ac4446e84427cb60684d": 1795379292012,
+  "nod_b995e9632e4e867a9c2329b9db7797f4": 1795376070003,
+  "nod_c163138ef65dac3d0afd8dcab20c6eba": 1795375530484,
+  "nod_c1b90c922948d108575ae1a95908b03d": 1795376070003,
+  "nod_c27859071772fc0986bc5473a385e5b7": 1795376843306,
+  "nod_c4b65ec1956d6186bdce6903b53b5204": 1795374362415,
+  "nod_c900d1342edf8f20e156fc965ded583a": 1795375530484,
+  "nod_ce012bb49e07dd483534b2bb988a5adf": 1795376354097,
+  "nod_cffba057e1ea50a3a54b6e65ec4dafd4": 1795376843306,
+  "nod_d2bcd6c1fa814fe4d672e34a04a26353": 1795375530484,
+  "nod_d4805a5df57f0cca70c3912c0c0854b2": 1795378886264,
+  "nod_d7a8adf7c5ab79fcbf4ae89d21e26125": 1795375826654,
+  "nod_e05ca38b99a87f722a2f39054afef2b9": 1795375530484,
+  "nod_e5b742ee89ce6abd94da0629706d5d08": 1795375530484,
+  "nod_e635ed12288ce9c64a9bd6e1112b4881": 1795379292012,
+  "nod_e7b7790a487c093e6179b251455357a7": 1795377244915,
+  "nod_f5f1dc0bc2f8504af27eb7b3d6fc8311": 1795376843306,
+  "nod_f765ca96fd6ec5cd1cb531968f6d6291": 1795375826654,
+  "nod_f7c505fe0f831011e7b9833f36606d94": 1795375530484,
+  "nod_fa7a054ddf0d5b194815bc2a0bdee46d": 1795375530484,
+  "nod_fc0b6ba6773d251e11c05f7204141fc4": 1795375530484
+ }
+}

@@ -71,6 +71,194 @@ fn caption(neighbour: &str) -> Option<Label> {
     label(neighbour.trim().trim_matches('*'))
 }
 
+/// The end of the Markdown link that starts at `at`.
+fn link_end(content: &str, at: usize) -> usize {
+    content[at..]
+        .find("](")
+        .and_then(|open| {
+            let target = at + open + 2;
+            content[target..].find(')').map(|close| target + close + 1)
+        })
+        .unwrap_or(at)
+}
+
+/// What the answer's own words say about the figure linked at `at`.
+struct AnswerWords<'a> {
+    /// The table row label, or the nearest clause of the sentence that names
+    /// a line, if any.
+    label: &'a str,
+    line: Option<numbers::LineNature>,
+    falls: bool,
+}
+
+/// A table row's figure takes its row label. A sentence's figure takes the
+/// nearest clause before it that names a line, within the sentence; links
+/// and clause punctuation separate clauses.
+fn answer_words(content: &str, at: usize) -> AnswerWords<'_> {
+    let line_start = content[..at].rfind('\n').map_or(0, |start| start + 1);
+    let line = &content[line_start..at];
+    if let Some(row) = line.trim_start().strip_prefix('|') {
+        let label = row.split('|').next().unwrap_or("");
+        let nature = numbers::line_nature(label);
+        return AnswerWords {
+            label,
+            line: nature,
+            falls: nature == Some(numbers::LineNature::Loss) || numbers::says_outflow(label),
+        };
+    }
+    let before = &line[line.ceil_char_boundary(line.len().saturating_sub(512))..];
+    let sentence_start = before
+        .char_indices()
+        .rev()
+        .find(|&(offset, c)| {
+            matches!(c, '。' | '！' | '？')
+                || (matches!(c, '.' | '!' | '?')
+                    && before[offset + 1..].starts_with(char::is_whitespace))
+        })
+        .map_or(0, |(offset, c)| offset + c.len_utf8());
+    let sentence = &before[sentence_start..];
+    let mut clauses = Vec::new();
+    let mut start = 0;
+    let mut cursor = 0;
+    while cursor < sentence.len() {
+        let rest = &sentence[cursor..];
+        let c = rest.chars().next().unwrap_or(' ');
+        if c == '[' {
+            let end = link_end(sentence, cursor);
+            if end > cursor {
+                clauses.push(&sentence[start..cursor]);
+                start = end;
+                cursor = end;
+                continue;
+            }
+        }
+        if matches!(c, ',' | ';' | ':' | '，' | '；' | '：' | '、') {
+            clauses.push(&sentence[start..cursor]);
+            start = cursor + c.len_utf8();
+        }
+        cursor += c.len_utf8();
+    }
+    clauses.push(&sentence[start..]);
+    let (label, line) = clauses
+        .iter()
+        .rev()
+        .find_map(|clause| numbers::line_nature(clause).map(|nature| (*clause, Some(nature))))
+        .unwrap_or((clauses.last().copied().unwrap_or(""), None));
+    let end = link_end(content, at);
+    let after = &content[end..content.floor_char_boundary((end + 96).min(content.len()))];
+    let after = after.split('\n').next().unwrap_or("");
+    AnswerWords {
+        label,
+        line,
+        falls: line == Some(numbers::LineNature::Loss)
+            || numbers::says_outflow(label)
+            || numbers::states_fall(before, after),
+    }
+}
+
+/// A bare one-to-three-digit link that trails text in its table cell or
+/// clause, with nothing but spacing or punctuation after it, is a reference
+/// marker (`숫자 없음 [2]`), even where a unit governs the cell.
+fn reference_marker(content: &str, at: usize, text: &str) -> bool {
+    let digits = text.trim();
+    if digits.is_empty() || digits.len() > 3 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return false;
+    }
+    let line_start = content[..at].rfind('\n').map_or(0, |start| start + 1);
+    let before = content[line_start..at].rsplit('|').next().unwrap_or("");
+    let trails_text =
+        before.trim_end().chars().next_back().is_some_and(|c| {
+            !matches!(c, '(' | '[' | '$' | '₩' | '€' | '£' | '¥' | '-' | '−' | '+')
+        });
+    let next = content[link_end(content, at)..].chars().next();
+    trails_text
+        && next.is_none_or(|c| {
+            c.is_whitespace()
+                || matches!(
+                    c,
+                    '|' | '.' | ',' | ';' | ':' | ')' | ']' | '!' | '?' | '。' | '、' | '，' | '['
+                )
+        })
+}
+
+pub(super) fn printed_number(
+    content: &str,
+    at: usize,
+    text: &str,
+    governing: Option<Label>,
+) -> Option<numbers::Printed> {
+    if reference_marker(content, at, text) {
+        return None;
+    }
+    let words = answer_words(content, at);
+    // A per-share row or clause keeps its own unit under a table's monetary scale.
+    let governing = governing.map(|(unit, currency)| match unit {
+        Unit::Amount(_) if numbers::per_share_label(words.label) => (Unit::Amount(1.0), currency),
+        other => (other, currency),
+    });
+    let mut printed = numbers::parse_with_unit(text, governing)?;
+    if !printed.signed {
+        printed.line = words.line;
+        printed.falls = words.falls;
+    }
+    Some(printed)
+}
+
+/// The figures of the answer's table row around one link, by column after the
+/// row label, and the link's column.
+pub(super) struct AnswerRow {
+    pub column: usize,
+    pub cells: Vec<Option<numbers::Printed>>,
+}
+
+pub(super) fn answer_row(
+    content: &str,
+    at: usize,
+    links: &[(usize, super::EvidenceLink)],
+    governing: &BTreeMap<usize, Label>,
+) -> Option<AnswerRow> {
+    let line_start = content[..at].rfind('\n').map_or(0, |start| start + 1);
+    let line_end = content[at..]
+        .find('\n')
+        .map_or(content.len(), |end| at + end);
+    let line = &content[line_start..line_end];
+    let first = line
+        .find('|')
+        .filter(|bar| line[..*bar].trim().is_empty())?;
+    let mut cells = Vec::new();
+    let mut column = None;
+    // The first cell is the row label.
+    let mut bars = line[first + 1..]
+        .match_indices('|')
+        .map(|(offset, _)| line_start + first + 1 + offset);
+    let mut cell_start = bars.next()? + 1;
+    for end in bars.chain(std::iter::once(line_end)) {
+        if end <= cell_start {
+            continue;
+        }
+        let figure = links
+            .iter()
+            .find(|(link_at, _)| (cell_start..end).contains(link_at))
+            .and_then(|(link_at, link)| {
+                if *link_at == at {
+                    column = Some(cells.len());
+                }
+                printed_number(
+                    content,
+                    *link_at,
+                    &link.text,
+                    governing.get(link_at).copied(),
+                )
+            });
+        if !(end == line_end && content[cell_start..end].trim().is_empty()) {
+            cells.push(figure);
+        }
+        cell_start = end + 1;
+    }
+    let column = column?;
+    (cells.iter().flatten().count() >= 2).then_some(AnswerRow { column, cells })
+}
+
 pub(super) fn governing_units(content: &str) -> BTreeMap<usize, Label> {
     let mut out = BTreeMap::new();
     let mut headers = Vec::new();

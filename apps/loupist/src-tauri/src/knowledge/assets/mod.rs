@@ -1113,9 +1113,7 @@ fn map_counts(body: &WorldSnapshotBody, entity: &str) -> MapCounts {
 }
 
 fn day_of_ms(at_ms: i64) -> NaiveDate {
-    chrono::DateTime::from_timestamp_millis(at_ms)
-        .map(|time| time.with_timezone(&chrono::Local).date_naive())
-        .unwrap_or_default()
+    crate::local_time::date_at_ms(at_ms).unwrap_or_default()
 }
 
 fn read_since(

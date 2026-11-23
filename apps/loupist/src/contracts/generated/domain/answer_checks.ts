@@ -70,6 +70,11 @@ export type NumberCheck = {
   link_index: number,
   text: string,
   evidence_id: string,
+  /**
+   * The evidence id the answer wrote, when the host rebound a link that
+   * named no retained result to the one this reply retained near it.
+   */
+  repairedFrom?: string,
   kind: NumberCheckKind,
   status: NumberCheckStatus,
   /** Nearest calculation result or plausible source figure for an unmatched citation. */
@@ -88,6 +93,8 @@ export type NumberCheck = {
   /** Present on a matched citation that changes monetary scale exactly. */
   scale_conversion?: NumberCheckScaleConversion,
   unstated_scale?: UnstatedScale,
+  /** Present on a match the source prints as an outflow. */
+  sourceSign?: SourceSign,
   /** The matched or compared cell (JSON Pointer into the retained result). */
   pointer?: string,
   /** The matched or compared figure (UTF-8 byte offsets into the excerpt). */
@@ -152,7 +159,10 @@ export type NumberCheckScaleConversion = {
   currency?: string,
 };
 
-export type NumberCheckStatus = "matched" | "rounded" | "not_found" | "differs";
+export type NumberCheckStatus = "matched" | "rounded" | "not_found" | "differs" | "unlinked";
+
+/** How the source signs a matched amount that the answer states unsigned. */
+export type SourceSign = "outflow";
 
 /** The side that leaves the scale of an exact digit match unstated. */
 export type UnstatedScale = "source" | "answer";

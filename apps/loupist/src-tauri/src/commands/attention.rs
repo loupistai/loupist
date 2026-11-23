@@ -440,7 +440,7 @@ pub(crate) fn preview(text: &str) -> String {
 /// An OS notification for a chat that finished or needs the user while it is not
 /// visible. The body comes from the stored chat, never from the renderer; nothing is
 /// sent unless the user granted notification permission.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn attention_notify(
     request: NotifyRequest,
     app: tauri::AppHandle,

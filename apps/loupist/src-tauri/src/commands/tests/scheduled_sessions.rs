@@ -221,9 +221,9 @@ async fn a_scheduled_run_sends_the_tasks_request_and_the_users_reply_lists_the_s
     assert_eq!(envelopes[2]["chat_surface"]["surface"], "scheduled");
     assert_eq!(
         previous["finished_at"],
-        chrono::DateTime::from_timestamp_millis(run.finished_at_ms.unwrap())
+        crate::local_time::at_ms(run.finished_at_ms.unwrap())
             .unwrap()
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+            .to_rfc3339_opts(chrono::SecondsFormat::Secs, false)
     );
     assert_eq!(previous["status"], "succeeded");
     assert_eq!(previous["quiet"], false);

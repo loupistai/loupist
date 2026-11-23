@@ -62,6 +62,27 @@ with two designated ISO date arguments and a rolling window. The rest of the
 arguments stay as supplied. The chart keeps one point per stated date. A
 history read can fill the chart when the source offers it.
 
+### Price currency
+
+The stored price records `currencySource`. `result` means the read states the
+currency (its `fields.currency` pointer), or a quote for the same symbol in the
+saving reply stated exactly one three-letter currency. The saved read keeps that
+quote currency as `quotedCurrency` for its repeats. `listing` means neither did
+and the asset's listing names an exchange whose venues quote one currency in
+major units: an OpenFIGI code of the US, Korean or Japanese venues
+(`finance_data/openfigi::listing_currency` reads the bundled directory's
+country), or NYSE, NASDAQ, Nasdaq or New York Stock Exchange. Venues that quote
+several currencies or minor units stay unknown. `none` leaves the currency
+empty. Among the key-less providers, a yfinance quote states `currency` and
+`exchange`, and yfinance, Cboe and TMX price histories state neither. Asset
+search returns an exchange and no currency.
+
+The asset page and Bot's tile write "Currency unknown" after a price whose
+currency is `none`. The price's receipt adds a Currency row for `listing`.
+`price_read_save` echoes the price with its source and a `currencyNote`. A saved
+read without a recorded source reads a stated currency as `result`. One without
+a currency gains one on its next repeat, when the listing has it.
+
 ## Host reads and refresh
 
 On page open the host repeats the current call with up to 15 minutes of
@@ -69,8 +90,8 @@ reuse. Check now asks for a fresh result. Replay uses ordinary tool authority
 with the Loupist's captured connection grants and records the returned
 provider, value, date, currency and retained dataset reference. The asset page
 and Bot use the same stored value. The source chip on the page opens the
-provider URL or a receipt with the dataset ID and revision. Currency is empty
-when the result omits it.
+provider URL or a receipt with the dataset ID and revision. A repeat completes
+the currency as the save did ([price currency](#price-currency)).
 
 A failed replay preserves the last successful price and marks the read
 `failed`. Losing the connection marks it `needs_connection`. A later turn

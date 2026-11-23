@@ -201,13 +201,27 @@ export const chatRunScenarios: PreviewScenario[] = [
         ? "동종 기업의 최근 실적과 내년 투자 전망 비교 및 주요 가정 분석"
         : "Compare peer earnings, operating assumptions and next year's investment outlook" }] };
     };
-    bridge.chatSend = async ({ run_id }, observer) => {
-      observer({ type: "started", run_id });
-      observer({ type: "delta", run_id, text: previewKo()
+    bridge.chatSend = async (request, observer) => {
+      const { run_id, loupist_id, thread_id } = request;
+      const text = previewKo()
         ? "한울정밀의 매출은 11% 늘었지만 영업이익률은 14.8%로 하락했습니다."
-        : "Hanul Precision’s revenue grew 11%, while operating margin slipped to 14.8%." });
-      observer({ type: "saving", run_id, waiting_for_other_chat: false });
-      observer({ type: "saving", run_id, waiting_for_other_chat: true, blocking_chat_id: "preview-blocking-chat" });
+        : "Hanul Precision’s revenue grew 11%, while operating margin slipped to 14.8%.";
+      const execution_model = executionModelLock(await bridge.modelCatalogGet(), request.model_profile_id, request.thinking_level, request.run_options);
+      const message_id = "preview-saving-answer";
+      const save_activity = { startedAtMs: Date.now(), finishedAtMs: null, waitedMs: 0 };
+      observer({ type: "started", run_id });
+      observer({ type: "delta", run_id, text });
+      // The answer is stored and the conversation is free; the reply's own save waits.
+      bridge.emitChatSave({ loupist_id, thread_id, message_id, run_id, pending: {
+        run_id, thread_id, message_id, waiting_for_other_chat: true, blocking_chat_id: "preview-blocking-chat",
+        save_activity: { ...save_activity, blockingChatId: "preview-blocking-chat" },
+      } });
+      observer({
+        type: "completed", run_id, message_id, created_at: new Date().toISOString(), final_text: text,
+        host_composed: false, lens_receipts: [], tool_refusals: [], execution_model, save_activity,
+        agent_harness: { schema: "loupist-harness/1", mode: "chat", skill_ids: [], capability_ids: [], digest: "e".repeat(64) },
+        performance: { setupMs: 0, generationMs: 0, totalMs: 0, sessionCache: "warm", inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      });
       return { run_id };
     };
   } },

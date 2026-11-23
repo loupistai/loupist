@@ -8,7 +8,7 @@ import { AppDateField } from "../ui/app-date-field";
 import { Button } from "../ui/button";
 import { compactOrigin, sourceOrigin, sourceTitle } from "../../knowledge/hostSource";
 import { extensionKindLabel } from "../../knowledge/mapKinds";
-import { groupByDay, sinceMs, useGrowthSince, whatsNewCounts, whatsNewEntries, whatsNewLinkText, whatsNewRows, type WhatsNewRow, type WhatsNewSince, type WhatsNewSourceGroup } from "./whatsNew";
+import { groupByDay, sinceMs, useGrowthSince, whatsNewEntries, whatsNewLinkText, whatsNewRows, whatsNewTotals, type WhatsNewRow, type WhatsNewSince, type WhatsNewSourceGroup } from "./whatsNew";
 
 const shortDate = (ms: number) => formatDate(ms, { year: undefined, month: "short", day: "numeric" });
 const DAY_MS = 86_400_000;
@@ -32,11 +32,11 @@ export function MapWhatsNew({ bridge, loupistId, map, onRevisionChange, lastSeen
   const [choice, setChoice] = useState<WhatsNewSince>(() => lastSeenAtMs === undefined ? { kind: "days", days: 7 } : { kind: "lastVisit" });
   const since = sinceMs(choice, lastSeenAtMs, nowMs);
   const load = useGrowthSince(bridge, loupistId, since, !!map, map?.generatedAtMs, map?.worldRevisionId, onRevisionChange);
-  const rows = useMemo(() => whatsNewRows(load.events, map, i18n.language), [load.events, map, i18n.language]);
+  const rows = useMemo(() => whatsNewRows(load.events, map, i18n.language, since), [load.events, map, i18n.language, since]);
   const entries = useMemo(() => whatsNewEntries(rows, i18n.language), [rows, i18n.language]);
   const groups = useMemo(() => groupByDay(entries, nowMs), [entries, nowMs]);
   const [expandedSources, setExpandedSources] = useState<ReadonlySet<string>>(() => new Set());
-  const counts = whatsNewCounts(entries);
+  const counts = whatsNewTotals(rows);
   const savedSources = useMemo(() => new Map(sources?.map(record => [record.recordId, record.objects])), [sources]);
   const titleFor = (source: WorldGrowthSource) => {
     const saved = savedSources.get(source.recordId)?.find(item => item.id === source.sourceId);

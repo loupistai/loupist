@@ -272,6 +272,8 @@ function stepReason(item: ActionItem, message: ChatMessage): string | undefined 
   if (revisionKeptEarlier(item, message)) return tDynamic("activitySheet.reason.revisionNotApplied");
   if (item.failureReason === "unreachable") return tDynamic("activitySheet.reason.offline");
   if (item.failureReason === "timeout") return tDynamic("chatMessageCard.provider_timeout");
+  if (item.failureReason === "invalid_input") return tDynamic("activitySheet.reason.invalidInput");
+  if (item.failureReason === "empty_result") return tDynamic("activitySheet.reason.emptyResult");
   if (message.offline_reads && (item.category === "finance" || item.category === "web" || item.source?.kind === "connector")) return tDynamic("activitySheet.reason.offline");
   return tDynamic("activitySheet.reason.generic");
 }

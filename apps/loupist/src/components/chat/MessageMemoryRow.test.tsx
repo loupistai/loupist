@@ -81,6 +81,16 @@ describe("the relation this answer added", () => {
     expect(screen.getByRole("button", { name: "Show in World: TSMC supplies NVDA" })).toBe(pills[0]);
   });
 
+  it("names an open relation in the interface language", async () => {
+    await act(async () => { await i18n.changeLanguage("ko"); });
+    try {
+      show([claim("real", "tsmc", "nvda", "PROVIDES_FUNDING_TO")]);
+      expect(document.querySelector(".answer-map-preview")).toHaveTextContent("TSMC자금 제공NVDA");
+    } finally {
+      await act(async () => { await i18n.changeLanguage("en"); });
+    }
+  });
+
   it("shows no relation when every added edge joins an asset to itself", () => {
     show([claim("self", "nvda", "nvda"), claim("same-label", "nvda-2", "nvda"), claim("same-name", "nvidia-ko", "nvidia")]);
     expect(document.querySelector(".answer-map-preview")).toBeNull();

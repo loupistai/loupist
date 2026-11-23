@@ -212,7 +212,7 @@ async fn live_followed_assets_reach_the_map() -> Result<()> {
         let tx = conn.transaction()?;
         let mut config = load_settings(&tx, &loupist)?;
         config.enrichment_enabled = true;
-        config.awaiting_default_model = false;
+        config.world_model_choice = crate::knowledge::WorldModelChoice::Chosen;
         config.helper_provider = Some(provider.into());
         config.helper_model = Some(model_id.into());
         config.helper_model_profile_id = Some(profile.clone());

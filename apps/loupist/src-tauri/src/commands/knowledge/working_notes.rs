@@ -9,7 +9,7 @@ pub struct WorkingNoteReadRequest {
     pub note_id: String,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_working_note_read(
     request: WorkingNoteReadRequest,
     state: State<'_, AppState>,
@@ -48,7 +48,7 @@ fn admit_chat(state: &AppState, loupist_id: &str, chat_id: &str) -> Result<(), C
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_working_notes(
     request: WorkingNotesRequest,
     state: State<'_, AppState>,
@@ -172,7 +172,7 @@ pub(in crate::commands) fn attach_journal_context_as_of(
         return Ok((envelope.into(), left));
     }
     let today = cutoff.map_or_else(
-        || chrono::Utc::now().format("%Y-%m-%d").to_string(),
+        || crate::local_time::today().to_string(),
         |cutoff| cutoff.day(),
     );
     let store = crate::knowledge::KnowledgeStore::attach_loupist(

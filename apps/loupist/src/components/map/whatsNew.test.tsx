@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { GrowthEvent, KnowledgeMap } from "../../contracts/knowledge";
 import { MapWhatsNew } from "./MapWhatsNew";
-import { groupByDay, sinceMs, whatsNewCounts, whatsNewEntries, whatsNewRows } from "./whatsNew";
+import { firstSeenAfter, groupByDay, sinceMs, whatsNewEntries, whatsNewLinkText, whatsNewRows, whatsNewTotals } from "./whatsNew";
 
 const NOW = new Date(2026, 9, 31, 12).getTime();
 const HOUR = 3_600_000;
@@ -25,8 +25,9 @@ const map = {
 
 it("turns growth events into one row per subject, newest first, without schema or truncation markers", () => {
   const rows = whatsNewRows([
-    event("entity_added", "hanul", NOW - 3 * HOUR, { originMessageId: "answer" }),
-    event("entity_added", "hanul", NOW - 4 * HOUR),
+    // A name added twice in the range belongs to its first add.
+    event("entity_added", "hanul", NOW - 3 * HOUR),
+    event("entity_added", "hanul", NOW - 4 * HOUR, { originMessageId: "answer" }),
     event("source_retained", null, NOW - 3 * HOUR, { originMessageId: "answer", summary: "Q3 operating review" }),
     event("claim_added", "c1", NOW - 2 * HOUR, { summary: "Hanul's margin fell" }),
     event("claim_disputed", "c1", NOW - HOUR, { summary: "Inventory days 54 vs 48" }),
@@ -48,7 +49,9 @@ it("turns growth events into one row per subject, newest first, without schema o
   // The stored proposition is English; relationship and conflict rows speak through the names on the Map.
   expect(rows.find((row) => row.kind === "relationship")?.link).toEqual({ a: "한울정밀", b: "Operating margin", relation: undefined });
   expect(rows.find((row) => row.kind === "conflict")?.link?.a).toBe("한울정밀");
-  expect(whatsNewCounts(rows)).toEqual({ names: 2, links: 1, conflicts: 1 });
+  expect(rows.find((row) => row.kind === "name")?.atMs).toBe(NOW - 4 * HOUR);
+  // A name that has left World stays dimmed and is not new.
+  expect(whatsNewTotals(rows)).toEqual({ names: 1, links: 1, conflicts: 1 });
 });
 
 it("groups rows by local day and resolves since-choices", () => {
@@ -104,7 +107,17 @@ it("reads a value reported about one name as a fact about it, and lists identica
   ]);
   // A fact row opens the name its Key facts belong to and carries that name's swatch.
   expect(rows[0]).toMatchObject({ node: { id: "krw-btc" }, category: "market", origin: "Farside Investors — US spot bitcoin ETF daily net flows" });
-  expect(whatsNewCounts(rows)).toEqual({ names: 0, links: 2, conflicts: 1 });
+  // Totals count claims, so the two OWNS claims on one row are two relationships.
+  expect(whatsNewTotals(rows)).toEqual({ names: 0, links: 3, conflicts: 1 });
+});
+
+it("writes a changed claim's relation in the interface language, and an unlisted one in plain English", () => {
+  const ko = i18n.getFixedT("ko", "knowledge");
+  const en = i18n.getFixedT("en", "knowledge");
+  expect(whatsNewLinkText({ a: "테슬라", b: "나스닥", relation: "LISTS_ON" }, ko)).toBe("테슬라 → 나스닥 (상장 거래소)");
+  expect(whatsNewLinkText({ a: "Tesla", b: "Nasdaq", relation: "LISTS_ON" }, en)).toBe("Tesla → Nasdaq (lists on)");
+  expect(whatsNewLinkText({ a: "테슬라", b: "CES", relation: "DEMOED_AT" }, ko)).toBe("테슬라 → CES (demoed at)");
+  expect(whatsNewLinkText({ a: "테슬라", relation: "LOCATED_IN" }, ko)).toBe("테슬라 (소재지)");
 });
 
 describe("the What's new drawer", () => {
@@ -169,7 +182,7 @@ it("combines a new name and all its facts from the same publication even off the
   expect(rows.filter(row => row.kind === "fact").map(row => [row.link?.a, row.count])).toEqual([["Hanul Precision", 1], ["Zenith", 1]]);
 });
 
-it("uses the collapsed row threshold per publication and Source after combining names and facts", () => {
+it("uses the collapsed row threshold per Source after combining names and facts", () => {
   const { newsMap, namesAdded, facts, source, short } = sourcesFixture();
   const rows = whatsNewRows([...namesAdded, ...facts], newsMap, "en");
   const entries = whatsNewEntries(rows, "en");
@@ -181,8 +194,36 @@ it("uses the collapsed row threshold per publication and Source after combining 
     ["name", "Beta"], ["name", "Delta"], ["name", "Gamma"], ["name", "Zenith"], ["fact", "Hanul Precision"],
   ]);
   expect(entries.slice(1)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "name", source: short, facts: 1 })]));
-  expect(whatsNewCounts(entries)).toEqual({ names: 3, links: 0, conflicts: 0 });
+  // The header adds up every row: the group's four names and the two names outside it.
+  expect(whatsNewTotals(rows)).toEqual({ names: 6, links: 0, conflicts: 0 });
   expect(whatsNewEntries(rows.filter(row => ["Beta", "Gamma", "Zenith"].includes(row.label)), "en")).toHaveLength(3);
+});
+
+it("keeps one group for a Source published in several chunks, newest change first", () => {
+  const { newsMap, namesAdded, facts, source, at } = sourcesFixture();
+  // The same Source: its first chunk added four names, a later chunk five minutes on added two more and a fact.
+  const later = { revisionId: "world-c", source: { ...source, revisionId: "source-rev-a2" } };
+  const chunked = [
+    ...namesAdded.slice(0, 4), facts[0]!, facts[2]!,
+    ...namesAdded.slice(4).map(item => ({ ...item, eventId: `${item.eventId}:later`, atMs: at + 5 * 60_000, publication: later })),
+    { ...facts[3]!, eventId: "margin:later", atMs: at + 5 * 60_000, publication: { ...later, factSubjectId: "Echo" } },
+  ];
+  const entries = whatsNewEntries(whatsNewRows(chunked, newsMap, "en"), "en");
+  expect(entries).toHaveLength(1);
+  const group = entries[0]!;
+  if (group.kind !== "source") throw new Error("Expected one Source group");
+  expect(group).toMatchObject({ atMs: at + 5 * 60_000, names: 6, facts: 3, source: later.source });
+  expect(group.rows.map(row => [row.atMs - at, row.link?.a ?? row.label])).toEqual([
+    [300_000, "Echo"], [300_000, "Fable"],
+    [0, "Beta"], [0, "Delta"], [0, "Gamma"], [0, "Zenith"], [0, "Hanul Precision"],
+  ]);
+  // The toolbar badge counts entries, so the Source counts once; the header counts its names.
+  expect(entries).toHaveLength(1);
+  expect(whatsNewTotals(group.rows)).toEqual({ names: 6, links: 0, conflicts: 0 });
+  // Its disclosure keeps its identity when a further chunk arrives.
+  const next = { revisionId: "world-d", source };
+  const more = whatsNewEntries(whatsNewRows([...chunked, event("entity_added", "hanul", at + 9 * 60_000, { publication: next })], newsMap, "en"), "en");
+  expect(more.map(entry => [entry.kind, entry.id, entry.atMs - at])).toEqual([["source", group.id, 540_000]]);
 });
 
 it("never groups by a shared Source title, timestamp or message without matching identity", () => {
@@ -211,7 +252,7 @@ it("carries a Source across five pages, keeps disclosure open after refresh and 
   expect(read).toHaveBeenCalledTimes(5);
   expect(view.container.querySelectorAll('[data-kind="source"]')).toHaveLength(1);
   expect(screen.getByText("4 new names · 3 new facts")).toBeVisible();
-  expect(view.container.querySelector(".map-whats-new-summary")).toHaveTextContent("+3 in World");
+  expect(view.container.querySelector(".map-whats-new-summary")).toHaveTextContent("+6 in World");
   expect(screen.queryByRole("list", { name: source.title })).toBeNull();
   const title = screen.getByRole("button", { name: new RegExp(source.title) });
   title.focus();
@@ -222,7 +263,7 @@ it("carries a Source across five pages, keeps disclosure open after refresh and 
   expect(within(list).getAllByRole("listitem")).toHaveLength(5);
   expect(within(list).getByText("Company · 2 new facts")).toBeVisible();
   expect(screen.getByText("Company · 1 new fact")).toBeVisible();
-  expect(view.container.querySelector(".map-whats-new-summary")).toHaveTextContent("+3 in World");
+  expect(view.container.querySelector(".map-whats-new-summary")).toHaveTextContent("+6 in World");
   await act(async () => view.rerender(<MapWhatsNew {...props} map={{ ...newsMap, worldRevisionId: "world-newer" }} />));
   expect(screen.getByRole("list", { name: source.title })).toBeVisible();
   await user.click(within(list).getByRole("button", { name: /Zenith/ }));
@@ -235,4 +276,86 @@ it("carries a Source across five pages, keeps disclosure open after refresh and 
   expect(onOpenSource).toHaveBeenCalledWith(source);
   await user.click(screen.getByRole("button", { name: "Replay these" }));
   expect(onReplay).toHaveBeenCalledWith(at - 1);
+});
+
+/**
+ * One week of two Sources, as Y-009 saw it: Source A in two chunks adds five names; Source B
+ * later re-adds one of them with facts, adds one more name and reports values about earlier
+ * ones. Hanul existed before the range; Old name was added and has left World.
+ */
+function weekFixture() {
+  const { newsMap, at } = sourcesFixture();
+  const since = at - DAY_MS;
+  const a = { recordId: "pe", revisionId: "pe-1", sourceId: "pe", title: "Automakers by P/E ratio" };
+  const b = { recordId: "cap", revisionId: "cap-1", sourceId: "cap", title: "Largest automakers by market cap" };
+  const chunk1 = { revisionId: "world-1", source: a }, chunk2 = { revisionId: "world-2", source: a }, later = { revisionId: "world-3", source: b };
+  const added = (id: string, atMs: number, publication: GrowthEvent["publication"]) => event("entity_added", id, atMs, { eventId: `${id}:${atMs}`, publication });
+  const fact = (id: string, name: string, atMs: number) => event("claim_added", id, atMs, { publication: { ...later, factSubjectId: name } });
+  const map: KnowledgeMap = {
+    ...newsMap,
+    nodes: newsMap.nodes.map(node => node.id === "hanul" ? { ...node, firstSeenAtMs: since - DAY_MS } : node.id === "Zenith" ? { ...node, firstSeenAtMs: at } : node),
+  };
+  const events = [
+    ...["Zenith", "Gamma", "Beta", "Delta"].map(id => added(id, at, chunk1)),
+    added("Echo", at + 5 * 60_000, chunk2),
+    // Source B: Zenith again (the same World name), a new Fable, Hanul back from before the range.
+    added("Zenith", at + 10 * 60_000, later), added("Fable", at + 10 * 60_000, later), added("hanul", at + 10 * 60_000, later),
+    fact("zenith-sales", "Zenith", at + 10 * 60_000), fact("zenith-cap", "Zenith", at + 10 * 60_000),
+    fact("gamma-cap", "Gamma", at + 10 * 60_000), fact("beta-cap", "Beta", at + 10 * 60_000),
+    added("old", at + 10 * 60_000, later),
+  ];
+  return { map, events, since, a, b };
+}
+const DAY_MS = 24 * HOUR;
+
+it("counts a name once, in the group of the Source that first added it, and a later Source's values as facts", () => {
+  const { map, events, since, a, b } = weekFixture();
+  const rows = whatsNewRows(events, map, "en", since);
+  const entries = whatsNewEntries(rows, "en");
+  const groups = entries.filter(entry => entry.kind === "source");
+  expect(groups.map(group => [group.source.title, group.names, group.facts])).toEqual([[b.title, 1, 4], [a.title, 5, 0]]);
+  // Zenith is new once, in A; in B it gains two facts.
+  expect(rows.filter(row => row.kind === "name" && row.label === "Zenith").map(row => row.source?.title)).toEqual([a.title]);
+  expect(rows.find(row => row.kind === "fact" && row.link?.a === "Zenith")).toMatchObject({ count: 2, source: b });
+  // Hanul existed before the range, so it is not new; Old name left World, so it is listed dimmed and not counted.
+  expect(rows.some(row => row.kind === "name" && row.label === "Hanul Precision")).toBe(false);
+  expect(rows.find(row => row.label === "Old name")).toMatchObject({ kind: "name", gone: true });
+  // The header is the sum of the groups and the rows outside them.
+  expect(whatsNewTotals(rows).names).toBe(6);
+  expect(groups.reduce((total, group) => total + group.names, 0)).toBe(6);
+});
+
+it("calls a name new only when World first saw it after the range's start", () => {
+  expect(firstSeenAfter(10, 9)).toBe(true);
+  expect(firstSeenAfter(9, 9)).toBe(false);
+  expect(firstSeenAfter(undefined, 9)).toBe(true);
+  expect(firstSeenAfter(5, undefined)).toBe(true);
+});
+
+it("counts a name a bounded overview left out, and opens it by id; an absent name in a complete overview has left World", () => {
+  const { map, events, since } = weekFixture();
+  const far = event("entity_added", "far-away", since + HOUR, { summary: "Far Away Motors" });
+  const bounded = { ...map, counts: { ...map.counts, entity: { total: 2000, shown: 1000, truncated: true } } } as KnowledgeMap;
+  const outside = whatsNewRows([...events, far], bounded, "en", since).find(row => row.label === "Far Away Motors");
+  expect(outside).toMatchObject({ kind: "name", gone: false, nameId: "far-away" });
+  expect(whatsNewTotals(whatsNewRows([...events, far], bounded, "en", since)).names).toBe(7);
+  expect(whatsNewRows([...events, far], map, "en", since).find(row => row.label === "Far Away Motors")).toMatchObject({ gone: true });
+  expect(whatsNewTotals(whatsNewRows([...events, far], map, "en", since)).names).toBe(6);
+});
+
+it("totals the whole range whichever page an event arrived on", async () => {
+  const { map, events, since, a, b } = weekFixture();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  // Pages split each Source and put B's re-add of Zenith before A's first chunk finishes arriving.
+  const pages = [events.slice(5, 8), events.slice(0, 2), events.slice(8), events.slice(2, 5)];
+  const read = vi.spyOn(bridge, "knowledgeGrowthEvents").mockImplementation(async ({ cursor }) => {
+    const page = cursor ? Number(cursor) : 0;
+    return { events: pages[page]!, nextCursor: page < pages.length - 1 ? String(page + 1) : null };
+  });
+  const view = render(<MapWhatsNew bridge={bridge} loupistId="loupist" map={map} lastSeenAtMs={since} nowMs={NOW} onOpenRow={vi.fn()} onReplay={vi.fn()} onClose={vi.fn()} />);
+  await screen.findByRole("button", { name: new RegExp(a.title) });
+  expect(read).toHaveBeenCalledTimes(4);
+  expect(view.container.querySelector(".map-whats-new-summary")).toHaveTextContent("+6 in World");
+  expect(within(screen.getByRole("button", { name: new RegExp(a.title) })).getByText("5 new names")).toBeVisible();
+  expect(within(screen.getByRole("button", { name: new RegExp(b.title) })).getByText("1 new name · 4 new facts")).toBeVisible();
 });

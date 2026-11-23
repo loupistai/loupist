@@ -296,6 +296,7 @@ async fn live_growth_scenario_v1() -> Result<()> {
         helper_provider: Some("openai-codex".into()),
         helper_model: Some(model.model.clone()),
         helper_model_profile_id: Some(MODEL.into()),
+        world_model_choice: crate::knowledge::WorldModelChoice::Chosen,
         thinking_level: "medium".into(),
         timeout_ms: 120_000,
         run_options: model

@@ -290,6 +290,7 @@ const SCHEMA_KEYWORDS: &[&str] = &[
     "const",
     "default",
     "description",
+    "examples",
     "items",
     "properties",
     "required",
@@ -437,6 +438,7 @@ fn prune_parameters(parameters: &mut Value, enabled: &BTreeSet<String>) {
         })
         .unwrap_or_else(|| enabled.iter().cloned().collect());
     let mut dropped = Vec::new();
+    let mut required_fields = Vec::new();
     if let Some(properties) = schema.get_mut("properties").and_then(Value::as_object_mut) {
         for (name, property) in properties.iter_mut() {
             let Some(property) = property.as_object_mut() else {
@@ -450,6 +452,37 @@ fn prune_parameters(parameters: &mut Value, enabled: &BTreeSet<String>) {
                     }
                 }
             }
+            let required_by = tool_providers
+                .iter()
+                .filter(|provider| {
+                    property
+                        .get(provider.as_str())
+                        .and_then(|metadata| metadata.get("required"))
+                        == Some(&Value::Bool(true))
+                })
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            let required_note =
+                if !required_by.is_empty() && required_by.len() == tool_providers.len() {
+                    if !required.contains(name) {
+                        required_fields.push(json!(name));
+                    }
+                    if property.get("default") == Some(&Value::Null) {
+                        property.remove("default");
+                    }
+                    if let Some(union) = property.get_mut("anyOf").and_then(Value::as_array_mut) {
+                        union.retain(|option| option["type"] != "null");
+                    }
+                    None
+                } else if !required.contains(name) && !required_by.is_empty() {
+                    Some(format!(
+                        "Required when provider is {}.",
+                        required_by.join(" or ")
+                    ))
+                } else {
+                    None
+                };
+
             // An enum replaces the upstream union only when every enabled
             // provider that accepts this property names its choices; a
             // provider without choices (TMX intervals) accepts other values.
@@ -463,6 +496,25 @@ fn prune_parameters(parameters: &mut Value, enabled: &BTreeSet<String>) {
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_else(|| tool_providers.clone());
+            // Apply a provider-specific maximum to a single-provider card.
+            if let [provider] = accepting.as_slice() {
+                if let Some(maximum) = property
+                    .get(provider)
+                    .and_then(|metadata| metadata["maximum"].as_u64())
+                {
+                    property.entry("maximum").or_insert(json!(maximum));
+                }
+            }
+            // A provider's own upper bound is stated with the provider's name, so a
+            // card shared by several providers does not present it as everyone's.
+            let bounds = accepting
+                .iter()
+                .filter_map(|provider| {
+                    let maximum = property.get(provider.as_str())?.get("maximum")?.as_u64()?;
+                    Some(format!("{provider} accepts at most {maximum}"))
+                })
+                .collect::<Vec<_>>();
+            let bounds = (!bounds.is_empty()).then(|| format!("{}.", bounds.join("; ")));
             let all_listed = !accepting.is_empty()
                 && accepting.iter().all(|provider| {
                     property.get(provider).is_some_and(|vendor| {
@@ -523,6 +575,21 @@ fn prune_parameters(parameters: &mut Value, enabled: &BTreeSet<String>) {
                         .collect::<Vec<_>>();
                     format!("{}.", parts.join("; "))
                 });
+            // Another provider on the card accepts other forms, so each provider's own
+            // values are named with it.
+            let literal_choices = accepting
+                .iter()
+                .filter(|_| !all_listed)
+                .filter_map(|provider| {
+                    let metadata = property.get(provider)?;
+                    if metadata["choices_from_query"] != Value::Bool(true) {
+                        return None;
+                    }
+                    let values = metadata["choices"].as_array()?;
+                    let choices = values.iter().filter_map(Value::as_str).collect::<Vec<_>>();
+                    Some(format!("{provider} accepts {}.", choices.join(", ")))
+                })
+                .collect::<Vec<_>>();
             let vendor_keys = property
                 .keys()
                 .filter(|key| !SCHEMA_KEYWORDS.contains(&key.as_str()))
@@ -557,6 +624,22 @@ fn prune_parameters(parameters: &mut Value, enabled: &BTreeSet<String>) {
                     .map_or(by_provider.clone(), |text| format!("{text} {by_provider}"));
                 property.insert("description".into(), Value::String(description));
             }
+            for note in required_note.into_iter().chain(literal_choices) {
+                let description = property
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .filter(|text| !text.is_empty())
+                    .map_or(note.clone(), |text| format!("{text} {note}"));
+                property.insert("description".into(), Value::String(description));
+            }
+            if let Some(bounds) = bounds {
+                let description = property
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .filter(|text| !text.is_empty())
+                    .map_or(bounds.clone(), |text| format!("{text} {bounds}"));
+                property.insert("description".into(), Value::String(description));
+            }
         }
         for name in &dropped {
             properties.remove(name);
@@ -566,8 +649,11 @@ fn prune_parameters(parameters: &mut Value, enabled: &BTreeSet<String>) {
         required.retain(|value| {
             value
                 .as_str()
-                .is_none_or(|name| !dropped.contains(&name.to_owned()))
+                .is_none_or(|name| !dropped.iter().any(|removed| removed == name))
         });
+        required.extend(required_fields);
+    } else if !required_fields.is_empty() {
+        schema.insert("required".into(), Value::Array(required_fields));
     }
 }
 
@@ -603,6 +689,17 @@ pub(super) fn shape_card(
     if !local {
         if let Some(parameters) = card.get_mut("parameters") {
             prune_parameters(parameters, enabled_provider_ids);
+            if tool.name == "index_constituents" && providers.iter().any(|id| id == "tmx") {
+                if let Some(symbol) = parameters.pointer_mut("/properties/symbol") {
+                    symbol["examples"] = json!(["^TSX"]);
+                    let note = "tmx takes its own index symbols, with the caret, as index_available lists them.";
+                    let description = symbol["description"]
+                        .as_str()
+                        .filter(|text| !text.is_empty())
+                        .map_or(note.to_owned(), |text| format!("{text} {note}"));
+                    symbol["description"] = json!(description);
+                }
+            }
         }
     }
     let summary = curated_summary(&tool.name)
@@ -669,6 +766,58 @@ mod tests {
             .iter()
             .map(|provider| (*provider).to_owned())
             .collect()
+    }
+
+    #[test]
+    fn query_metadata_marks_required_fields_only_for_the_active_providers() {
+        let schema = json!({
+            "type": "object",
+            "required": ["provider", "symbol"],
+            "properties": {
+                "provider": {"enum": ["cboe", "tmx"]},
+                "symbol": {"type": "string", "cboe": {
+                    "choices": ["BUK100P", "BEP50P"], "choices_from_query": true
+                }},
+                "country": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": null, "cboe": {"required": true}
+                }
+            }
+        });
+        let source = tool("index_constituents", "", schema.clone());
+        let mut mixed = json!({"parameters": schema.clone()});
+        shape_card(
+            &mut mixed,
+            &source,
+            false,
+            false,
+            &BTreeSet::from(["cboe".to_owned(), "tmx".to_owned()]),
+        );
+        assert_eq!(
+            mixed["parameters"]["required"],
+            json!(["provider", "symbol"])
+        );
+        let props = &mixed["parameters"]["properties"];
+        assert!(props["country"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("cboe"));
+        assert!(props["symbol"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("BUK100P"));
+        assert_eq!(props["symbol"]["examples"], json!(["^TSX"]));
+        assert!(props["symbol"].get("enum").is_none());
+        let mut only_cboe = schema;
+        prune_parameters(&mut only_cboe, &BTreeSet::from(["cboe".to_owned()]));
+        assert_eq!(
+            only_cboe["required"],
+            json!(["provider", "symbol", "country"])
+        );
+        let props = &only_cboe["properties"];
+        assert_eq!(props["country"]["anyOf"], json!([{"type": "string"}]));
+        assert!(props["country"].get("default").is_none());
+        assert_eq!(props["symbol"]["enum"], json!(["BUK100P", "BEP50P"]));
     }
 
     #[test]
@@ -741,6 +890,65 @@ mod tests {
     /// The runtime's schema names every provider it ships. The card keeps only
     /// what the run's providers accept: other providers' properties, vendor
     /// keys, titles and per-provider sentences go.
+    #[test]
+    fn statement_cards_bound_only_the_selected_providers() {
+        for name in [
+            "equity_fundamental_income",
+            "equity_fundamental_balance",
+            "equity_fundamental_cash",
+        ] {
+            let source = tool(
+                name,
+                "",
+                json!({
+                    "type": "object",
+                    "required": ["symbol"],
+                    "properties": {
+                        "symbol": {"type": "string"},
+                        "provider": {"type": "string", "enum": ["sec", "yfinance"]},
+                        "period": {
+                            "anyOf": [
+                                {"type": "string", "enum": ["annual", "quarterly", "ttm"]},
+                                {"type": "string", "enum": ["annual", "quarter"]},
+                            ],
+                            "sec": {"choices": ["annual", "quarterly", "ttm"]},
+                            "yfinance": {"choices": ["annual", "quarter"]},
+                        },
+                        "limit": {
+                            "anyOf": [{"type": "integer", "minimum": 0}, {"type": "null"}],
+                            "yfinance": {"maximum": 5},
+                        },
+                    },
+                }),
+            );
+            for (available, maximum, periods) in [
+                (&["yfinance"][..], json!(5), json!(["annual", "quarter"])),
+                (
+                    &["sec"][..],
+                    Value::Null,
+                    json!(["annual", "quarterly", "ttm"]),
+                ),
+                (
+                    &["sec", "yfinance"][..],
+                    Value::Null,
+                    json!(["annual", "quarterly", "ttm", "quarter"]),
+                ),
+            ] {
+                let available = enabled(available);
+                let filtered = crate::mcp::filter_tool_providers(&source, &available, false)
+                    .unwrap()
+                    .unwrap();
+                let mut card = crate::mcp::tool_to_agent_schema("openbb", &filtered).unwrap();
+                shape_card(&mut card, &filtered, false, false, &available);
+                let fields = &card["parameters"]["properties"];
+                assert_eq!(fields["limit"]["maximum"], maximum, "{name} {available:?}");
+                assert_eq!(fields["period"]["enum"], periods, "{name} {available:?}");
+                assert!(fields["limit"].get("yfinance").is_none());
+                assert_eq!(fields["limit"]["anyOf"][0]["minimum"], 0);
+            }
+        }
+    }
+
     #[test]
     fn a_standard_field_redefined_by_one_provider_survives_pruning() {
         // Upstream shapes from equity_price_historical: `symbol` carries the

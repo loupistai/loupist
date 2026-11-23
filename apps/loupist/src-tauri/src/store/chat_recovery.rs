@@ -55,6 +55,8 @@ pub(super) fn stop_interrupted_turns(
             )
             .map_err(|error| StoreError::Invalid(error.to_string()))?;
             chat.messages.push(reply);
+            // An untitled session takes the title its reply would have given it.
+            chat.title_unfinished_reply();
             chat.updated_at_ms = finished_at_ms;
             chat.pi_session_cache = None;
             if chat.validate().is_ok() {
@@ -95,6 +97,7 @@ mod crash_recovery_tests {
     use crate::{
         app::AppState,
         chat::{approvals, home, questions},
+        commands::fallback_chat_title,
         domain::prepare_chat_retry,
         test_fixtures::{chat_message, chat_session, create_folder_loupist},
     };
@@ -177,6 +180,46 @@ mod crash_recovery_tests {
         assert_eq!(after_retry.messages, [steer]);
         assert_eq!(fixture.read(&already_stopped.id), already_stopped);
         assert_eq!(fixture.restart().read(&interrupted.id), recovered);
+    }
+
+    #[test]
+    fn an_untitled_session_is_titled_from_its_interrupted_request() {
+        let fixture = Fixture::new();
+        let mut untitled = interrupted_request("untitled");
+        untitled.title.clear();
+        untitled.messages[0].content =
+            "Check the annual report for segment margins and the outlook\nThen compare peers."
+                .into();
+        let mut file_only = interrupted_request("file-only");
+        file_only.title.clear();
+        file_only.messages[0].content.clear();
+        file_only.messages[0]
+            .attachments
+            .push(crate::domain::ChatAttachment {
+                id: "attachment".into(),
+                filename: "annual-report.pdf".into(),
+                media_type: "application/pdf".into(),
+                size_bytes: 4,
+                content_sha256: "a".repeat(64),
+            });
+        let titled = interrupted_request("titled");
+        for chat in [&untitled, &file_only, &titled] {
+            fixture.state.store.create_chat(chat).unwrap();
+        }
+
+        let fixture = fixture.restart();
+        // The same derivation as a finished first turn, without a model call.
+        assert_eq!(
+            fixture.read("untitled").title,
+            fallback_chat_title(&untitled.messages[0].content)
+        );
+        assert_eq!(
+            fixture.read("untitled").title,
+            "Check the annual report for segment…"
+        );
+        assert_eq!(fixture.read("file-only").title, "annual-report.pdf");
+        assert_eq!(fixture.read("titled").title, "Test chat");
+        assert_stopped(&titled, &fixture.read("titled"));
     }
 
     #[test]

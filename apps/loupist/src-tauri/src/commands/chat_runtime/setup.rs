@@ -34,7 +34,9 @@ impl PreparedChatTurn {
         mut execution: PiExecutionConfig,
         prompt: &str,
         surface: ChatSurface,
+        phase: &mut ChatStartPhase,
     ) -> Result<Self, CommandError> {
+        *phase = ChatStartPhase::Configuration;
         let config = loupist_configuration(state, &profile.id)?;
         let skill_ids = config.enabled_skill_ids();
         let run_skill_ids = agent_harness::run_skill_ids(&skill_ids).map_err(map_internal)?;
@@ -44,6 +46,7 @@ impl PreparedChatTurn {
             })?;
         let skill_files = agent_harness::resolve_skill_paths(agent_root, &run_skill_ids)
             .map_err(|error| CommandError::new("pi_unavailable", error.to_string()))?;
+        *phase = ChatStartPhase::ConnectorAuthority;
         let connector_authority = capture_chat_connector_authority(state, &profile.id)?;
         let capabilities = &connector_authority.capability_ids;
         let web_search_policy = if capabilities.iter().any(|id| id == "community.web-research") {
@@ -51,6 +54,7 @@ impl PreparedChatTurn {
         } else {
             crate::web::WebSearchPolicy::default()
         };
+        *phase = ChatStartPhase::WorkspaceContext;
         let bound_workspace = profile_workspace(profile)?;
         let workspace = agent_harness::workspace::workspace_snapshot_with_preferences(
             bound_workspace.path(),
@@ -256,7 +260,7 @@ pub(in crate::commands) fn validate_turn_as_of(as_of: Option<&str>) -> Result<()
     if date < earliest {
         return Err(CommandError::invalid("as_of must be 1990-01-01 or later"));
     }
-    if date > chrono::Local::now().date_naive() {
+    if date > crate::local_time::today() {
         return Err(CommandError::invalid("as_of must be today or earlier"));
     }
     Ok(())
@@ -265,10 +269,22 @@ pub(in crate::commands) fn validate_turn_as_of(as_of: Option<&str>) -> Result<()
 /// `Err` returns before the user turn is appended. `Break` means the user
 /// turn is durable and its reply already ended (failed, or stopped first).
 pub(super) fn admit_chat_turn(
+    request: ChatSendRequest,
+    on_event: ChatEventSink,
+    state: &AppState,
+    admission: Option<ChatAdmission>,
+) -> Result<ControlFlow<RunStarted, AdmittedChatTurn>, ChatStartError> {
+    let mut phase = ChatStartPhase::Request;
+    prepare_chat_turn(request, on_event, state, admission, &mut phase)
+        .map_err(|error| ChatStartError { phase, error })
+}
+
+fn prepare_chat_turn(
     mut request: ChatSendRequest,
     mut on_event: ChatEventSink,
     state: &AppState,
     admission: Option<ChatAdmission>,
+    phase: &mut ChatStartPhase,
 ) -> Result<ControlFlow<RunStarted, AdmittedChatTurn>, CommandError> {
     // Resolve the eval/live override before admission, events, scratch files
     // or a durable user message. Launch must not discover this failure after
@@ -278,10 +294,11 @@ pub(super) fn admit_chat_turn(
     let interactive = admission.is_none();
     let chat_started_at = Instant::now();
     on_event.tool_trace = Arc::default();
-    state.ensure_loupist_available(&request.loupist_id)?;
     let run_id = validated_chat_run_id(&request.run_id)?;
     require_text(&request.loupist_id, "Loupist", 512)?;
     require_text(&request.thread_id, "Chat thread", 512)?;
+    *phase = ChatStartPhase::RunAdmission;
+    state.ensure_loupist_available(&request.loupist_id)?;
     // Stop remains available while subsequent setup awaits external processes.
     let admission = match admission {
         Some(admission)
@@ -306,21 +323,14 @@ pub(super) fn admit_chat_turn(
     let chat_controls = admission.controls;
     let cancel = registration.cancel;
     let run_lease = registration.lease;
+    *phase = ChatStartPhase::Scratch;
     let run_scratch = crate::runs::scratch::RunScratch::create(
         state.artifacts.deletion_root.clone(),
         &request.loupist_id,
         &run_id,
     )?;
-    let _ = on_event.send(ChatStreamEvent::Started {
-        run_id: run_id.clone(),
-    });
     let progress_started_at_ms = now_ms();
-    emit_chat_progress_snapshot(
-        &on_event,
-        &run_id,
-        &ChatProgressProjection::new(progress_started_at_ms),
-        0,
-    );
+    *phase = ChatStartPhase::Request;
     let prompt = if handoff.is_some() {
         request.prompt.clone()
     } else {
@@ -338,6 +348,7 @@ pub(super) fn admit_chat_turn(
             "a prompt or at least one attachment is required",
         ));
     }
+    *phase = ChatStartPhase::Model;
     let level = if request.thinking_level.is_empty() {
         crate::providers::auto::research_level(
             state,
@@ -396,6 +407,7 @@ pub(super) fn admit_chat_turn(
             "image attachment type is unsupported",
         ));
     }
+    *phase = ChatStartPhase::WorkspaceContext;
     let profile = state
         .store
         .get_loupist(&request.loupist_id)
@@ -435,6 +447,7 @@ pub(super) fn admit_chat_turn(
         pi_execution,
         if handoff.is_some() { "" } else { &prompt },
         surface,
+        phase,
     )?;
     if !scheduled_custom {
         context
@@ -474,6 +487,7 @@ pub(super) fn admit_chat_turn(
     );
     let surface = context.surface;
     let harness = context.agent_harness;
+    *phase = ChatStartPhase::Transcript;
     let chat_attachments = state.loupist_files_root(&profile.id)?.absolute_path(
         &PathBuf::from("loupists")
             .join(&profile.id)
@@ -502,6 +516,7 @@ pub(super) fn admit_chat_turn(
             .is_some_and(|note| note.untrusted_id.is_some())
     });
     let expected_chat = chat.clone();
+    *phase = ChatStartPhase::WorkspaceContext;
     crate::commands::knowledge::validate_selected_references(&request.pins)?;
     let cutoff = crate::commands::knowledge::as_of::Cutoff::parse(request.as_of.as_deref());
     let mut left_out = crate::commands::knowledge::as_of::LeftOut::default();
@@ -552,17 +567,26 @@ pub(super) fn admit_chat_turn(
     } else {
         None
     };
+    // An earlier reply's pending save: the messages it was offered are not
+    // offered again, and the entries it resolves or forgets are not shown.
+    let (pending_review, leaving) = if surface.is_bot() && request.use_memory {
+        super::saves::pending_bot_memory(state, &profile.id, &chat.id)?
+    } else {
+        Default::default()
+    };
     let bot_memory = (surface.is_bot() && request.use_memory).then(|| {
         let known = cutoff.map(|cutoff| {
             move |message: &ChatMessage| {
                 crate::commands::knowledge::as_of::message_known(message, cutoff)
             }
         });
-        let context = crate::chat::bot_memory::context(
+        let context = crate::chat::bot_memory::context_after(
             &chat,
             known
                 .as_ref()
                 .map(|known| known as &dyn Fn(&ChatMessage) -> bool),
+            &pending_review,
+            &leaving,
         );
         left_out.notes.extend(context.left_out.iter().cloned());
         // A turn that cannot keep anything is not asked to review.
@@ -653,6 +677,7 @@ pub(super) fn admit_chat_turn(
         .then(|| chat.pi_session_cache.clone())
         .flatten()
         .filter(|cache| cache.matches(&requested_cache_scope));
+    *phase = ChatStartPhase::Transcript;
     let pending_attachments = persist_chat_attachments(
         state,
         &profile.id,
@@ -721,19 +746,30 @@ pub(super) fn admit_chat_turn(
     if !scheduled_custom {
         chat.updated_at_ms = timestamp;
     }
-    if let Err(error) = state.store.replace_chat(&expected_chat, &chat) {
+    if let Err(error) = super::saves::append_after_receipts(state, &expected_chat, &mut chat) {
         if let Some(pending) = pending_attachments {
             pending.rollback()?;
         }
-        return Err(map_store(error));
+        return Err(error);
     }
     if let Some(pending) = pending_attachments {
         pending.commit();
     }
+    // A Started event acknowledges the queued submission. Send it once its
+    // request is durable so setup errors can keep the request and show recovery.
+    let _ = on_event.send(ChatStreamEvent::Started {
+        run_id: run_id.clone(),
+    });
+    emit_chat_progress_snapshot(
+        &on_event,
+        &run_id,
+        &ChatProgressProjection::new(progress_started_at_ms),
+        0,
+    );
     on_event.admitted(&chat);
-    // A stopped or failed first reply leaves the placeholder in place. The
-    // next successful reply should still give that conversation a useful title.
-    let should_generate_title = chat.title.is_empty();
+    // A stopped or failed first reply titles the session from its request,
+    // provisionally: the next finished reply titles it as it would an untitled one.
+    let should_generate_title = chat.takes_reply_title();
     let assistant_message_id = new_id("message");
     if state
         .store

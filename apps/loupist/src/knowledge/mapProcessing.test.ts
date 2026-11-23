@@ -1,5 +1,5 @@
 import type { GraphProcessingView, KnowledgeCatalog } from "../types";
-import { sourceDisplayStatus, worldProcessing } from "./mapProcessing";
+import { sourceDisplayStatus, sourceProcessingLabel, worldProcessing } from "./mapProcessing";
 
 function catalog(statuses: readonly string[]): KnowledgeCatalog {
   return {
@@ -28,6 +28,10 @@ it.each([
   { statuses: ["paused"], readiness: { status: "paused" }, expected: { kind: "waiting", reason: "paused" }, pending: false },
   { statuses: ["queued"], readiness: { status: "runtime_unavailable" }, expected: { kind: "waiting", reason: "runtime_unavailable" }, pending: true },
   { statuses: ["queued"], readiness: { status: "model_unavailable" }, expected: { kind: "waiting", reason: "model_unavailable" }, pending: true },
+  // With no AI account at all, the host's note decides the reason, whatever the model status.
+  { statuses: ["queued"], readiness: { status: "model_unavailable", note: "no_account" }, expected: { kind: "waiting", reason: "no_account" }, pending: true },
+  { statuses: ["queued"], readiness: { status: "provider_disconnected", note: "no_account" }, expected: { kind: "waiting", reason: "no_account" }, pending: true },
+  { statuses: ["queued"], readiness: { status: "model_unavailable", note: "model_unavailable" }, expected: { kind: "waiting", reason: "model_unavailable" }, pending: true },
   { statuses: ["queued"], readiness: { status: "reconciliation_required" }, expected: { kind: "waiting", reason: "reconciliation_required" }, pending: true },
   { statuses: ["paused_budget"], readiness: ready, expected: { kind: "waiting", reason: "paused_budget" }, pending: false },
   { statuses: ["failed_before_mutation"], readiness: ready, expected: { kind: "waiting", reason: "failed_before_mutation" }, pending: false },
@@ -47,4 +51,11 @@ it("preserves running and stopped Sources and reflects when a paused queue is sw
   expect(sourceDisplayStatus("running", disconnected)).toBe("running");
   expect(sourceDisplayStatus("paused_budget", disconnected)).toBe("paused_budget");
   expect(sourceDisplayStatus("paused", { status: "disabled" })).toBe("disabled");
+  expect(sourceDisplayStatus("queued", { status: "model_unavailable", note: "no_account" })).toBe("no_account");
+});
+
+it("words a budget pause and a missing account where the status is shown", () => {
+  expect(sourceProcessingLabel("paused_budget")).toBe("World building paused for this source: it reached the request allowance set in World building settings.");
+  expect(sourceProcessingLabel("no_account")).toBe("World is waiting for an AI account. Connect one in Settings > AI accounts.");
+  expect(sourceProcessingLabel("model_unavailable")).toBe("Choose another AI model");
 });

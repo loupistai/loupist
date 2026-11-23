@@ -85,14 +85,14 @@ pub enum ImportKind {
     Github,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn skills_list(
     request: ConfigReadRequest,
     state: State<'_, AppState>,
 ) -> Result<SkillCatalog, CommandError> {
     list(&state, &request.scope)
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn skills_read(
     request: SkillReadRequest,
     state: State<'_, AppState>,
@@ -102,7 +102,7 @@ pub fn skills_read(
     }
     skills::document(find(&state, &request.scope, &request.key)?)
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn skills_create(
     request: SkillCreateRequest,
     state: State<'_, AppState>,
@@ -119,7 +119,7 @@ pub fn skills_create(
     )?;
     list(&state, &request.scope)
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn skills_save(
     request: SkillSaveRequest,
     state: State<'_, AppState>,
@@ -136,7 +136,7 @@ pub fn skills_save(
     )?;
     list(&state, &request.scope)
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn skills_delete(
     request: SkillDeleteRequest,
     state: State<'_, AppState>,
@@ -151,7 +151,7 @@ pub fn skills_delete(
     )?;
     list(&state, &request.scope)
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub fn skills_reveal(
     request: SkillReadRequest,
     state: State<'_, AppState>,

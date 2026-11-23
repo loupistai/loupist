@@ -183,7 +183,8 @@ per-task connection allowlist, or per-task native-execution preference.
 Each scheduled task is `custom` or `briefing`. A Loupist has at most one briefing,
 with a continuing Memory-enabled Chat titled Briefings. The default briefing is
 08:00 Monday through Friday in the device time zone. At run time Rust supplies
-the date, elapsed time since the previous run, the followed names and reference
+the date and the previous run's start, both at the user's UTC offset, the elapsed
+time since then, the followed names and reference
 fields with saved-read state, principles, up to 40 World growth summaries, and up
 to five due Journal pointers. The briefing context keeps up to 20 disputed
 entity IDs for the World filter. The unattended agent chooses its own data reads

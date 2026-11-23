@@ -75,7 +75,7 @@ it("reads parked jobs once and distinguishes a Source stop from the user's pause
   const read = vi.fn().mockResolvedValue(job("paused_budget"));
   render(<WorldProcessingStatus jobId="job-1" initialStatus="paused_budget" readJob={read} />);
   await act(async () => {});
-  expect(screen.getByRole("status")).toHaveTextContent("World: building stopped for this source");
+  expect(screen.getByRole("status")).toHaveTextContent("World: building paused for this source (request allowance reached)");
   expect(read).toHaveBeenCalledOnce();
   read.mockResolvedValue(job("paused"));
   fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
@@ -84,7 +84,7 @@ it("reads parked jobs once and distinguishes a Source stop from the user's pause
   read.mockResolvedValue(job("paused_budget"));
   fireEvent.click(screen.getByRole("button", { name: "Refresh status" }));
   await act(async () => {});
-  expect(screen.getByRole("status")).toHaveTextContent("World: building stopped for this source");
+  expect(screen.getByRole("status")).toHaveTextContent("World: building paused for this source (request allowance reached)");
 });
 
 describe("Try again on a Source that stopped", () => {

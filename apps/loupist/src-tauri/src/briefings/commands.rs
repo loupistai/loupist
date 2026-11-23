@@ -298,21 +298,21 @@ pub(crate) fn unread_counts(state: &AppState) -> Result<Vec<UnreadCount>, Comman
         .collect()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn briefing_settings_get(
     request: LoupistRequest,
     state: State<'_, AppState>,
 ) -> Result<BriefingSettings, CommandError> {
     settings_get(&state, &request.loupist_id)
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn briefing_settings_set(
     request: SettingsRequest,
     state: State<'_, AppState>,
 ) -> Result<BriefingSettings, CommandError> {
     settings_set(&state, request)
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn inbox_list(
     request: InboxRequest,
     state: State<'_, AppState>,
@@ -331,7 +331,7 @@ pub(crate) fn inbox_list(
         next_cursor,
     })
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn inbox_mark_read(
     request: ReadRequest,
     state: State<'_, AppState>,
@@ -348,7 +348,7 @@ pub(crate) fn inbox_mark_read(
     super::desktop::changed(&request.loupist_id);
     Ok(())
 }
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn inbox_unread_counts(
     state: State<'_, AppState>,
 ) -> Result<Vec<UnreadCount>, CommandError> {

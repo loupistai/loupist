@@ -74,7 +74,7 @@ pub(crate) fn scheduled_tasks_activity(
         .map_err(map_store)
 }
 
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub(crate) fn scheduled_task_watch(
     request: RunRequest,
     on_event: Channel<ChatStreamEvent>,
@@ -93,7 +93,7 @@ pub(crate) fn scheduled_task_watch(
 mod tests;
 
 /// The current state of a task a Chat card shows; `None` once it was deleted.
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub(crate) fn scheduled_task_get(
     request: TaskRequest,
     state: State<'_, AppState>,
@@ -102,7 +102,7 @@ pub(crate) fn scheduled_task_get(
 }
 
 /// The one-tap OK for a task the Loupist proposed from a conversation.
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub(crate) fn scheduled_task_confirm(
     request: TaskRequest,
     state: State<'_, AppState>,
@@ -111,7 +111,7 @@ pub(crate) fn scheduled_task_confirm(
 }
 
 /// Declines a proposed task; only unconfirmed tasks can be discarded this way.
-#[tauri::command(rename_all = "snake_case")]
+#[tauri::command(async, rename_all = "snake_case")]
 pub(crate) fn scheduled_task_discard(
     request: TaskRequest,
     state: State<'_, AppState>,

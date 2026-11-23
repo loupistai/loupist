@@ -5,14 +5,14 @@ import { loupistOptionLabel } from "../../lib/loupistFolder";
 import { Disclosure } from "../ui/disclosure";
 import { useCallback, useEffect, useState } from "react";
 import { CheckIcon, FolderOpenIcon, RefreshCwIcon } from "lucide-react";
-import type { ConfigDocument, ConfigScope, ConfigSnapshot, LoupistSummary, LoupistBridge, ModelCatalog } from "../../types";
+import type { ConfigDocument, ConfigScope, ConfigSnapshot, LoupistSummary, LoupistBridge, ModelCatalog, ModelRunSelection } from "../../types";
 import { notifyConfigurationChanged, useConfiguration } from "../../app/useConfiguration";
 import { Button } from "../ui/button";
 import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
 import { Input } from "../ui/input";
 import { NativeSelect } from "../ui/native-select";
 import { Switch } from "../ui/switch";
-import { modelRunSelection, thinkingLabel, runControlLabel, runChoiceLabel, visibleCatalogModels } from "../../lib/modelSelection";
+import { defaultRunOptions, modelRunSelection, thinkingLabel, runControlLabel, runChoiceLabel, visibleCatalogModels } from "../../lib/modelSelection";
 import { ModelSelectionMenu } from "../models/ModelSelectionMenu";
 import { ProviderPlanLine } from "../models/ProviderPlanLine";
 
@@ -25,6 +25,11 @@ function leaf(document: unknown, path: string): unknown {
 function patch(path: string, value: unknown): ConfigDocument {
   return path.split(".").reverse().reduce<unknown>((result, key) => ({ [key]: result }), value) as ConfigDocument;
 }
+/** The Chat default fields a composer pick stands in for: model, reasoning level and run options. */
+const CHAT_MODEL_KEYS: readonly string[] = ["model_profile_id", "thinking_level", "run_options"];
+const savesChatModel = (set: ConfigDocument, unset: string[][]) =>
+  CHAT_MODEL_KEYS.some((key) => set.chat !== undefined && Object.hasOwn(set.chat, key))
+  || unset.some(([section, key]) => section === "chat" && key !== undefined && CHAT_MODEL_KEYS.includes(key));
 type FieldProps = { snapshot: ConfigSnapshot; path: string; relatedPaths?: string[]; label: string; description?: string; disabled: boolean; onReset: (path: string) => void };
 
 function SettingField({ snapshot, path, relatedPaths = [], label, description, disabled, onReset, children }: FieldProps & { children: React.ReactNode }) {
@@ -59,9 +64,11 @@ export function ConfigurationDiagnostics({ snapshot }: { snapshot: ConfigSnapsho
   return <div className="inline-error config-diagnostics" role="alert"><strong>{i18n.t("settings:agentSettings.newResponsesStayPausedUntilThisIsFixed")}</strong>{snapshot.diagnostics.map((diagnostic, index) => <p key={index}>{diagnostic.line !== null ? i18n.t("settings:agentSettings.diagnosticLine", { line: formatNumber(diagnostic.line), message: diagnostic.message }) : i18n.t("settings:agentSettings.diagnostic", { message: diagnostic.message })}</p>)}</div>;
 }
 
-export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange, onConnectAccount }: {
+export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange, onConnectAccount, onChatDefaultSaved }: {
   onConnectAccount?: () => void;
   bridge: LoupistBridge; loupists: LoupistSummary[]; catalog: ModelCatalog | null; scope: ConfigScope; onScopeChange?: (scope: ConfigScope) => void;
+  /** A saved Chat model, reasoning level or run option, so the composer picks it covers yield to it. */
+  onChatDefaultSaved?: (scope: ConfigScope) => void;
 }) {
   useTranslation("settings");
   const config = useConfiguration(bridge, scope);
@@ -85,16 +92,31 @@ export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange,
     setSavedScope(null);
     const saved = await config.update(set, unset);
     if (saved) setSavedScope(scopeKey);
+    // "Applies from the next reply" holds for a chat that uses the composer's earlier pick too.
+    if (saved && savesChatModel(set, unset)) onChatDefaultSaved?.(scope);
     return saved;
   };
   const save = (path: string, value: unknown) => update(patch(path, value));
   const reset = (path: string) => { void update({}, [path.split(".")]); };
+  const saveModel = ({ model_profile_id, run_options }: ModelRunSelection) => {
+    // A model change replaces its controls at this scope in the same write.
+    const obsolete = Object.keys(snapshot?.explicit?.chat?.run_options ?? {})
+      .filter((key) => !Object.hasOwn(run_options, key))
+      .map((key) => ["chat", "run_options", key]);
+    return update({ chat: { model_profile_id, run_options } }, obsolete);
+  };
   const field = (path: string, label: string, description?: string): FieldProps => ({ snapshot: snapshot!, path, label, description, disabled, onReset: reset });
   const models = visibleCatalogModels(catalog);
   const resolved = snapshot?.modelSelection;
-  const selection = modelRunSelection(resolved);
-  const optionModel = models.find((model) => model.id === selection.model_profile_id);
-  const unavailableOptions = Object.entries(snapshot?.effective.chat.run_options ?? {}).filter(([key, value]) => !optionModel?.run_controls.some((control) => control.id === key && control.choices.some((choice) => choice.id === value)));
+  // A stored model that cannot run now stays shown here; Chat uses Auto until it can.
+  const storedModel = resolved?.stored_unavailable ? catalog?.models.find((model) => model.id === snapshot?.effective.chat.model_profile_id) : undefined;
+  const selection = storedModel && snapshot
+    ? { model_profile_id: storedModel.id, thinking_level: snapshot.effective.chat.thinking_level ?? "", run_options: { ...defaultRunOptions(storedModel), ...snapshot.effective.chat.run_options } }
+    : modelRunSelection(resolved);
+  const optionModel = storedModel ?? models.find((model) => model.id === selection.model_profile_id);
+  const runOptions = snapshot?.scope.kind === "project" && snapshot.explicit?.chat?.model_profile_id && resolved?.model && !resolved.is_default
+    ? resolved.run_options : snapshot?.effective.chat.run_options ?? {};
+  const unavailableOptions = Object.entries(runOptions).filter(([key, value]) => !optionModel?.run_controls.some((control) => control.id === key && control.choices.some((choice) => choice.id === value)));
   const thinking = snapshot?.effective.chat.thinking_level;
   const thinkingLevels = optionModel?.thinking_levels ?? [...new Set(models.flatMap((model) => model.thinking_levels))];
   return <>
@@ -110,15 +132,16 @@ export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange,
         <SettingField {...field("chat.model_profile_id", i18n.t("settings:agentSettings.defaultModel"), i18n.t("settings:agentSettings.theModelToUseWhenStartingAChat"))}>
           {resolved?.unavailable_reason === "no_connected_account" ? <Button id="config-chat.model_profile_id" variant="outline" onClick={onConnectAccount}>{i18n.t("chat:chatModelMenu.noAccount")}</Button>
             : <ModelSelectionMenu triggerId="config-chat.model_profile_id" ariaLabel={i18n.t("settings:agentSettings.defaultModel")} disabled={disabled}
-                models={models} providers={catalog?.providers ?? []} selection={selection} modelName={resolved?.model?.name} isDefault={resolved?.is_default}
+                models={models} providers={catalog?.providers ?? []} selection={selection} modelName={storedModel?.name ?? resolved?.model?.name} isDefault={!storedModel && resolved?.is_default}
                 onChooseDefault={() => reset("chat.model_profile_id")}
                 onSelectionChange={next => {
-                  if (next.model_profile_id !== selection.model_profile_id) void save("chat.model_profile_id", next.model_profile_id);
+                  if (next.model_profile_id !== selection.model_profile_id) void saveModel(next);
                   else if (next.thinking_level !== selection.thinking_level) void save("chat.thinking_level", next.thinking_level);
                   else if (next.run_options !== selection.run_options) void update({ chat: { run_options: next.run_options } });
-                  else void save("chat.model_profile_id", next.model_profile_id);
+                  else void saveModel(next);
                 }} />}
         </SettingField>
+        {storedModel ? <p className="agent-config-description" role="note">{i18n.t("settings:agentSettings.storedModelUnavailable")}</p> : null}
         <ProviderPlanLine className="agent-config-plan-line" provider={catalog?.providers.find((provider) => provider.id === optionModel?.provider)} onOpenUsage={(provider) => { void bridge.providerOpenUsage({ provider }).catch(() => {}); }} />
         <SettingField {...field("chat.thinking_level", i18n.t("settings:agentSettings.reasoningLevel"), i18n.t("settings:agentSettings.howMuchTimeTheModelSpendsThinkingBefore"))}><NativeSelect id="config-chat.thinking_level" aria-describedby="config-description-chat.thinking_level" disabled={disabled} value={thinking ?? "__automatic__"} onChange={(event) => event.target.value === "__automatic__" ? reset("chat.thinking_level") : void save("chat.thinking_level", event.target.value)}><option value="__automatic__">{scope.kind === "project" ? i18n.t("settings:agentSettings.useGlobalDefaultReasoningLevel") : i18n.t("settings:agentSettings.modelDefault")}</option>{thinking !== null && thinking !== undefined && !thinkingLevels.includes(thinking) ? <option value={thinking}>{i18n.t("settings:agentSettings.unavailableThinking", { level: thinking })}</option> : null}{thinkingLevels.map((level) => <option value={level} key={level}>{thinkingLabel(level) || i18n.t("settings:agentSettings.none")}</option>)}</NativeSelect></SettingField>
         <SettingField
@@ -144,7 +167,7 @@ export function AgentSettings({ bridge, loupists, catalog, scope, onScopeChange,
       </div></section>
       <Disclosure className="agent-config-advanced" data-testid="agent-config-advanced" title={i18n.t("settings:agentSettings.advanced")} description={i18n.t("settings:agentSettings.advancedDescription")}>
         {optionModel?.run_controls.length ? <div className="agent-config-group" data-run-controls><h4>{i18n.t("settings:agentSettings.performanceGroup")}</h4><div className="agent-config-fields">
-          {optionModel?.run_controls.map((control) => <SettingField key={control.id} {...field(`chat.run_options.${control.id}`, runControlLabel(control), control.id === "performance" ? i18n.t("settings:agentSettings.performanceDescription") : undefined)}><NativeSelect id={`config-chat.run_options.${control.id}`} aria-describedby={control.id === "performance" ? `config-description-chat.run_options.${control.id}` : undefined} disabled={disabled} value={snapshot.effective.chat.run_options[control.id] ?? control.default_choice} onChange={(event) => void update({ chat: { run_options: { [control.id]: event.target.value } } })}>{snapshot.effective.chat.run_options[control.id] !== undefined && !control.choices.some((choice) => choice.id === snapshot.effective.chat.run_options[control.id]) ? <option value={snapshot.effective.chat.run_options[control.id]}>{i18n.t("settings:agentSettings.unavailableChoice")}</option> : null}{control.choices.map((choice) => <option key={choice.id} value={choice.id}>{runChoiceLabel(control, choice)}</option>)}</NativeSelect></SettingField>)}
+          {optionModel?.run_controls.map((control) => <SettingField key={control.id} {...field(`chat.run_options.${control.id}`, runControlLabel(control), control.id === "performance" ? i18n.t("settings:agentSettings.performanceDescription") : undefined)}><NativeSelect id={`config-chat.run_options.${control.id}`} aria-describedby={control.id === "performance" ? `config-description-chat.run_options.${control.id}` : undefined} disabled={disabled} value={runOptions[control.id] ?? control.default_choice} onChange={(event) => void update({ chat: { run_options: { [control.id]: event.target.value } } })}>{runOptions[control.id] !== undefined && !control.choices.some((choice) => choice.id === runOptions[control.id]) ? <option value={runOptions[control.id]}>{i18n.t("settings:agentSettings.unavailableChoice")}</option> : null}{control.choices.map((choice) => <option key={choice.id} value={choice.id}>{runChoiceLabel(control, choice)}</option>)}</NativeSelect></SettingField>)}
         </div></div> : null}
         <div className="agent-config-group"><h4>{i18n.t("settings:agentSettings.conversationContext")}</h4><p>{i18n.t("settings:agentSettings.standardFitsANormalResearchChatKeepMore")}</p>{/* The preset shows as chosen only when the kept amount is exactly its own; a custom amount selects neither. */}
           <SegmentedControl className="agent-config-presets" aria-label={i18n.t("settings:agentSettings.conversationContext")} disabled={disabled}

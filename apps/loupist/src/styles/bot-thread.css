@@ -165,6 +165,7 @@
 .bot-tile:disabled { cursor: default; }
 .bot-tile-name { overflow: hidden; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-semibold); text-overflow: ellipsis; white-space: nowrap; }
 .bot-tile-price { font-size: var(--gg-text-body); font-weight: var(--gg-weight-bold); }
+.bot-tile-currency { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 /* "As of {date} · {provider}" is the tile's quietest line, never larger than the name above it. */
 .bot-tile-foot { min-width: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 .bot-greeting[aria-busy="false"] > :not(.bot-greeting-top) { animation: bot-rise var(--gg-motion-slow) var(--gg-ease-out) both; }

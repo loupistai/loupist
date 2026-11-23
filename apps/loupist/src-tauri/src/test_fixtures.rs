@@ -39,6 +39,7 @@ pub(crate) fn chat_session(id: &str, loupist_id: &str) -> ChatSession {
         pi_session_id: "123e4567-e89b-42d3-a456-426614174000".into(),
         pi_session_cache: None,
         title: "Test chat".into(),
+        title_provisional: false,
         memory_policy: MemoryPolicy::default(),
         set_aside_memory: Vec::new(),
         versions: Vec::new(),

@@ -24,7 +24,7 @@ pub struct SourceSelectionPin {
 
 /// Resolve a renderer selection to its immutable, host-created containing span.
 /// No new Source, revision, span or model read receipt is written.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_source_selection_resolve(
     request: SourceSelectionRequest,
     state: State<'_, AppState>,

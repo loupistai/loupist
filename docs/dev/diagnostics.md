@@ -40,11 +40,21 @@ count the same execution once when both entries are selected.
 World entries carry `inferenceCalls { llm, embedding }`, counting only calls the
 host made (refused requests excluded), `queueWaitMs`, how long the job waited before
 this attempt, and `stageMs`, the time paid calls took per extraction stage (calls
-sent together overlap, so the sum can exceed the duration); Chat entries carry `openbbFirstCallMs`, the
+sent together overlap, so the sum can exceed the duration), and, when extraction ran,
+`entityResolution { proposed, refused, byCode }`: the extracted names the model
+merged into a stored node, the merges among them the host refused because the two
+names carry different identifying codes and do not agree in name, and the names the
+host joined to a stored node by an equal code where the model had not
+([codes](../knowledge/worlds.md#identifying-codes-in-entity-resolution)). Chat entries carry `openbbFirstCallMs`, the
 duration of the turn's first OpenBB call including any cold start.
 Chat entries with a refused connector credential read carry
 `connectorKeychainStatuses`, a set of Security status categories. It can include
 `no_default_keychain`, `database_locked`, `interaction_not_allowed` and `other`.
+
+When Chat returns an admission or setup error, the entry records
+`chatStartFailure { phase, reason }`, for example `model` and `invalid_request`.
+The phase is a fixed host checkpoint. The reason is a known command error code.
+The entry excludes the rejected input and the raw error message.
 
 A failed Chat commit also records `memoryCommitFailure { stage, reason }`. Both
 values come from fixed host enums: the stage identifies the first failed commit
@@ -60,6 +70,11 @@ A Chat or scheduled run with a retained answer and skipped Memory can still
 finish with status `ok`. Its `memorySaveSkip` records the reason separately
 from failures that prevented completion. Chat progress keeps its saving
 duration and the time spent waiting for admission.
+
+For Chat turns that reach save admission or complete directly, `chatSavePath`
+is `direct`, `queued` (save admission without an observed wait), or `waited`.
+Count `waited` among entries with this field to measure how often completion
+waits. Older entries and runs that end before selecting a path omit the field.
 
 The logger never takes prompts, answer or Source text, file contents,
 credential/header values, or raw error bodies. It applies the shared

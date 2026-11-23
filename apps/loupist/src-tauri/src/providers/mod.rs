@@ -1,5 +1,5 @@
 //! Model providers: the model catalog, user-added endpoints, sign-in, isolated
-//! inference and the initial World model choice.
+//! inference and the World model the bundled list recommends.
 
 pub(crate) mod auto;
 pub(crate) mod catalog;
@@ -13,3 +13,4 @@ pub(crate) mod status;
 pub(crate) mod support;
 pub(crate) mod unknown;
 pub(crate) mod world_defaults;
+pub(crate) mod world_model_list;

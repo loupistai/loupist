@@ -188,7 +188,7 @@ fn owned_references() -> (tempfile::TempDir, crate::app::AppState, OwnedReferenc
 
 fn prepared_prompt(use_memory: bool, hints: Option<&serde_json::Value>) -> String {
     let envelope = crate::agent_harness::turn_envelope_block(
-        chrono::Utc::now(),
+        crate::local_time::now(),
         use_memory,
         &[],
         None,

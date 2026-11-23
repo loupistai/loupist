@@ -6,7 +6,7 @@ import { checkFor, looksLikeNumber } from "../../chat/numberChecks";
 import { evidenceLinkStarts } from "../../chat/evidenceLinkOrder";
 import { keepNumberParticles } from "../../chat/keepParticles";
 import { evidenceLinkAliases } from "../../chat/evidenceLinkAliases";
-import { CitationChip, UnavailableCitation } from "../chat/CitationChip";
+import { CitationChip, UnavailableCitation, UnlinkedFigure } from "../chat/CitationChip";
 import { replayWarning } from "../chat/FigureWarnings";
 import { NumberChip, PendingNumber } from "../chat/NumberChip";
 import { useTurn } from "../chat/TurnProvider";
@@ -96,6 +96,7 @@ function EvidenceLink({ href, start, children }: { href: string; start?: number;
     const artifactId = artifactLinks.get(href);
     const reason = check?.comparisonReplay?.reason === "evidence_unavailable" ? replayWarning(check) : undefined;
     return artifactId ? <ProseLink to={{ kind: "artifact-link", artifactId }} title={nodeText(children)}>{children}</ProseLink>
+      : check?.status === "unlinked" ? <UnlinkedFigure>{children}</UnlinkedFigure>
       : <UnavailableCitation reason={reason}>{children}</UnavailableCitation>;
   }
   if (check) return <NumberChip check={check} checks={numberChecks} evidence={evidence} evidenceRefs={evidenceRefs} asOf={turn?.asOf}>{children}</NumberChip>;

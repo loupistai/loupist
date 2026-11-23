@@ -34,8 +34,7 @@ impl Cutoff {
     /// Something this device recorded at `at_ms` was known by the end of the
     /// cutoff day, on the user's calendar.
     pub(crate) fn recorded(self, at_ms: i64) -> bool {
-        chrono::DateTime::from_timestamp_millis(at_ms)
-            .is_some_and(|at| at.with_timezone(&chrono::Local).date_naive() <= self.0)
+        crate::local_time::date_at_ms(at_ms).is_some_and(|day| day <= self.0)
     }
 
     /// A publication time on or before the cutoff; undated never is.

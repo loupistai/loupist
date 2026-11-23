@@ -9,7 +9,7 @@ pub struct LensArchiveRequest {
     pub archived: bool,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_lens_archive(
     state: State<'_, AppState>,
     request: LensArchiveRequest,

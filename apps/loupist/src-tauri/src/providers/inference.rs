@@ -243,6 +243,22 @@ impl ProviderInferenceService {
             .unwrap_or_default()
             .resolve(&format!("{provider}/{model}"))
     }
+    /// The same snapshot the host uses, for work that runs without it.
+    pub(crate) fn world_models(
+        &self,
+    ) -> Result<crate::providers::world_defaults::WorldModels, CommandError> {
+        let catalog = self
+            .store
+            .get_model_catalog()
+            .map_err(|_| CommandError::internal("Model catalog is unavailable"))?
+            .unwrap_or_default();
+        crate::providers::world_defaults::WorldModels::from_parts(
+            catalog,
+            &self.agent_data_dir,
+            &self.artifacts.app_data_dir,
+            self.store.clone(),
+        )
+    }
     pub fn readiness(
         &self,
         provider: &str,

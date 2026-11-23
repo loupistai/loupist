@@ -183,63 +183,74 @@ pub(super) fn persist_and_emit_terminal_chat(
     progress: Option<ChatProgress>,
     terminal_status: ChatTerminalStatus,
 ) -> Result<RunStarted, CommandError> {
-    let expected = store
-        .get_chat(thread_id)
-        .map_err(map_store)?
-        .ok_or_else(|| CommandError::not_found("chat thread"))?;
     let store_failed = matches!(terminal_status, ChatTerminalStatus::StoreFailed);
-    if store_failed
-        && expected
+    // An earlier reply of this conversation may write its save receipt meanwhile.
+    let (created_at_ms, title) = super::saves::retry_chat_cas(|| {
+        let expected = store
+            .get_chat(thread_id)
+            .map_err(map_store)?
+            .ok_or_else(|| CommandError::not_found("chat thread"))?;
+        if store_failed
+            && expected
+                .messages
+                .iter()
+                .any(|message| message.id == message_id)
+        {
+            return Err(CommandError::conflict("Chat response is already saved"));
+        }
+        let created_at_ms = now_ms().max(expected.updated_at_ms + 1);
+        let status = match terminal_status {
+            ChatTerminalStatus::Aborted => ChatMessageStatus::Aborted,
+            ChatTerminalStatus::Error | ChatTerminalStatus::StoreFailed => ChatMessageStatus::Error,
+        };
+        let as_of = expected
             .messages
             .iter()
-            .any(|message| message.id == message_id)
-    {
-        return Err(CommandError::conflict("Chat response is already saved"));
+            .rev()
+            .find(|message| message.role == ChatRole::User && !message.steer)
+            .and_then(|message| message.as_of.clone());
+        let mut chat = expected.clone();
+        chat.messages.push(ChatMessage {
+            tool_refusals: on_event.tool_refusals(),
+            tool_trace: Some(on_event.tool_trace.snapshot()),
+            schedule_receipts: on_event.schedule_receipts(),
+            failure_kind: (!matches!(terminal_status, ChatTerminalStatus::Aborted))
+                .then(|| on_event.failure_kind()),
+            retry_after_seconds: on_event.retry_after_seconds(),
+            replaced_model: on_event.replaced_model(),
+            memory_refs: memory_trace.refs.clone(),
+            observed_exact_count: memory_trace.observed_exact_count,
+            refs_truncated: memory_trace.refs_truncated,
+            refs_digest: memory_trace.refs_digest.clone(),
+            memory_revision: memory_revision.clone(),
+            execution_model: Some(execution_model.clone()),
+            agent_harness: Some(agent_harness.clone()),
+            evidence_refs: on_event.evidence_refs(),
+            progress: progress.clone(),
+            ..ChatMessage::terminal_reply(
+                message_id.to_owned(),
+                status,
+                if store_failed {
+                    FAILED_CHAT_CONTENT.into()
+                } else {
+                    content.clone()
+                },
+                created_at_ms,
+                as_of,
+            )
+            .map_err(map_internal)?
+        });
+        chat.updated_at_ms = created_at_ms;
+        let title = chat.title_unfinished_reply();
+        store.replace_chat(&expected, &chat).map_err(map_store)?;
+        Ok((created_at_ms, title))
+    })?;
+    if let Some(title) = title {
+        let _ = on_event.send(ChatStreamEvent::Title {
+            run_id: run_id.to_owned(),
+            title,
+        });
     }
-    let created_at_ms = now_ms().max(expected.updated_at_ms + 1);
-    let status = match terminal_status {
-        ChatTerminalStatus::Aborted => ChatMessageStatus::Aborted,
-        ChatTerminalStatus::Error | ChatTerminalStatus::StoreFailed => ChatMessageStatus::Error,
-    };
-    let as_of = expected
-        .messages
-        .iter()
-        .rev()
-        .find(|message| message.role == ChatRole::User && !message.steer)
-        .and_then(|message| message.as_of.clone());
-    let mut chat = expected.clone();
-    chat.messages.push(ChatMessage {
-        tool_refusals: on_event.tool_refusals(),
-        tool_trace: Some(on_event.tool_trace.snapshot()),
-        schedule_receipts: on_event.schedule_receipts(),
-        failure_kind: (!matches!(terminal_status, ChatTerminalStatus::Aborted))
-            .then(|| on_event.failure_kind()),
-        retry_after_seconds: on_event.retry_after_seconds(),
-        replaced_model: on_event.replaced_model(),
-        memory_refs: memory_trace.refs,
-        observed_exact_count: memory_trace.observed_exact_count,
-        refs_truncated: memory_trace.refs_truncated,
-        refs_digest: memory_trace.refs_digest,
-        memory_revision,
-        execution_model: Some(execution_model.clone()),
-        agent_harness: Some(agent_harness.clone()),
-        evidence_refs: on_event.evidence_refs(),
-        progress: progress.clone(),
-        ..ChatMessage::terminal_reply(
-            message_id.to_owned(),
-            status,
-            if store_failed {
-                FAILED_CHAT_CONTENT.into()
-            } else {
-                content.clone()
-            },
-            created_at_ms,
-            as_of,
-        )
-        .map_err(map_internal)?
-    });
-    chat.updated_at_ms = created_at_ms;
-    store.replace_chat(&expected, &chat).map_err(map_store)?;
     let _ = on_event.send(match terminal_status {
         ChatTerminalStatus::Aborted => ChatStreamEvent::Aborted {
             run_id: run_id.to_owned(),

@@ -95,3 +95,47 @@ describe("startup model discovery", () => {
     expect(result.current.catalog).toEqual(next);
   });
 });
+
+describe("composer picks for this app session", () => {
+  const claude = { model_profile_id: "anthropic/claude-sonnet-4-5", thinking_level: "medium", run_options: {} };
+  const luna = { model_profile_id: "model-test", thinking_level: "high", run_options: { performance: "standard" } };
+  async function twoAccounts() {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    await bridge.providerConfigure({ provider: "anthropic", api_key: "test-key" });
+    const view = renderHook(() => useModelCatalog(bridge));
+    await waitFor(() => expect(view.result.current.resolved).toBe(true));
+    act(() => {
+      view.result.current.changeSelection("loupist-quality", claude);
+      view.result.current.changeSelection("loupist-cycle", luna);
+    });
+    return { bridge, ...view };
+  }
+
+  it("drops a pick once its account is disconnected, and keeps it dropped when the account returns", async () => {
+    const { bridge, result } = await twoAccounts();
+    expect(result.current.selections).toEqual({ "loupist-quality": claude, "loupist-cycle": luna });
+    await act(() => result.current.providerActions.onDisconnect("anthropic"));
+    expect(result.current.selections).toEqual({ "loupist-cycle": luna });
+    await act(async () => { result.current.setCatalog(await bridge.providerConfigure({ provider: "anthropic", api_key: "test-key" })); });
+    expect(result.current.catalog?.models.some((model) => model.id === claude.model_profile_id)).toBe(true);
+    expect(result.current.selections).toEqual({ "loupist-cycle": luna });
+  });
+
+  it("drops a pick whose model is hidden from Chat or no longer offered", async () => {
+    const { bridge, result } = await twoAccounts();
+    await act(() => result.current.providerActions.onUpdateModelVisibility({ model_profile_id: claude.model_profile_id, visible_in_chat: false }));
+    expect(result.current.selections).toEqual({ "loupist-cycle": luna });
+    const catalog = await bridge.modelCatalogGet();
+    act(() => result.current.setCatalog({ ...catalog, models: catalog.models.filter((model) => model.id !== luna.model_profile_id) }));
+    expect(result.current.selections).toEqual({});
+  });
+
+  it("yields a Loupist's pick to its saved Chat default, and every pick to the app's", async () => {
+    const { result } = await twoAccounts();
+    act(() => result.current.yieldToChatDefault({ kind: "project", loupistId: "loupist-quality" }));
+    expect(result.current.selections).toEqual({ "loupist-cycle": luna });
+    act(() => result.current.changeSelection("loupist-quality", claude));
+    act(() => result.current.yieldToChatDefault({ kind: "global" }));
+    expect(result.current.selections).toEqual({});
+  });
+});

@@ -147,6 +147,17 @@ describe("Loupist · Shell and Loupist", () => {
     expect(within(await openDelete()).queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("says a session that is still answering or saving cannot be deleted yet", async () => {
+    const user = userEvent.setup();
+    const bridge = await openApp();
+    vi.spyOn(bridge, "chatDelete").mockRejectedValueOnce({ code: "conflict", message: "this Loupist target already has an active run" });
+    await user.click(screen.getByRole("button", { name: "Options for How should we read the margin decline?" }));
+    await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete research session?" });
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("This session is still answering or saving to Memory. Delete it when that finishes.");
+  });
+
   it("ignores a late Chat created for the previously selected Loupist", async () => {
     const user = userEvent.setup();
     const bridge = await openApp();

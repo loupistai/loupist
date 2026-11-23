@@ -34,7 +34,7 @@ pub struct MemoryUsage {
     pub used_in: Vec<MemoryUsedIn>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn knowledge_memory_usage(
     state: State<'_, AppState>,
     request: MemoryUsageRequest,

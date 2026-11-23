@@ -220,6 +220,7 @@ import asyncio
 import json
 import sys
 from pathlib import Path
+from unittest.mock import patch
 from loupist_openbb.bootstrap import (
     Bootstrap,
     BootstrapSettings,
@@ -235,8 +236,10 @@ scratch = Path(sys.argv[1])
 configure_scratch_environment(scratch)
 from fastmcp import Client
 from loupist_openbb.server import _available_route_providers, create_server
-from loupist_openbb.failures import SEC_CONTACT_REQUIRED
+from loupist_openbb.failures import INVALID_ARGUMENTS, SEC_CONTACT_REQUIRED
 from openbb_core.api.rest_api import app
+from openbb_tmx.models.index_constituents import TmxIndexConstituentsFetcher
+from openbb_yfinance.models.key_metrics import YFinanceKeyMetricsFetcher
 
 manifest = load_runtime_manifest()
 categories = tuple(manifest["allowed_categories"])
@@ -290,7 +293,9 @@ for provider in manifest["providers"]:
         for route in anonymous.get(name, ()):
             assert name in missing_key["/api/v1/" + route]
 assert keyless["/api/v1/equity/fundamental/filings"] == ["tmx"]
-assert keyless["/api/v1/equity/fundamental/metrics"] == ["finviz", "yfinance"]
+assert keyless["/api/v1/equity/fundamental/metrics"] == ["yfinance"]
+assert "finviz" not in with_keys["/api/v1/equity/fundamental/metrics"]
+assert "finviz" in keyless["/api/v1/equity/screener"]
 assert all("sec" not in ids for ids in keyless.values())
 without_account_type = _available_route_providers(
     app, set(providers), fields - {"tradier_account_type"}, manifest["providers"]
@@ -374,6 +379,62 @@ async def check_surface():
             activation = await client.call_tool("activate_category", {"category": category})
             assert not activation.is_error
         advertised = {tool.name: tool for tool in await client.list_tools()}
+        def properties(name):
+            return advertised[name].inputSchema["properties"]
+
+        for name, provider, fields in [
+            ("economy_survey_bls_search", "bls", ("category",)),
+            ("economy_balance_of_payments", "ecb", ("country",)),
+            ("economy_direction_of_trade", "imf", ("country", "counterpart")),
+            ("economy_indicators", "imf", ("symbol",)),
+        ]:
+            for field in fields:
+                assert properties(name)[field][provider]["required"], (name, field)
+        assert "BUK100P" in properties("index_constituents")["symbol"]["cboe"]["choices"]
+        assert "grain" in properties("commodity_psd_report")["commodity"]["government_us"]["choices"]
+        with patch.object(TmxIndexConstituentsFetcher, "extract_data") as extract:
+            extract.return_value = {"indices": {"^TSX": {}}}
+            for name, provider, params, field in [
+                ("economy_survey_bls_search", "bls", {"query": "unemployment"}, "category"),
+                ("economy_balance_of_payments", "ecb", {}, "country"),
+                ("economy_direction_of_trade", "imf", {}, "country"),
+                ("economy_direction_of_trade", "imf", {"country": "USA"}, "counterpart"),
+                ("economy_indicators", "imf", {"symbol": "CPI", "country": "USA"}, "symbol"),
+                ("index_constituents", "cboe", {"symbol": "SPX"}, "symbol"),
+                ("index_constituents", "tmx", {"symbol": "TSX"}, "symbol"),
+                ("commodity_psd_report", "government_us",
+                 {"commodity": "wheat", "year": 2024, "month": 10}, "commodity"),
+            ]:
+                error = await client.call_tool(
+                    name, {**params, "provider": provider}, raise_on_error=False
+                )
+                assert error.is_error, (name, provider)
+                assert error.structured_content == {"loupist_error": {
+                    "kind": "invalid_arguments", "field": field, "provider": provider,
+                }}, (name, provider, error)
+            extract.assert_awaited_once()
+        metrics = advertised["equity_fundamental_metrics"].inputSchema["properties"]
+        assert set(metrics["provider"]["enum"]) == set(
+            with_keys["/api/v1/equity/fundamental/metrics"]
+        )
+        blocked_metrics = await client.call_tool(
+            "equity_fundamental_metrics",
+            {"symbol": "TSLA", "provider": "finviz"},
+            raise_on_error=False,
+        )
+        assert blocked_metrics.is_error
+        assert blocked_metrics.structured_content == INVALID_ARGUMENTS
+        with patch.object(YFinanceKeyMetricsFetcher, "extract_data") as extract:
+            extract.return_value = [{"symbol": "TSLA", "marketCap": 123456789}]
+            available_metrics = await client.call_tool(
+                "equity_fundamental_metrics",
+                {"symbol": "TSLA", "provider": "yfinance"},
+            )
+        extract.assert_awaited_once()
+        assert available_metrics.structured_content["provider"] == "yfinance"
+        row = available_metrics.structured_content["results"][0]
+        assert row["symbol"] == "TSLA"
+        assert row["market_cap"] == 123456789
         # Grant SEC without a contact to exercise the real request guard.
         refusal = await client.call_tool(
             "equity_fundamental_income",

@@ -818,6 +818,7 @@ impl SqliteStore {
                     pi_session_id: Uuid::new_v4().to_string(),
                     pi_session_cache: None,
                     title: snapshot.title.clone(),
+                    title_provisional: false,
                     memory_policy: MemoryPolicy {
                         use_memory: snapshot.use_memory,
                         update_memory: snapshot.update_memory,

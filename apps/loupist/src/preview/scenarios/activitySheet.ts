@@ -66,6 +66,40 @@ function sheetAnswer(bridge: PreviewBridge, { files = false } = {}) {
 }
 
 /**
+ * Earlier turns before the fixture's question, each with a long question, so the sheet's "Earlier
+ * replies" pairs a long title with its time (X-015: the title ran under the time and off the edge).
+ */
+function earlierTurns(bridge: PreviewBridge) {
+  const questions = previewKo() ? [
+    "테슬라(TSLA), 이 기업 앞으로 팔로우해줘",
+    "팔로우한 테슬라(TSLA)의 최근 거래일 종가를 내장 시장 데이터로 확인하고 자산 페이지에 저장해 줘",
+    "테슬라(TSLA)를 앞으로 평일마다 오전 8시 30분(이 Mac의 한국 시간)에 확인하고 지난 실행 이후 바뀐 점을 봇에 요약해 줘",
+    "테슬라 사용자 지정 예약은 그대로 두고, 기본 제공 평일 아침 브리핑도 켜서 평일마다 둘 다 받게 해 줘",
+  ] : [
+    "Follow Tesla (TSLA) for this Loupist",
+    "What is the saved Nvidia price on its Following page now, and when was it last checked against the market?",
+    "Every weekday at 8:30 Korea time, check Tesla (TSLA) for anything that changed since the previous run and summarize it in Bot",
+    "Keep the custom Tesla weekday schedule as it is, and also turn on the built-in weekday morning briefing so both arrive every weekday",
+  ];
+  const original = bridge.loupistSelect.bind(bridge);
+  bridge.loupistSelect = async loupistId => {
+    const workspace = await original(loupistId);
+    const thread = workspace.threads[0]!;
+    const first = Date.parse(thread.messages[0]?.created_at ?? "2026-10-28T00:00:00Z");
+    const turns = questions.flatMap((content, index) => {
+      const at = first - (questions.length - index) * 600_000;
+      return [
+        { id: `earlier-question-${index}`, role: "user" as const, status: "complete" as const, content, created_at: new Date(at).toISOString() },
+        { id: `earlier-answer-${index}`, role: "assistant" as const, status: "complete" as const, created_at: new Date(at + 8_000).toISOString(),
+          content: previewKo() ? "처리했습니다." : "Done.", progress: { startedAtMs: at + 1_000, finishedAtMs: at + 8_000, items: sheetSteps(at + 1_000).slice(0, index + 1) } },
+      ];
+    });
+    thread.messages = [...turns, ...thread.messages];
+    return workspace;
+  };
+}
+
+/**
  * The fixture's answer as a reply that published a table and then failed to
  * revise it: the card keeps the published table, the sheet lists the failed step.
  */
@@ -110,6 +144,16 @@ export const activitySheetScenarios: PreviewScenario[] = [
     () => select('.activity-sheet [data-activity-section="checks"]'), () => openSheet()), setup: async bridge => {
     await prepareFixture(bridge, "answer");
     sheetAnswer(bridge);
+  } },
+  { ...base("activity-sheet-earlier", "Earlier replies with long questions: each title ends in an ellipsis before its time",
+    () => select('.activity-sheet [data-activity-section="earlier"]'), async () => {
+      await openSheet();
+      const body = await until(() => select(".activity-sheet-body") && select('.activity-sheet [data-activity-section="earlier"]') && select(".activity-sheet-body"), "Earlier replies did not render");
+      body.scrollTop = body.scrollHeight;
+    }), setup: async bridge => {
+    await prepareFixture(bridge, "answer");
+    sheetAnswer(bridge);
+    earlierTurns(bridge);
   } },
   { ...base("activity-sheet-revision-failed", "A table revision that failed: the sheet says the earlier version is still shown",
     () => [...document.querySelectorAll(".activity-sheet .activity-step-reason")].find(visible) ?? null, () => openSheet()), setup: async bridge => {

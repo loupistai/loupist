@@ -64,9 +64,9 @@ export function checkFor(checks: readonly NumberCheck[] | undefined, linkIndex: 
   return check && check.evidence_id === evidenceId && normalized(check.text) === normalized(text) ? check : undefined;
 }
 
-export const needsChecking = (check: Pick<NumberCheck, "status">) => check.status === "not_found" || check.status === "differs";
+export const needsChecking = (check: Pick<NumberCheck, "status">) => check.status === "not_found" || check.status === "differs" || check.status === "unlinked";
 
-/** Number links in a finished answer that did not match their source. */
+/** Number links in a finished answer that did not match their source, or named none of its reply. */
 export const numbersToCheck = (message: Pick<ChatMessage, "number_checks">) => (message.number_checks ?? []).filter(needsChecking).length;
 
 /** The number as spoken: "8.4 percent" for a percent, the printed text otherwise. */
@@ -125,6 +125,7 @@ export function exportFootnote(check: NumberCheck, evidence: ChatEvidenceRef | u
     const sources = inputSources(check, evidenceRefs);
     return `${equation} (${t("numberChip.exportCalculated", { inputs: sources || t("numberChip.notLinked") })})`;
   }
+  if (check.status === "unlinked") return t("numberChip.unlinked");
   if (!evidence) return check.text;
   const origin = evidenceProvenance(evidence);
   return evidence.memory_origin

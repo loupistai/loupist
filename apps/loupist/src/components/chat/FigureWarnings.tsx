@@ -37,6 +37,7 @@ export function replayWarning(check: NumberCheck) {
 }
 
 export function warningReason(check: NumberCheck, calculation: boolean) {
+  if (check.status === "unlinked") return t("numberChip.unlinked");
   const replay = replayWarning(check);
   if (replay) return replay;
   if (check.status === "differs") return t("numberChip.differs", { nearest: check.nearest ?? "", shown: check.text });
@@ -103,6 +104,11 @@ export function FigureWarnings({ message, label, children }: { message: Pick<Cha
         const calculation = calculationCheck(check, evidence);
         const provenance = evidence?.memory_origin ? evidenceProvenance(evidence) : null;
         const meta = [provenance?.attribution, provenance?.publication?.label].filter(Boolean).join(" · ");
+        // A number linked to nothing in its reply has no source to name.
+        if (check.status === "unlinked") return <li key={check.link_index}>
+          <WarningValues check={check} calculation={false} />
+          <span>{t("numberChip.unlinked")}</span>
+        </li>;
         return <li key={check.link_index}>
           <strong>{comparisonTitle(check, evidence)}</strong>
           {meta ? <small className="number-chip-meta">{meta}</small> : null}

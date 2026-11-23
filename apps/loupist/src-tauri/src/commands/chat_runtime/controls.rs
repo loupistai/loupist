@@ -11,6 +11,16 @@ pub(in crate::commands) fn persist_chat_control_message(
     thread_id: &str,
     prompt: &str,
 ) -> Result<AcceptedChatControl, CommandError> {
+    // An earlier reply of this conversation may write its save receipt meanwhile.
+    super::saves::retry_chat_cas(|| append_control_message(store, loupist_id, thread_id, prompt))
+}
+
+fn append_control_message(
+    store: &SqliteStore,
+    loupist_id: &str,
+    thread_id: &str,
+    prompt: &str,
+) -> Result<AcceptedChatControl, CommandError> {
     let expected = store
         .get_chat(thread_id)
         .map_err(map_store)?

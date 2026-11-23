@@ -155,13 +155,35 @@ identity. A new name and the facts added about it in that publication share one
 row, with the fact count next to its kind. Facts about an existing name keep
 their own row.
 
-Four or more rows from the same Source in one publication collapse into one
-expandable row. Its title opens the Source in the Library. The group shows the
-numbers of new names and facts. Its children list names first, with each category
-ordered alphabetically. The reader keeps disclosure state while the drawer
+One definition of "new" serves the drawer, its groups, the toolbar badge and
+World's "new this week" (`firstSeenAfter` and `whatsNewTotals` in
+`components/map/whatsNew.ts`). A name is new in a range when World first saw it
+after the range's start (its first `entity_added` ever, the overview's
+`firstSeenAtMs`) and it exists now. It is listed and counted once, in the row or
+group of the change that first added it in the range; a later Source that adds
+it again or reports values about it shows those values as facts about the name,
+never the name as new. A name World had before the range that comes back is not
+new. One that has left World stays as a dimmed row and is not counted.
+Relationships follow the same rule per claim. A name or claim that a bounded
+overview leaves out is taken to exist; such a name opens by its id. Every count is
+computed over all pages of the range's events, after they join. Two World names
+that share a spelling are two names here, as on the canvas.
+
+Four or more rows from the same Source in the range shown collapse into one
+expandable row, however many publications they came from: a long Source is
+processed in chunks minutes apart, and its counts add up in one group. The group
+carries the time of its latest change and keeps its disclosure as further chunks
+arrive. Its title opens the Source in the Library. The group shows the
+numbers of new names and facts. Its children list the newest change first; within
+one publication, names come first, ordered alphabetically. The group only
+presents the rows: Replay still reveals each publication at its own time. The
+reader keeps disclosure state while the drawer
 stays open, and pages of events join before the drawer counts or renders them.
-The drawer totals count collapsed entries, and the toolbar badge counts them
-since the last visit. Row actions still open the inspector or Lens entry and
+The drawer's totals add up every row in the range: "+N in World" is the new
+names, equal to the groups' "new names" plus the name rows outside groups, and
+the relationship and disagreement counts are claims. The toolbar badge counts the
+entries the list shows since the last visit (a Source group counts once). World's
+"new this week" is the drawer's name total for its last seven days. Row actions still open the inspector or Lens entry and
 dim items that have left World. Replay and date ranges use the underlying
 changes. Bot does not repeat this growth. Schema and truncation events are
 excluded.

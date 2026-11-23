@@ -16,6 +16,7 @@ import {
   LoupistRunRegistry,
   useLoupistRunRegistrySnapshot,
 } from "../chat/loupistRunRegistry";
+import { PendingSaves } from "../chat/pendingSaves";
 
 /** Cross-domain callbacks wired by the composition root after every hook exists. */
 export type ChatSessionHandlers = {
@@ -77,9 +78,24 @@ export function useChatSessions(bridge: LoupistBridge) {
     [],
   );
 
+  // A reply whose save waits on its own: its wait shows on the reply, and its
+  // receipt replaces it once the save resolves (in its Chat even off screen).
+  const [pendingSaves] = useState(() => new PendingSaves(bridge, (loupistId, threadId, message) => {
+    chatRegistryRef.current?.replaceMessage(loupistId, threadId, message);
+    setThreadsForLoupist(loupistId, (current) => current.map((thread) => thread.id === threadId
+      ? { ...thread, messages: thread.messages.map((shown) => shown.id === message.id ? message : shown) }
+      : thread));
+    if (message.memory_update?.status === "applied") {
+      handlersRef.current?.onMemoryChanged?.(loupistId);
+      void handlersRef.current?.refreshLoupistAvailability(loupistId).catch(() => undefined);
+    }
+  }));
+  useEffect(() => pendingSaves.listen(), [pendingSaves]);
+
   const hydrateThreadsForLoupist = useCallback((loupistId: string, threads: ChatThread[]) => {
     setThreadsForLoupist(loupistId, threads);
-  }, [setThreadsForLoupist]);
+    void pendingSaves.hydrate(loupistId);
+  }, [pendingSaves, setThreadsForLoupist]);
 
   const updateChatTitle = useCallback(
     (loupistId: string, threadId: string, title: string) => {
@@ -246,6 +262,7 @@ export function useChatSessions(bridge: LoupistBridge) {
     chatRegistry,
     runRegistry,
     runRegistrySnapshot,
+    pendingSaves,
     handlersRef,
     removeLoupist,
   };

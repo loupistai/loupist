@@ -11,7 +11,7 @@ import type { ChatArtifact, ChatArtifactVersion } from "./chat/artifacts";
 import type { ModelVisibilityUpdateRequest } from "./commands";
 import type { ApprovalDecideRequest } from "./commands/approvals";
 import type { AssetEntitySetRequest, AssetVerdictUndoRequest } from "./commands/assets";
-import type { AssetFollowNameRequest, AssetIdRequest, AssetLookupCandidate, AssetLookupRequest, AssetOpenRequest, AssetPricePoint, AssetPriceSeriesRequest, AssetRow, AssetsListRequest, StoredAssetQuote, ThinAssetPageView } from "./commands/assets/wire";
+import type { AssetFollowNameRequest, AssetIdRequest, AssetLookupRequest, AssetLookupResult, AssetOpenRequest, AssetPricePoint, AssetPriceSeriesRequest, AssetRow, AssetsListRequest, StoredAssetQuote, ThinAssetPageView } from "./commands/assets/wire";
 import type { AttentionItem, NotifyRequest } from "./commands/attention";
 import type { ChatRetryReceipt, ChatRetryRequest } from "./commands/chat_runtime";
 import type { PickFileRequest } from "./commands/dialog";
@@ -34,7 +34,7 @@ import type { WorldKeepAwakeRequest } from "./commands/power";
 import type { QuestionAnswerRequest } from "./commands/questions";
 import type { RevisionRequest, RunRequest, ScheduledTasksLoupistRequest, StatusRequest, TaskRequest } from "./commands/scheduled_tasks";
 import type { SkillCreateRequest, SkillDeleteRequest, SkillImportRequest, SkillReadRequest, SkillSaveRequest } from "./commands/skills";
-import type { ChatArtifactListRequest, ChatArtifactReadRequest, ChatArtifactRestoreRequest, ChatArtifactViewDto, ChatAttachmentReadDto, ChatAttachmentReadRequest, ChatBranchRequest, ChatControlReceiptDto, ChatControlRequestDto, ChatCreateRequest, ChatDeleteRequest, ChatFeedbackRequest, ChatMemorySetAsideRequest, ChatRenameRequest, ChatSendRequest, ChatThreadDto, ChatVersionSwitchRequest, ChatWatchRequest, ChatWatchSnapshot, LoupistArtifactItemDto, LoupistArtifactListRequest, LoupistCreateRequest, LoupistDeleteRequest, LoupistImportRequest, LoupistProfileUpdateRequest, LoupistReconnectRequest, LoupistSummary, LoupistWorkspace, RunStarted } from "./commands/types";
+import type { ChatArtifactListRequest, ChatArtifactReadRequest, ChatArtifactRestoreRequest, ChatArtifactViewDto, ChatAttachmentReadDto, ChatAttachmentReadRequest, ChatBranchRequest, ChatControlReceiptDto, ChatControlRequestDto, ChatCreateRequest, ChatDeleteRequest, ChatFeedbackRequest, ChatMemorySetAsideRequest, ChatRenameRequest, ChatSaveState, ChatSavesRequest, ChatSendRequest, ChatThreadDto, ChatVersionSwitchRequest, ChatWatchRequest, ChatWatchSnapshot, LoupistArtifactItemDto, LoupistArtifactListRequest, LoupistCreateRequest, LoupistDeleteRequest, LoupistImportRequest, LoupistProfileUpdateRequest, LoupistReconnectRequest, LoupistSummary, LoupistWorkspace, RunStarted } from "./commands/types";
 import type { ChatActivityRequest, WorkspacePathRequest } from "./commands/workspace";
 import type { DraftAttachment, DraftIdentity, StoredChatDraft, WorkspaceUiState, WorkspaceUiWriteRequest } from "./commands/workspace_ui";
 import type { AddCommandRequest, AddJsonRequest, AddUrlRequest, ApproveRequest, AuthorizeRequest, ConfirmRequest, EnabledRequest, IdentityRequest, ListRequest, MemoryRequest } from "./custom_connections/commands";
@@ -112,7 +112,7 @@ export type BridgeCommands = {
   assets_list: { request: AssetsListRequest, response: Array<AssetRow> },
   asset_follow_name: { request: AssetFollowNameRequest, response: AssetRow },
   asset_unfollow: { request: AssetIdRequest, response: null },
-  asset_lookup: { request: AssetLookupRequest, response: Array<AssetLookupCandidate> },
+  asset_lookup: { request: AssetLookupRequest, response: AssetLookupResult },
   asset_price_check: { request: AssetIdRequest, response: ThinAssetPageView },
   asset_follow: { request: AssetIdRequest, response: AssetRow },
   asset_entity_set: { request: AssetEntitySetRequest, response: ThinAssetPageView },
@@ -125,6 +125,7 @@ export type BridgeCommands = {
   attention_notify: { request: NotifyRequest, response: boolean },
   chat_abort: { request: never, response: null },
   chat_retry_last: { request: ChatRetryRequest, response: ChatRetryReceipt },
+  chat_saves: { request: ChatSavesRequest, response: Array<ChatSaveState> },
   chat_send: { request: ChatSendRequest, response: RunStarted },
   chat_steer: { request: ChatControlRequestDto, response: ChatControlReceiptDto },
   chat_unwatch: { request: ChatWatchRequest, response: null },

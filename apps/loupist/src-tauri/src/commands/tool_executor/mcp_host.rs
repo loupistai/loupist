@@ -1512,7 +1512,10 @@ fn provider_failure(
     provider: Option<&str>,
     provider_error: bool,
 ) -> BrokerError {
-    if is_argument_failure(&error) || is_sec_contact_required(&error) {
+    if is_argument_failure(&error)
+        || is_sec_contact_required(&error)
+        || matches!(error, BrokerError::EmptyResult)
+    {
         return error;
     }
     let source = match &error {
@@ -2303,7 +2306,8 @@ done
                 &format!("[{}]({citation})", second["to_per_from"]),
                 &receipts,
             )
-            .await;
+            .await
+            .checks;
         let reads = fs::read_to_string(&spawned.transcript)
             .unwrap()
             .matches(r#""method":"tools/call""#)
@@ -2392,7 +2396,8 @@ done
                 &format!("[1334.87]({})", first["citation_url"].as_str().unwrap()),
                 std::slice::from_ref(&receipt),
             )
-            .await;
+            .await
+            .checks;
         assert_eq!(checks[0].kind, crate::domain::NumberCheckKind::Data);
         assert_eq!(checks[0].status, crate::domain::NumberCheckStatus::Matched);
         let retained = turn

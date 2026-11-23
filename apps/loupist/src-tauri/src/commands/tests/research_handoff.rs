@@ -348,6 +348,15 @@ mod turns {
         }
     }
 
+    /// The Bot reply as its save left it, from the message-scoped channel.
+    fn settled_reply(run_id: &str) -> crate::commands::types::ChatMessageDto {
+        crate::commands::chat_runtime::saves::published(run_id)
+            .into_iter()
+            .rev()
+            .find_map(|(_, event)| event.message)
+            .expect("the reply's save published its receipt")
+    }
+
     #[tokio::test]
     async fn the_child_opens_with_bots_brief_after_a_short_confirmation() {
         let fixture = fixture();
@@ -371,13 +380,11 @@ mod turns {
             "Compare the announced HBM4 capacity and 2027 delivery dates for each supplier.";
         fixture.options(json!({"brief": brief}));
         fixture.bot_turn_with("bot-ok", confirmation, false).await;
+        // The reply's stream ended with its stored answer; the session it opened
+        // arrives with the reply's receipt once the save commits the hand-off.
         let source_turn = fixture.completions.lock().unwrap().clone();
-        assert!(
-            source_turn
-                .iter()
-                .any(|event| event["research_session_id"].is_string()),
-            "{source_turn:?}"
-        );
+        assert_eq!(source_turn.len(), 1, "{source_turn:?}");
+        assert!(settled_reply("bot-ok").research_session_id.is_some());
         let rows = fixture.settled_handoffs().await;
         let row = &rows[0];
         let session = fixture.state.store.get_chat(&row.chat_id).unwrap().unwrap();
@@ -459,8 +466,8 @@ mod turns {
             .iter()
             .all(|m| m.id == announced.id || m.research_session_id.is_none()));
         assert_eq!(
-            fixture.completions.lock().unwrap()[0]["research_session_id"],
-            row.chat_id
+            settled_reply("bot-1").research_session_id.as_deref(),
+            Some(row.chat_id.as_str())
         );
         let session = fixture.state.store.get_chat(&row.chat_id).unwrap().unwrap();
         assert_eq!(session.loupist_id, home.loupist_id);

@@ -76,7 +76,7 @@ async fn the_card_reports_each_state_from_readiness_and_this_loupists_binding() 
     assert_eq!(shown["state"], "needs_setup");
     let notice = shown["notice"].as_str().unwrap();
     assert!(
-        notice.contains("never repeat one") && notice.contains("next message"),
+        notice.contains("never repeat a key") && notice.contains("next message"),
         "{notice}"
     );
 

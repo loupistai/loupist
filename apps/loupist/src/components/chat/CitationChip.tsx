@@ -15,6 +15,18 @@ import { useConversationScroll } from "../ai-elements/conversation";
 /** How long a press is held before it opens the card instead of Evidence (narrow windows). */
 export const LONG_PRESS_MS = 500;
 
+/**
+ * A number whose link named no result of its reply: marked as a figure to check,
+ * with the reason in its name and on hover, never drawn as a working citation.
+ */
+export function UnlinkedFigure({ children }: { children: ReactNode }) {
+  const { t } = useTranslation("chat");
+  const reason = t("numberChip.unlinked");
+  return <span className="number-chip" data-status="unlinked" data-number-check="check" title={reason}>
+    {children}<span className="number-chip-unmatched" aria-hidden="true" /><span className="sr-only"> {reason}</span>
+  </span>;
+}
+
 /** A citation nothing can open: the number stays in the text, with the reason on hover. */
 export function UnavailableCitation({ children, reason }: { children: ReactNode; reason?: string }) {
   const { t } = useTranslation("chat");

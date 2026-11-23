@@ -15,6 +15,7 @@ import { Switch } from "../ui/switch";
 import { PackMarkdown } from "./PackMarkdown";
 import { revealFocused } from "../../lib/revealFocused";
 import { licenseName, licenseSummary } from "./sharingText";
+import { relationName } from "../map/relations";
 import "@/styles/sharing.css";
 
 type Sections = { perspective: boolean; methods: boolean; principles: boolean; map: boolean };
@@ -51,6 +52,7 @@ function ReviewBody({ bridge, preview, loupists, currentLoupistId, focusAdd, onA
   bridge: LoupistBridge; preview: PackPreview; loupists: readonly LoupistSummary[]; currentLoupistId?: string | null; focusAdd?: boolean; onAdded: (added: PackAddResult) => void;
 }) {
   const { t } = useTranslation("sharing");
+  const { t: tKnowledge } = useTranslation("knowledge");
   const browser = useExternalLink(url => bridge.openExternalUrl(url));
   const ids = { name: useId(), tone: useId(), mode: useId(), target: useId() };
   const { manifest } = preview;
@@ -84,7 +86,8 @@ function ReviewBody({ bridge, preview, loupists, currentLoupistId, focusAdd, onA
   const date = Number.isNaN(Date.parse(manifest.createdAt)) ? null : formatDate(Date.parse(manifest.createdAt), { year: undefined, month: "short", day: "numeric" });
   const meta = [manifest.author, t("version", { version: formatNumber(manifest.version) }), date].filter(Boolean).join(" · ");
   const hosts = preview.world.sourceHosts.map(host => `${host.host} (${formatNumber(host.count)})`).concat(preview.world.moreHosts ? [`+${formatNumber(preview.world.moreHosts)}`] : []).join(", ");
-  const tracks = [preview.world.kinds.join(", "), preview.world.relations.join(", ")].filter(Boolean).join(" · ");
+  const relations = [...new Set(preview.world.relations.map(relation => relationName(relation, tKnowledge)))];
+  const tracks = [preview.world.kinds.join(", "), relations.join(", ")].filter(Boolean).join(" · ");
 
   return <div className="pack-review-grid">
     <div className="pack-review-main" onFocus={revealFocused}>

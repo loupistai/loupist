@@ -19,8 +19,8 @@ use super::{
     catalog::{
         bundled_catalog, MarketplaceCatalogDto, MarketplaceCredentialRequest,
         MarketplaceCredentialSaveRequest, MarketplaceCredentialStatusDto,
-        MarketplaceCredentialVerification, MarketplaceEntryDto, MarketplaceRuntimeKind,
-        MarketplaceSetupFieldKind,
+        MarketplaceCredentialVerification, MarketplaceEntryDto, MarketplaceFreeState,
+        MarketplaceRuntimeKind, MarketplaceSetupFieldKind,
     },
     connector_config::{
         connector_config_value, reconcile_connector_configs_locked, valid_setup_value,
@@ -151,12 +151,19 @@ pub(super) fn credential_statuses(
     if fields.is_empty() {
         return Ok(Vec::new());
     }
+    // A refused read cannot show that a key exists. For bundled market data, only
+    // the non-secret status record can say one was saved. A key-less connection's
+    // optional key cannot exist without a keychain, unless that record says so.
+    let no_key = || {
+        !crate::finance_credentials::has_saved_key(state, &entry.id)
+            && (entry.runtime.kind == MarketplaceRuntimeKind::BundledMcp
+                || (entry.free_state == MarketplaceFreeState::Keyless
+                    && crate::finance_credentials::refused_read_status(state, &entry.id)
+                        == Some(crate::finance_credentials::KeychainReadStatus::NoDefaultKeychain)))
+    };
     let status = match crate::finance_credentials::status_for_state(state, &entry.id) {
         Ok(status) => status,
-        Err(crate::finance_credentials::FinanceCredentialError::Locked)
-            if entry.runtime.kind == MarketplaceRuntimeKind::BundledMcp
-                && !crate::finance_credentials::has_saved_key(state, &entry.id) =>
-        {
+        Err(crate::finance_credentials::FinanceCredentialError::Locked) if no_key() => {
             Default::default()
         }
         // One unreadable key never fails the list: only its own connection

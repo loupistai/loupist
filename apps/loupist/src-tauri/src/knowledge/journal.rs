@@ -22,9 +22,9 @@ fn date(value: &str) -> KnowledgeResult<NaiveDate> {
         .filter(|d| d.year() >= 100 && d.format("%Y-%m-%d").to_string() == value)
         .ok_or_else(|| field("journal_date", "journal date must be YYYY-MM-DD"))
 }
+/// The user's calendar date at `at_ms`: Journal's "today", as the model is told it.
 pub(crate) fn journal_date(at_ms: i64) -> KnowledgeResult<NaiveDate> {
-    chrono::DateTime::from_timestamp_millis(at_ms)
-        .map(|d| d.date_naive())
+    crate::local_time::date_at_ms(at_ms)
         .ok_or_else(|| field("journal_date", "journal timestamp must be valid"))
 }
 pub(crate) fn validate_fields(
@@ -237,7 +237,9 @@ pub(crate) fn dated_evidence(point: Option<&super::TimePoint>, by_date: &str, to
     let day = match point.precision {
         super::TimePrecision::Date => value.to_owned(),
         super::TimePrecision::Instant => match chrono::DateTime::parse_from_rfc3339(value) {
-            Ok(v) => v.with_timezone(&chrono::Utc).date_naive().to_string(),
+            Ok(v) => crate::local_time::at(v.with_timezone(&chrono::Utc))
+                .date_naive()
+                .to_string(),
             Err(_) => return false,
         },
         _ => return false,
