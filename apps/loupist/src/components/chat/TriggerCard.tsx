@@ -78,7 +78,14 @@ function TriggerReview({ trigger, bridge, loupistId, taskId, revision, schedule,
       setBusy(false);
     }
   };
-  const scores = dry?.scores;
+  const savedScores = dry?.scores;
+  const baseline = savedScores && "baseline" in savedScores ? savedScores.baseline : undefined;
+  // Older comparisons pooled past pins. A saved score must name the approved
+  // pin still shown beside the pending candidate.
+  const scores = trigger.pending && trigger.approved && baseline && typeof baseline === "object"
+    && "version" in baseline && baseline.version === trigger.approved.version
+    && "sha256" in baseline && baseline.sha256 === trigger.approved.sha256
+    ? savedScores : undefined;
   const notComparable = scores ? scores.days.length - scores.compared : 0;
   return <div className="schedule-delivery" data-trigger-state={trigger.state}>
     <div><dt>{t("schedule.checks")}</dt><dd>{summary}</dd></div>

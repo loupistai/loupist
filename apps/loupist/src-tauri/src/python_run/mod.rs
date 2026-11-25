@@ -49,6 +49,11 @@ const MAX_TIMEOUT_SECONDS: u64 = 120;
 const COLD_COMPILE_SECONDS: u64 = 180;
 static WORKERS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 
+// Keep unrelated tests out of the worker queue, including between rounds.
+#[cfg(test)]
+pub(crate) static PYTHON_WORKER_TEST_LOCK: tokio::sync::Mutex<()> =
+    tokio::sync::Mutex::const_new(());
+
 #[derive(Debug)]
 pub(crate) struct PythonError {
     message: String,

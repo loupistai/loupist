@@ -499,6 +499,7 @@ fn python_executor(state: &AppState, temporary: &tempfile::TempDir) -> AppToolEx
 #[cfg(unix)]
 #[tokio::test]
 async fn python_pending_round_marks_tagged_files_before_dispatching_custom_reads() {
+    let _worker = crate::python_run::PYTHON_WORKER_TEST_LOCK.lock().await;
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
     let executor = python_executor(&state, &temporary);
@@ -525,6 +526,7 @@ with open('input.txt') as source:
 #[cfg(unix)]
 #[tokio::test]
 async fn python_writeback_tags_new_and_replaced_files_from_broker_reads() {
+    let _worker = crate::python_run::PYTHON_WORKER_TEST_LOCK.lock().await;
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
     let executor = python_executor(&state, &temporary);
@@ -577,6 +579,7 @@ Path('outputs/existing.txt').write_text('Update: ' + source)
 #[cfg(unix)]
 #[tokio::test]
 async fn python_replay_screens_named_arguments_and_unprinted_values() {
+    let _worker = crate::python_run::PYTHON_WORKER_TEST_LOCK.lock().await;
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
     let executor = python_executor(&state, &temporary);
@@ -634,6 +637,7 @@ async fn python_replay_screens_named_arguments_and_unprinted_values() {
 #[cfg(unix)]
 #[tokio::test]
 async fn python_dataset_selection_keeps_its_host_receipt_separate_from_the_guest_value() {
+    let _worker = crate::python_run::PYTHON_WORKER_TEST_LOCK.lock().await;
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
     let executor = python_executor(&state, &temporary);
@@ -677,6 +681,7 @@ print(row['count'] * 2)
 #[cfg(unix)]
 #[tokio::test]
 async fn python_check_screens_retained_results_and_preserves_safe_state() {
+    let _worker = crate::python_run::PYTHON_WORKER_TEST_LOCK.lock().await;
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
     let executor = python_executor(&state, &temporary);
@@ -703,7 +708,7 @@ loupist.result(False, 'No change', '2026-11-24')
             as_of: None,
             allowed: &allowed,
             discover_providers: false,
-            replay: &[],
+            replay: None,
             max_rounds: 3,
             max_calls: 3,
         })
@@ -711,6 +716,37 @@ loupist.result(False, 'No change', '2026-11-24')
     let clean = run(Default::default(), false, true).await.unwrap();
     assert_eq!(clean.state, json!({"visits":2}));
     assert_eq!(clean.ledger.len(), 1);
+    let replay = |ledger| {
+        executor.run_check(super::python_reads::CheckRun {
+            code: r#"
+import loupist
+try:
+    loupist.followed()
+except loupist.Refused:
+    pass
+loupist.state['visits'] += 1
+loupist.result(False, 'No change', '2026-11-24')
+"#,
+            after_outside_text: false,
+            use_memory: true,
+            args: Default::default(),
+            state: json!({"visits":1}),
+            now: "2026-11-24T00:00:00Z".into(),
+            as_of: None,
+            allowed: &allowed,
+            discover_providers: false,
+            replay: Some(ledger),
+            max_rounds: 1,
+            max_calls: 0,
+        })
+    };
+    assert_eq!(
+        replay(clean.ledger.as_slice()).await.unwrap().state,
+        clean.state
+    );
+    assert!(
+        matches!(replay(&[]).await, Err(BrokerError::Execution(message)) if message == "Recorded inputs do not cover this replay")
+    );
     let sensitive = json!({"password":"fixture"});
     let screened = run(sensitive.as_object().unwrap().clone(), false, true)
         .await
@@ -738,6 +774,7 @@ loupist.result(False, 'No change', '2026-11-24')
 #[cfg(unix)]
 #[tokio::test]
 async fn python_ledger_runs_a_script_saved_in_an_earlier_reply_with_scheduled_reads() {
+    let _worker = crate::python_run::PYTHON_WORKER_TEST_LOCK.lock().await;
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
     let current = executor_for(&state, Arc::new(ToolCapture::for_chat("reply-a".into())));

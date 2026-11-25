@@ -198,6 +198,7 @@ mod runtime {
                     language: Some("en".into()),
                     results_date: once.then(|| "2099-11-15".into()),
                 },
+                None,
             )
             .unwrap();
             let prompt = filled.prompt.clone();

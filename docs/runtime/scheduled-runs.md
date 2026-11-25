@@ -96,14 +96,17 @@ Proposal replay starts with empty state on the oldest of the previous 20
 weekdays. It carries state forward through successful evaluations and charges
 every data attempt, including refusals and unavailable results, against the
 80-read proposal budget. The current follow list and saved quote cannot supply
-a historical snapshot. Version comparisons use a saved replay seed whose
-state came from a known reset and complete retained read results. Without
-such a seed, the checks are not comparable. Older saved input snapshots do
-not establish this provenance. A successful check that made no
-reads still replays and can change the carried state. A successful check
-that lost its read ledger makes its later state unavailable for replay.
-That gap stays in effect after the evaluation is pruned and clears only
-when an approval or revert resets the script state. The task store prunes the oldest evaluations when the serialized definition approaches its reader limit. The latest result keeps the displayed evidence and source names without duplicating the replay ledger. A row that cannot be decoded still appears in Schedule as unreadable.
+a historical snapshot. Version comparisons start from empty state at each
+recorded reset, including approval of the same script version and revert.
+Each saved evaluation carries its boundary and position. A missing read ledger
+makes later checks in that sequence not comparable, even after the loss ages
+out of history. The comparison also skips a sequence whose reset or prefix
+was pruned, or whose records lack the freshness state at reset. The candidate
+replays every retained input, including reads from a failed live check, and
+carries its own state through successful results. If the candidate needs an
+unrecorded input, it and subsequent checks stay not comparable until a reset.
+The update card counts only paired verdicts from the currently approved
+script pin and shows how many of its checks were not comparable. The task store prunes the oldest evaluations when the serialized definition approaches its reader limit. The latest result keeps the displayed evidence and source names without duplicating the replay ledger. A row that cannot be decoded still appears in Schedule as unreadable.
 
 ## Runs
 

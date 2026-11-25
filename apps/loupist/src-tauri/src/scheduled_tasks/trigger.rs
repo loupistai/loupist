@@ -7,13 +7,13 @@ use serde_json::{Map, Value};
 use super::{
     schedule::next_run_after,
     types::{
-        invalid, RunTrigger, Schedule, Task, TaskTrigger, TriggerActiveHours, TriggerApproval,
-        TriggerCounters, TriggerDayCount, TriggerDryDay, TriggerDryRun, TriggerEvaluation,
-        TriggerOutcome, TriggerPhase, TriggerScoreDay, TriggerScores, TriggerScriptRef,
-        TriggerToolGrant, MAX_STORED_EVALUATIONS, MAX_TRIGGERED_RUNS_PER_LOUPIST_DAY,
-        MAX_TRIGGER_AGENT_RUNS_PER_DAY, MAX_TRIGGER_ARGS_BYTES, MAX_TRIGGER_EVIDENCE_BYTES,
-        MAX_TRIGGER_READING_CHARS, MAX_TRIGGER_READS_PER_DAY, MAX_TRIGGER_STATE_BYTES,
-        TRIGGER_FAILURE_STREAK,
+        invalid, ReplayBoundary, ReplayBoundaryKind, ReplayFreshness, RunTrigger, Schedule, Task,
+        TaskTrigger, TriggerActiveHours, TriggerApproval, TriggerCounters, TriggerDayCount,
+        TriggerDryDay, TriggerDryRun, TriggerEvaluation, TriggerOutcome, TriggerPhase,
+        TriggerScoreDay, TriggerScores, TriggerScriptRef, TriggerToolGrant, MAX_STORED_EVALUATIONS,
+        MAX_TRIGGERED_RUNS_PER_LOUPIST_DAY, MAX_TRIGGER_AGENT_RUNS_PER_DAY, MAX_TRIGGER_ARGS_BYTES,
+        MAX_TRIGGER_EVIDENCE_BYTES, MAX_TRIGGER_READING_CHARS, MAX_TRIGGER_READS_PER_DAY,
+        MAX_TRIGGER_STATE_BYTES, TRIGGER_FAILURE_STREAK,
     },
 };
 use crate::store::StoreResult;
@@ -133,12 +133,32 @@ pub(crate) fn set_price_subject_args(
 impl TaskTrigger {
     pub(crate) fn reset_script_state(&mut self) {
         self.script_state = serde_json::json!({});
-        self.replay_state_known = true;
+        self.begin_replay_boundary(ReplayBoundaryKind::Reset);
+    }
+
+    fn begin_replay_boundary(&mut self, kind: ReplayBoundaryKind) {
+        self.replay_boundary = Some(ReplayBoundary {
+            generation: self
+                .replay_boundary
+                .map_or(0, |boundary| boundary.generation.saturating_add(1)),
+            kind,
+            offset: 0,
+        });
+    }
+
+    fn replay_freshness(&self) -> Option<ReplayFreshness> {
+        self.replay_boundary
+            .filter(|boundary| boundary.starts_reset())
+            .map(|_| ReplayFreshness {
+                latest: self.counters.as_of_value.clone(),
+                unchanged_since_ms: self.counters.as_of_since_ms,
+                stale_after_days: self.stale_after_days,
+            })
     }
 
     pub(super) fn compact_latest_evidence(&mut self) {
         if let Some(last) = &mut self.last {
-            last.replay_seed = None;
+            last.replay_freshness = None;
             last.ledger = successful_read_sources(&last.ledger)
                 .into_iter()
                 .map(|tool| serde_json::json!({"call":{"tool":tool},"response":{"status":"ok"}}))
@@ -525,6 +545,7 @@ pub(crate) fn apply_output(
         output
     };
     roll_day(&mut trigger.counters, now_ms);
+    let replay_freshness = trigger.replay_freshness();
     let mut outcome = output.outcome;
     let mut error = output.error;
     if let Some(tool) = &output.refused_tool {
@@ -534,11 +555,17 @@ pub(crate) fn apply_output(
         ));
     }
     if matches!(outcome, TriggerOutcome::Met | TriggerOutcome::NotMet)
-        && stale_or_advance(trigger, output.as_of.as_deref(), now_ms)
+        && stale_or_advance(
+            &mut trigger.counters.as_of_value,
+            &mut trigger.counters.as_of_since_ms,
+            trigger.stale_after_days,
+            output.as_of.as_deref(),
+            now_ms,
+        )
     {
         outcome = TriggerOutcome::Stale;
     }
-    let mut evaluation = TriggerEvaluation {
+    let evaluation = TriggerEvaluation {
         at_ms: now_ms,
         scheduled_for_ms,
         outcome,
@@ -557,16 +584,14 @@ pub(crate) fn apply_output(
         ledger: output.ledger,
         card_message_id: None,
         retry_after_seconds: output.retry_after_seconds,
-        replay_seed: None,
+        replay_boundary: None,
+        replay_freshness,
     };
-    let can_replay = evaluation.can_replay();
-    if can_replay && trigger.replay_state_known {
-        evaluation.replay_seed = Some(trigger.script_state.clone());
+    if evaluation.reads != 0 && evaluation.ledger.is_empty() {
+        trigger.begin_replay_boundary(ReplayBoundaryKind::MissingLedger);
     }
     if outcome.updates_state() {
         trigger.script_state = output.state;
-        // This checkpoint must outlive both count- and byte-based history pruning.
-        trigger.replay_state_known &= can_replay;
     }
     trigger.counters.today.evaluations = trigger.counters.today.evaluations.saturating_add(1);
     trigger.counters.today.reads = trigger.counters.today.reads.saturating_add(output.reads);
@@ -634,7 +659,11 @@ pub(crate) fn apply_output(
     }
 }
 
-fn push_evaluation(trigger: &mut TaskTrigger, evaluation: TriggerEvaluation) {
+fn push_evaluation(trigger: &mut TaskTrigger, mut evaluation: TriggerEvaluation) {
+    if let Some(boundary) = &mut trigger.replay_boundary {
+        evaluation.replay_boundary = Some(*boundary);
+        boundary.offset = boundary.offset.saturating_add(1);
+    }
     trigger.evaluations.insert(0, evaluation.clone());
     trigger.evaluations.truncate(MAX_STORED_EVALUATIONS);
     trigger.last = Some(evaluation);
@@ -653,25 +682,26 @@ fn data_timestamp(value: &str) -> Option<DateTime<Utc>> {
     }
 }
 
-fn stale_or_advance(trigger: &mut TaskTrigger, as_of: Option<&str>, now_ms: i64) -> bool {
+pub(crate) fn stale_or_advance(
+    latest: &mut Option<String>,
+    unchanged_since_ms: &mut Option<i64>,
+    stale_after_days: u32,
+    as_of: Option<&str>,
+    now_ms: i64,
+) -> bool {
     let Some((as_of, timestamp)) = as_of.and_then(|value| Some((value, data_timestamp(value)?)))
     else {
         return true;
     };
-    let prior = trigger
-        .counters
-        .as_of_value
-        .as_deref()
-        .and_then(data_timestamp);
-    match prior {
+    match latest.as_deref().and_then(data_timestamp) {
         Some(prior) if timestamp < prior => true,
-        Some(prior) if timestamp == prior => trigger.counters.as_of_since_ms.is_some_and(|since| {
-            let days = i64::from(trigger.stale_after_days.max(1));
+        Some(prior) if timestamp == prior => unchanged_since_ms.is_some_and(|since| {
+            let days = i64::from(stale_after_days.max(1));
             now_ms.saturating_sub(since) > days * 24 * 60 * 60 * 1000
         }),
         _ => {
-            trigger.counters.as_of_value = Some(as_of.to_owned());
-            trigger.counters.as_of_since_ms = Some(now_ms);
+            *latest = Some(as_of.to_owned());
+            *unchanged_since_ms = Some(now_ms);
             false
         }
     }
@@ -750,6 +780,7 @@ pub(crate) fn note_skipped(
     error: Option<String>,
 ) {
     roll_day(&mut trigger.counters, now_ms);
+    let replay_freshness = trigger.replay_freshness();
     push_evaluation(
         trigger,
         TriggerEvaluation {
@@ -767,7 +798,8 @@ pub(crate) fn note_skipped(
             ledger: Vec::new(),
             card_message_id: None,
             retry_after_seconds: None,
-            replay_seed: None,
+            replay_boundary: None,
+            replay_freshness,
         },
     );
 }
@@ -976,36 +1008,35 @@ pub(crate) fn tested(dry: &TriggerDryRun) -> bool {
         && dry.scores.is_some()
 }
 
-impl TriggerEvaluation {
-    pub(crate) fn can_replay(&self) -> bool {
-        !self.ledger.is_empty() || (self.reads == 0 && self.outcome.updates_state())
-    }
-}
-
 pub(crate) fn score_replays(
     previous: &[TriggerEvaluation],
-    mut next: impl FnMut(&TriggerEvaluation) -> Option<CheckOutput>,
+    baseline: &TriggerScriptRef,
+    mut next: impl FnMut(&TriggerEvaluation) -> Option<TriggerOutcome>,
 ) -> TriggerScores {
     let mut scores = TriggerScores {
-        previous_met: 0,
-        next_met: 0,
-        compared: 0,
-        days: Vec::new(),
+        baseline: Some(baseline.clone()),
+        ..TriggerScores::default()
     };
     for evaluation in previous.iter().take(MAX_STORED_EVALUATIONS) {
         let replayed = next(evaluation);
-        if !evaluation.outcome.updates_state() {
+        if evaluation.version != baseline.version
+            || evaluation.sha256 != baseline.sha256
+            || evaluation.outcome == TriggerOutcome::SkippedBusy
+        {
             continue;
         }
-        // Keep a row for every successful live check. NoData here also
-        // represents a replay that could not be run with a known baseline.
-        let outcome = replayed.map_or(TriggerOutcome::NoData, |output| output.outcome);
+        // NoData also represents a replay whose input could not be established.
+        let outcome = replayed.unwrap_or(TriggerOutcome::NoData);
         scores.days.push(TriggerScoreDay {
-            date: evaluation.as_of.clone().unwrap_or_default(),
+            date: evaluation.as_of.clone().unwrap_or_else(|| {
+                DateTime::from_timestamp_millis(evaluation.at_ms)
+                    .map(|time| time.date_naive().to_string())
+                    .unwrap_or_default()
+            }),
             previous: evaluation.outcome,
             next: outcome,
         });
-        if !outcome.updates_state() {
+        if !evaluation.outcome.updates_state() || !outcome.updates_state() {
             continue;
         }
         scores.compared += 1;
@@ -1058,7 +1089,7 @@ pub(crate) fn reviewed_fixture() -> TriggerDryRun {
         days: Vec::new(),
         reads: 2,
         error: None,
-        scores: Some(score_replays(&[], |_| None)),
+        scores: Some(TriggerScores::default()),
     }
 }
 
@@ -1091,7 +1122,7 @@ mod tests {
             pending: None,
             state: TriggerPhase::On,
             script_state: json!({}),
-            replay_state_known: true,
+            replay_boundary: Some(crate::scheduled_tasks::types::ReplayBoundary::INITIAL),
             last: None,
             evaluations: Vec::new(),
             counters: TriggerCounters::default(),
@@ -1413,13 +1444,17 @@ mod tests {
             ledger: vec![json!({"id":"ledger"})],
             card_message_id: None,
             retry_after_seconds: None,
-            replay_seed: None,
+            replay_boundary: None,
+            replay_freshness: None,
         };
-        let scores = score_replays(std::slice::from_ref(&stored), |evaluation| {
+        let baseline = TriggerScriptRef {
+            name: "price-band".into(),
+            version: stored.version,
+            sha256: stored.sha256.clone(),
+        };
+        let scores = score_replays(std::slice::from_ref(&stored), &baseline, |evaluation| {
             assert_eq!(evaluation.ledger[0]["id"], "ledger");
-            let mut same = met("Northwind -7.4%");
-            same.outcome = TriggerOutcome::NotMet;
-            Some(same)
+            Some(TriggerOutcome::NotMet)
         });
         assert_eq!(scores.compared, 1);
         assert_eq!(scores.previous_met, 1);

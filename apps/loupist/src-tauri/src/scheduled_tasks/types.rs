@@ -272,9 +272,12 @@ pub struct TriggerScoreDay {
     pub next: TriggerOutcome,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct TriggerScores {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(skip))]
+    pub(crate) baseline: Option<TriggerScriptRef>,
     pub previous_met: u32,
     pub next_met: u32,
     pub compared: u32,
@@ -314,6 +317,48 @@ pub struct TriggerPending {
     pub configuration: Option<TriggerConfiguration>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ReplayBoundaryKind {
+    Reset,
+    MissingLedger,
+}
+
+/// A position in the state sequence that began at a host reset or a lost ledger.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub(crate) struct ReplayBoundary {
+    pub(crate) generation: u64,
+    pub(crate) kind: ReplayBoundaryKind,
+    pub(crate) offset: u64,
+}
+
+impl ReplayBoundary {
+    pub(crate) const INITIAL: Self = Self {
+        generation: 0,
+        kind: ReplayBoundaryKind::Reset,
+        offset: 0,
+    };
+
+    pub(crate) fn starts_reset(self) -> bool {
+        self.kind == ReplayBoundaryKind::Reset && self.generation < u64::MAX && self.offset == 0
+    }
+
+    pub(crate) fn follows(self, previous: Self) -> bool {
+        self.kind == ReplayBoundaryKind::Reset
+            && self.generation < u64::MAX
+            && self.generation == previous.generation
+            && self.kind == previous.kind
+            && previous.offset.checked_add(1) == Some(self.offset)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub(crate) struct ReplayFreshness {
+    pub(crate) latest: Option<String>,
+    pub(crate) unchanged_since_ms: Option<i64>,
+    pub(crate) stale_after_days: u32,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct TriggerEvaluation {
@@ -344,8 +389,10 @@ pub struct TriggerEvaluation {
     pub retry_after_seconds: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(skip))]
-    // Older input_state snapshots have no proof that earlier ledgers were complete.
-    pub replay_seed: Option<serde_json::Value>,
+    pub(crate) replay_boundary: Option<ReplayBoundary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(skip))]
+    pub(crate) replay_freshness: Option<ReplayFreshness>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -420,9 +467,11 @@ pub struct TaskTrigger {
     /// The script's `loupist.state`, kept between evaluations. Not the phase.
     #[cfg_attr(test, ts(type = "Record<string, unknown>"))]
     pub script_state: serde_json::Value,
-    #[serde(default)]
+    // The next position is persisted even if all evaluations at this boundary
+    // are pruned, or if another reset occurs before the next evaluation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(skip))]
-    pub(crate) replay_state_known: bool,
+    pub(crate) replay_boundary: Option<ReplayBoundary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub last: Option<TriggerEvaluation>,

@@ -160,8 +160,8 @@ def embed_assets_step(name, flag):
 # The Python worker admits one run at a time, so these tests form one serial
 # chain that outlasts every other test. They run beside the headless eval
 # contracts, in the same build, instead of extending the all-target test step.
-# Only this module holds the test-side worker lock: a Python test elsewhere
-# stays in `tests`, where it cannot queue ahead of the timed cold/warm runs.
+# This filter keeps the longer sandbox tests in the eval leg. Tests in other
+# modules share the same test-side lock when running in the same process.
 PYTHON_SANDBOX_TESTS = ("python_run::tests::",)
 
 

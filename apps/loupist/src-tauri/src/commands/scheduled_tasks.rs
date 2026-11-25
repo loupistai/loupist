@@ -154,7 +154,7 @@ pub(crate) fn preset_trigger(
         pending: None,
         state: crate::scheduled_tasks::types::TriggerPhase::Proposed,
         script_state: serde_json::json!({}),
-        replay_state_known: true,
+        replay_boundary: Some(crate::scheduled_tasks::types::ReplayBoundary::INITIAL),
         last: None,
         evaluations: Vec::new(),
         counters: Default::default(),

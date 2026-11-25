@@ -1027,6 +1027,7 @@ fn product_eval_budget_counts_cached_input_and_unknown_usage() {
 #[cfg(unix)]
 #[tokio::test]
 async fn an_eval_run_compiles_python_once_for_all_its_trials() {
+    let _worker = crate::python_run::PYTHON_WORKER_TEST_LOCK.lock().await;
     if crate::python_run::runtime_dir().is_none() || crate::python_run::worker_path().is_none() {
         eprintln!("skipped: the Python runtime is not staged in this checkout");
         return;

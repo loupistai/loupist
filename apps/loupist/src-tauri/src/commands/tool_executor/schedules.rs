@@ -7,7 +7,8 @@ use crate::{
         types::{
             NotifyPolicy, ReportPolicy, Schedule, ScheduleAction, ScheduleReceipt, Task,
             TaskDefinition, TaskDraft, TaskStatus, TaskSubject, TaskTarget, TaskTrigger, TaskWatch,
-            TriggerDryRun, TriggerOutcome, TriggerPhase, TriggerToolGrant, WatchPreset,
+            TriggerDryRun, TriggerOutcome, TriggerPhase, TriggerScriptRef, TriggerToolGrant,
+            WatchPreset,
         },
     },
 };
@@ -24,9 +25,14 @@ pub(in crate::commands) fn spawn_dry_run(
     code: String,
     args: serde_json::Map<String, Value>,
     previous: Vec<crate::scheduled_tasks::types::TriggerEvaluation>,
+    baseline: Option<TriggerScriptRef>,
     use_memory: bool,
 ) -> tokio::task::JoinHandle<Result<TriggerReviewRun, String>> {
-    tokio::spawn(async move { executor.dry_run(&code, &args, &previous, use_memory).await })
+    tokio::spawn(async move {
+        executor
+            .dry_run(&code, &args, &previous, baseline.as_ref(), use_memory)
+            .await
+    })
 }
 
 #[derive(Clone)]
@@ -989,7 +995,7 @@ impl AppToolExecutor {
             pending: None,
             state: TriggerPhase::Proposed,
             script_state: json!({}),
-            replay_state_known: true,
+            replay_boundary: Some(crate::scheduled_tasks::types::ReplayBoundary::INITIAL),
             last: None,
             evaluations: Vec::new(),
             counters: Default::default(),
@@ -1005,7 +1011,7 @@ impl AppToolExecutor {
             .transpose()?;
         let mut price_subjects = None;
         let mut test_args = args;
-        let (use_memory, previous) = if let Some(task) = &original {
+        let (use_memory, previous, baseline) = if let Some(task) = &original {
             let existing = task
                 .trigger
                 .as_ref()
@@ -1039,14 +1045,21 @@ impl AppToolExecutor {
             } else {
                 Vec::new()
             };
-            (use_memory, previous)
+            (use_memory, previous, existing.approved_ref().cloned())
         } else {
-            (policy.use_memory && context.use_memory, Vec::new())
+            (policy.use_memory && context.use_memory, Vec::new(), None)
         };
-        let reviewed = spawn_dry_run(self.clone(), code, test_args, previous, use_memory)
-            .await
-            .map_err(|_| BrokerError::Execution("The dry run could not finish.".into()))?
-            .map_err(|_| BrokerError::Execution("The dry run could not finish.".into()))?;
+        let reviewed = spawn_dry_run(
+            self.clone(),
+            code,
+            test_args,
+            previous,
+            baseline,
+            use_memory,
+        )
+        .await
+        .map_err(|_| BrokerError::Execution("The dry run could not finish.".into()))?
+        .map_err(|_| BrokerError::Execution("The dry run could not finish.".into()))?;
         trigger.reads_per_check = reviewed.today.reads.max(1);
         trigger.tools = reviewed.tools;
         trigger.proposal_test = Some(reviewed.test);
@@ -1142,6 +1155,7 @@ impl AppToolExecutor {
         code: &str,
         args: &serde_json::Map<String, Value>,
         previous: &[crate::scheduled_tasks::types::TriggerEvaluation],
+        baseline: Option<&TriggerScriptRef>,
         use_memory: bool,
     ) -> Result<TriggerReviewRun, String> {
         use crate::scheduled_tasks::types::{MAX_TRIGGER_READS_PER_EVALUATION, MAX_TRIGGER_ROUNDS};
@@ -1173,7 +1187,7 @@ impl AppToolExecutor {
                 now.to_rfc3339(),
                 None,
                 json!({}),
-                &[],
+                None,
                 MAX_TRIGGER_ROUNDS,
                 MAX_TRIGGER_READS_PER_EVALUATION,
             ))
@@ -1185,19 +1199,21 @@ impl AppToolExecutor {
                     format!("{date}T23:59:59Z"),
                     Some(date),
                     state,
-                    &[],
+                    None,
                     MAX_TRIGGER_ROUNDS,
                     max_calls,
                 ))
             })
             .await?;
         let previous = if use_memory { previous } else { &[] };
-        dry.scores = Some(
-            replay_comparison(previous, |now, state, ledger| {
-                self.run_check(request(now, None, state, ledger, 1, 0))
+        dry.scores = Some(if let Some(baseline) = baseline {
+            replay_comparison(previous, baseline, |now, state, ledger| {
+                self.run_check(request(now, None, state, Some(ledger), 1, 0))
             })
-            .await,
-        );
+            .await
+        } else {
+            Default::default()
+        });
         Ok(TriggerReviewRun {
             test: dry,
             tools,
@@ -1208,6 +1224,7 @@ impl AppToolExecutor {
 
 async fn replay_comparison<'a, F>(
     previous: &'a [crate::scheduled_tasks::types::TriggerEvaluation],
+    baseline: &TriggerScriptRef,
     mut check: impl FnMut(String, Value, &'a [Value]) -> F,
 ) -> crate::scheduled_tasks::types::TriggerScores
 where
@@ -1215,51 +1232,76 @@ where
         Output = Result<crate::scheduled_tasks::trigger::CheckOutput, BrokerError>,
     >,
 {
-    use crate::scheduled_tasks::types::MAX_STORED_EVALUATIONS;
+    use crate::scheduled_tasks::{
+        trigger::stale_or_advance,
+        types::{ReplayFreshness, MAX_STORED_EVALUATIONS},
+    };
 
-    let mut state = None;
-    let mut previous_pin = None;
+    let mut candidate: Option<(Value, ReplayFreshness)> = None;
+    let mut previous_boundary = None;
     let mut replayed = Vec::new();
     for evaluation in previous.iter().take(MAX_STORED_EVALUATIONS).rev() {
-        let pin = (evaluation.version, evaluation.sha256.as_str());
-        if previous_pin.is_some_and(|prior| prior != pin) {
-            // Approving or reverting to another pin clears the live state.
-            state = Some(json!({}));
+        let boundary = evaluation.replay_boundary;
+        if boundary.is_some_and(|position| position.starts_reset()) {
+            candidate = evaluation
+                .replay_freshness
+                .clone()
+                .map(|freshness| (json!({}), freshness));
+        } else if !boundary
+            .zip(previous_boundary)
+            .is_some_and(|(position, previous)| position.follows(previous))
+        {
+            candidate = None;
         }
-        previous_pin = Some(pin);
-        if !evaluation.can_replay() {
-            if evaluation.outcome.updates_state() {
-                // A successful check can change state even if its read ledger
-                // was too large to keep. A later ordinary live snapshot
-                // cannot repair the candidate's missing state.
-                state = None;
-            }
+        previous_boundary = boundary;
+
+        if evaluation.outcome == TriggerOutcome::SkippedBusy {
             replayed.push(None);
             continue;
         }
-        if state.is_none() {
-            state = evaluation
-                .replay_seed
-                .as_ref()
-                .filter(|seed| seed.is_object())
-                .cloned();
-        }
-        let mut output = None;
-        if let Some(input) = &mut state {
-            let now = chrono::DateTime::from_timestamp_millis(evaluation.at_ms)
-                .unwrap_or_default()
-                .to_rfc3339();
-            output = check(now, input.clone(), &evaluation.ledger).await.ok();
-            if let Some(replayed_check) = &output {
-                if replayed_check.outcome.updates_state() {
-                    input.clone_from(&replayed_check.state);
+
+        let outcome = if let Some((state, freshness)) = candidate.take() {
+            let now = chrono::DateTime::from_timestamp_millis(evaluation.at_ms);
+            if let Some(now) =
+                now.filter(|_| evaluation.reads == 0 || !evaluation.ledger.is_empty())
+            {
+                match check(now.to_rfc3339(), state.clone(), &evaluation.ledger).await {
+                    Ok(output) => {
+                        let mut freshness = freshness;
+                        let mut outcome = output.outcome;
+                        if outcome.updates_state()
+                            && stale_or_advance(
+                                &mut freshness.latest,
+                                &mut freshness.unchanged_since_ms,
+                                freshness.stale_after_days,
+                                output.as_of.as_deref(),
+                                evaluation.at_ms,
+                            )
+                        {
+                            outcome = TriggerOutcome::Stale;
+                        }
+                        let next_state = if outcome.updates_state() {
+                            output.state
+                        } else {
+                            state
+                        };
+                        candidate = Some((next_state, freshness));
+                        Some(outcome)
+                    }
+                    Err(_) => None,
                 }
+            } else {
+                None
             }
-        }
-        replayed.push(output);
+        } else {
+            None
+        };
+        replayed.push(outcome);
     }
     let mut replayed = replayed.into_iter().rev();
-    crate::scheduled_tasks::trigger::score_replays(previous, |_| replayed.next().flatten())
+    crate::scheduled_tasks::trigger::score_replays(previous, baseline, |_| {
+        replayed.next().flatten()
+    })
 }
 
 async fn replay_dry_run<F>(
@@ -1333,13 +1375,29 @@ mod tests {
         app::PiArtifacts,
         commands::tests::{profile, seed_profile},
     };
+    fn comparison_pin() -> TriggerScriptRef {
+        TriggerScriptRef {
+            name: "fixture".into(),
+            version: 1,
+            sha256: "ab".repeat(32),
+        }
+    }
+
+    fn initial_freshness() -> crate::scheduled_tasks::types::ReplayFreshness {
+        crate::scheduled_tasks::types::ReplayFreshness {
+            latest: None,
+            unchanged_since_ms: None,
+            stale_after_days: 5,
+        }
+    }
+
     #[tokio::test]
-    async fn comparison_replays_new_items_in_order_with_carried_state() {
+    async fn comparison_replays_retained_reads_even_when_the_live_script_errored() {
         use crate::scheduled_tasks::{
             trigger,
-            types::{TriggerEvaluation, TriggerOutcome},
+            types::{ReplayBoundary, TriggerEvaluation, TriggerOutcome},
         };
-        let occurrence = |at, outcome, item| TriggerEvaluation {
+        let occurrence = |at: i64, outcome, item| TriggerEvaluation {
             at_ms: at,
             scheduled_for_ms: at,
             outcome,
@@ -1354,41 +1412,51 @@ mod tests {
             ledger: vec![json!(item)],
             card_message_id: None,
             retry_after_seconds: None,
-            replay_seed: (at == 1).then(|| json!({})),
+            replay_boundary: Some(ReplayBoundary {
+                offset: at as u64 - 1,
+                ..ReplayBoundary::INITIAL
+            }),
+            replay_freshness: (at == 1).then(initial_freshness),
         };
         let previous = [
             occurrence(3, TriggerOutcome::Met, "new"),
             occurrence(2, TriggerOutcome::Error, "error"),
             occurrence(1, TriggerOutcome::NotMet, "baseline"),
         ];
-        let scores = replay_comparison(&previous, |_, state, ledger| async move {
-            let item = ledger[0].as_str().unwrap();
-            if item == "error" {
-                return Ok(trigger::errored("Provider failed", vec![], 0));
-            }
-            // The bundled new-item check treats its first list as a baseline.
-            let met = state["seen"].as_str().is_some_and(|prior| prior != item);
-            Ok(trigger::output_from_worker(
-                &json!({"status":"completed","check_verdict":{
-                    "met": met, "reading": "Listed items", "as_of":"2026-11-24",
-                    "state":{"seen":item}
-                }}),
-                vec![],
-                0,
-            ))
-        })
+        let scores = replay_comparison(
+            &previous,
+            &comparison_pin(),
+            |_, state, ledger| async move {
+                let item = ledger[0].as_str().unwrap();
+                let seen = if item == "error" { "new" } else { item };
+                // The bundled new-item check treats its first list as a baseline.
+                let met = state["seen"].as_str().is_some_and(|prior| prior != seen);
+                Ok(trigger::output_from_worker(
+                    &json!({"status":"completed","check_verdict":{
+                        "met": met, "reading": "Listed items", "as_of":"2026-11-24",
+                        "state":{"seen":seen}
+                    }}),
+                    vec![],
+                    0,
+                ))
+            },
+        )
         .await;
         assert_eq!(scores.compared, 2);
         assert_eq!(scores.previous_met, 1);
-        assert_eq!(scores.next_met, 1);
-        assert_eq!(scores.days[0].next, TriggerOutcome::Met);
-        assert_eq!(scores.days[1].next, TriggerOutcome::NotMet);
+        assert_eq!(scores.next_met, 0);
+        assert_eq!(scores.days[0].next, TriggerOutcome::NotMet);
+        assert_eq!(scores.days[1].previous, TriggerOutcome::Error);
+        assert_eq!(scores.days[1].next, TriggerOutcome::Met);
     }
 
     #[tokio::test]
     async fn comparison_replays_zero_read_state_changes_before_scoring() {
-        use crate::scheduled_tasks::{trigger, types::TriggerEvaluation};
-        let occurrence = |at, outcome, ledger| TriggerEvaluation {
+        use crate::scheduled_tasks::{
+            trigger,
+            types::{ReplayBoundary, TriggerEvaluation},
+        };
+        let occurrence = |at: i64, outcome, ledger| TriggerEvaluation {
             at_ms: at,
             scheduled_for_ms: at,
             outcome,
@@ -1403,13 +1471,17 @@ mod tests {
             ledger: if ledger { vec![json!("item")] } else { vec![] },
             card_message_id: None,
             retry_after_seconds: None,
-            replay_seed: Some(json!({})),
+            replay_boundary: Some(ReplayBoundary {
+                offset: at as u64 - 1,
+                ..ReplayBoundary::INITIAL
+            }),
+            replay_freshness: (at == 1).then(initial_freshness),
         };
         let previous = [
             occurrence(2, TriggerOutcome::Met, true),
             occurrence(1, TriggerOutcome::NotMet, false),
         ];
-        let score = replay_comparison(&previous, |_, state, ledger| {
+        let score = replay_comparison(&previous, &comparison_pin(), |_, state, ledger| {
             let matched = !ledger.is_empty() && state["ready"] == true;
             std::future::ready(Ok(trigger::output_from_worker(
                 &json!({"status":"completed", "check_verdict":{
@@ -1458,10 +1530,13 @@ mod tests {
         let ready = live.script_state["ready"] == true;
         assert!(ready);
         apply_output(&mut live, 3, 3, verdict(ready, json!({"ready":true}), 0), 0);
-        assert!(live.evaluations[0].replay_seed.is_none());
+        assert_eq!(
+            live.evaluations[0].replay_boundary.unwrap().kind,
+            crate::scheduled_tasks::types::ReplayBoundaryKind::MissingLedger
+        );
 
         let mut replayed = Vec::new();
-        let scores = replay_comparison(&live.evaluations, |now, input, _| {
+        let scores = replay_comparison(&live.evaluations, &live.script, |now, input, _| {
             replayed.push(now);
             std::future::ready(Ok(verdict(input["ready"] == true, input, 0)))
         })
@@ -1479,17 +1554,17 @@ mod tests {
         live.script.sha256 = "ab".repeat(32);
         live.reset_script_state();
         apply_output(&mut live, 4, 4, verdict(false, json!({}), 0), 0);
-        let scores = replay_comparison(&live.evaluations, |_, input, _| {
+        let scores = replay_comparison(&live.evaluations, &live.script, |_, input, _| {
             assert_eq!(input, json!({}));
             std::future::ready(Ok(verdict(false, input, 0)))
         })
         .await;
         assert_eq!(
             (scores.compared, scores.previous_met, scores.next_met),
-            (2, 0, 0)
+            (1, 0, 0)
         );
         assert_eq!(scores.days[0].next, TriggerOutcome::NotMet);
-        assert_eq!(scores.days[1].next, TriggerOutcome::NoData);
+        assert_eq!(scores.days.len(), 1);
     }
 
     #[tokio::test]
@@ -1540,7 +1615,7 @@ mod tests {
             );
         }
         let mut stored = serde_json::to_value(&live).unwrap();
-        assert_eq!(stored["replay_state_known"], false);
+        assert_eq!(stored["replay_boundary"]["kind"], "missing_ledger");
         let mut live: TaskTrigger = serde_json::from_value(stored.clone()).unwrap();
         assert_eq!(live.evaluations.len(), MAX_STORED_EVALUATIONS);
         assert!(live
@@ -1554,7 +1629,7 @@ mod tests {
             // Starting from the live cache would make every proposed replay match.
             std::future::ready(Ok(verdict(input["threshold_met"] == true, input, 0)))
         };
-        let scores = replay_comparison(&live.evaluations, replay).await;
+        let scores = replay_comparison(&live.evaluations, &live.script, replay).await;
         assert_eq!(
             (scores.compared, scores.previous_met, scores.next_met),
             (0, 0, 0)
@@ -1566,18 +1641,25 @@ mod tests {
             .all(|day| day.next == TriggerOutcome::NoData));
 
         // A legacy snapshot without provenance cannot establish the seed either.
-        stored.as_object_mut().unwrap().remove("replay_state_known");
+        stored.as_object_mut().unwrap().remove("replay_boundary");
         for evaluation in stored["evaluations"].as_array_mut().unwrap() {
-            evaluation["input_state"] = json!({"threshold_met":true});
+            evaluation
+                .as_object_mut()
+                .unwrap()
+                .remove("replay_boundary");
+            evaluation["replay_seed"] = json!({"threshold_met":true});
         }
         let legacy: TaskTrigger = serde_json::from_value(stored).unwrap();
-        assert_eq!(replay_comparison(&legacy.evaluations, replay).await, scores);
+        assert_eq!(
+            replay_comparison(&legacy.evaluations, &legacy.script, replay).await,
+            scores
+        );
 
         // A same-pin approval also resets state. Only the new check can be compared.
         live.reset_script_state();
         let at = 2 + MAX_STORED_EVALUATIONS as i64;
         apply_output(&mut live, at, at, verdict(false, json!({}), 0), 0);
-        let reset = replay_comparison(&live.evaluations, replay).await;
+        let reset = replay_comparison(&live.evaluations, &live.script, replay).await;
         assert_eq!(
             (reset.compared, reset.previous_met, reset.next_met),
             (1, 0, 0)
@@ -1589,17 +1671,46 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn comparison_seeds_the_retained_window_from_the_first_evaluation() {
+    async fn displayed_comparison_matches_an_independent_oracle_across_generated_histories() {
         use crate::scheduled_tasks::{
-            trigger::{apply_output, output_from_worker},
+            trigger::{apply_output, errored, note_skipped, output_from_worker, CheckOutput},
             types::{TriggerOutcome, MAX_STORED_EVALUATIONS},
         };
+        use std::collections::VecDeque;
+
+        #[derive(Clone, Copy)]
+        struct Input {
+            delta: Option<u64>,
+            live_error: bool,
+            candidate_error: bool,
+            candidate_missing: bool,
+            lost_ledger: bool,
+            day: u8,
+        }
+
+        struct Occurrence {
+            reset_freshness: Option<Option<u8>>,
+            input: Option<Input>,
+            pin: TriggerScriptRef,
+            outcome: TriggerOutcome,
+        }
+
+        fn verdict(met: bool, state: Value, day: u8, ledger: Vec<Value>) -> CheckOutput {
+            let reads = ledger.len() as u32;
+            output_from_worker(
+                &json!({"status":"completed", "check_verdict":{
+                    "met":met,"reading":"Checked","as_of":format!("2026-11-{day:02}"),"state":state
+                }}),
+                ledger,
+                reads,
+            )
+        }
 
         let root = tempfile::tempdir().unwrap();
         let state = AppState::for_test(root.path().join("app"));
         let loupist = "loupist-a";
         crate::test_fixtures::create_folder_loupist(&state.store, loupist, root.path());
-        let mut check = crate::commands::scheduled_tasks::preset_trigger(
+        let initial = crate::commands::scheduled_tasks::preset_trigger(
             &state,
             loupist,
             "new-item",
@@ -1607,38 +1718,205 @@ mod tests {
             "New items",
         )
         .unwrap();
-        let verdict = |item: &Value, met: bool| {
-            output_from_worker(
-                &json!({"status":"completed","check_verdict":{
-                    "met": met, "reading": "Listed items", "as_of":"2026-11-24",
-                    "state":{"seen":item}
-                }}),
-                vec![item.clone()],
-                1,
-            )
-        };
-        for number in 0..=MAX_STORED_EVALUATIONS {
-            let at = 1_795_560_000_000 + number as i64 * 60_000;
-            let item = json!(format!("item-{number}"));
-            apply_output(&mut check, at, at, verdict(&item, number != 0), 0);
-        }
-        let scores = replay_comparison(&check.evaluations, |_, state, ledger| {
-            std::future::ready(Ok(verdict(
-                &ledger[0],
-                state["seen"]
-                    .as_str()
-                    .is_some_and(|prior| ledger[0] != prior),
-            )))
-        })
-        .await;
 
-        assert_eq!(
-            check.evaluations.last().unwrap().replay_seed,
-            Some(json!({"seen":"item-0"}))
-        );
-        assert_eq!(scores.compared as usize, MAX_STORED_EVALUATIONS);
-        assert_eq!(scores.next_met, scores.previous_met);
-        assert_eq!(scores.days.last().unwrap().next, TriggerOutcome::Met);
+        for seed in 1_u64..=16 {
+            let mut random = seed;
+            let mut live = initial.clone();
+            let mut events = VecDeque::<Occurrence>::new();
+            let mut live_latest = None;
+            let mut reset = true;
+            let mut approved = vec![live.script.clone()];
+
+            for at in 1..=160 {
+                random ^= random << 13;
+                random ^= random >> 7;
+                random ^= random << 17;
+                let event = match at {
+                    1 => 3, // Retained live error initializes the corrected candidate.
+                    2 | 4..=25 => 0,
+                    3 => 8,  // Same-pin approval.
+                    26 => 9, // Different pin.
+                    27 => 0,
+                    28 => 10, // Revert to the original pin.
+                    29 => 5,
+                    30 => 12,
+                    _ => random % 14,
+                };
+                match event {
+                    0..=7 => {
+                        let reset_freshness = reset.then_some(live_latest);
+                        let input = (event != 7).then_some(Input {
+                            delta: (event >= 2).then_some(if at == 1 {
+                                0
+                            } else {
+                                (random >> 16) % 3
+                            }),
+                            live_error: event == 3,
+                            candidate_error: event == 4 && random & 16 != 0,
+                            candidate_missing: event == 4 && random & 16 == 0,
+                            lost_ledger: event == 5,
+                            day: if event == 6 { 23 } else { 24 },
+                        });
+                        if let Some(input) = input {
+                            let ledger = input.delta.map(|value| json!({
+                                "value": value, "day": input.day,
+                                "candidate_error": input.candidate_error, "candidate_missing": input.candidate_missing,
+                            })).into_iter().collect::<Vec<_>>();
+                            let steps = live.script_state["steps"].as_u64().unwrap_or(0);
+                            let delta = input.delta.unwrap_or(0);
+                            let mut output = if input.live_error {
+                                errored("Live check failed", ledger, 1)
+                            } else {
+                                verdict(
+                                    (steps + delta) % 3 == 1,
+                                    json!({"steps":steps + delta + 1}),
+                                    input.day,
+                                    ledger,
+                                )
+                            };
+                            if input.lost_ledger {
+                                output.ledger.clear();
+                            }
+                            let expected_live = if input.live_error {
+                                TriggerOutcome::Error
+                            } else if live_latest.is_some_and(|day| input.day < day) {
+                                TriggerOutcome::Stale
+                            } else {
+                                live_latest = Some(input.day);
+                                output.outcome
+                            };
+                            apply_output(&mut live, at, at, output, 0);
+                            assert_eq!(live.last.as_ref().unwrap().outcome, expected_live);
+                        } else {
+                            note_skipped(&mut live, at, at, TriggerOutcome::SkippedBusy, None);
+                        }
+                        reset = false;
+                        events.push_back(Occurrence {
+                            reset_freshness,
+                            input,
+                            pin: live.script.clone(),
+                            outcome: live.last.as_ref().unwrap().outcome,
+                        });
+                        if events.len() > MAX_STORED_EVALUATIONS {
+                            events.pop_front();
+                        }
+                    }
+                    8..=11 => {
+                        if event == 9 {
+                            let mut pin = live.script.clone();
+                            pin.version = approved.last().unwrap().version + 1;
+                            pin.sha256 = format!("{:064x}", pin.version);
+                            approved.push(pin.clone());
+                            live.script = pin;
+                        } else if event == 10 {
+                            let prior = if at == 28 {
+                                0
+                            } else {
+                                ((random >> 24) as usize) % approved.len()
+                            };
+                            live.script = approved[prior].clone();
+                        }
+                        live.reset_script_state();
+                        reset = true;
+                    }
+                    12 => {
+                        live = serde_json::from_slice(&serde_json::to_vec(&live).unwrap()).unwrap();
+                    }
+                    _ => {
+                        let keep = ((random >> 32) as usize) % MAX_STORED_EVALUATIONS;
+                        live.evaluations.truncate(keep);
+                        while events.len() > keep {
+                            events.pop_front();
+                        }
+                    }
+                }
+
+                // The oracle holds the candidate's historical state as a number
+                // and date, without using replay boundaries or the replay worker.
+                let mut predicted: Option<(u64, Option<u8>)> = None;
+                let mut expected = Vec::new();
+                for row in &events {
+                    if let Some(latest) = row.reset_freshness {
+                        predicted = Some((0, latest));
+                    }
+                    let Some(input) = row.input else { continue };
+                    let outcome = if input.lost_ledger || input.candidate_missing {
+                        predicted = None;
+                        TriggerOutcome::NoData
+                    } else if let Some((sum, latest)) = predicted {
+                        if input.candidate_error {
+                            TriggerOutcome::Error
+                        } else if latest.is_some_and(|day| input.day < day) {
+                            TriggerOutcome::Stale
+                        } else {
+                            predicted =
+                                Some((sum + 2 * input.delta.unwrap_or(0) + 1, Some(input.day)));
+                            if sum % 5 == 1 {
+                                TriggerOutcome::Met
+                            } else {
+                                TriggerOutcome::NotMet
+                            }
+                        }
+                    } else {
+                        TriggerOutcome::NoData
+                    };
+                    if row.pin == live.script {
+                        expected.push((row.outcome, outcome));
+                    }
+                }
+                expected.reverse();
+                let scores =
+                    replay_comparison(&live.evaluations, &live.script, |_, input, ledger| {
+                        let record = ledger.first().unwrap_or(&Value::Null);
+                        let result = if record["candidate_missing"] == true {
+                            Err(BrokerError::Malformed)
+                        } else if record["candidate_error"] == true {
+                            Ok(errored("Candidate check failed", ledger.to_vec(), 1))
+                        } else {
+                            let sum = input["sum"].as_u64().unwrap_or(0);
+                            let delta = record["value"].as_u64().unwrap_or(0);
+                            let day = record["day"].as_u64().unwrap_or(24) as u8;
+                            Ok(verdict(
+                                sum % 5 == 1,
+                                json!({"sum":sum + 1 + delta * 2}),
+                                day,
+                                vec![],
+                            ))
+                        };
+                        std::future::ready(result)
+                    })
+                    .await;
+                let actual = scores
+                    .days
+                    .iter()
+                    .map(|day| (day.previous, day.next))
+                    .collect::<Vec<_>>();
+                assert_eq!(actual, expected, "seed {seed}, event {at}");
+                let comparable = expected
+                    .iter()
+                    .filter(|(prev, next)| prev.updates_state() && next.updates_state());
+                assert_eq!(scores.compared as usize, comparable.clone().count());
+                assert_eq!(
+                    scores.previous_met as usize,
+                    comparable
+                        .clone()
+                        .filter(|(prev, _)| *prev == TriggerOutcome::Met)
+                        .count()
+                );
+                assert_eq!(
+                    scores.next_met as usize,
+                    comparable
+                        .filter(|(_, next)| *next == TriggerOutcome::Met)
+                        .count()
+                );
+                if at == 2 {
+                    assert_eq!(
+                        (scores.compared, scores.previous_met, scores.next_met),
+                        (1, 0, 1)
+                    );
+                }
+            }
+        }
     }
 
     fn fixture(
@@ -2218,7 +2496,8 @@ mod tests {
                 ledger: Vec::new(),
                 card_message_id: None,
                 retry_after_seconds: None,
-                replay_seed: None,
+                replay_boundary: None,
+                replay_freshness: None,
             },
             None,
         )

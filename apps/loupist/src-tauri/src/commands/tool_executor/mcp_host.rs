@@ -4455,6 +4455,7 @@ done
     #[tokio::test]
     async fn python_reads_capture_quarterly_income_in_the_parent_delivery() {
         let _guard = crate::mcp::MCP_PROCESS_TEST_LOCK.lock().await;
+        let _worker = crate::python_run::PYTHON_WORKER_TEST_LOCK.lock().await;
         let temporary = tempfile::tempdir().unwrap();
         let state = AppState::for_test(temporary.path().join("app"));
         let (_workspace, roots) = crate::python_run::ledger::empty_roots().unwrap();

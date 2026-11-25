@@ -1,11 +1,15 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { TaskTrigger } from "../../contracts/generated";
+import type { TaskTrigger, TriggerScores } from "../../contracts/generated";
 import type { ChatMessage, LoupistBridge } from "../../types";
 import { ThreadDelivery } from "./ThreadDelivery";
 import { TriggerCard } from "./TriggerCard";
 
 const schedule = { kind: "interval", every_minutes: 45 } as const;
+const baseline = { name: "price-band", version: 3, sha256: "ab".repeat(32) };
+const approved = { ...baseline, at_ms: 1 };
+type SavedScores = TriggerScores & { baseline?: typeof baseline };
+const reviewedScores: SavedScores = { baseline, previous_met: 2, next_met: 1, compared: 4, days: [] };
 
 const trigger = (patch: Partial<TaskTrigger> = {}): TaskTrigger => ({
   script: { name: "price-band", version: 3, sha256: "ab".repeat(32) },
@@ -24,7 +28,7 @@ const trigger = (patch: Partial<TaskTrigger> = {}): TaskTrigger => ({
     fired_on: ["2026-11-12", "2026-11-24"], replayed: 18, unreplayed: 2,
     days: [{ date: "2026-11-12", outcome: "met", reading: "Northwind +6.2%" }, { date: "2026-11-24", outcome: "met", reading: "Northwind −7.4%" }],
     reads: 8,
-    scores: { previous_met: 2, next_met: 1, compared: 4, days: [] },
+    scores: reviewedScores,
   },
   ...patch,
 });
@@ -41,7 +45,7 @@ function bridge(extra: Partial<LoupistBridge> = {}): LoupistBridge {
 
 it("shows the dry run, both versions' scores, and the code", async () => {
   const user = userEvent.setup();
-  render(<TriggerCard trigger={trigger({ state: "update_proposed", pending: { version: 4, sha256: "cd".repeat(32), test: trigger().proposal_test } })} bridge={bridge()} loupistId="desk" taskId="task" schedule={schedule} revision={7} prompt="Report the move." />);
+  render(<TriggerCard trigger={trigger({ state: "update_proposed", approved, pending: { version: 4, sha256: "cd".repeat(32), test: trigger().proposal_test } })} bridge={bridge()} loupistId="desk" taskId="task" schedule={schedule} revision={7} prompt="Report the move." />);
   expect(screen.getByText(/Checked on today's data: not met/)).toBeVisible();
   expect(screen.getByText(/2 days could not be replayed/)).toBeVisible();
   expect(screen.getByText(/Nov 12|2026-11-12/)).toBeVisible();
@@ -54,19 +58,39 @@ it("shows the dry run, both versions' scores, and the code", async () => {
 it("labels checks with a missing replay baseline and hides empty scores", () => {
   const test = trigger().proposal_test!;
   const skipped = { date: "2026-11-24", previous: "met", next: "no_data" } as const;
-  const card = (scores: NonNullable<typeof test.scores>) => <TriggerCard
-    trigger={trigger({ state: "update_proposed", pending: {
+  const card = (scores: SavedScores) => <TriggerCard
+    trigger={trigger({ state: "update_proposed", approved, pending: {
       version: 4, sha256: "cd".repeat(32), test: { ...test, scores },
     } })} bridge={bridge()} loupistId="desk" taskId="task" schedule={schedule} revision={7} />;
-  const { rerender } = render(card({ previous_met: 0, next_met: 0, compared: 0, days: [skipped] }));
+  const { rerender } = render(card({ baseline, previous_met: 0, next_met: 0, compared: 0, days: [skipped] }));
   expect(screen.getByText("1 stored check is not comparable.")).toBeVisible();
   expect(screen.queryByText(/approved version was met/)).toBeNull();
   rerender(card({
-    previous_met: 1, next_met: 1, compared: 1,
+    baseline, previous_met: 1, next_met: 1, compared: 1,
     days: [skipped, { date: "2026-11-23", previous: "met", next: "met" }],
   }));
   expect(screen.getByText("1 stored check is not comparable.")).toBeVisible();
   expect(screen.getByText(/The approved version was met 1 times; the new one 1, of 1 stored checks/)).toBeVisible();
+});
+
+it("hides pooled scores, scores for another approved pin, and scores after approval", () => {
+  const test = trigger().proposal_test!;
+  const { baseline: _baseline, ...unscoped } = reviewedScores;
+  const pending = (scores: SavedScores) => ({
+    version: 4, sha256: "cd".repeat(32), test: { ...test, scores },
+  });
+  const card = (check: TaskTrigger) => <TriggerCard trigger={check} bridge={bridge()}
+    loupistId="desk" taskId="task" schedule={schedule} revision={7} />;
+  const { rerender } = render(card(trigger({
+    approved, state: "update_proposed", pending: pending(unscoped),
+  })));
+  expect(screen.queryByText(/approved version was met/)).toBeNull();
+  rerender(card(trigger({
+    approved, state: "update_proposed", pending: pending({ ...unscoped, baseline: { ...baseline, sha256: "ef".repeat(32) } }),
+  })));
+  expect(screen.queryByText(/approved version was met/)).toBeNull();
+  rerender(card(trigger({ approved, state: "on" })));
+  expect(screen.queryByText(/approved version was met/)).toBeNull();
 });
 
 it("clears the reviewed code when the displayed version changes and binds approval to the new revision", async () => {

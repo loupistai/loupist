@@ -78,7 +78,7 @@ pub(in crate::commands) struct CheckRun<'a> {
     pub as_of: Option<String>,
     pub allowed: &'a [crate::scheduled_tasks::types::TriggerToolGrant],
     pub discover_providers: bool,
-    pub replay: &'a [Value],
+    pub replay: Option<&'a [Value]>,
     pub max_rounds: u32,
     pub max_calls: usize,
 }
@@ -239,8 +239,10 @@ impl AppToolExecutor {
         reader: &Self,
     ) -> Result<CheckOutput, BrokerError> {
         use crate::scheduled_tasks::types::{TRIGGER_QUEUE_WAIT, TRIGGER_TIMEOUT_SECONDS};
-        if check.replay.iter().any(contains_credential_json) {
-            return Ok(trigger::errored("sensitive_text", Vec::new(), 0));
+        let replaying = check.replay.is_some();
+        let replay = check.replay.unwrap_or_default();
+        if replay.iter().any(contains_credential_json) {
+            return Err(BrokerError::UntrustedTextPaused);
         }
         let policy = ToolPolicy {
             loupist_id: self.loupist_id.clone(),
@@ -256,38 +258,41 @@ impl AppToolExecutor {
                 && trigger::admit_call(check.allowed, &call.tool).is_ok()
         };
         let mut entries = Vec::new();
-        for value in check.replay {
-            if let Ok(mut entry) = serde_json::from_value::<LedgerEntry>(value.clone()) {
-                if !approved(&entry.call) {
-                    entry.response = Response::refused("not_approved");
-                } else if check_memory_tool(&entry.call) && !policy.use_memory {
-                    entry.response = Response::refused("needs_permission");
-                } else if policy.as_of.is_some() {
-                    entry.response = Response::unavailable("no_data");
-                } else if let Response::Ok { value } = &entry.response {
+        for value in replay {
+            let entry: LedgerEntry =
+                serde_json::from_value(value.clone()).map_err(|_| BrokerError::Malformed)?;
+            let permitted = approved(&entry.call)
+                && (!check_memory_tool(&entry.call) || policy.use_memory)
+                && policy.as_of.is_none();
+            let same_grant = match &entry.response {
+                Response::Ok { value } => {
                     let grant = observed_check_grant(&entry.call, value);
-                    if !trigger::admit_grant(check.allowed, &grant, check.discover_providers) {
-                        entry.response = Response::refused("not_approved");
-                    }
+                    trigger::admit_grant(check.allowed, &grant, check.discover_providers)
                 }
-                entries.push(entry);
+                _ => true,
+            };
+            if !permitted || !same_grant {
+                return Err(BrokerError::UntrustedTextPaused);
             }
+            entries.push(entry);
         }
         let mut run = RunLedger {
-            id: crate::commands::new_id("check"),
+            // The sealed worker seeds Python's random module from this ID.
+            id: crate::util::sha256(check.now.as_bytes()),
             now: check.now.clone(),
             args: check.args.clone(),
             state: check.state.clone(),
             inputs: Default::default(),
             entries,
-            final_round: !check.replay.is_empty(),
+            final_round: false,
         };
         let mut reads = 0u32;
         let mut tools = Vec::new();
         let rounds = check.max_rounds.clamp(1, 3);
         for round in 1..=rounds {
-            run.final_round =
-                round == rounds || reads as usize >= check.max_calls || !check.replay.is_empty();
+            // Yield on an unrecorded replay read so even a script that catches
+            // refusals cannot turn incomplete inputs into a comparable result.
+            run.final_round = !replaying && (round == rounds || reads as usize >= check.max_calls);
             let result = match python_run::execute_sealed(
                 &self.state.artifacts.python_cache_root,
                 check.code,
@@ -308,6 +313,9 @@ impl AppToolExecutor {
                 self.capture.turn_taint.mark_untrusted_text();
             }
             if self.capture.turn_taint.has_untrusted_content() {
+                if replaying {
+                    return Err(BrokerError::UntrustedTextPaused);
+                }
                 return Ok(trigger::errored(
                     &BrokerError::UntrustedTextPaused.to_string(),
                     Vec::new(),
@@ -315,10 +323,23 @@ impl AppToolExecutor {
                 ));
             }
             let Some(requests) = result.get("_python_pending").cloned() else {
+                if replaying
+                    && result["status"] != "completed"
+                    && result.get("check_failure").is_none()
+                {
+                    return Err(BrokerError::Execution(
+                        "The recorded check could not be replayed".into(),
+                    ));
+                }
                 let mut output = self.screen_check_output(check.code, &run, &result, reads);
                 output.tools = tools;
                 return Ok(output);
             };
+            if replaying {
+                return Err(BrokerError::Execution(
+                    "Recorded inputs do not cover this replay".into(),
+                ));
+            }
             let calls: Vec<ReadCall> =
                 serde_json::from_value(requests).map_err(|_| BrokerError::Malformed)?;
             if calls.is_empty() {
@@ -977,7 +998,7 @@ mod tests {
             as_of: None,
             allowed: &allowed,
             discover_providers: false,
-            replay: &[],
+            replay: None,
             max_rounds: 3,
             max_calls: 24,
         };

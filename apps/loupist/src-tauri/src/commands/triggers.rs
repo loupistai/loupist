@@ -149,11 +149,13 @@ pub(crate) async fn on_due(
             use_memory: task.use_memory,
             args: scoped_price_args(&trigger.args, price_ids.as_deref()),
             state: trigger.script_state.clone(),
-            now: chrono::Utc::now().to_rfc3339(),
+            now: chrono::DateTime::from_timestamp_millis(now)
+                .ok_or_else(|| CommandError::invalid("Invalid check time"))?
+                .to_rfc3339(),
             as_of: None,
             allowed: &trigger.tools,
             discover_providers: false,
-            replay: &[],
+            replay: None,
             max_rounds: crate::scheduled_tasks::types::MAX_TRIGGER_ROUNDS,
             max_calls: allowance as usize,
         })
@@ -759,6 +761,7 @@ pub(crate) async fn test_now(
             } else {
                 Vec::new()
             },
+            trigger.approved_ref().cloned(),
             task.use_memory,
         )
         .await
@@ -789,7 +792,7 @@ pub(crate) async fn test_now(
                 as_of: None,
                 allowed: &trigger.tools,
                 discover_providers: false,
-                replay: &[],
+                replay: None,
                 max_rounds: 3,
                 max_calls: 24,
             })
@@ -811,7 +814,8 @@ pub(crate) async fn test_now(
         ledger: output.ledger,
         card_message_id: None,
         retry_after_seconds: output.retry_after_seconds,
-        replay_seed: None,
+        replay_boundary: None,
+        replay_freshness: None,
     })
 }
 
@@ -889,7 +893,7 @@ mod tests {
             pending: None,
             state: TriggerPhase::On,
             script_state: json!({}),
-            replay_state_known: true,
+            replay_boundary: Some(crate::scheduled_tasks::types::ReplayBoundary::INITIAL),
             last: None,
             evaluations: Vec::new(),
             counters: Default::default(),
@@ -1167,7 +1171,7 @@ mod tests {
             let mut output = met_output("Price moved");
             output.evidence = json!({"source":"saved close"});
             output.state = json!({"number":number,"padding":"s".repeat(8_100)});
-            output.ledger[0]["response"]["value"] = json!("p".repeat(34_500));
+            output.ledger[0]["response"]["value"] = json!("p".repeat(43_000));
             let now = due + number as i64;
             trigger::apply_output(check, now, now, output, 0);
         }
@@ -1197,22 +1201,20 @@ mod tests {
                 .as_str()
                 .unwrap()
                 .len(),
-            34_500
+            43_000
         );
-        let input = &check
-            .evaluations
-            .last()
-            .unwrap()
-            .replay_seed
-            .as_ref()
-            .unwrap()["number"];
+        let oldest = check.evaluations.last().unwrap().replay_boundary.unwrap();
         assert_eq!(
-            input.as_u64().unwrap() as usize,
+            oldest.offset as usize,
             MAX_STORED_EVALUATIONS - check.evaluations.len()
         );
+        assert_eq!(oldest.generation, 0);
         let last = check.last.unwrap();
         assert_eq!(last.evidence, json!({"source":"saved close"}));
-        assert!(last.replay_seed.is_none());
+        assert_eq!(
+            last.replay_boundary.unwrap().offset as usize,
+            MAX_STORED_EVALUATIONS - 1
+        );
         assert_eq!(trigger::successful_read_sources(&last.ledger), ["price"]);
         assert!(last.ledger[0]["response"].get("value").is_none());
     }
@@ -1418,7 +1420,7 @@ mod tests {
         let mut reviewed_task = task;
         reviewed_task.trigger.as_mut().unwrap().proposal_test = Some(trigger::reviewed_fixture());
         let reviewed_task = write(&state, reviewed_task, now_ms()).unwrap();
-        let turned_on = approve(
+        let mut turned_on = approve(
             &state,
             loupist,
             &reviewed_task.id,
@@ -1427,6 +1429,33 @@ mod tests {
             &first.sha256,
         )
         .unwrap();
+        let check = turned_on.trigger.as_mut().unwrap();
+        let last_reset = check.replay_boundary.unwrap();
+        check.script_state = json!({"seen":true});
+        check.state = TriggerPhase::UpdateProposed;
+        check.pending = Some(scheduled_tasks::types::TriggerPending {
+            version: first.version,
+            sha256: first.sha256.clone(),
+            configuration: Some(check.configuration()),
+            test: Some(trigger::reviewed_fixture()),
+        });
+        let turned_on = write(&state, turned_on, now_ms()).unwrap();
+        let turned_on = approve(
+            &state,
+            loupist,
+            &turned_on.id,
+            turned_on.revision,
+            first.version,
+            &first.sha256,
+        )
+        .unwrap();
+        let check = turned_on.trigger.as_ref().unwrap();
+        assert_eq!(check.script_state, json!({}));
+        assert_eq!(
+            check.replay_boundary.unwrap().generation,
+            last_reset.generation + 1
+        );
+        assert!(check.replay_boundary.unwrap().starts_reset());
         let second = state
             .store
             .script_save(
@@ -1531,6 +1560,11 @@ mod tests {
         assert_eq!(restored.args["band_percent"], 10);
         assert_eq!(restored.tools[0].provider.as_deref(), Some("provider-a"));
         assert_eq!(restored.reads_per_check, 20);
+        assert!(restored.replay_boundary.unwrap().starts_reset());
+        assert_eq!(
+            restored.replay_boundary.unwrap().generation,
+            renewed_trigger.replay_boundary.unwrap().generation + 1
+        );
     }
 
     #[test]
@@ -1579,7 +1613,7 @@ mod tests {
             }),
             state: TriggerPhase::UpdateProposed,
             script_state: json!({}),
-            replay_state_known: true,
+            replay_boundary: Some(crate::scheduled_tasks::types::ReplayBoundary::INITIAL),
             last: None,
             evaluations: Vec::new(),
             counters: Default::default(),

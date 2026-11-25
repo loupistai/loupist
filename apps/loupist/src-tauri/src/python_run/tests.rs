@@ -5,7 +5,7 @@ use std::{
     process::Command,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Mutex, OnceLock,
+        OnceLock,
     },
     time::{Duration, Instant},
 };
@@ -15,7 +15,7 @@ use tempfile::TempDir;
 
 use crate::{broker::BrokerError, web::SearchCancel};
 
-use super::snapshot::Prepared;
+use super::{snapshot::Prepared, PYTHON_WORKER_TEST_LOCK};
 
 const TOKEN: &str = "APPTOKEN-9f3c";
 const README: &str = "readme-original";
@@ -109,11 +109,6 @@ fn conflicts(report: &super::snapshot::WriteReport) -> Vec<(String, String)> {
         .iter()
         .map(|conflict| (conflict.path.clone(), conflict.reason.to_owned()))
         .collect()
-}
-
-fn lock_worker() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn shared_cache() -> &'static Path {
@@ -493,7 +488,7 @@ fn snapshot_file_selection_is_deterministic_with_outputs_then_recency_then_path(
 fn python_runs_large_folders_and_reports_both_file_and_byte_omissions() {
     // Real worker runs are serialized: a second worker compiling at the same time
     // skews the cold/warm cache timing test.
-    let _lock = lock_worker();
+    let _lock = PYTHON_WORKER_TEST_LOCK.blocking_lock();
     require_runtime();
     for files in [true, false] {
         let fixture = sample();
@@ -1014,7 +1009,7 @@ fn host_call_traps_without_leaking_the_runtime_path() {
 
 #[test]
 fn managed_workspace_reads_input_and_copies_back_outputs_without_app_data() {
-    let _guard = lock_worker();
+    let _guard = PYTHON_WORKER_TEST_LOCK.blocking_lock();
     let mut fixture = sample();
     let managed = fixture
         .roots
@@ -1050,7 +1045,7 @@ Path('/workspace/notes/result.txt').write_text('existing-folder')
 
 #[test]
 fn run_python_computes_with_six_offline_packages_and_writes_a_chart() {
-    let _lock = lock_worker();
+    let _lock = PYTHON_WORKER_TEST_LOCK.blocking_lock();
     require_runtime();
     let fixture = sample();
     let marker = fixture.outside.join("marker");
@@ -1081,7 +1076,7 @@ fn run_python_computes_with_six_offline_packages_and_writes_a_chart() {
 
 #[test]
 fn run_python_refuses_paths_network_dns_javascript_and_subprocesses() {
-    let _lock = lock_worker();
+    let _lock = PYTHON_WORKER_TEST_LOCK.blocking_lock();
     require_runtime();
     let fixture = sample();
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
@@ -1174,7 +1169,7 @@ print("scan-done")
 
 #[test]
 fn an_output_flood_keeps_only_the_file_written_before_the_cap() {
-    let _lock = lock_worker();
+    let _lock = PYTHON_WORKER_TEST_LOCK.blocking_lock();
     require_runtime();
     let fixture = sample();
     let code = r#"
@@ -1195,7 +1190,7 @@ open("/workspace/outputs/after.txt", "w").write("after")
 
 #[test]
 fn a_memory_allocation_past_the_cap_does_not_publish_a_file() {
-    let _lock = lock_worker();
+    let _lock = PYTHON_WORKER_TEST_LOCK.blocking_lock();
     require_runtime();
     let fixture = sample();
     let code = r#"
@@ -1211,7 +1206,7 @@ open("/workspace/outputs/allocated.txt", "w").write(str(len(chunk)))
 
 #[test]
 fn cancellation_copies_back_the_file_written_before_the_kill() {
-    let _lock = lock_worker();
+    let _lock = PYTHON_WORKER_TEST_LOCK.blocking_lock();
     require_runtime();
     let fixture = sample();
     let code = r#"
@@ -1265,7 +1260,7 @@ open("/workspace/outputs/after.txt", "w").write("after")
 
 #[test]
 fn queued_calls_cancel_and_time_out_before_creating_a_snapshot() {
-    let _lock = lock_worker();
+    let _lock = PYTHON_WORKER_TEST_LOCK.blocking_lock();
     let fixture = sample();
     runtime().block_on(async {
         // A compiled cache keeps the queue bound at the call's own timeout.
@@ -1311,7 +1306,7 @@ fn queued_calls_cancel_and_time_out_before_creating_a_snapshot() {
 
 #[test]
 fn a_disconnected_caller_still_reaps_and_copies_back_prior_files() {
-    let _lock = lock_worker();
+    let _lock = PYTHON_WORKER_TEST_LOCK.blocking_lock();
     require_runtime();
     let fixture = sample();
     runtime().block_on(async {
@@ -1394,7 +1389,7 @@ fn run_timed(fixture: &Fixture, cache: &Path, timeout: u64) -> (Value, Duration,
 
 #[test]
 fn a_cold_cache_finishes_the_default_chart_and_a_warm_call_reuses_it() {
-    let _lock = lock_worker();
+    let _lock = PYTHON_WORKER_TEST_LOCK.blocking_lock();
     require_runtime();
     let cache = TempDir::new().unwrap();
     let cold_fixture = sample();
@@ -1518,7 +1513,7 @@ async fn only_a_worker_that_ends_by_itself_counts_as_compiled() {
 
 #[test]
 fn a_cold_first_call_compiles_outside_its_timeout_and_a_warm_call_keeps_it() {
-    let _lock = lock_worker();
+    let _lock = PYTHON_WORKER_TEST_LOCK.blocking_lock();
     require_runtime();
     let cache = TempDir::new().unwrap();
     let fixture = sample();
@@ -1559,7 +1554,7 @@ fn a_cold_first_call_compiles_outside_its_timeout_and_a_warm_call_keeps_it() {
 
 #[test]
 fn a_wall_timeout_copies_back_the_file_written_before_the_kill() {
-    let _lock = lock_worker();
+    let _lock = PYTHON_WORKER_TEST_LOCK.blocking_lock();
     require_runtime();
     let fixture = sample();
     let code = r#"
@@ -1580,7 +1575,7 @@ open("/workspace/outputs/after.txt", "w").write("after")
 #[test]
 fn python_ledger_batches_missing_calls_and_only_the_final_round_copies_back() {
     use super::ledger::{LedgerEntry, ReadCall, Response, RunLedger};
-    let _guard = lock_worker();
+    let _guard = PYTHON_WORKER_TEST_LOCK.blocking_lock();
     require_runtime();
     let fixture = sample();
     fs::write(
