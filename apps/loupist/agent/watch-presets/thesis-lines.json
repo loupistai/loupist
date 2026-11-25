@@ -1,0 +1,11 @@
+{
+  "title": "Thesis lines",
+  "terms": "Read the metrics behind your lines for {assets}",
+  "prompt": "This is a scheduled check, and the user is not present. For each followed asset they wrote lines for (what\nwould change their mind), they asked you to read where each line stands.\n\nRead each asset's page for its lines. For each line, read its metric from an original source: a filing, a\ndata result, or a calculation over one. Record the reading with thesis_update and its lineReading, citing\nthat source; the app decides whether a line was crossed and tells the user itself. Do not judge a line from\na headline, and do not record a reading you could not find in an original. Name each line you could not\nread and why.\n\nWhen this run has no previous_run record it is the first: report each line with its reading and date. On\nlater runs, report only a reading that moved materially toward or past its line since the previous run; if\nyou read every line and none did, call schedule_quiet. Answer in {language}.",
+  "report": "when_met",
+  "days": [
+    6
+  ],
+  "hour": 10,
+  "minute": 0
+}

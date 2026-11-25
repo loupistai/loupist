@@ -193,6 +193,8 @@ pub(crate) fn seed_e2e_knowledge_fixture(state: &AppState) -> Result<(), Command
                 handoff_action: None,
                 scheduled: None,
                 link: None,
+                offers: Vec::new(),
+                ask: None,
                 failure_kind: None,
                 host_composed: false,
                 steer: false,

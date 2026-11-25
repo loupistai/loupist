@@ -4,7 +4,7 @@
     {
       "provider": "koreainvestment.market-data",
       "request": {
-        "url": "https://openapivts.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations/investor-trade-by-stock-daily?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=990417&FID_INPUT_DATE_1=20261030&FID_ORG_ADJ_PRC=&FID_ETC_CLS_CODE=",
+        "url": "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations/investor-trade-by-stock-daily?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=990417&FID_INPUT_DATE_1=20261030&FID_ORG_ADJ_PRC=&FID_ETC_CLS_CODE=",
         "tr_id": "FHPTJ04160001"
       },
       "query_match": {
@@ -216,7 +216,7 @@
     {
       "provider": "koreainvestment.market-data",
       "request": {
-        "url": "https://openapivts.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations/daily-short-sale?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=990417&FID_INPUT_DATE_1=20261001&FID_INPUT_DATE_2=20261030",
+        "url": "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations/daily-short-sale?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=990417&FID_INPUT_DATE_1=20261001&FID_INPUT_DATE_2=20261030",
         "tr_id": "FHPST04830000"
       },
       "query_match": {
@@ -366,7 +366,7 @@
     {
       "provider": "koreainvestment.market-data",
       "request": {
-        "url": "https://openapivts.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations/daily-loan-trans?MRKT_DIV_CLS_CODE=3&MKSC_SHRN_ISCD=990417&START_DATE=20261001&END_DATE=20261030&CTS=",
+        "url": "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations/daily-loan-trans?MRKT_DIV_CLS_CODE=3&MKSC_SHRN_ISCD=990417&START_DATE=20261001&END_DATE=20261030&CTS=",
         "tr_id": "HHPST074500C0"
       },
       "query_match": {
@@ -478,7 +478,7 @@
     {
       "provider": "koreainvestment.market-data",
       "request": {
-        "url": "https://openapivts.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations/inquire-price?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=990417",
+        "url": "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations/inquire-price?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=990417",
         "tr_id": "FHKST01010100"
       },
       "response": {

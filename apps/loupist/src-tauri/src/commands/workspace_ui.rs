@@ -14,6 +14,8 @@ use crate::{
 
 use super::{map_internal, map_store};
 
+pub(crate) mod composer_model;
+
 const DIRECTORY: &str = "preferences";
 const FILE_NAME: &str = "workspace-ui.json";
 const MAX_BYTES: usize = 512 * 1024;
@@ -317,14 +319,14 @@ fn require_draft_chat(
 
 /// Keep the canonical Chat lock through its profile-local draft write, so a
 /// deletion either clears the completed write or wins before this final check.
-fn with_draft_chat(
+fn with_draft_chat<T>(
     state: &AppState,
     id: &DraftIdentity,
-    write: impl FnOnce(&mut rusqlite::Connection) -> Result<(), CommandError>,
-) -> Result<(), CommandError> {
+    access: impl FnOnce(&mut rusqlite::Connection) -> Result<T, CommandError>,
+) -> Result<T, CommandError> {
     if id.thread_id == "__empty-chat__" {
         let mut catalog = state.store.lock().map_err(map_store)?;
-        return write(&mut catalog);
+        return access(&mut catalog);
     }
     let mut owner = state
         .store
@@ -333,10 +335,10 @@ fn with_draft_chat(
     require_draft_chat(&owner, id)?;
     let result = if state.store.is_folder_catalog() {
         let mut catalog = state.store.lock().map_err(map_store)?;
-        write(&mut catalog)
+        access(&mut catalog)
     } else {
         // The single-database store already holds the profile connection.
-        write(&mut owner)
+        access(&mut owner)
     };
     drop(owner);
     result
@@ -355,6 +357,7 @@ pub(super) fn clear_chat_drafts(
         "composer_draft_context",
         "composer_draft_files",
         "composer_drafts",
+        "composer_model_selections",
     ] {
         let exists: bool = tx
             .query_row(

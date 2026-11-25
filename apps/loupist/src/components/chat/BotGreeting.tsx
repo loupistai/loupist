@@ -1,6 +1,6 @@
 import i18n, { useTranslation } from "@/i18n";
 import { formatDate, formatNumber } from "@/i18n/format";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ArrowRightIcon, XIcon } from "lucide-react";
 import type { LoupistBridge } from "../../types";
 import { assetTicker, type AssetRow, type StoredAssetQuote } from "../../contracts/assets";
@@ -12,6 +12,7 @@ import { PriceText } from "../market/PriceText";
 import { priceAsOf } from "../market/priceAsOf";
 import { useGo } from "../navigation/Open";
 import { joinMeta } from "./BotPost";
+import { BotScheduleTasks } from "./BotScheduleTasks";
 import "@/styles/bot-thread.css";
 
 const t = i18n.getFixedT(null, "chat");
@@ -73,6 +74,8 @@ function hidePrinciple(loupistId: string) {
 export function BotGreeting({ bridge, loupistId, loupist, onAsk, accountConnected = true, onConnectAccount, onOpenFollowing, refreshRevision = 0 }: Props) {
   useTranslation("chat");
   const go = useGo();
+  const { tasks, refresh } = useContext(BotScheduleTasks);
+  const [watchState, setWatchState] = useState<"busy" | "error" | null>(null);
   // The greeting and date are those of the moment Bot is shown, again each time it is shown.
   const [opened, setOpened] = useState(() => ({ nowMs: Date.now(), revision: refreshRevision }));
   if (opened.revision !== refreshRevision) setOpened({ nowMs: Date.now(), revision: refreshRevision });
@@ -120,6 +123,17 @@ export function BotGreeting({ bridge, loupistId, loupist, onAsk, accountConnecte
       cards.push(ask("markets", t("bot.greeting.ask.markets.label"), t("bot.greeting.ask.markets.hint"), t("bot.greeting.ask.markets.prompt")));
     } else {
       const lead = followed[0]!;
+      const hasWatch = [...(tasks?.values() ?? [])].some(task => task.preset === "filings-and-results" &&
+        task.subjects?.some(subject => "asset" in subject && subject.asset === lead.key));
+      if (accountConnected && tasks && !hasWatch) cards.push({
+        key: "watch", label: i18n.t("briefings:schedule.filings"), hint: i18n.t("briefings:schedule.watchCost"),
+        run: () => {
+          if (watchState === "busy") return;
+          setWatchState("busy");
+          void bridge.scheduledTaskFromPreset({ loupistId, preset: "filings-and-results", subjects: [{ asset: lead.key }] })
+            .then(() => { setWatchState(null); refresh?.(); }, () => setWatchState("error"));
+        },
+      });
       cards.push(ask("status", t("bot.greeting.ask.status.label", { name: lead.name }), t("bot.greeting.ask.status.hint"), t("bot.greeting.ask.status.prompt", { name: lead.name })));
       cards.push(read.briefingOn === false ? setupBriefing
         : ask("briefing", t("bot.greeting.ask.briefing.label"), t("bot.greeting.ask.briefing.hint", { count: followed.length, formattedCount: formatNumber(followed.length) }), t("bot.greeting.ask.briefing.prompt")));
@@ -138,6 +152,7 @@ export function BotGreeting({ bridge, loupistId, loupist, onAsk, accountConnecte
 
   return (
     <section className="bot-greeting" data-bot-greeting="" aria-label={t("bot.greeting.label", { name: loupist.name })} aria-busy={!read}>
+      {watchState === "error" && <p role="alert" className="inline-error">{i18n.t("briefings:schedule.statusFailed")}</p>}
       <header className="bot-greeting-top">
         <LoupistAvatar loupist={loupist} size={56} />
         <span>

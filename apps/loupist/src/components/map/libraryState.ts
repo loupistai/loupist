@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { LoupistBridge, KnowledgeLocation } from "../../types";
-export type LibraryTab = "source" | "journal" | "note";
+export type LibraryTab = "source" | "journal" | "note" | "scripts";
 /** The knowledge surface a Library tab reads: the Journal and research notes are both notes. */
 export const librarySurface = (tab: LibraryTab) => (tab === "source" ? "source" : "note") as "source" | "note";
 /** `requested`: a `requestLibrary` tab the Library has not shown yet; it wins over the reader's location on mount. */

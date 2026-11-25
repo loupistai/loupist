@@ -10,10 +10,15 @@ const header = (props: Partial<Parameters<typeof AppHeader>[0]> = {}) => render(
   onNavigate={vi.fn()} materials={null} workspaceOpen={false} workspacePlacement="side" onWorkspaceToggle={vi.fn()} onWorkspaceSplit={vi.fn()} {...props} /></SidebarProvider>);
 
 it("names the Loupist on Bot and says when it is working", () => {
+  const opened = vi.fn();
+  window.addEventListener("loupist:open-standing", opened);
   const { rerender } = header();
   const banner = screen.getByRole("banner");
   expect(banner).toHaveTextContent(MOCK_LOUPISTS[0]!.name);
   expect(banner.querySelector("h1")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Standing" }));
+  expect(opened).toHaveBeenCalledOnce();
+  window.removeEventListener("loupist:open-standing", opened);
   rerender(<SidebarProvider><AppHeader tab="chat" loupist={MOCK_LOUPISTS[0]!} running title={null}
     onNavigate={vi.fn()} materials={null} workspaceOpen={false} workspacePlacement="side" onWorkspaceToggle={vi.fn()} onWorkspaceSplit={vi.fn()} /></SidebarProvider>);
   expect(banner).toHaveTextContent("Working");

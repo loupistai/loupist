@@ -178,6 +178,7 @@ export type ActivityStep = {
   detailId?: string;
   outputRevision?: number;
   evidence: ChatEvidenceRef[];
+  pythonReads?: { id: string; label: string; status: ChatProgressStatus }[];
 };
 
 /** Steps of the same kind, collapsed into one row; a step with a reason keeps a row of its own. */
@@ -312,6 +313,7 @@ export function activityTurn(message: ChatMessage): ActivityTurn {
   const byKind = new Map<string, ActivityGroup>();
   let stepCount = 0;
   for (const item of message.progress?.items ?? []) {
+    if (item.kind === "tool" && item.origin === "python") continue;
     if (item.kind === "commentary" || (item.kind === "tool" && item.toolName && HIDDEN_TOOLS.has(item.toolName))) continue;
     stepCount += 1;
     const step: ActivityStep = {
@@ -320,6 +322,11 @@ export function activityTurn(message: ChatMessage): ActivityTurn {
       empty: emptyResult(item),
       detailId: item.kind === "tool" ? item.detailId : undefined, outputRevision: item.kind === "tool" ? item.outputRevision : undefined,
       evidence: item.kind === "tool" ? (item.resultIds ?? []).flatMap((id) => evidenceById.get(id) ?? []) : [],
+      ...(item.kind === "tool" && item.toolName === "run_python" ? {
+        pythonReads: message.progress?.items.flatMap(read =>
+          read.kind === "tool" && read.origin === "python" && read.parentStep === item.id
+            ? [{ id: read.id, label: activityStepLabel(read), status: read.status }] : []),
+      } : {}),
     };
     if (step.reason) {
       groups.push({ key: item.id, label: step.label, status: step.status, steps: [step], durationMs: step.durationMs });

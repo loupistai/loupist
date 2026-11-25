@@ -49,17 +49,25 @@ function percentile(values, fraction) { return values.length ? values[Math.max(0
 export function summarize(runs) {
   const counts = {}; const failures = {}; const duration = [];
   const tokens = { input: 0, cachedInput: 0, output: 0, knownRuns: 0, unknownRuns: 0 };
+  let requests = 0;
+  let costEstimate = null;
   for (const run of runs) {
     counts[run.kind] = (counts[run.kind] ?? 0) + 1;
     if (run.status === 'failed') failures[run.kind] = (failures[run.kind] ?? 0) + 1;
     duration.push(run.durationMs);
+    if (Number.isFinite(run.requests)) requests += run.requests;
+    if (Number.isFinite(run.costEstimate?.microusd)) {
+      costEstimate ??= { microusd: 0, fromProvider: true };
+      costEstimate.microusd += run.costEstimate.microusd;
+      costEstimate.fromProvider &&= run.costEstimate.fromProvider === true;
+    }
     if (run.usage && ['input', 'cachedInput', 'output'].every(k => Number.isFinite(run.usage[k]))) {
       for (const key of ['input', 'cachedInput', 'output']) tokens[key] += run.usage[key];
       tokens.knownRuns++;
     } else tokens.unknownRuns++;
   }
   duration.sort((a, b) => a - b);
-  return { total: runs.length, counts, failures, p50Ms: percentile(duration, 0.5), p95Ms: percentile(duration, 0.95), usage: tokens };
+  return { total: runs.length, counts, failures, p50Ms: percentile(duration, 0.5), p95Ms: percentile(duration, 0.95), usage: tokens, requests, costEstimate };
 }
 const safe = value => String(value ?? 'unknown').replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').slice(0, 256);
 export async function main(args) {
@@ -70,7 +78,7 @@ export async function main(args) {
   if (loaded.skipped) process.stderr.write(`Skipped ${loaded.skipped} malformed or incomplete log lines.\n`);
   if (opt.command === 'tail') {
     if (!runs.length) return 'No matching runs.\n';
-    return runs.slice(-20).map(run => `${new Date(run.startedAtMs).toISOString()} ${safe(run.kind)} ${safe(run.status)} ${run.durationMs}ms run=${safe(run.runId)} model=${safe(run.model)} effort=${safe(run.effort)} usage=${run.usage ? `in:${run.usage.input} cached:${run.usage.cachedInput} out:${run.usage.output}` : 'unknown'}${run.failureKind ? ` failure=${safe(run.failureKind)}` : ''}`).join('\n') + '\n';
+    return runs.slice(-20).map(run => `${new Date(run.startedAtMs).toISOString()} ${safe(run.kind)} ${safe(run.status)} ${run.durationMs}ms run=${safe(run.runId)} model=${safe(run.model)} effort=${safe(run.effort)} req=${Number.isFinite(run.requests) ? run.requests : "unknown"} cost=${Number.isFinite(run.costEstimate?.microusd) ? `$${(run.costEstimate.microusd / 1e6).toFixed(6)}(${run.costEstimate.fromProvider ? "billed" : "estimate"})` : "unknown"} usage=${run.usage ? `in:${run.usage.input} cached:${run.usage.cachedInput} out:${run.usage.output}` : 'unknown'}${run.failureKind ? ` failure=${safe(run.failureKind)}` : ''}`).join('\n') + '\n';
   }
   const units = { m: 60_000, h: 3_600_000, d: 86_400_000 };
   const since = Date.now() - Number(opt.since.slice(0, -1)) * units[opt.since.at(-1)];
@@ -80,7 +88,9 @@ export async function main(args) {
   // Usage totals count the Chat record once, including a scheduled record only
   // when its corresponding Chat entry is not in this selection.
   const chats = new Set(runs.filter(r => r.kind === 'chat').map(r => `${r.loupistId}:${r.runId}`));
-  summary.usage = summarize(runs.filter(r => !['scheduled', 'briefing'].includes(r.kind) || !chats.has(`${r.loupistId}:${r.runId}`))).usage;
+  const measured = summarize(runs.filter(r => !['scheduled', 'briefing'].includes(r.kind) || !chats.has(`${r.loupistId}:${r.runId}`)));
+  const { usage: tokens, requests, costEstimate } = measured;
+  Object.assign(summary, { usage: tokens, requests, costEstimate });
   return JSON.stringify(summary, null, 2) + '\n';
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

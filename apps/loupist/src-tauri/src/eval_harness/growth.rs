@@ -169,6 +169,7 @@ async fn briefing(state: &AppState, loupist: &str) -> Result<Value> {
             loupist_id: loupist.into(),
             enabled: true,
             schedule: None,
+            edition: None,
         },
     )?
     .task

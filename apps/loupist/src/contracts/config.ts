@@ -16,6 +16,8 @@ export type ConfigDocument = {
     compaction?: { reserve_tokens?: number; keep_recent_tokens?: number };
     retry?: { enabled?: boolean; max_retries?: number; base_delay_ms?: number; max_agent_delay_ms?: number };
   };
+  /** Preset offers the user declined. Not an execution setting. */
+  bot?: { declined_offers?: string[] };
 };
 
 export type EffectiveConfig = {

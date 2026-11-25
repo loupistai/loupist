@@ -116,7 +116,7 @@ it("updates all three task cards when a tool deletes the task at the same revisi
     use_memory: true, update_memory: false, status: "paused",
   });
   const identity = { loupist_id: loupistId, task_id: proposal.id };
-  const task = await bridge.scheduledTaskConfirm(identity);
+  const task = await bridge.scheduledTaskConfirm({ ...identity, expected_revision: proposal.revision });
   const viewed: TaskScheduleReceipt = {
     task_id: task.id, title: task.title, revision: task.revision, action: "viewed",
     status: task.status, schedule: task.schedule, target: task.target,

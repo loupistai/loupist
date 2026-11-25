@@ -539,3 +539,26 @@ fn editing_the_home_tail_does_not_repost_a_hidden_run_or_handoff() {
         .messages
         .is_empty());
 }
+
+#[test]
+fn consecutive_failures_update_one_home_card_and_unread_item() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = fixture(&temporary);
+    let loupist = "loupist-a";
+    let home = ensure_home_thread(&state, loupist).unwrap();
+    let task = service::create(&state, loupist, draft("Morning notes"), None).unwrap();
+    let first = finish_run(&state, &task.id, "", RunStatus::Failed);
+    assert_eq!(deliver_finished_runs(&state, loupist).unwrap(), 1);
+    let first_post = state.store.get_chat(&home.id).unwrap().unwrap().messages[0].clone();
+    let second = finish_run(&state, &task.id, "", RunStatus::Failed);
+    assert_eq!(deliver_finished_runs(&state, loupist).unwrap(), 1);
+    let updated = state.store.get_chat(&home.id).unwrap().unwrap();
+    assert_eq!(updated.messages.len(), 1);
+    assert_eq!(updated.messages[0].id, first_post.id);
+    let delivery = updated.messages[0].delivery.as_ref().unwrap();
+    assert_eq!(delivery.run_id, second);
+    let streak = delivery.failure_streak.as_ref().unwrap();
+    assert_eq!(streak.id, first);
+    assert_eq!(streak.count, 2);
+    assert_eq!(state.store.inbox_unread_count(loupist).unwrap(), 1);
+}

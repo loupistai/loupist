@@ -79,10 +79,16 @@ pub(crate) static NATIVE_VENDORS: [NativeVendor; 6] = [
         hosts: &[
             "openapi.koreainvestment.com",
             "openapivts.koreainvestment.com",
+            "new.real.download.dws.co.kr",
         ],
         credential: VendorCredential::KisAppKey,
         credential_query: &[],
-        tools: &[ToolMethod::KisOperationSearch, ToolMethod::KisRead],
+        tools: &[
+            ToolMethod::KisOperationSearch,
+            ToolMethod::KisSymbolLookup,
+            ToolMethod::KisDividendCalendar,
+            ToolMethod::KisRead,
+        ],
     },
     NativeVendor {
         source_id: WORLD_BANK_SOURCE_ID,

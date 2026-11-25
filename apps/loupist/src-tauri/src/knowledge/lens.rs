@@ -1903,6 +1903,9 @@ pub struct LearnedPage {
 pub struct LearnedDigest {
     pub message_id: String,
     pub pages: Vec<LearnedPage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub scripts: Option<Vec<crate::store::scripts::ScriptRef>>,
 }
 
 /// What each message filed, derived from the log.
@@ -1959,9 +1962,11 @@ pub(super) fn learned_digest(
                 key,
             });
         }
+        let scripts = crate::store::scripts::learned_for_message(tx, loupist_id, message_id)?;
         digests.push(LearnedDigest {
             message_id: message_id.clone(),
             pages,
+            scripts: (!scripts.is_empty()).then_some(scripts),
         });
     }
     Ok(digests)

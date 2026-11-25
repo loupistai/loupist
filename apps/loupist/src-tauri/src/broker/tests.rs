@@ -229,6 +229,9 @@ fn an_offline_read_has_its_own_error_category_and_marks_the_turn_trace() {
         outcome: crate::domain::ToolTraceOutcome::Error,
         error: Some(error),
         result_bytes: None,
+        origin: None,
+        parent_step: None,
+        python: None,
     };
     let mut trace = crate::domain::ChatToolTrace::default();
     trace.push(entry(provider));

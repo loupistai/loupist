@@ -993,5 +993,43 @@
       "would-break": "Would break",
       "statement": "Statement"
     }
+  },
+  "scripts": {
+    "tab": "Scripts",
+    "search": "Search scripts",
+    "error": "Could not open the script library.",
+    "loading": "Opening scripts",
+    "noMatches": "No matching scripts.",
+    "empty": "Saved Python scripts appear here.",
+    "usedByCount_one": "Used by {{count}} check",
+    "usedByCount_other": "Used by {{count}} checks",
+    "usedBy": "Used by",
+    "lastRun": "Ran {{date}}",
+    "back": "Back to scripts",
+    "outside": "Saved after reading outside text.",
+    "origin": {
+      "chat": "Written in Chat",
+      "run": "Written in a scheduled run",
+      "user": "Edited by you",
+      "template": "From a template"
+    },
+    "title": "Title",
+    "summary": "Summary",
+    "args": "Arguments",
+    "code": "Python code",
+    "saveVersion": "Save new version",
+    "cancel": "Cancel",
+    "test": "Test",
+    "runTest": "Run test",
+    "testStatus": "{{status}} · {{rounds}} Python starts",
+    "edit": "Edit",
+    "export": "Export .py",
+    "delete": "Delete",
+    "deleteQuestion": "Delete all versions of this script?",
+    "pinned": "Used by {{tasks}}. Remove the script from those checks before deleting it.",
+    "versions": "Versions",
+    "version": "v{{version}}",
+    "restore": "Restore as a new version",
+    "invalidArgs": "Enter arguments as a JSON object."
   }
 }

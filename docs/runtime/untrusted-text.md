@@ -12,6 +12,12 @@ news raise it, prices and statements do not), Rust refuses custom-connection cal
 and every schedule change, including create, update, status, Run now, delete and
 stop, for the rest of the turn with
 `untrusted_text_paused`. `run_python` stays allowed on every host, without a card or override.
+
+A read served to Python raises the same tier as the direct tool. A custom
+connection stays paused after third-party text even if the guest asks for it
+in the same batch. Python output carries the turn's trust boundary. A saved
+script records whether its authoring turn read outside text, and using that
+version restores the third-party text tier.
 Native `write` and `edit` refuse an instruction file, and a file with another
 name on disk (a hard link), for the reply; native file tools stay inside the
 Loupist folder in every reply

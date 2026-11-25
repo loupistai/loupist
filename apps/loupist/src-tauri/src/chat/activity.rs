@@ -28,6 +28,18 @@ const UPDATE_INTERVAL_MS: i64 = 500;
 pub struct ChatActivityDetail {
     pub id: String,
     pub tool_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub step_id: Option<String>,
+    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub python: Option<crate::python_run::ledger::PythonStep>,
+    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub python_message_id: Option<String>,
+    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub python_sources: Option<Vec<crate::domain::ChatEvidenceRef>>,
     pub status: ChatProgressStatus,
     pub input: String,
     pub output: String,
@@ -121,6 +133,10 @@ impl ActivityRecorder {
         let detail = ChatActivityDetail {
             id: uuid::Uuid::new_v4().simple().to_string(),
             tool_name: tool_name.into(),
+            step_id: (tool_name == "run_python").then(|| call_id.to_owned()),
+            python: None,
+            python_message_id: None,
+            python_sources: None,
             status: ChatProgressStatus::Running,
             input: bound(&raw_input, MAX_INPUT_BYTES).into(),
             output: String::new(),
@@ -691,6 +707,10 @@ mod tests {
         let mut detail = ChatActivityDetail {
             id: "a".repeat(32),
             tool_name: "read".into(),
+            step_id: None,
+            python: None,
+            python_message_id: None,
+            python_sources: None,
             status: ChatProgressStatus::Running,
             input: String::new(),
             output: String::new(),

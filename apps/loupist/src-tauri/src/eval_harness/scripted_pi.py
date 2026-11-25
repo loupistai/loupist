@@ -142,6 +142,12 @@ for line in sys.stdin:
                 output.write(json.dumps(prompt) + "\n")
             if script.get("stall"):
                 continue
+            if "previous_run" in script:
+                assert bool(envelope.get("previous_run")) == script["previous_run"]
+            if "quiet_result" in script:
+                current_request = prompt
+                quiet = call_tool("schedule_quiet", "schedule.quiet", {})
+                assert quiet["ok"] == script["quiet_result"]
             message = {"role": "assistant", "stopReason": "stop", "content": [{"type": "text", "text": script["answer"]}]}
             emit({"type": "message_start", "message": {"role": "assistant"}})
             emit({"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "delta": script["answer"]}})

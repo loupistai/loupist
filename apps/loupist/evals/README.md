@@ -73,6 +73,7 @@ is the local `grok` CLI (`grok-4.7`, no web search, empty working directory); an
 OpenAI-compatible backend takes `--endpoint` (HTTPS) and `--api-key-env` (the
 variable name, never the key). `--backend codex` runs `codex exec` (`gpt-6-astra` by
 default) without shell, web or user configuration, for agents on an xAI model.
+It reads the prompt from stdin, so large traces are independent of argv limits.
 `--backend claude` judges agents outside the Anthropic family, such as GPT Sol, with
 `claude -p` on the Claude subscription login (`claude-opus-5-5` by default; `--model`
 overrides and `--reasoning-effort` sets `--effort`). It never uses an API key: the
@@ -418,6 +419,9 @@ broker tasks; other test runtimes keep their own fixtures and HTTP servers.
 The native credential entry point resolves a replay bundle within the calling
 runtime, where the replay scope is available.
 The serial eval runner keeps its replay process-wide for Tauri worker tasks.
+Korea Investment replays use the real catalog when the fixture contains a
+request to the real API origin. T-045 uses that origin for investor flows,
+short selling and lending. Other Korea Investment fixtures default to demo.
 S-R09 replays one Korea Investment balance read. The host replaces every reviewed
 account field (quantities, amounts, prices paid and the rates derived from them)
 with `[hidden on this computer]` before the result reaches the model; the
@@ -671,13 +675,15 @@ missing or invalid. Discovery alone does not start the runtime or make network
 requests.
 
 Read `performance.answer_text_ms` (the first streamed text of the final stopping
-assistant message), `performance.total_ms`, `model_rounds`, `round_usage` and each
+assistant message), `performance.total_ms`, `model_rounds`, `compaction_requests`, `round_usage` and each
 tool's `duration_ms`. `first_text_ms` remains the first text of any assistant
 message, including narration before a tool call. Each assistant `message_end`
 counts as a round; its `round_usage` row records `output` and the optional
 provider-reported `reasoning` subset of output. Missing usage stays `null`,
 including reasoning when the provider does not report it. A stopping answer
 without a streamed text delta has no answer-text timing.
+Each `compaction_end` with `result.usage` adds one `compaction_requests`. Add it
+to `model_rounds` for the same request count used in Settings › Usage.
 
 `report` emits `answer_text_ms` p50/p95 alongside `latency_ms` (whole turn), with
 sample and unknown counts. Timing targets over five trials are answer-text p50
@@ -725,7 +731,8 @@ Measures, per turn, from the trace JSONL:
 - whole-turn time: `performance.total_ms`; a `first_text_ms` earlier than
   `answer_text_ms` means text was written between tool calls;
 - model rounds: `model_rounds` and `round_usage`, top-level fields beside
-  `performance` (one per assistant `message_end`);
+  `performance` (one per assistant `message_end`), plus `compaction_requests`
+  for completed compactions with usage;
 - calls by tool and failed calls: `tool_calls` (`name`, `args`, `outcome`,
   `error_code`) per turn, and the report's `trajectory` (steps, calls, errors,
   redundant successes, recovered errors) over the suite;
@@ -1003,10 +1010,13 @@ exactly one host briefing throughout; no custom task is created.
 `agent/suites/scheduling-v1.json` covers multi-task creation, selective changes,
 pause/resume/delete, discussion without creation, explicit time zones, one-time
 execution, task-owned versus fresh sessions and ambiguous deletion. The
-`scheduled_tasks` assertion matches the canonical SQLite snapshot captured after each
-turn (exact count plus partial field matches); an assistant's claim of saving is
-not evidence. A session named `bot` uses the persisted home conversation. Clear requests for active schedules register immediately. A research-session probe uses the handoff tool. Unit and native checks separately cover admission, overlap
-prevention, session reuse and receipt rendering.
+`scheduled_tasks` assertion checks the canonical SQLite snapshot captured after
+each turn for an exact task count and partial field matches. The private trace
+keeps each task's identity, prompt hash and full saved prompt, subject to
+credential redaction. A session named `bot` uses the persisted home conversation.
+Clear requests for active schedules register immediately. A research-session
+probe uses the handoff tool. Unit and native checks separately cover admission,
+overlap prevention, session reuse and receipt rendering.
 
 Edit loop: run the `regression` tag, grade, inspect failed state or tool arguments,
 fix the owning layer and rerun; then run the untouched `validation` tag. A

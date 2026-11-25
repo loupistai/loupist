@@ -62,6 +62,8 @@ const STORE_STEPS: &[Step] = &[
     store_9_to_10,
     store_10_to_11,
     store_11_to_12,
+    store_12_to_13,
+    store_13_to_14,
 ];
 /// Knowledge steps; index 0 upgrades `KNOWLEDGE_BASELINE_VERSION` by one.
 const KNOWLEDGE_STEPS: &[Step] = &[
@@ -1486,9 +1488,12 @@ pub(crate) fn restore_baseline_for_test(connection: &mut Connection) {
     transaction
         .execute_batch(&format!(
             "DROP TABLE assets;
+             DROP TABLE scripts;
              ALTER TABLE knowledge_source_captures DROP COLUMN provided_json;
              DROP INDEX IF EXISTS knowledge_spans_by_id;
              DROP INDEX IF EXISTS knowledge_representations_by_id;
+             DROP INDEX IF EXISTS one_briefing_per_edition;
+             CREATE UNIQUE INDEX one_briefing_per_loupist ON scheduled_tasks(loupist_id) WHERE json_extract(data_json,'$.kind')='briefing';
              PRAGMA user_version = {STORE_BASELINE_VERSION};
              UPDATE knowledge_schema SET version = {KNOWLEDGE_BASELINE_VERSION};"
         ))
@@ -1497,6 +1502,39 @@ pub(crate) fn restore_baseline_for_test(connection: &mut Connection) {
     connection
         .execute_batch("PRAGMA foreign_keys = ON")
         .unwrap();
+}
+
+/// One briefing task per edition. Morning rows written before editions stay morning.
+fn store_13_to_14(tx: &Transaction<'_>) -> StoreResult<()> {
+    tx.execute_batch(
+        r#"
+UPDATE scheduled_tasks SET data_json = json_set(data_json, '$.edition', 'morning')
+ WHERE json_extract(data_json, '$.kind') = 'briefing'
+   AND json_extract(data_json, '$.edition') IS NULL;
+DROP INDEX IF EXISTS one_briefing_per_loupist;
+CREATE UNIQUE INDEX one_briefing_per_edition ON scheduled_tasks(loupist_id, coalesce(json_extract(data_json,'$.edition'), 'morning')) WHERE json_extract(data_json,'$.kind')='briefing';
+"#,
+    )?;
+    Ok(())
+}
+
+/// S1. Frozen schema for the first script library.
+fn store_12_to_13(tx: &Transaction<'_>) -> StoreResult<()> {
+    tx.execute_batch(
+        r#"
+CREATE TABLE scripts (
+    loupist_id TEXT NOT NULL REFERENCES loupist_profiles(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    sha256 TEXT NOT NULL,
+    created_at_ms INTEGER NOT NULL,
+    code TEXT NOT NULL,
+    data_json TEXT NOT NULL,
+    PRIMARY KEY (loupist_id, name, version)
+) STRICT;
+"#,
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]

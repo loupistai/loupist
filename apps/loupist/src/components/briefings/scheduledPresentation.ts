@@ -5,6 +5,9 @@ import type { SkippedTool } from "../../contracts/scheduled";
 import { formatDate, formatDateTime, formatNumber, formatRelative, formatTime } from "@/i18n/format";
 import type { ScheduledCadence } from "../../types";
 
+export const unreadableTask = (task: { prompt: string; last_error: string | null }) =>
+  task.prompt === "" && task.last_error === "unreadable_task";
+
 export function skippedToolNames(tools: readonly SkippedTool[]) {
   return {
     ordinary: tools.filter(tool => tool.reason !== "keychain_permission_required").map(tool => tool.name),
@@ -42,8 +45,11 @@ const HOST_BRIEFING_TITLE = "Briefings";
  * The name shown for a scheduled task. A title the user or the Loupist saved is
  * kept. The host defaults are shown in the reader's language, without a morning-only label.
  */
-export function scheduledTaskTitle(kind: string, title: string) {
+const HOST_EVENING_TITLE = "Evening briefing";
+
+export function scheduledTaskTitle(kind: string, title: string, edition?: string | null) {
   const saved = title.trim();
+  if (kind === "briefing" && (edition === "evening" || saved === HOST_EVENING_TITLE)) return i18n.t("briefings:evening");
   if (kind === "briefing" && (!saved || saved === HOST_BRIEFING_TITLE)) return i18n.t("briefings:schedule.kind.briefing");
   return title;
 }

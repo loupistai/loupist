@@ -3,7 +3,7 @@ use crate::commands::tool_executor::{StagedResearch, StagedResearchJournal};
 
 #[test]
 fn quiet_finalize_preserves_the_chat_timestamp_and_hides_a_fresh_scheduled_session() {
-    use crate::scheduled_tasks::types::{Schedule, TaskDraft, TaskStatus, TaskTarget};
+    use crate::scheduled_tasks::types::{RunStatus, Schedule, TaskDraft, TaskStatus, TaskTarget};
     let directory = tempfile::tempdir().unwrap();
     let state = AppState::for_test(directory.path().join("app"));
     let store = &state.store;
@@ -27,10 +27,19 @@ fn quiet_finalize_preserves_the_chat_timestamp_and_hides_a_fresh_scheduled_sessi
             100,
         )
         .unwrap();
+    // A task's first run must report. A later run can still start a fresh Chat.
+    let (first, ()) = store
+        .scheduled_task_claim_with(loupist, &task.id, 150, true, |_| Ok(()))
+        .unwrap()
+        .unwrap();
+    store
+        .scheduled_task_finish(loupist, &first.run.run_id, RunStatus::Succeeded, None, 175)
+        .unwrap();
     let (claim, ()) = store
         .scheduled_task_claim_with(loupist, &task.id, 200, true, |_| Ok(()))
         .unwrap()
         .unwrap();
+    assert_ne!(claim.run.thread_id, first.run.thread_id);
     let expected = store
         .get_chat(claim.run.thread_id.as_deref().unwrap())
         .unwrap()
@@ -142,6 +151,8 @@ fn finalized_learning_report_opens_canonical_sources_lens_and_journal_even_when_
         output_tokens: 20,
         cache_read_tokens: 100,
         cache_write_tokens: 0,
+        model_requests: None,
+        cost_estimate: None,
     };
     state
         .store

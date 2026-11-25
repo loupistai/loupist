@@ -78,6 +78,25 @@ it("preserves native cancellation and missing results", async () => {
   expect(invoke).toHaveBeenLastCalledWith("site_favicon", { url: "https://example.com" });
 });
 
+it("reads the native clipboard image without passing renderer clipboard data", async () => {
+  const bridge = createLoupistBridge();
+  vi.mocked(invoke).mockResolvedValue({ status: "tooLarge" });
+  expect(await bridge.clipboardReadImage()).toEqual({ status: "tooLarge" });
+  expect(invoke).toHaveBeenLastCalledWith("clipboard_read_image", undefined);
+});
+
+it("passes a Chat's model and the resolved send separately to the host", async () => {
+  const bridge = createLoupistBridge();
+  const chat = { loupist_id: "loupist-a", thread_id: "chat-a" };
+  const lastSent = { modelProfileId: "luna", thinkingLevel: "medium", runOptions: {} };
+  const request = { kind: "set" as const, chat, selection: null, lastSent };
+  await bridge.chatComposerModelWrite(request);
+  expect(invoke).toHaveBeenLastCalledWith("chat_composer_model_write", { request });
+  vi.mocked(invoke).mockResolvedValue(lastSent);
+  expect(await bridge.chatComposerModelRead({ chat: null })).toEqual(lastSent);
+  expect(invoke).toHaveBeenLastCalledWith("chat_composer_model_read", { request: { chat: null } });
+});
+
 it("streams observed commands through the on_event channel", async () => {
   const bridge = createLoupistBridge();
   const observer = vi.fn();

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
-import type { ChatActivityDetail } from "../../types";
+import type { ChatActivityDetail, LoupistBridge } from "../../types";
 import { ChatActivityDetailView } from "./ChatActivityDetailView";
 
 const detail: ChatActivityDetail = { id: "activity", tool_name: "run_python", status: "succeeded", input: "print(391)", output: "391", truncated: false, started_at_ms: 10, finished_at_ms: 20, file_path: "outputs/margin.png" };
@@ -70,4 +70,20 @@ it.each([
   await userEvent.click(await screen.findByText(summary));
   expect(screen.getByText(text)).toBeVisible();
   expect(screen.queryByText(JSON.stringify(input))).not.toBeInTheDocument();
+});
+
+it("shows nested Python reads and replays the selected step from stored data", async () => {
+  const python = { code: "print(42)", stdout: "42\n", stderr: "", status: "completed", rounds: 2,
+    reads: [{ tool: "dart_financials", status: "ok", provider: "OpenDART", asOf: "2026-09-30" }] };
+  const replay = vi.fn().mockResolvedValue({ step: python, matches: true, stdout: "42\n", stderr: "" });
+  const bridge = { chatActivityRead: vi.fn().mockResolvedValue({
+    id: "activity", tool_name: "run_python", input: '{}', output: "", status: "succeeded",
+    python, python_message_id: "answer", step_id: "call-1",
+  }), pythonStepReplay: replay } as unknown as LoupistBridge;
+  render(<ChatActivityDetailView bridge={bridge} threadId="chat" loupistId="scope" detailId="activity" />);
+  expect(await screen.findByRole("heading", { name: "Show the math" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Read from Python" })).toHaveTextContent("OpenDART");
+  fireEvent.click(screen.getByRole("button", { name: "Run again on the same data" }));
+  expect(replay).toHaveBeenCalledWith({ chatId: "chat", messageId: "answer", stepId: "call-1" });
+  expect(await screen.findByText("Same output as the original run.")).toBeInTheDocument();
 });

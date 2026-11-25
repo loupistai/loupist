@@ -1,5 +1,10 @@
 [
   {
+    "key": "en.briefings.schedule.notifyDigest",
+    "term": "Digest",
+    "reason": "Named notification policy that groups results for the next briefing"
+  },
+  {
     "key": "en.briefings.following.securityType.depositaryReceipt",
     "term": "Receipt",
     "reason": "Standard name of the financial instrument"

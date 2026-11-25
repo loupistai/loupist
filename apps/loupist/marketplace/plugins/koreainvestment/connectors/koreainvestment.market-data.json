@@ -47,7 +47,8 @@
   "permissions": {
     "network_hosts": [
       "openapi.koreainvestment.com",
-      "openapivts.koreainvestment.com"
+      "openapivts.koreainvestment.com",
+      "new.real.download.dws.co.kr"
     ],
     "credential_kinds": [
       "app_key",

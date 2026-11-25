@@ -267,6 +267,25 @@ async function runSlowHandoffJourney() {
   await capture("handoff-stopped-card");
 }
 
+async function verifyScriptedUsage() {
+  const link = await displayed('#main-panel-chat article[aria-label^="New link: "]');
+  const title = (await link.getAttribute("aria-label")).replace(/^New link: /, "Link: ");
+  await clickButton("Look into it again", link);
+  await displayed(`#main-panel-chat article[aria-label=${JSON.stringify(`Research: ${title}`)}][data-status="done"]`, 45_000);
+  await openMainTab(browser, "settings");
+  await clickButton("Usage", await displayed("nav[aria-label='Settings sections']"));
+  // The scripted Pi emits a stopping assistant message without token usage.
+  const usage = /^(\d[\d,]*) requests?$/u;
+  await browser.waitUntil(async () => {
+    const statuses = await browser.$$("#main-panel-settings [role='status']");
+    for (const status of statuses) {
+      const match = (await status.getText()).match(usage);
+      if (match && Number(match[1].replaceAll(",", "")) >= 1) return true;
+    }
+    return false;
+  }, { timeout: 15_000, timeoutMsg: "Usage did not count the scripted answer's request" });
+}
+
 async function selectOption(triggerSelector, optionText) {
   const trigger = await displayed(triggerSelector);
   await trigger.click();
@@ -331,6 +350,7 @@ try {
 
   // The knowledge fixture's Loupist holds the Map link; the next step removes it.
   if (slowHandoff) await step("a Bot hand-off runs on its own with nothing in Bot, streams into its session, takes guidance, stops and is posted once", runSlowHandoffJourney);
+  if (slowHandoff) await step("Usage counts the completed scripted hand-off", verifyScriptedUsage);
   // The fixture model takes images; under --release-renderer this runs with the shipped policy enforced.
   if (slowHandoff) await step("an image and a file from the + menu's file input are previewed, sent and shown on the sent message", async () => {
     await openBot();

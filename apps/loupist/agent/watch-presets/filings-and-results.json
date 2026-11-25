@@ -1,0 +1,15 @@
+{
+  "title": "Filings and results",
+  "terms": "Material filings, results and guidance for {assets}",
+  "prompt": "This is a scheduled check, and the user is not present. They asked to be told when a company among {assets}\nfiles or reports something that matters to why they follow it.\n\nFor each company, find what was filed or announced since the previous run (over the past week when there\nwas none): results, a change in guidance, a material filing, a dividend, buyback or issuance, a change of\nmanagement or auditor, a deal. Prefer the filing or the company's own release; a news report stands in only\nwith its publisher and date. What matters is yours to judge from the reasons and lines the user wrote for\nthat asset: a routine filing that changes nothing is not worth their attention. For each item give what it\nsays with its date and source link, keep the publication date apart from the event date, and say in a\nsentence what it means for the user's reasons. Name the companies you could not check.\n\nWhen this run has no previous_run record it is the first: report the most recent material item for each\ncompany, so the user sees what this check reads. On later runs, if you checked every company and found\nnothing that matters, call schedule_quiet. Answer in {language}.",
+  "report": "when_met",
+  "days": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "hour": 18,
+  "minute": 30
+}

@@ -2,12 +2,17 @@
 // LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract
 
 import type { Basis, BasisChip, IdeaState, LensKind, Origin, SectionKey } from "../knowledge/lens_page";
+import type { ScriptRef } from "../store/scripts";
 
 export type AnchorRole = "subject" | "mention" | "applied";
 
 export type AnchorView = { role: AnchorRole, nodeId: string | null, name: string };
 
-export type LearnedDigest = { messageId: string, pages: Array<LearnedPage> };
+export type LearnedDigest = {
+  messageId: string,
+  pages: Array<LearnedPage>,
+  scripts?: Array<ScriptRef>,
+};
 
 export type LearnedOutcome = { opId: string, outcome: string, key?: string };
 

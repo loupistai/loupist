@@ -493,13 +493,14 @@ pub(super) fn save_credential_for_state(
 pub(super) fn credential_verification_outcome<T>(
     result: &Result<T, crate::finance_data::FinanceDataError>,
 ) -> crate::finance_credentials::VerificationOutcome {
-    use crate::finance_data::FinanceDataError;
+    use crate::finance_data::{FinanceDataError, KisReadError};
 
     match result {
         Ok(_) => crate::finance_credentials::VerificationOutcome::Verified,
         Err(FinanceDataError::CredentialRejected(_))
         | Err(FinanceDataError::DartKeyRefused(_))
         | Err(FinanceDataError::KisCredentialRejected(_))
+        | Err(FinanceDataError::KisRead(KisReadError::CredentialRejected))
         | Err(FinanceDataError::ServiceApprovalRequired { .. })
         | Err(FinanceDataError::InvalidQuery(_)) => {
             crate::finance_credentials::VerificationOutcome::Rejected
@@ -511,7 +512,7 @@ pub(super) fn credential_verification_outcome<T>(
 pub(super) fn credential_verification_error(
     error: &crate::finance_data::FinanceDataError,
 ) -> CommandError {
-    use crate::finance_data::FinanceDataError;
+    use crate::finance_data::{FinanceDataError, KisReadError};
 
     match error {
         FinanceDataError::KisCredentialRejected(diagnostic) => CommandError::new(
@@ -527,6 +528,7 @@ pub(super) fn credential_verification_error(
         ),
         FinanceDataError::CredentialRejected(_)
         | FinanceDataError::DartKeyRefused(_)
+        | FinanceDataError::KisRead(KisReadError::CredentialRejected)
         | FinanceDataError::InvalidQuery(_)
         | FinanceDataError::ServiceApprovalRequired { .. } => CommandError::new(
             "credential_rejected",

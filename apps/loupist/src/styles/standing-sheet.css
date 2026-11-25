@@ -1,0 +1,45 @@
+/* Standing instructions: Bot memory the user can read, edit and forget, plus each task's usage. */
+.standing-scrim {
+  position: absolute; inset: 0; z-index: var(--gg-z-panel);
+  background: var(--gg-color-bg-overlay); opacity: 0.5;
+}
+.standing-sheet {
+  position: absolute; top: 0; right: 0; bottom: 0; z-index: var(--gg-z-panel);
+  display: flex; flex-direction: column; width: min(420px, 92%); min-width: 0;
+  border-left: 1px solid var(--gg-color-border-subtle);
+  border-bottom: 1px solid var(--gg-color-border-subtle);
+  background: var(--gg-color-bg-raised); color: var(--gg-color-text-primary);
+  box-shadow: var(--gg-shadow-lg); outline: none;
+}
+.standing-sheet:focus-visible { outline: none !important; }
+.standing-sheet-top {
+  display: flex; align-items: center; gap: var(--gg-space-2);
+  padding: var(--gg-space-3) var(--gg-space-3) var(--gg-space-2);
+  border-bottom: 1px solid var(--gg-color-border-subtle);
+}
+.standing-sheet-top h2 {
+  flex: 1 1 auto; min-width: 0; margin: 0;
+  font-size: var(--gg-text-body); font-weight: var(--gg-weight-strong);
+}
+.standing-sheet-body {
+  display: flex; flex: 1 1 0; flex-direction: column; gap: var(--gg-space-4); min-height: 0;
+  padding: 14px var(--gg-space-4) var(--gg-space-5); overflow-y: auto; overscroll-behavior: contain;
+}
+.standing-sheet-intro, .standing-sheet-status { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.standing-list, .standing-usage { display: flex; flex-direction: column; gap: var(--gg-space-3); margin: 0; padding: 0; list-style: none; }
+.standing-entry, .standing-usage li {
+  display: flex; flex-direction: column; gap: 6px; min-width: 0;
+  padding-bottom: var(--gg-space-3); border-bottom: 1px solid var(--gg-color-border-subtle);
+}
+.standing-entry-kind { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-semibold); }
+.standing-entry p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.standing-entry-meta { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.standing-entry-actions, .standing-usage-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); }
+.standing-entry textarea {
+  width: 100%; min-height: 4.5rem; resize: vertical; box-sizing: border-box;
+  font: inherit; color: inherit;
+}
+.standing-usage h3 { margin: 0; font-size: var(--gg-text-control); font-weight: var(--gg-weight-strong); }
+.standing-usage-line { justify-content: space-between; }
+.standing-usage-line span:last-child { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
+.standing-error { margin: 0; color: var(--gg-color-danger, var(--gg-color-text-primary)); }

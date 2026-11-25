@@ -46,7 +46,8 @@ restart or a cold rebuild, preserve the current goal and corrections, completed 
 pending work, data revisions, evidence IDs, permissions and next exact reads. Test
 continuation on work that depends on earlier context. In Bot, your Loupist carries
 the user's preferences, decisions and open requests past the cold transcript bound in [Bot memory](../ui/home-thread.md#bot-memory)
-(tool `bot_memory`).
+(tool `bot_memory`). An unattended run with Memory on receives the preference
+entries as `standing_preferences` ([context bounds](context.md#context-assembly-and-bounds)).
 
 During a reply, the host freezes the current request and full turn envelope in the
 private Pi bootstrap. After Pi compacts in this reply's process, the extension
@@ -103,7 +104,12 @@ time, up to 60 of the run's Loupist's followed assets with saved-read state, up 
 principles, up to 40 growth summaries, up to five due Journal pointers, and
 disputed entity IDs. The run chooses its own reads under the unattended
 allowlist. The briefing and delegated previews take the first prose paragraph
-after headings, tables and lists.
+after headings, tables and lists. With Memory on, the same envelope carries
+`standing_preferences`: the home Thread's `preference` entries only. A decision,
+open request, context note or review excerpt is not delivered, and neither is
+text the user wrote in a private turn and never stored. A changed preference
+changes the envelope digest, so the next briefing sees it and nothing else in
+Bot memory does.
 
 A completed delegated answer without prose uses its research title in Bot.
 Opening the research session shows the complete answer. A Bot-initiated
@@ -123,7 +129,23 @@ selected assets when a source supports them.
 
 Interactive Bot and research turns receive only `interface.display_currency`
 when set. They can read product and navigation labels through
-`interface_labels` with or without Memory. The same admitted appearance drives
+`interface_labels` with or without Memory. A turn the user wrote also names
+`current_message_script`, the ISO 15924 code of the script most of the user's
+message is written in (`Latn`, `Hang`, `Jpan`, `Hani`, `Cyrl` and others), as the
+block right before `live_time`, next to the message
+(`agent_harness/message_script.rs`). It counts letters in words and leaves out
+links, tickers and acronyms ("NVDA", "HBM", "Q3"); a message without a script
+holding three in five of its letters names none. The script, not a language:
+letters tell Hangul from Latin for certain, English from French not. In the v0.1.6
+acceptance an English question in a Loupist with a Korean focus was answered in
+English with its progress notes in Korean; the block gives the notes the
+question's script, which the Loupist's name, focus and saved material do not set.
+It changes with each message, so it is outside the envelope digest and an
+abbreviated envelope carries it, like `previous_run`. It has no hint of its own:
+SYSTEM.md's Communication section says what it is and that a language the user asks
+for, or their own words around quoted or pasted material, wins over it. A message of pasted
+material in one language with a short request in another names the pasted
+material's script. The same admitted appearance drives
 every tool round and a same-turn retry. The next turn reads appearance again.
 Scheduled, delegated and host-started World-link turns receive the resolved
 `interface.language`, localized product and navigation `names` and the optional currency. For scheduled

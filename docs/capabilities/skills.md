@@ -11,7 +11,7 @@ disk. The app neither lists nor loads them while the feature is off. Launch a lo
 debug build with `LOUPIST_DEV_USER_SKILLS=1` to restore management, workspace Skill
 discovery and the original Skill write wording in the agent prompt.
 
-Fixed app procedures are World (Skill id `world`), Lens (`lens`), Journal (`journal`)
+The bundled `triggers` Skill states the check contract. Fixed app procedures are World (Skill id `world`), Lens (`lens`), Journal (`journal`)
 and visualization (`visualize`). Built-in tools allowed for the turn are ready
 without `capability_load`; data connections still load their tool inventories and
 keep their grants and Memory permissions. Optional

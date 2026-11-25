@@ -300,6 +300,7 @@ fn graph_usage(usage: Option<&Value>) -> Value {
         "input":usage.and_then(|u| u.get("input")).and_then(Value::as_u64),
         "cacheRead":usage.and_then(|u| u.get("cacheRead")).and_then(Value::as_u64),
         "cacheWrite":usage.and_then(|u| u.get("cacheWrite")).and_then(Value::as_u64),
+        "cost":usage.and_then(|u| u.get("cost")),
         "certainty":if input.is_some() && output.is_some() {"accounted"} else {"uncertain"}})
 }
 

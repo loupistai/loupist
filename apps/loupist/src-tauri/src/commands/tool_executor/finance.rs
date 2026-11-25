@@ -30,14 +30,13 @@ impl Default for ProviderPace {
 }
 
 impl ProviderPace {
-    async fn handles(pace: &Mutex<Self>, provider: &str) -> (Arc<Semaphore>, Arc<Mutex<Instant>>) {
+    async fn clock(pace: &Mutex<Self>, provider: &str) -> Arc<Mutex<Instant>> {
         let mut state = pace.lock().await;
-        let clock = state
+        state
             .clocks
             .entry(provider.to_owned())
             .or_insert_with(|| Arc::new(Mutex::new(Instant::now())))
-            .clone();
-        (state.capacity.clone(), clock)
+            .clone()
     }
 
     async fn space(clock: &Mutex<Instant>) {
@@ -54,19 +53,23 @@ impl ProviderPace {
         pace: &Mutex<Self>,
         provider: &str,
     ) -> Result<OwnedSemaphorePermit, BrokerError> {
-        let (capacity, clock) = Self::handles(pace, provider).await;
-        let permit = capacity
-            .acquire_owned()
-            .await
-            .map_err(|_| BrokerError::Execution("finance reads are closed".into()))?;
-        Self::space(&clock).await;
+        let permit = Self::acquire_capacity(pace).await?;
+        Self::wait(pace, provider).await;
         Ok(permit)
     }
 
+    async fn acquire_capacity(pace: &Mutex<Self>) -> Result<OwnedSemaphorePermit, BrokerError> {
+        let capacity = pace.lock().await.capacity.clone();
+        capacity
+            .acquire_owned()
+            .await
+            .map_err(|_| BrokerError::Execution("finance reads are closed".into()))
+    }
+
     /// Spacing for an additional request inside a call that already holds
-    /// its concurrency permit (KRX range dates, KIS continuation pages).
-    async fn wait(pace: &Mutex<Self>, provider: &'static str) {
-        let (_, clock) = Self::handles(pace, provider).await;
+    /// its concurrency permit, such as the next KRX range date.
+    async fn wait(pace: &Mutex<Self>, provider: &str) {
+        let clock = Self::clock(pace, provider).await;
         Self::space(&clock).await;
     }
 }
@@ -74,7 +77,7 @@ impl ProviderPace {
 /// Provider and transport diagnostics may quote a credential, URL or private
 /// file. Only host-owned categories and repairs reach the model.
 fn finance_error(error: crate::finance_data::FinanceDataError) -> BrokerError {
-    use crate::finance_data::FinanceDataError as E;
+    use crate::finance_data::{FinanceDataError as E, KisReadError};
     match error {
         // The model must react as it would to a provider with nothing for this exact
         // request; the harness marker stays in the message for traces and fixtures.
@@ -117,6 +120,12 @@ fn finance_error(error: crate::finance_data::FinanceDataError) -> BrokerError {
             "OpenDART's daily request limit for this key has been reached (status 020).".into(),
             "Stop calling OpenDART for this turn. Answer from what was already read and say that OpenDART's daily limit was reached; it resets tomorrow.",
         ),
+        E::RateLimitedWithRetry { retry_after, .. } => BrokerError::ProviderFailure {
+            kind: ProviderFailureKind::RateLimited,
+            message: "The finance provider reported a rate limit.".into(),
+            next: "Wait for the provider before calling again.".into(),
+            retry_after: Some(retry_after),
+        },
         E::ProviderMaintenance(provider) => provider_failure(
             ProviderFailureKind::Unavailable,
             format!("{provider} is stopped for maintenance (status 800)."),
@@ -132,15 +141,54 @@ fn finance_error(error: crate::finance_data::FinanceDataError) -> BrokerError {
         ),
         E::Network(_) | E::NetworkSafe(_) =>
             BrokerError::Execution("The finance data request did not complete (a network failure, not a refusal). Try once more or use another source.".into()),
+        // The broker's message names the limit; its next asks for less or another source.
+        E::ResultTooLarge { limit_bytes } => BrokerError::ResultTooLarge {
+            bytes: None,
+            limit_bytes: Some(limit_bytes),
+        },
         E::Provider(_) => BrokerError::Execution("The finance provider rejected the request. Check its symbol, route and date range before retrying.".into()),
         E::Configuration(_) => BrokerError::Execution("The finance connection's setup is unavailable. Check the connection before retrying.".into()),
         E::KisResponseContract { .. } => BrokerError::Execution("The finance provider returned an unsupported response. Use another source or update Loupist.".into()),
-        E::KisCredentialRejected(_) => BrokerError::Execution("The finance provider rejected authentication. Check the connection's credentials and access.".into()),
+        // Token issuance refused the key pair, unlike a rejected session token.
+        E::KisCredentialRejected(_) => provider_failure(
+            ProviderFailureKind::CredentialRejected,
+            "Korea Investment refused the saved app key or app secret when issuing an access token.".into(),
+            KIS_KEY_NEXT,
+        ),
+        // The session token, renewed once, not the saved key.
+        E::KisRead(KisReadError::TokenRejected) => provider_failure(
+            ProviderFailureKind::TokenRejected,
+            "Korea Investment rejected this read's access token, and renewing it did not help. The saved app key and secret are not the cause.".into(),
+            "Try this read once more after a minute, since Korea Investment issues one token a minute; if it is rejected again, continue without Korea Investment and say so.",
+        ),
+        E::KisRead(KisReadError::CredentialRejected) => provider_failure(
+            ProviderFailureKind::CredentialRejected,
+            "Korea Investment refused the saved app key or app secret.".into(),
+            KIS_KEY_NEXT,
+        ),
+        E::KisRead(KisReadError::PermissionRequired) => BrokerError::ProviderApprovalRequired {
+            provider: crate::finance_data::KIS_SOURCE_ID.into(),
+            services: vec!["this Korea Investment API service".into()],
+            next: "The key works, but its KIS Developers app is not permitted to use this API. The user enables the service for that app in KIS Developers (apiportal.koreainvestment.com) and asks again. Do not call this operation again this turn; use another operation or source meanwhile.".into(),
+        },
+        E::KisRead(KisReadError::MarketCode) => BrokerError::invalid(
+            "",
+            "Korea Investment refused the market code this read sent (OPSQ2001)",
+        )
+        .with_next("Check the operation's market or exchange code field in kis_operation_search's schema (J for KRX stocks, for example) against the market_code or exchange_code kis_symbol_lookup returned for the symbol, then call again with that code."),
+        E::KisRead(KisReadError::FieldLength) => BrokerError::invalid(
+            "",
+            "Korea Investment refused the length of a value this read sent (OPSQ2002)",
+        )
+        .with_next("Give each field in the form the operation's schema states (a six-digit domestic code, dates as YYYYMMDD, one code per field) and call again."),
         E::KisRateLimited(_) => BrokerError::Execution("The finance provider reported a rate limit. Stop calling it for this turn.".into()),
         // These variants carry static host-owned messages only.
         error @ (E::InvalidQuery(_) | E::CredentialRejected(_) | E::RateLimited(_) | E::NoData(_) | E::InvalidResponse) => BrokerError::Execution(error.to_string()),
     }
 }
+
+/// The saved KIS key or secret was refused: the user fixes it in the card.
+const KIS_KEY_NEXT: &str = "Ask the user to check the app key and secret for this connection's environment (real or demo): if connection_setup is available, call it with {id: \"koreainvestment.market-data\"} so they can do it from a card; otherwise point them to Connections. Do not call Korea Investment again this turn.";
 
 /// A successful provider response is still outside text. Reject an echoed
 /// key before it can reach a result, retained dataset, citation or export.
@@ -230,6 +278,7 @@ fn provider_failure(kind: ProviderFailureKind, message: String, next: &'static s
     BrokerError::ProviderFailure {
         kind,
         message,
+        retry_after: None,
         next: next.into(),
     }
 }
@@ -543,13 +592,79 @@ impl AppToolExecutor {
             .provider_credential_bundle(crate::finance_data::KIS_SOURCE_ID)
             .await?;
         let profile = Self::kis_account_profile(&credential)?;
+        let environment = self.kis_environment()?;
         let result = self
             .state
             .finance_data
-            .kis_operation_search(Value::Object(search), profile.as_ref())
+            .kis_operation_search(Value::Object(search), &environment, profile.as_ref())
             .map_err(finance_error);
         drop(credential);
         result
+    }
+
+    pub(super) async fn kis_symbol_lookup(&self, params: Value) -> Result<Value, BrokerError> {
+        self.require_capability(crate::finance_data::KIS_SOURCE_ID)?;
+        let output = self
+            .state
+            .finance_data
+            .kis_symbol_lookup(params)
+            .await
+            .map_err(finance_error)?;
+        self.validate_provider_tool_output(output, ToolMethod::KisSymbolLookup)
+    }
+
+    fn kis_environment(&self) -> Result<String, BrokerError> {
+        crate::marketplace::connector_config_value(
+            &self.state,
+            crate::finance_data::KIS_SOURCE_ID,
+            "environment",
+        )
+        .map_err(|_| BrokerError::Execution("KIS configuration is unavailable".into()))?
+        .ok_or_else(|| BrokerError::Execution("the KIS connector needs an environment".into()))
+    }
+
+    pub(super) async fn kis_dividend_calendar(
+        &self,
+        policy: &ToolPolicy,
+        params: Value,
+        credential: &crate::finance_credentials::ActiveCredentialBundle,
+    ) -> Result<Value, BrokerError> {
+        if effective_as_of(policy, &params)?.is_some() {
+            return Err(BrokerError::Execution(
+                "as_of_unsupported: kis_dividend_calendar gives KSD's record and payment dates as KSD holds them now, not when each was announced, so it cannot answer as of an earlier date; use the company's dated dividend disclosure instead".into(),
+            ));
+        }
+        let environment = self.kis_environment()?;
+        let (app_key, app_secret) = self.kis_keys(credential)?;
+        let _permit = ProviderPace::acquire_capacity(&self.capture.provider_pace).await?;
+        let output = self
+            .state
+            .finance_data
+            .kis_dividend_calendar(params, &environment, app_key, app_secret)
+            .await
+            .map_err(finance_error)?;
+        self.validate_provider_tool_output(output, ToolMethod::KisDividendCalendar)
+    }
+
+    fn kis_keys<'a>(
+        &self,
+        credential: &'a crate::finance_credentials::ActiveCredentialBundle,
+    ) -> Result<(&'a str, &'a str), BrokerError> {
+        self.require_capability(crate::finance_data::KIS_SOURCE_ID)?;
+        let current = crate::finance_credentials::revision_for_state(
+            &self.state,
+            crate::finance_data::KIS_SOURCE_ID,
+        )
+        .map_err(|_| BrokerError::MethodDenied)?;
+        if current.as_deref() != Some(credential.revision()) {
+            return Err(BrokerError::MethodDenied);
+        }
+        let read = |field| {
+            credential
+                .get(field)
+                .ok_or_else(|| BrokerError::Execution("credential lookup failed".into()))
+        };
+        Ok((read("app_key")?, read("app_secret")?))
     }
 
     pub(super) async fn kis_read(
@@ -589,50 +704,21 @@ impl AppToolExecutor {
                 crate::privacy::account_fields::UNREVIEWED.into(),
             ));
         }
-        self.require_capability(crate::finance_data::KIS_SOURCE_ID)?;
         let profile = Self::kis_account_profile(credential)?;
-        let environment = crate::marketplace::connector_config_value(
-            &self.state,
-            crate::finance_data::KIS_SOURCE_ID,
-            "environment",
-        )
-        .map_err(|_| BrokerError::Execution("KIS configuration is unavailable".into()))?
-        .ok_or_else(|| BrokerError::Execution("the KIS connector needs an environment".into()))?;
-        let current = crate::finance_credentials::revision_for_state(
-            &self.state,
-            crate::finance_data::KIS_SOURCE_ID,
-        )
-        .map_err(|_| BrokerError::MethodDenied)?;
-        if current.as_deref() != Some(credential.revision()) {
-            return Err(BrokerError::MethodDenied);
-        }
-        let app_key = credential
-            .get("app_key")
-            .map(str::to_owned)
-            .ok_or_else(|| BrokerError::Execution("credential lookup failed".into()))?;
-        let app_secret = credential
-            .get("app_secret")
-            .map(str::to_owned)
-            .ok_or_else(|| BrokerError::Execution("credential lookup failed".into()))?;
+        let environment = self.kis_environment()?;
+        let (app_key, app_secret) = self.kis_keys(credential)?;
         let query = json!({
             "operation_id": operation_id,
             "params": operation_params
         });
-        let _permit = self.pace(crate::finance_data::KIS_SOURCE_ID).await?;
+        let _permit = ProviderPace::acquire_capacity(&self.capture.provider_pace).await?;
         let output = self
             .state
             .finance_data
-            .kis_read_data(
-                query,
-                &environment,
-                &app_key,
-                &app_secret,
-                profile.as_ref(),
-                &self.request_pacer(crate::finance_data::KIS_SOURCE_ID),
-            )
+            .kis_read_data(query, &environment, app_key, app_secret, profile.as_ref())
             .await
             .map_err(finance_error)?;
-        refuse_credential_echo(&output, &[app_key, app_secret])?;
+        refuse_credential_echo(&output, &[app_key.to_owned(), app_secret.to_owned()])?;
         // Quantities, amounts, prices paid and their rates stay here: hidden
         // before the result reaches Pi, a dataset, a result ref or an export.
         let mut output = output;
@@ -1181,6 +1267,26 @@ mod tests {
     }
 
     #[test]
+    fn oversized_finance_responses_have_their_own_broker_code_and_limit() {
+        let error = finance_error(crate::finance_data::FinanceDataError::ResultTooLarge {
+            limit_bytes: 32 * 1024 * 1024,
+        });
+        let body = crate::broker::error_body(&error);
+        assert_eq!(body["code"], "result_too_large");
+        assert_eq!(body["limit_bytes"], 32 * 1024 * 1024);
+        assert_eq!(body["retryable"], false);
+        assert!(body.get("bytes").is_none());
+        assert_eq!(
+            body["message"],
+            "The reply to this valid request was larger than the 32 MiB one result can carry, so it was not delivered."
+        );
+        assert!(body["next"]
+            .as_str()
+            .unwrap()
+            .contains("use another source"));
+    }
+
+    #[test]
     fn a_resolved_company_is_its_corp_code_and_several_name_their_codes() {
         use crate::finance_data::DartResolution::{Candidates, Found};
         assert_eq!(
@@ -1264,6 +1370,17 @@ mod tests {
         assert!(matches!(
             finance_error(E::Offline("opendart")),
             BrokerError::Offline(_)
+        ));
+        assert!(matches!(
+            finance_error(E::RateLimitedWithRetry {
+                provider: KRX,
+                retry_after: 73
+            }),
+            BrokerError::ProviderFailure {
+                kind: ProviderFailureKind::RateLimited,
+                retry_after: Some(73),
+                ..
+            }
         ));
         // Other vendors' empty and limit statuses keep their own wording.
         for error in [

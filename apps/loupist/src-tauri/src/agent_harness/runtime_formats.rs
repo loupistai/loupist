@@ -3,10 +3,8 @@
 use serde_json::Value;
 use std::sync::OnceLock;
 
-static WORKER: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
 async fn probe(code: &str) -> (tempfile::TempDir, Value) {
-    let _worker = WORKER.lock().await;
+    let _worker = crate::python_run::PYTHON_WORKER_TEST_LOCK.lock().await;
     static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
     let temporary = tempfile::tempdir().unwrap();
     let base = temporary.path();

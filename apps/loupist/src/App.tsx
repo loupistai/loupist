@@ -274,7 +274,10 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   useEffect(() => { if (sharingVisible) void bridge.githubAccount().then(account => setIndexConfigured(account.indexConfigured)).catch(() => undefined); }, [bridge, sharingVisible]);
   const deepLinks = useDeepLinks(bridge, model.resolved && !loupist.loading && !loupist.error && !onboardingActive && !needsOnboarding, setBriefingToast);
   // The morning message reads "last seen" per Loupist; leaving a Loupist (or Settings) records the visit.
-  useLoupistVisit(selectedLoupist?.id ?? null, tab !== "settings" && !onboardingActive);
+  const closeProposalVisit = useCallback((loupist_id: string, visit: number) => {
+    void bridge.scheduledProposalVisitEnd({ loupist_id, visit }).catch(() => undefined);
+  }, [bridge]);
+  useLoupistVisit(selectedLoupist?.id ?? null, tab !== "settings" && !onboardingActive, closeProposalVisit);
   const inboxCounts = useInboxCounts(bridge, loupists.map(loupist => loupist.id).join(","));
   const [inboxFocus, setInboxFocus] = useState<{ loupistId: string; runId: string | null; run?: ScheduledRun } | null>(null);
   useEffect(() => bridge.onInboxOpen(event => {
@@ -395,6 +398,11 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   const effectiveThreadId = isEmptyChatThreadId(activeThreadId)
     ? EMPTY_CHAT_THREAD_ID
     : (activeThreadId ?? threads.find((thread) => thread.home)?.id ?? threads[0]?.id ?? null);
+  const visibleBot = view.chatVisible && !onboardingActive && !needsOnboarding &&
+    selectedLoupistId && effectiveThreadId === `home-${selectedLoupistId}` ? selectedLoupistId : null;
+  useEffect(() => {
+    void bridge.notificationBotFocusSet({ loupist_id: visibleBot }).catch(() => undefined);
+  }, [bridge, visibleBot]);
   const persistedThreadId = isEmptyChatThreadId(effectiveThreadId)
     ? null
     : effectiveThreadId;
@@ -724,6 +732,20 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     { id: "settings", label: i18n.t("app:palette.actions.settings"), keys: shortcutFor("settings"), run: () => openSettings() },
     { id: "keyboard", label: i18n.t("app:palette.actions.keyboard"), run: () => openSettings("keyboard") },
   ];
+  useEffect(() => {
+    const sync = () => {
+      const templates = i18n.getFixedT(null, "settings");
+      void bridge.notificationTemplatesSet({ language: i18n.language, templates: {
+        result: templates("notifications.template.result", { loupist: "{loupist}", task: "{task}" }),
+        privateResult: templates("notifications.template.privateResult", { loupist: "{loupist}" }),
+        digest: templates("notifications.template.digest", { total: "{count}", loupist: "{loupist}" }),
+        lineCrossed: templates("notifications.template.lineCrossed"),
+      } }).catch(() => undefined);
+    };
+    sync();
+    i18n.on("languageChanged", sync);
+    return () => { i18n.off("languageChanged", sync); };
+  }, [bridge]);
   const openAttention = async (item: AttentionItem) => {
     if (item.kind === "savedKeyPermission") {
       setPermissionNoticeRequest((value) => value + 1);
@@ -738,7 +760,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       return;
     }
     // An approval or a question is answered in its chat.
-    if ((item.kind === "approval" || item.kind === "question") && item.chatId) {
+    if ((item.kind === "approval" || item.kind === "question" || item.kind === "offer" || item.kind === "ask") && item.chatId) {
       selectLoupistFromNavigation(item.loupistId, item.chatId);
       setTab("chat");
       return;
@@ -750,6 +772,9 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       return;
     }
     selectLoupistFromNavigation(item.loupistId);
+    if ((item.kind === "proposal" || item.kind === "taskPaused") && item.recordId) {
+      setScheduledFocus({ loupistId: item.loupistId, taskId: item.recordId });
+    }
     setTab("schedule");
   };
   workspace.visibleRef.current = {
@@ -1061,6 +1086,15 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                       onOpenLoupistConnections={id => { setMarketplaceEntryId(null); setSettingsSection("loupists"); void openLoupistSettingsFor(id, false, "connections"); }}
                       currentLoupistId={selectedLoupistId}
                       onManageProviders={() => openSettings("model")}
+                      onOpenUsage={() => openSettings("usage")}
+                      onOpenUsageProgram={(loupistId, taskId) => {
+                        void (async () => {
+                          if (loupistId !== selectedLoupistId && !await selectLoupist(loupistId)) return;
+                          setInboxFocus(null);
+                          setScheduledFocus({ loupistId, taskId });
+                          setTab("schedule");
+                        })();
+                      }}
                       onDraftSkill={draftSkill}
                       appearanceConfiguration={appearanceConfiguration}
                       section={settingsSection}
@@ -1111,7 +1145,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                     hidden={tab !== "chat"}
                     inert={tab !== "chat"}
                   >
-                    {chatViewProps ? <ChatView key={selectedLoupist.id} {...chatViewProps} /> : null}
+                    {chatViewProps ? <ChatView key={selectedLoupist.id} {...chatViewProps} attentionItems={attention} onOpenAttention={item => void openAttention(item)} /> : null}
                   </div>
                   {tab === "following" ? <div className="app-panel following-route" id="main-panel-following" aria-labelledby="current-location">
                     <FollowingPage key={selectedLoupist.id} bridge={bridge} loupist={selectedLoupist} focusSearch={followingSearchFocus} onAskInChat={askInChat} onOpenConnections={connectionId => openSettings("connections", { entryId: connectionId })} />

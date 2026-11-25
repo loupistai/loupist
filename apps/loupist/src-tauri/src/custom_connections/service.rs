@@ -166,9 +166,11 @@ impl ConnectionServices {
             }
         };
         drop(services);
+        // Another request or Settings action holds this connection; its key
+        // is not involved.
         let mut service = scoped
             .try_lock_owned()
-            .map_err(|_| ConnectionError::KeychainBusy)?;
+            .map_err(|_| ConnectionError::InUse)?;
         if credentials::is_pending(&self.environment, id)? {
             return Err(ConnectionError::KeychainBusy);
         }
@@ -1234,9 +1236,15 @@ async fn stdio_error(session: &McpSession, error: McpError) -> ConnectionError {
     {
         ConnectionError::Transport
     } else {
-        // A JSON-RPC rejection or invalid result from a live child leaves its
-        // negotiated session usable. Never expose the server's error prose.
-        ConnectionError::Protocol
+        // A JSON-RPC rejection, invalid result or oversized reply from a live
+        // child leaves its negotiated session usable. Never expose the
+        // server's error prose.
+        match error {
+            McpError::FrameTooLarge => ConnectionError::ResultTooLarge {
+                limit_bytes: crate::mcp::MAX_FRAME_BYTES as u64,
+            },
+            _ => ConnectionError::Protocol,
+        }
     }
 }
 

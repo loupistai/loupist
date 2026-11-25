@@ -7,6 +7,7 @@ import { Button } from "../ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../ui/tabs";
 import { SourceWorkspace } from "../knowledge/SourceWorkspace";
 import { librarySurface, libraryState, useLibraryRequests, type LibraryTab } from "./libraryState";
+import { ScriptLibrary } from "../knowledge/ScriptLibrary";
 import { ResearchLibrary } from "../knowledge/ResearchLibrary";
 
 /** The note tab that shows what a location selects: a Journal entry opens Journal, a research note opens Notes. */
@@ -37,10 +38,11 @@ export function MapLibrary({ bridge, catalog, worldProcessing, location, onOpen,
   return <aside className="map-library" data-testid="map-library" aria-label={t("map.library")}>
     <header><h2>{t("map.library")}</h2><Button variant="ghost" size="icon-sm" aria-label={t("map.closeLibrary")} onClick={onClose}><XIcon /></Button></header>
     <Tabs value={tab} onValueChange={value => setTab(value as typeof tab)}>
-      <div className="map-library-tabbar"><TabsList aria-label={t("map.library")}><TabsTrigger value="source">{t("map.sources")}</TabsTrigger><TabsTrigger value="journal">{t("map.libraryJournal")}</TabsTrigger><TabsTrigger value="note">{t("map.libraryNotes")}</TabsTrigger></TabsList></div>
+      <div className="map-library-tabbar"><TabsList aria-label={t("map.library")}><TabsTrigger value="source">{t("map.sources")}</TabsTrigger><TabsTrigger value="journal">{t("map.libraryJournal")}</TabsTrigger><TabsTrigger value="note">{t("map.libraryNotes")}</TabsTrigger><TabsTrigger value="scripts">{t("scripts.tab")}</TabsTrigger></TabsList></div>
       <TabsContent value="source"><SourceWorkspace {...shared} worldProcessing={worldProcessing} compact onAddSource={onAddSource} onManageProcessing={onManageProcessing} onManageProviders={onManageProviders} /></TabsContent>
       <TabsContent value="journal"><ResearchLibrary {...shared} compact show="journal" /></TabsContent>
       <TabsContent value="note"><ResearchLibrary {...shared} compact show="notes" /></TabsContent>
+      <TabsContent value="scripts"><ScriptLibrary bridge={bridge} loupistId={location.loupistId} query={shared.query} onQueryChange={shared.onQueryChange} /></TabsContent>
     </Tabs>
   </aside>;
 }

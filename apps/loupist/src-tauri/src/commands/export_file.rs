@@ -14,6 +14,7 @@ pub enum ExportKind {
     Webm,
     Md,
     Csv,
+    Py,
 }
 impl ExportKind {
     fn extension(self) -> &'static str {
@@ -23,11 +24,12 @@ impl ExportKind {
             Self::Webm => "webm",
             Self::Md => "md",
             Self::Csv => "csv",
+            Self::Py => "py",
         }
     }
     fn max_bytes(self) -> usize {
         match self {
-            Self::Md | Self::Csv => MAX_TEXT_BYTES,
+            Self::Md | Self::Csv | Self::Py => MAX_TEXT_BYTES,
             Self::Png | Self::Mp4 | Self::Webm => MAX_BYTES,
         }
     }
@@ -36,6 +38,7 @@ impl ExportKind {
             Self::Png | Self::Mp4 | Self::Webm => "world",
             Self::Md => "chat",
             Self::Csv => "data",
+            Self::Py => "script",
         }
     }
 }
@@ -207,7 +210,10 @@ pub async fn export_save(
     let saved = path.display().to_string();
     // Renderer-composed text has no authoritative origin receipt. Fail closed;
     // images and recordings do not carry model-readable text through `read`.
-    if matches!(request.kind, ExportKind::Md | ExportKind::Csv) {
+    if matches!(
+        request.kind,
+        ExportKind::Md | ExportKind::Csv | ExportKind::Py
+    ) {
         super::export_trust::record(state.inner(), &request.bytes)?;
     }
     tauri::async_runtime::spawn_blocking(move || {

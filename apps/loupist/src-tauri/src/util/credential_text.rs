@@ -61,6 +61,25 @@ pub(crate) fn contains_credential_text(text: &str) -> bool {
         || url_userinfo(&lower)
 }
 
+/// Screen structured records without losing field names or string boundaries.
+pub(crate) fn contains_credential_json(value: &serde_json::Value) -> bool {
+    use serde_json::Value;
+
+    match value {
+        Value::String(text) => contains_credential_text(text),
+        Value::Array(items) => items.iter().any(contains_credential_json),
+        Value::Object(fields) => fields.iter().any(|(name, value)| {
+            (!value.is_null()
+                && ASSIGNED_NAMES
+                    .iter()
+                    .any(|known| name.eq_ignore_ascii_case(known)))
+                || contains_credential_text(name)
+                || contains_credential_json(value)
+        }),
+        _ => false,
+    }
+}
+
 fn starts_word(lower: &str, index: usize) -> bool {
     lower[..index]
         .chars()

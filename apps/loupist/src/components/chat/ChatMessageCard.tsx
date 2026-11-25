@@ -73,6 +73,7 @@ import type { LoupistAvatarId } from "../../contracts/loupist";
 import { BotHandoffOpening, HandoffNote } from "./HandoffNote";
 
 const t = i18n.getFixedT(null, "chat");
+const tUsage = i18n.getFixedT(null, "settings", "usage");
 
 const failureMessages = (): Record<NonNullable<ChatMessage["failure_kind"]>, string> => ({
   empty_reply: t("chatMessageCard.empty_reply"),
@@ -115,10 +116,23 @@ function responseTokenLines(performance: ChatPerformance | undefined): string[] 
   const cacheWrite = knownTokenCount(performance.cacheWriteTokens);
   const totalInput = input !== undefined && cacheRead !== undefined && cacheWrite !== undefined
     ? knownTokenCount(input + cacheRead + cacheWrite) : undefined;
-  return [
+  const lines = [
     t("chatMessageCard.inputTokens", { value1: tokenCountLabel(totalInput) }),
     t("chatMessageCard.outputTokens", { value1: tokenCountLabel(knownTokenCount(performance.outputTokens)) }),
   ];
+  if (performance.modelRequests !== undefined) {
+    lines.push(t("chatMessageCard.modelRequests", { count: performance.modelRequests, formattedCount: formatNumber(performance.modelRequests) }));
+  }
+  if (performance.costEstimate) {
+    const { microusd, fromProvider } = performance.costEstimate;
+    const price = formatNumber(microusd / 1_000_000, {
+      style: "currency", currency: "USD", currencyDisplay: "narrowSymbol",
+    });
+    lines.push(microusd < 10_000
+      ? tUsage("costUnderCent")
+      : tUsage(fromProvider ? "costBilled" : "costEstimate", { price }));
+  }
+  return lines;
 }
 
 function MessageAttachment({
@@ -455,7 +469,7 @@ function ChatMessageCardComponent({
       {unplaced(grids).map((block) => renderBlock("grid_publish", block, block.key))}
 
       {researchSession && <ResearchSessionLink session={researchSession} />}
-      {message.role === "assistant" && <MessageSchedules receipts={message.schedule_receipts ?? []} />}
+      {message.role === "assistant" && <MessageSchedules receipts={message.schedule_receipts ?? []} onChangeDraft={onFillComposer} />}
 
       <DeliveredFiles paths={deliveredPaths}
         onReveal={bridge ? (path) => bridge.workspaceReveal({ loupist_id: loupistId, path }) : undefined} />

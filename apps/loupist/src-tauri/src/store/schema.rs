@@ -16,7 +16,7 @@ use crate::fs::artifact_trust::{
 // formats are refused with a typed state, and newer ones are left untouched.
 // The SQLite application id distinguishes Loupist files from unrelated
 // databases and discarded development formats.
-pub(crate) const STORE_SCHEMA_VERSION: i64 = 12;
+pub(crate) const STORE_SCHEMA_VERSION: i64 = 14;
 pub(crate) const STORE_APPLICATION_ID: i64 = 0x4755_5255; // "GURU": the id stored in every existing database, kept as is
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -229,6 +229,7 @@ impl SqliteStore {
         )?;
         connection.execute_batch(crate::datasets::embedded_ddl())?;
         connection.execute_batch(crate::scheduled_tasks::store::DDL)?;
+        connection.execute_batch(super::scripts::DDL)?;
         connection.execute_batch(crate::chat::handoff::DDL)?;
         connection.execute_batch(&format!(
             "PRAGMA application_id = {STORE_APPLICATION_ID}; PRAGMA user_version = {STORE_SCHEMA_VERSION}; COMMIT;"

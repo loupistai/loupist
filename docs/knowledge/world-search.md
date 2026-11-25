@@ -61,6 +61,18 @@ Until a Source's job settles, its relationships are not in World. `world_search`
 marks such a Source hit `mapPending`, and the system prompt tells the model that
 missing World relationships for it prove nothing.
 
+A Source span hit carries the `readArgs` that open its matched span. A Source's title is
+indexed on its own as well. `world_search` drops the title hit when a span from the
+same revision matches in the ranked window. When only the title matches in that
+window, its `readArgs` open an available span from that revision when one exists.
+Each Source hit also names `origin`, the page,
+file or provider it was saved from, and its `sourceClass` (`user_provided` for text
+the user pasted), as a Source read's `attribution` does, so a saved copy of another
+site's page reads apart from the publisher's document or a connection's read before
+it is opened. The system prompt has a Source hit that may answer read before any web
+search or fetch, and a data connection that serves the official record (a filing
+register, the issuer's statements) read and cited over a copy saved from another site.
+
 Startup resumes untouched work and reruns attempts the app's exit cut short within
 their allowance ([interruptions](worlds.md#queue-and-interruptions)); an uncertain paid
 attempt past it quarantines. Recover World building rebuilds the derived index from the confirmed

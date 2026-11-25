@@ -10,6 +10,8 @@ export type AppearanceConfig = {
   display_currency?: string,
 };
 
+export type BotConfig = { declined_offers?: Array<string> };
+
 export type ChatConfig = {
   model_profile_id?: string,
   thinking_level?: string,
@@ -32,6 +34,7 @@ export type ConfigDocument = {
   chat?: ChatConfig,
   skills?: { [key in string]: SkillConfig },
   pi?: PartialPiConfig,
+  bot?: BotConfig,
 };
 
 export type ConfigReadRequest = { scope: ConfigScope };

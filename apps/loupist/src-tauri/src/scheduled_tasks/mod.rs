@@ -1,8 +1,10 @@
 //! App-owned schedules reuse ordinary Chat admission, execution and persistence.
+pub(crate) mod presets;
 pub(crate) mod questions;
 pub(crate) mod schedule;
 pub(crate) mod service;
 pub(crate) mod store;
+pub(crate) mod trigger;
 pub(crate) mod types;
 
 use std::{
@@ -38,6 +40,10 @@ pub(crate) const UNEXPECTED_INTERRUPTION: &str = "Interrupted unexpectedly befor
 const LEGACY_INTERRUPTED: &str = "Interrupted before completion.";
 
 // Recheck capacity/offline folders and wall-clock changes at least once a minute.
+pub(crate) const UNREADABLE_TASK: &str = "unreadable_task";
+pub(crate) const UNREACHABLE: &str = "unreachable";
+const EMPTY_WATCH: &str = "nothing_left_to_watch";
+
 const MAX_POLL_SLEEP: Duration = Duration::from_secs(60);
 const RETRY_POLL_SLEEP: Duration = Duration::from_secs(5);
 
@@ -162,6 +168,7 @@ impl ScheduledSupervisor {
     }
 
     async fn poll(&self, state: &AppState) -> Result<(), CommandError> {
+        crate::briefings::desktop::flush_notifications(state).await;
         {
             // A claim cannot commit between the live snapshot and recovery.
             // Finishing a live run concurrently is safe: its receipt is already
@@ -283,26 +290,95 @@ impl ScheduledSupervisor {
         let _activity = state
             .maintenance
             .admit_kind(MaintenanceActivityKind::ChatMutation)?;
+        let now = now_ms();
+        let trigger_occurrence =
+            match crate::commands::triggers::on_due(state, loupist_id, task_id, now, manual).await?
+            {
+                crate::commands::triggers::DueCheck::Pass => None,
+                crate::commands::triggers::DueCheck::Done => return Ok(None),
+                crate::commands::triggers::DueCheck::Met(occurrence) => Some(occurrence),
+            };
+        let mut empty_trigger_scope = false;
+        let scope = if let Some(task) = state
+            .store
+            .scheduled_task_get(loupist_id, task_id)
+            .map_err(map_store)?
+            .filter(|task| task.watch.preset.is_some() && !task.awaiting_confirmation)
+            .filter(|task| {
+                manual
+                    || (task.status == types::TaskStatus::Active
+                        && task.next_run_at_ms.is_some_and(|next| next <= now))
+            }) {
+            match presets::live_scope(state, &task)? {
+                Some(scope) => Some((task.revision, scope)),
+                None if trigger_occurrence.is_some() => {
+                    empty_trigger_scope = true;
+                    None
+                }
+                None => {
+                    if task.status == types::TaskStatus::Active {
+                        state
+                            .store
+                            .scheduled_watch_without_subjects(&task, now)
+                            .map_err(map_store)?;
+                        crate::briefings::desktop::changed(loupist_id);
+                    }
+                    if manual {
+                        return Err(CommandError::invalid("Nothing left to watch"));
+                    }
+                    return Ok(None);
+                }
+            }
+        } else {
+            None
+        };
         let mut admission_error = None;
-        let claimed =
-            state
+        let admit = |claim: &types::Claim| {
+            ChatAdmission::new(
+                state,
+                &claim.run.run_id,
+                &claim.run.loupist_id,
+                claim.run.thread_id.as_deref().ok_or_else(|| {
+                    crate::store::StoreError::Invalid("scheduled Chat target is missing".into())
+                })?,
+            )
+            .map_err(|error| {
+                admission_error = Some(error.clone());
+                crate::store::StoreError::Conflict("scheduled Chat admission failed")
+            })
+        };
+        let claimed = if let Some(occurrence) = &trigger_occurrence {
+            let claimed = state
                 .store
-                .scheduled_task_claim_with(loupist_id, task_id, now_ms(), manual, |claim| {
-                    ChatAdmission::new(
-                        state,
-                        &claim.run.run_id,
-                        &claim.run.loupist_id,
-                        claim.run.thread_id.as_deref().ok_or_else(|| {
-                            crate::store::StoreError::Invalid(
-                                "scheduled Chat target is missing".into(),
-                            )
-                        })?,
-                    )
-                    .map_err(|error| {
-                        admission_error = Some(error.clone());
-                        crate::store::StoreError::Conflict("scheduled Chat admission failed")
-                    })
-                });
+                .scheduled_trigger_consume(occurrence, now, empty_trigger_scope, admit)
+                .map_err(map_store)?;
+            if occurrence.card.is_some() {
+                crate::briefings::desktop::notify_trigger(
+                    state,
+                    loupist_id,
+                    &occurrence.task.title,
+                    &occurrence.context.reading,
+                    occurrence.notify,
+                );
+            }
+            if occurrence.card.is_some() || empty_trigger_scope {
+                crate::briefings::desktop::changed(loupist_id);
+            }
+            Ok(claimed)
+        } else {
+            state.store.scheduled_task_claim_scoped(
+                loupist_id,
+                task_id,
+                now,
+                manual,
+                scope
+                    .as_ref()
+                    .map_or(store::ClaimScope::Unscoped, |(revision, _)| {
+                        store::ClaimScope::Definition(*revision)
+                    }),
+                admit,
+            )
+        };
         if let Some(error) = admission_error {
             return if !manual
                 && matches!(
@@ -323,6 +399,10 @@ impl ScheduledSupervisor {
         let mut run = claim.run;
         let task = claim.task;
         let released = claim.released;
+        let effective_prompt = scope.map(|(_, scope)| {
+            admission.scheduled_followed_ids = scope.followed_ids;
+            scope.prompt
+        });
         admission.scheduled = Some(crate::domain::ScheduledTurn {
             task_id: task.id.clone(),
             run_id: run.run_id.clone(),
@@ -332,6 +412,7 @@ impl ScheduledSupervisor {
         // A custom run is told how its task's last run ended; the briefing has
         // its own since-the-last-briefing facts. The facts are optional
         // context, so a store read that fails leaves them out.
+        admission.trigger = trigger_occurrence.map(|occurrence| occurrence.context);
         if task.kind == TaskKind::Custom {
             admission.previous_run = state
                 .store
@@ -362,18 +443,29 @@ impl ScheduledSupervisor {
             run_id: run_id.clone(),
         };
         drop(_admission);
+        crate::briefings::desktop::emit(
+            crate::events::INBOX_CHANGED,
+            crate::briefings::desktop::InboxChanged {
+                loupist_id: loupist_id.to_owned(),
+            },
+        );
         // A run that left the history takes its session with it.
         service::release_sessions(state, loupist_id, Some(&released));
         let prompt = if task.kind == TaskKind::Briefing {
-            match crate::briefings::build_prompt(state, loupist_id, task.last_run_at_ms, now_ms())
-                .and_then(|(prompt, context)| {
-                    state
-                        .store
-                        .scheduled_run_briefing_context(loupist_id, &run_id, context.clone())
-                        .map_err(map_store)?;
-                    run.briefing_context = Some(context);
-                    Ok(prompt)
-                }) {
+            match crate::briefings::build_prompt(
+                state,
+                loupist_id,
+                run.started_at_ms,
+                task.edition(),
+            )
+            .and_then(|(prompt, context)| {
+                state
+                    .store
+                    .scheduled_run_briefing_context(loupist_id, &run_id, context.clone())
+                    .map_err(map_store)?;
+                run.briefing_context = Some(context);
+                Ok(prompt)
+            }) {
                 Ok(prompt) => prompt,
                 Err(error) => {
                     let finished = state
@@ -388,7 +480,7 @@ impl ScheduledSupervisor {
                 }
             }
         } else {
-            task.prompt.clone()
+            effective_prompt.unwrap_or_else(|| task.prompt.clone())
         };
         if let Ok(mut live) = self.inner.live.lock() {
             if let Some(current) = live.get_mut(&run_id) {
@@ -498,6 +590,7 @@ impl ScheduledSupervisor {
                         crate::domain::ChatFailureKind::NeedsReconnect => {
                             crate::pi::provider_failure::NEEDS_RECONNECT.to_owned()
                         }
+                        crate::domain::ChatFailureKind::Offline => UNREACHABLE.to_owned(),
                         crate::domain::ChatFailureKind::ModelGone => {
                             crate::pi::provider_failure::MODEL_GONE.to_owned()
                         }

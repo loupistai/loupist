@@ -130,3 +130,8 @@ Unspecified costs produce a before-cost result. Prices without total-return adju
 ## Code
 
 - Calculations and sensitivity ranges: `src-tauri/src/calculations/`, `src-tauri/src/commands/tool_executor/sensitivity.rs`, `src-tauri/src/domain/answer_checks.rs`, `src/components/assets/SensitivityCard.tsx`, `src/components/assets/sensitivityText.ts`
+
+A figure cited to a Python step opens **Show the math**. The step lists the
+code, admitted reads and output. **Run again on the same data** starts the
+saved code with the step's sealed ledger and compares the output. See
+[Reads and replay](../capabilities/scripts.md#reads-and-replay).

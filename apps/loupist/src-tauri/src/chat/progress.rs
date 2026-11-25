@@ -126,6 +126,16 @@ pub enum ChatProgressItem {
         #[serde(default, rename = "toolName", skip_serializing_if = "Option::is_none")]
         #[cfg_attr(test, ts(optional))]
         tool_name: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
+        origin: Option<crate::domain::ToolTraceOrigin>,
+        #[serde(
+            default,
+            rename = "parentStep",
+            skip_serializing_if = "Option::is_none"
+        )]
+        #[cfg_attr(test, ts(optional))]
+        parent_step: Option<String>,
         category: ChatProgressCategory,
         operation: ChatProgressOperation,
         action: String,
@@ -220,6 +230,8 @@ impl ChatProgressItem {
         validate_id(self.id())?;
         if let Self::Tool {
             tool_name,
+            origin,
+            parent_step,
             detail_id,
             file_path,
             running,
@@ -231,6 +243,14 @@ impl ChatProgressItem {
             ..
         } = self
         {
+            if origin.is_some() != parent_step.is_some() {
+                return Err(DomainError::Invalid(
+                    "nested chat progress needs its parent",
+                ));
+            }
+            if let Some(parent) = parent_step {
+                validate_id(parent)?;
+            }
             if tool_name
                 .as_deref()
                 .is_some_and(|name| !valid_tool_name(name))
@@ -922,6 +942,8 @@ impl ChatProgressProjection {
         self.progress.items.push(ChatProgressItem::Tool {
             id: id.clone(),
             tool_name: valid_tool_name(tool_name).then(|| tool_name.to_owned()),
+            origin: None,
+            parent_step: None,
             category: presentation.category,
             operation: presentation.operation,
             action: presentation.action,
@@ -1007,16 +1029,17 @@ impl ChatProgressProjection {
     /// Python can retain a file even when the program times out. Only the
     /// host tool result supplies this link; assistant prose never does.
     pub(crate) fn attach_python_result(&mut self, tool_call_id: &str, result: &Value) -> bool {
-        let Some(id) = self.tool_items.get(tool_call_id) else {
+        let Some(id) = self.tool_items.get(tool_call_id).cloned() else {
             return false;
         };
-        let Some(&index) = self.item_indices.get(id) else {
+        let Some(&index) = self.item_indices.get(&id) else {
             return false;
         };
         let Some(ChatProgressItem::Tool {
             tool_name,
             file_path,
             written_paths,
+            started_at_ms,
             ..
         }) = self.progress.items.get_mut(index)
         else {
@@ -1028,13 +1051,16 @@ impl ChatProgressProjection {
         let Some(value) = super::activity::python_result(result) else {
             return false;
         };
+        let started = *started_at_ms;
         *file_path = super::activity::python_artifact_path(&value);
         written_paths.clear();
-        if !super::activity::python_completed(&value) {
-            return true;
-        }
+        let complete = super::activity::python_completed(&value);
         // Artifacts are emitted after successful copy-back. changed_files also includes deletions.
-        if let Some(artifacts) = value.get("artifacts").and_then(Value::as_array) {
+        if let Some(artifacts) = value
+            .get("artifacts")
+            .and_then(Value::as_array)
+            .filter(|_| complete)
+        {
             for path in artifacts
                 .iter()
                 .filter_map(|artifact| artifact.get("path")?.as_str())
@@ -1047,7 +1073,59 @@ impl ChatProgressProjection {
                 }
             }
         }
-        false
+        self.attach_python_reads(&id, &value, started);
+        !complete
+    }
+
+    fn attach_python_reads(&mut self, parent: &str, result: &Value, started: i64) {
+        if self.progress.items.iter().any(|item| {
+            matches!(item,
+                ChatProgressItem::Tool { parent_step: Some(step), .. } if step == parent
+            )
+        }) {
+            return;
+        }
+        let reads = result["reads"].as_array().into_iter().flatten().take(32);
+        for read in reads {
+            let Some(name) = read["tool"].as_str().filter(|name| valid_tool_name(name)) else {
+                continue;
+            };
+            let success = read["status"] == "ok";
+            let presentation = summarize_tool(name, &Value::Null, None);
+            let id = self.next_id("tool");
+            let index = self.progress.items.len();
+            self.progress.items.push(ChatProgressItem::Tool {
+                id: id.clone(),
+                tool_name: Some(name.to_owned()),
+                origin: Some(crate::domain::ToolTraceOrigin::Python),
+                parent_step: Some(parent.to_owned()),
+                category: presentation.category,
+                operation: ChatProgressOperation::Read,
+                action: presentation.action,
+                running: None,
+                target: None,
+                href: None,
+                source: None,
+                summary: None,
+                result_ids: Vec::new(),
+                written_paths: Vec::new(),
+                entity_ids: Vec::new(),
+                output_revision: None,
+                detail_id: None,
+                file_path: None,
+                status: if success {
+                    ChatProgressStatus::Succeeded
+                } else {
+                    ChatProgressStatus::Failed
+                },
+                failure_reason: None,
+                refusal: None,
+                started_at_ms: started,
+                finished_at_ms: Some(started),
+            });
+            self.item_indices.insert(id.clone(), index);
+            self.mark_dirty(&id);
+        }
     }
 
     pub fn finish_tool(
@@ -2428,6 +2506,8 @@ mod tests {
         let item = |ids: Vec<String>| ChatProgressItem::Tool {
             id: "tool-1".into(),
             tool_name: Some("world_read".into()),
+            origin: None,
+            parent_step: None,
             category: ChatProgressCategory::Memory,
             operation: ChatProgressOperation::Read,
             action: "Read World".into(),

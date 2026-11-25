@@ -150,7 +150,7 @@ async fn check_helpers(resources: &Path, scratch: &Path) -> Result<(), String> {
     let result = crate::python_run::execute(
         &roots,
         &scratch.join("cache"),
-        "print('loupist-release-helper-ok')",
+        "import loupist\nassert not loupist.inputs\nprint('loupist-release-helper-ok')",
         120,
         SearchCancel::never(),
     )

@@ -4,7 +4,7 @@
 /**
  * Every file the app saves for the user: Map images and replays, chat transcripts and data tables.
  */
-export type ExportKind = "png" | "mp4" | "webm" | "md" | "csv";
+export type ExportKind = "png" | "mp4" | "webm" | "md" | "csv" | "py";
 
 export type ExportRequest = {
   suggestedName: string,

@@ -170,6 +170,12 @@ pub struct ChatMessageDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub link: Option<crate::domain::HomeLink>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub offers: Vec<crate::domain::HomeOffer>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub ask: Option<crate::domain::HomeAsk>,
     pub handoff: Option<crate::domain::HomeHandoff>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
@@ -669,6 +675,8 @@ impl From<crate::chat::artifacts::ChatArtifactSnapshot> for ChatArtifactViewDto 
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "type", rename_all = "snake_case")]
+// The schedule event carries a task receipt, including its optional check.
+#[allow(clippy::large_enum_variant)]
 pub enum ChatStreamEvent {
     Started {
         run_id: String,
@@ -894,6 +902,8 @@ pub(crate) fn chat_dto_with_memory(
     state: &crate::app::AppState,
     chat: &ChatSession,
 ) -> Result<ChatThreadDto, CommandError> {
+    let pin = crate::chat::cards::resolve_legacy_follow_ups(state, chat)?;
+    let chat = pin.as_ref();
     let mut dto = chat_dto(chat)?;
     crate::commands::knowledge::project_chat_memory(state, chat, &mut dto);
     super::tool_executor::number_checks::replay::project_chat(state, chat, &mut dto);
@@ -948,6 +958,8 @@ pub(crate) fn chat_dto(chat: &ChatSession) -> Result<ChatThreadDto, CommandError
 
                 vocabulary: message.vocabulary.clone(),
                 link: message.link.clone(),
+                offers: message.offers.clone(),
+                ask: message.ask.clone(),
                 handoff: message.handoff.clone(),
                 research_session_id: message.research_session_id.clone(),
                 handoff_note: message.handoff_note.as_ref().map(|note| HandoffNoteDto {

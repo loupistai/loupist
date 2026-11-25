@@ -1,0 +1,9 @@
+{
+  "title": "Week in review",
+  "terms": "What the week changed for {assets}",
+  "prompt": "This is the weekly review, a scheduled run, and the user is not present. They asked for one look each\nweek at {assets}: what the week changed, what is due next, and which earlier findings it bore out.\n\nFor each asset, find what was filed, reported or announced this week and how its price and the measures\nbehind the user's reasons and lines moved. Prefer the filing or the company's own release; a news report\nstands in only with its publisher and date. Give each item its date and source link, keep the publication\ndate apart from the event date, and say in a sentence what the week means for the reasons and lines the\nuser wrote for that asset. Then name what is due in the next two weeks that bears on those reasons, such as\nresults, a shareholder meeting, a dividend date or a data release. Then say which earlier findings this\nweek bore out or overturned, such as a line reading on the asset's page or what last week's review\nreported (previous_run). Name each asset you could not check.\n\nReport facts and what they mean for the user's reasons and lines; give no call to buy, sell, hold or\nresize and no target of your own. This review reports every week, a quiet week in a few lines.\nAnswer in {language}.",
+  "report": "every_run",
+  "days": [5],
+  "hour": 16,
+  "minute": 0
+}

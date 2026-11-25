@@ -54,7 +54,8 @@ Brokered reads become usable evidence only after client acknowledgment. The
 turn-local `result_ref` records payload and provenance; it expires with the turn.
 Persisted `ChatEvidenceRef` snapshots remain inspectable even when Memory is off
 or a reply fails. A read receipt proves delivery, not truth. Native file calls and
-`run_python` produce Chat activity, not broker evidence or immutable datasets.
+`run_python` produce Chat activity. Python results can also be cited, and Python
+steps keep a host-owned ledger for replay.
 
 Host-issued citation links resolve against the message's evidence. A citation of a
 credential-free web page opens that page in a browser tab, one tab per address.
@@ -113,6 +114,11 @@ Sidecar checks fail if `rg` is missing, linked or altered.
 `run_python` does not use a shell PATH. The worker receives no host environment.
 Its offline packages are the pinned WASI stack staged by
 `apps/loupist/scripts/stage_python_runtime.py`.
+
+Python can ask Rust for admitted reads through the bundled `loupist` module.
+Rust serves requests between isolated starts, and only the final start can copy
+back files. Activity groups the reads under the Python step. See
+[Reads and replay](../capabilities/scripts.md#reads-and-replay).
 
 Rust snapshots bounded instructions in this order: global `AGENTS.md`, one selected
 workspace-root instruction, then `.loupist/AGENTS.md`. Root precedence is
@@ -268,7 +274,9 @@ the wait shows on the reply after a reload. Each reply keeps "Saving to Memory Â
 waiting for â€¦" and its own **Skip saving** (Stop of that run) until its receipt
 arrives. The line names the session it waits for; one whose first reply still runs
 has no title yet and is named from its request, as a stopped reply titles it
-(`waitedOnChatTitle` in `src/app/chatTitle.ts`, `src/lib/requestTitle.ts`). The wait
+(`waitedOnChatTitle` in `src/app/chatTitle.ts`, `src/lib/requestTitle.ts`). The session
+list holds a request from the moment it is submitted (`ChatSessionRegistry`), not only
+once its answer ends, so a session started in this window is named the same way. The wait
 stays in memory: writing it to the row would race the next turn. A crash leaves the
 checkpoint's activity and interrupted-save receipt.
 

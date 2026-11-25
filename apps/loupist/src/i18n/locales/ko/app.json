@@ -108,6 +108,9 @@
     "unavailable": "{{name}} 사용 불가"
   },
   "navigation": {
+    "usage": "사용량",
+    "usageKeywords": "모델 요청 토큰 캐시 결제 비용 추정 지출 한도",
+    "usageDescription": "이 기기의 모델 요청 수, 토큰 사용량 및 예상 비용을 확인합니다.",
     "connections": "데이터 연결",
     "connectionsDataSourcesApiKeyDartKrxOpenbb": "연결 자료 제공처 API 키 DART KRX OpenBB",
     "addDataSourcesAndChooseWhichLoupistsCan": "자료 제공처를 추가하고 사용할 루피스트를 선택합니다.",
@@ -289,6 +292,8 @@
     }
   },
   "attention": {
+    "proposal": "{{title}} 승인 대기 중",
+    "taskPaused": "{{title}}이(가) 일시 정지되었습니다",
     "savedKeyPermission": "저장된 키({{count}}개)를 Loupist가 사용하도록 허용",
     "approval": "{{loupistSubject}} {{connection}} 사용 허락을 기다립니다",
     "approvalAny": "{{loupistSubject}} 허락을 기다립니다",
@@ -300,7 +305,13 @@
     "checkLate": "{{day}} 기한 지남: {{title}}",
     "more_other": "{{formattedCount}}개 더",
     "finishedHidden": "자리를 비운 동안 끝났습니다",
-    "lineCrossed": "조건 넘음 · {{name}}"
+    "lineCrossed": "조건 넘음 · {{name}}",
+    "triggerFailing": "{{title}} 확인이 멈췄습니다",
+    "triggerUpdate": "{{title}} 새 버전",
+    "offer": "{{title}} 켜기",
+    "ask": "{{loupistSubject}} 질문을 남겼습니다",
+    "watchQuiet": "{{title}} · 오래 조용함",
+    "watchLoud": "{{title}} · 알림이 잦음"
   },
   "notifications": {
     "finished": "{{loupist}} 작업 완료",

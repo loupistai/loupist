@@ -482,3 +482,79 @@ async fn empty_custom_reads_stay_unlisted_but_still_pause_outbound_calls() {
         }
     }
 }
+
+#[tokio::test]
+async fn a_connection_another_request_holds_is_in_use_not_a_key_being_changed() {
+    let server = Server::start(move |_, request| {
+        let body = request.json();
+        match body["method"].as_str().unwrap() {
+            "initialize" => Response::json(json!({"jsonrpc":"2.0","id":body["id"],"result":{"protocolVersion":crate::mcp::MCP_PROTOCOL_VERSION,"serverInfo":{"name":"fixture"},"capabilities":{"tools":{}}}})),
+            "notifications/initialized" => Response::status(202),
+            "tools/list" => Response::json(json!({"jsonrpc":"2.0","id":body["id"],"result":{"tools":[{"name":"read_company","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}}]}})),
+            "tools/call" => Response::json(json!({"jsonrpc":"2.0","id":body["id"],"result":{"content":[{"type":"text","text":"Revenue grew."}]}})),
+            _ => Response::status(400),
+        }
+    }).await;
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let manager = service::for_state(&state).unwrap();
+    let connection = {
+        let mut service = manager.for_new_connection().unwrap();
+        let pending = service
+            .add_pending(ParsedConnection {
+                name: "Shared reads".into(),
+                transport: TransportConfig::Http {
+                    url: format!("{}/mcp", server.url),
+                },
+                secrets: Default::default(),
+            })
+            .unwrap();
+        service.confirm(&pending.id).await.unwrap();
+        let connection = service.set_enabled(&pending.id, "loupist-a", true).unwrap();
+        service
+            .approve(
+                "loupist-a",
+                &connection.id,
+                "read_company",
+                &connection.tools[0].definition_hash,
+                ApprovalChoice::Always,
+            )
+            .await
+            .unwrap();
+        connection
+    };
+    let socket = tool_broker_endpoint(temporary.path().join("in-use.sock"));
+    let broker = start_tool_broker(
+        socket.clone(),
+        policy(true, true),
+        Arc::new(executor_for(&state, Arc::new(ToolCapture::default()))),
+    )
+    .await
+    .unwrap();
+    let arguments = json!({"server_id":connection.id,"tool_name":"read_company","arguments":{}});
+
+    // Another conversation's call or a Settings action holds the connection.
+    let held = manager.for_connection(&connection.id).unwrap();
+    assert!(matches!(
+        manager.for_connection(&connection.id).err(),
+        Some(crate::custom_connections::ConnectionError::InUse)
+    ));
+    let refused = broker_request(&socket, broker.token(), "mcp.call", arguments.clone()).await;
+    assert_eq!(refused["error"]["code"], "execution_failed", "{refused}");
+    let message = refused["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("in use by another request")
+            && message.contains("Its key and setup are fine"),
+        "{refused}"
+    );
+    assert!(refused["error"]["next"]
+        .as_str()
+        .unwrap()
+        .starts_with("Call it once more later in this reply"));
+
+    // Once it is released, the same call is served.
+    drop(held);
+    let answered = broker_request(&socket, broker.token(), "mcp.call", arguments).await;
+    assert!(answered["result"].is_object(), "{answered}");
+    broker.shutdown().await.unwrap();
+}

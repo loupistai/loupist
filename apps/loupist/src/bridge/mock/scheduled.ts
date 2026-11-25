@@ -1,3 +1,4 @@
+import type { DeliveryRequest, FromPresetRequest, ProposalDeclineRequest, ProposalVisitRequest, TriggerReviewRequest, TriggerDryRun, TriggerEvaluation, TriggerGetRequest, TriggerRevertRequest, TriggerView } from "../../contracts/generated";
 import type {
   BriefingSettings, BriefingSettingsRequest, InboxRequest, InboxPage, InboxItem,
   ChatSendRequest, ChatStreamEvent, ScheduledCadence, ScheduledRun, ScheduledTask, ScheduledTaskListItem,
@@ -31,25 +32,34 @@ export class MockScheduledTasks {
 
   constructor(private state: MockBridgeState, private changed: (loupistId: string) => void = () => {}) {}
 
-  async briefingSettingsGet({ loupistId }: { loupistId: string }): Promise<BriefingSettings> {
+  async briefingSettingsGet({ loupistId, edition }: { loupistId: string; edition?: "morning" | "evening" | null }): Promise<BriefingSettings> {
     if (!this.state.loupists.some(loupist => loupist.id === loupistId)) throw new Error("Loupist not found.");
-    const task = [...this.tasks.values()].find(task => task.loupist_id === loupistId && task.kind === "briefing") ?? null;
-    return clone({ enabled: task?.status === "active", task, schedule: task?.schedule ?? { kind: "weekly", days: [1,2,3,4,5], hour: 8, minute: 0, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone } });
+    const wanted = edition ?? "morning";
+    const task = [...this.tasks.values()].find(task => task.loupist_id === loupistId && task.kind === "briefing" && (task.edition ?? "morning") === wanted) ?? null;
+    const hour = wanted === "evening" ? 18 : 8;
+    return clone({ enabled: task?.status === "active", task, schedule: task?.schedule ?? { kind: "weekly", days: [1,2,3,4,5], hour, minute: 0, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone } });
   }
   async briefingSettingsSet(request: BriefingSettingsRequest): Promise<BriefingSettings> {
-    const previous = await this.briefingSettingsGet(request);
+    const edition = request.edition ?? "morning";
+    const previous = await this.briefingSettingsGet({ loupistId: request.loupistId, edition });
     const schedule = request.schedule ?? previous.schedule;
     const status = request.enabled ? "active" : "paused";
     if (previous.task) {
       const task = this.tasks.get(previous.task.id)!;
-      Object.assign(task, { schedule, status, revision: task.revision + 1, updated_at_ms: Date.now(), next_run_at_ms: request.enabled ? preview(schedule) : null });
+      Object.assign(task, { schedule, status, edition, revision: task.revision + 1, updated_at_ms: Date.now(), next_run_at_ms: request.enabled ? preview(schedule) : null });
     } else if (request.enabled || request.schedule) {
-      const task = await this.create({ loupist_id: request.loupistId, title: "Briefings", prompt: "Host-authored briefing", schedule, status, target: { kind: "dedicated_chat" }, model_profile_id: "", thinking_level: "", run_options: {}, use_memory: true, update_memory: true });
-      this.tasks.get(task.id)!.kind = "briefing";
+      const task = await this.create({ loupist_id: request.loupistId, title: edition === "evening" ? "Evening briefing" : "Briefings", prompt: "Host-authored briefing", schedule, status, target: { kind: "dedicated_chat" }, model_profile_id: "", thinking_level: "", run_options: {}, use_memory: true, update_memory: true });
+      Object.assign(this.tasks.get(task.id)!, { kind: "briefing", edition });
     }
     this.changed(request.loupistId);
-    return this.briefingSettingsGet(request);
+    return this.briefingSettingsGet({ loupistId: request.loupistId, edition });
   }
+  async acceptOffer(request: { loupistId: string; offerId: string }): Promise<ScheduledTask> {
+    const task = await this.fromPreset({ loupistId: request.loupistId, preset: "filings-and-results", subjects: [] });
+    return task;
+  }
+  async dismissOffer(_request: { loupistId: string; offerId: string }) {}
+  answerAsk(_request: { loupistId: string; askId: string; choice: number }) {}
   async inboxList({ loupistId, cursor, limit }: InboxRequest): Promise<InboxPage> {
     if (limit < 1 || limit > 100) throw new Error("Inbox limit must be between 1 and 100.");
     if (!this.state.loupists.some(loupist => loupist.id === loupistId)) throw new Error("Loupist not found.");
@@ -103,12 +113,27 @@ export class MockScheduledTasks {
     const task = this.tasks.get(request.task_id);
     return task && task.loupist_id === request.loupist_id ? clone(task) : null;
   }
-  async confirm(request: ScheduledTaskIdentity) {
+  async confirm(request: ScheduledTaskIdentity & { expected_revision: number }) {
     const task = this.task(request);
-    if (!task.awaiting_confirmation) throw new Error("This scheduled task is not waiting for confirmation.");
+    if (task.revision !== request.expected_revision || !task.awaiting_confirmation || task.declined_in_visit !== undefined
+      || task.trigger && !task.replaces) throw new Error("This scheduled task is not waiting for confirmation.");
     Object.assign(task, { status: "active", awaiting_confirmation: false, next_run_at_ms: preview(task.schedule), revision: task.revision + 1, updated_at_ms: Date.now() });
     this.changed(task.loupist_id);
     return clone(task);
+  }
+  async setDeclined(request: ProposalDeclineRequest) {
+    const task = this.task(request);
+    if (!task.awaiting_confirmation || (task.declined_in_visit !== undefined && task.declined_in_visit !== request.visit)
+      || (!request.declined && task.declined_in_visit !== request.visit)) throw new Error("This proposal cannot be changed in this visit.");
+    task.declined_in_visit = request.declined ? request.visit : undefined;
+    this.changed(task.loupist_id);
+  }
+  async endVisit(request: ProposalVisitRequest) {
+    const before = this.tasks.size;
+    for (const task of this.tasks.values()) {
+      if (task.loupist_id === request.loupist_id && task.declined_in_visit !== undefined && task.declined_in_visit <= request.visit) this.tasks.delete(task.id);
+    }
+    if (this.tasks.size !== before) this.changed(request.loupist_id);
   }
   async discard(request: ScheduledTaskIdentity) {
     const task = this.task(request);
@@ -116,9 +141,145 @@ export class MockScheduledTasks {
     this.tasks.delete(task.id);
     this.changed(task.loupist_id);
   }
+  async fromPreset(request: FromPresetRequest) {
+    const subjects = request.subjects ?? [];
+    const existing = [...this.tasks.values()].find(task => task.loupist_id === request.loupistId &&
+      task.preset === request.preset && JSON.stringify(task.subjects) === JSON.stringify(subjects));
+    if (existing) return clone(existing);
+    const rows = {
+      "filings-and-results": { title: "Filings and results", days: [1, 2, 3, 4, 5], hour: 18, minute: 30 },
+      "thesis-lines": { title: "Thesis lines", days: [6], hour: 10, minute: 0 },
+      "results-follow-up": { title: "Results follow-up", days: [], hour: 8, minute: 0 },
+      "price-move": { title: "Price moves", days: [], hour: 0, minute: 0 },
+      "week-in-review": { title: "Week in review", days: [5], hour: 16, minute: 0 },
+    };
+    const { title, days, hour, minute } = rows[request.preset];
+    if (request.preset === "price-move") {
+      const task = await this.create({
+        loupist_id: request.loupistId, title, prompt: "Report the move.", schedule: { kind: "interval", every_minutes: 15 }, status: "paused",
+        target: { kind: "new_chat" }, model_profile_id: "", thinking_level: "", run_options: {}, use_memory: true, update_memory: false,
+      });
+      const saved = this.tasks.get(task.id)!;
+      Object.assign(saved, {
+        preset: request.preset, subjects, report: "every_run", terms: "A move of more than 5% from one close to the next", awaiting_confirmation: true,
+        trigger: {
+          script: { name: "price-band", version: 1, sha256: "ab".repeat(32) }, summary: "A move of more than 5% from one close to the next",
+          tools: [{ name: "price" }, { name: "followed" }], args: { band_percent: 5 }, state: "proposed", script_state: {},
+          evaluations: [], counters: { today: { day: "", evaluations: 0, reads: 0, met: 0 }, recent: [], agent_runs_today: 0, error_streak: 0, no_data_streak: 0, backoff_ms: 0, reads_blocked: false },
+          approved_versions: [], stale_after_days: 5, reads_per_check: 1,
+          proposal_test: { today_met: false, today_reading: "No asset beyond the band", today_outcome: "not_met", fired_on: ["2026-11-12"], replayed: 18, unreplayed: 2, days: [{ date: "2026-11-12", outcome: "met", reading: "Northwind +6.1%" }], reads: 4 },
+        },
+      });
+      this.changed(task.loupist_id);
+      return clone(saved);
+    }
+    const once = request.preset === "results-follow-up";
+    const schedule: ScheduledCadence = once
+      ? { kind: "once", at_ms: Date.parse(`${request.params?.results_date}T08:00:00`) + 86_400_000 }
+      : { kind: "weekly", days, hour, minute, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+    const task = await this.create({
+      loupist_id: request.loupistId, title, prompt: title, schedule, status: "active",
+      target: { kind: "new_chat" }, model_profile_id: "", thinking_level: "", run_options: {}, use_memory: true, update_memory: true,
+    });
+    Object.assign(this.tasks.get(task.id)!, {
+      preset: request.preset, subjects, report: once || request.preset === "week-in-review" ? "every_run" : "when_met",
+      terms: title,
+    });
+    this.changed(task.loupist_id);
+    return clone(this.tasks.get(task.id)!);
+  }
+  async triggerGet(request: TriggerGetRequest): Promise<TriggerView> {
+    const task = this.task(request);
+    const trigger = task.trigger;
+    if (!trigger) throw new Error("This task has no check.");
+    const version = request.version ?? trigger.pending?.version ?? trigger.script.version;
+    return {
+      code: "# saved check\n", summary: trigger.summary, version,
+      sha256: (trigger.pending?.version === version ? trigger.pending.sha256 : trigger.script.sha256),
+      dry_run: trigger.pending?.version === version ? trigger.pending.test : trigger.approved_versions.find(item => item.version === version)?.test ?? trigger.proposal_test,
+      task: clone(task),
+    };
+  }
+  async triggerApprove(request: TriggerReviewRequest) {
+    const task = this.task(request);
+    const trigger = task.trigger;
+    const selected = trigger?.pending ?? (task.awaiting_confirmation ? trigger?.script : undefined);
+    if (!trigger || task.revision !== request.expected_revision || selected?.version !== request.version
+        || selected.sha256 !== request.sha256) {
+      throw new Error("Turn on the version shown on the card.");
+    }
+    const test = trigger.pending ? trigger.pending.test : trigger.proposal_test;
+    const configuration = trigger.pending ? trigger.pending.configuration : {
+      args: trigger.args, tools: trigger.tools, reads_per_check: trigger.reads_per_check, active_hours: trigger.active_hours,
+    };
+    if (!test?.scores || !configuration) throw new Error("Test this version before turning it on.");
+    Object.assign(trigger, configuration);
+    trigger.approved = { version: request.version, sha256: request.sha256, at_ms: Date.now(), test, configuration };
+    trigger.script = { ...trigger.script, version: request.version, sha256: request.sha256 };
+    trigger.approved_versions = [...trigger.approved_versions, trigger.approved];
+    trigger.pending = undefined;
+    trigger.state = "on";
+    task.awaiting_confirmation = false;
+    task.status = "active";
+    task.next_run_at_ms = Date.now() + 15 * 60_000;
+    task.revision++;
+    this.changed(task.loupist_id);
+    return clone(task);
+  }
+  async triggerRevert(request: TriggerRevertRequest) {
+    const task = this.task({ loupist_id: request.loupistId, task_id: request.taskId });
+    const prior = task.trigger?.approved_versions.find(version => version.version === request.toVersion);
+    if (!task.trigger || !prior?.configuration || !prior.test?.scores) throw new Error("Go back only to a reviewed version.");
+    Object.assign(task.trigger, prior.configuration);
+    task.trigger.script = { ...task.trigger.script, version: prior.version, sha256: prior.sha256 };
+    task.trigger.approved = prior;
+    task.trigger.pending = undefined;
+    task.trigger.state = "on";
+    task.revision++;
+    this.changed(task.loupist_id);
+    return clone(task);
+  }
+  async triggerTest(request: TriggerReviewRequest): Promise<TriggerEvaluation> {
+    const task = this.task(request);
+    const trigger = task.trigger;
+    if (!trigger) throw new Error("This task has no check.");
+    const selected = trigger.pending ?? trigger.script;
+    if (task.revision !== request.expected_revision || task.declined_in_visit !== undefined
+        || selected.version !== request.version || selected.sha256 !== request.sha256) {
+      throw new Error("The check proposal changed.");
+    }
+    const reading = "No asset beyond the band";
+    if (task.awaiting_confirmation || trigger.pending) {
+      const test: TriggerDryRun = {
+        today_met: false, today_reading: reading, today_outcome: "not_met", reads: 1,
+        fired_on: [], replayed: 0, unreplayed: 0, days: [],
+        scores: { previous_met: 0, next_met: 0, compared: 0, days: [] },
+      };
+      if (trigger.pending) trigger.pending.test = test;
+      else trigger.proposal_test = test;
+      task.revision++;
+      this.changed(task.loupist_id);
+    }
+    return {
+      at_ms: Date.now(), scheduled_for_ms: Date.now(), outcome: "not_met", reading,
+      as_of: "2026-11-24", evidence: {}, version: selected.version, sha256: selected.sha256,
+      reads: 1, coalesced: false, ledger: [],
+    };
+  }
+  async triggerEvaluations(request: ScheduledTaskIdentity): Promise<TriggerEvaluation[]> {
+    return clone(this.task(request).trigger?.evaluations ?? []);
+  }
+  async setDelivery(request: DeliveryRequest) {
+    const task = this.task({ loupist_id: request.loupistId, task_id: request.taskId });
+    if (task.revision !== request.expectedRevision) throw new Error("The task changed. Reload and try again.");
+    task.delivery = { to: request.to ?? task.delivery?.to ?? "bot", notify: request.notify ?? task.delivery?.notify };
+    task.revision++;
+    this.changed(task.loupist_id);
+    return clone(task);
+  }
   async setStatus(request: ScheduledTaskIdentity & { expected_revision: number; status: "active" | "paused" }) {
     const task = this.task(request);
-    if (task.revision !== request.expected_revision) throw new Error("The task changed. Reload and try again.");
+    if (task.revision !== request.expected_revision || task.awaiting_confirmation) throw new Error("The task changed. Reload and try again.");
     Object.assign(task, { status: request.status, awaiting_confirmation: false, next_run_at_ms: request.status === "active" ? preview(task.schedule) : null, revision: task.revision + 1, updated_at_ms: Date.now() });
     this.changed(task.loupist_id);
     return clone(task);
@@ -169,6 +330,7 @@ export class MockScheduledTasks {
 
   async runNow(request: ScheduledTaskIdentity, send: (request: ChatSendRequest, observer: StreamObserver<ChatStreamEvent>) => Promise<{ run_id: string }>) {
     const task = this.task(request);
+    if (task.awaiting_confirmation) throw new Error("This scheduled task is waiting for approval.");
     if ([...this.runs.values()].some((run) => run.task_id === task.id && run.status === "running")) throw new Error("This task is already running.");
     const thread = task.target.kind === "new_chat" || (task.target.kind === "dedicated_chat" && !task.session_thread_id)
       ? await chatCreate(this.state, { loupist_id: task.loupist_id, title: task.title })

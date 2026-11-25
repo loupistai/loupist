@@ -57,6 +57,8 @@ fn append_control_message(
         handoff_action: None,
         scheduled: None,
         link: None,
+        offers: Vec::new(),
+        ask: None,
         id: message_id.clone(),
         role: ChatRole::User,
         status: ChatMessageStatus::Complete,

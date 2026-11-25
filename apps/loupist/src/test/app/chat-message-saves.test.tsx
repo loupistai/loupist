@@ -4,6 +4,7 @@ import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import type { ChatMessage, ChatSaveState, ChatStreamEvent, ChatThread } from "../../types";
 import { completedRun } from "../streamFixtures";
+import { newChatButton } from "../renderApp";
 
 // A reply whose save waits on its own (docs/runtime/chat-turns.md#saves-that-wait-on-their-own).
 const LOUPIST = "loupist-quality";
@@ -105,6 +106,33 @@ it("names the session it waits on from that session's request while its first re
   const status = within((await screen.findByText("Margins fell on input costs.")).closest("article")!).getByRole("status");
   await waitFor(() => expect(status).toHaveTextContent("Saving to Memory · waiting for “Compare Coca-Cola and PepsiCo using…” to finish"));
   expect(within(status).getByRole("link", { name: "Compare Coca-Cola and PepsiCo using…" })).toBeVisible();
+});
+
+it("names a research session started in this window from its request while its first answer runs", async () => {
+  const user = userEvent.setup();
+  // The 0.1.6 acceptance run: the session was created here and its first answer was still running,
+  // so the host had neither titled it nor handed back its messages.
+  const request = "Compare Microsoft and Alphabet using each company's latest annual report on Form 10-K.";
+  const bridge = setup([
+    { id: "ask-1", role: "user", content: "Why did margins fall?", created_at: new Date().toISOString(), status: "complete" },
+    stored("answer-1", "Margins fell on input costs."),
+  ]);
+  // The first answer starts and keeps running.
+  const send = vi.spyOn(bridge, "chatSend").mockImplementation(async (sent, observer) => {
+    observer({ type: "started", run_id: sent.run_id });
+    return { run_id: sent.run_id };
+  });
+  render(<App bridge={bridge} />);
+  await screen.findByRole("button", { name: SESSION });
+  await user.click(newChatButton());
+  await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), `${request}{Enter}`);
+  await waitFor(() => expect(send).toHaveBeenCalledOnce());
+  const session = send.mock.calls[0]![0].thread_id;
+  await user.click(screen.getByRole("button", { name: SESSION }));
+  act(() => bridge.emitChatSave({ loupist_id: LOUPIST, thread_id: THREAD, message_id: "answer-1", run_id: "run-1",
+    pending: { ...pending("run-1", "answer-1"), blocking_chat_id: session, save_activity: { ...activity, blockingChatId: session } } }));
+  const status = within((await screen.findByText("Margins fell on input costs.")).closest("article")!).getByRole("status");
+  await waitFor(() => expect(status).toHaveTextContent("Saving to Memory · waiting for “Compare Microsoft and Alphabet using…” to finish"));
 });
 
 it("shows a save still waiting after the conversation is opened again, until its receipt arrives", async () => {

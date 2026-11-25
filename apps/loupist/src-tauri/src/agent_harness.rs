@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 pub(crate) mod interface;
+pub(crate) mod message_script;
 pub(crate) mod native_policy;
 #[cfg(test)]
 mod runtime_formats;
@@ -30,6 +31,7 @@ pub const DATA_ANALYSIS_SKILL_ID: &str = "data-analysis";
 pub const DIVIDEND_INCOME_SKILL_ID: &str = "dividend-income";
 pub const FUND_COMPARE_SKILL_ID: &str = "fund-compare";
 pub const WHY_IT_MOVED_SKILL_ID: &str = "why-it-moved";
+pub const TRIGGERS_SKILL_ID: &str = "triggers";
 pub const GOAL_MATH_SKILL_ID: &str = "goal-math";
 
 pub const PDF_SKILL_ID: &str = "pdf";
@@ -149,6 +151,14 @@ const SELECTABLE_SKILLS: &[BundledSkill] = &[
             "skills/fund-compare/references/fund-checks.md",
             include_bytes!("../../agent/skills/fund-compare/references/fund-checks.md"),
         )],
+    },
+    BundledSkill {
+        id: TRIGGERS_SKILL_ID,
+        name: "Checks",
+        default_enabled: true,
+        relative_path: "skills/triggers/SKILL.md",
+        content: include_bytes!("../../agent/skills/triggers/SKILL.md"),
+        support_files: &[],
     },
     BundledSkill {
         id: WHY_IT_MOVED_SKILL_ID,
@@ -620,6 +630,17 @@ impl AgentRuntimeProfile {
             });
         }
         Ok(())
+    }
+
+    pub(crate) fn with_kis_dividend_calendar(mut self, real_connection: bool) -> Self {
+        if !real_connection {
+            for component in &mut self.components {
+                component
+                    .tool_names
+                    .retain(|name| name != "kis_dividend_calendar");
+            }
+        }
+        self
     }
 
     /// Unattended (scheduled) runs see only the briefing allowlist: no native
@@ -1198,6 +1219,42 @@ pub fn attach_chat_surface(envelope: &str, surface: &crate::chat::surface::ChatS
 
 /// A custom scheduled run's `previous_run` block: the host's facts about its
 /// task's last finished run, beside `chat_surface`. A first run has none.
+/// The sentence the host places before a triggered run's `trigger` block.
+pub(crate) const TRIGGER_FRAMING: &str = "This run started because a check the user approved was met. trigger gives what that check computed from data the app read for it: its one-line reading, the date of its data, its evidence and the script version. It is a computation over provider data, not a fact you have read: re-read what you report with your own tools, and say so if what you read does not agree with it.";
+
+pub(crate) fn attach_trigger(
+    envelope: &str,
+    trigger: &crate::commands::triggers::TriggerContext,
+) -> String {
+    let Ok(mut value) = serde_json::from_str::<Value>(envelope) else {
+        return envelope.to_owned();
+    };
+    let Some(object) = value.as_object_mut() else {
+        return envelope.to_owned();
+    };
+    object.insert(
+        "trigger_framing".into(),
+        Value::String(TRIGGER_FRAMING.into()),
+    );
+    object.insert(
+        "trigger".into(),
+        json!({
+            "version": trigger.version,
+            "reading": trigger_text_for_model(&trigger.reading),
+            "as_of": trigger_text_for_model(&trigger.as_of),
+            "evidence": trigger_text_for_model(&trigger.evidence.to_string()),
+            "summary": trigger.summary,
+        }),
+    );
+    serde_json::to_string(&value).unwrap_or_else(|_| envelope.to_owned())
+}
+
+pub(crate) fn trigger_text_for_model(text: &str) -> String {
+    use crate::custom_connections::taint::{delimited, fresh_id};
+    // TODO(model-text): Check the trigger result's source label.
+    delimited(text, "trigger check result", &fresh_id())
+}
+
 pub(crate) fn attach_previous_run(
     envelope: &str,
     run: &crate::scheduled_tasks::types::PreviousRun,
@@ -1455,10 +1512,21 @@ pub(crate) fn followed_context(
     state: &crate::app::AppState,
     loupist: &str,
 ) -> Result<Value, crate::app::CommandError> {
+    followed_context_for(state, loupist, None)
+}
+
+pub(crate) fn followed_context_for(
+    state: &crate::app::AppState,
+    loupist: &str,
+    scope: Option<&[String]>,
+) -> Result<Value, crate::app::CommandError> {
     let mut followed = state
         .store
         .assets_list(loupist, true)
         .map_err(crate::commands::map_store)?;
+    if let Some(ids) = scope {
+        followed.retain(|asset| ids.contains(&asset.asset_id));
+    }
     followed.truncate(60);
     crate::commands::assets::with_assets(state, loupist, false, |tx| {
         use crate::commands::assets::wire::PriceReadState;
@@ -1600,11 +1668,16 @@ pub(crate) fn render_turn_context(envelope: &str) -> String {
         }
     }
     let live_time = object.remove("live_time");
+    // Last before the clock, next to the message it describes.
+    let script = object.remove(message_script::CURRENT_MESSAGE_SCRIPT);
     blocks.extend(
         object
             .iter()
             .map(|(key, value)| (key.clone(), value.clone())),
     );
+    if let Some(script) = script {
+        blocks.push((message_script::CURRENT_MESSAGE_SCRIPT.into(), script));
+    }
     if let Some(time) = live_time {
         blocks.push(("live_time".into(), time));
     }
@@ -1627,6 +1700,8 @@ pub fn envelope_context_digest(envelope: &str) -> String {
         // New with every scheduled run, as the clock is; an abbreviated
         // envelope carries it whole.
         object.remove("previous_run");
+        // Read from each message; carried whole as well.
+        object.remove(message_script::CURRENT_MESSAGE_SCRIPT);
         if let Some(memory) = object
             .get_mut("memory_protocol")
             .and_then(Value::as_object_mut)
@@ -1656,6 +1731,7 @@ pub fn maybe_abbreviate_envelope(
             "Loupist tone",
             "interface",
             "previous_run",
+            message_script::CURRENT_MESSAGE_SCRIPT,
         ] {
             if let Some(value) = parsed.get(key) {
                 short[key] = value.clone();

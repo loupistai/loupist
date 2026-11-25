@@ -168,7 +168,7 @@ const startedAt = (message: ChatMessage) => message.progress?.startedAtMs ?? Dat
 /** The plan and the question line stand for these steps; they are not counted and have no row. */
 const HIDDEN_TOOLS = new Set(["plan_update", "ask_user"]);
 const isCounted = (item: ChatProgressItem): item is ActionItem =>
-  isActionItem(item) && !(item.kind === "tool" && item.toolName && HIDDEN_TOOLS.has(item.toolName));
+  isActionItem(item) && !(item.kind === "tool" && (item.origin === "python" || (item.toolName && HIDDEN_TOOLS.has(item.toolName))));
 const isCardTool = (tool: string | undefined): tool is "chart_publish" | "grid_publish" => tool === "chart_publish" || tool === "grid_publish";
 
 /** Changes whenever the host reports a step, phase, plan or approval change. */

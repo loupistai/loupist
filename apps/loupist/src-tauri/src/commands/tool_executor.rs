@@ -10,6 +10,7 @@ mod bot_memory;
 mod calculation;
 #[cfg(test)]
 mod calculation_tests;
+mod cards;
 mod lens_file;
 mod question;
 pub(crate) use lens_file::commit_turn as commit_filings;
@@ -49,6 +50,10 @@ mod setup;
 pub(super) use setup::StagedSetup;
 mod connection_setup;
 pub(crate) use setup::{apply_watchlist as apply_setup_watchlist, commit_turn as commit_setup};
+mod python_reads;
+pub(in crate::commands) use python_reads::CheckRun;
+pub(in crate::commands) use schedules::spawn_dry_run;
+mod scripts;
 mod workspace;
 pub(in crate::commands) use workspace::NativeGate;
 mod world_schema;
@@ -182,6 +187,11 @@ pub(super) struct ToolCapture {
     pub(super) approval_sink: Option<ApprovalSink>,
     /// Set for interactive Chats: `ask_user` shows its question card here.
     pub(super) question_sink: Option<QuestionSink>,
+    /// Offers this turn has made. Unplaced ones ride on the reply.
+    pub(super) offers: std::sync::Mutex<Vec<crate::domain::HomeOffer>>,
+    card_publication: std::sync::Mutex<cards::CardPublication>,
+    /// The one question this run left, when it was not posted yet.
+    pub(super) ask: std::sync::Mutex<Option<crate::domain::HomeAsk>>,
     /// Cards this reply has shown; it holds at most `MAX_PROGRESS_APPROVALS`.
     pub(super) approvals_shown: std::sync::atomic::AtomicUsize,
     /// The native policy's turn state (`agent_harness::native_policy`).
@@ -562,18 +572,6 @@ impl ToolCapture {
                 "tool result exceeded the run result capture limit".into(),
             ));
         }
-        let mut unique_upstream = BTreeSet::new();
-        for result_ref in &upstream_result_refs {
-            if result_ref.is_empty()
-                || result_ref.len() > 128
-                || !unique_upstream.insert(result_ref.as_str())
-                || self.run_result(result_ref).await.is_none()
-            {
-                return Err(BrokerError::Execution(
-                    "upstream_result_refs must name unique delivered results from this turn".into(),
-                ));
-            }
-        }
         let result_ref = format!("result:{}", uuid::Uuid::new_v4().simple());
         let warnings = result_warnings(&payload);
         let origin = match producer.origin {
@@ -605,6 +603,22 @@ impl ToolCapture {
         }
         let committed = self.run_results.lock().await;
         let mut pending = self.pending_deliveries.lock().await;
+        // Nested reads can be upstream of their parent before either is
+        // acknowledged. Validate against both registries under the commit locks.
+        let staged_results = pending.get(delivery_id).map(|capture| &capture.run_results);
+        let mut unique_upstream = BTreeSet::new();
+        for reference in &result.upstream_result_refs {
+            if reference.is_empty()
+                || reference.len() > 128
+                || !unique_upstream.insert(reference.as_str())
+                || (committed.get(reference).is_none()
+                    && !staged_results.is_some_and(|results| results.contains_key(reference)))
+            {
+                return Err(BrokerError::Execution(
+                    "upstream_result_refs must name unique delivered results from this turn".into(),
+                ));
+            }
+        }
         let pending_count = pending
             .values()
             .map(|capture| capture.run_results.len())
@@ -1168,6 +1182,18 @@ impl ToolExecutor for AppToolExecutor {
     }
 }
 
+/// Builds the schedule future outside the tool dispatcher. `inline(never)`
+/// keeps that future off the dispatcher's stack frame.
+#[inline(never)]
+fn erased_schedule<'a>(
+    executor: &'a AppToolExecutor,
+    policy: &'a ToolPolicy,
+    method: ToolMethod,
+    params: Value,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, BrokerError>> + Send + 'a>> {
+    Box::pin(executor.schedule_tool(policy, method, params))
+}
+
 impl AppToolExecutor {
     /// File and local dataset/index work must not occupy an async worker.
     async fn blocking_tool<F>(&self, operation: F) -> Result<Value, BrokerError>
@@ -1245,7 +1271,10 @@ impl AppToolExecutor {
         };
         let request = params.clone();
         let persistent_data = retention.is_some_and(Retention::keeps_dataset);
-        let kis_credential = if method == ToolMethod::KisRead {
+        let kis_credential = if matches!(
+            method,
+            ToolMethod::KisRead | ToolMethod::KisDividendCalendar
+        ) {
             Some(
                 self.provider_credential_bundle(crate::finance_data::KIS_SOURCE_ID)
                     .await?,
@@ -1285,7 +1314,14 @@ impl AppToolExecutor {
             | ToolMethod::ScheduleSetStatus
             | ToolMethod::ScheduleDelete
             | ToolMethod::ScheduleRunNow
-            | ToolMethod::ScheduleStop => self.schedule_tool(policy, method, params).await,
+            | ToolMethod::ScheduleStop
+            | ToolMethod::TriggerSave => {
+                // The schedule future, including a check's dry run, is larger
+                // than the other arms. Build it in its own frame and keep only
+                // the box in this dispatcher, so an unrelated tool does not
+                // overflow the stack.
+                erased_schedule(self, policy, method, params).await
+            }
             ToolMethod::ResearchOpen => {
                 self.capture
                     .stage_research_open(policy, params, delivery_id)
@@ -1315,6 +1351,15 @@ impl AppToolExecutor {
             ToolMethod::DefillamaRead => self.defillama_read(policy, params).await,
             ToolMethod::KrxDailyQuote => self.krx_daily_quote(policy, params).await,
             ToolMethod::KisOperationSearch => self.kis_operation_search(params).await,
+            ToolMethod::KisSymbolLookup => self.kis_symbol_lookup(params).await,
+            ToolMethod::KisDividendCalendar => {
+                self.kis_dividend_calendar(
+                    policy,
+                    params,
+                    kis_credential.as_ref().ok_or(BrokerError::MethodDenied)?,
+                )
+                .await
+            }
             ToolMethod::KisRead => {
                 self.kis_read(
                     policy,
@@ -1368,6 +1413,8 @@ impl AppToolExecutor {
             ToolMethod::LoupistSetup => self.stage_loupist_setup(policy, params, delivery_id).await,
             ToolMethod::ConnectionSetup => self.connection_setup(params),
             ToolMethod::AskUser => self.ask_user_question(params).await,
+            ToolMethod::BotOffer => self.bot_offer(params).await,
+            ToolMethod::AskLater => self.ask_later(params).await,
             ToolMethod::LensFile => self.stage_lens_file(policy, params, delivery_id).await,
             ToolMethod::ArtifactList => self.artifact_list(policy, params).await,
             ToolMethod::ArtifactRead => self.artifact_read(policy, params, delivery_id).await,
@@ -1393,7 +1440,10 @@ impl AppToolExecutor {
                 Ok(result)
             }
             ToolMethod::PastedCapture => self.pasted_capture(policy, params),
-            ToolMethod::PythonRun => self.python_run(params).await,
+            ToolMethod::PythonRun => Box::pin(self.python_run(policy, params, delivery_id)).await,
+            ToolMethod::ScriptSave | ToolMethod::ScriptList | ToolMethod::ScriptRead => {
+                self.script_tool(policy, method, params)
+            }
         }?;
         drop(kis_credential);
         // Account-field redaction over every account result: an account read
@@ -1484,7 +1534,8 @@ impl AppToolExecutor {
                 "bounded dataset schema and sample"
             });
         }
-        let compact = persistent_data && result.to_string().len() > 16 * 1024;
+        let compact =
+            !python_reads::nested() && persistent_data && result.to_string().len() > 16 * 1024;
         let mut dataset_ref = None;
         if let Some(request_key) = request_key {
             let (reference, fetched_at, reused) = match reused {
@@ -1558,20 +1609,25 @@ impl AppToolExecutor {
         // Full datasets stay in the host; large model-facing views are bounded.
         let mut delivered = model_payload.unwrap_or(result);
         let mut links = crate::custom_connections::taint::DeliveredLinks::default();
-        crate::custom_connections::taint::delimit_untrusted_bodies(
-            method,
-            &request,
-            &self.state.artifacts.mcp_runtimes,
-            &mut delivered,
-            &mut links,
-        );
-        if let Some(returning) = &returning {
-            crate::custom_connections::taint::delimit_returning(
+        // Nested reads return structured values to the isolated worker.
+        // The parent Python response, which can quote any of them, carries
+        // the model-facing delimiters.
+        if !python_reads::nested() {
+            crate::custom_connections::taint::delimit_untrusted_bodies(
                 method,
-                returning,
+                &request,
+                &self.state.artifacts.mcp_runtimes,
                 &mut delivered,
                 &mut links,
             );
+            if let Some(returning) = &returning {
+                crate::custom_connections::taint::delimit_returning(
+                    method,
+                    returning,
+                    &mut delivered,
+                    &mut links,
+                );
+            }
         }
         if method.safety().pack_text == PackText::Delimited {
             // Text from shared packs arrives delimited and pauses commands for this turn.
@@ -1608,7 +1664,10 @@ impl AppToolExecutor {
         kis_credential: Option<&crate::finance_credentials::ActiveCredentialBundle>,
     ) -> String {
         let mut key = json!({"method":format!("{method:?}"),"request":request,"as_of":policy.as_of,"capabilities":self.capability_ids,"schema":"finance-dataset/1"});
-        if method == ToolMethod::KisRead {
+        if matches!(
+            method,
+            ToolMethod::KisRead | ToolMethod::KisDividendCalendar
+        ) {
             key["provider_identity"] =
                 json!(kis_credential.and_then(|credential| self.kis_reuse_identity(credential)));
         }
@@ -1778,7 +1837,7 @@ fn refuse_sensitive_memory(
     method: ToolMethod,
     params: &Value,
 ) -> Result<(), BrokerError> {
-    if !method.safety().memory.screened_for_credentials() || !any_credential_text(params) {
+    if !method.safety().write.screened_for_credentials() || !any_credential_text(params) {
         return Ok(());
     }
     Err(sensitive_memory_refusal(capture, method))

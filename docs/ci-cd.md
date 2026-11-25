@@ -167,6 +167,8 @@ outlasts every other test (about 135 s of a 176 s local run). `check_runner.py`
 skips that chain in `tests` and runs it as `python-sandbox-tests` in the `eval`
 leg's existing build, with one filter list for both sides, so each test runs once
 and the two legs finish in similar time.
+Tests that use the app's Python worker share a test lock so an unrelated test
+cannot take the worker slot between rounds of a tool call.
 Lint installs only Rust; the other legs install locked Node and OpenBB dependencies
 for host integration tests. The plans still execute every Rust step exactly once
 on each host. `check.sh rust --only <steps>` runs the same parts locally. Rust

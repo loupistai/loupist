@@ -1,3 +1,4 @@
+import type { DeliveryRequest, FromPresetRequest, ResidentRequest, TemplatesRequest, BotFocusRequest, ProposalDeclineRequest, ProposalVisitRequest } from "../contracts/generated";
 import { MockLegacyHoldings } from "./mock/legacyHoldings";
 import type { AttentionItem, AttentionNotifyRequest } from "../contracts/attention";
 import { CURRENT_NOTICE_VERSION } from "./notice";
@@ -12,6 +13,7 @@ import type { SharingBridge } from "../contracts/sharing";
 import { workspaceFolderName } from "../lib/loupistFolder";
 import { AGENT_SKILLS, FIXED_AGENT_SKILLS, visibleSkill } from "../lib/agentSkills";
 import type * as Contract from "../types";
+import type { ComposerModelRead, ComposerModelSelection, ComposerModelWrite } from "../contracts/generated";
 import {
   ASSET_LOOKUP_SOURCE_ID,
   createMockLoupistCapabilityBindings,
@@ -29,6 +31,7 @@ import worldDefaults from "../../world-model-defaults.json";
 import { defaultRunOptions } from "../lib/modelSelection";
 import { executionModelLock, initialModelCatalog, listProviderModels, mockModelSelection, mockProviderStatus, type MockModelIdentity } from "./mock/models";
 import { commandError } from "./mock/commandError";
+import { mockUsageSummary } from "./mock/usage";
 
 /** The bundled Skills' own files, loaded on demand when a detail opens. */
 const bundledSkillSources = import.meta.glob<string>("../../agent/skills/*/SKILL.md", { query: "?raw", import: "default" });
@@ -36,6 +39,51 @@ const bundledSkillSources = import.meta.glob<string>("../../agent/skills/*/SKILL
 const skillBody = (source: string) => source.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").replace(/^\n+/, "");
 
 export class MockLoupistBridge implements Contract.LoupistBridge {
+  private scripts = new Map<string, import("../contracts/generated").ScriptVersion[]>();
+
+  async scriptsList({ loupistId, query }: Parameters<Contract.LoupistBridge["scriptsList"]>[0]) {
+    return [...this.scripts.entries()].filter(([key]) => key.startsWith(`${loupistId}\n`)).flatMap(([, entries]) => {
+      const summary = entries[0]?.summary;
+      return summary && (!query || `${summary.name} ${summary.metadata.title} ${summary.metadata.summary}`.toLowerCase().includes(query.toLowerCase())) ? [summary] : [];
+    });
+  }
+
+  async scriptGet({ loupistId, name, version }: Parameters<Contract.LoupistBridge["scriptGet"]>[0]) {
+    const entries = this.scripts.get(`${loupistId}\n${name}`) ?? [];
+    const script = version === undefined ? entries[0] : entries.find(item => item.summary.version === version);
+    if (!script) throw new Error("The saved script could not be found.");
+    return { ...script, versions: entries.map(item => item.summary.version) };
+  }
+
+  async scriptSave({ loupistId, draft }: Parameters<Contract.LoupistBridge["scriptSave"]>[0]) {
+    const key = `${loupistId}\n${draft.name}`;
+    const entries = this.scripts.get(key) ?? [];
+    const version = (entries[0]?.summary.version ?? 0) + 1;
+    const script: import("../contracts/generated").ScriptVersion = {
+      code: draft.code, versions: [],
+      summary: { name: draft.name, version, sha256: "", createdAtMs: Date.now(), usedBy: [],
+        metadata: { title: draft.title ?? draft.name, summary: draft.summary, args: draft.args ?? {},
+          origin: { kind: "user" }, afterOutsideText: false, reads: [] } },
+    };
+    this.scripts.set(key, [script, ...entries]);
+    return this.scriptGet({ loupistId, name: draft.name, version });
+  }
+
+  async scriptDelete({ loupistId, name, version }: Parameters<Contract.LoupistBridge["scriptDelete"]>[0]) {
+    const key = `${loupistId}\n${name}`;
+    if (version === undefined) this.scripts.delete(key);
+    else this.scripts.set(key, (this.scripts.get(key) ?? []).filter(item => item.summary.version !== version));
+    return null;
+  }
+
+  async scriptTest(_: Parameters<Contract.LoupistBridge["scriptTest"]>[0]): ReturnType<Contract.LoupistBridge["scriptTest"]> {
+    throw new Error("Python tests require the desktop app.");
+  }
+
+  async pythonStepReplay(_: Parameters<Contract.LoupistBridge["pythonStepReplay"]>[0]): ReturnType<Contract.LoupistBridge["pythonStepReplay"]> {
+    throw new Error("Python replay requires the desktop app.");
+  }
+
   private noticeVersion = CURRENT_NOTICE_VERSION;
   async noticeSettingsGet() { return { notice_acknowledged_version: this.noticeVersion }; }
   async noticeAcknowledge() { this.noticeVersion = Math.max(this.noticeVersion, CURRENT_NOTICE_VERSION); return this.noticeSettingsGet(); }
@@ -98,6 +146,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
 
   async exportSave(request: Parameters<Contract.LoupistBridge["exportSave"]>[0]): Promise<string | null> { return `/mock/${request.suggestedName}`; }
   async pickFile(_request: { title: string; filters: { name: string; extensions: string[] }[] }): Promise<string | null> { return "/mock/holdings.csv"; }
+  async clipboardReadImage(): ReturnType<Contract.LoupistBridge["clipboardReadImage"]> { return { status: "unavailable" }; }
 
   private admitAssetLoupist(loupistId: string) {
     if (!this.state.loupists.some(item => item.id === loupistId && item.availability.status === "available")) {
@@ -185,10 +234,18 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   onInboxOpen(_handler: (event: Contract.InboxOpenEvent) => void) { return () => {}; }
   briefingSettingsGet(request: { loupistId: string }) { return this.scheduled.briefingSettingsGet(request); }
   briefingSettingsSet(request: Contract.BriefingSettingsRequest) { return this.scheduled.briefingSettingsSet(request); }
+  botOfferAccept(request: { loupistId: string; offerId: string }) { return this.scheduled.acceptOffer(request); }
+  botOfferDismiss(request: { loupistId: string; offerId: string }) { return this.scheduled.dismissOffer(request); }
+  async botAskAnswer(request: { loupistId: string; askId: string; choice: number }) { this.scheduled.answerAsk(request); }
   // The fixture already has a briefing, so the automatic default has turned menu-bar residence on.
   resident: Contract.BriefingResidentSettings = { keepRunning: true, notificationPermissionAsked: false, keepRunningChoice: null, loginItem: "unavailable", loginItemTurnedOff: false };
   async briefingResidentSettingsGet() { return { ...this.resident, loginItemTurnedOff: false }; }
-  async briefingResidentSettingsSet({ keepRunning }: { keepRunning: boolean }) {
+  async briefingResidentSettingsSet({ keepRunning, notifications }: ResidentRequest) {
+    if (notifications) {
+      this.resident = { ...this.resident, notifications };
+      return { ...this.resident };
+    }
+    if (keepRunning == null) throw new Error("Choose a desktop setting to update.");
     const turnedOff = !keepRunning && this.resident.loginItem === "on";
     this.resident = { ...this.resident, keepRunning, keepRunningChoice: keepRunning, loginItem: turnedOff ? "off" : this.resident.loginItem };
     return { ...this.resident, loginItemTurnedOff: turnedOff };
@@ -215,17 +272,37 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   scheduledTaskSetStatus(request: Contract.ScheduledTaskIdentity & { expected_revision: number; status: "active" | "paused" }) { return this.scheduled.setStatus(request); }
   scheduledTaskDelete(request: Contract.ScheduledTaskIdentity & { expected_revision: number }) { return this.scheduled.delete(request); }
   scheduledTaskRuns(request: Contract.ScheduledTaskIdentity) { return this.scheduled.taskRuns(request); }
+  scheduledTaskSetDelivery(request: DeliveryRequest) { return this.scheduled.setDelivery(request); }
+  async scheduledTaskFromPreset(request: FromPresetRequest) {
+    const task = await this.scheduled.fromPreset(request);
+    if (task.status === "active" && task.schedule.kind !== "once" && task.last_run_at_ms === null && !task.trigger) {
+      await this.scheduledTaskRunNow({ loupist_id: task.loupist_id, task_id: task.id });
+    }
+    return this.scheduled.get({ loupist_id: task.loupist_id, task_id: task.id }).then(current => current ?? task);
+  }
+  async notificationPermissionSettingsOpen() {}
+  async notificationBotFocusSet(_request: BotFocusRequest) {}
+  async notificationTemplatesSet(_request: TemplatesRequest) {}
   scheduledTaskRunNow(request: Contract.ScheduledTaskIdentity) { return this.scheduled.runNow(request, (input, observer) => this.chatSend(input, observer)); }
   /** Preview and test helper: a task the Loupist proposed in conversation, waiting for the user's OK. */
   proposeScheduledTask(request: Contract.ScheduledTaskCreateRequest) { return this.scheduled.propose(request); }
   /** Preview and test helper: a task Rust created by itself (the results task) and its runs. */
   installScheduledTask(task: Contract.ScheduledTask, runs: Contract.ScheduledRun[] = []) { this.scheduled.installTask(task, runs); }
   scheduledTaskGet(request: Contract.ScheduledTaskIdentity) { return this.scheduled.get(request); }
-  scheduledTaskConfirm(request: Contract.ScheduledTaskIdentity) { return this.scheduled.confirm(request); }
+  scheduledTaskConfirm(request: Contract.ScheduledTaskIdentity & { expected_revision: number }) { return this.scheduled.confirm(request); }
+  scheduledTriggerGet(request: import("../contracts/generated").TriggerGetRequest) { return this.scheduled.triggerGet(request); }
+  scheduledTriggerApprove(request: import("../contracts/generated").TriggerReviewRequest) { return this.scheduled.triggerApprove(request); }
+  scheduledTriggerRevert(request: import("../contracts/generated").TriggerRevertRequest) { return this.scheduled.triggerRevert(request); }
+  scheduledTriggerTest(request: import("../contracts/generated").TriggerReviewRequest) { return this.scheduled.triggerTest(request); }
+  scheduledTriggerEvaluations(request: Contract.ScheduledTaskIdentity) { return this.scheduled.triggerEvaluations(request); }
+  scheduledProposalSetDeclined(request: ProposalDeclineRequest) { return this.scheduled.setDeclined(request); }
+  scheduledProposalVisitEnd(request: ProposalVisitRequest) { return this.scheduled.endVisit(request); }
   scheduledTaskDiscard(request: Contract.ScheduledTaskIdentity) { return this.scheduled.discard(request); }
   scheduledTasksActivity(request: { loupist_id: string }) { return this.scheduled.activity(request); }
   scheduledTaskWatch(request: Contract.ScheduledRunIdentity, observer: Contract.StreamObserver<Contract.ChatStreamEvent>) { return this.scheduled.watch(request, observer); }
   private readonly state: MockBridgeState;
+  private readonly composerModels = new Map<string, Map<string, ComposerModelSelection>>();
+  private lastComposerModel: ComposerModelSelection | null = null;
   private workspaceUi: Contract.WorkspaceUiState | null = null;
   private modelCatalog: Contract.ModelCatalog = initialModelCatalog();
   private readonly disabledCapabilities = new Map<string, Set<string>>();
@@ -399,6 +476,18 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   async providerOpenConsole(_request: { provider: string }) {}
 
   async providerOpenUsage(_request: { provider: string }) {}
+  async usageSummary(request: Parameters<Contract.LoupistBridge["usageSummary"]>[0]) {
+    return mockUsageSummary(request, (await this.loupistList())[0]);
+  }
+  async botMemoryList(_request: Parameters<Contract.LoupistBridge["botMemoryList"]>[0]) {
+    return [];
+  }
+  async botMemoryForget(request: Parameters<Contract.LoupistBridge["botMemoryForget"]>[0]) {
+    return this.botMemoryList(request);
+  }
+  async botMemoryUpdate(request: Parameters<Contract.LoupistBridge["botMemoryUpdate"]>[0]) {
+    return this.botMemoryList(request);
+  }
 
   async providerPresetSave(request: Contract.ProviderPresetRequest) {
     if (!request.api_key.trim()) throw commandError("key_rejected", "Upstage didn't accept this key.");
@@ -863,6 +952,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
 
   async loupistDelete(request: Contract.LoupistDeleteRequest) {
     await loupistChat.loupistDelete(this.state, request);
+    this.composerModels.delete(request.loupist_id);
     this.disabledCapabilities.delete(request.loupist_id);
     this.assets.forgetLoupist(request.loupist_id);
   }
@@ -876,6 +966,31 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     stored.use_memory = thread.use_memory;
     stored.update_memory = thread.update_memory;
     return thread;
+  }
+
+  async chatComposerModelRead({ chat }: ComposerModelRead): Promise<ComposerModelSelection | null> {
+    if (!chat) return structuredClone(this.lastComposerModel);
+    return structuredClone(this.composerModels.get(chat.loupist_id)?.get(chat.thread_id) ?? null);
+  }
+
+  protected async composerModelChatExists(loupistId: string, threadId: string): Promise<boolean> {
+    return this.state.threads[loupistId]?.some((thread) => thread.id === threadId) ?? false;
+  }
+
+  async chatComposerModelWrite(request: ComposerModelWrite): Promise<void> {
+    if (request.kind === "reset") {
+      if (request.loupistId) this.composerModels.delete(request.loupistId);
+      else this.composerModels.clear();
+      this.lastComposerModel = null;
+      return;
+    }
+    const { loupist_id, thread_id } = request.chat;
+    if (!(await this.composerModelChatExists(loupist_id, thread_id))) throw commandError("not_found", "Chat not found.");
+    const choices = this.composerModels.get(loupist_id) ?? new Map<string, ComposerModelSelection>();
+    if (request.selection) choices.set(thread_id, structuredClone(request.selection));
+    else choices.delete(thread_id);
+    this.composerModels.set(loupist_id, choices);
+    if (request.lastSent) this.lastComposerModel = structuredClone(request.lastSent);
   }
 
   async chatFeedbackSet(request: Contract.ChatFeedbackRequest): Promise<Contract.ChatFeedback> {
@@ -985,8 +1100,9 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     throw new Error("This question is no longer waiting");
   }
 
-  chatDelete(request: Contract.ChatDeleteRequest): Promise<void> {
-    return loupistChat.chatDelete(this.state, request);
+  async chatDelete(request: Contract.ChatDeleteRequest): Promise<void> {
+    await loupistChat.chatDelete(this.state, request);
+    this.composerModels.get(request.loupist_id)?.delete(request.thread_id);
   }
 
   chatAttachmentRead(

@@ -171,6 +171,9 @@ mod tests {
             outcome: ToolTraceOutcome::Error,
             error: Some(json!({"code": code, "message": "m"})),
             result_bytes: None,
+            origin: None,
+            parent_step: None,
+            python: None,
         }
     }
 

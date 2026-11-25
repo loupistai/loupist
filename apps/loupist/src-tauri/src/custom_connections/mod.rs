@@ -18,6 +18,9 @@ pub enum ConnectionError {
     InvalidUrl,
     #[error("The custom connection returned an invalid or oversized response.")]
     Protocol,
+    /// A reply over the transport's limit; the server keeps running.
+    #[error("The custom connection's reply exceeded the {} MiB limit. The connection is still running.", .limit_bytes / (1024 * 1024))]
+    ResultTooLarge { limit_bytes: u64 },
     #[error("The custom connection rejected the tool arguments.")]
     InvalidArguments,
     #[error("The custom connection could not be reached.")]
@@ -36,6 +39,10 @@ pub enum ConnectionError {
     CredentialStore,
     #[error("A saved-key operation for this connection is still waiting for macOS.")]
     KeychainBusy,
+    /// Another conversation's call or a Settings action holds the connection.
+    /// The model reads this with `mcp_host::custom`'s next line.
+    #[error("This connection is in use by another request, so this call was not sent. Its key and setup are fine.")]
+    InUse,
     #[error("The Keychain did not respond in time.")]
     KeychainUnavailable,
     #[error("The Keychain did not respond in time.")]

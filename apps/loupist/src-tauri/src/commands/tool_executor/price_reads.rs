@@ -14,7 +14,7 @@ fn native_price_method(tool: &str) -> Option<ToolMethod> {
             producer.origin == RunResultOrigin::AcquiredOriginal
                 && producer.retention.keeps_dataset()
         }) && crate::briefings::policy::allowed_method(*method)
-            && method.safety().memory == crate::broker::tool_class::MemoryWrite::NoWrite
+            && method.safety().write == crate::broker::tool_class::PersistentWrite::NoWrite
     })
 }
 

@@ -36,7 +36,7 @@ sign-in code in the provider extension.
 
 ## Shared providers and World processing
 
-Settings › AI accounts owns shared sign-ins, keys and the model catalog; it is the first Settings destination, followed by Loupists, Data connections, Chat defaults and Skills, then General (menu-bar residence, the AI notice and a privacy summary), Appearance, Keyboard and Updates. An unset Chat model follows the host’s recommended model. The catalog and scoped Settings snapshots identify the concrete choice before a turn starts. Response speed (Standard or Fast) sits under Advanced and says Fast may cost more on API keys.
+Settings › AI accounts owns shared sign-ins, keys and the model catalog. It is the first Settings destination, followed by Usage, Loupists, Data connections, Chat defaults and Skills, then General (menu-bar residence, the AI notice and a privacy summary), Appearance, Keyboard and Updates. An unset Chat model follows the host’s recommended model. The catalog and scoped Settings snapshots identify the concrete choice before a turn starts. Response speed (Standard or Fast) sits under Advanced and says Fast may cost more on API keys.
 Its Add a provider sheet and onboarding share one list of ways to connect
 (`components/settings/ProviderWays.tsx`, featured rows from the provider
 manifest); the sheet adds Pi's other key providers
@@ -178,7 +178,7 @@ An in-process permit excludes concurrent probes. Preparation, runtime launch fai
 dispatch and a confirmed `not_sent` result leave the window available; a completed or uncertain dispatch
 spends it when its outcome is consumed.
 
-The catalog exposes its current recommended model in `default_selection`. Global and project configuration snapshots carry the effective `modelSelection`, including a model identity, default flag, supported thinking levels and run controls, and the chosen settings. An unavailable selection has a null model and a typed reason; it occurs only when no account can run a model, or the configuration or catalog cannot be read. A composer override belongs to the renderer session and never names a model Chat cannot use: once the model is hidden, removed or its account disconnected, the renderer drops the override and sends the Loupist's default ([Chat composer](../ui/chat-composer.md#chat-composer)). The host keeps the stored Chat preference unset until the user chooses a model.
+The catalog exposes its current recommended model in `default_selection`. Global and project configuration snapshots carry the effective `modelSelection`, including a model identity, default flag, supported thinking levels and run controls, and the chosen settings. An unavailable selection has a null model and a typed reason; it occurs only when no account can run a model, or the configuration or catalog cannot be read. The host keeps a composer override for each saved chat in this app profile. When the composer sees that the selected model is hidden, removed or disconnected, it clears the override and uses the Loupist's default. Choosing the Default row also clears the override. [Chat composer](../ui/chat-composer.md#chat-composer).
 
 Each project snapshot can carry a `defaultModelChange` with previous and current identities. Refresh the project configuration when catalog or provider status changes, and acknowledge a displayed change by ID with `model_notice_ack`. The host retains the notice across reads and restart until acknowledgement. The global catalog stores this per-Loupist observation separately from the selected model, using the extensible `app_settings` key space.
 
@@ -294,7 +294,43 @@ Chat tool calls and [saved price replays](../knowledge/asset-pages.md#saved-pric
 prepare the bundled market runtime using their captured connection grants. A
 replay calls the provider without a model.
 
+## Usage
+
+Settings › Usage shows Today, 7 days and 30 days in the device's time zone.
+Requests are grouped by AI account, local day, kind of work, Loupist and scheduled
+program. Each AI account card links to this page from its seven-day total.
+
+A request is one terminal Pi assistant message, including failed attempts and
+automatic retries, or a compaction that reports usage. If a turn retries on
+another provider, each account counts its own requests and the turn counts once
+in the overall totals. Each isolated model call
+sent for World building, schema review or method learning also counts. Local
+embeddings and account management do not make model requests.
+
+Input tokens include cache writes, with cached reads broken out. If any attempt
+is missing token measurements, Settings shows the measured counts as partial.
+Costs are
+shown for API-key and environment accounts. Pi estimates costs from its model
+prices and can also report a billed amount from the service, such as OpenRouter.
+A total is labeled billed when every cost in it came from the service. Chat
+uses the credential active for each account's requests. World costs use the AI account's
+current credential kind when the ledger has no kind for the run.
+
+ChatGPT and SuperGrok rows show Loupist's request and token counts. The plan's
+remaining allowance is unavailable to the app. In ChatGPT, **Manage usage**
+opens Settings › Usage. Go, Plus and Pro subscribers can set a percentage of
+their weekly allowance as Loupist's app limit.
+[OpenAI's app usage guide](https://help.openai.com/en/articles/20001542-using-your-chatgpt-plan-in-other-apps-and-sites)
+
+Usage history starts when this feature first records work. The device retains
+400 days of content-free aggregates in its global catalog. Bot usage omits
+the Home chat ID. Removing a Loupist clears its association and any legacy
+Bot chat IDs from usage history while preserving account totals. Usage reads the
+catalog locally and sends no usage data over the network.
+[Storage authority](storage-authority.md#schema-versions-and-upgrades)
+
 ## Code
 
 - Pi startup / provider failures: `src-tauri/src/pi.rs`, `src-tauri/src/pi/`, `provider_failure.rs`
 - Model providers / Auto: `src-tauri/src/providers/`, `provider-manifest.json`, `chat-model-defaults.json`, `src/chat/providerManifest.ts`, `src/components/settings/`, `src/components/onboarding/ConnectStep.tsx`
+- Usage: `src-tauri/src/commands/usage.rs`, `src-tauri/src/runs/log.rs`, `src-tauri/src/store/model_usage.rs`, `src/components/settings/UsageSettings.tsx`

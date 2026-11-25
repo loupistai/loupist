@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { formatDate, formatDateTime, formatNumber } from "../../i18n/format";
 import { useTranslation } from "../../i18n";
 import { providerShortName } from "../../chat/providerNames";
+import type { UsageTotals } from "../../contracts/generated";
 import type { ConfiguredModel, ModelProviderOption, ProviderStatusView } from "../../types";
 import type { ConnectSheetTarget } from "./ConnectSheet";
 import { ProviderStateLabel } from "./ProviderWays";
@@ -50,6 +51,8 @@ type ProviderCardProps = {
   reloadDisabled: boolean;
   visibilityBusyId: string | null;
   now?: number;
+  weeklyUsage?: Pick<UsageTotals, "requests" | "inputTokens" | "cachedInputTokens" | "outputTokens">;
+  onOpenUsageSettings?: () => void;
   onReload: () => void;
   onConnect: (target: ConnectSheetTarget) => void;
   onOpenUsage: (provider: string) => void;
@@ -59,7 +62,7 @@ type ProviderCardProps = {
 };
 
 /** One provider (spec providers §2.3): state, credential, billing, one notice, then its models. */
-export function ProviderCard({ searchControls = false, option, models, hiddenModels, chatModel, loading, removing, loadError, locked, reloadDisabled, visibilityBusyId, now = Date.now(), onReload, onConnect, onOpenUsage, onRemove, onSetVisibility, onSetAllVisible }: ProviderCardProps) {
+export function ProviderCard({ searchControls = false, option, models, hiddenModels, chatModel, loading, removing, loadError, locked, reloadDisabled, visibilityBusyId, now = Date.now(), weeklyUsage, onOpenUsageSettings, onReload, onConnect, onOpenUsage, onRemove, onSetVisibility, onSetAllVisible }: ProviderCardProps) {
   const { t } = useTranslation("settings");
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState("");
@@ -68,10 +71,18 @@ export function ProviderCard({ searchControls = false, option, models, hiddenMod
   const plan = status.credential_kind === "plan";
   const needle = query.trim().toLowerCase();
   const filtered = needle ? models.filter((model) => `${model.name} ${model.model}`.toLowerCase().includes(needle)) : models;
+  const weeklyLine = weeklyUsage ? t("usage.weeklyAccount", {
+    requests: formatNumber(weeklyUsage.requests),
+    tokens: formatNumber(weeklyUsage.inputTokens + weeklyUsage.cachedInputTokens + weeklyUsage.outputTokens),
+  }) : null;
+  const usageLine = weeklyLine ? <p className="provider-card-meta">
+    {onOpenUsageSettings ? <button type="button" className="connect-link" onClick={onOpenUsageSettings}>{weeklyLine}</button> : weeklyLine}
+  </p> : null;
 
   if (status.state === "disconnected") {
     return <li><article className="provider-card" data-provider-card={option.id} data-state="disconnected" aria-label={title}>
       <header className="provider-card-heading"><h3>{title}</h3><ProviderStateLabel status={status} /></header>
+      {usageLine}
       {status.used_by.schedules > 0 ? <p className="provider-card-meta">{t("providers.usedBy", { count: status.used_by.schedules, formattedCount: formatNumber(status.used_by.schedules) })}</p> : null}
       <div className="provider-card-footer"><span className="provider-card-actions">
         <Button type="button" size="sm" disabled={locked} onClick={() => onConnect(reconnectTarget(option))}>{t("providers.connect")}</Button>
@@ -99,6 +110,7 @@ export function ProviderCard({ searchControls = false, option, models, hiddenMod
       <article className="provider-card" data-provider-card={option.id} data-state={status.state} aria-label={title}>
         <header className="provider-card-heading"><h3>{title}</h3><ProviderStateLabel status={status} /></header>
         <p className="provider-card-meta">{credential}</p>
+        {usageLine}
         {reconnect ? <p className="provider-card-body">{t("providers.reconnectBody")}</p> : null}
         {plan && option.billing_note === "chatgpt_plan" ? <p className="provider-card-body" data-plan-line="chatgpt">
           {t("providers.usingPlan")}

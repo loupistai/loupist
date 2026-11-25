@@ -269,14 +269,11 @@ impl AppToolExecutor {
             crate::knowledge::reject_locator_userinfo(origin)
                 .map_err(|_| BrokerError::Malformed)?;
         }
-        if result
-            .payload
-            .pointer("/model_delivery/coverage")
-            .and_then(Value::as_str)
-            == Some("bounded_sample")
-        {
-            return Err(BrokerError::Execution("Only a summary of this result was delivered. Read a narrower original result before saving its exact payload as a Source".into()));
-        }
+        // A compacted data result (`model_delivery.coverage` `bounded_sample`)
+        // reached the model as a summary, but the run result holds the whole
+        // provider result, the same bytes its number checks read: the Source
+        // keeps all of it, and the source_save description says to save it as
+        // it is.
         let workspace_file = result.producer.origin == RunResultOrigin::WorkspaceFile;
         let title = if workspace_file {
             result.payload["path"]
@@ -299,6 +296,14 @@ impl AppToolExecutor {
         } else {
             serde_json::to_vec(&result.payload).map_err(|_| BrokerError::Malformed)?
         };
+        // A retained result can pass what one Source holds; refuse it here,
+        // not when the reply's Memory save commits.
+        if bytes.len() > crate::knowledge::MAX_BLOB_BYTES {
+            return Err(BrokerError::Execution(format!(
+                "This result is larger than the {} MiB one Source holds, so it was not saved. To keep its figures, read a narrower range (a shorter period, one statement) and save that result",
+                crate::knowledge::MAX_BLOB_BYTES / (1024 * 1024)
+            )));
+        }
         let partial_web_delivery = result.producer.runtime_id == "native-web"
             && result.producer.tool_name == "web_fetch"
             && (result.payload.get("truncated").and_then(Value::as_bool) == Some(true)
@@ -330,11 +335,21 @@ impl AppToolExecutor {
                     .pointer("/data/document/pages")
                     .and_then(Value::as_u64)
                     .is_none_or(|pages| pages > 1));
+        let page_truncated = if result.producer.runtime_id == "native-finance" {
+            result
+                .payload
+                .pointer("/page/truncated")
+                .and_then(Value::as_bool)
+        } else {
+            None
+        };
         let truncated = partial_filing
             || result.producer.origin == RunResultOrigin::Discovery
-            || result.warnings.iter().any(|warning| {
-                warning.to_ascii_lowercase().contains("truncat")
-                    || warning.to_ascii_lowercase().contains("snippet")
+            || page_truncated.unwrap_or_else(|| {
+                result.warnings.iter().any(|warning| {
+                    let warning = warning.to_ascii_lowercase();
+                    warning.contains("truncat") || warning.contains("snippet")
+                })
             });
         if coverage == "included_full" && truncated {
             return Err(BrokerError::Execution(

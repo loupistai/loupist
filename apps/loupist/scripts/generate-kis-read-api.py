@@ -28,6 +28,31 @@ EXPECTED_READS = 146
 EXPECTED_MARKET_READS = 91
 EXPECTED_ACCOUNT_READS = 55
 
+# KIS Developers' per-endpoint virtualTrId, reviewed 2026-11-24. A market
+# operation absent here is real-only, even if the example supplies a demo ID.
+MARKET_DEMO_TR_IDS = {
+    "domestic_futureoption.inquire_asking_price": "FHMIF10010000",
+    "domestic_futureoption.inquire_daily_fuopchartprice": "FHKIF03020100",
+    "domestic_futureoption.inquire_price": "FHMIF10000000",
+    "domestic_stock.inquire_asking_price_exp_ccn": "FHKST01010200",
+    "domestic_stock.inquire_ccnl": "FHKST01010300",
+    "domestic_stock.inquire_daily_indexchartprice": "FHKUP03500100",
+    "domestic_stock.inquire_daily_itemchartprice": "FHKST03010100",
+    "domestic_stock.inquire_daily_overtimeprice": "FHPST02320000",
+    "domestic_stock.inquire_daily_price": "FHKST01010400",
+    "domestic_stock.inquire_elw_price": "FHKEW15010000",
+    "domestic_stock.inquire_investor": "FHKST01010900",
+    "domestic_stock.inquire_member": "FHKST01010600",
+    "domestic_stock.inquire_price": "FHKST01010100",
+    "domestic_stock.inquire_time_itemchartprice": "FHKST03010200",
+    "domestic_stock.inquire_time_itemconclusion": "FHPST01060000",
+    "domestic_stock.inquire_time_overtimeconclusion": "FHPST02310000",
+    "overseas_stock.dailyprice": "HHDFS76240000",
+    "overseas_stock.inquire_daily_chartprice": "FHKST03030100",
+    "overseas_stock.inquire_search": "HHDFS76410000",
+    "overseas_stock.price": "HHDFS00000300",
+}
+
 PRODUCTS = (
     "domestic_bond",
     "domestic_futureoption",
@@ -157,6 +182,21 @@ class ContractError(RuntimeError):
 
 def fail(message: str) -> None:
     raise ContractError(message)
+
+
+def review_market_demo(operation: dict[str, Any]) -> None:
+    if operation["scope"] != "market":
+        return
+    expected = MARKET_DEMO_TR_IDS.get(operation["id"])
+    rules = operation["tr_id_rules"]
+    if expected is None:
+        operation["tr_id_rules"] = [
+            rule for rule in rules if rule["when"]["environment"] != "demo"
+        ]
+    elif {rule["value"] for rule in rules if rule["when"]["environment"] == "demo"} != {
+        expected
+    }:
+        fail(f"{operation['id']}: demo transaction ID differs from KIS Developers")
 
 
 def literal(node: ast.AST, context: str) -> Any:
@@ -946,6 +986,7 @@ def build_operation(
         }
     review_holding_fields(operation)
     review_blank_parameters(operation)
+    review_market_demo(operation)
     return operation, False
 
 

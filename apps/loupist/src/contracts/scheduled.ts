@@ -23,7 +23,7 @@ export type ScheduledTaskDefinition = {
 };
 /** The scheduler holds only agent work: the briefing and custom tasks (an alert is a custom task whose prompt states the condition). */
 export type ScheduledTaskKind = "custom" | "briefing";
-export type ScheduledTask = Omit<ScheduledTaskDefinition, "status"> & {
+export type ScheduledTask = Omit<ScheduledTaskDefinition, "status"> & Wire.TaskWatch & {
   model_selection?: Wire.ResolvedModelSelection;
   kind: ScheduledTaskKind;
   id: string;
@@ -40,6 +40,12 @@ export type ScheduledTask = Omit<ScheduledTaskDefinition, "status"> & {
   awaiting_confirmation: boolean;
   /** The reply that proposed it; that reply cannot turn it on in the user's place. */
   proposed_in_message_id?: string;
+  replaces?: Wire.Task["replaces"];
+  confirmed_proposal_id?: string;
+  declined_in_visit?: number;
+  trigger?: Wire.TaskTrigger;
+  /** Absent on a briefing saved before editions means morning. */
+  edition?: "morning" | "evening";
 };
 /** A task as `scheduledTasksList` returns it, with its latest occurrence. */
 export type ScheduledTaskListItem = ScheduledTask & { latest_run: ScheduledRun | null };
@@ -54,7 +60,7 @@ export type ScheduledTaskCreateRequest = ScheduledTaskDefinition & { loupist_id:
 export type ScheduledTaskWatch = { run: ScheduledRun; thread: ChatThread };
 
 export type ScheduleReceipt = { task_id: string; title: string; question: string } | TaskScheduleReceipt;
-export type TaskScheduleReceipt = {
+export type TaskScheduleReceipt = Wire.TaskWatch & {
   task_id: string;
   title: string;
   revision: number;
@@ -67,6 +73,7 @@ export type TaskScheduleReceipt = {
   update_memory: boolean;
   /** Created from a conversation; it stays paused until the user taps Turn on in the card. */
   awaiting_confirmation: boolean;
+  trigger?: Wire.TaskTrigger;
 };
 
 export type SkippedTool = Wire.SkippedTool;

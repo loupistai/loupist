@@ -5,9 +5,27 @@ import type { BriefingContext } from "../briefings";
 import type { DiscardedMemoryItem, MemorySaveSkipReason } from "../domain/chat";
 import type { ResolvedModelSelection } from "../providers/selection";
 
+/**
+ * Which built-in briefing a task is. Missing on a briefing written before
+ * editions means the morning one.
+ */
+export type BriefingEdition = "morning" | "evening";
+
+export type DeliveryTarget = "bot" | "none" | "briefing";
+
+export type FailureStreak = { id: string, count: number };
+
+export type NotifyPolicy = "now" | "digest" | "off";
+
+export type ProposalTarget = { id: string, revision: number };
+
 export type QuestionReceipt = { task_id: string, title: string, question: string };
 
+export type ReportPolicy = "when_met" | "every_run";
+
 export type Run = {
+  failure_streak?: FailureStreak,
+  first_run?: boolean,
   memory_save_skip?: MemorySaveSkipReason,
   discarded_memory_items?: Array<DiscardedMemoryItem>,
   briefing_context: BriefingContext | null,
@@ -29,9 +47,12 @@ export type Run = {
   finished_at_ms: number | null,
   status: RunStatus,
   error: string | null,
+  trigger?: RunTrigger,
 };
 
 export type RunStatus = "running" | "succeeded" | "failed" | "interrupted";
+
+export type RunTrigger = { version: number, reading: string, as_of: string };
 
 export type Schedule =
   | { "kind": "once", at_ms: number }
@@ -80,9 +101,23 @@ export type Task = {
    * in the Chat card; any later status decision clears this.
    */
   awaiting_confirmation: boolean,
+  declined_in_visit?: number,
   /** The reply that proposed it; that reply cannot turn it on in the user's place. */
   proposed_in_message_id?: string,
+  trigger?: TaskTrigger,
+  /** Set on a briefing. Absent means morning, including tasks saved before editions. */
+  edition?: BriefingEdition,
+  replaces?: ProposalTarget,
+  /** Lets the most recent approved edit card continue to open this task. */
+  confirmed_proposal_id?: string,
+  report?: ReportPolicy,
+  delivery?: TaskDelivery,
+  subjects?: Array<TaskSubject>,
+  preset?: WatchPreset,
+  terms?: string,
 };
+
+export type TaskDelivery = { to: DeliveryTarget, notify?: NotifyPolicy };
 
 /**
  * A kind another Loupist version wrote and this one does not know reads as
@@ -122,8 +157,20 @@ export type TaskListItem = {
    * in the Chat card; any later status decision clears this.
    */
   awaiting_confirmation: boolean,
+  declined_in_visit?: number,
   /** The reply that proposed it; that reply cannot turn it on in the user's place. */
   proposed_in_message_id?: string,
+  trigger?: TaskTrigger,
+  /** Set on a briefing. Absent means morning, including tasks saved before editions. */
+  edition?: BriefingEdition,
+  replaces?: ProposalTarget,
+  /** Lets the most recent approved edit card continue to open this task. */
+  confirmed_proposal_id?: string,
+  report?: ReportPolicy,
+  delivery?: TaskDelivery,
+  subjects?: Array<TaskSubject>,
+  preset?: WatchPreset,
+  terms?: string,
 };
 
 /** A saved action snapshot, displayed even if the rest of the Chat stops. */
@@ -140,11 +187,165 @@ export type TaskReceipt = {
   update_memory: boolean,
   /** Created from a conversation and waiting for the user's one-tap OK in its card. */
   awaiting_confirmation: boolean,
+  trigger?: TaskTrigger,
+  report?: ReportPolicy,
+  delivery?: TaskDelivery,
+  subjects?: Array<TaskSubject>,
+  preset?: WatchPreset,
+  terms?: string,
 };
 
 export type TaskStatus = "active" | "paused" | "completed";
+
+export type TaskSubject = { asset: string } | { name: string };
 
 export type TaskTarget =
   | { "kind": "new_chat" }
   | { "kind": "dedicated_chat" }
   | { "kind": "existing_chat", thread_id: string };
+
+/**
+ * The check on a custom task. Code lives in `scripts`; this is the pin,
+ * the approval, and the last evaluations.
+ */
+export type TaskTrigger = {
+  script: TriggerScriptRef,
+  summary: string,
+  tools: Array<TriggerToolGrant>,
+  args: Record<string, unknown>,
+  active_hours?: TriggerActiveHours,
+  approved?: TriggerApproval,
+  pending?: TriggerPending,
+  state: TriggerPhase,
+  /** The script's `loupist.state`, kept between evaluations. Not the phase. */
+  script_state: Record<string, unknown>,
+  last?: TriggerEvaluation,
+  evaluations: Array<TriggerEvaluation>,
+  counters: TriggerCounters,
+  /** Versions the user has turned on, so Go back can re-pin only those. */
+  approved_versions: Array<TriggerApproval>,
+  stale_after_days: number,
+  reads_per_check: number,
+  proposal_test?: TriggerDryRun,
+};
+
+export type TaskWatch = {
+  report?: ReportPolicy,
+  delivery?: TaskDelivery,
+  subjects?: Array<TaskSubject>,
+  preset?: WatchPreset,
+  terms?: string,
+};
+
+export type TriggerActiveHours = {
+  days: Array<number>,
+  start: string,
+  end: string,
+  timezone: string,
+};
+
+export type TriggerApproval = {
+  version: number,
+  sha256: string,
+  at_ms: number,
+  configuration?: TriggerConfiguration,
+  test?: TriggerDryRun,
+};
+
+export type TriggerConfiguration = {
+  summary?: string,
+  args: Record<string, unknown>,
+  tools: Array<TriggerToolGrant>,
+  reads_per_check: number,
+  active_hours?: TriggerActiveHours,
+};
+
+export type TriggerCounters = {
+  today: TriggerDayCount,
+  recent: Array<TriggerDayCount>,
+  agent_runs_today: number,
+  error_streak: number,
+  no_data_streak: number,
+  backoff_ms: number,
+  as_of_since_ms?: number,
+  as_of_value?: string,
+  reads_blocked: boolean,
+};
+
+export type TriggerDayCount = { day: string, evaluations: number, reads: number, met: number };
+
+export type TriggerDryDay = { date: string, outcome: TriggerOutcome, reading: string };
+
+/** What `trigger_save` shows on the proposal or update card. */
+export type TriggerDryRun = {
+  today_met: boolean,
+  today_reading: string,
+  today_outcome: TriggerOutcome,
+  fired_on: Array<string>,
+  replayed: number,
+  unreplayed: number,
+  days: Array<TriggerDryDay>,
+  reads: number,
+  error?: string,
+  scores?: TriggerScores,
+};
+
+export type TriggerEvaluation = {
+  at_ms: number,
+  scheduled_for_ms: number,
+  outcome: TriggerOutcome,
+  reading: string,
+  as_of?: string,
+  evidence: unknown,
+  version: number,
+  sha256: string,
+  reads: number,
+  error?: string,
+  coalesced: boolean,
+  ledger: unknown [],
+  card_message_id?: string,
+  retry_after_seconds?: number,
+};
+
+export type TriggerOutcome =
+  | "met"
+  | "not_met"
+  | "error"
+  | "no_data"
+  | "rate_limited"
+  | "stale"
+  | "skipped_busy";
+
+export type TriggerPending = {
+  version: number,
+  sha256: string,
+  test?: TriggerDryRun,
+  configuration?: TriggerConfiguration,
+};
+
+/**
+ * `proposed` waits for Turn on. `on` is the approved check. `update_proposed`
+ * keeps running the approved hash while a newer one waits. `failing` has
+ * stopped after three code errors.
+ */
+export type TriggerPhase = "proposed" | "on" | "update_proposed" | "failing";
+
+export type TriggerScoreDay = { date: string, previous: TriggerOutcome, next: TriggerOutcome };
+
+export type TriggerScores = {
+  previous_met: number,
+  next_met: number,
+  compared: number,
+  days: Array<TriggerScoreDay>,
+};
+
+export type TriggerScriptRef = { name: string, version: number, sha256: string };
+
+export type TriggerToolGrant = { name: string, provider?: string };
+
+export type WatchPreset =
+  | "filings-and-results"
+  | "thesis-lines"
+  | "results-follow-up"
+  | "price-move"
+  | "week-in-review";

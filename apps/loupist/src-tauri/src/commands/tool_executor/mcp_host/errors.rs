@@ -1,5 +1,8 @@
 //! Fixed, host-owned diagnostics and recovery guidance. Never expose remote error bodies.
-use crate::{broker::BrokerError, mcp::McpError};
+use crate::{
+    broker::{BrokerError, ProviderFailureKind},
+    mcp::McpError,
+};
 use serde_json::{json, Value};
 
 pub(super) fn mcp_call_error_with_inventory(
@@ -10,15 +13,27 @@ pub(super) fn mcp_call_error_with_inventory(
     if is_offline(&error)
         || is_argument_failure(&error)
         || is_sec_contact_required(&error)
-        || matches!(error, BrokerError::EmptyResult)
+        || matches!(
+            error,
+            BrokerError::EmptyResult | BrokerError::ResultTooLarge { .. }
+        )
     {
         return Err(error);
     }
     let message = safe_mcp_error_summary(&error);
     match tools {
-        Some(tools) => Ok(
-            json!({ "call_error": true, "message": message, "next": mcp_error_next(&error), "tools": tools }),
-        ),
+        Some(tools) => {
+            let mut response = json!({ "call_error": true, "message": message, "next": mcp_error_next(&error), "tools": tools });
+            if let BrokerError::ProviderFailure {
+                kind: ProviderFailureKind::RateLimited,
+                retry_after,
+                ..
+            } = error
+            {
+                response["error"] = json!({"code":"rate_limited", "retry_after":retry_after});
+            }
+            Ok(response)
+        }
         None => Err(error),
     }
 }
@@ -74,7 +89,9 @@ fn safe_mcp_error_summary(error: &BrokerError) -> String {
 
 fn mcp_error_next(error: &BrokerError) -> Option<&str> {
     match error {
-        BrokerError::WithNext { next, .. } => Some(next.as_ref()),
+        BrokerError::WithNext { next, .. } | BrokerError::ProviderFailure { next, .. } => {
+            Some(next.as_ref())
+        }
         _ => None,
     }
 }
@@ -151,6 +168,35 @@ fn yahoo_statement_argument(marker: &Value) -> Option<BrokerError> {
     Some(BrokerError::invalid(field, expected))
 }
 
+fn retry_after_seconds(value: &Value) -> Option<u64> {
+    match value {
+        Value::Object(fields) => fields
+            .iter()
+            .filter_map(|(key, value)| {
+                if matches!(
+                    key.as_str(),
+                    "retry_after" | "retry_after_seconds" | "retryAfterSeconds"
+                ) {
+                    value.as_u64().or_else(|| value.as_str()?.parse().ok())
+                } else {
+                    retry_after_seconds(value)
+                }
+            })
+            .max(),
+        Value::Array(items) => items.iter().filter_map(retry_after_seconds).max(),
+        _ => None,
+    }
+}
+
+fn mcp_rate_limit(retry_after: Option<u64>) -> BrokerError {
+    BrokerError::ProviderFailure {
+        kind: ProviderFailureKind::RateLimited,
+        message: "The MCP provider reported a rate limit".into(),
+        next: "Stop calling this provider for now. Report the limit and use already available evidence; do not retry the same request this turn.".into(),
+        retry_after,
+    }
+}
+
 pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerError {
     let marker = result
         .structured_content
@@ -212,9 +258,18 @@ pub(super) fn rejected_mcp_result(result: &crate::mcp::McpCallResult) -> BrokerE
         Some("unsupported_adjustment") => {
             return BrokerError::invalid("adjustment", YAHOO_ADJUSTMENT_EXPECTED);
         }
+        Some("rate_limited") => return mcp_rate_limit(marker.and_then(retry_after_seconds)),
         Some("offline") => return BrokerError::Offline("market data provider".into()),
         Some("empty_result") => {
             return BrokerError::EmptyResult;
+        }
+        Some("result_too_large") => {
+            // The broker's message gives the size and limit, and its next a
+            // shorter range or one table or series.
+            return BrokerError::ResultTooLarge {
+                bytes: marker.and_then(|marker| marker["bytes"].as_u64()),
+                limit_bytes: marker.and_then(|marker| marker["limit_bytes"].as_u64()),
+            };
         }
         Some("sec_contact_required")
             if marker.is_some_and(|marker| marker["provider"] == "sec") =>
@@ -273,10 +328,7 @@ fn rejected_mcp_text(diagnostic: &str) -> BrokerError {
         .iter()
         .any(|marker| lower.contains(marker))
     {
-        (
-            "The MCP provider reported a rate limit",
-            "Stop calling this provider for now. Report the limit and use already available evidence; do not retry the same request this turn.",
-        )
+        return mcp_rate_limit(structured.as_ref().and_then(retry_after_seconds));
     } else if has_status(401)
         || has_status(403)
         || [
@@ -465,6 +517,37 @@ mod tests {
     }
 
     #[test]
+    fn oversized_openbb_results_keep_their_type_and_sizes_after_activation() {
+        let result = serde_json::from_value(json!({
+            "isError": true,
+            "content": [{"type":"text", "text":"private provider diagnostic"}],
+            "structuredContent": {"loupist_error": {
+                "kind": "result_too_large", "provider": "yfinance",
+                "bytes": 57_100_000, "limit_bytes": 33_488_896,
+            }},
+        }))
+        .unwrap();
+        let error = super::super::provider_failure(
+            rejected_mcp_result(&result),
+            None,
+            Some("yfinance"),
+            true,
+        );
+        let error = mcp_call_error_with_inventory(Some(vec![]), error).unwrap_err();
+        let body = crate::broker::error_body(&error);
+        assert_eq!(body["code"], "result_too_large");
+        assert_eq!(
+            body["message"],
+            "The reply to this valid request was 54.5 MiB, more than the 31.9 MiB one result can carry, so it was not delivered."
+        );
+        assert_eq!(body["next"], crate::broker::RESULT_TOO_LARGE_NEXT);
+        assert_eq!(body["bytes"], 57_100_000);
+        assert_eq!(body["limit_bytes"], 33_488_896);
+        assert_eq!(body["retryable"], false);
+        assert!(!body.to_string().contains("private provider diagnostic"));
+    }
+
+    #[test]
     fn yahoo_adjustment_refusal_keeps_the_same_providers_supported_options() {
         let result = serde_json::from_value(json!({
             "isError": true, "content": [],
@@ -510,15 +593,17 @@ mod tests {
         let limited = serde_json::from_value(json!({
             "isError": true,
             "content": [{"type":"text", "text":"rate_limited"}],
-            "structuredContent": {"loupist_error": {"kind": "rate_limited", "provider": "alpha_vantage"}},
+            "structuredContent": {"loupist_error": {"kind": "rate_limited", "provider": "alpha_vantage", "retry_after": 90}},
         }))
         .unwrap();
         let error = rejected_mcp_result(&limited);
         assert!(error
             .to_string()
             .ends_with("The MCP provider reported a rate limit"));
-        assert!(!error.to_string().contains("paid"));
-        assert!(mcp_error_next(&error).is_some());
+        assert_eq!(
+            mcp_call_error_with_inventory(Some(vec![]), error).unwrap()["error"]["retry_after"],
+            90
+        );
     }
 
     #[test]
@@ -526,13 +611,20 @@ mod tests {
         let private = "fixture-private-detail";
         let rate_limited: crate::mcp::McpCallResult = serde_json::from_value(json!({
             "isError": true,
-            "content": [{"type":"text", "text":json!({"status_code":429,"private":private}).to_string()}],
+            "content": [{"type":"text", "text":json!({"status_code":429,"retry_after":73,"private":private}).to_string()}],
         }))
         .unwrap();
         let auth = map_mcp_error(McpError::Remote(format!(
             "HTTP 401 Unauthorized: {private}"
         )));
         let rate = rejected_mcp_result(&rate_limited);
+        assert!(matches!(
+            &rate,
+            BrokerError::ProviderFailure {
+                retry_after: Some(73),
+                ..
+            }
+        ));
         assert_ne!(mcp_error_next(&auth), mcp_error_next(&rate));
         let tools = vec![json!({"name":"mcp__openbb__available_tools"})];
         for error in [auth, rate, map_mcp_error(McpError::Remote(private.into()))] {

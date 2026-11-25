@@ -9,7 +9,7 @@ native file execution with the resolved file (`read`, `write`, `edit`) or the re
 root (`ls`, `find`, `grep`; the workspace by default).
 `AppToolExecutor::native_authorize` (`commands/tool_executor/workspace.rs`) parses the
 request once and decides. Unattended runs refuse native file tools before this policy
-(`briefings/policy.rs`). `run_python` is not part of that refusal.
+(`briefings/policy.rs`). `run_python` is not part of that refusal. A trigger evaluation is a separate entry: sealed snapshot, no workspace, no attachments, scratch only, at most 20 seconds a round. In this build the sealed read serves `followed` and `price` only; any other call, including the web, is `not_approved`.
 
 There is no agent Bash tool. Model code does not get a shell, the host Python, or a JavaScript runtime.
 
@@ -174,7 +174,14 @@ all chats are spaced at least 125 milliseconds apart.
 
 ## Python execution
 
-`run_python` is broker method `python.run` with permission always. The model sends `code` and an optional `timeout_seconds`. Code is at most 64 KiB. The timeout defaults to 60 seconds and cannot exceed 120. The worker is `loupist-python-worker` in the staged `python-runtime` resource. The host verifies the executable before spawning it; release builds ignore worker and runtime environment overrides and enforce the platform's bundle trust check. It hosts Wasmtime 50.0.1 and the pinned CPython WASI snapshot in `apps/loupist/python-worker/runtime.json` (ClayGendron/wasi-python v0.1.4). The host does not invoke native Python for model code.
+`run_python` is broker method `python.run` with permission always. The model sends `code` or a saved `script`, with optional `inputs`, `args`, and `timeout_seconds`. Code is at most 64 KiB. The timeout defaults to 60 seconds and cannot exceed 120. The worker is `loupist-python-worker` in the staged `python-runtime` resource. The host verifies the executable before spawning it; release builds ignore worker and runtime environment overrides and enforce the platform's bundle trust check. It hosts Wasmtime 50.0.1 and the pinned CPython WASI snapshot in `apps/loupist/python-worker/runtime.json` (ClayGendron/wasi-python v0.1.4). The host does not invoke native Python for model code.
+
+Python code uses the bundled `loupist` module to read admitted data and Memory.
+The Rust host verifies each request between worker starts, using the same grants,
+as-of cutoff and third-party text policy as direct calls. Custom reads require
+the current read-only Always approval inside an interactive turn. Web, write
+and model calls are outside the exposure table. The worker has no host callback.
+See [Reads and replay](../capabilities/scripts.md#reads-and-replay).
 
 Each call snapshots the allowed workspace files, this Chat's attachments and a scratch directory into a private host-owned tree. The guest sees `/workspace` as its relative cwd, `/attachments` for this Chat as read-only, `/scratch` for this run as writable, and `/usr/local/lib` for the runtime as read-only. Matplotlib's data directory is a separate read-only preopen. The snapshot omits dot directories recursively, app private roots, credentials, `.git`, symlinks, hard links, special files and nested instruction locations. Top-level workspace files are read-only. Writes are granted only for `outputs/`, which the host creates, and for existing non-dot top-level subdirectories the host allows. The worker never receives a live host directory as a writable WASI preopen.
 
@@ -185,6 +192,11 @@ The offline packages are numpy, pandas, scipy, matplotlib, statsmodels and sciki
 On macOS the worker is signed with the hardened runtime and `com.apple.security.cs.allow-unsigned-executable-memory`. Wasmtime 50 maps executable memory with W^X `mmap` rather than Apple's `MAP_JIT`, so that entitlement is required for the worker to run. The Loupist app binary does not receive it. Pi keeps its own entitlement file for the Node runtime. That file is not applied to the app.
 
 Rust copies allowed guest writes back to the host, including writes made before cancellation or timeout. Copy-back preserves existing file permission bits and removes partial new files and replacement temporary files if a write fails. It reapplies the native path policy to every destination, including newly created names, and admits only ordinary workspace content. It uses descriptor-relative nofollow and openat checks and refuses symlink races, replaced parents and hard-link aliases. The host does not extract guest archives onto itself. If a host file changes during the call, copy-back does not overwrite it. The snapshot is limited to 2,000 files and 32 MiB. Large folders produce a partial snapshot: existing `outputs/` files first, then newer modification times, then path. Files that do not fit are omitted rather than rejecting the call. The result reports `snapshot_omitted_count`, up to eight `snapshot_omitted_paths`, and `snapshot_scan_truncated`; when a subtree could not be scanned, the count is a lower bound and the path ends in `/`. Omitted host files never become deletion candidates during copy-back. Snapshot selection retains at most 10,000 admitted entries and 32 directory levels; directory enumeration uses bounded candidate storage. Copy-back is limited to 256 changed files and 32 MiB, with an 8 MiB limit per file. Copy-back walks visit at most 10,000 entries and 32 directory levels; at most 256 writable roots, including `outputs`, are admitted. If the workspace already has an ordinary file named `outputs`, the call explains that it must be renamed before Python can run. Snapshot omissions and copy-back truncation are reported independently. Oversized output files and changed host files are reported individually so other allowed results survive. Removing or renaming an existing directory is reported as a conflict and leaves its original host subtree intact; remove individual files when needed.
+
+Copy-back records the digests of new and changed files as third-party text
+when the turn has seen outside content, including through broker reads, a saved
+script or a tagged snapshot file. A later read recognizes the same bytes in a
+renamed or copied file.
 
 ## Renderer Content-Security-Policy
 

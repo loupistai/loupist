@@ -58,6 +58,7 @@
       "../agent/skills/skill-creator/LICENSE.txt": "loupist-agent/skills/skill-creator/LICENSE.txt",
       "../agent/skills/skill-creator/SKILL.md": "loupist-agent/skills/skill-creator/SKILL.md",
       "../agent/skills/spreadsheets/SKILL.md": "loupist-agent/skills/spreadsheets/SKILL.md",
+      "../agent/skills/triggers/SKILL.md": "loupist-agent/skills/triggers/SKILL.md",
       "../agent/skills/valuation/SKILL.md": "loupist-agent/skills/valuation/SKILL.md",
       "../agent/skills/valuation/references/dcf.md": "loupist-agent/skills/valuation/references/dcf.md",
       "../agent/skills/visualize/SKILL.md": "loupist-agent/skills/visualize/SKILL.md",
@@ -66,6 +67,15 @@
       "../agent/skills/word-documents/SKILL.md": "loupist-agent/skills/word-documents/SKILL.md",
       "../agent/skills/world/SKILL.md": "loupist-agent/skills/world/SKILL.md",
       "../agent/tool-catalog.json": "loupist-agent/tool-catalog.json",
+      "../agent/trigger-templates/level-cross.py": "loupist-agent/trigger-templates/level-cross.py",
+      "../agent/trigger-templates/new-item.py": "loupist-agent/trigger-templates/new-item.py",
+      "../agent/trigger-templates/price-band.py": "loupist-agent/trigger-templates/price-band.py",
+      "../agent/trigger-templates/volume-spike.py": "loupist-agent/trigger-templates/volume-spike.py",
+      "../agent/watch-presets/filings-and-results.json": "loupist-agent/watch-presets/filings-and-results.json",
+      "../agent/watch-presets/price-move.json": "loupist-agent/watch-presets/price-move.json",
+      "../agent/watch-presets/results-follow-up.json": "loupist-agent/watch-presets/results-follow-up.json",
+      "../agent/watch-presets/thesis-lines.json": "loupist-agent/watch-presets/thesis-lines.json",
+      "../agent/watch-presets/week-in-review.json": "loupist-agent/watch-presets/week-in-review.json",
       "../agent/workspace-resources.mjs": "loupist-agent/workspace-resources.mjs",
       "../agent/workspace-tools.mjs": "loupist-agent/workspace-tools.mjs"
     }

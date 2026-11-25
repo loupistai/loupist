@@ -506,12 +506,14 @@ pub(super) fn pi_session_cache_runtime_policy_sha256(
 
 pub(super) fn pi_session_cache_runtime_surface_sha256(
     capability_ids: &[String],
+    kis_real: bool,
 ) -> Result<String, CommandError> {
     // `true, true` yields the complete Memory-capable core surface. Per-turn
     // Memory authority is sealed as an exact cache field, while this digest
     // keeps every component binding exact and rejects removed tool results.
     let surface = agent_harness::AgentRuntimeProfile::new("chat", true, true, capability_ids)
-        .map_err(map_internal)?;
+        .map_err(map_internal)?
+        .with_kis_dividend_calendar(kis_real);
     let serialized = serde_json::to_vec(&surface).map_err(map_internal)?;
     Ok(crate::util::sha256(&serialized))
 }

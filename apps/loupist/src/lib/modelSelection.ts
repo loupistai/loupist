@@ -83,3 +83,10 @@ export const resolveExplicitSelection = (
     run_options: supported ? options : defaultRunOptions(model),
   };
 };
+
+/** Two choices answer with the same model, reasoning level and run options. */
+export const sameRunSelection = (a: ModelRunSelection, b: ModelRunSelection) =>
+  a.model_profile_id === b.model_profile_id && a.thinking_level === b.thinking_level &&
+  Object.keys(a.run_options).length === Object.keys(b.run_options).length &&
+  Object.entries(a.run_options).every(([key, value]) => b.run_options[key] === value);
+

@@ -34,7 +34,7 @@ export const RUNTIME_STOP_MARKER = "Response stopped.";
 
 // Typed from the contract, so tsc fails when a host-post record is missing here.
 const HOST_POST_KEYS: Record<keyof HostPostRecords, true> = {
-  delivery: true, alert: true, vocabulary: true, handoff: true, link: true,
+  delivery: true, alert: true, vocabulary: true, handoff: true, link: true, offers: true, ask: true,
 };
 const HOST_POST_FIELDS = Object.keys(HOST_POST_KEYS) as (keyof HostPostRecords)[];
 

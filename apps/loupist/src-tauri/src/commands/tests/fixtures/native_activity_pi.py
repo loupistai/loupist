@@ -61,6 +61,7 @@ session_id = argument("--session-id")
 session_file = pathlib.Path(argument("--session-dir")) / f"fixture_{session_id}.jsonl"
 fixture_root = pathlib.Path(__file__).parent
 trace_file = fixture_root / "startup-trace.jsonl"
+startup_gate = fixture_root / "hold-pi-startup"
 
 
 def trace(event, **values):
@@ -82,7 +83,10 @@ for line in sys.stdin:
     trace("settings_confirmation" if is_settings_control else command)
     # A test-controlled startup stall still handles abort on the live stdin
     # stream, so Stop exercises the real RPC and owned-process shutdown path.
-    if (fixture_root / "hold-pi-startup").exists() and command != "abort":
+    if startup_gate.exists() and command != "abort":
+        if command == "get_available_thinking_levels":
+            with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as ready:
+                ready.sendto(b"1", str(startup_gate))
         continue
     if command == "get_available_thinking_levels":
         respond(request, {"levels": [argument("--thinking")]})

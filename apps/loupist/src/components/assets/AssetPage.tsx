@@ -1,3 +1,4 @@
+import { AssetBotCard } from "./AssetBotCard";
 import i18n, { useTranslation } from "@/i18n";
 import { formatDate, formatNumber, storedPriceWasRounded } from "@/i18n/format";
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
@@ -450,6 +451,7 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onO
         <AssetThesis bridge={bridge} loupistId={loupistId} loupistName={loupist.name} page={page} name={name} threads={threads} numbers={numbers}
           onChanged={changed} onUndo={moveId => void undo(moveId)} onOpenEvidence={openEvidence} onOpenChat={onOpenChat}
           onWorkItOut={() => onAsk(thesisPrompt)} />
+        {page.asset.followedAtMs !== null && <AssetBotCard key={page.asset.assetId} bridge={bridge} loupistId={loupistId} assetId={page.asset.assetId} hasLines={page.lines.length > 0} />}
         {mapRow}
       </aside>
     </div>

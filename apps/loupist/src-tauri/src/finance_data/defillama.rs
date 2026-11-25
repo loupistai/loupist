@@ -7,6 +7,20 @@ pub(super) const DEFILLAMA_API_ROOT: &str = "https://api.llama.fi";
 pub(super) const DEFILLAMA_STABLECOINS_ROOT: &str = "https://stablecoins.llama.fi";
 const DEFAULT_DAYS: i64 = 365;
 const MAX_DAYS: i64 = 3 * 366;
+/// `protocol/{slug}` has no date filter: it sends the whole history with every
+/// chain's and token's breakdown, of which only `name` and `tvl` are read.
+/// Curve DEX's reply was 72.9 MB decoded (22.5 MB gzip) on 2026-11-24, over
+/// the 32 MiB other large reads allow; most protocols are a few MB.
+const MAX_PROTOCOL_BYTES: usize = 128 * 1024 * 1024;
+
+/// The two fields a protocol reply is read for. Every other field, the
+/// per-chain and per-token histories included, is skipped while parsing
+/// rather than built into a JSON tree.
+#[derive(Deserialize)]
+struct ProtocolHistory {
+    name: Option<Value>,
+    tvl: Vec<Value>,
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -118,34 +132,44 @@ pub(super) fn normalize_llama_response(
     query: &ValidatedLlamaQuery,
     raw: &RawProviderResponse,
 ) -> Result<Value, FinanceDataError> {
-    let root: Value =
-        serde_json::from_slice(&raw.bytes).map_err(|_| FinanceDataError::InvalidResponse)?;
+    let protocol: ProtocolHistory;
+    let root: Value;
     let (series, value_of, name): (&Vec<Value>, ValueOf, Option<&str>) = match query.route {
-        LlamaRoute::Protocol => (
-            root.get("tvl")
-                .and_then(Value::as_array)
-                .ok_or(FinanceDataError::InvalidResponse)?,
-            |row| row.get("totalLiquidityUSD"),
-            root.get("name").and_then(Value::as_str),
-        ),
-        LlamaRoute::Chain => (
-            root.as_array().ok_or(FinanceDataError::InvalidResponse)?,
-            |row| row.get("tvl"),
-            None,
-        ),
-        LlamaRoute::Stablecoin => (
-            root.as_array().ok_or(FinanceDataError::InvalidResponse)?,
-            // `totalCirculatingUSD` holds one USD value keyed by the coin's peg
-            // (`peggedUSD`, `peggedEUR`, `peggedJPY` and so on).
-            |row| {
-                row.get("totalCirculatingUSD")
-                    .and_then(Value::as_object)
-                    .filter(|values| values.len() == 1)
-                    .and_then(|values| values.values().next())
-                    .or_else(|| row.pointer("/totalCirculating/peggedUSD"))
-            },
-            None,
-        ),
+        LlamaRoute::Protocol => {
+            protocol = serde_json::from_slice(&raw.bytes)
+                .map_err(|_| FinanceDataError::InvalidResponse)?;
+            (
+                &protocol.tvl,
+                |row| row.get("totalLiquidityUSD"),
+                protocol.name.as_ref().and_then(Value::as_str),
+            )
+        }
+        LlamaRoute::Chain => {
+            root = serde_json::from_slice(&raw.bytes)
+                .map_err(|_| FinanceDataError::InvalidResponse)?;
+            (
+                root.as_array().ok_or(FinanceDataError::InvalidResponse)?,
+                |row| row.get("tvl"),
+                None,
+            )
+        }
+        LlamaRoute::Stablecoin => {
+            root = serde_json::from_slice(&raw.bytes)
+                .map_err(|_| FinanceDataError::InvalidResponse)?;
+            (
+                root.as_array().ok_or(FinanceDataError::InvalidResponse)?,
+                // `totalCirculatingUSD` holds one USD value keyed by the coin's peg
+                // (`peggedUSD`, `peggedEUR`, `peggedJPY` and so on).
+                |row| {
+                    row.get("totalCirculatingUSD")
+                        .and_then(Value::as_object)
+                        .filter(|values| values.len() == 1)
+                        .and_then(|values| values.values().next())
+                        .or_else(|| row.pointer("/totalCirculating/peggedUSD"))
+                },
+                None,
+            )
+        }
     };
     let mut by_day = BTreeMap::new();
     for row in series {
@@ -203,6 +227,13 @@ pub(super) fn normalize_llama_response(
     )
 }
 
+fn max_reply_bytes(route: LlamaRoute) -> usize {
+    match route {
+        LlamaRoute::Protocol => MAX_PROTOCOL_BYTES,
+        LlamaRoute::Chain | LlamaRoute::Stablecoin => MAX_LARGE_PROVIDER_BYTES,
+    }
+}
+
 impl FinanceDataService {
     pub async fn defillama_read(&self, params: Value) -> Result<Value, FinanceDataError> {
         let query = validate_llama_query(params)?;
@@ -212,7 +243,7 @@ impl FinanceDataService {
                 self.client.get(url.clone()),
                 DEFILLAMA_SOURCE_ID,
                 url.to_string(),
-                MAX_LARGE_PROVIDER_BYTES,
+                max_reply_bytes(query.route),
             )
             .await?;
         normalize_llama_response(&query, &raw)
@@ -290,6 +321,55 @@ mod tests {
         )
         .unwrap();
         assert_eq!(output["data"]["rows"][0]["value"], "174598064742.07");
+    }
+
+    /// Recorded 2026-11-24 from `protocol/curve-dex` (72.9 MB), trimmed: every
+    /// top-level field in its order, two chains, the last points of each
+    /// history and three tokens per row. Per-chain `tvl` arrays come before
+    /// the protocol's own, as in the real reply.
+    #[test]
+    fn a_recorded_protocol_reply_reads_only_its_own_daily_tvl() {
+        let curve = query("protocol", "curve-dex", "2026-11-22", "2026-11-24");
+        let output = normalize_llama_response(
+            &curve,
+            &raw(include_str!("defillama-protocol-fixture.json")),
+        )
+        .unwrap();
+        assert_eq!(output["data"]["series"]["name"], "Curve DEX");
+        assert_eq!(output["data"]["series"]["metric"], "total_value_locked");
+        // The day's later point (06:18 UTC) replaces its midnight point.
+        assert_eq!(
+            output["data"]["rows"],
+            json!([
+                {"date":"2026-11-22","value":"988940256"},
+                {"date":"2026-11-23","value":"998099192"},
+                {"date":"2026-11-24","value":"1000188776"}
+            ])
+        );
+        assert_eq!(output["page"]["returned"], 3);
+    }
+
+    /// The whole history is downloaded whatever the dates, so the protocol
+    /// route allows more than other large reads and parses only what it uses.
+    #[test]
+    fn a_protocol_reply_larger_than_other_large_reads_is_read() {
+        assert!(max_reply_bytes(LlamaRoute::Protocol) > 72_920_946);
+        for route in [LlamaRoute::Chain, LlamaRoute::Stablecoin] {
+            assert_eq!(max_reply_bytes(route), MAX_LARGE_PROVIDER_BYTES);
+        }
+        let padding = "x".repeat(MAX_LARGE_PROVIDER_BYTES);
+        let body = format!(
+            r#"{{"name":"Large DEX","chainTvls":{{"Ethereum":{{"tvl":[{{"date":1795305600,"totalLiquidityUSD":7}}],"tokens":[{{"date":1795305600,"tokens":{{"PAD":"{padding}"}}}}]}}}},"tvl":[{{"date":1795305600,"totalLiquidityUSD":5}}],"tokens":[]}}"#
+        );
+        assert!(body.len() > MAX_LARGE_PROVIDER_BYTES);
+        assert!(body.len() <= max_reply_bytes(LlamaRoute::Protocol));
+        let large = query("protocol", "large-dex", "2026-11-22", "2026-11-22");
+        let output = normalize_llama_response(&large, &raw(&body)).unwrap();
+        assert_eq!(
+            output["data"]["rows"],
+            json!([{"date":"2026-11-22","value":"5"}])
+        );
+        assert!(normalize_llama_response(&large, &raw(r#"{"name":"No history"}"#)).is_err());
     }
 
     #[test]

@@ -282,7 +282,10 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
     setPinned(false);
   };
   // Calculation and step evidence resolves to its inline step, which only an answer has.
-  const showStep = closeThen(stepLink.activate);
+  const python = evidence.tool_name === "run_python";
+  const showStep = closeThen(python ? () => window.dispatchEvent(new CustomEvent("loupist:open-activity", {
+    detail: { tab: "steps", pythonEvidenceId: evidence.id },
+  })) : stepLink.activate);
   const origin = open ? evidenceProvenance(evidence, check.kind === "data" && !flagged ? providerText(evidence) ?? source : source) : null;
   const passageMeta = origin ? [origin.attribution, origin.publication?.label ?? origin.fetchLabel].filter(Boolean).join(" · ") : "";
   const dataMeta = !evidence.memory_origin && origin?.publication && origin.fetched
@@ -358,7 +361,7 @@ export function NumberChip({ check, checks = [check], evidence, evidenceRefs, as
           <StatusLine check={check} exact={exact} matchDetail={matchDetail} asOf={asOf} id={`${statusId}-line`} />
           <div className="number-chip-actions">
             {flagged ? <WarningAction check={check} evidence={evidence} close={() => { setOpen(false); setPinned(false); }} /> : quote ? null : check.kind === "calculated" || check.kind === "step"
-              ? stepLink.available ? <Button type="button" variant="ghost" size="sm" onClick={showStep}>{t("numberChip.showStep")}</Button> : null
+              ? (python || stepLink.available) ? <Button type="button" variant="ghost" size="sm" onClick={showStep}>{t(python ? "python.showMath" : "numberChip.showStep")}</Button> : null
               : sourceLink.available ? <Button type="button" variant="ghost" size="sm" onClick={closeThen(sourceLink.activate)} onAuxClick={sourceLink.props.onAuxClick}>{t("numberChip.openEvidence")}</Button> : null}
             {!flagged && check.kind === "calculated" && !check.calc?.grid ? <Button type="button" variant="ghost" size="sm" onClick={() => {
               void copyText(copiedFormula(check, evidenceRefs));

@@ -94,6 +94,11 @@ display name for About, Hide and Quit on macOS. AppKit handles the predefined
 actions and their key equivalents. The pinned menu wrapper disables AppKit title
 validation, so the app synchronizes the predefined full-screen item’s title with
 the native window and disables AppKit’s automatic full-screen item.
+AppKit also adds AutoFill, Start Dictation… and Emoji & Symbols to the Edit menu,
+titled in the bundle’s development language (English) whatever the interface
+language. The app turns off the last two at launch and, after setting each menu,
+removes the AutoFill item AppKit appends (`keep_own_edit_items` in
+`src-tauri/src/app_menu/macos.rs`), so Edit lists only the table’s items, each once.
 File › New Loupist opens the creation dialog. File › Print
 (⌘P) uses the command palette’s chat print action when that action is available.
 Close Window (⌘W) sends the same close request as the red window button,

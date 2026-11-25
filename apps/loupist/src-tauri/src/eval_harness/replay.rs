@@ -276,6 +276,34 @@ pub(crate) fn execute_binding_readiness(
         .filter(|replay| replay.environment == environment)?;
     Some(replay.openbb_loupist.as_deref() == Some(binding.loupist_id.as_str()))
 }
+
+/// Select the KIS catalog environment used by the state's replay requests.
+pub(super) fn kis_environment(environment: &str) -> &'static str {
+    use crate::finance_data::{KIS_REAL_API_ROOT, KIS_SOURCE_ID};
+
+    let real = active()
+        .read()
+        .unwrap()
+        .get(&scope())
+        .filter(|replay| replay.environment == environment)
+        .is_some_and(|replay| {
+            replay.fixture.requests.iter().any(|entry| {
+                entry.provider == KIS_SOURCE_ID
+                    && entry
+                        .request
+                        .get("url")
+                        .and_then(Value::as_str)
+                        .and_then(|url| url.strip_prefix(KIS_REAL_API_ROOT))
+                        .is_some_and(|path| path.starts_with('/'))
+            })
+        });
+    if real {
+        "real"
+    } else {
+        "demo"
+    }
+}
+
 /// The active replay answers a Korea Investment account (trading) read.
 pub(crate) fn wants_kis_account() -> bool {
     active()

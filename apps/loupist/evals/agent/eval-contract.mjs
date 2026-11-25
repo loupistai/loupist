@@ -8,7 +8,7 @@ export const LENS_ASSERTS = new Set(['lens_pages', 'lens_unchanged', 'lens_read'
 export const MEMORY_ASSERTS = new Set(['committed', 'not_committed', ...LENS_ASSERTS]);
 const LENS_KINDS = new Set(['principle', 'perspective', 'method', 'subject', 'idea']);
 const BASIS_KINDS = new Set(['span', 'claim', 'said', 'page']);
-export const MEMORY_KINDS = new Set(['source', 'note', 'lens', 'principle', 'journal']);
+export const MEMORY_KINDS = new Set(['source', 'note', 'lens', 'principle', 'journal', 'priceread']);
 export const ANSWER_ASSERTS = new Set(['metrics', 'contains_any', 'contains_number_any', 'figures_present', 'not_contains', 'answer_matching', 'answer_not_matching', 'prediction', 'cites_result', 'cites_source_span', 'numbers_linked', 'calculation_chip', 'no_false_save_claim', 'answer_language', 'visible_labels']);
 /** Saved Memory an as-of answer left out, as Rust counts it in `as_of_report.left_out`. */
 export const AS_OF_LEFT_OUT_KINDS = new Set(['facts', 'sources', 'notes', 'methods']);

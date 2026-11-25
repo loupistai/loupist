@@ -115,6 +115,53 @@ async fn dataset_export_writes_owned_pinned_full_data_without_overwriting() {
 }
 
 #[tokio::test]
+async fn dataset_tools_cannot_read_or_export_private_python_replay_records() {
+    let temporary = tempfile::tempdir().unwrap();
+    let executor = executor(&temporary);
+    let record = json!({"code":"print('private')", "ledger":{"entries":[{"value":42}]}});
+    let reference = executor
+        .state
+        .store
+        .dataset_put(
+            "loupist-a",
+            "private-replay",
+            &record,
+            json!({"origin":"python_replay", "chat_id":"chat-a"}),
+        )
+        .unwrap();
+    let read = json!({"dataset_id":reference.dataset_id,"revision":reference.revision});
+    let mut export = read.clone();
+    export["path"] = json!("replay.json");
+    export["format"] = json!("json");
+    for (method, params) in [
+        (ToolMethod::DatasetDescribe, read.clone()),
+        (ToolMethod::DatasetQuery, read),
+        (ToolMethod::DatasetExport, export),
+    ] {
+        let error = executor
+            .execute(&policy(), method, params)
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("dataset revision"),
+            "{method:?}: {error}"
+        );
+    }
+    let workspace = temporary.path().join("loupist-a");
+    assert!(!workspace.join("replay.json").exists());
+    assert!(!workspace.join("replay.json.provenance.json").exists());
+    assert!(executor.capture.evidence_refs.lock().await.is_empty());
+    assert_eq!(
+        executor
+            .state
+            .store
+            .python_replay("loupist-a", &reference)
+            .unwrap(),
+        record
+    );
+}
+
+#[tokio::test]
 async fn dataset_reads_are_citable_saved_context_with_exact_slice_and_lineage() {
     let temporary = tempfile::tempdir().unwrap();
     let executor = executor(&temporary);

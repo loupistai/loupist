@@ -1,8 +1,12 @@
-import { renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { useChatViewModel } from "./useChatViewModel";
+import { useModelCatalog } from "./useModelCatalog";
+import { MockLoupistBridge } from "../bridge/mockBridge";
 import type { ModelRunSelection } from "../types";
 
 type Input = Parameters<typeof useChatViewModel>[0];
+/** The chat's own key: model choices are kept per chat. */
+const CHAT = "loupist-a:thread-a";
 function input(home: boolean, configuredModel: string | null = "xai/grok-4.7", explicit?: ModelRunSelection): Input {
   const model = { id: "xai/grok-4.7", provider: "xai", model: "grok-4.7", name: "Grok", thinking_levels: ["low", "medium", "high"],
     input: ["text"], reasoning: true, context_window: 100_000, max_tokens: 20_000, run_controls: [], thinking_level_map: {}, credential_source: "saved" };
@@ -10,9 +14,9 @@ function input(home: boolean, configuredModel: string | null = "xai/grok-4.7", e
   // Only the returned view-model props execute here; bridge/run callbacks stay idle.
   return {
     selectedLoupist: { id: "loupist-a", last_model_profile_id: model.id }, activeChat: {},
-    threads: [{ id: "thread-a", home }], effectiveThreadId: "thread-a", effectiveChatKey: null,
-    model: { catalog: { models: [model], providers: [], custom_providers: [], hidden_model_profile_ids: [] }, selections: explicit ? { "loupist-a": explicit } : {}, changeSelection: vi.fn() },
-    configuration: { snapshot, reload: async () => snapshot }, bridge: {}, chat: {}, workspace: {},
+    threads: [{ id: "thread-a", home }], effectiveThreadId: "thread-a", effectiveChatKey: CHAT,
+    model: { catalog: { models: [model], providers: [], custom_providers: [], hidden_model_profile_ids: [] }, selections: explicit ? { [CHAT]: explicit } : {}, changeSelection: vi.fn(), saveSent: vi.fn() },
+    configuration: { snapshot, reload: async () => snapshot }, bridge: {}, chat: {}, workspace: { selectedArtifacts: {} },
     loupist: {}, drafts: { getSession: () => [] }, threadActions: {},
   } as unknown as Input;
 }
@@ -34,6 +38,46 @@ it("names the host-selected model and submits the saved controls without pinning
   expect(await result.current!.onResolveModelSelection!()).toMatchObject({ model_profile_id: "", thinking_level: "high", auto: true });
 });
 
+it("blocks Send after a failed pin read and restores the saved pin on focus", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const catalog = await bridge.modelCatalogGet();
+  const props = input(false);
+  vi.spyOn(bridge, "modelCatalogGet").mockResolvedValue({
+    ...catalog,
+    models: props.model.catalog!.models,
+  });
+  const saved = { modelProfileId: "xai/grok-4.7", thinkingLevel: "medium", runOptions: {} };
+  const read = vi.spyOn(bridge, "chatComposerModelRead").mockImplementation(async ({ chat }) => {
+    if (chat) throw new Error("Saved model temporarily unavailable.");
+    return null;
+  });
+  const write = vi.spyOn(bridge, "chatComposerModelWrite");
+  const { result } = renderHook(() => {
+    const model = useModelCatalog(bridge);
+    return useChatViewModel({
+      ...props,
+      active: true,
+      persistedThreadId: "thread-a",
+      selectedLoupist: { ...props.selectedLoupist!, availability: { status: "available" } },
+      model,
+    });
+  });
+  await waitFor(() => expect(result.current!.configurationError).toBe("Saved model temporarily unavailable."));
+  expect(result.current!.configurationReady).toBe(false);
+  await expect(result.current!.onResolveModelSelection!()).rejects.toThrow("Saved model temporarily unavailable.");
+  await expect(result.current!.onStoreComposerModel!("thread-a")).rejects.toThrow("Saved model temporarily unavailable.");
+  expect(write).not.toHaveBeenCalled();
+
+  read.mockResolvedValue(saved);
+  act(() => window.dispatchEvent(new Event("focus")));
+  await waitFor(() => expect(result.current!.configurationReady).toBe(true));
+  expect(result.current!.configurationError).toBeUndefined();
+  expect(await result.current!.onResolveModelSelection!()).toMatchObject({
+    composerModel: { selection: { model_profile_id: saved.modelProfileId, thinking_level: "medium" } },
+  });
+  expect(write).not.toHaveBeenCalled();
+});
+
 it("never sends a composer pick the latest configuration hides: the Loupist's default answers and the pick is dropped", async () => {
   const pick = { model_profile_id: "xai/grok-4.7", thinking_level: "medium", run_options: {} };
   const props = input(false, null, pick);
@@ -43,5 +87,5 @@ it("never sends a composer pick the latest configuration hides: the Loupist's de
   const { result } = renderHook(() => useChatViewModel({ ...props, model: { ...props.model, resetSelection }, configuration: { ...props.configuration, reload: async () => hidden } }));
   expect(result.current!.modelSelection).toMatchObject({ thinking_level: "medium" });
   expect(await result.current!.onResolveModelSelection!()).toMatchObject({ model_profile_id: "", thinking_level: "high", auto: true });
-  expect(resetSelection).toHaveBeenCalledExactlyOnceWith("loupist-a");
+  expect(resetSelection).toHaveBeenCalledExactlyOnceWith(CHAT);
 });

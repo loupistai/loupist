@@ -284,24 +284,6 @@ impl AppToolExecutor {
         }
     }
 
-    pub(super) async fn python_run(&self, params: Value) -> Result<Value, BrokerError> {
-        let (code, timeout) = crate::python_run::parse_params(&params)?;
-        let roots = self
-            .capture
-            .native
-            .roots()
-            .cloned()
-            .ok_or_else(|| BrokerError::Execution("Python execution is unavailable".into()))?;
-        crate::python_run::execute(
-            &roots,
-            &self.state.artifacts.python_cache_root,
-            &code,
-            timeout,
-            self.capture.search_cancel.clone(),
-        )
-        .await
-    }
-
     pub(super) fn captured_attachment_snapshot_title(&self, path: &str) -> Option<String> {
         self.capture
             .file_labels

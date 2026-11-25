@@ -8,6 +8,8 @@ use super::{AssetLookupCandidate, LookupStatus};
 #[derive(Serialize)]
 pub(super) struct Search<'a> {
     pub(super) query: &'a str,
+    #[serde(rename = "marketSecDes", skip_serializing_if = "Option::is_none")]
+    market_sector: Option<&'static str>,
 }
 
 impl<'a> Search<'a> {
@@ -20,7 +22,18 @@ impl<'a> Search<'a> {
         {
             return Err(LookupStatus::InvalidQuery);
         }
-        Ok(Self { query })
+        Ok(Self {
+            query,
+            market_sector: None,
+        })
+    }
+
+    /// The same search limited to OpenFIGI's equity market sector.
+    pub(super) fn equities(&self) -> Self {
+        Self {
+            query: self.query,
+            market_sector: Some("Equity"),
+        }
     }
 }
 
@@ -29,6 +42,8 @@ struct ResultEnvelope {
     data: Option<Vec<Value>>,
     error: Option<String>,
     warning: Option<String>,
+    /// Set when OpenFIGI has more results after this page.
+    next: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -65,7 +80,8 @@ fn valid_figi(figi: &str) -> bool {
             .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
 }
 
-fn listed_equity(kind: &str) -> bool {
+/// The issuer's own shares: common stock and depositary receipts.
+fn issuer_share(kind: &str) -> bool {
     matches!(
         kind.to_ascii_lowercase().as_str(),
         "common stock"
@@ -74,10 +90,53 @@ fn listed_equity(kind: &str) -> bool {
             | "adr"
             | "gdr"
             | "canadian dr"
-            | "etf"
-            | "exchange traded fund"
-            | "exchange traded funds"
     )
+}
+
+fn listed_equity(kind: &str) -> bool {
+    issuer_share(kind)
+        || matches!(
+            kind.to_ascii_lowercase().as_str(),
+            "etf" | "exchange traded fund" | "exchange traded funds"
+        )
+}
+
+/// A venue of a country: an exchange or a country composite. Trade-reporting
+/// and OTC lines (European APAs, `EO`, `EU`) have none in OpenFIGI's list.
+fn national_venue(code: Option<&str>) -> bool {
+    code.and_then(super::venues).is_some_and(|venues| {
+        !venues.is_empty() && venues.iter().all(|(_, country)| country.is_some())
+    })
+}
+
+/// Whether a full first page shows the issuer's shares only on trade-reporting
+/// lines. OpenFIGI fills a large issuer's first page with its bonds and those
+/// lines: "Samsung Electronics" returned no listing of 005930 on any exchange
+/// on 2026-11-24, while the same search in the equity sector has it.
+pub(super) fn wants_equity_page(bytes: &[u8]) -> bool {
+    let Ok(result) = serde_json::from_slice::<ResultEnvelope>(bytes) else {
+        return false;
+    };
+    if result.next.is_none() || result.error.is_some() || result.warning.is_some() {
+        return false;
+    }
+    let mut shares = false;
+    for value in result.data.iter().flatten() {
+        let Ok(row) = Row::deserialize(value) else {
+            continue;
+        };
+        if [row.security_type.as_deref(), row.security_type2.as_deref()]
+            .into_iter()
+            .flatten()
+            .any(issuer_share)
+        {
+            if national_venue(row.exch_code.as_deref()) {
+                return false;
+            }
+            shares = true;
+        }
+    }
+    shares
 }
 
 struct Listing {
@@ -85,10 +144,12 @@ struct Listing {
     equity: bool,
     exact: bool,
     composite: bool,
+    /// One of its venues belongs to a country.
+    national: bool,
     venues: usize,
 }
 
-pub(super) fn decode(query: &str, bytes: &[u8]) -> Result<Vec<AssetLookupCandidate>, LookupStatus> {
+fn page_rows(bytes: &[u8]) -> Result<Vec<Value>, LookupStatus> {
     let result: ResultEnvelope =
         serde_json::from_slice(bytes).map_err(|_| LookupStatus::Unavailable)?;
     if let Some(message) = result.error.as_deref().or(result.warning.as_deref()) {
@@ -101,7 +162,28 @@ pub(super) fn decode(query: &str, bytes: &[u8]) -> Result<Vec<AssetLookupCandida
             Err(LookupStatus::Unavailable)
         };
     }
-    let data = result.data.ok_or(LookupStatus::Unavailable)?;
+    result.data.ok_or(LookupStatus::Unavailable)
+}
+
+#[cfg(test)]
+fn decode(query: &str, bytes: &[u8]) -> Result<Vec<AssetLookupCandidate>, LookupStatus> {
+    decode_pages(query, &[bytes])
+}
+
+/// Candidates from the first page and any later page of the same search. A
+/// later page that cannot be read leaves the first page's answer.
+pub(super) fn decode_pages(
+    query: &str,
+    pages: &[&[u8]],
+) -> Result<Vec<AssetLookupCandidate>, LookupStatus> {
+    let mut data = Vec::new();
+    for (index, bytes) in pages.iter().enumerate() {
+        match page_rows(bytes) {
+            Ok(rows) => data.extend(rows),
+            Err(status) if index == 0 => return Err(status),
+            Err(_) => {}
+        }
+    }
     let mut seen = BTreeSet::new();
     let mut groups: BTreeMap<String, usize> = BTreeMap::new();
     let mut listings: Vec<Listing> = Vec::new();
@@ -128,6 +210,7 @@ pub(super) fn decode(query: &str, bytes: &[u8]) -> Result<Vec<AssetLookupCandida
                 && row.security_type2.as_deref() == Some("Mutual Fund")
                 && row.market_sector.as_deref() == Some("Equity"));
         let group = row.composite_figi.filter(|id| equity && valid_figi(id));
+        let national = national_venue(row.exch_code.as_deref());
         let exchange = bounded(row.exch_code, 64);
         let exchange_name = bounded(row.exchange_name, 128)
             .or_else(|| super::exchange_name(exchange.as_deref()?).map(str::to_owned));
@@ -137,6 +220,7 @@ pub(super) fn decode(query: &str, bytes: &[u8]) -> Result<Vec<AssetLookupCandida
                 .is_some_and(|t| t.eq_ignore_ascii_case(query)),
             composite: group.as_ref() == Some(&row.figi),
             equity,
+            national,
             venues: 1,
             candidate: AssetLookupCandidate {
                 figi: row.figi,
@@ -154,17 +238,20 @@ pub(super) fn decode(query: &str, bytes: &[u8]) -> Result<Vec<AssetLookupCandida
             let index = *groups.entry(group).or_insert(listings.len());
             if let Some(previous) = listings.get_mut(index) {
                 let venues = previous.venues + 1;
+                let national = previous.national || listing.national;
                 if (listing.exact, listing.composite) > (previous.exact, previous.composite) {
                     *previous = listing;
                 }
                 previous.venues = venues;
+                previous.national = national;
                 continue;
             }
         }
         listings.push(listing);
     }
-    // Preserve provider order on ties. For competing listings with the same
-    // ticker, the broader set of returned venues breaks a composite tie.
+    // Preserve provider order on ties. Between composites, one traded on an
+    // exchange or country composite precedes trade-reporting lines; then the
+    // broader set of returned venues breaks the tie.
     let query = query.to_lowercase();
     listings.sort_by_cached_key(|listing| {
         let name = listing.candidate.name.to_lowercase();
@@ -174,6 +261,7 @@ pub(super) fn decode(query: &str, bytes: &[u8]) -> Result<Vec<AssetLookupCandida
             !listing.exact && !name.starts_with(&query),
             !listing.exact && !name.contains(&query),
             !listing.composite,
+            !listing.national,
             std::cmp::Reverse(listing.venues),
         )
     });
@@ -219,6 +307,63 @@ mod tests {
                 assert!(rows.iter().any(|row| row.name == "DECISIVE DIVIDEND CORP"));
             }
         }
+    }
+
+    /// Recorded 2026-11-24 from OpenFIGI's public route: selected rows, in
+    /// OpenFIGI's order, of the first page for "Samsung Electronics", the same
+    /// search in the equity sector, and "005930".
+    #[test]
+    fn an_issuer_shown_only_on_trade_reporting_lines_resolves_to_its_home_listing() {
+        let searches: Value = serde_json::from_str(include_str!("search-fixture.json")).unwrap();
+        let page = |name: &str| serde_json::to_vec(&searches[name]).unwrap();
+        let (first, equities, ticker) = (
+            page("Samsung Electronics"),
+            page("Samsung Electronics, equity sector"),
+            page("005930"),
+        );
+        let query = "Samsung Electronics";
+        // The first page has bonds, preference shares, Korean funds and the
+        // shares on European reporting lines, but no listing of 005930.
+        assert!(decode(query, &first)
+            .unwrap()
+            .iter()
+            .all(|row| row.ticker.as_deref() != Some("005930")));
+        assert!(wants_equity_page(&first));
+        for settled in [&equities, &ticker, &page("Costco")] {
+            assert!(!wants_equity_page(settled));
+        }
+        let rows = decode_pages(query, &[&first, &equities]).unwrap();
+        assert_eq!(
+            (
+                rows[0].figi.as_str(),
+                rows[0].ticker.as_deref(),
+                rows[0].exchange.as_deref()
+            ),
+            ("BBG000BCY2S8", Some("005930"), Some("KS"))
+        );
+        assert_eq!(rows[0].exchange_name.as_deref(), Some("South Korea"));
+        // KOSPI and Nextrade share its composite; EuroCTP has its own.
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row.ticker.as_deref() == Some("005930"))
+                .count(),
+            2
+        );
+        // The ticker still finds the same listing first from one page.
+        assert_eq!(decode("005930", &ticker).unwrap()[0].figi, "BBG000BCY2S8");
+        // A later page that cannot be read leaves the first page's answer.
+        assert_eq!(
+            decode_pages(query, &[&first, b"{"]).unwrap().len(),
+            decode(query, &first).unwrap().len()
+        );
+        assert_eq!(
+            serde_json::to_value(Search::new(query).unwrap().equities()).unwrap(),
+            serde_json::json!({"query": query, "marketSecDes": "Equity"})
+        );
+        assert_eq!(
+            serde_json::to_value(Search::new(query).unwrap()).unwrap(),
+            serde_json::json!({"query": query})
+        );
     }
 
     #[test]

@@ -46,6 +46,9 @@ impl AppToolExecutor {
                 "Loupist/tool root scope does not match".into(),
             ));
         }
+        if super::python_reads::host_python_read() {
+            return Ok(());
+        }
         // Read only the authoritative binding, not the entire transcript. Check
         // it each time so deletion or a changed binding is still refused.
         let chat_loupist: String = self

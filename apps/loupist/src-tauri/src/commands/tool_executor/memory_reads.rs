@@ -185,22 +185,38 @@ impl AppToolExecutor {
         let owned_query = query.clone();
         let owned_scope = scope.to_owned();
         let owned_options = options.clone();
+        let cutoff = crate::commands::knowledge::as_of::Cutoff::parse(policy.as_of.as_deref());
+        // Source hits name their origin and sourceClass. SYSTEM.md's Memory
+        // paragraph has a Source hit opened before the web, and a data
+        // connection serving the official record read over a copy saved from
+        // another site (v0.1.6 acceptance: a saved Fed announcement fetched
+        // again from the web; excerpts from a third-party site answered in
+        // place of the connected OpenDART).
         // Local embeddings and SQL are synchronous; keep them off the async broker.
-        let mut hits = tokio::task::spawn_blocking(move || {
-            crate::commands::knowledge::host_search_with_options(
+        let (mut hits, capped) = tokio::task::spawn_blocking(move || {
+            let mut hits = crate::commands::knowledge::host_search_with_options(
                 &state,
                 &loupist_id,
                 &owned_query,
                 &owned_scope,
                 &owned_options,
-            )
+            )?;
+            let capped = hits
+                .as_array()
+                .is_some_and(|rows| rows.len() >= crate::knowledge::SEARCH_WINDOW_LIMIT);
+            if let Some(rows) = hits.as_array_mut() {
+                crate::commands::knowledge::describe_source_hits(
+                    &state,
+                    &loupist_id,
+                    rows,
+                    cutoff,
+                )?;
+            }
+            Ok::<_, crate::app::CommandError>((hits, capped))
         })
         .await
         .map_err(|_| BrokerError::Execution("knowledge search failed".into()))?
         .map_err(command_error)?;
-        let capped = hits
-            .as_array()
-            .is_some_and(|rows| rows.len() >= crate::knowledge::SEARCH_WINDOW_LIMIT);
         if let Some(rows) = hits.as_array_mut() {
             rows.retain(|hit| {
                 matches!(

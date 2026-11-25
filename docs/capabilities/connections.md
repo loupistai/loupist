@@ -157,6 +157,14 @@ Paste JSON keeps the draft and points to the first syntax problem by line and co
   The callback accepts only the exact loopback listener's Host header and `/callback` path.
   Stopped, expired or failed transports are discarded so the next attempt starts a fresh transport, while live
   server rejections and result-validation failures keep the session; removing a connection also deletes its private command working files.
+  For local commands, the host discards a stdio frame over 32 MiB through its newline.
+  If its response ID matches a pending call, that call fails and the session keeps serving: the model reads
+  `result_too_large` with the 32 MiB limit, that the connection is still running, and to ask for less.
+  HTTP connections report the same refusal with their 4 MiB limit for JSON and event streams.
+  One request at a time holds a connection (a call, a connect, a sign-in or a Settings change). Another that
+  arrives meanwhile is refused at once as the connection being in use, not as its key being changed; a turn's
+  own calls already take turns, so this comes from another conversation or Settings. The model is told the call
+  was not sent and the key is fine, and to call once more later in the reply before going on without it.
 - **Tools:** only tools annotated read-only and not destructive are eligible, and names or descriptions matching
   trading, transfer or payment action words are blocked. Concatenated action verbs are checked at name word starts;
   descriptions use whole English words and Korean action forms so research terms remain eligible.

@@ -159,6 +159,117 @@ mod runtime {
     }
 
     #[tokio::test]
+    async fn scripted_presets_report_first_then_only_when_met() {
+        use crate::scheduled_tasks::{
+            presets,
+            types::{
+                TaskDefinition, TaskDraft, TaskKind, TaskStatus, TaskSubject, TaskTarget,
+                WatchPreset,
+            },
+        };
+        let suite: Suite = serde_json::from_str(SCHEDULED).unwrap();
+        let session = &suite.scenarios[1].sessions[0];
+        let turn = &session.turns[0];
+        let existing =
+            serde_json::from_value(json!({"kind":"custom","run_existing":true})).unwrap();
+        for preset in [
+            WatchPreset::FilingsAndResults,
+            WatchPreset::ThesisLines,
+            WatchPreset::ResultsFollowUp,
+        ] {
+            let root = tempfile::tempdir_in("/tmp").unwrap();
+            let workspace = root.path().join("workspace");
+            fs::create_dir(&workspace).unwrap();
+            let mut state = AppState::for_eval(root.path().join("app"));
+            super::super::tests::scripted(&mut state, root.path());
+            let loupist = crate::commands::loupist::create_folder_loupist(&state, &workspace)
+                .await
+                .unwrap();
+            let home = crate::chat::home::ensure_home_thread(&state, &loupist.id).unwrap();
+            let once = preset == WatchPreset::ResultsFollowUp;
+            let filled = presets::fill(
+                &state,
+                &loupist.id,
+                preset,
+                Some(vec![TaskSubject::Name {
+                    name: "Northwind Loom".into(),
+                }]),
+                presets::PresetParams {
+                    language: Some("en".into()),
+                    results_date: once.then(|| "2099-11-15".into()),
+                },
+                None,
+            )
+            .unwrap();
+            let prompt = filled.prompt.clone();
+            state
+                .store
+                .scheduled_task_create_definition(
+                    &loupist.id,
+                    "fixture-watch",
+                    TaskDraft {
+                        title: filled.title,
+                        prompt: filled.prompt,
+                        schedule: filled.schedule,
+                        target: TaskTarget::NewChat,
+                        model_profile_id: "fixture".into(),
+                        thinking_level: "medium".into(),
+                        run_options: Default::default(),
+                        use_memory: true,
+                        update_memory: true,
+                        status: TaskStatus::Active,
+                    },
+                    TaskKind::Custom,
+                    TaskDefinition {
+                        watch: filled.watch,
+                        ..Default::default()
+                    },
+                    crate::commands::now_ms(),
+                )
+                .unwrap();
+            let cases = if once { 1 } else { 3 };
+            for i in 0..cases {
+                let quiet = i == 1;
+                let mut script = json!({
+                    "prompt": prompt,
+                    "answer": if quiet { "" } else { "Checked the available reports for Northwind Loom." },
+                    "previous_run": i > 0,
+                });
+                if i < 2 {
+                    script["quiet_result"] = json!(quiet);
+                }
+                fs::write(
+                    root.path().join("scheduled-script.json"),
+                    script.to_string(),
+                )
+                .unwrap();
+                let record =
+                    scheduled::run(&state, &home, turn, &existing, "fixture", "medium", 60_000)
+                        .await
+                        .unwrap();
+                assert_eq!(record["status"], "completed", "{record}");
+                assert_eq!(record["runs"][0]["quiet"], quiet, "{record}");
+                assert_eq!(
+                    record["deliveries"].as_array().unwrap().len(),
+                    usize::from(!quiet),
+                    "{record}"
+                );
+                let saved = state.store.get_chat(&home.id).unwrap().unwrap();
+                assert!(
+                    saved
+                        .messages
+                        .iter()
+                        .filter_map(|message| message.delivery.as_ref())
+                        .next()
+                        .unwrap()
+                        .first_run
+                );
+            }
+            state.shutdown().await.unwrap();
+        }
+    }
+
+    #[tokio::test]
     async fn scheduled_timeout_aborts_one_run_without_a_delivery() {
         let suite: Suite = serde_json::from_str(SCHEDULED).unwrap();
         scheduled_case(&suite.scenarios[1], true).await;

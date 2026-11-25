@@ -186,12 +186,13 @@ the locked runtime closure, excluding development-only packages.
 
 ## Korea Investment Open Trading API
 
-Loupist's checked-in read-operation inventory is derived from the
-[Korea Investment Open Trading API](https://github.com/koreainvestment/open-trading-api)
-repository at commit `b093e42ba32d1df5f5ddad7a71cb715cbc800832`, copyright
-(c) 2026 Korea Investment & Securities, under the MIT License. The MIT terms
-reproduced above apply. Loupist does not bundle or execute the upstream
-MCP server or Python examples.
+Loupist's read-operation inventory uses the [Korea Investment Trading MCP
+catalog](https://github.com/koreainvestment/open-trading-api/tree/b0a0d33b7e5f863a8f3c6790f50adb840829c806/MCP/Kis%20Trading%20MCP)
+at revision `b0a0d33b7e5f863a8f3c6790f50adb840829c806`, whose catalog entries
+match the source pin used by the generator. The MCP package is copyright
+(c) 2026 Korea Investment & Securities under its [MIT license](https://github.com/koreainvestment/open-trading-api/blob/b0a0d33b7e5f863a8f3c6790f50adb840829c806/MCP/Kis%20Trading%20MCP/LICENSE).
+The MIT terms reproduced above apply to that package. Loupist uses public
+KIS Developers protocol documentation and ships native reads.
 
 
 ## Bundled method Skills

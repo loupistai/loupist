@@ -276,6 +276,16 @@ describe("response details", () => {
     cleanup();
     expect(await details({ ...performance, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })).toHaveTextContent("Input: 0 tokens");
   });
+
+  it.each([
+    [{ microusd: 3_100_000, fromProvider: false }, "about $3.10 (estimate)"],
+    [{ microusd: 3_100_000, fromProvider: true }, "billed $3.10"],
+    [{ microusd: 120, fromProvider: false }, "< $0.01"],
+  ] as const)("shows requests and the available cost for the answer", async (costEstimate, label) => {
+    const dialog = await details({ ...performance, modelRequests: 4, costEstimate });
+    expect(dialog).toHaveTextContent("4 model requests");
+    expect(dialog).toHaveTextContent(label);
+  });
 });
 
 it("shows only explicitly delivered, successfully written files as file chips, which open and show the file in Finder", async () => {

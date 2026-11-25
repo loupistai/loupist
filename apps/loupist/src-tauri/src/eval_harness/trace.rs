@@ -16,6 +16,7 @@ pub(crate) struct PiTrace {
     native_reads: BTreeMap<String, Value>,
     pub usage_seen: bool,
     round_usage: Vec<RoundUsage>,
+    compaction_requests: u64,
     error: Option<Value>,
     /// Pi failed to start before the prompt, so the turn reached no model.
     startup_failed: bool,
@@ -102,6 +103,7 @@ impl PiTrace {
 
     pub fn record_round_usage(&self, record: &mut Value) {
         record["model_rounds"] = json!(self.round_usage.len());
+        record["compaction_requests"] = json!(self.compaction_requests);
         record["round_usage"] = json!(self.round_usage);
     }
 
@@ -129,6 +131,10 @@ impl PiTrace {
                     output: usage.and_then(|usage| usage["output"].as_u64()),
                     reasoning: usage.and_then(|usage| usage["reasoning"].as_u64()),
                 });
+            }
+            Some("compaction_end") if crate::runs::log::compaction_usage(event).is_some() => {
+                self.compaction_requests += 1;
+                self.usage_seen = true;
             }
             Some("eval_error") => {
                 self.startup_failed |= event["phase"] == "launch";
@@ -303,6 +309,19 @@ fn redact(value: &Value) -> Value {
 }
 pub(crate) fn bounded_json(value: &Value) -> Value {
     bounded_value(value, MAX_DIAGNOSTIC_BYTES)
+}
+
+/// The store bounds the definition. Keep its identity and complete prompt for
+/// assertions and judging, with the same redaction as other diagnostics.
+pub(super) fn scheduled_task(task: &crate::scheduled_tasks::types::Task) -> Value {
+    redact(&json!({
+        "task_id": task.id, "title": task.title, "status": task.status, "revision": task.revision,
+        "schedule": task.schedule, "target": task.target, "session_thread_id": task.session_thread_id,
+        "model_profile_id": task.model_profile_id, "thinking_level": task.thinking_level,
+        "use_memory": task.use_memory, "update_memory": task.update_memory,
+        "next_run_at_ms": task.next_run_at_ms, "awaiting_confirmation": task.awaiting_confirmation,
+        "prompt": task.prompt, "prompt_sha256": crate::util::sha256(task.prompt.as_bytes()),
+    }))
 }
 
 // Eval evidence needs complete Journal/note arguments, which routinely exceed
@@ -582,6 +601,48 @@ mod tests {
     use super::*;
 
     #[test]
+    fn scheduled_task_trace_keeps_the_full_saved_prompt_and_identity() {
+        use crate::scheduled_tasks::types::{Schedule, TaskDraft, TaskStatus, TaskTarget};
+
+        let store = crate::store::SqliteStore::open_in_memory().unwrap();
+        let profile = crate::test_fixtures::loupist_profile("eval-profile");
+        store.create_loupist(&profile).unwrap();
+        let mut prompt = "Read the market data (\u{c2dc}\u{c7a5}).\n".repeat(100);
+        prompt.push_str("Stay quiet when nothing changes.");
+        let draft = TaskDraft {
+            title: "Market baseline".into(),
+            prompt: prompt.clone(),
+            schedule: Schedule::Interval { every_minutes: 5 },
+            target: TaskTarget::NewChat,
+            model_profile_id: "fixture/model".into(),
+            thinking_level: "off".into(),
+            run_options: BTreeMap::new(),
+            use_memory: true,
+            update_memory: true,
+            status: TaskStatus::Active,
+        };
+        let task = store.scheduled_task_create(&profile.id, draft, 1).unwrap();
+        let mut task = store
+            .scheduled_task_get(&profile.id, &task.id)
+            .unwrap()
+            .unwrap();
+        let snapshot = scheduled_task(&task);
+        assert_eq!(snapshot["task_id"], task.id);
+        assert_eq!(snapshot["status"], "active");
+        assert_eq!(snapshot["prompt"], prompt);
+        assert_eq!(
+            snapshot["prompt_sha256"],
+            crate::util::sha256(prompt.as_bytes())
+        );
+
+        task.prompt
+            .push_str("\nAuthorization: Bearer synthetic-fixture");
+        let redacted = scheduled_task(&task);
+        assert_eq!(redacted["task_id"], task.id);
+        assert_eq!(redacted["prompt"], "[redacted]");
+    }
+
+    #[test]
     fn model_round_usage_ignores_nonterminal_events_and_preserves_unknowns() {
         let mut pi = PiTrace::default();
         for event in [
@@ -604,6 +665,25 @@ mod tests {
             trace["round_usage"],
             json!([{"output":0,"reasoning":0},{"output":null,"reasoning":null},{"output":42,"reasoning":null}])
         );
+    }
+
+    #[test]
+    fn compaction_requests_count_only_terminal_events_with_usage() {
+        let mut pi = PiTrace::default();
+        for event in [
+            json!({"type":"compaction_start","result":{"usage":{"output":9}}}),
+            json!({"type":"compaction_end","aborted":true}),
+            json!({"type":"compaction_end","result":{"usage":null}}),
+            json!({"type":"compaction_end","result":{"usage":{"output":11}}}),
+            json!({"type":"message_end","message":{"role":"assistant"}}),
+        ] {
+            pi.observe(&event);
+        }
+        let mut trace = json!({});
+        pi.record_round_usage(&mut trace);
+        assert_eq!(trace["model_rounds"], 1);
+        assert_eq!(trace["compaction_requests"], 1);
+        assert!(pi.usage_seen);
     }
 
     #[test]

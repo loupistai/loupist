@@ -124,6 +124,10 @@ fn roots(collector: &mut Collector<'_>) {
         crate::chat::artifacts::ChatArtifact,
         crate::chat::artifacts::ChatArtifactVersion,
         crate::commands::ModelVisibilityUpdateRequest,
+        crate::commands::bot_memory::BotMemoryListEntry,
+        crate::commands::bot_memory::BotMemoryListRequest,
+        crate::commands::bot_memory::BotMemoryForgetRequest,
+        crate::commands::bot_memory::BotMemoryUpdateRequest,
         crate::commands::approvals::ApprovalDecideRequest,
         crate::commands::assets::wire::AssetsListRequest,
         crate::commands::assets::wire::AssetIdRequest,
@@ -134,6 +138,23 @@ fn roots(collector: &mut Collector<'_>) {
         crate::commands::chat_runtime::ChatRetryRequest,
         crate::commands::dialog::PickFileRequest,
         crate::commands::export_file::ExportRequest,
+        crate::commands::scripts::ScriptsListRequest,
+        crate::commands::scripts::ScriptGetRequest,
+        crate::commands::scripts::ScriptSaveRequest,
+        crate::commands::scripts::ScriptTestRequest,
+        crate::commands::scripts::PythonStepReplayRequest,
+        crate::commands::scripts::PythonReplay,
+        crate::python_run::ledger::PythonStep,
+        crate::python_run::ledger::ReadSummary,
+        crate::store::scripts::ScriptDraft,
+        crate::store::scripts::ScriptMetadata,
+        crate::store::scripts::ScriptOrigin,
+        crate::store::scripts::ScriptRef,
+        crate::store::scripts::ScriptSummary,
+        crate::store::scripts::ScriptTest,
+        crate::store::scripts::ScriptVersion,
+        crate::domain::ChatToolTrace,
+        crate::domain::ToolTraceOrigin,
         crate::commands::handoff::ResearchHandoffReceipt,
         crate::commands::handoff::ResearchHandoffRequest,
         crate::commands::knowledge::JournalSourceReadDto,
@@ -303,6 +324,7 @@ fn roots(collector: &mut Collector<'_>) {
         crate::scheduled_tasks::WatchSnapshot,
         crate::scheduled_tasks::types::Run,
         crate::scheduled_tasks::types::Task,
+        crate::scheduled_tasks::types::TaskWatch,
         crate::scheduled_tasks::types::TaskListItem,
         crate::scoped_config::ConfigReadRequest,
         crate::scoped_config::ConfigSnapshot,
@@ -367,6 +389,9 @@ macro_rules! commands {
 
 commands! {
         app_menu_update: crate::app_menu::AppMenuContext => ();
+        bot_offer_accept: crate::commands::cards::OfferRequest => crate::scheduled_tasks::types::Task;
+        bot_offer_dismiss: crate::commands::cards::OfferRequest => ();
+        bot_ask_answer: crate::commands::cards::AskAnswerRequest => ();
         briefing_settings_get: crate::briefings::commands::LoupistRequest => crate::briefings::commands::BriefingSettings;
         briefing_settings_set: crate::briefings::commands::SettingsRequest => crate::briefings::commands::BriefingSettings;
         inbox_list: crate::briefings::commands::InboxRequest => crate::briefings::commands::InboxPage;
@@ -409,7 +434,14 @@ commands! {
         config_reveal: crate::scoped_config::ConfigReadRequest => ();
         config_update: crate::scoped_config::ConfigUpdateRequest => crate::scoped_config::ConfigSnapshot;
         pick_file: crate::commands::dialog::PickFileRequest => Option<String>;
+        clipboard_read_image: () => crate::commands::clipboard::ClipboardImage;
         export_save: crate::commands::export_file::ExportRequest => Option<String>;
+        scripts_list: crate::commands::scripts::ScriptsListRequest => Vec<crate::store::scripts::ScriptSummary>;
+        script_get: crate::commands::scripts::ScriptGetRequest => crate::store::scripts::ScriptVersion;
+        script_save: crate::commands::scripts::ScriptSaveRequest => crate::store::scripts::ScriptVersion;
+        script_delete: crate::commands::scripts::ScriptGetRequest => ();
+        script_test: crate::commands::scripts::ScriptTestRequest => crate::python_run::ledger::PythonStep;
+        python_step_replay: crate::commands::scripts::PythonStepReplayRequest => crate::commands::scripts::PythonReplay;
         research_handoff_start: crate::commands::handoff::ResearchHandoffRequest => crate::commands::handoff::ResearchHandoffReceipt;
         knowledge_catalog: crate::commands::knowledge::KnowledgeCatalogRequest => crate::commands::knowledge::KnowledgeCatalogDto;
         knowledge_connection_dismiss: crate::commands::knowledge::KnowledgeConnectionRequest => crate::knowledge::ConnectionView;
@@ -482,9 +514,21 @@ commands! {
         chat_rename: crate::commands::types::ChatRenameRequest => crate::commands::types::ChatThreadDto;
         chat_version_switch: crate::commands::types::ChatVersionSwitchRequest => crate::commands::types::ChatThreadDto;
         loupist_artifact_list: crate::commands::types::LoupistArtifactListRequest => Vec<crate::commands::types::LoupistArtifactItemDto>;
-        scheduled_task_confirm: crate::commands::scheduled_tasks::TaskRequest => crate::scheduled_tasks::types::Task;
+        scheduled_task_confirm: crate::commands::scheduled_tasks::RevisionRequest => crate::scheduled_tasks::types::Task;
         scheduled_task_delete: crate::commands::scheduled_tasks::RevisionRequest => ();
+        scheduled_proposal_set_declined: crate::commands::scheduled_tasks::ProposalDeclineRequest => ();
+        scheduled_proposal_visit_end: crate::commands::scheduled_tasks::ProposalVisitRequest => ();
         scheduled_task_discard: crate::commands::scheduled_tasks::TaskRequest => ();
+        notification_permission_settings_open: () => ();
+        notification_bot_focus_set: crate::briefings::desktop::BotFocusRequest => ();
+        notification_templates_set: crate::briefings::desktop::TemplatesRequest => ();
+        scheduled_task_from_preset: crate::commands::scheduled_tasks::FromPresetRequest => crate::scheduled_tasks::types::Task;
+        scheduled_trigger_get: crate::commands::scheduled_tasks::TriggerGetRequest => crate::commands::scheduled_tasks::TriggerView;
+        scheduled_trigger_approve: crate::commands::scheduled_tasks::TriggerReviewRequest => crate::scheduled_tasks::types::Task;
+        scheduled_trigger_revert: crate::commands::scheduled_tasks::TriggerRevertRequest => crate::scheduled_tasks::types::Task;
+        scheduled_trigger_test: crate::commands::scheduled_tasks::TriggerReviewRequest => crate::scheduled_tasks::types::TriggerEvaluation;
+        scheduled_trigger_evaluations: crate::commands::scheduled_tasks::TaskRequest => Vec<crate::scheduled_tasks::types::TriggerEvaluation>;
+        scheduled_task_set_delivery: crate::commands::scheduled_tasks::DeliveryRequest => crate::scheduled_tasks::types::Task;
         scheduled_task_get: crate::commands::scheduled_tasks::TaskRequest => Option<crate::scheduled_tasks::types::Task>;
         scheduled_task_run_now: crate::commands::scheduled_tasks::TaskRequest => crate::scheduled_tasks::types::Run;
         scheduled_task_runs: crate::commands::scheduled_tasks::TaskRequest => Vec<crate::scheduled_tasks::types::Run>;
@@ -517,6 +561,8 @@ commands! {
         chat_draft_read: crate::commands::workspace_ui::DraftIdentity => Option<crate::commands::workspace_ui::StoredChatDraft>;
         chat_draft_write: crate::commands::workspace_ui::DraftIdentity => ();
         workspace_ui_read: () => Option<crate::commands::workspace_ui::WorkspaceUiState>;
+        chat_composer_model_read: crate::commands::workspace_ui::composer_model::ComposerModelRead => Option<crate::commands::workspace_ui::composer_model::ComposerModelSelection>;
+        chat_composer_model_write: crate::commands::workspace_ui::composer_model::ComposerModelWrite => ();
         workspace_ui_write: crate::commands::workspace_ui::WorkspaceUiWriteRequest => crate::commands::workspace_ui::WorkspaceUiState;
         custom_connection_add_command: crate::custom_connections::commands::AddCommandRequest => crate::custom_connections::service::ConnectionView;
         custom_connection_add_json: crate::custom_connections::commands::AddJsonRequest => Vec<crate::custom_connections::service::ConnectionView>;
@@ -553,6 +599,10 @@ commands! {
         provider_models: crate::providers::connection::ProviderModelsRequest => crate::providers::catalog::ModelCatalogView;
         provider_open_console: crate::providers::connection::ProviderPageRequest => ();
         provider_open_usage: crate::providers::connection::ProviderPageRequest => ();
+        usage_summary: crate::commands::usage::UsageSummaryRequest => crate::commands::usage::UsageSummary;
+        bot_memory_list: crate::commands::bot_memory::BotMemoryListRequest => Vec<crate::commands::bot_memory::BotMemoryListEntry>;
+        bot_memory_forget: crate::commands::bot_memory::BotMemoryForgetRequest => Vec<crate::commands::bot_memory::BotMemoryListEntry>;
+        bot_memory_update: crate::commands::bot_memory::BotMemoryUpdateRequest => Vec<crate::commands::bot_memory::BotMemoryListEntry>;
         provider_custom_test: crate::providers::local::ProviderCustomTestRequest => crate::providers::local::ProviderCustomTestResult;
         provider_local_discover: () => crate::providers::local::LocalDiscovery;
         provider_preset_save: crate::providers::local::ProviderPresetRequest => crate::providers::catalog::ModelCatalogView;
@@ -636,6 +686,10 @@ async fn command_signatures() {
     fn any<T>() -> T {
         unreachable!()
     }
+    let _: Result<crate::scheduled_tasks::types::Task, CommandError> =
+        crate::commands::cards::bot_offer_accept(any(), any()).await;
+    let _: Result<(), CommandError> = crate::commands::cards::bot_offer_dismiss(any(), any());
+    let _: Result<(), CommandError> = crate::commands::cards::bot_ask_answer(any(), any());
     let _: Result<crate::briefings::commands::BriefingSettings, CommandError> =
         crate::briefings::commands::briefing_settings_get(
             any::<crate::briefings::commands::LoupistRequest>(),
@@ -766,11 +820,44 @@ async fn command_signatures() {
         .await;
     let _: Result<Option<String>, CommandError> =
         crate::commands::dialog::pick_file(any::<crate::commands::dialog::PickFileRequest>()).await;
+    let _: Result<crate::commands::clipboard::ClipboardImage, CommandError> =
+        crate::commands::clipboard::clipboard_read_image(any());
     let _: Result<Option<String>, CommandError> = crate::commands::export_file::export_save(
         any(),
         any::<crate::commands::export_file::ExportRequest>(),
     )
     .await;
+    let _: Result<Vec<crate::store::scripts::ScriptSummary>, CommandError> =
+        crate::commands::scripts::scripts_list(
+            any::<crate::commands::scripts::ScriptsListRequest>(),
+            any(),
+        );
+    let _: Result<crate::store::scripts::ScriptVersion, CommandError> =
+        crate::commands::scripts::script_get(
+            any::<crate::commands::scripts::ScriptGetRequest>(),
+            any(),
+        );
+    let _: Result<crate::store::scripts::ScriptVersion, CommandError> =
+        crate::commands::scripts::script_save(
+            any::<crate::commands::scripts::ScriptSaveRequest>(),
+            any(),
+        );
+    let _: Result<(), CommandError> = crate::commands::scripts::script_delete(
+        any::<crate::commands::scripts::ScriptGetRequest>(),
+        any(),
+    );
+    let _: Result<crate::python_run::ledger::PythonStep, CommandError> =
+        crate::commands::scripts::script_test(
+            any::<crate::commands::scripts::ScriptTestRequest>(),
+            any(),
+        )
+        .await;
+    let _: Result<crate::commands::scripts::PythonReplay, CommandError> =
+        crate::commands::scripts::python_step_replay(
+            any::<crate::commands::scripts::PythonStepReplayRequest>(),
+            any(),
+        )
+        .await;
     let _: Result<crate::commands::handoff::ResearchHandoffReceipt, CommandError> =
         crate::commands::handoff::research_handoff_start(
             any::<crate::commands::handoff::ResearchHandoffRequest>(),
@@ -1134,17 +1221,40 @@ async fn command_signatures() {
         );
     let _: Result<crate::scheduled_tasks::types::Task, CommandError> =
         crate::commands::scheduled_tasks::scheduled_task_confirm(
-            any::<crate::commands::scheduled_tasks::TaskRequest>(),
+            any::<crate::commands::scheduled_tasks::RevisionRequest>(),
             any(),
         );
     let _: Result<(), CommandError> = crate::commands::scheduled_tasks::scheduled_task_delete(
         any::<crate::commands::scheduled_tasks::RevisionRequest>(),
         any(),
     );
+    let _: Result<(), CommandError> =
+        crate::commands::scheduled_tasks::scheduled_proposal_set_declined(any(), any());
+    let _: Result<(), CommandError> =
+        crate::commands::scheduled_tasks::scheduled_proposal_visit_end(any(), any());
     let _: Result<(), CommandError> = crate::commands::scheduled_tasks::scheduled_task_discard(
         any::<crate::commands::scheduled_tasks::TaskRequest>(),
         any(),
     );
+    let _: Result<(), CommandError> =
+        crate::briefings::desktop::notification_bot_focus_set(any(), any());
+    let _: Result<(), CommandError> =
+        crate::briefings::desktop::notification_permission_settings_open();
+    let _: Result<(), CommandError> = crate::briefings::desktop::notification_templates_set(any());
+    let _: Result<crate::scheduled_tasks::types::Task, CommandError> =
+        crate::commands::scheduled_tasks::scheduled_task_from_preset(any(), any()).await;
+    let _: Result<crate::commands::scheduled_tasks::TriggerView, CommandError> =
+        crate::commands::scheduled_tasks::scheduled_trigger_get(any(), any());
+    let _: Result<crate::scheduled_tasks::types::Task, CommandError> =
+        crate::commands::scheduled_tasks::scheduled_trigger_approve(any(), any());
+    let _: Result<crate::scheduled_tasks::types::Task, CommandError> =
+        crate::commands::scheduled_tasks::scheduled_trigger_revert(any(), any());
+    let _: Result<crate::scheduled_tasks::types::TriggerEvaluation, CommandError> =
+        crate::commands::scheduled_tasks::scheduled_trigger_test(any(), any()).await;
+    let _: Result<Vec<crate::scheduled_tasks::types::TriggerEvaluation>, CommandError> =
+        crate::commands::scheduled_tasks::scheduled_trigger_evaluations(any(), any());
+    let _: Result<crate::scheduled_tasks::types::Task, CommandError> =
+        crate::commands::scheduled_tasks::scheduled_task_set_delivery(any(), any());
     let _: Result<Option<crate::scheduled_tasks::types::Task>, CommandError> =
         crate::commands::scheduled_tasks::scheduled_task_get(
             any::<crate::commands::scheduled_tasks::TaskRequest>(),
@@ -1266,6 +1376,12 @@ async fn command_signatures() {
     );
     let _: Result<Option<crate::commands::workspace_ui::WorkspaceUiState>, CommandError> =
         crate::commands::workspace_ui::workspace_ui_read(any());
+    let _: Result<
+        Option<crate::commands::workspace_ui::composer_model::ComposerModelSelection>,
+        CommandError,
+    > = crate::commands::workspace_ui::composer_model::chat_composer_model_read(any(), any());
+    let _: Result<(), CommandError> =
+        crate::commands::workspace_ui::composer_model::chat_composer_model_write(any(), any());
     let _: Result<crate::commands::workspace_ui::WorkspaceUiState, CommandError> =
         crate::commands::workspace_ui::workspace_ui_write(
             any::<crate::commands::workspace_ui::WorkspaceUiWriteRequest>(),
@@ -1452,6 +1568,26 @@ async fn command_signatures() {
     let _: Result<(), CommandError> = crate::providers::connection::provider_open_usage(any::<
         crate::providers::connection::ProviderPageRequest,
     >());
+    let _: Result<crate::commands::usage::UsageSummary, CommandError> =
+        crate::commands::usage::usage_summary(
+            any::<crate::commands::usage::UsageSummaryRequest>(),
+            any(),
+        );
+    let _: Result<Vec<crate::commands::bot_memory::BotMemoryListEntry>, CommandError> =
+        crate::commands::bot_memory::bot_memory_list(
+            any::<crate::commands::bot_memory::BotMemoryListRequest>(),
+            any(),
+        );
+    let _: Result<Vec<crate::commands::bot_memory::BotMemoryListEntry>, CommandError> =
+        crate::commands::bot_memory::bot_memory_forget(
+            any::<crate::commands::bot_memory::BotMemoryForgetRequest>(),
+            any(),
+        );
+    let _: Result<Vec<crate::commands::bot_memory::BotMemoryListEntry>, CommandError> =
+        crate::commands::bot_memory::bot_memory_update(
+            any::<crate::commands::bot_memory::BotMemoryUpdateRequest>(),
+            any(),
+        );
     let _: Result<crate::providers::local::ProviderCustomTestResult, CommandError> =
         crate::providers::local::provider_custom_test(any::<
             crate::providers::local::ProviderCustomTestRequest,

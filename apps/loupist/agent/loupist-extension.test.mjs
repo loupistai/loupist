@@ -1322,3 +1322,25 @@ test("the runtime directs permission-blocked saved keys to Settings", () => {
     message: "This connection's saved key needs the user's permission in macOS first. Tell the user to open Settings > Data connections and choose Allow access, then ask again. Continue this reply without this connection.",
   });
 });
+
+test("saved scripts and named Python inputs use the broker", async (t) => {
+  useHostContext(t, runtimeContext("chat", ["script_save", "script_list", "script_read", "run_python"]));
+  const received = await startToolBroker(t, () => ({
+    status: "completed", exit_code: 0, stdout: "24\n", rounds: 1, reads: [{ tool: "dataset", status: "ok" }],
+  }));
+  const { registered } = loadExtension();
+  const script = { name: "quarter-total", summary: "Sum quarterly data.", code: "import loupist\nprint(sum(loupist.inputs['quarters']))" };
+  const run = {
+    script: "quarter-total@1",
+    inputs: [{ name: "quarters", dataset: { dataset_id: "ds-quarters", revision: 1 } }],
+    args: {},
+  };
+  const saveTool = registered.get("script_save");
+  const python = registered.get("run_python");
+  assert.deepEqual(validateToolArguments(python, { id: "run", name: "run_python", arguments: run }), run);
+  await saveTool.execute("save", script, new AbortController().signal);
+  await python.execute("run", run, new AbortController().signal);
+  assert.deepEqual(received.map(({ method, params }) => [method, params]), [
+    ["script.save", script], ["python.run", run],
+  ]);
+});

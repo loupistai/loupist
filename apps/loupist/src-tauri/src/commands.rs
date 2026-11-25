@@ -4,6 +4,8 @@ mod artifact_context;
 pub(crate) mod assets;
 pub(crate) mod attachments;
 pub(crate) mod attention;
+pub(crate) mod bot_memory;
+pub(crate) mod cards;
 #[cfg(all(
     any(test, feature = "e2e"),
     target_os = "macos",
@@ -12,6 +14,7 @@ pub(crate) mod attention;
 ))]
 mod chat_fixture;
 pub(crate) mod chat_runtime;
+pub(crate) mod clipboard;
 pub(crate) mod configuration;
 pub(crate) mod dialog;
 pub(crate) mod export_file;
@@ -27,11 +30,14 @@ pub(crate) mod power;
 pub(crate) mod questions;
 pub(crate) mod records;
 pub(crate) mod scheduled_tasks;
+pub(crate) mod scripts;
 pub(crate) mod skills;
 mod tool_executor;
+pub(crate) mod triggers;
 pub(crate) use tool_executor::number_checks::replay::ReplayCache;
 pub(crate) use tool_executor::prewarm_market_data;
 pub mod types;
+pub(crate) mod usage;
 pub(crate) mod workspace;
 pub(crate) mod workspace_ui;
 

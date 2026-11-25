@@ -216,11 +216,11 @@ impl<T: Transport, C: Clock> Lookups<T, C> {
         let grant = before.grant_revision;
         let revision = before.key_revision().map(str::to_owned);
         let key = before.api_key();
+        let keyed = key.is_some();
         let endpoint = Endpoint::Search;
         let request = http::request(endpoint, &search, key)?;
-        let lease = self
-            .limiter
-            .dispatch(endpoint, key.is_some(), self.clock.now())?;
+        let equity_request = http::request(endpoint, &search.equities(), key)?;
+        let lease = self.limiter.dispatch(endpoint, keyed, self.clock.now())?;
         let (saved_key_unread, keychain_status) = (before.saved_key_unread, before.keychain_status);
         drop(before);
         let deadline = self.clock.now() + DEADLINE;
@@ -228,6 +228,11 @@ impl<T: Transport, C: Clock> Lookups<T, C> {
             .await
             .map_err(|_| LookupStatus::Timeout)??;
         let status = self.limiter.observe(lease, &reply, self.clock.now());
+        let equities = if status.is_ok() && response::wants_equity_page(&reply.body) {
+            self.equity_page(equity_request, keyed, deadline).await
+        } else {
+            None
+        };
         // A Keychain change outside Loupist does not update the host projection.
         // Recheck the actual item before releasing a response from the old key.
         let after = authority(state, loupist_id)
@@ -238,11 +243,36 @@ impl<T: Transport, C: Clock> Lookups<T, C> {
         }
         drop(after);
         status?;
+        let mut pages = vec![reply.body.as_slice()];
+        pages.extend(equities.as_deref());
         Ok(Lookup {
-            candidates: response::decode(search.query, &reply.body)?,
+            candidates: response::decode_pages(search.query, &pages)?,
             saved_key_unread,
             keychain_status,
         })
+    }
+
+    /// A second request, in the equity sector, when the first page shows the
+    /// issuer's shares only on trade-reporting lines. It is skipped when the
+    /// request limit has no room, and any failure leaves the first page.
+    async fn equity_page(
+        &self,
+        request: reqwest::Request,
+        keyed: bool,
+        deadline: tokio::time::Instant,
+    ) -> Option<Vec<u8>> {
+        let lease = self
+            .limiter
+            .dispatch(Endpoint::Search, keyed, self.clock.now())
+            .ok()?;
+        let reply = tokio::time::timeout_at(deadline, self.transport.send(request))
+            .await
+            .ok()?
+            .ok()?;
+        self.limiter
+            .observe(lease, &reply, self.clock.now())
+            .ok()
+            .map(|()| reply.body)
     }
 }
 
@@ -370,6 +400,69 @@ mod tests {
             transport: PublicRoute(Default::default()),
             clock: RuntimeClock,
             limiter: Limiter::default(),
+        }
+    }
+
+    /// Answers with the recorded pages for a search and records each request.
+    struct RecordedPages(std::sync::Mutex<Vec<serde_json::Value>>);
+
+    #[async_trait::async_trait]
+    impl Transport for RecordedPages {
+        async fn send(&self, request: reqwest::Request) -> Result<http::Reply, LookupStatus> {
+            let body: serde_json::Value =
+                serde_json::from_slice(request.body().unwrap().as_bytes().unwrap()).unwrap();
+            self.0.lock().unwrap().push(body.clone());
+            let searches: serde_json::Value =
+                serde_json::from_str(include_str!("search-fixture.json")).unwrap();
+            let name = match (body["query"].as_str().unwrap(), body.get("marketSecDes")) {
+                ("Samsung Electronics", Some(_)) => "Samsung Electronics, equity sector",
+                (query, _) => query,
+            };
+            Ok(http::Reply {
+                status: 200,
+                headers: reqwest::header::HeaderMap::new(),
+                body: serde_json::to_vec(&searches[name]).unwrap(),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn an_english_name_crowded_by_debt_finds_the_krx_listing() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(root.path().join("app"));
+        let id = "lookup-desk";
+        state
+            .store
+            .create_loupist(&crate::test_fixtures::loupist_profile(id))
+            .unwrap();
+        for (query, requests) in [("Samsung Electronics", 2), ("005930", 1), ("Costco", 1)] {
+            let lookup = Lookups {
+                transport: RecordedPages(Default::default()),
+                clock: RuntimeClock,
+                limiter: Limiter::default(),
+            };
+            let found = lookup
+                .search(&state, id, response::Search::new(query).unwrap())
+                .await
+                .map_err(CommandError::from)
+                .unwrap();
+            let sent = lookup.transport.0.lock().unwrap().clone();
+            assert_eq!(sent.len(), requests, "{query}");
+            assert_eq!(sent[0], serde_json::json!({"query": query}));
+            if requests == 2 {
+                assert_eq!(
+                    sent[1],
+                    serde_json::json!({"query": query, "marketSecDes": "Equity"})
+                );
+            }
+            if query != "Costco" {
+                let first = &found.candidates[0];
+                assert_eq!(
+                    (first.ticker.as_deref(), first.exchange.as_deref()),
+                    (Some("005930"), Some("KS")),
+                    "{query}"
+                );
+            }
         }
     }
 

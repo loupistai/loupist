@@ -299,6 +299,90 @@ async fn a_new_loupists_focus_reaches_the_turn_from_its_profile_without_a_lens_p
     }
 }
 
+/// The model writes its answer and its progress notes in the language of the
+/// question. The turn names the question's script, next to the question, and
+/// not the Loupist's: an English question in a Loupist whose focus is Korean
+/// (the v0.1.6 acceptance, whose notes came back Korean), and the reverse.
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+#[tokio::test]
+async fn a_turn_names_the_script_of_its_question_not_of_its_loupist() {
+    use crate::agent_harness::message_script::CURRENT_MESSAGE_SCRIPT;
+    use crate::commands::tests::{
+        chat,
+        chat_behavior::{install_chat_rpc_fixture, send_request},
+    };
+    for (index, (focus, question, script)) in [
+        (
+            "미국 대형 기술 기업",
+            "When does Adriana Kugler's term on the Fed Board end, and how did she get onto the Board?",
+            "Latn",
+        ),
+        (
+            "Large US technology companies",
+            "애드리아나 쿠글러의 연준 이사 임기는 언제 끝나고, 어떻게 이사가 됐어?",
+            "Hang",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let temporary = tempfile::tempdir().unwrap();
+        let workspace = temporary.path().join("research");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut state = AppState::for_test(temporary.path().join("app"));
+        install_chat_rpc_fixture(
+            &mut state,
+            temporary.path(),
+            include_str!("../tests/fixtures/model_gone_pi.py"),
+        );
+        let created = crate::commands::loupist::create_folder_loupist_with_setup(
+            &state,
+            &workspace,
+            Some(focus.into()),
+            None,
+        )
+        .await
+        .unwrap();
+        std::fs::create_dir_all(workspace.join(".loupist")).unwrap();
+        state
+            .store
+            .create_chat(&chat("language-chat", &created.id, 1))
+            .unwrap();
+        let request = send_request(
+            &format!("language-run-{index}"),
+            &created.id,
+            "language-chat",
+            question,
+        );
+        let ControlFlow::Continue(turn) =
+            setup::admit_chat_turn(request, ChatEventSink::new(|_| Ok(())), &state, None).unwrap()
+        else {
+            panic!("turn must be admitted");
+        };
+        let envelope = launch::build_turn_envelope(
+            turn.envelope,
+            &state,
+            &turn.profile,
+            false,
+            &turn.surface,
+            &ToolCapture::default(),
+        )
+        .await
+        .unwrap();
+        let rendered = agent_harness::render_turn_context(&envelope);
+        let value: Value = serde_json::from_str(&rendered).unwrap();
+        assert_eq!(value[agent_harness::LOUPIST_FOCUS_BLOCK], focus);
+        assert_eq!(value[CURRENT_MESSAGE_SCRIPT], script, "{rendered}");
+        // The block nearest the message: only the clock comes after it.
+        assert!(
+            rendered.contains(&format!(
+                "\"{CURRENT_MESSAGE_SCRIPT}\":\"{script}\",\"live_time\":"
+            )),
+            "{rendered}"
+        );
+    }
+}
+
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
 #[tokio::test]
 async fn interface_labels_follow_turn_origin_and_freeze_the_admitted_appearance() {
@@ -1510,6 +1594,7 @@ fn terminal_replies_keep_acknowledged_records_across_reopen_without_a_renderer()
         upstream_evidence_ids: vec![],
     };
     let receipt = ScheduleReceipt::Task(crate::scheduled_tasks::types::TaskReceipt {
+        watch: Default::default(),
         task_id: "schedule-survives-stop".into(),
         title: "Daily research".into(),
         revision: 1,
@@ -1521,6 +1606,7 @@ fn terminal_replies_keep_acknowledged_records_across_reopen_without_a_renderer()
         use_memory: false,
         update_memory: false,
         awaiting_confirmation: false,
+        trigger: None,
     });
     let refusal = crate::domain::ChatToolRefusal {
         connection_id: "custom-test".into(),

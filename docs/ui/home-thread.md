@@ -1,5 +1,7 @@
 # Home Thread
 
+When a check is met, Rust posts a card at once with the reading, its as-of date and "from your check". The agent run fills that same card. If no run can start, the card keeps the reading and says why.
+
 The persistent home Thread appears as Bot (봇). Each Loupist has one Bot. Research sessions have separate titles and drafts. The app restores the selected conversation and its unsent draft on restart, including attached files, the exact inline references, the selected work, Skills and the as-of date. Scheduled results, crossed lines and the morning message are host posts, not model calls.
 
 Each Loupist has one persisted home Thread (`home-{loupist}`), created on workspace load
@@ -256,8 +258,11 @@ instead of reusing a summary containing the previous entry. Remembering a new
 entry alone preserves the session and refreshes its envelope. Forget removes Bot
 memory copies; it does not delete the user's original conversation messages.
 
-**When it changes.** Only through `bot_memory`, a Bot-only tool that needs Memory
-saving on. A call is checked and reserved under one lock, so parallel calls in a reply
+**When it changes.** Through `bot_memory`, a Bot-only tool that needs Memory
+saving on, or from the standing sheet without a model call. The sheet's
+`bot_memory_forget` and `bot_memory_update` commit with `settle_reply`, the
+same apply as the tool, and drop the warm Pi session when the change is not a
+new remember, as a reply commit does. A call is checked and reserved under one lock, so parallel calls in a reply
 share the 30-entry and 30-change budgets and an undelivered call frees its share.
 Delivered changes apply as one batch in the transaction that publishes the Bot
 reply; one that no longer applies fails the reply instead of being dropped. A
@@ -297,10 +302,41 @@ working note the Bot saved earlier stays in Library.
 cover Bot memory: a private Bot turn neither receives nor changes it and its
 message is never queued, like the rest of saved Memory. Under an
 [as-of date](../analysis/point-in-time.md#point-in-time-answers) the Bot sees its
-memory as it stood then (changes whose reply passes the chat-history rule, counted
-as left-out notes), forgotten entries never return, and no review is offered.
+memory as it stood then. A change must have been recorded by the cutoff, and
+its reply must pass the chat-history rule. Changes left out count as notes.
+Forgotten entries never return, and no review is offered.
 Deleting the Loupist deletes it with the Thread; the Thread itself cannot be
 deleted. Reset what it learned covers what the Loupist learned in Lens and World and
-leaves Bot memory alone; asking the Bot to forget is the way to clear it. The user
+leaves Bot memory alone; asking the Bot to forget, or Forget in the standing sheet, clears it. The user
 asks the Bot what it remembers, corrects it or tells it to forget in the
-conversation; each change shows as a "Remembered for this conversation" step.
+conversation; each change from the tool shows as a "Remembered for this conversation" step.
+Bot's header opens the standing sheet, which lists every entry on the shown
+path with Forget and Edit. Forget still deletes every stored copy on every
+path. Edit replaces the text and keeps the kind and the messages it rests on.
+
+**Unattended runs.** A scheduled, price-setup or delegated run with Memory on
+receives `standing_preferences`: only `preference` entries, under the fixed
+rule in `chat/bot_memory.rs`. Decisions, open requests, context and the review
+queue stay on the Bot. A private turn receives neither `bot_memory` nor
+`standing_preferences`, and a message that was never stored is not delivered.
+The block is part of the envelope digest, so a changed preference is sent on
+the next unattended run. A World-link hand-off is a research session
+(`session` surface), so it does not receive the block.
+
+## Watches and background results
+
+The standing strip reads the selected Loupist's saved Schedule tasks. It shows work currently checking, recent quiet checks and tasks that paused after a failure. **Needs you** brings proposals, paused tasks, preset offers, questions a run left, and watches that have been quiet for six reports or loud for four delivered results in a week, alongside other items that need attention. **Turn on** confirms the displayed proposal revision or the displayed offer in the host. A proposal row in Needs you reads its title, timing, and revision from one Schedule snapshot. **Not now** on an offer records that the same preset and asset are not offered again. **Change** fills the composer for the user's review. An offer card names a bundled preset and a followed asset. Results follow-up cards show the results date and the run time resolved by the host. The first display or acceptance of an older card pins its missing run time in storage for future reads and acceptance. Needs you opens results follow-up cards for review. Accepting records the decision and creates that preset's task in one database transaction. Declining reserves the card before updating project configuration. A retry can finish the configuration write without reopening the card. A question card stores the chosen option on the original card. The option wording came from the model and does not enter user-authored history or standing preferences. Each reply or run can reserve two distinct offers and each run can leave one question. The host gates both free-text card tools after outside text or a Don't Save result.
+
+A result card links to the original run and shows the host's checked and unmatched figures. **Ask about this** opens the run's conversation. Per-task notification and pause actions reuse the Schedule controls. After an absence, results can be read together in a collapsible block.
+
+**Settings › Notifications** holds the app-wide quiet hours, daily cap and details switch. Each scheduled task selects its own notification policy. The host uses the interface's notification templates and decides when to deliver.
+Each delivery accepted by the OS uses one slot. If the OS refuses the request
+or delivery fails, the result stays queued for another attempt.
+
+Notification defaults are editable by kind in Settings. Line crossings, filings and results, and briefings initially notify now. Other scheduled work and failed runs initially wait for the next digest. A watch with an explicit notification setting keeps that setting when the defaults change.
+
+**Not now** hides the proposal for this visit and offers **Undo** on its message. Leaving the visit removes a declined proposal. An undone proposal still waits for **Turn on**.
+
+The host suppresses scheduled-result and line-crossing notifications while the focused main window shows that Loupist’s Bot. Viewing another Loupist or another page uses the ordinary notification rules.
+
+On macOS, **Open System Settings** under Notifications opens the operating system’s notification permissions.

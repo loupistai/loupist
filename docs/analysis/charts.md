@@ -44,7 +44,10 @@ axis never formats a period as a quantity: a date prints in the app's date forma
 x column is a category (one band per value, printed as given) when its semantic type
 names a period, date, category or identifier, its column kind is a string or date,
 or, with no type saying it is a quantity, every value is an integer from 1800 to
-2200, a year. The panel's chart, the answer's card and Save as PNG draw the same
+2200, a year. A time axis asks for one tick per 80 px of plot (110 px for month
+labels, 60 px for years), so a year of daily prices shows one date a quarter in the
+side panel and one a month in a wide answer column; a label that would still touch
+its neighbour is dropped, every other one at a time. The panel's chart, the answer's card and Save as PNG draw the same
 view, so they agree, and a language change draws the chart again. Legends
 wrap below the plot as the panel changes width, keeping room for the data;
 display labels do not change series identity or stored values.

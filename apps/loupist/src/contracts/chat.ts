@@ -28,6 +28,8 @@ export type ChatProgressItem =
        * Absent on system steps and on steps recorded before it existed.
        */
       toolName?: string;
+      origin?: Wire.ToolTraceOrigin;
+      parentStep?: string;
       category: ChatProgressCategory;
       operation: ChatProgressOperation;
       action: string;
@@ -286,7 +288,15 @@ export type HostPostRecords = {
   handoff?: HomeHandoff;
   /** Present on a host-posted "New link" card from discovery. */
   link?: HomeLink;
+  /** Preset offers on this message. */
+  offers?: HomeOffer[];
+  /** A question a scheduled run left. */
+  ask?: HomeAsk;
 };
+
+export type HomeOffer = Wire.HomeOffer;
+export type HomeAsk = Wire.HomeAsk;
+export type HomeAskOption = Wire.HomeAskOption;
 
 export type HandoffNote = Wire.HandoffNoteDto;
 export type HandoffAction = Wire.HandoffAction;

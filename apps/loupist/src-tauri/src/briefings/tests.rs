@@ -1,4 +1,5 @@
 use super::*;
+use crate::scheduled_tasks::types::RunStatus;
 #[test]
 fn summary_is_first_prose_paragraph_without_markdown() {
     assert_eq!(
@@ -112,6 +113,7 @@ fn settings_opt_in_is_single_task_and_pause_preserves_its_chat_definition() {
             loupist_id: loupist.clone(),
             enabled: true,
             schedule: None,
+            edition: None,
         },
     )
     .unwrap();
@@ -124,6 +126,7 @@ fn settings_opt_in_is_single_task_and_pause_preserves_its_chat_definition() {
             loupist_id: loupist.clone(),
             enabled: true,
             schedule: None,
+            edition: None,
         },
     )
     .unwrap();
@@ -134,6 +137,7 @@ fn settings_opt_in_is_single_task_and_pause_preserves_its_chat_definition() {
             loupist_id: loupist.clone(),
             enabled: false,
             schedule: None,
+            edition: None,
         },
     )
     .unwrap();
@@ -157,6 +161,7 @@ fn a_schedule_saved_while_off_is_kept_without_turning_briefings_on() {
             loupist_id: loupist.clone(),
             enabled: false,
             schedule: Some(schedule.clone()),
+            edition: None,
         },
     )
     .unwrap();
@@ -169,101 +174,6 @@ fn a_schedule_saved_while_off_is_kept_without_turning_briefings_on() {
         reread.task.unwrap().status,
         crate::scheduled_tasks::types::TaskStatus::Paused
     );
-}
-
-#[test]
-fn notification_effects_include_loupist_status_summary_and_navigation_target() {
-    use std::cell::RefCell;
-    struct Fake {
-        calls: RefCell<Vec<String>>,
-    }
-    impl desktop::DesktopEffects for Fake {
-        fn notify(&self, title: &str, body: &str, target: &desktop::InboxOpen) {
-            self.calls.borrow_mut().push(format!(
-                "{title}|{body}|{}|{}",
-                target.loupist_id,
-                target.run_id.as_deref().unwrap_or("")
-            ));
-        }
-        fn changed(&self, loupist: &str) {
-            self.calls.borrow_mut().push(format!("changed:{loupist}"));
-        }
-    }
-    let fake = Fake {
-        calls: RefCell::new(Vec::new()),
-    };
-    let run = crate::scheduled_tasks::types::Run {
-        discarded_memory_items: None,
-        memory_save_skip: None,
-        briefing_context: None,
-        kind: crate::scheduled_tasks::types::TaskKind::Briefing,
-        read_at_ms: None,
-        quiet: false,
-        summary: "First line\nSecond line".into(),
-        message_id: Some("message-a".into()),
-        skipped_tools: vec![],
-        id: "receipt-a".into(),
-        task_id: "task-a".into(),
-        loupist_id: "loupist-a".into(),
-        task_revision: 1,
-        task_title: "Briefings".into(),
-        thread_id: Some("chat-a".into()),
-        run_id: "run-a".into(),
-        scheduled_for_ms: 1,
-        started_at_ms: 1,
-        finished_at_ms: Some(2),
-        status: crate::scheduled_tasks::types::RunStatus::Succeeded,
-        error: None,
-    };
-    desktop::deliver(&fake, "Research", &run);
-    {
-        let calls = fake.calls.borrow();
-        assert!(calls[0].starts_with("Research"));
-        assert!(calls[0].ends_with("|First line|loupist-a|run-a"));
-        assert_eq!(calls[1], "changed:loupist-a");
-    }
-    use crate::scheduled_tasks::types::{RunStatus, TaskKind};
-    for (kind, title) in [
-        (TaskKind::Briefing, "briefing"),
-        (TaskKind::Custom, "Weekly research"),
-    ] {
-        for (status, error, suffix) in [
-            (RunStatus::Succeeded, None, "ready"),
-            (RunStatus::Failed, None, "couldn't finish"),
-            (RunStatus::Interrupted, None, "couldn't finish"),
-            (
-                RunStatus::Interrupted,
-                Some("Interrupted before completion."),
-                "couldn't finish",
-            ),
-            (
-                RunStatus::Interrupted,
-                Some("Scheduled run was interrupted."),
-                "couldn't finish",
-            ),
-            (
-                RunStatus::Interrupted,
-                Some("Stopped before completion"),
-                "stopped",
-            ),
-        ] {
-            fake.calls.borrow_mut().clear();
-            let finished = crate::scheduled_tasks::types::Run {
-                kind: kind.clone(),
-                task_title: title.into(),
-                status,
-                error: error.map(str::to_owned),
-                ..run.clone()
-            };
-            desktop::deliver(&fake, "Research", &finished);
-            let calls = fake.calls.borrow();
-            assert_eq!(
-                calls[0],
-                format!("Research: {title} {suffix}|First line|loupist-a|run-a")
-            );
-            assert_eq!(calls[1], "changed:loupist-a");
-        }
-    }
 }
 
 #[test]
@@ -330,6 +240,7 @@ fn opt_in_keeps_an_unset_model_so_the_briefing_can_follow_the_catalog() {
             loupist_id: loupist.clone(),
             enabled: true,
             schedule: None,
+            edition: None,
         },
     )
     .unwrap()
@@ -418,6 +329,7 @@ fn resuming_a_briefing_or_custom_task_enables_the_automatic_resident_setting() {
                 loupist_id: loupist.clone(),
                 enabled: false,
                 schedule: Some(commands::settings_get(&state, &loupist).unwrap().schedule),
+                edition: None,
             },
         )
         .unwrap()
@@ -450,7 +362,7 @@ fn resident_choice_survives_briefing_enable_and_disable() {
         assert!(!initial.keep_running);
         assert_eq!(initial.keep_running_choice, None);
         if let Some(choice) = choice {
-            desktop::set_keep_running(&state, choice).unwrap();
+            super::login_item::apply(&state, super::login_item::Action::MenuBar(choice)).unwrap();
         }
         for enabled in [true, false, true, false] {
             commands::settings_set(
@@ -459,6 +371,7 @@ fn resident_choice_survives_briefing_enable_and_disable() {
                     loupist_id: loupist.clone(),
                     enabled,
                     schedule: None,
+                    edition: None,
                 },
             )
             .unwrap();
@@ -518,7 +431,13 @@ fn a_scheduled_briefing_reads_only_its_own_loupists_follows() {
             Some("Morrow Components"),
         )
         .unwrap();
-    let (prompt, context) = build_prompt(&state, &loupist, None, 1_800_000_000_000).unwrap();
+    let (prompt, context) = build_prompt(
+        &state,
+        &loupist,
+        1_800_000_000_000,
+        crate::scheduled_tasks::types::BriefingEdition::Morning,
+    )
+    .unwrap();
     assert_eq!(context.symbols, ["Hanul Precision"]);
     assert!(prompt.contains("Hanul Precision"));
     assert!(!prompt.contains("Morrow"));
@@ -528,7 +447,33 @@ fn a_scheduled_briefing_reads_only_its_own_loupists_follows() {
 fn a_briefing_dates_this_run_and_the_last_one_at_the_users_offset() {
     let (_root, state, loupist) = state_fixture();
     let (previous, now) = (1_799_000_000_000, 1_800_000_000_000);
-    let (prompt, _) = build_prompt(&state, &loupist, Some(previous), now).unwrap();
+    let task = commands::settings_set(
+        &state,
+        commands::SettingsRequest {
+            loupist_id: loupist.clone(),
+            enabled: true,
+            schedule: None,
+            edition: None,
+        },
+    )
+    .unwrap()
+    .task
+    .unwrap();
+    finish_run(
+        &state,
+        &loupist,
+        &task.id,
+        previous,
+        previous + 1,
+        RunStatus::Succeeded,
+    );
+    let (prompt, _) = build_prompt(
+        &state,
+        &loupist,
+        now,
+        crate::scheduled_tasks::types::BriefingEdition::Morning,
+    )
+    .unwrap();
     let data: serde_json::Value =
         serde_json::from_str(prompt.strip_prefix(PROMPT).unwrap().trim()).unwrap();
     let local = |at_ms| {
@@ -541,6 +486,143 @@ fn a_briefing_dates_this_run_and_the_last_one_at_the_users_offset() {
     assert_eq!(data["previousBriefingAt"], local(previous));
     assert_eq!(data["timeSincePreviousBriefingMs"], now - previous);
     assert!(data.get("previousBriefingAtMs").is_none());
+    assert_eq!(data["edition"], "morning");
+}
+
+fn finish_run(
+    state: &AppState,
+    loupist: &str,
+    task_id: &str,
+    started: i64,
+    finished: i64,
+    status: RunStatus,
+) -> crate::scheduled_tasks::types::Run {
+    let (claim, ()) = state
+        .store
+        .scheduled_task_claim_with(loupist, task_id, started, true, |_| Ok(()))
+        .unwrap()
+        .unwrap();
+    state
+        .store
+        .scheduled_task_finish(loupist, &claim.run.run_id, status, None, finished)
+        .unwrap()
+}
+
+#[test]
+fn evening_edition_includes_only_background_runs_since_the_last_successful_briefing() {
+    use crate::scheduled_tasks::types::*;
+    let (_root, state, loupist) = state_fixture();
+    let morning = commands::settings_set(
+        &state,
+        commands::SettingsRequest {
+            loupist_id: loupist.clone(),
+            enabled: true,
+            schedule: None,
+            edition: Some(BriefingEdition::Morning),
+        },
+    )
+    .unwrap();
+    let evening = commands::settings_set(
+        &state,
+        commands::SettingsRequest {
+            loupist_id: loupist.clone(),
+            enabled: true,
+            schedule: None,
+            edition: Some(BriefingEdition::Evening),
+        },
+    )
+    .unwrap();
+    let morning_task = morning.task.unwrap();
+    let evening_task = evening.task.unwrap();
+    assert_ne!(morning_task.id, evening_task.id);
+    assert_eq!(morning_task.edition(), BriefingEdition::Morning);
+    assert_eq!(evening_task.edition(), BriefingEdition::Evening);
+    assert!(matches!(
+        evening_task.schedule,
+        Schedule::Weekly { hour: 18, .. }
+    ));
+    let still = commands::settings_for(&state, &loupist, BriefingEdition::Morning).unwrap();
+    assert_eq!(still.task.unwrap().id, morning_task.id);
+    let watch = state
+        .store
+        .scheduled_task_create(
+            &loupist,
+            TaskDraft {
+                title: "Filings".into(),
+                prompt: "Check filings.".into(),
+                schedule: Schedule::Daily {
+                    hour: 9,
+                    minute: 0,
+                    timezone: "UTC".into(),
+                },
+                target: TaskTarget::NewChat,
+                model_profile_id: String::new(),
+                thinking_level: String::new(),
+                run_options: Default::default(),
+                use_memory: true,
+                update_memory: true,
+                status: TaskStatus::Active,
+            },
+            1_000,
+        )
+        .unwrap();
+    state
+        .store
+        .scheduled_task_set_delivery(
+            &loupist,
+            &watch.id,
+            watch.revision,
+            Some(DeliveryTarget::Briefing),
+            None,
+            1_100,
+        )
+        .unwrap();
+    let before_morning = finish_run(
+        &state,
+        &loupist,
+        &watch.id,
+        1_200,
+        1_300,
+        RunStatus::Succeeded,
+    );
+    assert!(state
+        .store
+        .inbox_runs(&loupist, None, 10)
+        .unwrap()
+        .is_empty());
+    let (_, morning) = build_prompt(&state, &loupist, 2_000, BriefingEdition::Morning).unwrap();
+    assert_eq!(morning.background_runs[0].run_id, before_morning.run_id);
+    finish_run(
+        &state,
+        &loupist,
+        &morning_task.id,
+        2_000,
+        3_000,
+        RunStatus::Succeeded,
+    );
+    let during_morning = finish_run(
+        &state,
+        &loupist,
+        &watch.id,
+        2_100,
+        2_200,
+        RunStatus::Succeeded,
+    );
+    finish_run(
+        &state,
+        &loupist,
+        &evening_task.id,
+        4_000,
+        4_100,
+        RunStatus::Failed,
+    );
+
+    let (_, context) = build_prompt(&state, &loupist, 5_000, BriefingEdition::Evening).unwrap();
+    assert_eq!(context.edition, BriefingEdition::Evening);
+    assert_eq!(context.background_runs.len(), 1);
+    assert_eq!(context.background_runs[0].task, "Filings");
+    assert_eq!(context.background_runs[0].task_id, watch.id);
+    assert_eq!(context.background_runs[0].run_id, during_morning.run_id);
 }
 
 #[test]

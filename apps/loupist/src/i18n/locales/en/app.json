@@ -107,6 +107,9 @@
     "unavailable": "{{name}} unavailable"
   },
   "navigation": {
+    "usage": "Usage",
+    "usageKeywords": "model requests tokens cached billing cost estimate spending limits",
+    "usageDescription": "Review model requests, tokens and estimated costs on this device.",
     "connections": "Data connections",
     "connectionsDataSourcesApiKeyDartKrxOpenbb": "connections data sources api key dart krx openbb",
     "addDataSourcesAndChooseWhichLoupistsCan": "Add data sources and choose which Loupists can use them.",
@@ -290,6 +293,8 @@
     }
   },
   "attention": {
+    "proposal": "Turn on {{title}}?",
+    "taskPaused": "{{title}} is paused",
     "savedKeyPermission": "Allow Loupist to use your saved keys ({{count}})",
     "approval": "{{loupistSubject}} wants your OK to use {{connection}}",
     "approvalAny": "{{loupistSubject}} is waiting for your OK",
@@ -303,7 +308,13 @@
     "more_one": "{{formattedCount}} more",
     "more_other": "{{formattedCount}} more",
     "finishedHidden": "Finished while you were away",
-    "lineCrossed": "Line crossed · {{name}}"
+    "lineCrossed": "Line crossed · {{name}}",
+    "triggerFailing": "{{title}} stopped working",
+    "triggerUpdate": "Update {{title}}?",
+    "offer": "Turn on {{title}}?",
+    "ask": "{{loupistSubject}} left a question",
+    "watchQuiet": "{{title}} has been quiet",
+    "watchLoud": "{{title}} is notifying often"
   },
   "notifications": {
     "finished": "{{loupist}} finished",

@@ -573,6 +573,16 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
             handoff_action: None,
             scheduled: None,
             link: None,
+            offers: capture
+                .offers
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .clone(),
+            ask: capture
+                .ask
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .clone(),
             id: message_id.clone(),
             role: ChatRole::Assistant,
             status: ChatMessageStatus::Complete,
@@ -634,6 +644,8 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                 output_tokens: token_usage.output,
                 cache_read_tokens: token_usage.cache_read,
                 cache_write_tokens: token_usage.cache_write,
+                model_requests: token_usage.model_requests(),
+                cost_estimate: token_usage.cost_estimate(),
             });
             let checkpoint_title = title.as_deref().filter(|_| release);
             match crate::store::bounded_chat_save(|| {
@@ -1226,6 +1238,8 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         output_tokens: token_usage.output,
                         cache_read_tokens: token_usage.cache_read,
                         cache_write_tokens: token_usage.cache_write,
+                        model_requests: token_usage.model_requests(),
+                        cost_estimate: token_usage.cost_estimate(),
                     };
                     completion_performance = Some(performance.clone());
                     completed_message = crate::commands::knowledge::write_chat_learning_report(

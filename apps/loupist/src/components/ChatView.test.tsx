@@ -332,7 +332,7 @@ it("keeps Bot task cards in sync with Schedule through pauses and deletion", asy
     model_profile_id: "model", thinking_level: "medium", run_options: {}, use_memory: true, update_memory: false, status: "active",
   });
   const identity = { loupist_id: loupistId, task_id: task.id };
-  const active = await bridge.scheduledTaskConfirm(identity);
+  const active = await bridge.scheduledTaskConfirm({ ...identity, expected_revision: task.revision });
   const props = viewProps([{ id: "answer", role: "assistant", status: "complete", created_at: "2026-10-03T00:00:00Z", content: "Scheduled.",
     schedule_receipts: [{ ...active, task_id: task.id, action: "created" }] }], { bridge });
   Object.assign(props.threads[0]!, { home: true, update_memory: true, use_memory: true });
@@ -410,4 +410,15 @@ it("explains the feedback lock for each reply and keeps finished answers readabl
   const sources = within(activity).getByRole("heading", { name: /What it read/ }).closest("section")!;
   await user.click(within(sources).getByRole("button", { name: /Annual filing/ }));
   expect(destinations(open).at(-1)).toMatchObject({ kind: "evidence", evidence: { id: source.id } });
+});
+
+it("opens standing instructions from the header event on the home thread", async () => {
+  const props = viewProps([]);
+  props.threads = [{ ...props.threads[0]!, id: "home-loupist-quality", home: true, title: "Thread" }];
+  props.activeThreadId = props.threads[0]!.id;
+  render(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
+  expect(screen.queryByRole("dialog", { name: "Standing instructions" })).toBeNull();
+  act(() => { window.dispatchEvent(new CustomEvent("loupist:open-standing")); });
+  expect(await screen.findByRole("dialog", { name: "Standing instructions" })).toBeVisible();
+  expect(await screen.findByText("Nothing kept yet. Tell the Bot in the conversation.")).toBeVisible();
 });

@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { newChatButton, openApp, privateChatOn, togglePrivateChat } from "../renderApp";
@@ -213,6 +213,63 @@ describe("Loupist · Chat composer", () => {
     await send(user, "Use the fast tier");
     await waitFor(() => expect(chatSend).toHaveBeenCalledTimes(2));
     expect(chatSend.mock.calls[1][0]).toMatchObject({ model_profile_id: "model-test", thinking_level: "medium", run_options: { performance: "fast" } });
+  });
+
+  it("keeps each chat's own model through a restart and starts a new chat on the model last sent", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    await bridge.providerConfigure({ provider: "anthropic", api_key: "test-key" });
+    const chatSend = vi.spyOn(bridge, "chatSend");
+    await openApp(bridge);
+    // Chat A (Bot) answers with Claude.
+    await user.click(screen.getByRole("button", { name: "Bot" }));
+    await screen.findByRole("heading", { name: "Bot" });
+    await chooseModelOption(user, "Claude Sonnet 4.5");
+    await send(user, "Answer in A");
+    await waitFor(() => expect(chatSend).toHaveBeenCalledTimes(1));
+    await screen.findByText("Response complete.");
+    // A new chat starts on the model last sent; chat B then picks GPT.
+    await user.click(newChatButton());
+    await screen.findByRole("heading", { name: "Untitled research session" });
+    expect(modelMenuButton()).toHaveAccessibleName(/^Claude Sonnet 4\.5 · /);
+    await chooseModelOption(user, "GPT-5.6 Luna");
+    await send(user, "Answer in B");
+    await waitFor(() => expect(chatSend).toHaveBeenCalledTimes(2));
+    expect(modelMenuButton()).toHaveAccessibleName(/^GPT-5\.6 Luna · /);
+    // Back in A, A's model is still Claude, and it answers with it.
+    await user.click(screen.getByRole("button", { name: "Bot" }));
+    await screen.findByRole("heading", { name: "Bot" });
+    expect(modelMenuButton()).toHaveAccessibleName(/^Claude Sonnet 4\.5 · /);
+    await send(user, "Answer in A again");
+    await waitFor(() => expect(chatSend).toHaveBeenCalledTimes(3));
+    expect(chatSend.mock.calls.map(([request]) => request.model_profile_id)).toEqual(["anthropic/claude-sonnet-4-5", "model-test", "anthropic/claude-sonnet-4-5"]);
+    // B kept GPT.
+    await user.click(await screen.findByRole("button", { name: "Answer in B" }));
+    await waitFor(() => expect(modelMenuButton()).toHaveAccessibleName(/^GPT-5\.6 Luna · /));
+    // The next new chat starts on Claude again, what A sent last.
+    await user.click(newChatButton());
+    await screen.findByRole("heading", { name: "Untitled research session" });
+    expect(modelMenuButton()).toHaveAccessibleName(/^Claude Sonnet 4\.5 · /);
+    // Change B without sending. A was still the last chat to send on Claude.
+    await user.click(await screen.findByRole("button", { name: "Answer in B" }));
+    await chooseModelOption(user, "Fast");
+
+    cleanup();
+    localStorage.clear();
+    await openApp(bridge);
+    await user.click(screen.getByRole("button", { name: "Bot" }));
+    await waitFor(() => expect(modelMenuButton()).toHaveAccessibleName(/^Claude Sonnet 4\.5 · /));
+    await user.click(await screen.findByRole("button", { name: "Answer in B" }));
+    await waitFor(() => expect(modelMenuButton()).toHaveAccessibleName(/^GPT-5\.6 Luna · /));
+    await user.click(modelMenuButton());
+    await user.click(screen.getByRole("menuitem", { name: "Advanced" }));
+    expect(await screen.findByRole("menuitemradio", { name: "Fast" })).toHaveAttribute("aria-checked", "true");
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Bot" }));
+    await waitFor(() => expect(modelMenuButton()).toHaveAccessibleName(/^Claude Sonnet 4\.5 · /));
+    await user.click(newChatButton());
+    await screen.findByRole("heading", { name: "Untitled research session" });
+    expect(modelMenuButton()).toHaveAccessibleName(/^Claude Sonnet 4\.5 · /);
   });
 
   it("answers with the Loupist's default once the picked model's account is disconnected, in this chat and a new one", async () => {

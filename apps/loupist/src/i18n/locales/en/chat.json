@@ -80,9 +80,8 @@
     "noMatchingItem": "No matching item",
     "results": "Results",
     "promptShortcuts": "Prompt shortcuts",
-    "clipboardAttachmentsAreNotAvailableInThisEnvironment": "Clipboard attachments are not available in this environment.",
     "theClipboardDoesNotContainAnAttachableImage": "The clipboard does not contain an attachable image.",
-    "clipboardAccessWasNotAllowed": "Clipboard access was not allowed.",
+    "clipboardNotRead": "The clipboard was not read. To attach an image, press {{paste}} in the message.",
     "couldNotAttachClipboardContents": "Could not attach clipboard contents.",
     "addToThisMessage": "Add to this message",
     "manageSkillsTools": "Manage skills & tools",
@@ -130,7 +129,9 @@
     "attachments": {
       "count_one": "{{formattedCount}} attachment",
       "count_other": "{{formattedCount}} attachments",
-      "clearAll": "Clear all"
+      "clearAll": "Clear all",
+      "reading_one": "Reading {{formattedCount}} file…",
+      "reading_other": "Reading {{formattedCount}} files…"
     },
     "drop": {
       "title": "Drop to attach to your next message",
@@ -158,6 +159,8 @@
     "addToQuestion": "Add to question"
   },
   "chatMessageCard": {
+    "modelRequests_one": "{{formattedCount}} model request",
+    "modelRequests_other": "{{formattedCount}} model requests",
     "tokenUsageUnavailable": "Token usage unavailable",
     "previewUnavailable": "Preview unavailable",
     "you": "You",
@@ -425,6 +428,11 @@
     "readPrinciples_other": "Read {{formattedCount}} principles"
   },
   "messageSchedules": {
+    "notTurnedOn": "Not turned on",
+    "undoDecline": "Undo",
+    "firstCheckRunning": "First check running now",
+    "replaced": "Replaced",
+    "expired": "This check’s time has passed",
     "draftFilesFailed": "Could not save draft attachments on this Mac.",
     "needsTime": "Answer in Bot",
     "handedToBot": "Handed to Bot · {{status}}",
@@ -1295,6 +1303,14 @@
       "running": "Asking you a question",
       "done": "Asked you a question"
     },
+    "bot_offer": {
+      "running": "Offering a step",
+      "done": "Offered a step"
+    },
+    "ask_later": {
+      "running": "Leaving a question",
+      "done": "Left a question"
+    },
     "research_open": {
       "running": "Opening a research session",
       "done": "Opened a research session"
@@ -1314,6 +1330,14 @@
     "kis_operation_search": {
       "running": "Searching market operations",
       "done": "Searched market operations"
+    },
+    "kis_symbol_lookup": {
+      "running": "Finding a Korea Investment symbol",
+      "done": "Searched Korea Investment symbols"
+    },
+    "kis_dividend_calendar": {
+      "running": "Reading the KSD dividend calendar",
+      "done": "Read the KSD dividend calendar"
     },
     "kis_read": {
       "running": "Reading market data",
@@ -1481,6 +1505,31 @@
     "declined": "Skipped saving one item: it looked like a password, key or other secret."
   },
   "thread": {
+    "firstCheck": "First check",
+    "resultEvidence": "{{figures}} figures checked · {{sources}} sources",
+    "unmatchedFigures_one": "{{count}} figure didn’t match",
+    "unmatchedFigures_other": "{{count}} figures didn’t match",
+    "failureStreak_one": "{{count}} failed check in a row",
+    "failureStreak_other": "{{count}} failed checks in a row",
+    "askAboutResult": "Ask about this",
+    "moreResultActions": "More actions",
+    "notifyNow": "Notify me now",
+    "notifyQuietly": "Notify me quietly",
+    "notUseful": "Not useful",
+    "awayResults_one": "{{count}} result since you left",
+    "awayResults_other": "{{count}} results since you left",
+    "feedbackLabels": {
+      "tooMinor": "Too minor",
+      "knew": "Already knew",
+      "wrong": "Wrong",
+      "stop": "Stop this watch"
+    },
+    "resultFeedback": {
+      "tooMinor": "The result from {{title}} was too minor.",
+      "knew": "I already knew the result from {{title}}.",
+      "wrong": "The result from {{title}} was wrong.",
+      "stop": "Stop this watch: {{title}}."
+    },
     "scheduleOrigin": "Schedule · {{title}} · {{time}}",
     "open": "Open",
     "couldNotFinish": "This run couldn't finish.",
@@ -2480,5 +2529,51 @@
   },
   "botCards": {
     "lineCrossed": "Line crossed"
+  },
+  "standing": {
+    "open": "Standing",
+    "openHint": "What you asked the Bot to keep in mind",
+    "label": "Standing instructions",
+    "close": "Close standing instructions",
+    "intro": "What you told this Loupist to keep in mind. Forget or edit an entry here. A preference also reaches briefings and scheduled runs.",
+    "empty": "Nothing kept yet. Tell the Bot in the conversation.",
+    "loading": "Loading",
+    "loadError": "Couldn't read what the Bot keeps.",
+    "kinds": {
+      "preference": "Preference",
+      "decision": "Decision",
+      "open": "Open request",
+      "context": "Context"
+    },
+    "edit": "Edit",
+    "editText": "Entry text",
+    "save": "Save",
+    "cancel": "Cancel",
+    "forget": "Forget",
+    "saving": "Saving",
+    "saveError": "Couldn't save that change.",
+    "updated": "Updated {{date}}",
+    "usage": "Task usage",
+    "usageEmpty": "No task usage in the last 30 days.",
+    "usageError": "Couldn't read task usage.",
+    "runs_one": "{{formattedCount}} run",
+    "runs_other": "{{formattedCount}} runs",
+    "requests_one": "{{formattedCount}} request",
+    "requests_other": "{{formattedCount}} requests",
+    "removedTask": "Removed task"
+  },
+  "python": {
+    "reads": "Read from Python",
+    "showMath": "Show the math",
+    "printed": "Printed",
+    "rounds_one": "{{count}} Python start",
+    "rounds_other": "{{count}} Python starts",
+    "replaying": "Running again",
+    "replay": "Run again on the same data",
+    "same": "Same output as the original run.",
+    "changed": "The output differs from the original run.",
+    "error": "Could not replay the original run.",
+    "savedScripts": "Saved scripts",
+    "undoError": "Could not remove the saved script version."
   }
 }

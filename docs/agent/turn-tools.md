@@ -47,7 +47,7 @@ card ID and `offset=next_offset` (UTF-8 bytes).
 Missing, hidden, unfinished, failed and out-of-scope cards all return the same
 unavailable error.
 
-The general `schedules` tools are independent of Memory. `schedule_briefing`
+The general `schedules` tools are independent of Memory. `bot_offer` and `ask_later` are unattended-allowed and create no task by themselves. `schedule_briefing`
 reads and saves Memory settings, and requires Memory access and Save learning; a Private chat or either missing grant
 refuses them before any read or write, even though their catalog permission is
 `always`. Generic `schedule_set_status` and `schedule_run_now` also require both
@@ -60,7 +60,7 @@ briefing context and answer summaries stay in the run's Chat, because they can
 contain Memory and third-party text. Read current IDs/revisions
 before editing and keep a stable creation key within the turn. List receipts
 include task `kind` (`briefing`, `custom`); use `schedule_briefing`
-to change the one host briefing. A request for existing work updates that task
+to change one host briefing edition (`morning` or `evening`). A request for existing work updates that task
 or leaves it unchanged. A new custom task created in Bot with a live title (NFKC, case-folded,
 whitespace collapsed) is refused, while same-key retries and distinct titles
 at the same time remain valid. Agent modes are

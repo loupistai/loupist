@@ -1,4 +1,47 @@
 {
+  "usage": {
+    "period": "사용량 조회 기간",
+    "today": "오늘",
+    "days": "{{days}}일",
+    "loading": "사용량을 불러오는 중…",
+    "loadError": "사용량을 불러오지 못했습니다.",
+    "empty": "이 기간에는 모델 사용 내역이 없습니다.",
+    "manageError": "사용량 페이지를 열지 못했습니다.",
+    "accounts": "AI 계정",
+    "tokens": "입력 {{tokens}}토큰(캐시 {{cached}}) · 출력 {{output}}토큰",
+    "requests_other": "요청 {{formattedCount}}회",
+    "runs_other": "실행 {{formattedCount}}회",
+    "unknownRuns_other": "사용량 정보가 없는 실행 {{formattedCount}}회",
+    "costEstimate": "약 {{price}} (추정)",
+    "costBilled": "청구액 {{price}}",
+    "costUnderCent": "$0.01 미만",
+    "plan": "{{account}}에서는 요금제의 남은 사용량을 앱에 제공하지 않습니다. 여기에는 Loupist가 보낸 요청이 표시됩니다.",
+    "weeklyLimit": "Loupist의 주간 한도는 ChatGPT의 설정 › 사용량에서 지정할 수 있습니다.",
+    "weeklyAccount": "Loupist의 최근 7일 사용량: 요청 {{requests}}회 · 토큰 {{tokens}}개",
+    "daily": "일별 요청",
+    "date": "날짜",
+    "you": "직접 요청",
+    "background": "백그라운드",
+    "world": "월드",
+    "work": "작업 유형별",
+    "loupists": "Loupist별",
+    "programs": "프로그램",
+    "checks": "확인 {{evaluations}}번, 읽기 {{reads}}번, 맞음 {{met}}번",
+    "removedLoupist": "삭제된 Loupist",
+    "removedProgram": "삭제된 프로그램",
+    "surfaces": {
+      "bot": "봇",
+      "research": "리서치",
+      "handoff": "리서치 인계",
+      "briefing": "브리핑",
+      "scheduled": "예약 작업",
+      "learning": "일일 학습",
+      "deep_research": "심층 리서치",
+      "world": "월드 구축",
+      "world_schema": "월드가 추적하는 것 고침",
+      "method_learning": "방법 학습"
+    }
+  },
   "_status": "translated",
   "general": {
     "label": "일반",
@@ -767,5 +810,31 @@
     "changeKey": "키 바꾸기…",
     "reconnectEllipsis": "다시 연결…",
     "moreActions": "{{label}} 더보기"
-  }
+  },
+  "notifications": {
+    "osPermissions": "macOS 알림 권한",
+    "openSettings": "시스템 설정 열기",
+    "openFailed": "알림 설정을 열 수 없습니다.",
+    "defaultTitle": "종류별 기본값",
+    "kind": { "crossedLine": "기준을 넘었을 때", "filings": "공시와 실적", "briefing": "브리핑", "other": "기타 예약 작업", "failures": "실행 실패" },
+    "now": "즉시",
+    "grouped": "다음 알림에 모아 표시",
+    "botOnly": "Bot에만 표시",
+      "title": "알림",
+      "keywords": "방해 금지 알림 모아보기 개인정보",
+      "description": "Bot이 언제 알림을 보내고 어떤 내용을 표시할지 정합니다.",
+      "quietHours": "알림 쉬는 시간",
+      "quietDescription": "쉬는 시간이 끝날 때까지 알림을 보류합니다.",
+      "start": "시작",
+      "end": "종료",
+      "dailyCap": "하루 알림 한도",
+      "details": "알림에 세부 정보 표시",
+      "detailsDescription": "작업 이름과 결과 미리보기를 표시합니다.",
+      "template": {
+      "lineCrossed": "기준을 넘었습니다",
+        "result": "{{loupist}} · {{task}}",
+        "privateResult": "{{loupist}}: 결과가 도착했습니다",
+        "digest": "{{loupist}}에 결과 {{total}}개"
+      }
+    }
 }

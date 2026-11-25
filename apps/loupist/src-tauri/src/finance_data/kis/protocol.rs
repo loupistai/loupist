@@ -1,5 +1,37 @@
 use super::*;
 
+const KIS_READ_RATE_LIMIT_CODE: &str = "EGW00201";
+
+fn known_kis_read_error(body: &Value) -> Option<FinanceDataError> {
+    use KisReadError as E;
+    ["msg_cd", "error_code"].into_iter().find_map(|field| {
+        let error = match body.get(field)?.as_str()? {
+            "EGW00121" | "EGW00122" | "EGW00123" => E::TokenRejected,
+            "EGW00103" | "EGW00105" => E::CredentialRejected,
+            "EGW00206" => E::PermissionRequired,
+            "OPSQ2001" => E::MarketCode,
+            "OPSQ2002" => E::FieldLength,
+            KIS_READ_RATE_LIMIT_CODE => return Some(FinanceDataError::RateLimited(KIS_SOURCE_ID)),
+            _ => return None,
+        };
+        Some(FinanceDataError::KisRead(error))
+    })
+}
+
+pub(in crate::finance_data) fn interpret_kis_read_status(
+    status: StatusCode,
+    raw: RawProviderResponse,
+) -> Result<RawProviderResponse, FinanceDataError> {
+    if let Some(error) = serde_json::from_slice::<Value>(&raw.bytes)
+        .ok()
+        .as_ref()
+        .and_then(known_kis_read_error)
+    {
+        return Err(error);
+    }
+    interpret_provider_status(KIS_SOURCE_ID, status, raw)
+}
+
 pub(in crate::finance_data) fn kis_credentials(
     credentials: &BTreeMap<String, String>,
 ) -> Result<(&str, &str), FinanceDataError> {
@@ -99,10 +131,22 @@ pub(in crate::finance_data) fn parse_kis_token_response(
     {
         return Err(FinanceDataError::InvalidResponse);
     }
+    let absolute = chrono::NaiveDateTime::parse_from_str(
+        &response.access_token_token_expired,
+        "%Y-%m-%d %H:%M:%S",
+    )
+    .ok()
+    .and_then(|time| time.and_local_timezone(chrono_tz::Asia::Seoul).single())
+    .ok_or(FinanceDataError::InvalidResponse)?;
+    let now = Utc::now();
+    let expires_at = (now + ChronoDuration::seconds(response.expires_in)).min(absolute.to_utc());
+    if expires_at <= now {
+        return Err(FinanceDataError::InvalidResponse);
+    }
     Ok(KisAccessToken {
         value: response.access_token,
         environment,
-        expires_at: Utc::now() + ChronoDuration::seconds(response.expires_in),
+        expires_at,
     })
 }
 
@@ -279,12 +323,11 @@ pub(in crate::finance_data) fn kis_page_url(
 }
 
 /// Follows `tr_cont` continuation (`F`/`M` = more) with `tr_cont: N` and the
-/// returned cursor keys, bounded by page count, total bytes and pacing.
-/// `fetch(url, continuing)` must reject credential echoes itself.
+/// returned cursor keys, bounded by page count and total bytes.
+/// `fetch(url, continuing)` handles request spacing and credential echoes.
 pub(in crate::finance_data) async fn collect_kis_pages<F, Fut>(
     prepared: &PreparedKisRequest<'_>,
     mut fetch: F,
-    pacer: &RequestPacer<'_>,
 ) -> Result<KisPages, FinanceDataError>
 where
     F: FnMut(Url, bool) -> Fut,
@@ -307,7 +350,6 @@ where
         let Some(cursor) = kis_next_cursor(prepared.operation, &last.bytes) else {
             break KisPageStop::MissingCursor;
         };
-        pacer().await;
         let next = match fetch(kis_page_url(prepared, &cursor), true).await {
             Ok(next) => next,
             Err(
@@ -631,6 +673,9 @@ pub(in crate::finance_data) fn validate_kis_response(
     };
     let root: Value = serde_json::from_slice(bytes)
         .map_err(|_| mismatch("provider body was not valid JSON".to_owned()))?;
+    if let Some(error) = known_kis_read_error(&root) {
+        return Err(error);
+    }
     let object = root
         .as_object()
         .ok_or_else(|| mismatch("top-level value was not an object".to_owned()))?;
@@ -642,6 +687,13 @@ pub(in crate::finance_data) fn validate_kis_response(
         validate_kis_success_shape(object, operation)?;
         return Ok(root);
     }
+    Err(kis_read_failure(object, &operation.id))
+}
+
+pub(super) fn kis_read_failure(
+    object: &Map<String, Value>,
+    operation_id: &str,
+) -> FinanceDataError {
     let code = object
         .get("msg_cd")
         .and_then(Value::as_str)
@@ -659,7 +711,7 @@ pub(in crate::finance_data) fn validate_kis_response(
             || value.contains("인증")
             || value.contains("접근토큰")
     }) {
-        return Err(FinanceDataError::CredentialRejected(KIS_SOURCE_ID));
+        return FinanceDataError::CredentialRejected(KIS_SOURCE_ID);
     }
     if [code.as_str(), message.as_str()].iter().any(|value| {
         value.contains("rate")
@@ -667,12 +719,11 @@ pub(in crate::finance_data) fn validate_kis_response(
             || value.contains("호출 횟수")
             || value.contains("too many")
     }) {
-        return Err(FinanceDataError::RateLimited(KIS_SOURCE_ID));
+        return FinanceDataError::RateLimited(KIS_SOURCE_ID);
     }
-    Err(FinanceDataError::Provider(format!(
-        "{KIS_SOURCE_ID} rejected reviewed operation {}",
-        operation.id
-    )))
+    FinanceDataError::Provider(format!(
+        "{KIS_SOURCE_ID} rejected reviewed operation {operation_id}"
+    ))
 }
 
 pub(in crate::finance_data) fn validate_kis_success_shape(

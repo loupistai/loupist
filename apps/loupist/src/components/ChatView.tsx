@@ -1,3 +1,5 @@
+import type { AttentionItem } from "../contracts/attention";
+import { BotNeedsYou } from "./chat/BotNeedsYou";
 import i18n, { useTranslation } from "@/i18n";
 import {
   useCallback,
@@ -62,6 +64,7 @@ import { WorkspaceFileProvider } from "./workspace/WorkspaceFileContext";
 import { ArtifactReadLinksProvider } from "./chat/ArtifactReadLinks";
 import { ChatWorkingContext } from "./chat/ChatWorkingContext";
 import { ActivitySheet, useActivitySheet } from "./chat/ActivitySheet";
+import { OPEN_STANDING_EVENT, StandingSheet } from "./chat/StandingSheet";
 import { useExtensionAvailability } from "../app/extensionAvailability";
 import { visibleSkill } from "../lib/agentSkills";
 import { railData, type RailUsing } from "../chat/chatRail";
@@ -108,6 +111,8 @@ const chatPins = (pins: readonly KnowledgePin[]) =>
   }));
 
 type Props = {
+  attentionItems?: readonly AttentionItem[];
+  onOpenAttention?: (item: AttentionItem) => void;
   active?: boolean;
   theme?: "light" | "dark";
   bridge: LoupistBridge;
@@ -164,7 +169,8 @@ type Props = {
   noAccount?: boolean;
   onChooseDefault: () => void;
   onModelUsed: (selection: ModelRunSelection) => void;
-  onResolveModelSelection?: () => Promise<ModelRunSelection & { auto?: boolean; memoryDefaults?: { use_memory: boolean; update_memory: boolean } }>;
+  onResolveModelSelection?: () => Promise<ModelRunSelection & { auto?: boolean; composerModel?: ComposerModelForSend; memoryDefaults?: { use_memory: boolean; update_memory: boolean } }>;
+  onStoreComposerModel?: (threadId: string, model?: ComposerModelForSend) => Promise<void>;
   onAbortRecoveredRun: () => void;
   /** Joins a run the host started on a session (a Bot hand-off) while it is shown. */
   onWatchHostedRun?: WatchHostedRun;
@@ -173,7 +179,11 @@ type Props = {
   progressFocus?: string | null;
 };
 
+type ComposerModelForSend = { selection: ModelRunSelection | null; lastSent: ModelRunSelection };
+
 export function ChatView({
+  attentionItems,
+  onOpenAttention,
   active = true,
   theme = "dark",
   bridge,
@@ -223,6 +233,7 @@ export function ChatView({
   onChooseDefault,
   onModelUsed,
   onResolveModelSelection,
+  onStoreComposerModel,
   onAbortRecoveredRun,
   onWatchHostedRun,
   onTurnComplete,
@@ -391,6 +402,14 @@ export function ChatView({
   // The activity sheet: what the chat's replies did, read, checked and learned, opened on demand
   // (`loupist:open-activity`). It docks or overlays by the chat layout's own width, so the panel and sidebar count.
   const activitySheet = useActivitySheet(active);
+  const [standingOpen, setStandingOpen] = useState(false);
+  useEffect(() => {
+    if (!activeThread?.home) return undefined;
+    const open = () => setStandingOpen(true);
+    window.addEventListener(OPEN_STANDING_EVENT, open);
+    return () => window.removeEventListener(OPEN_STANDING_EVENT, open);
+  }, [activeThread?.home]);
+  useEffect(() => { if (!activeThread?.home) setStandingOpen(false); }, [activeThread?.home, activeThread?.id]);
   const railChatId = activeThread?.id ?? "";
   const railMap = chatMap?.loupistId === loupist.id && chatMap.chatId === railChatId ? chatMap : undefined;
   const rail = useMemo(() => railData({
@@ -695,11 +714,21 @@ export function ChatView({
       else onDraftChange?.("");
     }
   };
-  const enqueueFollowUp = (submittedText = prompt, files: FileUIPart[] = [], draftText?: string) => {
+  const storeComposerModel = async (threadId: string, model?: ComposerModelForSend) => {
+    try {
+      await onStoreComposerModel?.(threadId, model);
+      return true;
+    } catch (cause) {
+      setConfigurationReadError(errorMessage(cause, t("chatView.couldNotReadConfigurationBeforeSending")));
+      return false;
+    }
+  };
+  const enqueueFollowUp = async (submittedText = prompt, files: FileUIPart[] = [], draftText?: string) => {
     const text = withArtifactRange(submittedText);
     if (!isRunning || (!text && !files.length) || !activeThread?.id || !selectedModelAvailable || !workspaceAvailable) return false;
     const threadId = activeThread.id;
     const item = captureSubmission(text, files);
+    if (onStoreComposerModel && !await storeComposerModel(threadId)) return false;
     // File conversion can finish after this response's completion was observed.
     draftSession.update((current) => ({
       ...current,
@@ -742,6 +771,7 @@ export function ChatView({
     // Retry repeats the failed request's own as-of date (null: none).
     const item = captureSubmission(text, files, options?.asOf === undefined ? draft?.asOf : options.asOf);
     const memoryChoice = { ...memoryChoices.current };
+    let composerModel: ComposerModelForSend | undefined;
     if (onResolveModelSelection) {
       try {
         const selection = await onResolveModelSelection();
@@ -749,6 +779,7 @@ export function ChatView({
         item.modelProfileId = selection.model_profile_id;
         item.thinkingLevel = selection.thinking_level;
         item.runOptions = { ...selection.run_options };
+        composerModel = selection.composerModel;
         if ((!activeThread || isEmptyChatThreadId(activeThread.id)) && selection.memoryDefaults) {
           item.privateChat = memoryChoice.privateChat ?? !(selection.memoryDefaults.use_memory && selection.memoryDefaults.update_memory);
         }
@@ -777,6 +808,7 @@ export function ChatView({
       finally { creatingThread.current = false; promotingDraft.current = null; setIsCreatingThread(false); }
     }
     if (!targetThread) return false;
+    if (onStoreComposerModel && !await storeComposerModel(targetThread.id, composerModel)) return false;
     updateQueued(targetThread.id, (items) => [...items, item]);
     if (!options?.preserveDraft) consumeComposer(options?.draftText ?? submittedPrompt ?? prompt, targetThread.id);
     if (draftSession.getSnapshot().holds[targetThread.id] === MEMORY_BUSY) return true;
@@ -979,6 +1011,10 @@ export function ChatView({
     onReadWorldJob={onReadWorldJob}
     onWorldChanged={onWorldChanged}
     onSuggestion={askFromMorningMessage}
+    onResultFeedback={text => {
+      if (isRunning || editing || selectedArtifact || knowledgePins.length) askFromMorningMessage(text);
+      else void send(text, [], { preserveDraft: true, asOf: null }).then(sent => { if (!sent) askFromMorningMessage(text); });
+    }}
     onQuote={onChipsChange ? quoteToComposer : undefined}
     loupistTemplate={loupist.template}
     accountConnected={accountConnected}
@@ -1105,6 +1141,7 @@ export function ChatView({
           <span>{t("chatBranch.editing")}</span>
           <button type="button" onClick={() => { setEditing(null); setPrompt(""); focusComposerOnceGone(); }}>{t("chatBranch.cancel")}</button>
         </p> : null}
+        {active && activeThread?.home && attentionItems && onOpenAttention && <BotNeedsYou loupistId={loupist.id} items={attentionItems.filter(item => item.loupistId === loupist.id || item.kind === "savedKeyPermission")} bridge={bridge} onOpen={onOpenAttention} onAsk={askFromMorningMessage} />}
         <ChatComposer
           key={viewKey}
           attachmentDraft={draft}
@@ -1138,6 +1175,7 @@ export function ChatView({
           )}
           onAddKnowledgePin={onAddKnowledgePin}
           mapScreenshot={mapScreenshot}
+          readClipboardImage={() => bridge.clipboardReadImage()}
           evidenceSources={evidenceSources}
           onSelectArtifact={onSelectArtifact}
           onRemoveKnowledgePin={onRemoveKnowledgePin}
@@ -1165,6 +1203,7 @@ export function ChatView({
       </div>
       <ActivitySheet sheet={activitySheet} loupist={loupist} messages={savingMessages} threads={threads} running={isRunning} rail={rail} bridge={bridge} execution={executionScope}
         onOpenUsing={openRailUsing} onOpenFile={openRailFile} onShowOnMap={showOnMap} onWorldChanged={onWorldChanged} />
+      {activeThread?.home ? <StandingSheet open={standingOpen} loupistId={loupist.id} bridge={bridge} onClose={() => setStandingOpen(false)} /> : null}
       </ChatLightboxProvider>
     </section>
     </OpenProvider>

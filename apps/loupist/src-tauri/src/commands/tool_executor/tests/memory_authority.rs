@@ -156,6 +156,149 @@ async fn source_save_refuses_derived_output_saved_context_and_unseen_pages() {
 }
 
 #[tokio::test]
+async fn source_save_uses_the_dividend_calendar_truncation_flag() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let executor = executor_for(&state, Arc::new(ToolCapture::default()));
+    let policy = policy(true, true);
+    let warning = "Only part of the range was read: call again with each window in page.pending_windows as start and end.";
+    let result_ref = delivered(
+        &executor.capture,
+        RunResultProducer {
+            origin: RunResultOrigin::AcquiredOriginal,
+            runtime_id: "native-finance".into(),
+            tool_name: "kis_dividend_calendar".into(),
+            provider: Some(crate::finance_data::KIS_SOURCE_ID.into()),
+        },
+        json!({
+            "tool": "kis_dividend_calendar",
+            "page": {"truncated": true},
+            "warnings": [warning],
+        }),
+    )
+    .await;
+    let save = |coverage| {
+        json!({
+            "result_ref": result_ref, "title": "KSD dividend calendar", "coverage": coverage
+        })
+    };
+    assert!(matches!(
+        executor.stage_source_save(&policy, save("included_full"), "full").await,
+        Err(BrokerError::Execution(message)) if message.contains("full original")
+    ));
+    executor
+        .stage_source_save(&policy, save("upstream_truncated"), "partial")
+        .await
+        .unwrap();
+}
+
+/// A statement read too large to deliver whole reaches the model as a
+/// summary; saving it keeps every line item the host retained.
+#[tokio::test]
+async fn a_compacted_statement_read_is_saved_whole_as_a_source() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let executor = executor_for(&state, Arc::new(ToolCapture::default()));
+    let policy = policy(true, true);
+    let request = json!({"company": "005930", "fiscal_year": 2025,
+        "report_period": "annual", "basis": "consolidated"});
+    let facts = (0..229_i64)
+        .map(|index| {
+            json!({"statement": if index < 60 { "IS" } else { "BS" },
+                "label": format!("Line item {index}"), "canonical_concept": format!("concept_{index}"),
+                "value": 1_000_000 * (index + 1), "cumulative_value": null, "currency": "KRW"})
+        })
+        .collect::<Vec<_>>();
+    let statements = json!({"data": {"period": {"fiscal_year": 2025, "report_period": "annual",
+        "basis": "consolidated", "period_end": "2025-12-31"}, "facts": facts}});
+    assert!(statements.to_string().len() > 16 * 1024);
+    let key = executor.persistent_request_key(&policy, ToolMethod::DartFinancials, &request, None);
+    executor
+        .retain_dataset(&key, &statements, json!({}))
+        .unwrap();
+    let mut call = request.clone();
+    call["max_age"] = json!(3600);
+    let read = executor
+        .execute(&policy, ToolMethod::DartFinancials, call)
+        .await
+        .unwrap();
+    assert_eq!(
+        read["model_delivery"]["coverage"], "bounded_sample",
+        "{read}"
+    );
+    assert!(read.pointer("/data/facts").is_none(), "{read}");
+
+    let saved = executor
+        .stage_source_save(
+            &policy,
+            json!({"result_ref": read["result_ref"], "coverage": "included_full",
+                "title": "Samsung Electronics 2025 consolidated statements"}),
+            "save",
+        )
+        .await
+        .unwrap();
+    assert_eq!(saved["status"], "staged");
+    executor.capture.commit_delivery("save").await;
+    let staged = executor.capture.staged_sources.lock().await.clone();
+    let [source] = &staged[..] else {
+        panic!("one Source is staged: {staged:?}");
+    };
+    let kept: Value = serde_json::from_slice(&source.bytes).unwrap();
+    assert_eq!(kept["data"]["facts"], statements["data"]["facts"]);
+    assert_eq!(source.coverage, "included_full");
+}
+
+/// A retained result larger than one Source holds is refused when it is
+/// staged, with the narrower read that can be saved.
+#[tokio::test]
+async fn a_result_larger_than_one_source_is_refused_with_a_narrower_read() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let executor = executor_for(&state, Arc::new(ToolCapture::default()));
+    let policy = policy(true, true);
+    let request = json!({"company": "005930", "fiscal_year": 2025,
+        "report_period": "annual", "basis": "consolidated"});
+    let label = "x".repeat(4_096);
+    let facts = (0..2_200_i64)
+        .map(|index| {
+            json!({"statement": "BS", "label": format!("{label}{index}"),
+            "value": index, "currency": "KRW"})
+        })
+        .collect::<Vec<_>>();
+    let statements = json!({"data": {"period": {"fiscal_year": 2025}, "facts": facts}});
+    assert!(statements.to_string().len() > crate::knowledge::MAX_BLOB_BYTES);
+    let key = executor.persistent_request_key(&policy, ToolMethod::DartFinancials, &request, None);
+    executor
+        .retain_dataset(&key, &statements, json!({}))
+        .unwrap();
+    let mut call = request.clone();
+    call["max_age"] = json!(3600);
+    let read = executor
+        .execute(&policy, ToolMethod::DartFinancials, call)
+        .await
+        .unwrap();
+
+    let refused = executor
+        .stage_source_save(
+            &policy,
+            json!({"result_ref": read["result_ref"], "coverage": "included_full",
+                "title": "Samsung Electronics 2025 consolidated statements"}),
+            "save",
+        )
+        .await
+        .unwrap_err();
+    let BrokerError::Execution(message) = refused else {
+        panic!("an execution refusal: {refused:?}");
+    };
+    assert!(
+        message.starts_with("This result is larger than the 8 MiB one Source holds")
+            && message.contains("read a narrower range"),
+        "{message}"
+    );
+    assert!(executor.capture.staged_sources.lock().await.is_empty());
+}
+
+#[tokio::test]
 async fn conversation_memory_reads_only_completed_messages_of_the_current_loupist() {
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);

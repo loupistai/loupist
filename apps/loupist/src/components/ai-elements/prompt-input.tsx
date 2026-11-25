@@ -121,6 +121,8 @@ export type AttachedFile = FileUIPart & { id: string; sizeBytes?: number };
 export interface AttachmentsContext {
   isSubmitting: boolean;
   files: AttachedFile[];
+  /** Files added and still being read; they join `files` when read. */
+  reading: number;
   add: (files: File[] | FileList) => void;
   remove: (id: string) => void;
   openFileDialog: () => void;
@@ -154,13 +156,10 @@ export const PromptInputActionAddAttachments = ({
   useTranslation("chat");
   const attachments = usePromptInputAttachments();
 
-  const handleSelect = useCallback(
-    (e: Event) => {
-      e.preventDefault();
-      attachments.openFileDialog();
-    },
-    [attachments]
-  );
+  // The menu closes as the file dialog opens, so it is not left open behind the dialog or after the pick.
+  const handleSelect = useCallback(() => {
+    attachments.openFileDialog();
+  }, [attachments]);
 
   return (
     <DropdownMenuItem {...props} onSelect={handleSelect}>
@@ -219,6 +218,9 @@ export const PromptInput = ({
   const [files, setFiles] = useState<AttachedFile[]>(() => attachmentDraft?.files ?? []);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  // Reads in flight, each settling to whether all its files joined the tray; Send waits for them.
+  const readsRef = useRef(new Set<Promise<boolean>>());
+  const [reading, setReading] = useState(0);
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -296,8 +298,8 @@ export const PromptInput = ({
 
       // Read the bytes once, when the file is added: the data: URL is the image's preview, the draft's
       // saved copy and what the host receives on send. The tray's count is checked when they are in.
-      void Promise.all(sized.map(readFileDataUrl)).then((urls) => {
-        if (!mountedRef.current) return;
+      const pending = Promise.all(sized.map(readFileDataUrl)).then((urls) => {
+        if (!mountedRef.current) return false;
         const read = sized.flatMap((file, i) => {
           const url = urls[i];
           return url?.startsWith("data:") ? [{ file, url }] : [];
@@ -319,6 +321,13 @@ export const PromptInput = ({
           url,
         }));
         if (next.length) updateFiles([...previous, ...next]);
+        return read.length === sized.length && next.length === read.length;
+      }, () => false);
+      readsRef.current.add(pending);
+      setReading((count) => count + sized.length);
+      void pending.then(() => {
+        readsRef.current.delete(pending);
+        if (mountedRef.current) setReading((count) => count - sized.length);
       });
     },
     [matchesAccept, maxFiles, maxFileSize, onError, updateFiles, validateFile]
@@ -377,11 +386,23 @@ export const PromptInput = ({
       isSubmitting,
       add,
       files,
+      reading,
       openFileDialog,
       remove,
     }),
-    [files, add, remove, openFileDialog, isSubmitting]
+    [files, add, remove, openFileDialog, isSubmitting, reading]
   );
+
+  /** Waits for the files still being read; false when one of them did not join the tray. */
+  const settleReads = useCallback(async () => {
+    let complete = true;
+    for (let pending = [...readsRef.current]; pending.length; pending = [...readsRef.current]) {
+      const results = await Promise.all(pending);
+      for (const read of pending) readsRef.current.delete(read);
+      complete &&= results.every(Boolean);
+    }
+    return complete;
+  }, []);
 
   const handleSubmit: FormEventHandler<HTMLFormElement> = useCallback(
     async (event) => {
@@ -395,6 +416,10 @@ export const PromptInput = ({
       const text = (formData.get("message") as string) || "";
 
       try {
+        // A file still being read goes with this message: Send waits for it. One that could not be read
+        // or did not fit already said so, and the message stays for the user to send again.
+        if (!(await settleReads())) return;
+        const files = filesRef.current;
         // Each file was read into a data: URL when it was added (or restored as one with the draft).
         const submitted: FileUIPart[] = files.map(({ id: _id, ...item }) => {
           if (!item.url.startsWith("data:")) throw new Error(t("promptInput.couldNotReadAnAttachedFileRemoveItAnd"));
@@ -416,7 +441,7 @@ export const PromptInput = ({
         if (mountedRef.current) setIsSubmitting(false);
       }
     },
-    [files, onSubmit, onError, remove]
+    [onSubmit, onError, remove, settleReads]
   );
 
   return (

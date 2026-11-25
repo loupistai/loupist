@@ -3,7 +3,7 @@ import { menuShortcutKey, nativeDestinations } from "./nativeMenu";
 
 /** A page the stage shows. World and Lens are full pages; their chat tools stay in the side panel. */
 export type AppTab = "chat" | "following" | "map" | "lens" | "schedule" | "settings";
-export type SettingsSection = "model" | "loupists" | "connections" | "agent" | "skills" | "general" | "appearance" | "keyboard" | "updates";
+export type SettingsSection = "model" | "usage" | "loupists" | "connections" | "agent" | "skills" | "general" | "notifications" | "appearance" | "keyboard" | "updates";
 
 type AppPage = {
   /** Names the page in its error boundary and loading status. */
@@ -62,11 +62,13 @@ type SettingsSectionDefinition = {
 const SETTINGS_SECTIONS: readonly SettingsSectionDefinition[] = [
   // A new user sets up a model first, then finds their Loupists and data connections.
   { id: "model", get label() { return i18n.t("app:navigation.modelsProviders"); }, group: "research", get keywords() { return i18n.t("app:navigation.accountsConnectApiKeySignInModels"); }, get description() { return i18n.t("app:navigation.connectYourAccountsAndChooseTheModelsAvailable"); }, get caption() { return i18n.t("app:navigation.modelsCaption"); } },
+  { id: "usage", get label() { return i18n.t("app:navigation.usage"); }, group: "research", get keywords() { return i18n.t("app:navigation.usageKeywords"); }, get description() { return i18n.t("app:navigation.usageDescription"); } },
   { id: "loupists", get label() { return i18n.t("app:shell.loupists"); }, group: "research", get keywords() { return i18n.t("settings:loupists.keywords"); }, get description() { return i18n.t("settings:loupists.description"); } },
   { id: "connections", get label() { return i18n.t("app:navigation.connections"); }, group: "research", get keywords() { return i18n.t("app:navigation.connectionsDataSourcesApiKeyDartKrxOpenbb"); }, get description() { return i18n.t("app:navigation.addDataSourcesAndChooseWhichLoupistsCan"); } },
   { id: "agent", get label() { return i18n.t("app:navigation.chatPreferences"); }, group: "research", get keywords() { return i18n.t("app:navigation.agentDefaultsReasoningThinkingRetryTokensContextConfiguration"); }, get description() { return i18n.t("app:navigation.setModelAndMemoryDefaultsGloballyOrFor"); } },
   { id: "skills", get label() { return i18n.t("app:navigation.skills"); }, group: "research", get keywords() { return i18n.t("app:navigation.skillsCreatorInstallerInstructionsWorkflowsCreateInstallZip"); }, get description() { return i18n.t("app:navigation.addAndManageReusableWorkflowsForYourLoupists"); }, get caption() { return i18n.t("settings:skillsSettings.caption"); } },
   { id: "general", get label() { return i18n.t("settings:general.label"); }, group: "application", get keywords() { return i18n.t("settings:general.keywords"); }, get description() { return i18n.t("settings:general.description"); } },
+  { id: "notifications", get label() { return i18n.t("settings:notifications.title"); }, group: "application", get keywords() { return i18n.t("settings:notifications.keywords"); }, get description() { return i18n.t("settings:notifications.description"); } },
   { id: "appearance", get label() { return i18n.t("app:navigation.appearance"); }, group: "application", get keywords() { return i18n.t("app:navigation.themeLightDarkSystemDisplay"); }, get description() { return i18n.t("app:navigation.makeYourWorkspaceFeelAtHome"); } },
   { id: "keyboard", get label() { return i18n.t("app:navigation.keyboard"); }, group: "application", get keywords() { return i18n.t("app:navigation.keyboardKeywords"); }, get description() { return i18n.t("app:navigation.keyboardDescription"); } },
   { id: "updates", get label() { return i18n.t("app:navigation.updates"); }, group: "application", get keywords() { return i18n.t("app:navigation.versionReleaseInstallDownload"); }, get description() { return i18n.t("app:navigation.keepLoupistUpToDate"); } },

@@ -232,6 +232,7 @@ pub enum ToolMethod {
     ScheduleDelete,
     ScheduleRunNow,
     ScheduleStop,
+    TriggerSave,
     ResearchOpen,
     BotMemory,
     ChatHistory,
@@ -246,6 +247,8 @@ pub enum ToolMethod {
     DefillamaRead,
     KrxDailyQuote,
     KisOperationSearch,
+    KisSymbolLookup,
+    KisDividendCalendar,
     KisRead,
     DartFinancials,
     DartFilingSearch,
@@ -272,6 +275,8 @@ pub enum ToolMethod {
     LoupistSetup,
     ConnectionSetup,
     AskUser,
+    BotOffer,
+    AskLater,
     LensSearch,
     LensRead,
     WorldJob,
@@ -291,6 +296,9 @@ pub enum ToolMethod {
     PastedCapture,
     #[serde(rename = "run_python")]
     PythonRun,
+    ScriptSave,
+    ScriptList,
+    ScriptRead,
 }
 
 impl ToolMethod {
@@ -390,12 +398,18 @@ pub enum BrokerError {
     Execution(String),
     #[error("No data was returned for this request.")]
     EmptyResult,
+    #[error("{}", result_too_large_message(.bytes, .limit_bytes))]
+    ResultTooLarge {
+        bytes: Option<u64>,
+        limit_bytes: Option<u64>,
+    },
     /// A provider read failed for a reason the model can act on. The vendor's
     /// mapping writes `message` and `next`; `kind` is the error code.
     #[error("{message}")]
     ProviderFailure {
         kind: ProviderFailureKind,
         message: String,
+        retry_after: Option<u64>,
         next: std::borrow::Cow<'static, str>,
     },
     #[error("{0}")]
@@ -416,6 +430,35 @@ pub enum BrokerError {
     ArtifactLimit { limit: usize },
 }
 
+/// Bytes as MiB, whole when exact ("32 MiB", "54.5 MiB").
+fn mebibytes(bytes: u64) -> String {
+    let mib = bytes as f64 / (1024.0 * 1024.0);
+    if bytes.is_multiple_of(1024 * 1024) {
+        format!("{mib:.0} MiB")
+    } else {
+        format!("{mib:.1} MiB")
+    }
+}
+
+fn result_too_large_message(bytes: &Option<u64>, limit_bytes: &Option<u64>) -> String {
+    let limit = limit_bytes.map_or_else(
+        || "what one result can carry".to_owned(),
+        |limit| format!("the {} one result can carry", mebibytes(limit)),
+    );
+    match bytes {
+        Some(bytes) => format!(
+            "The reply to this valid request was {}, more than {limit}, so it was not delivered",
+            mebibytes(*bytes)
+        ),
+        None => format!(
+            "The reply to this valid request was larger than {limit}, so it was not delivered"
+        ),
+    }
+}
+
+/// The next step for a reply too large to deliver, from any source.
+pub(crate) const RESULT_TOO_LARGE_NEXT: &str = "Ask for less: a shorter date range or a narrower selection, such as one table, one series or one symbol. If this source cannot return less, use another source or say the data is too large to read here. Do not repeat the identical call.";
+
 /// Why a provider read failed, as the tool error's `code`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProviderFailureKind {
@@ -423,6 +466,8 @@ pub enum ProviderFailureKind {
     Timeout,
     /// The provider refused the saved key.
     CredentialRejected,
+    /// A bearer token was rejected after the permitted renewal attempt.
+    TokenRejected,
     /// The provider's request limit for this key was reached.
     RateLimited,
     /// The provider is stopped, for example for maintenance.
@@ -436,6 +481,7 @@ impl ProviderFailureKind {
         match self {
             Self::Timeout => "provider_timeout",
             Self::CredentialRejected => "credential_rejected",
+            Self::TokenRejected => "token_rejected",
             Self::RateLimited => "rate_limited",
             Self::Unavailable => "provider_unavailable",
             Self::Preparing => "provider_preparing",
@@ -1487,7 +1533,7 @@ fn encode_response_or_bounded_error(
     }
 }
 
-fn enforce_policy(policy: &ToolPolicy, method: ToolMethod) -> Result<(), BrokerError> {
+pub(crate) fn enforce_policy(policy: &ToolPolicy, method: ToolMethod) -> Result<(), BrokerError> {
     use crate::broker::tools::ToolPermission;
     match method.permission() {
         ToolPermission::MemoryRead if !policy.use_memory => Err(BrokerError::MemoryDisabled),
@@ -1589,6 +1635,7 @@ pub(crate) fn error_body(error: &BrokerError) -> Value {
             false,
         ),
         BrokerError::InvalidArguments { .. } | BrokerError::SecContactRequired(_) | BrokerError::EmptyResult => ("", false),
+        BrokerError::ResultTooLarge { .. } => (RESULT_TOO_LARGE_NEXT, false),
         BrokerError::ProviderFailure { kind, next, .. } => {
             (next.as_ref(), *kind == ProviderFailureKind::Preparing)
         }
@@ -1623,12 +1670,21 @@ pub(crate) fn error_body(error: &BrokerError) -> Value {
             false,
         ),
     };
-    json!({
+    let mut body = json!({
         "code": error_code(error),
         "message": message,
         "retryable": retryable,
         "next": next,
-    })
+    });
+    if let BrokerError::ResultTooLarge { bytes, limit_bytes } = error {
+        if let Some(bytes) = bytes {
+            body["bytes"] = json!(bytes);
+        }
+        if let Some(limit_bytes) = limit_bytes {
+            body["limit_bytes"] = json!(limit_bytes);
+        }
+    }
+    body
 }
 
 /// As-of refusals keep their own codes so the answer's note can list them
@@ -1670,6 +1726,7 @@ fn error_code(error: &BrokerError) -> &'static str {
         BrokerError::WithNext { source, .. } => error_code(source),
         BrokerError::Execution(message) => as_of_code(message).unwrap_or("execution_failed"),
         BrokerError::EmptyResult => "empty_result",
+        BrokerError::ResultTooLarge { .. } => "result_too_large",
         BrokerError::ProviderFailure { kind, .. } => kind.code(),
         BrokerError::SecContactRequired(_) => "sec_contact_required",
         BrokerError::KeychainBusy => "keychain_busy",
@@ -1692,6 +1749,7 @@ pub struct ToolTraceCapture {
 
 #[derive(Default)]
 struct ToolTraceState {
+    python_runs: std::collections::BTreeMap<String, crate::domain::PythonRunTrace>,
     trace: crate::domain::ChatToolTrace,
     connector_keychain_statuses:
         std::collections::BTreeSet<crate::finance_credentials::KeychainReadStatus>,
@@ -1907,6 +1965,9 @@ impl ToolTraceCapture {
             outcome: crate::domain::ToolTraceOutcome::Error,
             error: None,
             result_bytes: None,
+            origin: None,
+            parent_step: None,
+            python: None,
         }
     }
 
@@ -1979,6 +2040,55 @@ impl ToolTraceCapture {
         }
     }
 
+    pub(crate) fn record_python_read(
+        &self,
+        parent: Option<&str>,
+        read: &crate::python_run::ledger::ReadSummary,
+    ) {
+        let Some(parent) = parent else {
+            return;
+        };
+        // Unknown names are user data and must not leak into the run log.
+        let name = ToolMethod::from_tool_name(&read.tool)
+            .filter(|method| method.safety().python != tool_class::PythonExposure::NoPython)
+            .map(|method| method.tool_name())
+            .unwrap_or_else(|| match read.tool.as_str() {
+                "dataset" | "followed" | "price" => read.tool.clone(),
+                _ => "python.read".into(),
+            });
+        let mut entry = self.entry(None, &name, None, None);
+        entry.origin = Some(crate::domain::ToolTraceOrigin::Python);
+        entry.parent_step = Some(trace_text(parent, 256));
+        if read.status == "ok" {
+            entry.outcome = crate::domain::ToolTraceOutcome::Ok;
+        } else {
+            entry.error = Some(json!({"code":read.status}));
+        }
+        self.state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .trace
+            .push(entry);
+    }
+
+    pub(crate) fn record_python_run(
+        &self,
+        step: &str,
+        reads: u32,
+        rounds: u32,
+        replay: Option<crate::datasets::DatasetRef>,
+    ) {
+        let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        state.python_runs.insert(
+            trace_text(step, 256),
+            crate::domain::PythonRunTrace {
+                reads,
+                rounds,
+                replay,
+            },
+        );
+    }
+
     pub(crate) fn mark_untrusted_text(&self) {
         self.state
             .lock()
@@ -2038,12 +2148,18 @@ impl ToolTraceGuard {
             };
             entry.error = error.map(trace_error);
             entry.result_bytes = result_bytes;
-            self.capture
+            let mut state = self
+                .capture
                 .state
                 .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .trace
-                .push(entry);
+                .unwrap_or_else(|error| error.into_inner());
+            if entry.name == "run_python" {
+                entry.python = entry
+                    .call_id
+                    .as_ref()
+                    .and_then(|id| state.python_runs.remove(id));
+            }
+            state.trace.push(entry);
         }
     }
 }

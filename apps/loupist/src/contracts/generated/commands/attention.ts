@@ -24,8 +24,16 @@ export type AttentionKind =
   | "lineCrossed"
   | "savedKeyPermission"
   | "briefingConflict"
+  | "proposal"
+  | "taskPaused"
   | "unreadResults"
-  | "checkDue";
+  | "checkDue"
+  | "triggerFailing"
+  | "triggerUpdate"
+  | "offer"
+  | "ask"
+  | "watchQuiet"
+  | "watchLoud";
 
 export type NotifyRequest = {
   loupistId: string,

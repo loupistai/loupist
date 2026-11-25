@@ -56,11 +56,16 @@ impl ChatSurface {
     pub(crate) fn admits_tool(&self, name: &str) -> bool {
         match self {
             // The Bot keeps its conversation in bot_memory; a working note is a session's research record.
-            Self::Bot => !matches!(name, "schedule_handoff" | "note_save" | "schedule_quiet"),
+            Self::Bot => !matches!(
+                name,
+                "schedule_handoff" | "note_save" | "schedule_quiet" | "ask_later"
+            ),
             Self::Session => {
-                !matches!(name, "research_open" | "bot_memory")
-                    && (!name.starts_with("schedule_")
-                        || matches!(name, "schedule_list" | "schedule_read" | "schedule_handoff"))
+                !matches!(
+                    name,
+                    "research_open" | "bot_memory" | "trigger_save" | "bot_offer" | "ask_later"
+                ) && (!name.starts_with("schedule_")
+                    || matches!(name, "schedule_list" | "schedule_read" | "schedule_handoff"))
             }
             Self::Scheduled => crate::briefings::policy::allowed_name(name),
             Self::PriceSetup => {
@@ -80,7 +85,9 @@ impl ChatSurface {
                 })
             }
             Self::Delegated { .. } => {
-                name != "schedule_quiet" && crate::briefings::policy::allowed_name(name)
+                name != "schedule_quiet"
+                    && name != "ask_later"
+                    && crate::briefings::policy::allowed_name(name)
             }
         }
     }
@@ -160,14 +167,18 @@ mod tests {
         let bot = tools(&ChatSurface::Bot.restrict(runtime()));
         assert!(bot.iter().any(|name| name == "research_open"));
         assert!(bot.iter().any(|name| name == "schedule_create"));
+        assert!(bot.iter().any(|name| name == "trigger_save"));
         assert!(!bot
             .iter()
             .any(|name| name == "schedule_handoff" || name == "schedule_quiet"));
         assert!(bot.iter().any(|name| name == "loupist_setup"));
+        assert!(bot.iter().any(|name| name == "bot_offer"));
+        assert!(!bot.iter().any(|name| name == "ask_later"));
 
         let session = tools(&ChatSurface::Session.restrict(runtime()));
         assert!(!session.iter().any(|name| name == "research_open"));
         assert!(!session.iter().any(|name| name == "schedule_create"));
+        assert!(!session.iter().any(|name| name == "trigger_save"));
         assert!(session.iter().any(|name| name == "schedule_handoff"));
         assert!(session.iter().any(|name| name == "loupist_setup"));
 
@@ -188,6 +199,11 @@ mod tests {
                 matches!(unattended, ChatSurface::Scheduled)
             );
             assert!(names.iter().any(|name| name == "lens_read"));
+            assert!(names.iter().any(|name| name == "bot_offer"));
+            assert_eq!(
+                names.iter().any(|name| name == "ask_later"),
+                matches!(unattended, ChatSurface::Scheduled)
+            );
         }
     }
 

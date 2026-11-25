@@ -85,17 +85,22 @@
 .briefing-ahead > li > button, .briefing-changes .briefing-row-link { height: auto; min-height: var(--gg-size-control-sm); padding: 0; text-align: left; white-space: normal; }
 .briefing-changes .briefing-row-link { font-size: var(--gg-text-meta); color: var(--gg-color-accent-ink); font-weight: var(--gg-weight-regular); }
 
-/* Schedule lands as one column under its title: row text starts where the title does (bar inset minus row inset).
-   A task or run replaces it until Back. */
-.schedule-view .briefings-layout { display: block; flex: 1; width: min(var(--gg-size-reading-column), 100%); margin-inline: calc(var(--gg-space-5) - var(--gg-space-4)) auto; overflow: auto; }
-@media (max-width: 899px) { .schedule-view .briefings-layout { margin-inline: 0; } }
-.schedule-view .schedule-list { width: 100%; border-right: 0; overflow: visible; }
+/* Schedule is one centred column, as wide as Following's: the chat column inside 32 px gutters.
+   Row text starts where the header's does (gutter minus row inset). A task or run replaces it until Back. */
+.schedule-view .briefings-layout { display: block; flex: 1; width: 100%; overflow: auto; }
+.schedule-view .schedule-list {
+  box-sizing: border-box; width: 100%; max-width: calc(var(--gg-size-chat-column) + 2 * var(--gg-space-7));
+  margin-inline: auto; padding-inline: calc(var(--gg-space-7) - var(--gg-space-4)); border-right: 0; overflow: visible;
+}
 .schedule-view .briefings-reader-scroll { display: none; }
 .schedule-view .briefings-layout[data-reader-open="true"] { overflow: hidden; }
 .schedule-view .briefings-layout[data-reader-open="true"] .schedule-list { display: none; }
 .schedule-view .briefings-layout[data-reader-open="true"] .briefings-reader-scroll { display: block; width: 100%; height: 100%; overflow: auto; }
 .schedule-view .briefings-back { display: inline-flex; margin-bottom: var(--gg-space-4); }
-.schedule-view .briefings-reader { margin-inline: 0; padding-inline: var(--gg-space-4); }
+.schedule-view .briefings-reader {
+  box-sizing: border-box; max-width: calc(var(--gg-size-chat-column) + 2 * var(--gg-space-7));
+  margin-inline: auto; padding-inline: var(--gg-space-7);
+}
 
 .schedule-view .briefings-layout[data-run-open] { width: 100%; margin-inline: 0; container: scheduled-run / inline-size; }
 .schedule-view [data-run-open] .briefings-reader {
@@ -126,10 +131,13 @@
 .schedule-header {
   display: grid;
   gap: var(--gg-space-1);
-  padding: var(--gg-space-2) var(--gg-space-5);
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(var(--gg-size-chat-column) + 2 * var(--gg-space-7));
+  margin-inline: auto;
+  padding: var(--gg-space-2) var(--gg-space-7);
 }
 .schedule-header p { margin: 0; }
-.schedule-view .briefings-layout[data-intro] { width: 100%; margin-inline: 0; }
 .schedule-empty {
   width: min(calc(100% - 2 * var(--gg-space-5)), var(--gg-size-chat-column));
   margin-inline: auto;
@@ -154,10 +162,12 @@
 .schedule-detail-status strong { font-weight: var(--gg-weight-medium); color: var(--gg-color-text-primary); }
 .schedule-task-row { position: relative; }
 .schedule-task-chevron { position: absolute; right: var(--gg-space-3); top: 50%; width: 16px; height: 16px; translate: 0 -50%; color: var(--gg-color-text-tertiary); pointer-events: none; }
-.schedule-footer { margin: var(--gg-space-4); max-width: 72ch; }
+/* The footer follows the last row as the next row would: a hairline, then the row's inset. */
+.schedule-footer { margin: 0; padding: var(--gg-space-3) var(--gg-space-4) 0; border-top: 1px solid var(--gg-color-border-subtle); }
 .schedule-task-row .schedule-task-summary { padding-right: calc(var(--gg-space-3) + 20px); }
-/* The built-in briefing while it is off: Turn on takes the chevron's place at the row's end. */
+/* The built-in briefing while it is off: Off and Turn on take the chevron's place at the row's end, centred together. */
 .schedule-task[data-schedule-briefing="off"] .schedule-task-row { align-items: center; }
+.schedule-task-off { display: flex; flex: none; align-items: center; gap: var(--gg-space-2); }
 .schedule-task[data-schedule-briefing="off"] .schedule-task-summary { min-width: 0; padding-right: 0; }
 .schedule-task[data-schedule-briefing="off"] div.schedule-task-summary { cursor: default; }
 .schedule-task-turn-on { flex: none; }
@@ -168,3 +178,24 @@
 .morning-card { gap: 10px; }
 .morning-card > * + * { padding-top: 10px; border-top: 1px solid var(--gg-color-border-subtle); }
 .morning-card .morning-bullets { margin: 0; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+
+.schedule-delivery {
+  display: grid;
+  gap: 0.5rem;
+  margin-block: 0.75rem;
+}
+
+.schedule-delivery > div {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.schedule-delivery dt {
+  color: var(--muted-foreground);
+}
+
+.schedule-delivery dd {
+  margin: 0;
+}

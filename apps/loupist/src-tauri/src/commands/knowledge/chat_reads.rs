@@ -1591,17 +1591,100 @@ pub(in crate::commands) fn source_span_authorship(
     })
 }
 
+/// Where a Source was saved from: the page or file it was read at, else the
+/// provider that returned it.
+fn source_origin(source: &crate::knowledge::PublishedSource) -> String {
+    source
+        .origin_locator
+        .as_deref()
+        .filter(|origin| !origin.trim().is_empty())
+        .and_then(crate::chat::local_files::origin_label)
+        .unwrap_or_else(|| source.provider_identity.clone())
+}
+
+/// Source hits of `world_search`, as the model receives them. A Source's
+/// title is indexed on its own as well as with each span. Prefer ranked span
+/// hits of the same revision. A remaining title hit can open a span from its
+/// exact revision. Each Source hit names where it was saved
+/// from and its class, so a saved copy of another site's page reads apart
+/// from the publisher's own document or a connection's read.
+pub(in crate::commands) fn describe_source_hits(
+    state: &AppState,
+    loupist_id: &str,
+    hits: &mut Vec<serde_json::Value>,
+    cutoff: Option<super::as_of::Cutoff>,
+) -> Result<(), CommandError> {
+    let is_source = |hit: &serde_json::Value| hit["scope"] == "source";
+    let has_span =
+        |hit: &serde_json::Value| hit["spanId"].as_str().is_some_and(|id| !id.is_empty());
+    let spanned: std::collections::BTreeSet<String> = hits
+        .iter()
+        .filter(|hit| is_source(hit) && has_span(hit))
+        .filter_map(|hit| hit["revisionId"].as_str().map(str::to_owned))
+        .collect();
+    hits.retain(|hit| {
+        !is_source(hit)
+            || has_span(hit)
+            || hit["revisionId"]
+                .as_str()
+                .is_none_or(|id| !spanned.contains(id))
+    });
+    let revisions: std::collections::BTreeSet<String> = hits
+        .iter()
+        .filter(|hit| is_source(hit))
+        .filter_map(|hit| hit["revisionId"].as_str().map(str::to_owned))
+        .collect();
+    if revisions.is_empty() {
+        return Ok(());
+    }
+    let described = with_loupist_knowledge(state, loupist_id, |tx, blobs| {
+        let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
+        let mut described = std::collections::BTreeMap::new();
+        for revision_id in revisions {
+            let revision = write.get_revision(loupist_id, &revision_id)?;
+            let source = serde_json::from_value::<SourceRecordPayload>(revision.payload)?.source;
+            let span = if spanned.contains(&revision_id) {
+                None
+            } else {
+                source
+                    .captures
+                    .iter()
+                    .filter(|capture| {
+                        cutoff.is_none_or(|day| super::as_of::capture_known(capture, day))
+                    })
+                    .flat_map(|capture| &capture.representations)
+                    .flat_map(|representation| &representation.spans)
+                    .next()
+                    .map(|span| span.span_id.clone())
+            };
+            described.insert(
+                revision_id,
+                (source_origin(&source), source.source_class.as_str(), span),
+            );
+        }
+        Ok(described)
+    })?;
+    for hit in hits.iter_mut().filter(|hit| is_source(hit)) {
+        if let Some((origin, class, span)) = hit["revisionId"]
+            .as_str()
+            .and_then(|revision| described.get(revision))
+        {
+            hit["origin"] = serde_json::json!(origin);
+            hit["sourceClass"] = serde_json::json!(class);
+            if let Some(span) = span.as_ref().filter(|_| !has_span(hit)) {
+                hit["spanId"] = serde_json::json!(span);
+            }
+        }
+    }
+    Ok(())
+}
+
 fn source_overlay(payload: &serde_json::Value, span_id: &str) -> Option<SourceOverlay> {
     let parsed = serde_json::from_value::<SourceRecordPayload>(payload.clone()).ok()?;
     let source = parsed.source;
     let source_id = source.source_id.clone();
     let title = source.title.clone();
-    let origin = source
-        .origin_locator
-        .as_deref()
-        .filter(|origin| !origin.trim().is_empty())
-        .and_then(crate::chat::local_files::origin_label)
-        .unwrap_or_else(|| source.provider_identity.clone());
+    let origin = source_origin(&source);
     let attribution = if origin == source.provider_identity {
         format!("{} — {}", source.title, origin)
     } else {

@@ -261,12 +261,16 @@ test('a memory assertion may accept any of several kinds', () => {
   const graded = grade(mini, [
     row('note', [{ kind: 'note', title: 'Backlog' }]),
     row('source', [{ kind: 'source', title: 'Backlog' }]),
+    row('source-and-price', [{ kind: 'source', title: 'Backlog' }, { kind: 'priceread', title: 'Closing price' }]),
+    row('price-only', [{ kind: 'priceread', title: 'Closing price' }]),
     row('lens', [{ kind: 'lens', title: 'Backlog' }]),
     row('none', []),
   ]);
   const pass = (runId) => graded.results.find((item) => item.run_id === runId).pass;
   assert.equal(pass('note'), true);
   assert.equal(pass('source'), true);
+  assert.equal(pass('source-and-price'), true);
+  assert.equal(pass('price-only'), false);
   assert.equal(pass('lens'), false);
   assert.equal(pass('none'), false);
   assert.throws(() => grade({ ...mini, scenarios: [{ ...mini.scenarios[0], sessions: [{ ...mini.scenarios[0].sessions[0], turns: [{ user: 'x', expect: { memory: [{ assert: 'committed', kind: ['memo'], metric: 'save_recall' }] } }] }] }] }, [row('bad', [])]), /Unknown memory kind/);

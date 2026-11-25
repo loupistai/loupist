@@ -18,6 +18,9 @@ const KRX_CACHE_MAX_AGE: Duration = Duration::from_secs(90 * 24 * 60 * 60);
 /// KRX publishes a day's file on the next business day. An empty file is
 /// cached only once it can no longer be a not-yet-published day.
 const KRX_EMPTY_DAY_SETTLED_DAYS: i64 = 7;
+/// The daily trading services answer from this date (`:basDd >= '20100104'`
+/// in their definitions on openapi.krx.co.kr); earlier dates come back empty.
+const KRX_FIRST_DATE: (i32, u32, u32) = (2010, 1, 4);
 const KRX_RECORD_FIELDS: [&str; 15] = [
     "BAS_DD",
     "ISU_CD",
@@ -173,9 +176,16 @@ pub(super) fn validate_krx_query(
             ))
         }
     };
-    if first > last || last > today || first.year() < 1990 {
+    let (year, month, day) = KRX_FIRST_DATE;
+    let earliest = NaiveDate::from_ymd_opt(year, month, day).expect("a valid date");
+    if first > last || last > today {
         return Err(FinanceDataError::InvalidQuery(
-            "KRX dates must be historical, from 1990, with start on or before end",
+            "KRX dates must be historical, with start on or before end",
+        ));
+    }
+    if first < earliest {
+        return Err(FinanceDataError::InvalidQuery(
+            "KRX daily trading data starts on 2010-01-04; read earlier dates from another source",
         ));
     }
     // Bound the calendar walk before counting weekdays.
@@ -215,6 +225,23 @@ pub(super) struct KrxDailyFile {
     source_url: String,
     retrieved_at: String,
     records: Vec<Map<String, Value>>,
+}
+
+/// A listed issue with no trade that day, such as a trading halt: KRX keeps
+/// its row with zero open, high, low and volume and the base price as close
+/// (fields with no value read "-"). It has no bar for that day.
+fn untraded(record: &Map<String, Value>) -> bool {
+    let zero_or_blank = |name: &str| {
+        record
+            .get(name)
+            .is_none_or(|value| match canonical_decimal(value) {
+                Some(number) => number.parse::<f64>().is_ok_and(|number| number == 0.0),
+                None => value.as_str().is_some_and(|text| text.trim() == "-"),
+            })
+    };
+    ["ACC_TRDVOL", "TDD_OPNPRC", "TDD_HGPRC", "TDD_LWPRC"]
+        .into_iter()
+        .all(zero_or_blank)
 }
 
 impl KrxDailyFile {
@@ -478,6 +505,7 @@ where
     let mut resolved = None;
     let mut bars = Vec::new();
     let mut missing = Vec::new();
+    let mut halted = Vec::new();
     let mut denied = Vec::new();
     for date in &request.dates {
         if !crate::market_calendar::is_trading_day("KRX", *date) {
@@ -518,7 +546,14 @@ where
                 if request.choice == KrxMarketChoice::Auto {
                     resolved = Some(bar.market);
                 }
-                bars.push((*date, bar));
+                // A halted day has its row with no trades: missing, and
+                // warned of apart from the days with no row.
+                if untraded(&bar.record) {
+                    missing.push(*date);
+                    halted.push(*date);
+                } else {
+                    bars.push((*date, bar));
+                }
             }
             None => missing.push(*date),
         }
@@ -526,7 +561,7 @@ where
     if bars.is_empty() && !denied.is_empty() {
         return Err(approval_required(&denied));
     }
-    let mut result = normalize_krx_quotes(request, &bars, &missing, &stats)?;
+    let mut result = normalize_krx_quotes(request, &bars, &missing, &halted, &stats)?;
     if !missing.is_empty() && !denied.is_empty() {
         let warning = json!(format!(
             "Some dates could not be checked in {}. Verify this key's KRX service approvals.",
@@ -597,6 +632,7 @@ fn normalize_krx_quotes(
     request: &KrxRequest,
     found: &[(NaiveDate, KrxBar)],
     missing: &[NaiveDate],
+    halted: &[NaiveDate],
     stats: &KrxFetchStats,
 ) -> Result<Value, FinanceDataError> {
     let Some((_, latest)) = found.last() else {
@@ -653,17 +689,33 @@ fn normalize_krx_quotes(
         .min()
         .unwrap_or_default()
         .to_owned();
+    let listed = |dates: &[&NaiveDate]| {
+        dates
+            .iter()
+            .map(|date| date.to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     let mut warnings = Vec::new();
-    if !missing.is_empty() {
+    let no_row = missing
+        .iter()
+        .filter(|date| !halted.contains(date))
+        .collect::<Vec<_>>();
+    if !no_row.is_empty() {
         warnings.push(format!(
-            "KRX had no row for {} on {} weekday(s): {}. Exchange holidays, suspended trading and days not yet published have no row.",
+            "KRX had no row for {} on {} weekday(s): {}. Exchange holidays, days the issue was not listed and days not yet published (KRX publishes a day at 08:00 KST the next day) have no row.",
             request.symbol,
-            missing.len(),
-            missing
-                .iter()
-                .map(NaiveDate::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
+            no_row.len(),
+            listed(&no_row)
+        ));
+    }
+    if !halted.is_empty() {
+        let halted = halted.iter().collect::<Vec<_>>();
+        warnings.push(format!(
+            "KRX recorded no trades in {} on {} weekday(s): {}, as when trading is halted, so those days have no bar.",
+            request.symbol,
+            halted.len(),
+            listed(&halted)
         ));
     }
     let raw = RawProviderResponse {
@@ -788,13 +840,19 @@ mod tests {
         NaiveDate::parse_from_str(value, "%Y-%m-%d").unwrap()
     }
 
+    /// A row as the services define it on openapi.krx.co.kr (`stk_bydd_trd`,
+    /// `ksq_bydd_trd`): the fifteen fields in order, every value a string,
+    /// numbers formatted `###0` with no thousands separators, `ISU_CD` the
+    /// six-digit short code and "-" for a value KRX does not have. Values are
+    /// fictional; no keyed reply has been recorded.
     fn row(day: &str, symbol: &str, name: &str, market: &str, close: &str) -> Value {
         json!({
             "BAS_DD": day.replace('-', ""), "ISU_CD": symbol, "ISU_NM": name, "MKT_NM": market,
-            "TDD_OPNPRC": "1,000", "TDD_HGPRC": "1,200", "TDD_LWPRC": "900", "TDD_CLSPRC": close,
-            "CMPPREVDD_PRC": "-50", "FLUC_RT": "-4.76", "ACC_TRDVOL": "12,345",
-            "ACC_TRDVAL": "12345000", "MKTCAP": "100000000000", "LIST_SHRS": "100000000",
-            "SECT_TP_NM": "ignored"
+            "SECT_TP_NM": if market == "KOSDAQ" { "우량기업부" } else { "-" },
+            "TDD_CLSPRC": close, "CMPPREVDD_PRC": "-50", "FLUC_RT": "-4.76",
+            "TDD_OPNPRC": "1000", "TDD_HGPRC": "1200", "TDD_LWPRC": "900",
+            "ACC_TRDVOL": "12345", "ACC_TRDVAL": "12345000", "MKTCAP": "100000000000",
+            "LIST_SHRS": "100000000"
         })
     }
 
@@ -822,10 +880,10 @@ mod tests {
                 vec![]
             } else {
                 match market {
-                    KrxMarket::Kospi => vec![row(&text, "111111", "코스피상사", "KOSPI", "1,100")],
+                    KrxMarket::Kospi => vec![row(&text, "111111", "코스피상사", "KOSPI", "1100")],
                     KrxMarket::Kosdaq => vec![
-                        row(&text, "333333", "다른종목", "KOSDAQ", "1,000"),
-                        row(&text, "222222", "코스닥바이오", "KOSDAQ", "1,050"),
+                        row(&text, "333333", "다른종목", "KOSDAQ", "1000"),
+                        row(&text, "222222", "코스닥바이오", "KOSDAQ", "1050"),
                     ],
                 }
             };
@@ -1152,6 +1210,79 @@ mod tests {
         let largest =
             request(json!({"symbol": "111111", "start": "2026-01-01", "end": "2026-02-12"}));
         assert_eq!(largest.dates.len(), MAX_KRX_RANGE_DATES);
+        // The services answer from 2010-01-04; earlier dates come back empty.
+        assert!(matches!(
+            invalid(json!({"symbol": "111111", "date": "2009-12-30"})),
+            FinanceDataError::InvalidQuery(message) if message.contains("2010-01-04")
+        ));
+        assert_eq!(
+            request(json!({"symbol": "111111", "date": "2010-01-04"})).dates,
+            vec![date("2010-01-04")]
+        );
+    }
+
+    /// A halted issue keeps its row with no trades: zero open, high, low and
+    /// volume and the base price as close. Its days are warned of apart from
+    /// a holiday, which has no row.
+    #[tokio::test]
+    async fn a_halted_day_is_missing_rather_than_an_invalid_reply() {
+        let pacer = || Box::pin(async {}) as futures_util::future::BoxFuture<'static, ()>;
+        let query =
+            request(json!({"symbol": "111111", "start": "2026-03-02", "end": "2026-03-05"}));
+        let result = collect_krx_quotes(
+            &query,
+            None,
+            date("2026-10-30"),
+            |market, day| {
+                let text = day.to_string();
+                let mut record = row(&text, "111111", "코스피상사", "KOSPI", "1100");
+                if text == "2026-03-04" {
+                    for (field, value) in [
+                        ("TDD_OPNPRC", "0"),
+                        ("TDD_HGPRC", "0"),
+                        ("TDD_LWPRC", "0"),
+                        ("ACC_TRDVOL", "0"),
+                        ("ACC_TRDVAL", "0"),
+                        ("CMPPREVDD_PRC", "0"),
+                        ("FLUC_RT", "0.00"),
+                    ] {
+                        record[field] = json!(value);
+                    }
+                }
+                if text == "2026-03-05" {
+                    for field in ["TDD_OPNPRC", "TDD_HGPRC", "TDD_LWPRC", "ACC_TRDVOL"] {
+                        record[field] = json!("-");
+                    }
+                }
+                let response = Ok(RawProviderResponse {
+                    bytes: serde_json::to_vec(&json!({ "OutBlock_1": [record] })).unwrap(),
+                    source_url: market.daily_url(day).unwrap().to_string(),
+                    retrieved_at: "2026-10-30T00:00:00.000Z".into(),
+                    continuation: None,
+                });
+                async move { response }
+            },
+            &pacer,
+        )
+        .await
+        .unwrap();
+        let bars = result["data"]["bars"].as_array().unwrap();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0]["date"], "2026-03-03");
+        assert_eq!(
+            result["data"]["missing_dates"],
+            json!(["2026-03-02", "2026-03-04", "2026-03-05"])
+        );
+        assert_eq!(result["quality"]["status"], "warn");
+        let warnings = result["warnings"].as_array().unwrap();
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        assert!(warnings[0]
+            .as_str()
+            .unwrap()
+            .starts_with("KRX had no row for 111111 on 1 weekday(s): 2026-03-02."));
+        assert!(warnings[1].as_str().unwrap().starts_with(
+            "KRX recorded no trades in 111111 on 2 weekday(s): 2026-03-04, 2026-03-05, as when trading is halted"
+        ));
     }
 
     #[tokio::test]

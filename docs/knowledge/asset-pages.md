@@ -176,3 +176,8 @@ four-step ladder after a recorded verdict move, otherwise “Not reviewed yet”
 the user's reasons and lines as Journal entries) and World line when the page matched an
 entity: its supplier and customer counts, Open, and "Not this company", which unlinks it
 (`asset_entity_set` with `entityId: null`).
+
+
+### Bot on this asset
+
+A followed asset's sidebar can turn on the filings and results watch for that asset. An asset with thesis lines also offers a lines watch. Each switch shows the saved task's current state and pauses or resumes it directly. The first occurrence reports, and later occurrences report when the watch finds a change that meets its terms.

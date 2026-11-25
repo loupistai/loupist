@@ -1,6 +1,6 @@
 [package]
 name = "loupist-desktop"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 rust-version = "1.97"
 description = "Local native app for research with durable Loupist memory"
@@ -97,19 +97,27 @@ tauri-plugin-deep-link = "=2.6.3"
 tauri-plugin-single-instance = { version = "=2.5.5", features = ["deep-link"] }
 tauri-plugin-updater = "=2.14.1"
 
+[target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))'.dependencies]
+zbus = "=5.18.0"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = "=2.0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+block2 = "=0.6.2"
 objc2 = "=0.6.5"
-objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSBundle", "NSError", "NSString", "NSAppleEventManager", "NSAppleEventDescriptor"] }
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSBitmapImageRep", "NSImageRep", "NSPasteboard"] }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSBundle", "NSData", "NSDictionary", "NSError", "NSString", "NSAppleEventManager", "NSAppleEventDescriptor"] }
 objc2-web-kit = { version = "=0.3.2", default-features = false, features = ["std", "WKWebView", "objc2-app-kit"] }
+objc2-user-notifications = { version = "=0.3.2", default-features = false, features = ["std", "block2", "UNUserNotificationCenter", "UNNotificationContent", "UNNotificationRequest", "UNNotificationTrigger"] }
 keyring = { version = "=3.6.3", default-features = false, features = ["apple-native"] }
 security-framework = "=3.7.0"
 # OpenDART serves only TLS 1.2 with RSA key exchange, which rustls does not implement.
 reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
 
 [target.'cfg(windows)'.dependencies]
+tauri-winrt-notification = "=0.8.1"
+windows = { version = "=0.62.2", features = ["UI_Notifications"] }
 keyring = { version = "=3.6.3", default-features = false, features = ["windows-native"] }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_Storage_FileSystem"] }
 

@@ -813,3 +813,34 @@ fn review_storage_unavailable_bound_folder_does_not_break_other_records() {
     );
     unavailable.execute_batch("ROLLBACK").unwrap();
 }
+
+#[test]
+fn python_ledger_replay_is_removed_with_its_parent_chat() {
+    let store = SqliteStore::open_in_memory().unwrap();
+    seed_loupist(&store, &loupist());
+    let owner = "loupist-1";
+    let chat = crate::test_fixtures::chat_session("with-replay", owner);
+    store.create_chat(&chat).unwrap();
+    let replay = store
+        .dataset_put(
+            owner,
+            "python-fixture",
+            &serde_json::json!({"stdout":"24"}),
+            serde_json::json!({"origin":"python_replay", "chat_id":chat.id}),
+        )
+        .unwrap();
+    let independent = store
+        .dataset_put(
+            owner,
+            "provider-fixture",
+            &serde_json::json!([3, 8, 13]),
+            serde_json::json!({"origin":"provider"}),
+        )
+        .unwrap();
+    assert!(store.python_replay(owner, &replay).is_ok());
+    store.delete_chat(&chat).unwrap();
+    assert!(store.python_replay(owner, &replay).is_err());
+    assert!(store
+        .dataset(owner, &independent.dataset_id, independent.revision)
+        .is_ok());
+}

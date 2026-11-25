@@ -1,5 +1,5 @@
 //! Shared authority for the Scheduled UI and Chat tools.
-use super::types::{Run, RunStatus, Task, TaskDraft, TaskListItem, TaskStatus};
+use super::types::*;
 use crate::{
     app::{AppState, CommandError, LoupistAccess},
     commands::{map_store, now_ms},
@@ -17,7 +17,7 @@ pub(crate) fn ensure_visible(state: &AppState, loupist_id: &str) -> Result<(), C
     Ok(())
 }
 
-fn validate_draft(state: &AppState, draft: &TaskDraft) -> Result<(), CommandError> {
+pub(crate) fn validate_draft(state: &AppState, draft: &TaskDraft) -> Result<(), CommandError> {
     draft.validate().map_err(map_store)?;
     state.pi_execution(
         &draft.model_profile_id,
@@ -27,8 +27,9 @@ fn validate_draft(state: &AppState, draft: &TaskDraft) -> Result<(), CommandErro
     Ok(())
 }
 
-fn saved_task(state: &AppState, task: Task) -> Result<Task, CommandError> {
+pub(crate) fn saved_task(state: &AppState, task: Task) -> Result<Task, CommandError> {
     state.scheduled.changed();
+    crate::briefings::desktop::changed(&task.loupist_id);
     if task.status == TaskStatus::Active {
         crate::briefings::desktop::enable(state)?;
     }
@@ -67,6 +68,9 @@ pub(crate) fn list(state: &AppState, loupist_id: &str) -> Result<Vec<TaskListIte
             None
         };
         for item in &mut items {
+            if item.task.is_unreadable_list_item() {
+                continue;
+            }
             item.task
                 .resolve_selection(catalog.as_ref(), level.as_deref());
         }
@@ -78,27 +82,74 @@ pub(crate) fn get(state: &AppState, loupist_id: &str, id: &str) -> Result<Task, 
     find(state, loupist_id, id)?.ok_or_else(|| CommandError::not_found("scheduled task"))
 }
 
+#[cfg(test)]
 pub(crate) fn create(
     state: &AppState,
     loupist_id: &str,
     draft: TaskDraft,
     request_id: Option<&str>,
 ) -> Result<Task, CommandError> {
+    let generated;
+    let id = match request_id {
+        Some(id) => id,
+        None => {
+            generated = crate::commands::new_id("scheduled");
+            &generated
+        }
+    };
+    create_definition(state, loupist_id, draft, id, Default::default())
+}
+
+pub(crate) fn create_definition(
+    state: &AppState,
+    loupist_id: &str,
+    draft: TaskDraft,
+    request_id: &str,
+    definition: TaskDefinition,
+) -> Result<Task, CommandError> {
     let _activity = state
         .maintenance
         .admit_kind(MaintenanceActivityKind::ChatMutation)?;
     state.ensure_loupist_available(loupist_id)?;
     validate_draft(state, &draft)?;
-    match request_id {
-        Some(id) => state
-            .store
-            .scheduled_task_create_idempotent(loupist_id, id, draft, now_ms()),
-        None => state
-            .store
-            .scheduled_task_create(loupist_id, draft, now_ms()),
+    state
+        .store
+        .scheduled_task_create_definition(
+            loupist_id,
+            request_id,
+            draft,
+            TaskKind::Custom,
+            definition,
+            now_ms(),
+        )
+        .map_err(map_store)
+        .and_then(|task| saved_task(state, task))
+}
+
+pub(crate) fn set_delivery(
+    state: &AppState,
+    loupist_id: &str,
+    id: &str,
+    revision: u64,
+    to: Option<DeliveryTarget>,
+    notify: Option<NotifyPolicy>,
+) -> Result<Task, CommandError> {
+    let _activity = state
+        .maintenance
+        .admit_kind(MaintenanceActivityKind::ChatMutation)?;
+    state.ensure_loupist_available(loupist_id)?;
+    if to.is_none() && notify.is_none() {
+        return Err(CommandError::invalid(
+            "Choose a destination or notification policy",
+        ));
     }
-    .map_err(map_store)
-    .and_then(|task| saved_task(state, task))
+    let task = state
+        .store
+        .scheduled_task_set_delivery(loupist_id, id, revision, to, notify, now_ms())
+        .map_err(map_store)?;
+    state.scheduled.changed();
+    crate::briefings::desktop::changed(loupist_id);
+    Ok(present(state, task))
 }
 
 pub(crate) fn update(
@@ -107,6 +158,8 @@ pub(crate) fn update(
     id: &str,
     revision: u64,
     draft: TaskDraft,
+    watch: TaskWatch,
+    active_hours: Option<TriggerActiveHours>,
 ) -> Result<Task, CommandError> {
     let _activity = state
         .maintenance
@@ -124,9 +177,61 @@ pub(crate) fn update(
     validate_draft(state, &draft)?;
     state
         .store
-        .scheduled_task_update(loupist_id, id, revision, draft, now_ms())
+        .scheduled_task_update_definition(
+            loupist_id,
+            id,
+            revision,
+            draft,
+            Some((watch, active_hours)),
+            now_ms(),
+        )
         .map_err(map_store)
         .and_then(|task| saved_task(state, task))
+}
+
+/// Keep the existing definition runnable while its replacement waits for a tap.
+pub(crate) fn propose_change(
+    state: &AppState,
+    current: &Task,
+    expected_revision: u64,
+    mut draft: TaskDraft,
+    watch: TaskWatch,
+    message_id: &str,
+) -> Result<Task, CommandError> {
+    draft.status = TaskStatus::Paused;
+    if current.awaiting_confirmation {
+        return update(
+            state,
+            &current.loupist_id,
+            &current.id,
+            expected_revision,
+            draft,
+            watch,
+            current
+                .trigger
+                .as_ref()
+                .and_then(|check| check.active_hours.clone()),
+        );
+    }
+    let key = crate::util::sha256(
+        format!("{}\0{expected_revision}\0{message_id}", current.id).as_bytes(),
+    );
+    create_definition(
+        state,
+        &current.loupist_id,
+        draft,
+        &format!("schedule-proposal-{}", &key[..32]),
+        TaskDefinition {
+            watch,
+            proposed_in_message_id: Some(message_id.to_owned()),
+            trigger: current.trigger.clone(),
+            replaces: Some(ProposalTarget {
+                id: current.id.clone(),
+                revision: expected_revision,
+            }),
+            ..Default::default()
+        },
+    )
 }
 
 pub(crate) fn set_status(
@@ -154,7 +259,12 @@ pub(crate) fn set_status(
 }
 
 /// The user's one-tap OK in the Chat card for a task the agent proposed.
-pub(crate) fn confirm(state: &AppState, loupist_id: &str, id: &str) -> Result<Task, CommandError> {
+pub(crate) fn confirm(
+    state: &AppState,
+    loupist_id: &str,
+    id: &str,
+    revision: u64,
+) -> Result<Task, CommandError> {
     let _activity = state
         .maintenance
         .admit_kind(MaintenanceActivityKind::ChatMutation)?;
@@ -164,7 +274,7 @@ pub(crate) fn confirm(state: &AppState, loupist_id: &str, id: &str) -> Result<Ta
     validate_draft(state, &draft)?;
     state
         .store
-        .scheduled_task_confirm(loupist_id, id, now_ms())
+        .scheduled_task_confirm(loupist_id, id, revision, now_ms())
         .map_err(map_store)
         .and_then(|task| saved_task(state, task))
 }
@@ -179,7 +289,10 @@ pub(crate) fn discard(state: &AppState, loupist_id: &str, id: &str) -> Result<()
         .store
         .scheduled_task_discard(loupist_id, id)
         .map_err(map_store)
-        .inspect(|_| state.scheduled.changed())
+        .inspect(|_| {
+            state.scheduled.changed();
+            crate::briefings::desktop::changed(loupist_id);
+        })
 }
 
 /// The current state of one task, or `None` once it is gone.
@@ -219,6 +332,7 @@ pub(crate) fn delete(
         .map_err(map_store)?;
     crate::chat::questions::forget_task(loupist_id, id);
     state.scheduled.changed();
+    crate::briefings::desktop::changed(loupist_id);
     release_sessions(state, loupist_id, Some(&sessions));
     Ok(())
 }
@@ -284,6 +398,11 @@ pub(crate) async fn run_now(
     id: &str,
 ) -> Result<Run, CommandError> {
     state.ensure_loupist_available(loupist_id)?;
+    if get(state, loupist_id, id)?.awaiting_confirmation {
+        return Err(CommandError::conflict(
+            "This task needs your approval before it can run",
+        ));
+    }
     state
         .scheduled
         .dispatch(state, loupist_id, id, true)

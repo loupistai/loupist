@@ -131,9 +131,14 @@ export class ChatSessionRegistry {
       },
     });
     const unsubscribeStatus = chat["~registerStatusCallback"](() => {
-      if (!this.#disposed) {
-        this.handlers.onStatus(loupistId, threadId, chat.status);
+      if (this.#disposed) return;
+      // The request is in the Chat when it is submitted. The session list carries it from then on, so
+      // another reply's save that waits on this session names it from its request while the first
+      // answer runs (the host titles a session only once that answer ends).
+      if (chat.status === "submitted" && chat.lastMessage?.role === "user") {
+        this.handlers.onMessages(loupistId, threadId, chat.messages.map(fromLoupistUIMessage), true);
       }
+      this.handlers.onStatus(loupistId, threadId, chat.status);
     });
     this.#entries.set(key, {
       chat,

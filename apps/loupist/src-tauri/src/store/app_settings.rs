@@ -1,7 +1,32 @@
 use serde::{Deserialize, Serialize};
 
 use super::{SqliteStore, StoreResult};
+use crate::briefings::desktop::NotificationQueue;
 use rusqlite::{Connection, OptionalExtension};
+
+const NOTIFICATION_QUEUE_ID: &str = "desktop_notification_queue";
+
+impl SqliteStore {
+    pub(crate) fn desktop_notification_queue(&self) -> StoreResult<NotificationQueue> {
+        let connection = self.lock()?;
+        Ok(
+            super::load_json_by_id(&connection, "app_settings", NOTIFICATION_QUEUE_ID)?
+                .unwrap_or_default(),
+        )
+    }
+
+    pub(crate) fn save_desktop_notification_queue(
+        &self,
+        queue: &NotificationQueue,
+    ) -> StoreResult<()> {
+        let connection = self.lock()?;
+        super::put_app_setting(
+            &connection,
+            NOTIFICATION_QUEUE_ID,
+            &serde_json::to_string(queue)?,
+        )
+    }
+}
 
 pub(crate) const CURRENT_NOTICE_VERSION: u32 = 1;
 
