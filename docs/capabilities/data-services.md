@@ -6,7 +6,14 @@ Bundled data tools are read-only and Loupist-scoped. Blockchain reads and the Ko
 
 The Following search field submits its text on Enter or Search listings. The
 `asset_lookup` tool uses the same native lookup under the `openfigi.lookup` grant.
-A submitted lookup sends one bounded request to OpenFIGI. The projection keeps
+A submitted lookup sends one bounded request to OpenFIGI. When that full first page
+shows the issuer's shares (common stock or depositary receipts) only on venues with
+no country, such as European trade-reporting lines, it sends the same search once
+more in OpenFIGI's equity sector and merges the two pages, unless the request limit
+has no room. OpenFIGI fills a large issuer's first page with its bonds: "Samsung
+Electronics" had no listing of 005930 on any exchange there on 2026-11-24, while the
+equity-sector page has it. OpenFIGI has no Korean names, so "삼성전자" matches
+nothing; a ticker such as 005930 finds the KRX listing first. The projection keeps
 the listing's FIGI, name, ticker, exchange code, security type and market sector.
 Asset lookup is on by default for new Loupists and for existing Loupists without
 a saved choice. Each Loupist can turn it off in Connections. OpenFIGI receives
@@ -174,8 +181,71 @@ an account result reaches the model, retained datasets, result references, chart
 exports, independently of stored positions. Its `account_fields_visible` function is
 the single decision point for a connection and always returns false. Unreviewed
 account operations are refused, and account results cannot become Sources or Memory.
+
+KIS limits demo REST reads to one request per second per account and real reads
+to 18. Every KIS GET, including continuation pages, uses a shared connection
+clock. Demo requests are at least one second apart and real requests at least
+500 ms apart. KIS can report an exceeded limit as HTTP 500 with `msg_cd` set to
+`EGW00201`, which the connector maps to a rate-limit error. [KIS Developers REST limits](https://apiportal.koreainvestment.com/community/10000000-0000-0011-0000-000000000001/post/d0d1a83f-6f8d-4437-9700-6d26702fd989)
+
+KIS verification and reads share a memory-only token for the same environment
+and key pair. Verification always makes a paced, authenticated quote request
+to KIS, including when the token is cached. The token's lifetime is bounded by
+the provider's relative and absolute expiry, and issuance attempts for that
+pair are at least one minute apart.
+The connector checks reviewed KIS errors before HTTP and message fallbacks.
+Token rejections evict the token used and permit one GET retry with a refreshed
+token when issuance limits allow. App-key and secret refusals, API permission,
+market codes and field lengths are classified separately. A rejected token tells the
+model the saved key is not the cause and to try once more after a minute; a refused
+key or secret, at issuance or on a read, points to the connection's setup card; a
+missing API permission sends the user to KIS Developers; a market code or field
+length names the schema field to check (`finance_error` in
+`tool_executor/finance.rs`). A demo connection's refusal of a real-only operation
+points to `kis_operation_search`.
+
+The KIS catalog offers 20 of its 91 reviewed market operations on demo, based on
+each endpoint's `virtualTrId` in KIS Developers. `kis_operation_search` filters
+by the configured environment, and direct reads refuse unavailable operations
+before requesting a token. The domestic period chart uses `FHKST03010100` in both environments. Its required
+query fields are `FID_COND_MRKT_DIV_CODE` (for example, `J` for KRX),
+`FID_INPUT_ISCD` (stock code, for example `005930`),
+`FID_INPUT_DATE_1` and `FID_INPUT_DATE_2` (start and end in `YYYYMMDD`),
+`FID_PERIOD_DIV_CODE` (`D`, `W`, `M` or `Y`), and `FID_ORG_ADJ_PRC` (`0` for
+adjusted prices and `1` for raw prices). KIS returns up to 100 bars per request
+in either environment. [KIS Developers domestic period chart](https://apiportal.koreainvestment.com/apiservice-apiservice?/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice)
+
+`kis_symbol_lookup` searches the public KIS master files for Korean or English
+names and symbols. It uses fixed downloads from KIS without sending query text
+or credentials and returns product markets and any applicable exchange codes.
+The directory includes domestic equities, ELWs, bonds and derivatives, plus
+overseas equities, futures and options. Results report failed directories and
+rank exact matches ahead of partial ones; warnings name the directories left out
+and how to narrow a cut list. [KIS master files](https://apiportal.koreainvestment.com/apiservice-category)
+
+`kis_dividend_calendar` reads KSD's dividend calendar through KIS on real
+connections. It takes inclusive record dates and can filter by symbol and
+dividend kind. The endpoint has no `tr_cont` paging. The host splits windows
+at the 100-row boundary observed in KIS's example and reports windows still
+pending or single dates that reached the boundary, with warnings that give the next
+call for each. A result flagged `page.truncated` can be saved as a partial
+Source. It reports payment dates
+separately from record dates and refuses historical publication cutoffs.
+[KSD dividend calendar contract](https://apiportal.koreainvestment.com/api/apis/public/detail?accessUrl=/uapi/domestic-stock/v1/ksdinfo/dividend)
+
 KRX covers KOSPI and KOSDAQ with independent daily
 trading service approvals. Daily reads skip provider requests for published KRX holidays while keeping them in `missing_dates`, and report unavailable dividend and split values as null.
+The two services' definitions on openapi.krx.co.kr (`stk_bydd_trd`, `ksq_bydd_trd`)
+send every field as a string, numbers without thousands separators, `ISU_CD` as the
+six-digit code and "-" where a value is missing. They serve dates from 2010-01-04,
+so earlier dates are refused before any request, and a day appears at 08:00 KST
+the next day. A halted issue keeps its row with zero open, high, low and volume;
+that day goes to `missing_dates` instead of failing the read, with a warning of its
+own apart from the days that have no row (holidays, unlisted, not yet published).
+`krx_daily_quote` states the 2010-01-04 floor, and its refusal names another source. No keyed reply has
+been recorded yet: `finance_data/tests/live.rs` holds ignored live checks that read
+`LOUPIST_TEST_KRX_API_KEY`, or `LOUPIST_TEST_KIS_APP_KEY`, `LOUPIST_TEST_KIS_APP_SECRET`
+and `LOUPIST_TEST_KIS_ENVIRONMENT`, and skip when they are absent.
 Setup verifies both markets and keeps their coverage
 with the verified key; one approved market is enough to enable the connection.
 Automatic lookups continue past a denied market. If the issue cannot be found
@@ -251,6 +321,19 @@ A successful response with null scalar measures retains those nulls. The MCP
 output schema accepts null in number, integer, and string fields. Other
 constraints, such as required keys, container shapes, enums, and wrong non-null
 types, remain enforced.
+
+For the bundled runtime, the host reads one MCP stdio line of at most 32 MiB and ends the session on a
+longer one. The sidecar measures each result as its stdio writer serializes it
+and refuses one that would not fit as that call alone, with the typed
+`result_too_large` marker and the byte counts. The host preserves that error
+code, and other calls on the same session continue. The model reads the size and
+limit in MiB and is told to ask for a shorter range or one table, series or symbol,
+or to use another source (`RESULT_TOO_LARGE_NEXT` in `broker.rs`).
+Undated, the EIA petroleum status report (57.1 MB) and the Federal Reserve
+Svensson curve (73.2 MB) were refused this way on 2026-11-24, and dated reads of
+both fit. FINRA is not offered for
+short interest: its pinned fetcher downloads its whole archive on the sidecar's
+event loop, which answers nothing else for minutes.
 No model-facing text names the runtime; the model and the user see "market
 data", and the capability index lists no provider ids. Scraped providers
 (yfinance, finviz, seeking_alpha, stockgrid, multpl, wsj) are labeled best
@@ -302,6 +385,14 @@ The `onchain` plugin's keyless `defillama.tvl` (DefiLlama, `finance_data/defilla
 `stablecoins.llama.fi`. Its agent tool `defillama_read { route: protocol | chain |
 stablecoin, id, start?, end? }` returns dated daily values with `max_age` and the as-of
 cutoff ([rules](../analysis/datasets.md#data-and-provenance)); protocol and chain IDs cannot be dot path segments.
+DefiLlama's protocol endpoint has no date filter and sends the whole history with
+every chain's and token's breakdown: Curve DEX's reply was 72.9 MB decoded on
+2026-11-24, though most are a few MB. That route accepts up to 128 MiB, where other
+large reads stop at 32 MiB, and parses only the protocol's name and its own daily
+`tvl` series, skipping the rest without building it in memory. The result holds at
+most three years of daily rows (Curve DEX: 1,096 rows, 48 KB).
+Native bounded reads report `result_too_large` and the byte limit when the
+declared or streamed response exceeds that limit, with the same next step.
 It is on the unattended allowlist,
 a saved result is publisher material, and like other provider reads it is refused after a
 custom-connection result in the same turn, since its `id` is part of the request path.

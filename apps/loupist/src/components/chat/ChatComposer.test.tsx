@@ -491,6 +491,52 @@ describe("Chat attachment submission recovery", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  /** Holds every file read until the test lets it finish, as a large file's read outlasts a quick Send. */
+  const holdReads = (fail = false) => {
+    const held: Array<() => void> = [];
+    const read = FileReader.prototype.readAsDataURL;
+    vi.spyOn(FileReader.prototype, "readAsDataURL").mockImplementation(function (this: FileReader, blob: Blob) {
+      held.push(fail ? () => this.onerror?.(new ProgressEvent("error") as ProgressEvent<FileReader>) : () => read.call(this, blob));
+    });
+    return () => act(async () => { for (const finish of held.splice(0)) finish(); });
+  };
+
+  it("sends a message sent while its file is still being read once the file is in, with the file", async () => {
+    const user = userEvent.setup();
+    const finishReads = holdReads();
+    const onSend = vi.fn();
+    render(<RunningComposer isRunning={false} onSend={onSend} />);
+    const message = screen.getByRole("textbox", { name: "Message Loupist" });
+    await user.type(message, "Summarize the attached notes");
+    await user.upload(screen.getByLabelText("Upload files"), new File(["notes"], "notes.txt", { type: "text/plain" }));
+    await user.type(message, "{Enter}");
+    // Send waits for the read rather than leaving the file behind, and the tray says what it waits for.
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByText("Reading 1 file…")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    await finishReads();
+    await waitFor(() => expect(onSend).toHaveBeenCalledOnce());
+    expect(onSend).toHaveBeenCalledWith("Summarize the attached notes",
+      [expect.objectContaining({ filename: "notes.txt", url: expect.stringMatching(/^data:text\/plain;base64,/) })], "Summarize the attached notes");
+    expect(screen.queryByText("Reading 1 file…")).toBeNull();
+  });
+
+  it("does not send without a file whose read fails while the send waits for it", async () => {
+    const user = userEvent.setup();
+    const failReads = holdReads(true);
+    const onSend = vi.fn();
+    render(<RunningComposer isRunning={false} onSend={onSend} />);
+    const message = screen.getByRole("textbox", { name: "Message Loupist" });
+    await user.type(message, "Summarize the attached notes");
+    await user.upload(screen.getByLabelText("Upload files"), new File(["notes"], "notes.txt", { type: "text/plain" }));
+    await user.type(message, "{Enter}");
+    await failReads();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not read an attached file. Remove it and attach it again.");
+    expect(onSend).not.toHaveBeenCalled();
+    expect(message).toHaveValue("Summarize the attached notes");
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+  });
+
   it("refuses a file it cannot read and keeps the draft", async () => {
     const user = userEvent.setup();
     vi.spyOn(FileReader.prototype, "readAsDataURL").mockImplementation(function (this: FileReader) {

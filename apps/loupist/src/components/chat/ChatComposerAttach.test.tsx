@@ -7,7 +7,7 @@ import type { KnowledgePin } from "../../types";
 
 const pin = { kind: "source" as const, loupistId: "loupist", recordId: "sources", revisionId: "rev", objectId: "src-1", label: "Q3 operating review" };
 
-function MenuComposer({ status, onAddKnowledgePin, onSend = vi.fn() }: { status: "ready" | "empty" | "closed"; onAddKnowledgePin: (value: KnowledgePin) => void; onSend?: ComponentProps<typeof ChatComposer>["onSend"] }) {
+function MenuComposer({ status, onAddKnowledgePin, onSend = vi.fn(), readClipboardImage }: { status: "ready" | "empty" | "closed"; onAddKnowledgePin: (value: KnowledgePin) => void; onSend?: ComponentProps<typeof ChatComposer>["onSend"]; readClipboardImage?: ComponentProps<typeof ChatComposer>["readClipboardImage"] }) {
   const [prompt, setPrompt] = useState("");
   return <TooltipProvider><ChatComposer
     prompt={prompt} onPromptChange={setPrompt}
@@ -17,6 +17,7 @@ function MenuComposer({ status, onAddKnowledgePin, onSend = vi.fn() }: { status:
     onPrivateChatChange={vi.fn()} onModelSelectionChange={vi.fn()}
     onSend={onSend} onFollowUp={vi.fn()} onAbort={vi.fn()}
     mapScreenshot={{ status: () => status, take: async () => new File([new Uint8Array([1])], "world.png", { type: "image/png" }) }}
+    readClipboardImage={readClipboardImage}
     evidenceSources={[{ key: "sources", label: pin.label, pin }]}
     onAddKnowledgePin={onAddKnowledgePin}
   /></TooltipProvider>;
@@ -81,6 +82,48 @@ it("marks the + menu as opened by a press or by a key, so only keys get the focu
   await user.keyboard("{Enter}");
   expect(await screen.findByRole("menu")).toHaveAttribute("data-input", "keyboard");
   expect(trigger).toHaveAttribute("data-input", "keyboard");
+});
+
+describe("the + menu's Files… and Paste image", () => {
+  it("attaches the host clipboard image, closes the menu and returns to the message", async () => {
+    const user = userEvent.setup();
+    const readClipboardImage = vi.fn(async () => ({ status: "image" as const, dataBase64: "iVBORw0KGgo=" }));
+    render(<MenuComposer status="closed" onAddKnowledgePin={vi.fn()} readClipboardImage={readClipboardImage} />);
+    await user.click(screen.getByRole("button", { name: "Add to this message" }));
+    await user.click(screen.getByRole("menuitem", { name: "Paste image" }));
+    expect(await screen.findByRole("img", { name: /^Pasted image / })).toHaveAttribute("src", "data:image/png;base64,iVBORw0KGgo=");
+    expect(readClipboardImage).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(screen.getByRole("textbox", { name: "Message Loupist" })).toHaveFocus();
+  });
+
+  it.each([
+    ["noImage", /clipboard.*does not contain/i],
+    ["tooLarge", /5 MB or smaller/i],
+    ["unavailable", /press (⌘V|Ctrl\+V)/],
+  ] as const)("shows the attachment alert when the host returns %s", async (status, message) => {
+    const user = userEvent.setup();
+    render(<MenuComposer status="closed" onAddKnowledgePin={vi.fn()} readClipboardImage={async () => ({ status })} />);
+    await user.click(screen.getByRole("button", { name: "Add to this message" }));
+    await user.click(screen.getByRole("menuitem", { name: "Paste image" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.queryByRole("img")).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+  });
+
+  it("closes the menu when Files… opens the file dialog, so a picked file lands with the menu gone", async () => {
+    const user = userEvent.setup();
+    render(<MenuComposer status="closed" onAddKnowledgePin={vi.fn()} />);
+    const input = screen.getByLabelText("Upload files");
+    const opened = vi.spyOn(input, "click");
+    await user.click(screen.getByRole("button", { name: "Add to this message" }));
+    await user.click(screen.getByRole("menuitem", { name: "Files…" }));
+    expect(opened).toHaveBeenCalledOnce();
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    await user.upload(input, new File(["notes"], "notes.txt", { type: "text/plain" }));
+    expect(await screen.findByText("notes.txt")).toBeVisible();
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
 });
 
 /** A clipboard as WebKit hands it to a paste: its files as file items, and its text. */

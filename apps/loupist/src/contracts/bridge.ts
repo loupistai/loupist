@@ -1,4 +1,4 @@
-import type { AppMenuContext, PermissionProgress } from "./generated";
+import type { AppMenuContext, BotFocusRequest, BotMemoryForgetRequest, BotMemoryListEntry, BotMemoryListRequest, BotMemoryUpdateRequest, DeliveryRequest, FromPresetRequest, PermissionProgress, ProposalDeclineRequest, ProposalVisitRequest, ResidentRequest, TemplatesRequest, UsageSummary, UsageSummaryRequest } from "./generated";
 import type { LegacyHoldingsStatus } from "./legacyHoldings";
 import type { NoticeSettings } from "../bridge/notice";
 import type { AttentionItem, AttentionNotifyRequest } from "./attention";
@@ -109,6 +109,10 @@ import type {
 
 import type { ConfigScope, ConfigSnapshot, ConfigUpdateRequest, FxChanged, FxDisplay, FxDisplayRequest } from "./config";
 
+type ScriptCommand<C extends keyof import("./generated").BridgeCommands> =
+  (request: import("./generated").BridgeCommands[C]["request"]) =>
+    Promise<import("./generated").BridgeCommands[C]["response"]>;
+
 export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, SharingBridge {
   legacyHoldingsStatus(): Promise<LegacyHoldingsStatus>;
   legacyHoldingsRetry(): Promise<LegacyHoldingsStatus>;
@@ -133,8 +137,15 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
   principleArchive(request: PrincipleArchiveRequest): Promise<Principle>;
   /** Saves prepared bytes through the native save dialog; Rust checks the size and that the extension matches the kind. */
   /** `title` is the Save dialog's title in the interface language (`exportTitle`). */
-  exportSave(request: { suggestedName: string; bytes: number[]; kind: "png" | "mp4" | "webm" | "md" | "csv"; title: string }): Promise<string | null>;
+  exportSave(request: { suggestedName: string; bytes: number[]; kind: "png" | "mp4" | "webm" | "md" | "csv" | "py"; title: string }): Promise<string | null>;
+  scriptsList: ScriptCommand<"scripts_list">;
+  scriptGet: ScriptCommand<"script_get">;
+  scriptSave: ScriptCommand<"script_save">;
+  scriptDelete: ScriptCommand<"script_delete">;
+  scriptTest: ScriptCommand<"script_test">;
+  pythonStepReplay: ScriptCommand<"python_step_replay">;
   pickFile(request: { title: string; filters: { name: string; extensions: string[] }[] }): Promise<string | null>;
+  clipboardReadImage(): Promise<import("./generated").ClipboardImage>;
   appMenuUpdate(request: AppMenuContext): Promise<void>;
   onMenuAction(handler: (action: string) => void): () => void;
 
@@ -155,11 +166,14 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
   runLogsLastError(request: { loupist_id: string | null }): Promise<string | null>;
   briefingSettingsGet(request: { loupistId: string }): Promise<BriefingSettings>;
   briefingSettingsSet(request: BriefingSettingsRequest): Promise<BriefingSettings>;
+  botOfferAccept(request: { loupistId: string; offerId: string }): Promise<ScheduledTask>;
+  botOfferDismiss(request: { loupistId: string; offerId: string }): Promise<void>;
+  botAskAnswer(request: { loupistId: string; askId: string; choice: number }): Promise<void>;
   loginItemSet(request: { enabled: boolean }): Promise<BriefingResidentSettings>;
   loginItemHintDismiss(): Promise<BriefingResidentSettings>;
   loginItemOpenSettings(): Promise<void>;
   briefingResidentSettingsGet(): Promise<BriefingResidentSettings>;
-  briefingResidentSettingsSet(request: { keepRunning: boolean }): Promise<BriefingResidentSettings>;
+  briefingResidentSettingsSet(request: ResidentRequest): Promise<BriefingResidentSettings>;
   inboxList(request: InboxRequest): Promise<InboxPage>;
   inboxMarkRead(request: { loupistId: string; runIds: string[] }): Promise<void>;
   inboxUnreadCounts(): Promise<InboxUnreadCount[]>;
@@ -169,6 +183,16 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
   attentionList(): Promise<AttentionItem[]>;
   /** An OS notification for a chat the user is not watching; false when not sent. */
   attentionNotify(request: AttentionNotifyRequest): Promise<boolean>;
+  scheduledTaskFromPreset(request: FromPresetRequest): Promise<ScheduledTask>;
+  scheduledTriggerGet(request: import("./generated").TriggerGetRequest): Promise<import("./generated").TriggerView>;
+  scheduledTriggerApprove(request: import("./generated").TriggerReviewRequest): Promise<ScheduledTask>;
+  scheduledTriggerRevert(request: import("./generated").TriggerRevertRequest): Promise<ScheduledTask>;
+  scheduledTriggerTest(request: import("./generated").TriggerReviewRequest): Promise<import("./generated").TriggerEvaluation>;
+  scheduledTriggerEvaluations(request: ScheduledTaskIdentity): Promise<import("./generated").TriggerEvaluation[]>;
+  scheduledTaskSetDelivery(request: DeliveryRequest): Promise<ScheduledTask>;
+  notificationPermissionSettingsOpen(): Promise<void>;
+  notificationBotFocusSet(request: BotFocusRequest): Promise<void>;
+  notificationTemplatesSet(request: TemplatesRequest): Promise<void>;
   scheduledTaskRunNow(request: ScheduledTaskIdentity): Promise<ScheduledRun>;
   /** Every scheduled task of the Loupist with its latest run, for the Schedule tab. */
   scheduledTasksList(request: { loupist_id: string }): Promise<ScheduledTaskListItem[]>;
@@ -181,8 +205,10 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
   /** The current task behind a Chat card, or null once it is gone. */
   scheduledTaskGet(request: ScheduledTaskIdentity): Promise<ScheduledTask | null>;
   /** The user's one-tap OK for a task the Loupist proposed in conversation. */
-  scheduledTaskConfirm(request: ScheduledTaskIdentity): Promise<ScheduledTask>;
+  scheduledTaskConfirm(request: ScheduledTaskIdentity & { expected_revision: number }): Promise<ScheduledTask>;
   /** Declines a proposed task that was never confirmed. */
+  scheduledProposalSetDeclined(request: ProposalDeclineRequest): Promise<void>;
+  scheduledProposalVisitEnd(request: ProposalVisitRequest): Promise<void>;
   scheduledTaskDiscard(request: ScheduledTaskIdentity): Promise<void>;
   scheduledTasksActivity(request: { loupist_id: string }): Promise<ScheduledRun[]>;
   scheduledTaskWatch(request: ScheduledRunIdentity, observer: StreamObserver<ChatStreamEvent>): Promise<ScheduledTaskWatch | null>;
@@ -216,6 +242,13 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
   providerOpenConsole(request: { provider: string }): Promise<void>;
   /** Rust opens the provider's fixed usage page (ChatGPT plan). */
   providerOpenUsage(request: { provider: string }): Promise<void>;
+  usageSummary(request: UsageSummaryRequest): Promise<UsageSummary>;
+  /** Entries the Bot keeps on the shown path. */
+  botMemoryList(request: BotMemoryListRequest): Promise<BotMemoryListEntry[]>;
+  /** Forgets one entry on every path, without a model call. */
+  botMemoryForget(request: BotMemoryForgetRequest): Promise<BotMemoryListEntry[]>;
+  /** Replaces one entry's text and keeps its kind, without a model call. */
+  botMemoryUpdate(request: BotMemoryUpdateRequest): Promise<BotMemoryListEntry[]>;
   /** Saves a preset endpoint (Upstage Solar); rejects with code `key_rejected` when the key is refused. */
   providerPresetSave(request: ProviderPresetRequest): Promise<ModelCatalog>;
   providerDisconnect(provider: string): Promise<ModelCatalog>;
@@ -285,6 +318,8 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
   chatDraftRead(request: { loupist_id: string; thread_id: string }): Promise<StoredChatDraft | null>;
   chatDraftWrite(request: { loupist_id: string; thread_id: string }, draft: StoredChatDraft): Promise<void>;
   workspaceUiRead(): Promise<WorkspaceUiState | null>;
+  chatComposerModelRead(request: import("./generated").ComposerModelRead): Promise<import("./generated").ComposerModelSelection | null>;
+  chatComposerModelWrite(request: import("./generated").ComposerModelWrite): Promise<void>;
   workspaceUiWrite(state: WorkspaceUiState): Promise<WorkspaceUiState>;
   loupistList(): Promise<LoupistSummary[]>;
   loupistSelect(loupist_id: string): Promise<LoupistWorkspace>;

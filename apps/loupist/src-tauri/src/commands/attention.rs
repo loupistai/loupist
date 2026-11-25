@@ -38,9 +38,23 @@ pub(crate) enum AttentionKind {
     LineCrossed,
     SavedKeyPermission,
     BriefingConflict,
+    Proposal,
+    TaskPaused,
     UnreadResults,
     /// Watcher alerts delivered but not on screen yet.
     CheckDue,
+    /// A check stopped after repeated code errors.
+    TriggerFailing,
+    /// A newer version of a check is waiting to be turned on.
+    TriggerUpdate,
+    /// A preset offer waiting on the home Thread.
+    Offer,
+    /// A question a scheduled run left on the home Thread.
+    Ask,
+    /// A watch has reported nothing for a long streak.
+    WatchQuiet,
+    /// A watch has delivered several results in a short window.
+    WatchLoud,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -72,12 +86,19 @@ pub(crate) struct AttentionItem {
 fn rank(kind: AttentionKind) -> u8 {
     match kind {
         // Approvals and questions both wait on the user's reply; newest first between them.
-        AttentionKind::Approval | AttentionKind::Question => 1,
+        AttentionKind::Approval
+        | AttentionKind::Question
+        | AttentionKind::Proposal
+        | AttentionKind::TaskPaused
+        | AttentionKind::Offer
+        | AttentionKind::Ask => 1,
+        AttentionKind::WatchLoud | AttentionKind::WatchQuiet => 2,
         AttentionKind::SavedKeyPermission => 0,
         AttentionKind::LineCrossed => 2,
         AttentionKind::BriefingConflict => 3,
         AttentionKind::UnreadResults => 4,
         AttentionKind::CheckDue => 5,
+        AttentionKind::TriggerFailing | AttentionKind::TriggerUpdate => 1,
     }
 }
 
@@ -292,6 +313,45 @@ pub(crate) async fn collect(state: &AppState) -> Result<Vec<AttentionItem>, Comm
                 at_ms,
             });
         }
+        use crate::scheduled_tasks::types::{Schedule, TaskStatus};
+        for task in state
+            .store
+            .scheduled_tasks_list(&loupist.id)
+            .map_err(super::map_store)?
+        {
+            let kind = if task.awaiting_confirmation {
+                if task.declined_in_visit.is_some()
+                    || matches!(task.schedule, Schedule::Once { at_ms } if at_ms <= now)
+                {
+                    continue;
+                }
+                AttentionKind::Proposal
+            } else if task.trigger.as_ref().is_some_and(|trigger| {
+                trigger.state == crate::scheduled_tasks::types::TriggerPhase::Failing
+            }) {
+                AttentionKind::TriggerFailing
+            } else if task.trigger.as_ref().is_some_and(|trigger| {
+                trigger.state == crate::scheduled_tasks::types::TriggerPhase::UpdateProposed
+                    && trigger.pending.is_some()
+            }) {
+                AttentionKind::TriggerUpdate
+            } else if task.status == TaskStatus::Paused && task.last_error.is_some() {
+                AttentionKind::TaskPaused
+            } else {
+                continue;
+            };
+            items.push(AttentionItem {
+                kind,
+                loupist_id: loupist.id.clone(),
+                loupist_name: loupist.name.clone(),
+                chat_id: None,
+                record_id: Some(task.id),
+                title: task.title,
+                count: None,
+                due_date: None,
+                at_ms: task.updated_at_ms,
+            });
+        }
         let (count, conflict, latest) = state
             .store
             .unread_runs_summary(&loupist.id)
@@ -365,6 +425,59 @@ pub(crate) async fn collect(state: &AppState) -> Result<Vec<AttentionItem>, Comm
                 });
             }
         }
+        if let Ok(cards) = crate::chat::cards::waiting(state, &loupist.id) {
+            for card in cards {
+                items.push(AttentionItem {
+                    kind: match card.kind {
+                        crate::chat::cards::WaitingKind::Offer => AttentionKind::Offer,
+                        crate::chat::cards::WaitingKind::Ask => AttentionKind::Ask,
+                    },
+                    loupist_id: loupist.id.clone(),
+                    loupist_name: loupist.name.clone(),
+                    chat_id: Some(card.chat_id),
+                    record_id: Some(card.id),
+                    title: card.title,
+                    count: None,
+                    due_date: card.results_date,
+                    at_ms: card.at_ms,
+                });
+            }
+        }
+        for task in state
+            .store
+            .scheduled_tasks_list(&loupist.id)
+            .map_err(super::map_store)?
+        {
+            if task.kind != crate::scheduled_tasks::types::TaskKind::Custom
+                || task.status != crate::scheduled_tasks::types::TaskStatus::Active
+                || task.awaiting_confirmation
+            {
+                continue;
+            }
+            let runs = state
+                .store
+                .scheduled_task_runs(&loupist.id, &task.id)
+                .map_err(super::map_store)?;
+            let Some(kind) = watch_health(
+                task.watch.report,
+                crate::briefings::desktop::notify_for(state, &task),
+                &runs,
+                now,
+            ) else {
+                continue;
+            };
+            items.push(AttentionItem {
+                kind,
+                loupist_id: loupist.id.clone(),
+                loupist_name: loupist.name.clone(),
+                chat_id: None,
+                record_id: Some(task.id),
+                title: task.title,
+                count: None,
+                due_date: None,
+                at_ms: task.updated_at_ms,
+            });
+        }
     }
     if !refused.is_empty() {
         // Only refusals the user has not approved since still need them.
@@ -397,6 +510,47 @@ pub(crate) async fn collect(state: &AppState) -> Result<Vec<AttentionItem>, Comm
     }
     sort_items(&mut items);
     Ok(items)
+}
+
+/// A when-met watch that has been quiet for six finished runs in a row.
+pub(crate) const QUIET_STREAK: usize = 6;
+/// Delivered results inside a week that make a Now watch too loud.
+pub(crate) const LOUD_COUNT: usize = 4;
+pub(crate) const LOUD_WINDOW_MS: i64 = 7 * DAY_MS;
+
+pub(crate) fn watch_health(
+    report: Option<crate::scheduled_tasks::types::ReportPolicy>,
+    notify: crate::scheduled_tasks::types::NotifyPolicy,
+    runs: &[crate::scheduled_tasks::types::Run],
+    now: i64,
+) -> Option<AttentionKind> {
+    use crate::scheduled_tasks::types::{NotifyPolicy, ReportPolicy, RunStatus};
+    let finished: Vec<_> = runs
+        .iter()
+        .filter(|run| run.status != RunStatus::Running)
+        .collect();
+    let quiet = report == Some(ReportPolicy::WhenMet)
+        && finished.len() >= QUIET_STREAK
+        && finished
+            .iter()
+            .take(QUIET_STREAK)
+            .all(|run| run.quiet && run.status == RunStatus::Succeeded);
+    if quiet {
+        return Some(AttentionKind::WatchQuiet);
+    }
+    let loud = notify == NotifyPolicy::Now
+        && finished
+            .iter()
+            .filter(|run| {
+                run.status == RunStatus::Succeeded
+                    && !run.quiet
+                    && run
+                        .finished_at_ms
+                        .is_some_and(|at| now.saturating_sub(at) <= LOUD_WINDOW_MS)
+            })
+            .count()
+            >= LOUD_COUNT;
+    loud.then_some(AttentionKind::WatchLoud)
 }
 
 #[derive(Deserialize)]
@@ -486,6 +640,69 @@ pub(crate) fn attention_notify(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scheduled_tasks::types::{NotifyPolicy, ReportPolicy, Run, RunStatus, TaskKind};
+
+    fn run(id: &str, finished: i64, quiet: bool) -> Run {
+        Run {
+            failure_streak: None,
+            first_run: false,
+            memory_save_skip: None,
+            discarded_memory_items: None,
+            briefing_context: None,
+            kind: TaskKind::Custom,
+            read_at_ms: None,
+            summary: String::new(),
+            quiet,
+            message_id: None,
+            skipped_tools: Vec::new(),
+            id: id.into(),
+            task_id: "task".into(),
+            loupist_id: "loupist-a".into(),
+            task_revision: 1,
+            task_title: "Filings".into(),
+            thread_id: None,
+            run_id: id.into(),
+            scheduled_for_ms: finished,
+            started_at_ms: finished,
+            finished_at_ms: Some(finished),
+            status: RunStatus::Succeeded,
+            error: None,
+            trigger: None,
+        }
+    }
+
+    #[test]
+    fn a_long_quiet_streak_and_a_loud_week_are_host_cards() {
+        let now = 10_000_000_000;
+        let quiet: Vec<_> = (0..QUIET_STREAK)
+            .map(|index| run(&index.to_string(), now - index as i64, true))
+            .collect();
+        assert_eq!(
+            watch_health(
+                Some(ReportPolicy::WhenMet),
+                NotifyPolicy::Digest,
+                &quiet,
+                now
+            ),
+            Some(AttentionKind::WatchQuiet)
+        );
+        let loud: Vec<_> = (0..LOUD_COUNT)
+            .map(|index| run(&format!("l{index}"), now - index as i64 * 1_000, false))
+            .collect();
+        assert_eq!(
+            watch_health(Some(ReportPolicy::WhenMet), NotifyPolicy::Now, &loud, now),
+            Some(AttentionKind::WatchLoud)
+        );
+        assert_eq!(
+            watch_health(
+                Some(ReportPolicy::WhenMet),
+                NotifyPolicy::Digest,
+                &loud,
+                now
+            ),
+            None
+        );
+    }
 
     #[tokio::test]
     async fn an_attention_store_failure_is_returned_without_raw_sqlite_details() {

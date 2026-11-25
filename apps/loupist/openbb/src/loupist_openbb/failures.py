@@ -65,11 +65,46 @@ ARGUMENT_REFUSALS = (
     *YAHOO_STATEMENT_ARGUMENTS.values(),
 )
 CREDENTIAL_REASONS = frozenset({"key_format", "key_not_accepted"})
+# The host reads one MCP stdio line of at most 32 MiB (`MAX_FRAME_BYTES` in
+# src-tauri/src/mcp.rs) and ends the whole session on a longer one. A result
+# that would not fit is refused as that one call instead, leaving room for the
+# JSON-RPC envelope around it.
+MAX_RESULT_BYTES = 32 * 1024 * 1024 - 64 * 1024
 
 
 def empty_result(provider: str | None = None) -> dict[str, Any]:
     marker = {"kind": "empty_result"}
     if provider:
+        marker["provider"] = provider
+    return {"loupist_error": marker}
+
+
+def result_bytes(result: Any) -> int:
+    """The UTF-8 length of the result as the MCP stdio writer serializes it."""
+
+    from mcp.types import CallToolResult
+
+    wire = CallToolResult(
+        content=result.content,
+        structuredContent=result.structured_content,
+        isError=result.is_error,
+    )
+    return len(
+        wire.__pydantic_serializer__.to_json(wire, by_alias=True, exclude_none=True)
+    )
+
+
+def result_too_large(provider: str | None, size: int) -> dict[str, Any]:
+    # Like every marker here, this carries no text: the host's
+    # `rejected_mcp_result` writes what the model reads (the reply was larger
+    # than one result carries, the request was valid, a shorter date range or
+    # one table or series fits).
+    marker: dict[str, Any] = {
+        "kind": "result_too_large",
+        "bytes": size,
+        "limit_bytes": MAX_RESULT_BYTES,
+    }
+    if _safe_identifier(provider):
         marker["provider"] = provider
     return {"loupist_error": marker}
 

@@ -13,19 +13,22 @@ test('fixture tail filters failures and summary counts percentiles and known usa
     const dir = join(root, '.loupist/logs'); await mkdir(dir, { recursive: true });
     const base = { loupistId: 'loupist-fixture', runId: 'run-1', startedAtMs: Date.now() - 10_000, model: 'fixture/model', effort: 'medium', tools: {}, refusedTools: [], memoryChanges: {}, notes: [] };
     const records = [
-      { ...base, kind: 'chat', status: 'ok', durationMs: 100, usage: { input: 10, cachedInput: 5, output: 2 } },
-      { ...base, kind: 'briefing', status: 'ok', durationMs: 120, usage: { input: 10, cachedInput: 5, output: 2 } },
-      { ...base, runId: 'run-2', kind: 'world', status: 'failed', failureKind: 'world_worker_failed', durationMs: 900, usage: null },
+      { ...base, kind: 'chat', status: 'ok', durationMs: 100, requests: 2, costEstimate: { microusd: 321, fromProvider: false }, usage: { input: 10, cachedInput: 5, output: 2 } },
+      { ...base, kind: 'briefing', status: 'ok', durationMs: 120, requests: 2, costEstimate: { microusd: 321, fromProvider: false }, usage: { input: 10, cachedInput: 5, output: 2 } },
+      { ...base, runId: 'run-2', kind: 'world', status: 'failed', failureKind: 'world_worker_failed', durationMs: 900, requests: 1, costEstimate: { microusd: 12000, fromProvider: true }, usage: null },
       { ...base, runId: 'run-old', startedAtMs: Date.now() - 2 * 86400000, kind: 'chat', status: 'ok', durationMs: 10, usage: null },
     ];
     await writeFile(join(dir, 'runs-20261029.jsonl'), records.map(r => JSON.stringify(r)).join('\n') + '\n{"incomplete":');
     assert.equal((await readRuns(dir)).skipped, 1);
     const tail = execFileSync(process.execPath, [fileURLToPath(new URL('./runs.mjs', import.meta.url)), 'tail', '--loupist', root, '--kind', 'world', '--failed'], { encoding: 'utf8' });
     assert.match(tail, /world failed 900ms/); assert.match(tail, /failure=world_worker_failed/); assert.doesNotMatch(tail, /run-1/);
+    assert.match(tail, /req=1 cost=\$0\.012000\(billed\)/);
     const summary = JSON.parse(await main(['summary', '--loupist', root, '--since', '24h']));
     assert.deepEqual(summary.counts, { chat: 1, briefing: 1, world: 1 });
     assert.deepEqual(summary.failures, { world: 1 });
     assert.equal(summary.p50Ms, 120); assert.equal(summary.p95Ms, 900);
+    assert.equal(summary.requests, 3);
+    assert.deepEqual(summary.costEstimate, { microusd: 12321, fromProvider: false });
     assert.deepEqual(summary.usage, { input: 10, cachedInput: 5, output: 2, knownRuns: 1, unknownRuns: 1 });
     await mkdir(join(root, 'logs'));
     await writeFile(join(root, 'logs/runs-20261029.jsonl'), JSON.stringify({ ...base, loupistId: null, kind: 'connection_sign_in', status: 'ok', durationMs: 20, usage: null }) + '\n');

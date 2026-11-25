@@ -10,7 +10,7 @@ import type { LinkPath } from "../chat/handoff";
 import type { ChatProgress, ChatProgressPatch, ChatSaveActivity } from "../chat/progress";
 import type { DatasetRef } from "../datasets";
 import type { AsOfReport, NumberCheck } from "../domain/answer_checks";
-import type { ChatEvidenceDelivery, ChatEvidenceKind, ChatEvidenceMatch, ChatFailureKind, ChatFeedback, ChatFeedbackRating, ChatMessageStatus, ChatPerformance, ChatToolRefusal, DiscardedMemoryItem, HandoffAction, HomeAlert, HomeDelivery, HomeHandoff, HomeLink, HomeVocabulary, MemorySaveSkipReason, MemoryUpdateResult, ScheduledTurn, UnsavedThesis } from "../domain/chat";
+import type { ChatEvidenceDelivery, ChatEvidenceKind, ChatEvidenceMatch, ChatFailureKind, ChatFeedback, ChatFeedbackRating, ChatMessageStatus, ChatPerformance, ChatToolRefusal, DiscardedMemoryItem, HandoffAction, HomeAlert, HomeAsk, HomeDelivery, HomeHandoff, HomeLink, HomeOffer, HomeVocabulary, MemorySaveSkipReason, MemoryUpdateResult, ScheduledTurn, UnsavedThesis } from "../domain/chat";
 import type { LoupistTemplate, LoupistTone } from "../domain/loupist";
 import type { LensReceipt } from "../domain/memory";
 import type { RecordKind, TimePoint } from "../knowledge/model";
@@ -170,6 +170,8 @@ export type ChatMessageDto = {
   alert?: HomeAlert,
   vocabulary?: HomeVocabulary,
   link?: HomeLink,
+  offers?: Array<HomeOffer>,
+  ask?: HomeAsk,
   handoff: HomeHandoff | null,
   research_session_id?: string,
   handoff_note?: HandoffNoteDto,

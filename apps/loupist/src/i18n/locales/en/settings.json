@@ -1,4 +1,50 @@
 {
+  "usage": {
+    "period": "Usage period",
+    "today": "Today",
+    "days": "{{days}} days",
+    "loading": "Loading usage…",
+    "loadError": "Could not load usage.",
+    "empty": "No model usage in this period.",
+    "manageError": "Could not open the usage page.",
+    "accounts": "AI accounts",
+    "tokens": "{{tokens}} tokens ({{cached}} cached) · {{output}} output",
+    "requests_one": "{{formattedCount}} request",
+    "requests_other": "{{formattedCount}} requests",
+    "runs_one": "{{formattedCount}} run",
+    "runs_other": "{{formattedCount}} runs",
+    "unknownRuns_one": "Usage totals are partial. {{formattedCount}} run is missing figures.",
+    "unknownRuns_other": "Usage totals are partial. {{formattedCount}} runs are missing figures.",
+    "costEstimate": "about {{price}} (estimate)",
+    "costBilled": "billed {{price}}",
+    "costUnderCent": "< $0.01",
+    "plan": "{{account}} does not tell apps how much of the plan is left. These are the requests Loupist sent.",
+    "weeklyLimit": "To set a weekly limit for Loupist, open Settings › Usage in ChatGPT.",
+    "weeklyAccount": "Last 7 days in Loupist: {{requests}} requests · {{tokens}} tokens",
+    "daily": "Daily requests",
+    "date": "Date",
+    "you": "You",
+    "background": "Background",
+    "world": "World",
+    "work": "By kind of work",
+    "loupists": "By Loupist",
+    "programs": "Programs",
+    "checks": "{{evaluations}} checks, {{reads}} reads, {{met}} met",
+    "removedLoupist": "Removed Loupist",
+    "removedProgram": "Deleted program",
+    "surfaces": {
+      "bot": "Bot",
+      "research": "Research",
+      "handoff": "Research hand-offs",
+      "briefing": "Briefing",
+      "scheduled": "Scheduled tasks",
+      "learning": "Daily learning",
+      "deep_research": "Deep research",
+      "world": "World building",
+      "world_schema": "Updating what World tracks",
+      "method_learning": "Method learning"
+    }
+  },
   "general": {
     "label": "General",
     "description": "When Loupist runs, and what leaves this Mac.",
@@ -767,5 +813,31 @@
     "changeKey": "Change key…",
     "reconnectEllipsis": "Reconnect…",
     "moreActions": "More actions for {{label}}"
-  }
+  },
+  "notifications": {
+    "osPermissions": "macOS notification permissions",
+    "openSettings": "Open System Settings",
+    "openFailed": "Could not open notification settings.",
+    "defaultTitle": "Defaults by kind",
+    "kind": { "crossedLine": "Line crossings", "filings": "Filings and results", "briefing": "Briefing", "other": "Other scheduled work", "failures": "Failed runs" },
+    "now": "Now",
+    "grouped": "With the next update",
+    "botOnly": "In Bot only",
+      "title": "Notifications",
+      "keywords": "quiet hours notification privacy",
+      "description": "Choose when Bot can interrupt you and what appears in notifications.",
+      "quietHours": "Quiet hours",
+      "quietDescription": "Hold notifications until quiet hours end.",
+      "start": "Start",
+      "end": "End",
+      "dailyCap": "Daily cap",
+      "details": "Show details in notifications",
+      "detailsDescription": "Include task names and a preview of the result.",
+      "template": {
+      "lineCrossed": "Line crossed",
+        "result": "{{loupist}}: {{task}}",
+        "privateResult": "{{loupist}}: a result is ready",
+        "digest": "{{total}} results in {{loupist}}"
+      }
+    }
 }

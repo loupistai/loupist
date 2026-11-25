@@ -7,9 +7,58 @@ use objc2::{
 use objc2_foundation::{NSNotification, NSNotificationCenter, NSObject, NSString, NSUserDefaults};
 use tauri::{AppHandle, WebviewWindow};
 
-pub(crate) fn disable_automatic_fullscreen_item() {
-    NSUserDefaults::standardUserDefaults()
-        .setBool_forKey(false, &NSString::from_str("NSFullScreenMenuItemEverywhere"));
+/// AppKit adds items of its own to an app's menus: Enter Full Screen to the
+/// View menu, and Start Dictation… and Emoji & Symbols to the Edit menu.
+/// They are titled in the bundle's development language whatever the
+/// interface language, and the menu table already has its own Full Screen.
+/// Called before the event loop starts, so AppKit reads them at launch.
+pub(crate) fn disable_automatic_menu_items() {
+    let defaults = NSUserDefaults::standardUserDefaults();
+    defaults.setBool_forKey(false, &NSString::from_str("NSFullScreenMenuItemEverywhere"));
+    for key in [
+        "NSDisabledDictationMenuItem",
+        "NSDisabledCharacterPaletteMenuItem",
+    ] {
+        defaults.setBool_forKey(true, &NSString::from_str(key));
+    }
+}
+
+/// AppKit appends AutoFill (Contact…, Passwords…) to the Edit menu each time
+/// a main menu is set, with no setting to turn it off and in English under a
+/// Korean interface. It comes after the items Loupist put there, so the Edit
+/// submenu at `position` keeps its first `own` items. Runs on the main thread
+/// after the menu is set; a submenu not titled `title` is left alone.
+pub(super) fn keep_own_edit_items(position: usize, title: &str, own: usize) {
+    let (Ok(position), Ok(own)) = (isize::try_from(position), isize::try_from(own)) else {
+        return;
+    };
+    // The app menu is AppKit's, read and changed on the main thread.
+    unsafe {
+        let main: Option<Retained<AnyObject>> = msg_send![&*application(), mainMenu];
+        let Some(main) = main else {
+            return;
+        };
+        let top: isize = msg_send![&*main, numberOfItems];
+        if position >= top {
+            return;
+        }
+        let item: Option<Retained<AnyObject>> = msg_send![&*main, itemAtIndex: position];
+        let submenu: Option<Retained<AnyObject>> = item.and_then(|item| msg_send![&*item, submenu]);
+        let Some(submenu) = submenu else {
+            return;
+        };
+        let shown: Retained<NSString> = msg_send![&*submenu, title];
+        if shown.to_string() != title {
+            return;
+        }
+        loop {
+            let count: isize = msg_send![&*submenu, numberOfItems];
+            if count <= own {
+                break;
+            }
+            let _: () = msg_send![&*submenu, removeItemAtIndex: count - 1];
+        }
+    }
 }
 
 fn application() -> Retained<AnyObject> {

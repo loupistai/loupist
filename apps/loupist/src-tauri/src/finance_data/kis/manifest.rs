@@ -42,6 +42,7 @@ pub(in crate::finance_data) struct KisAccessToken {
 #[derive(Deserialize)]
 pub(in crate::finance_data) struct KisTokenResponse {
     pub(in crate::finance_data) access_token: String,
+    pub(in crate::finance_data) access_token_token_expired: String,
     pub(in crate::finance_data) token_type: String,
     #[serde(deserialize_with = "deserialize_kis_expires_in")]
     pub(in crate::finance_data) expires_in: i64,
@@ -251,8 +252,8 @@ impl KisManifest {
             || self.operations.len() != 146
             || self.market_operation_count() != 91
             || self.account_operation_count() != 55
-            || self.public_operation_count() != 88
-            || self.profile_gated_market_operation_count() != 3
+            || self.public_operation_count(KisEnvironment::Real) != 88
+            || self.profile_gated_market_operation_count(KisEnvironment::Real) != 3
         {
             return Err(FinanceDataError::Configuration(
                 "bundled KIS operation manifest does not match its pinned contract".to_owned(),
@@ -301,39 +302,57 @@ impl KisManifest {
             .count()
     }
 
-    pub(in crate::finance_data) fn public_operation_count(&self) -> usize {
+    pub(in crate::finance_data) fn public_operation_count(
+        &self,
+        environment: KisEnvironment,
+    ) -> usize {
         self.operations
             .iter()
-            .filter(|operation| !operation.requires_account_profile())
+            .filter(|operation| {
+                operation.available_in(environment) && !operation.requires_account_profile()
+            })
             .count()
     }
 
     pub(in crate::finance_data) fn agent_operation_count(
         &self,
+        environment: KisEnvironment,
         profile: Option<&KisAccountProfile>,
     ) -> usize {
         self.operations
             .iter()
-            .filter(|operation| operation.available_to_agent(profile))
+            .filter(|operation| {
+                operation.available_in(environment) && operation.available_to_agent(profile)
+            })
             .count()
     }
 
     pub(in crate::finance_data) fn agent_scope_operation_count(
         &self,
+        environment: KisEnvironment,
         profile: Option<&KisAccountProfile>,
         scope: KisOperationScope,
     ) -> usize {
         self.operations
             .iter()
-            .filter(|operation| operation.scope == scope && operation.available_to_agent(profile))
+            .filter(|operation| {
+                operation.scope == scope
+                    && operation.available_in(environment)
+                    && operation.available_to_agent(profile)
+            })
             .count()
     }
 
-    pub(in crate::finance_data) fn profile_gated_market_operation_count(&self) -> usize {
+    pub(in crate::finance_data) fn profile_gated_market_operation_count(
+        &self,
+        environment: KisEnvironment,
+    ) -> usize {
         self.operations
             .iter()
             .filter(|operation| {
-                operation.scope == KisOperationScope::Market && operation.requires_account_profile()
+                operation.scope == KisOperationScope::Market
+                    && operation.available_in(environment)
+                    && operation.requires_account_profile()
             })
             .count()
     }
@@ -344,6 +363,12 @@ impl KisManifest {
 }
 
 impl KisOperation {
+    pub(in crate::finance_data) fn available_in(&self, environment: KisEnvironment) -> bool {
+        self.tr_id_rules.iter().any(|rule| {
+            rule.when.get("environment").map(String::as_str) == Some(environment.as_str())
+        })
+    }
+
     pub(in crate::finance_data) fn requires_account_profile(&self) -> bool {
         self.parameters
             .iter()
@@ -470,7 +495,7 @@ pub(in crate::finance_data) fn validate_kis_operation(
         }
         _ => {}
     }
-    validate_kis_tr_ids(&operation.tr_id_rules, &ids)?;
+    validate_kis_tr_ids(operation, &ids)?;
     validate_kis_response_contract(operation)?;
     Ok(())
 }
@@ -550,7 +575,7 @@ pub(in crate::finance_data) fn valid_kis_operation_id(value: &str) -> bool {
 }
 
 pub(in crate::finance_data) fn validate_kis_tr_ids(
-    rules: &[KisTransactionIdRule],
+    operation: &KisOperation,
     parameter_ids: &std::collections::BTreeSet<&str>,
 ) -> Result<(), FinanceDataError> {
     let valid = |value: &str| {
@@ -560,8 +585,8 @@ pub(in crate::finance_data) fn validate_kis_tr_ids(
                 .bytes()
                 .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
     };
-    if rules.len() < 2
-        || rules.len() > 32
+    let rules = &operation.tr_id_rules;
+    if rules.len() > 32
         || rules.iter().any(|rule| {
             !valid(&rule.value)
                 || rule
@@ -572,11 +597,9 @@ pub(in crate::finance_data) fn validate_kis_tr_ids(
                     parameter != "environment" && !parameter_ids.contains(parameter.as_str())
                 })
         })
-        || !["real", "demo"].into_iter().all(|environment| {
-            rules
-                .iter()
-                .any(|rule| rule.when.get("environment").map(String::as_str) == Some(environment))
-        })
+        || !operation.available_in(KisEnvironment::Real)
+        || (operation.scope == KisOperationScope::Account
+            && !operation.available_in(KisEnvironment::Demo))
     {
         return Err(FinanceDataError::Configuration(
             "bundled KIS transaction rules are invalid".to_owned(),
@@ -584,6 +607,9 @@ pub(in crate::finance_data) fn validate_kis_tr_ids(
     }
     Ok(())
 }
+
+/// A demo connection serves fewer reads than a real one.
+pub(in crate::finance_data) const ENVIRONMENT_UNSUPPORTED: &str = "this Korea Investment operation is not served on this connection's environment (a demo connection has fewer reads than a real one); call kis_operation_search, which lists only the operations this environment serves, and read one of those";
 
 pub(in crate::finance_data) fn prepare_kis_request<'a>(
     manifest: &'a KisManifest,
@@ -599,6 +625,9 @@ pub(in crate::finance_data) fn prepare_kis_request<'a>(
                 "KIS operation ID is not in the reviewed manifest",
             ))?;
     let KisRequestAuthority::AgentRead = authority;
+    if !operation.available_in(environment) {
+        return Err(FinanceDataError::InvalidQuery(ENVIRONMENT_UNSUPPORTED));
+    }
     if !operation.available_to_agent(profile) {
         return Err(FinanceDataError::InvalidQuery(
             "KIS operation requires a configured account profile",

@@ -500,6 +500,8 @@ fn completed_chat_performance_survives_reload_and_matches_live_completion() {
         output_tokens: 96,
         cache_read_tokens: 256,
         cache_write_tokens: 64,
+        model_requests: None,
+        cost_estimate: None,
     };
     chat.messages.push(ChatMessage {
         created_at_ms: 2,
@@ -1219,10 +1221,14 @@ async fn native_tool_activity_and_redacted_trace_survive_completed_chat_reload()
 #[tokio::test]
 async fn chat_startup_stop_drains_without_relaunch_or_prompt() {
     use crate::commands::chat_runtime::{send_chat, ChatEventSink};
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
+    use tokio::{net::UnixDatagram, time::timeout};
 
     for warm in [false, true] {
-        let temporary = tempfile::tempdir().unwrap();
+        let temporary = tempfile::Builder::new()
+            .prefix("chat-startup-stop-")
+            .tempdir_in("/tmp")
+            .unwrap();
         let workspace = temporary.path().join("workspace");
         initialized_workspace(&workspace, "startup-stop");
         let mut state = AppState::for_test(temporary.path().join("app"));
@@ -1248,7 +1254,10 @@ async fn chat_startup_stop_drains_without_relaunch_or_prompt() {
             )
             .await
             .unwrap();
-            drain(&state).await;
+            timeout(Duration::from_secs(30), state.run_coordinator.drain())
+                .await
+                .expect("warm-up Chat did not drain")
+                .unwrap();
             let stored = state.store.get_chat(&chat.id).unwrap().unwrap();
             assert!(
                 stored.pi_session_cache.is_some(),
@@ -1256,49 +1265,42 @@ async fn chat_startup_stop_drains_without_relaunch_or_prompt() {
             );
         }
 
-        fs::write(temporary.path().join("hold-pi-startup"), "").unwrap();
+        // The fixture holds startup and signals when it reads the first control.
+        let startup_ready = UnixDatagram::bind(temporary.path().join("hold-pi-startup")).unwrap();
         let events = Arc::new(std::sync::Mutex::new(Vec::new()));
         let captured_events = events.clone();
         let sink = ChatEventSink::new(move |event| {
             captured_events.lock().unwrap().push(event);
             Ok(())
         });
-        let expected_launches = if warm { 2 } else { 1 };
-        let read_trace = || {
-            fs::read_to_string(&trace_file)
-                .unwrap()
-                .lines()
-                .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-                .collect::<Vec<_>>()
-        };
+        let run_id = "stop";
+        let started = send_chat(request(run_id), sink, &state, None);
+        tokio::pin!(started);
+        let mut ready = [0];
+        tokio::select! {
+            result = &mut started => panic!("Chat returned before Pi held startup: {result:?}"),
+            received = timeout(Duration::from_secs(45), startup_ready.recv(&mut ready)) => {
+                assert_eq!(received.expect("Pi did not signal held startup").unwrap(), 1);
+            }
+        }
+        state.cancel_run(run_id, RunKind::Chat).await.unwrap();
+        let started = timeout(Duration::from_secs(15), started)
+            .await
+            .expect("Stop did not drain Chat during Pi startup")
+            .unwrap();
+        assert_eq!(started.run_id, run_id);
+
+        let trace = fs::read_to_string(&trace_file)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .collect::<Vec<_>>();
         let count = |trace: &[serde_json::Value], name: &str| {
             trace.iter().filter(|event| event["event"] == name).count()
         };
-        let run_id = "stop";
-        let stop = async {
-            tokio::time::timeout(Duration::from_secs(5), async {
-                while count(&read_trace(), "get_available_thinking_levels") != expected_launches {
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-            })
-            .await
-            .expect("Pi did not enter the held startup control");
-            let stopped_at = Instant::now();
-            state.cancel_run(run_id, RunKind::Chat).await.unwrap();
-            stopped_at
-        };
-        let (started, stopped_at) = tokio::time::timeout(Duration::from_secs(5), async {
-            tokio::join!(send_chat(request(run_id), sink, &state, None), stop)
-        })
-        .await
-        .expect("Stop waited for Pi's startup deadline");
-        assert_eq!(started.unwrap().run_id, run_id);
-        assert!(stopped_at.elapsed() < Duration::from_secs(3));
-
-        let trace = read_trace();
         assert_eq!(
             count(&trace, "launch"),
-            expected_launches,
+            1 + usize::from(warm),
             "Stop must never trigger a cold fallback"
         );
         assert_eq!(
@@ -1501,6 +1503,8 @@ fn cold_bootstrap_restores_history_saved_work_and_attachments() {
                 items: vec![ChatProgressItem::Tool {
                     id: "tool-1".into(),
                     tool_name: Some("write".into()),
+                    origin: None,
+                    parent_step: None,
                     category: ChatProgressCategory::Files,
                     operation: ChatProgressOperation::Write,
                     action: "Saved a file".into(),

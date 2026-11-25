@@ -1,4 +1,4 @@
-import { useCallback, type ComponentProps, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { useCallback, useEffect, type ComponentProps, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { Chat } from "@ai-sdk/react";
 import i18n from "@/i18n";
 import type { ChatView } from "../components/ChatView";
@@ -6,7 +6,7 @@ import type { ConnectSheetTarget } from "../components/settings/ConnectSheet";
 import type { LoupistUIMessage } from "../chat/ai-sdk";
 import type { RecoveredChatRun } from "../chat/loupistRunRegistry";
 import { chatSessionKey, type HostedWatchPhase } from "../chat/sessionRegistry";
-import { modelRunSelection, resolveExplicitSelection, usableCatalogModel } from "../lib/modelSelection";
+import { modelRunSelection, resolveExplicitSelection, sameRunSelection, usableCatalogModel } from "../lib/modelSelection";
 import type { ChatArtifactRef, ChatThread, LoupistBridge, LoupistSummary, ModelRunSelection } from "../types";
 import type { ChatDraft, useChatDrafts } from "./useChatDrafts";
 import type { useChatSessions } from "./useChatSessions";
@@ -15,7 +15,7 @@ import type { useLoupistDirectory } from "./useLoupistDirectory";
 import type { useModelCatalog } from "./useModelCatalog";
 import type { useThreadActions } from "./useThreadActions";
 import type { useWorkspacePanel } from "./useWorkspacePanel";
-import { EMPTY_CHAT_THREAD_ID } from "./emptyChat";
+import { EMPTY_CHAT_THREAD_ID, isEmptyChatThreadId } from "./emptyChat";
 
 type ChatViewModelInput = {
   bridge: LoupistBridge;
@@ -61,30 +61,49 @@ export function useChatViewModel({
   refreshKnowledge, onOpenModelSettings, onOpenChatPreferences, onOpenFollowing,
 }: ChatViewModelInput): ComponentProps<typeof ChatView> | null {
   const selectedLoupistId = selectedLoupist?.id ?? null;
-  const chosen = selectedLoupistId ? model.selections[selectedLoupistId] : undefined;
   const resolved = configuration.snapshot?.modelSelection ?? model.catalog?.default_selection;
+  // Each saved Chat restores its own selection. A new Chat can inherit the last model sent.
+  const choice = effectiveChatKey && Object.hasOwn(model.selections, effectiveChatKey) ? model.selections[effectiveChatKey] : undefined;
+  const { restoreSelection } = model;
+  const workspaceAvailable = selectedLoupist?.availability?.status === "available";
+  useEffect(() => {
+    if (active && workspaceAvailable && persistedThreadId && effectiveChatKey && choice === undefined) {
+      return restoreSelection(effectiveChatKey);
+    }
+  }, [active, workspaceAvailable, persistedThreadId, effectiveChatKey, choice, restoreSelection]);
+  const selectionReady = isEmptyChatThreadId(effectiveThreadId) ? model.lastSentLoaded : !persistedThreadId || choice !== undefined;
+  const selectionError = !selectionReady && model.selectionReadError?.key === effectiveChatKey
+    ? model.selectionReadError.message : undefined;
+  const carried = choice === undefined && isEmptyChatThreadId(effectiveThreadId) ? model.lastSent : undefined;
+  const carriedChoice = carried && usableCatalogModel(model.catalog, carried.model_profile_id)
+    && !sameRunSelection(resolveExplicitSelection(model.catalog, carried), modelRunSelection(resolved)) ? carried : undefined;
+  const chosen = choice === undefined ? carriedChoice : choice ?? undefined;
   const modelSelection = chosen ? resolveExplicitSelection(model.catalog, chosen) : modelRunSelection(resolved);
   const { createThreadForLoupist } = threadActions;
   const { adopt } = drafts;
+  const { moveSelection } = model;
+  // The new chat's choice as shown: what was picked in it, its Default row, or what it started from.
+  const draftChoice = choice === null ? null : chosen;
   const createThread = useCallback(
     async () => {
       if (!selectedLoupist) return null;
       const created = await createThreadForLoupist(selectedLoupist.id);
       if (created) {
+        moveSelection(chatSessionKey(selectedLoupist.id, EMPTY_CHAT_THREAD_ID), chatSessionKey(selectedLoupist.id, created.id), draftChoice);
         fileWrites.current = fileWrites.current.then(() => bridge.chatDraftFilesWrite({ loupist_id: selectedLoupist.id, thread_id: EMPTY_CHAT_THREAD_ID }, [])).catch(() => {});
         adopt(chatSessionKey(selectedLoupist.id, EMPTY_CHAT_THREAD_ID), chatSessionKey(selectedLoupist.id, created.id));
         draftWrites.current = draftWrites.current.then(() => bridge.chatDraftWrite({ loupist_id: selectedLoupist.id, thread_id: EMPTY_CHAT_THREAD_ID }, { prompt: "" })).catch(() => {});
       }
       return created;
     },
-    [createThreadForLoupist, selectedLoupist, adopt, bridge, draftWrites, fileWrites],
+    [createThreadForLoupist, selectedLoupist, adopt, bridge, draftWrites, fileWrites, moveSelection, draftChoice],
   );
   const { changeSelection } = model;
   const changeSelectedModel = useCallback(
     (selection: ModelRunSelection) => {
-      if (selectedLoupistId) changeSelection(selectedLoupistId, selection);
+      if (effectiveChatKey) changeSelection(effectiveChatKey, selection);
     },
-    [changeSelection, selectedLoupistId],
+    [changeSelection, effectiveChatKey],
   );
   const { recordLastModel } = loupist;
   const recordSelectedModel = useCallback(
@@ -160,27 +179,37 @@ export function useChatViewModel({
     modelSelection,
     skillPreferences: snapshot?.effective.skills,
     memoryDefaults: snapshot?.effective.chat,
-    configurationReady: Boolean(snapshot) && !configuration.error && !snapshot?.diagnostics.length,
-    configurationError: configuration.error ?? (snapshot?.diagnostics.length ? i18n.t("app:app.correctTheConfigurationFileInSettingsChat") : snapshot && resolved?.unavailable_reason && resolved.unavailable_reason !== "no_connected_account" && !chosen ? i18n.t("app:app.theConfiguredChatDefaultsAreUnavailableFor") : undefined),
+    configurationReady: selectionReady && Boolean(snapshot) && !configuration.error && !snapshot?.diagnostics.length,
+    configurationError: selectionError ?? configuration.error ?? (snapshot?.diagnostics.length ? i18n.t("app:app.correctTheConfigurationFileInSettingsChat") : snapshot && resolved?.unavailable_reason && resolved.unavailable_reason !== "no_connected_account" && !chosen ? i18n.t("app:app.theConfiguredChatDefaultsAreUnavailableFor") : undefined),
     onModelSelectionChange: changeSelectedModel,
     modelName: chosen ? undefined : resolved?.model?.name,
     modelIsDefault: !chosen && Boolean(resolved?.is_default),
     noAccount: resolved && resolved.unavailable_reason === "no_connected_account",
-    onChooseDefault: () => model.resetSelection(loupistId),
+    onChooseDefault: () => { if (effectiveChatKey) model.resetSelection(effectiveChatKey); },
     onModelUsed: recordSelectedModel,
     onResolveModelSelection: async () => {
+      if (!selectionReady) throw new Error(selectionError ?? i18n.t("app:useModelCatalog.couldNotLoadModelSettings"));
       const next = await configuration.reload();
       if (!next || next.diagnostics.length) throw new Error(i18n.t("app:app.correctTheConfigurationFileBeforeSending"));
       const catalog = model.catalog ? { ...model.catalog, hidden_model_profile_ids: next.effective.models.hidden_model_profile_ids } : null;
-      const override = model.selections[loupistId];
-      if (override && usableCatalogModel(catalog, override.model_profile_id)) return { ...resolveExplicitSelection(catalog, override), memoryDefaults: next.effective.chat };
-      // A pick Chat can no longer answer with never goes out: the Loupist's default answers.
-      if (override) model.resetSelection(loupistId);
-      const selection = next.modelSelection;
-      if (selection?.is_default && selection.model) {
-        return { model_profile_id: "", thinking_level: next.effective.chat.thinking_level ?? "", run_options: { ...next.effective.chat.run_options }, auto: true, memoryDefaults: next.effective.chat };
+      const override = chosen;
+      if (override && usableCatalogModel(catalog, override.model_profile_id)) {
+        const picked = resolveExplicitSelection(catalog, override);
+        return { ...picked, composerModel: { selection: override, lastSent: picked }, memoryDefaults: next.effective.chat };
       }
-      return { ...modelRunSelection(selection), memoryDefaults: next.effective.chat };
+      // A pick Chat can no longer answer with never goes out: the Loupist's default answers.
+      if (override && effectiveChatKey) model.resetSelection(effectiveChatKey);
+      const selection = next.modelSelection;
+      const lastSent = modelRunSelection(selection);
+      const composerModel = { selection: null, lastSent };
+      if (selection?.is_default && selection.model) {
+        return { model_profile_id: "", thinking_level: next.effective.chat.thinking_level ?? "", run_options: { ...next.effective.chat.run_options }, auto: true, composerModel, memoryDefaults: next.effective.chat };
+      }
+      return { ...lastSent, composerModel, memoryDefaults: next.effective.chat };
+    },
+    onStoreComposerModel: async (threadId, { selection, lastSent } = { selection: chosen ?? null, lastSent: modelSelection }) => {
+      if (!selectionReady) throw new Error(selectionError ?? i18n.t("app:useModelCatalog.couldNotLoadModelSettings"));
+      await model.saveSent(chatSessionKey(loupistId, threadId), selection, lastSent);
     },
     selectedArtifact: effectiveChatKey ? workspace.selectedArtifacts[effectiveChatKey] : undefined,
     onClearSelectedArtifact: () => { if (effectiveChatKey) workspace.selectArtifactForChat(effectiveChatKey); },

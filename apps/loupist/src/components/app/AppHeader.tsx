@@ -71,6 +71,9 @@ export function AppHeader({ tab, loupist, running, title, origin, back = null, o
           {running ? <small>{i18n.t("app:shell.working")}</small> : null}</span>
       </div> : null}
     <span className="app-header-space" data-tauri-drag-region="deep" />
+    {tab === "chat" && title === null && loupist ? <Button type="button" variant="ghost" size="sm" className="header-standing" data-header-standing
+      title={i18n.t("chat:standing.openHint")}
+      onClick={() => window.dispatchEvent(new CustomEvent("loupist:open-standing"))}>{i18n.t("chat:standing.open")}</Button> : null}
     {materials ? (["bottom", "side"] as const).map(placement => <Button key={placement} type="button" variant="ghost" size="icon-sm" className="header-workspace-split" data-workspace-split={placement}
       aria-label={i18n.t(placement === "bottom" ? "app:shell.splitTopBottom" : "app:shell.splitLeftRight")} title={i18n.t(placement === "bottom" ? "app:shell.splitTopBottom" : "app:shell.splitLeftRight")}
       aria-pressed={workspaceOpen && workspacePlacement === placement} aria-controls={workspaceOpen ? "workspace-panel" : undefined}

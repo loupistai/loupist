@@ -235,6 +235,14 @@ export class PreviewBridge extends MockLoupistBridge {
   manyLoupists = false;
   manyChats = false;
   private stopStream?: () => void;
+
+  protected override async composerModelChatExists(loupistId: string, threadId: string): Promise<boolean> {
+    if (await super.composerModelChatExists(loupistId, threadId)) return true;
+    // The preview workspace also supplies fixture Chats.
+    const { threads } = await this.loupistSelect(loupistId);
+    return threads.some((thread) => thread.loupist_id === loupistId && thread.id === threadId);
+  }
+
   override async loupistSelect(loupistId: string) {
     const workspace = await super.loupistSelect(loupistId);
     const titles = this.manyChats || this.manyLoupists ? ["Q3 margin review", "HBM supply map", "Foundry capacity outlook", "Quarterly cash conversion", "Customer concentration", "Advanced packaging demand", "Capital expenditure plans"] : [this.conversation === "answer" ? "Reading Hanul Precision’s margin decline" : ""];

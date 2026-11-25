@@ -3183,10 +3183,11 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
 name = "loupist-desktop"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
+ "block2",
  "cfb",
  "chardetng",
  "chrono",
@@ -3204,7 +3205,9 @@ dependencies = [
  "libc",
  "model2vec-rs",
  "objc2",
+ "objc2-app-kit",
  "objc2-foundation",
+ "objc2-user-notifications",
  "objc2-web-kit",
  "office_oxide",
  "open",
@@ -3228,6 +3231,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tauri-plugin-wdio-webdriver",
+ "tauri-winrt-notification",
  "tempfile",
  "thiserror 2.0.21",
  "tokenizers",
@@ -3238,7 +3242,9 @@ dependencies = [
  "unicode-segmentation",
  "uuid",
  "webkit2gtk",
+ "windows 0.62.2",
  "windows-sys 0.61.2",
+ "zbus",
  "zip",
 ]
 
@@ -3864,6 +3870,8 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9df9128cbbfef73cda168416ccf7f837b62737d748333bfe9ab71c245d76613e"
 dependencies = [
+ "bitflags 2.13.1",
+ "block2",
  "objc2",
  "objc2-foundation",
 ]

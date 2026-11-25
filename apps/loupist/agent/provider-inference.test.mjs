@@ -60,6 +60,16 @@ test("malformed, schema-invalid, truncated and hidden retry responses are uncert
   }
 });
 
+test("isolated inference forwards only finite nonnegative cost and billing provenance", async () => {
+  for (const total of [0, 0.000123, -1, Infinity, "0.1"]) {
+    const f = fixture({ message: { usage: { cost: { total, totalFromProvider: true, private: "discard" } } } });
+    const result = await runProviderInference(f.ctx, request(), f.options);
+    assert.equal(result.disposition, "completed");
+    assert.deepEqual(result.usage.cost,
+      Number.isFinite(total) && total >= 0 ? { total, totalFromProvider: true } : undefined);
+  }
+});
+
 test("unavailable auth/model, unsupported controls and external schema references fail before dispatch", async () => {
   const absent = fixture({ available: false }); assert.equal((await runProviderInference(absent.ctx, request(), absent.options)).disposition, "not_sent"); assert.equal(absent.captured.calls, 0);
   for (const altered of [{ ...request(), thinkingLevel: "imaginary" }, { ...request(), runOptions: { endpoint: "https://wrong.test" } }, { ...request(), schema: { $ref: "https://outside.test/schema" } }, { ...request(), maxOutputTokens: 1000000 }]) {

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -314,17 +315,37 @@ test('model families ignore routing prefixes and leave unknown IDs unclassified'
 test('codex judge runs tool-free with the verdict schema and reads the last message', async () => {
   const { writeFile, readFile } = await import('node:fs/promises');
   let seen;
-  const backend = codexBackend({ model: 'gpt-6-astra', run: async (command, args) => {
-    seen = { command, args, schema: JSON.parse(await readFile(args[args.indexOf('--output-schema') + 1], 'utf8')) };
+  const backend = codexBackend({ model: 'gpt-6-astra', run: async (command, args, { input }) => {
+    seen = { command, args, input, schema: JSON.parse(await readFile(args[args.indexOf('--output-schema') + 1], 'utf8')) };
     await writeFile(args[args.indexOf('--output-last-message') + 1], '{"pass":false,"reason":"stale value"}');
     return '';
   } });
   assert.deepEqual(await backend.judge('Judge this.', { reasoningEffort: 'low' }), { pass: false, reason: 'stale value' });
   assert.equal(seen.command, 'codex');
-  assert.equal(seen.args.at(-1), 'Judge this.');
+  assert.equal(seen.args.at(-1), '-');
+  assert.equal(seen.input, 'Judge this.');
   for (const flag of ['features.shell_tool=false', 'web_search="disabled"', 'model_reasoning_effort="low"', 'read-only']) assert.ok(seen.args.includes(flag), flag);
   assert.deepEqual(seen.schema.required, ['pass', 'reason']);
   assert.equal(modelFamily(backend.model), 'openai');
+});
+
+test('codex judge sends a Stage A sized prompt intact over stdin', async (t) => {
+  const { writeFile } = await import('node:fs/promises');
+  const bin = await cacheDir(t);
+  const fake = join(bin, 'fake-codex.mjs');
+  await writeFile(fake, `#!/usr/bin/env node
+import { createHash } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
+const args = process.argv.slice(2);
+const hash = createHash('sha256');
+for await (const chunk of process.stdin) hash.update(chunk);
+const output = args[args.indexOf('--output-last-message') + 1];
+await writeFile(output, JSON.stringify({ pass: args.at(-1) === '-', reason: hash.digest('hex') }));
+`, { mode: 0o755 });
+  const prompt = 'Index close: 2,750. Record advances and declines.\n'.repeat(30_000);
+  assert.ok(Buffer.byteLength(prompt) > 1_309_413);
+  assert.deepEqual(await codexBackend({ command: fake }).judge(prompt),
+    { pass: true, reason: createHash('sha256').update(prompt).digest('hex') });
 });
 
 const claudeResult = (fields) => JSON.stringify({ type: 'result', subtype: 'success', is_error: false, stop_reason: 'end_turn',

@@ -467,3 +467,331 @@ async fn direct_saved_key_tools_refuse_with_the_permission_recovery() {
         0
     );
 }
+
+#[cfg(unix)]
+fn python_executor(state: &AppState, temporary: &tempfile::TempDir) -> AppToolExecutor {
+    static CACHE: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    let workspace = temporary.path().join("loupist");
+    let absent = temporary.path().join("absent");
+    let roots = crate::agent_harness::native_policy::NativeRoots::new(
+        &workspace,
+        &absent,
+        &state.artifacts.app_data_dir,
+        &workspace.join(".loupist"),
+        &absent,
+        &absent,
+        None,
+    );
+    let mut executor = executor_for(
+        state,
+        Arc::new(ToolCapture {
+            native: NativeGate::for_turn(roots),
+            ..ToolCapture::for_chat("python-test".into())
+        }),
+    );
+    Arc::make_mut(&mut executor.state.artifacts).python_cache_root = CACHE
+        .get_or_init(|| tempfile::tempdir().unwrap())
+        .path()
+        .to_path_buf();
+    executor
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn python_pending_round_marks_tagged_files_before_dispatching_custom_reads() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let executor = python_executor(&state, &temporary);
+    let input = "Outside text in a tagged file";
+    crate::commands::export_trust::record(&state, input.as_bytes()).unwrap();
+    fs::write(temporary.path().join("loupist/input.txt"), input).unwrap();
+
+    let result = executor
+        .execute(
+            &policy(false, false),
+            ToolMethod::PythonRun,
+            json!({"code": r#"
+import loupist
+with open('input.txt') as source:
+    loupist.call('mcp__custom-0123456789abcdef0123456789abcdef__quote', query=source.read())
+"#}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result["rounds"], 2, "{result}");
+    assert_eq!(result["reads"][0]["status"], "untrusted_text_paused");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn python_writeback_tags_new_and_replaced_files_from_broker_reads() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let executor = python_executor(&state, &temporary);
+    let output = temporary.path().join("loupist/outputs");
+    fs::create_dir(&output).unwrap();
+    fs::write(output.join("existing.txt"), "previous content").unwrap();
+    fs::write(output.join("untouched.txt"), "independent content").unwrap();
+    let data = state
+        .store
+        .dataset_put(
+            "loupist-a",
+            "outside-text",
+            &json!({"text": "Provider text"}),
+            json!({"trust":"third_party_text"}),
+        )
+        .unwrap();
+
+    let result = executor
+        .execute(
+            &policy(true, false),
+            ToolMethod::PythonRun,
+            json!({"inputs":[{"name":"source", "dataset":{
+                "dataset_id":data.dataset_id, "revision":data.revision, "pointer":"/text"
+            }}], "code":r#"
+import loupist
+from pathlib import Path
+source = loupist.inputs['source']
+Path('outputs/new.txt').write_text('New: ' + source)
+Path('outputs/existing.txt').write_text('Update: ' + source)
+"#}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result["status"], "completed", "{result}");
+    for (name, expected, tagged) in [
+        ("new.txt", "New: Provider text", true),
+        ("existing.txt", "Update: Provider text", true),
+        ("untouched.txt", "independent content", false),
+    ] {
+        let content = fs::read(output.join(name)).unwrap();
+        assert_eq!(content, expected.as_bytes());
+        assert_eq!(
+            crate::commands::export_trust::contains(&state, &sha256(&content)).unwrap(),
+            tagged,
+            "{name}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn python_replay_screens_named_arguments_and_unprinted_values() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let executor = python_executor(&state, &temporary);
+    let data = state
+        .store
+        .dataset_put(
+            "loupist-a",
+            "fixture-response",
+            &json!({"items":["sk-fixture-key"]}),
+            json!({"trust":"numeric"}),
+        )
+        .unwrap();
+
+    for (input, expected_replays) in [
+        (
+            json!({"name":"x", "call":{"tool":"followed", "arguments":{}}}),
+            1,
+        ),
+        (
+            json!({"name":"x", "call":{"tool":"followed", "arguments":{"password":"fixture"}}}),
+            1,
+        ),
+        (
+            json!({"name":"x", "dataset":{"dataset_id":data.dataset_id, "revision":data.revision}}),
+            1,
+        ),
+    ] {
+        let result = TOOL_CALL_ID
+            .scope(
+                new_id("python-replay-test"),
+                executor.execute(
+                    &policy(true, false),
+                    ToolMethod::PythonRun,
+                    json!({"inputs":[input], "code":"print('safe output')"}),
+                ),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result["status"], "completed", "{result}");
+        assert!(result["stdout"].as_str().unwrap().contains("safe output"));
+        let replays: u32 = state
+            .store
+            .lock_loupist("loupist-a")
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM datasets WHERE json_extract(metadata_json, '$.origin') = 'python_replay'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(replays, expected_replays, "{input}");
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn python_dataset_selection_keeps_its_host_receipt_separate_from_the_guest_value() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let executor = python_executor(&state, &temporary);
+    let dataset = state
+        .store
+        .dataset_put(
+            "loupist-a",
+            "dataset-with-reference-field",
+            &json!({"row":{"count":21,"result_ref":"stored row field"}}),
+            json!({"trust":"numeric"}),
+        )
+        .unwrap();
+    let result = executor.execute(
+        &policy(true, false),
+        ToolMethod::PythonRun,
+        json!({"args":{"dataset_id":dataset.dataset_id,"revision":dataset.revision,"pointer":"/row"},"code":r#"
+import loupist
+row = loupist.dataset(**loupist.args)
+assert row == {'count': 21, 'result_ref': 'stored row field'}
+print(row['count'] * 2)
+"#}),
+    ).await.unwrap();
+    assert_eq!(result["status"], "completed", "{result}");
+    assert_eq!(result["stdout"].as_str().unwrap().trim(), "42");
+    let parent = executor
+        .capture
+        .run_result(result["result_ref"].as_str().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(parent.upstream_result_refs.len(), 1);
+    let reference = &parent.upstream_result_refs[0];
+    let receipt = executor.capture.run_result(reference).await.unwrap();
+    assert_eq!(receipt.producer.tool_name, "dataset_describe");
+    assert_eq!(receipt.payload["dataset_ref"], json!(dataset));
+    assert_eq!(
+        result["reads"][0]["citation_url"],
+        evidence::citation_url(reference)
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn python_check_screens_retained_results_and_preserves_safe_state() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let executor = python_executor(&state, &temporary);
+    let allowed = [crate::scheduled_tasks::types::TriggerToolGrant {
+        name: "followed".into(),
+        provider: None,
+    }];
+    let code = r#"
+import loupist
+loupist.followed()
+loupist.state['visits'] += 1
+if loupist.args.get('echo'):
+    loupist.state.update(loupist.args)
+loupist.result(False, 'No change', '2026-11-24')
+"#;
+    let run = |args, after_outside_text, use_memory| {
+        executor.run_check(super::python_reads::CheckRun {
+            code,
+            after_outside_text,
+            use_memory,
+            args,
+            state: json!({"visits":1}),
+            now: "2026-11-24T00:00:00Z".into(),
+            as_of: None,
+            allowed: &allowed,
+            discover_providers: false,
+            replay: &[],
+            max_rounds: 3,
+            max_calls: 3,
+        })
+    };
+    let clean = run(Default::default(), false, true).await.unwrap();
+    assert_eq!(clean.state, json!({"visits":2}));
+    assert_eq!(clean.ledger.len(), 1);
+    let sensitive = json!({"password":"fixture"});
+    let screened = run(sensitive.as_object().unwrap().clone(), false, true)
+        .await
+        .unwrap();
+    assert!(screened.ledger.is_empty());
+    assert_eq!(screened.state, clean.state);
+    let copied = json!({"password":"fixture", "echo":true});
+    let screened = run(copied.as_object().unwrap().clone(), false, true)
+        .await
+        .unwrap();
+    assert_eq!(screened.error.as_deref(), Some("sensitive_text"));
+    assert_eq!(screened.reads, 1);
+    assert!(screened.ledger.is_empty());
+    assert_eq!(screened.state, json!({}));
+    let private = run(Default::default(), false, false).await.unwrap();
+    assert_eq!(private.ledger[0]["response"]["code"], "needs_permission");
+    assert_ne!(private.state, clean.state);
+    assert!(matches!(
+        run(Default::default(), true, true).await,
+        Err(BrokerError::UntrustedTextPaused)
+    ));
+    assert!(executor.capture.turn_taint.has_untrusted_content());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn python_ledger_runs_a_script_saved_in_an_earlier_reply_with_scheduled_reads() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let current = executor_for(&state, Arc::new(ToolCapture::for_chat("reply-a".into())));
+    let data = state
+        .store
+        .dataset_put(
+            "loupist-a",
+            "quarters",
+            &json!([7, 8, 9]),
+            json!({"as_of":"2026-11-24"}),
+        )
+        .unwrap();
+    let saved = current
+        .execute(
+            &policy(true, true),
+            ToolMethod::ScriptSave,
+            json!({
+                "name":"quarter-total", "summary":"Sum the retained quarterly data.",
+                "code":"import loupist\nprint(sum(loupist.dataset(**loupist.args)))",
+            }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(saved["version"], 1);
+    let (folder, roots) = crate::python_run::ledger::empty_roots().unwrap();
+    let unattended = executor_for(
+        &state,
+        Arc::new(ToolCapture {
+            native: NativeGate::for_turn(roots),
+            unattended_run_id: Some("scheduled-test".into()),
+            ..ToolCapture::default()
+        }),
+    );
+    let mut policy = policy(true, false);
+    policy.as_of = Some("2026-11-24".into());
+    let request =
+        json!({"script":"quarter-total@1", "args":{"dataset_id":data.dataset_id, "revision":1}});
+    let result = unattended
+        .execute(&policy, ToolMethod::PythonRun, request.clone())
+        .await
+        .unwrap();
+    assert_eq!(result["status"], "completed", "{result}");
+    let printed = |result: &Value| {
+        let stdout = result["stdout"].as_str().unwrap();
+        assert!(stdout.starts_with("<<untrusted "), "{result}");
+        assert!(stdout.lines().any(|line| line == "24"), "{result}");
+    };
+    printed(&result);
+    assert_eq!(result["rounds"], 2);
+    let second = unattended
+        .execute(&policy, ToolMethod::PythonRun, request)
+        .await
+        .unwrap();
+    printed(&second);
+    assert_eq!(second["rounds"], 1);
+    drop(folder);
+}

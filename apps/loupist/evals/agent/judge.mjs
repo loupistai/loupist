@@ -301,11 +301,11 @@ export function grokBackend({ model = DEFAULT_JUDGE_MODEL, reasoningEffort = DEF
   };
 }
 
-export function codexJudgeArgs({ prompt, model, cwd, schemaPath, outputPath, reasoningEffort = DEFAULT_REASONING_EFFORT }) {
+export function codexJudgeArgs({ model, cwd, schemaPath, outputPath, reasoningEffort = DEFAULT_REASONING_EFFORT }) {
   return ['exec', '--ignore-user-config', '--ignore-rules', '--skip-git-repo-check', '--ephemeral', '-m', model,
     '-c', `model_reasoning_effort="${reasoningEffort}"`, '-c', 'features.shell_tool=false', '-c', 'web_search="disabled"',
     '-c', 'features.multi_agent=false', '--sandbox', 'read-only', '--cd', cwd,
-    '--output-schema', schemaPath, '--output-last-message', outputPath, prompt];
+    '--output-schema', schemaPath, '--output-last-message', outputPath, '-'];
 }
 
 /** A tool-free `codex exec` judge, for agents whose own family is xAI. */
@@ -318,7 +318,7 @@ export function codexBackend({ model = 'gpt-6-astra', reasoningEffort = DEFAULT_
         const schemaPath = join(cwd, 'schema.json');
         const outputPath = join(cwd, 'verdict.json');
         await writeFile(schemaPath, JSON.stringify(JUDGE_SCHEMA));
-        await run(command, codexJudgeArgs({ prompt, model, cwd, schemaPath, outputPath, reasoningEffort: controls.reasoningEffort ?? reasoningEffort }), { cwd });
+        await run(command, codexJudgeArgs({ model, cwd, schemaPath, outputPath, reasoningEffort: controls.reasoningEffort ?? reasoningEffort }), { cwd, input: prompt });
         return parseJudgeResult(await readFile(outputPath, 'utf8'));
       } finally {
         await rm(cwd, { recursive: true, force: true });

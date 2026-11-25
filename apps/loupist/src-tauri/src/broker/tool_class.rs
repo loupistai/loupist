@@ -62,9 +62,9 @@ pub(crate) enum ResultText {
     ByRoute,
 }
 
-/// Memory the call stages.
+/// What the call can persist in Memory or the script library.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum MemoryWrite {
+pub(crate) enum PersistentWrite {
     NoWrite,
     /// Memory text: refused once a Don't-save result taints the turn and
     /// when the text looks like a credential.
@@ -73,19 +73,24 @@ pub(crate) enum MemoryWrite {
     /// result taints the turn. Not screened for credentials, because a
     /// fetched page may quote an example key.
     Retained,
+    /// A new script version. The library uses the same privacy and credential
+    /// gates as Memory text. Saving a script does not stage a Memory update.
+    Script,
+    /// Free text published in Bot's cards without a Memory grant.
+    Card,
 }
 
-impl MemoryWrite {
+impl PersistentWrite {
     pub(crate) const fn refused_after_dont_save(self) -> bool {
         match self {
-            Self::Text | Self::Retained => true,
+            Self::Text | Self::Retained | Self::Script | Self::Card => true,
             Self::NoWrite => false,
         }
     }
 
     pub(crate) const fn screened_for_credentials(self) -> bool {
         match self {
-            Self::Text => true,
+            Self::Text | Self::Script | Self::Card => true,
             Self::NoWrite | Self::Retained => false,
         }
     }
@@ -101,6 +106,15 @@ pub(crate) enum Unattended {
     GrantChecked,
 }
 
+/// Code mode uses the same read policies, with an explicit narrower admission.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PythonExposure {
+    NoPython,
+    DataRead,
+    MemoryRead,
+    RouteChecked,
+}
+
 /// Whether text a shared pack added is delimited in the result.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PackText {
@@ -114,8 +128,9 @@ pub(crate) struct ToolSafety {
     pub(crate) reach: Reach,
     pub(crate) after_text: AfterText,
     pub(crate) result_text: ResultText,
-    pub(crate) memory: MemoryWrite,
+    pub(crate) write: PersistentWrite,
     pub(crate) unattended: Unattended,
+    pub(crate) python: PythonExposure,
     pub(crate) pack_text: PackText,
 }
 
@@ -157,16 +172,18 @@ const fn row(
     reach: Reach,
     after_text: AfterText,
     result_text: ResultText,
-    memory: MemoryWrite,
+    write: PersistentWrite,
     unattended: Unattended,
+    python: PythonExposure,
     pack_text: PackText,
 ) -> ToolSafety {
     ToolSafety {
         reach,
         after_text,
         result_text,
-        memory,
+        write,
         unattended,
+        python,
         pack_text,
     }
 }
@@ -202,85 +219,94 @@ impl ToolMethod {
     #[rustfmt::skip]
     pub(crate) const fn safety(self) -> ToolSafety {
         use AfterText::*;
-        use MemoryWrite::*;
         use PackText::*;
+        use PersistentWrite::*;
+        use PythonExposure::*;
         use Reach::*;
         use ResultText::*;
         use Unattended::*;
         match self {
-            //                                reach     after text    result      memory        unattended    pack text
+            //                                reach     after text    result      write         unattended    python         pack text
             Self::NativeAuthorize
-            | Self::NativeDeliveredText  => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
-            Self::ScheduleList         => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
-            Self::ScheduleRead         => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
-            Self::ScheduleCreate       => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPack),
-            Self::ScheduleHandoff      => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPack),
-            Self::ScheduleQuiet        => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::ScheduleBriefing     => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPack),
-            Self::ScheduleUpdate       => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPack),
-            Self::ScheduleSetStatus    => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPack),
-            Self::ScheduleDelete       => row(Local,    Paused,       Own,        NoWrite,      Refused,      NoPack),
-            Self::ScheduleRunNow       => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPack),
-            Self::ScheduleStop         => row(Local,    Paused,       Own,        NoWrite,      Refused,      NoPack),
-            Self::ResearchOpen         => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
-            Self::BotMemory            => row(Local,    Open,         Own,        Text,         Refused,      NoPack),
-            Self::InterfaceLabels      => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
-            Self::ChatHistory          => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::DatasetDescribe      => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::DatasetQuery         => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::DatasetExport        => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
-            Self::DatasetImport        => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
-            Self::Calculate            => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::WorldbankSeries      => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::FxRate               => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::DefillamaRead        => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::KrxDailyQuote        => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
+            | Self::NativeDeliveredText  => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::ScheduleList         => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::ScheduleRead         => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::ScheduleCreate       => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::TriggerSave          => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::ScheduleHandoff      => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::ScheduleQuiet        => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPython,      NoPack),
+            Self::ScheduleBriefing     => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::ScheduleUpdate       => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::ScheduleSetStatus    => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::ScheduleDelete       => row(Local,    Paused,       Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::ScheduleRunNow       => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::ScheduleStop         => row(Local,    Paused,       Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::ResearchOpen         => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::BotMemory            => row(Local,    Open,         Own,        Text,         Refused,      NoPython,      NoPack),
+            Self::InterfaceLabels      => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::ChatHistory          => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPython,      NoPack),
+            Self::DatasetDescribe      => row(Local,    Open,         Own,        NoWrite,      Allowed,      MemoryRead,    NoPack),
+            Self::DatasetQuery         => row(Local,    Open,         Own,        NoWrite,      Allowed,      MemoryRead,    NoPack),
+            Self::DatasetExport        => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::DatasetImport        => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::Calculate            => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPython,      NoPack),
+            Self::WorldbankSeries      => row(Outbound, Open,         Own,        NoWrite,      Allowed,      DataRead,      NoPack),
+            Self::FxRate               => row(Outbound, Open,         Own,        NoWrite,      Allowed,      DataRead,      NoPack),
+            Self::DefillamaRead        => row(Outbound, Open,         Own,        NoWrite,      Allowed,      DataRead,      NoPack),
+            Self::KrxDailyQuote        => row(Outbound, Open,         Own,        NoWrite,      Allowed,      DataRead,      NoPack),
             // Searches the bundled operation catalog; no request leaves the host.
-            Self::KisOperationSearch   => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::KisRead              => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::DartFinancials       => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::DartFilingSearch     => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::DartFilingRead       => row(Outbound, Open,         ThirdParty, NoWrite,      Allowed,      NoPack),
-            Self::DartCompanyLookup    => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::DartMajorReport      => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::DartOwnership        => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::DartDividends        => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::DartReportItems      => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::McpConnect           => row(Outbound, CustomPaused, Own,        NoWrite,      GrantChecked, NoPack),
-            Self::McpCall              => row(Outbound, CustomPaused, ByRoute,    NoWrite,      GrantChecked, NoPack),
-            Self::RunResultsList       => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::WebSearch            => row(Outbound, Open,         ThirdParty, NoWrite,      Allowed,      NoPack),
-            Self::WebFetch             => row(Outbound, Open,         ThirdParty, NoWrite,      Allowed,      NoPack),
-            Self::SourceSave           => row(Local,    Open,         Own,        Retained,     Allowed,      NoPack),
-            Self::WorldSearch          => row(Local,    Open,         Own,        NoWrite,      Allowed,      Delimited),
-            Self::WorldRead            => row(Local,    Open,         Own,        NoWrite,      Allowed,      Delimited),
-            Self::NoteSave             => row(Local,    Open,         Own,        Text,         Allowed,      NoPack),
-            Self::JournalSave          => row(Local,    Open,         Own,        Text,         Refused,      NoPack),
-            Self::JournalReview        => row(Local,    Open,         Own,        Text,         Refused,      NoPack),
-            Self::PrincipleSave        => row(Local,    Open,         Own,        Text,         Refused,      NoPack),
-            Self::LensFile             => row(Local,    Open,         Own,        Text,         Allowed,      NoPack),
-            Self::WorldSchemaUpdate    => row(Local,    Open,         Own,        Text,         Refused,      NoPack),
-            Self::LoupistSetup         => row(Local,    Open,         Own,        Text,         Refused,      NoPack),
-            Self::ConnectionSetup      => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
-            Self::AskUser              => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
-            Self::LensSearch           => row(Local,    Open,         Own,        NoWrite,      Allowed,      Delimited),
-            Self::LensRead             => row(Local,    Open,         Own,        NoWrite,      Allowed,      Delimited),
-            Self::WorldJob             => row(Outbound, Open,         Own,        Retained,     Allowed,      NoPack),
-            Self::ConversationMemory   => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::AssetLookup          => row(Outbound, Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::PriceReadSave        => row(Local,    Open,         Own,        Retained,     Allowed,      NoPack),
-            Self::AssetPageRead        => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::ThesisUpdate         => row(Local,    Open,         Own,        Text,         Allowed,      NoPack),
-            Self::ArtifactList         => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::ArtifactRead         => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::ArtifactPublish      => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
-            Self::ChartQuery           => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
-            Self::ChartPublish         => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
-            Self::GridPublish          => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
-            Self::WorkspaceCapture     => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
+            Self::KisOperationSearch   => row(Local,    Open,         Own,        NoWrite,      Allowed,      DataRead,      NoPack),
+            Self::KisSymbolLookup      => row(Outbound, Open,         ThirdParty, NoWrite,      Allowed,      DataRead,      NoPack),
+            Self::KisDividendCalendar  => row(Outbound, Open,         ThirdParty, NoWrite,      Allowed,      DataRead,      NoPack),
+            Self::KisRead              => row(Outbound, Open,         Own,        NoWrite,      Allowed,      DataRead,      NoPack),
+            Self::DartFinancials       => row(Outbound, Open,         Own,        NoWrite,      Allowed,      DataRead,      NoPack),
+            Self::DartFilingSearch     => row(Outbound, Open,         Own,        NoWrite,      Allowed,      DataRead,      NoPack),
+            Self::DartFilingRead       => row(Outbound, Open,         ThirdParty, NoWrite,      Allowed,      DataRead,      NoPack),
+            Self::DartCompanyLookup    => row(Outbound, Open,         Own,        NoWrite,      Allowed,      DataRead,      NoPack),
+            Self::DartMajorReport      => row(Outbound, Open,         Own,        NoWrite,      Allowed,      DataRead,      NoPack),
+            Self::DartOwnership        => row(Outbound, Open,         Own,        NoWrite,      Allowed,      DataRead,      NoPack),
+            Self::DartDividends        => row(Outbound, Open,         Own,        NoWrite,      Allowed,      DataRead,      NoPack),
+            Self::DartReportItems      => row(Outbound, Open,         Own,        NoWrite,      Allowed,      DataRead,      NoPack),
+            Self::McpConnect           => row(Outbound, CustomPaused, Own,        NoWrite,      GrantChecked, NoPython,      NoPack),
+            Self::McpCall              => row(Outbound, CustomPaused, ByRoute,    NoWrite,      GrantChecked, RouteChecked,  NoPack),
+            Self::RunResultsList       => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPython,      NoPack),
+            Self::WebSearch            => row(Outbound, Open,         ThirdParty, NoWrite,      Allowed,      NoPython,      NoPack),
+            Self::WebFetch             => row(Outbound, Open,         ThirdParty, NoWrite,      Allowed,      NoPython,      NoPack),
+            Self::SourceSave           => row(Local,    Open,         Own,        Retained,     Allowed,      NoPython,      NoPack),
+            Self::WorldSearch          => row(Local,    Open,         Own,        NoWrite,      Allowed,      MemoryRead,    Delimited),
+            Self::WorldRead            => row(Local,    Open,         Own,        NoWrite,      Allowed,      MemoryRead,    Delimited),
+            Self::NoteSave             => row(Local,    Open,         Own,        Text,         Allowed,      NoPython,      NoPack),
+            Self::JournalSave          => row(Local,    Open,         Own,        Text,         Refused,      NoPython,      NoPack),
+            Self::JournalReview        => row(Local,    Open,         Own,        Text,         Refused,      NoPython,      NoPack),
+            Self::PrincipleSave        => row(Local,    Open,         Own,        Text,         Refused,      NoPython,      NoPack),
+            Self::LensFile             => row(Local,    Open,         Own,        Text,         Allowed,      NoPython,      NoPack),
+            Self::WorldSchemaUpdate    => row(Local,    Open,         Own,        Text,         Refused,      NoPython,      NoPack),
+            Self::LoupistSetup         => row(Local,    Open,         Own,        Text,         Refused,      NoPython,      NoPack),
+            Self::ConnectionSetup      => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::AskUser              => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::BotOffer             => row(Local,    Paused,       Own,        Card,         Allowed,      NoPython,      NoPack),
+            Self::AskLater             => row(Local,    Paused,       Own,        Card,         Allowed,      NoPython,      NoPack),
+            Self::LensSearch           => row(Local,    Open,         Own,        NoWrite,      Allowed,      MemoryRead,    Delimited),
+            Self::LensRead             => row(Local,    Open,         Own,        NoWrite,      Allowed,      MemoryRead,    Delimited),
+            Self::WorldJob             => row(Outbound, Open,         Own,        Retained,     Allowed,      NoPython,      NoPack),
+            Self::ConversationMemory   => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPython,      NoPack),
+            Self::AssetLookup          => row(Outbound, Open,         Own,        NoWrite,      Allowed,      DataRead,      NoPack),
+            Self::PriceReadSave        => row(Local,    Open,         Own,        Retained,     Allowed,      NoPython,      NoPack),
+            Self::AssetPageRead        => row(Local,    Open,         Own,        NoWrite,      Allowed,      MemoryRead,    NoPack),
+            Self::ThesisUpdate         => row(Local,    Open,         Own,        Text,         Allowed,      NoPython,      NoPack),
+            Self::ArtifactList         => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPython,      NoPack),
+            Self::ArtifactRead         => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPython,      NoPack),
+            Self::ArtifactPublish      => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::ChartQuery           => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPython,      NoPack),
+            Self::ChartPublish         => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::GridPublish          => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::WorkspaceCapture     => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPython,      NoPack),
             // Interactive only: an unattended run's request is no message the user typed.
-            Self::PastedCapture        => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPack),
-            Self::PythonRun            => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPack),
+            Self::PastedCapture        => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::PythonRun            => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPython,      NoPack),
+            Self::ScriptSave            => row(Local,    Open,         Own,        Script,       Allowed,      NoPython,      NoPack),
+            Self::ScriptList            => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPython,      NoPack),
+            Self::ScriptRead            => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPython,      NoPack),
         }
     }
 
@@ -311,6 +337,8 @@ impl ToolMethod {
             Self::DefillamaRead        => native(FINANCE,            AcquiredOriginal, Publisher, DatasetMaxAge),
             Self::KrxDailyQuote        => native(FINANCE,            AcquiredOriginal, Publisher, DatasetMaxAge),
             Self::KisOperationSearch   => native(FINANCE,            Discovery,        User,      Dataset),
+            Self::KisSymbolLookup      => native(FINANCE,            Discovery,        Publisher, Dataset),
+            Self::KisDividendCalendar  => native(FINANCE,            AcquiredOriginal, Publisher, Dataset),
             Self::KisRead              => native(FINANCE,            AcquiredOriginal, User,      DatasetMaxAge),
             Self::DartFinancials       => native(FINANCE,            AcquiredOriginal, Publisher, DatasetMaxAge),
             Self::DartFilingSearch     => native(FINANCE,            AcquiredOriginal, Publisher, DatasetMaxAge),
@@ -327,6 +355,7 @@ impl ToolMethod {
             Self::ChartQuery           => native(ARTIFACTS,          Derived,          Tool,      Turn),
             Self::WorkspaceCapture     => native(WORKSPACE,          WorkspaceFile,    User,      Turn),
             Self::PastedCapture        => native("chat-paste",       UserProvided,     User,      Turn),
+            Self::ScriptSave | Self::ScriptList | Self::ScriptRead => None,
             Self::PythonRun            => native("python-worker",    Derived,          Tool,      Turn),
             Self::DatasetDescribe      => native(DATASETS,           SavedContext,     Tool,      Turn),
             Self::DatasetQuery         => native(DATASETS,           SavedContext,     Tool,      Turn),
@@ -337,6 +366,7 @@ impl ToolMethod {
             | Self::ScheduleList
             | Self::ScheduleRead
             | Self::ScheduleCreate
+            | Self::TriggerSave
             | Self::ScheduleHandoff
             | Self::ScheduleQuiet
             | Self::PriceReadSave
@@ -364,6 +394,8 @@ impl ToolMethod {
             | Self::LoupistSetup
             | Self::ConnectionSetup
             | Self::AskUser
+            | Self::BotOffer
+            | Self::AskLater
             | Self::WorldJob
             | Self::ThesisUpdate
             | Self::ArtifactPublish

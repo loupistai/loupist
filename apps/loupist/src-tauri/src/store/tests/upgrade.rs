@@ -220,6 +220,7 @@ fn a_baseline_database_upgrades_to_the_fresh_schema_with_its_data_intact() {
     }
     // The app-wide followed list had no Loupist, so no Loupist follows it.
     assert_eq!(actual.remove("asset_follows"), Some(Vec::new()));
+    assert_eq!(actual.remove("scripts"), Some(Vec::new()));
     for event in data_before.get_mut("knowledge_growth_events").unwrap() {
         event.push(Value::Null); // Earlier events did not record their publication.
     }
@@ -601,6 +602,7 @@ fn store_five_adds_source_lookup_indexes_without_rewriting_rows() {
     }
     // The catalog creates each Loupist's follows when it opens; none carry over.
     assert_eq!(after.remove("asset_follows"), Some(Vec::new()));
+    assert_eq!(after.remove("scripts"), Some(Vec::new()));
     assert_eq!(after, before);
     for (table, column, index) in [
         ("knowledge_source_spans", "span_id", "knowledge_spans_by_id"),

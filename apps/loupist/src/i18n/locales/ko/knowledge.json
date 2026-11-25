@@ -973,5 +973,42 @@
       "would-break": "깨지는 조건",
       "statement": "원칙"
     }
+  },
+  "scripts": {
+    "tab": "스크립트",
+    "search": "스크립트 검색",
+    "error": "스크립트 자료함을 열지 못했습니다.",
+    "loading": "스크립트 불러오는 중…",
+    "noMatches": "검색 조건에 맞는 스크립트가 없습니다.",
+    "empty": "저장한 파이썬 스크립트가 여기에 표시됩니다.",
+    "usedByCount_other": "점검 {{count}}개에서 사용",
+    "usedBy": "이 스크립트를 쓰는 점검",
+    "lastRun": "{{date}} 실행",
+    "back": "스크립트 목록으로",
+    "outside": "외부 자료를 읽은 뒤 저장했습니다.",
+    "origin": {
+      "chat": "대화에서 작성",
+      "run": "예약 실행에서 작성",
+      "user": "직접 편집",
+      "template": "템플릿에서 추가"
+    },
+    "title": "제목",
+    "summary": "요약",
+    "args": "인수",
+    "code": "파이썬 코드",
+    "saveVersion": "새 버전으로 저장",
+    "cancel": "취소",
+    "test": "테스트",
+    "runTest": "테스트 실행",
+    "testStatus": "{{status}} · 파이썬 {{rounds}}회 실행",
+    "edit": "편집",
+    "export": ".py로 내보내기",
+    "delete": "삭제",
+    "deleteQuestion": "이 스크립트의 모든 버전을 삭제하시겠습니까?",
+    "pinned": "{{tasks}}에서 사용 중입니다. 삭제하려면 해당 점검에서 스크립트를 먼저 제거하십시오.",
+    "versions": "버전 기록",
+    "version": "버전 {{version}}",
+    "restore": "새 버전으로 복원",
+    "invalidArgs": "인수를 중괄호 안에 이름과 값 쌍으로 입력하십시오."
   }
 }

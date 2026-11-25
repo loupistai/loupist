@@ -21,6 +21,20 @@ const task = (latest: ScheduledRun) => ({
   schedule: { kind: "once", at_ms: 0 }, latest_run: latest,
 }) as unknown as ScheduledTaskListItem;
 
+it("lists an unreadable task in the default filter without offering task controls", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const unreadable: ScheduledTaskListItem = { ...task(running), id: "damaged-check", prompt: "", status: "paused", last_error: "unreadable_task", latest_run: null };
+  vi.spyOn(bridge, "scheduledTasksList").mockResolvedValue([task(running), unreadable]);
+  const history = vi.spyOn(bridge, "scheduledTaskRuns");
+  render(<ScheduleView bridge={bridge} loupist={loupist} theme="light" initialTaskId={unreadable.id} open={vi.fn()} onOpenChat={vi.fn()} />);
+
+  const row = (await screen.findByText("Unreadable scheduled task")).closest("li")!;
+  expect(row).toHaveTextContent("damaged-check");
+  expect(within(row).queryByRole("button")).toBeNull();
+  expect(await screen.findByRole("button", { name: /Chip news/ })).toBeVisible();
+  expect(history).not.toHaveBeenCalled();
+});
+
 it("shows the answer of a run left open while it runs once the run finishes", async () => {
   const user = userEvent.setup();
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
@@ -162,7 +176,9 @@ describe("the built-in briefing beside a custom task", () => {
     expect(on.closest("li")).toHaveAttribute("data-status", "active");
     expect(within(on).getByText("Built in")).toBeVisible();
     expect(briefingRow()).toBeNull();
-    expect(screen.queryByText("Off")).toBeNull();
+    const evening = document.querySelector<HTMLElement>("[data-schedule-evening]");
+    expect(evening).toHaveTextContent("Evening briefing");
+    expect(within(evening!).getByText("Off")).toBeVisible();
   });
 
   it("offers Turn on for a briefing that was turned off, and its name still opens its runs", async () => {
@@ -174,6 +190,9 @@ describe("the built-in briefing beside a custom task", () => {
     const row = await vi.waitFor(() => { const found = briefingRow(); if (!found) throw new Error("no briefing row"); return found; });
     expect(within(row).getByText("Off")).toBeVisible();
     expect(within(row).getByRole("button", { name: "Turn on" })).toBeVisible();
+    // Off sits beside Turn on at the row's end, centred with it, not on the name's line inside its button.
+    expect(within(row).getByText("Off").parentElement).toContainElement(within(row).getByRole("button", { name: "Turn on" }));
+    expect(within(row).getByRole("button", { name: /^Briefing/ })).not.toHaveTextContent("Off");
     await user.click(within(row).getByRole("button", { name: /^Briefing/ }));
     expect(await screen.findByRole("article", { name: "Briefing" })).toBeVisible();
   });
@@ -323,4 +342,21 @@ describe("Schedule's login hint", () => {
       await act(async () => {});
       expect(screen.queryByText(hint)).toBeNull();
     });
+});
+
+it("groups watches in Schedule and changes their notification policy without a run", async () => {
+  const user = userEvent.setup();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  bridge.installScheduledTask({ ...task({ ...running, status: "succeeded" }), report: "when_met",
+    delivery: { to: "bot", notify: "now" }, terms: "New filings that bear on your reasons" });
+  const change = vi.spyOn(bridge, "scheduledTaskSetDelivery");
+  const runNow = vi.spyOn(bridge, "scheduledTaskRunNow");
+  render(<ScheduleView bridge={bridge} loupist={loupist} theme="light" open={vi.fn()} onOpenChat={vi.fn()} />);
+  expect(await screen.findByRole("heading", { name: "Watches" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: /Chip news/ }));
+  expect(screen.getByText("New filings that bear on your reasons")).toBeVisible();
+  await user.selectOptions(screen.getByRole("combobox", { name: "Notifies" }), "digest");
+  await vi.waitFor(() => expect(screen.getByRole("combobox", { name: "Notifies" })).toHaveValue("digest"));
+  expect(change).toHaveBeenCalledWith({ loupistId: loupist.id, taskId: "task-1", expectedRevision: 1, notify: "digest" });
+  expect(runNow).not.toHaveBeenCalled();
 });

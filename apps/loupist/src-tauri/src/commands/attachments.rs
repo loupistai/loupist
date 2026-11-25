@@ -586,6 +586,14 @@ pub(super) fn attach_handoff_note(envelope: &str, message: Option<&ChatMessage>)
     serde_json::Value::Object(fields).to_string()
 }
 
+fn transcript_content_for_model(message: &ChatMessage) -> std::borrow::Cow<'_, str> {
+    if message.has_trigger_card() {
+        crate::agent_harness::trigger_text_for_model(&message.content).into()
+    } else {
+        message.content.as_str().into()
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn bootstrap_pi_chat_session_from_sqlite(
     attachments_root: &Path,
@@ -630,7 +638,7 @@ pub(crate) fn bootstrap_pi_chat_session_from_sqlite(
                 ChatMessageStatus::Aborted => "aborted",
                 ChatMessageStatus::Error => "error",
             },
-            "content": message.content,
+            "content": transcript_content_for_model(message),
             "attachments": attachment_manifest,
         });
         if let Some(note) = handoff_note_for_model(message) {
@@ -764,7 +772,7 @@ pub(crate) fn bootstrap_pi_chat_session_from_sqlite(
                 ChatMessageStatus::Aborted => "aborted",
                 ChatMessageStatus::Error => "error",
             },
-            "content": message.content,
+            "content": transcript_content_for_model(message),
             "attachments": attachment_manifest,
         });
         if let Some(note) = handoff_note_for_model(message) {

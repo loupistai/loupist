@@ -110,5 +110,7 @@ pub(crate) fn chat_message(id: &str, role: ChatRole, content: &str) -> ChatMessa
         handoff_action: None,
         scheduled: None,
         link: None,
+        offers: Vec::new(),
+        ask: None,
     }
 }

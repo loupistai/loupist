@@ -78,11 +78,12 @@ export function useCurrentVisit(loupistId: string): CurrentVisit | undefined {
  * away for more than five minutes) records the visit when it lasted five minutes.
  * Each visit starts inactive, including the one that starts after the window was away.
  */
-export function useLoupistVisit(loupistId: string | null, present: boolean) {
+export function useLoupistVisit(loupistId: string | null, present: boolean, closeVisit?: (loupistId: string, visit: number) => void) {
   const visit = useRef<{ loupistId: string; openedAtMs: number } | null>(null);
   useEffect(() => {
     if (!loupistId || !present) return;
     visit.current = { loupistId, openedAtMs: Date.now() };
+    closeVisit?.(loupistId, visit.current.openedAtMs - 1);
     publish(loupistId, { openedAtMs: visit.current.openedAtMs, active: false });
     let awaySinceMs: number | null = null;
     const leave = () => { if (awaySinceMs === null) awaySinceMs = Date.now(); };
@@ -92,6 +93,7 @@ export function useLoupistVisit(loupistId: string | null, present: boolean) {
       awaySinceMs = null;
       if (Date.now() - away <= AWAY_ENDS_VISIT_MS || !visit.current) return;
       recordVisit(visit.current.loupistId, visit.current.openedAtMs, away);
+      closeVisit?.(loupistId, visit.current.openedAtMs);
       visit.current = { loupistId, openedAtMs: Date.now() };
       publish(loupistId, { openedAtMs: visit.current.openedAtMs, active: false });
     };
@@ -106,7 +108,10 @@ export function useLoupistVisit(loupistId: string | null, present: boolean) {
       const current = visit.current;
       visit.current = null;
       publish(loupistId, null);
-      if (current) recordVisit(current.loupistId, current.openedAtMs, awaySinceMs ?? Date.now());
+      if (current) {
+        closeVisit?.(loupistId, current.openedAtMs);
+        recordVisit(current.loupistId, current.openedAtMs, awaySinceMs ?? Date.now());
+      }
     };
-  }, [loupistId, present]);
+  }, [loupistId, present, closeVisit]);
 }

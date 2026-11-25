@@ -99,8 +99,17 @@ and refusals are in [Schema versions and upgrades](#schema-versions-and-upgrades
 Workspace tabs retain their saved references while a registered folder is unavailable;
 only an available folder can establish that a Chat was deleted. Draft writes recheck
 the Chat in its canonical database and hold that database lock through the
-profile-local write, serializing with deletion. The empty-Chat composer remains a
-separate draft identity with no Chat row. Shared store-error mapping and Memory
+profile-local write, serializing with deletion. Composer model preferences use the
+same ownership check and lock order. The catalog creates `composer_model_selections`
+on first use, keyed by Loupist and Chat. It stores the model profile, thinking level,
+and run options. An absent row means the Loupist's default. The catalog also records
+the last submitted selection in `app_settings` under `last_composer_model`, with
+both records written in one transaction on send. The store version stays unchanged.
+The catalog's `app_settings` row `desktop_notification_queue` keeps pending
+desktop deliveries and the local calendar day's notification count across app
+restarts. This profile-local row uses the existing schema.
+The empty-Chat composer remains a separate draft identity with no Chat row.
+Shared store-error mapping and Memory
 transaction setup keep raw SQLite diagnostics out of renderer messages.
 
 An interrupted Memory transaction rolls back through the current transaction entry
@@ -119,7 +128,7 @@ features or the agent.
 
 The global `catalog.sqlite3` and every folder's `loupist.sqlite3` share one schema
 (`initialize_schema` in `store/schema.rs`) and one upgrade ladder
-(`store/upgrade.rs`). The store schema is version 12 (`PRAGMA user_version`), the
+(`store/upgrade.rs`). The store schema is version 13 (`PRAGMA user_version`), the
 Knowledge schema version 10 (`knowledge_schema`) and the Knowledge format version 1.
 A fresh database is created at the current versions.
 
@@ -215,6 +224,11 @@ keeps its ID, name, reference and every page and saved read that points to it.
 It removes the instrument and listing registry, identity history, automatic
 results tasks, and watch and results portions of past runs and Bot messages.
 Per-Loupist follows live in `asset_follows`, a lazily created catalog table.
+
+Store 13 adds the strict `scripts` table for each Loupist's script library.
+The forward step creates an empty table and leaves Knowledge unchanged. The
+Loupist database owns each version's code, hash, origin and run metadata.
+[Saved Python scripts](../capabilities/scripts.md) describes the library.
 
 Knowledge 9 keeps asset pages, thesis moves, Journal entries and line readings.
 It removes host financial observations, filing section deltas, watching and
@@ -327,6 +341,14 @@ shape in place. A shape change is a ladder step that alters the table only when 
 exists, together with the module's DDL for databases that never created it. Store 5
 adds `application_settings.keep_awake` (off) this way.
 
+`store/model_usage.rs` creates `model_usage` and its time and task indexes in
+the global catalog on first use, at store version 12. Its content-free rows hold
+run identifiers, counts, timing and cost in micro-USD. Writes prune rows older
+than 400 days at most once per day per process. When a Loupist is removed, the
+same catalog transaction clears its ID from historical rows so they continue
+to contribute to account totals. Folder copies and exports do not include this
+table. [Usage](providers.md#usage)
+
 Rust refuses data it cannot read and leaves it unchanged:
 
 | Data | Folder | Catalog |
@@ -415,7 +437,7 @@ one whose profile, tasks or runs fail to decode or validate, as it refuses a dig
 mismatch. Records a newer build wrote under the rules above decode and pass.
 
 SQL addresses stored JSON by serde name (`json_extract`, `json_set`, partial
-indexes such as one briefing per Loupist on `$.kind`). `store/tests/chat.rs` and
+indexes such as one briefing per edition on `$.kind` and `$.edition`). `store/tests/chat.rs` and
 `scheduled_tasks/tests.rs` serialize the real types and check each path and value
 the SQL uses, so a serde rename fails a test instead of a query.
 
@@ -437,6 +459,9 @@ and diagnostics path. Chat admission freezes the setting for its envelope
 and FX tool, and display reads resolve the current setting per request.
 The key needs no database migration. Older versions reject it until the line
 is removed from global `config.toml`.
+
+Bot offer declines merge into the project configuration from one revision and retry
+after a concurrent write. The configuration file size bounds the stored keys.
 
 Fields resolve project → global → app default; arrays replace. Reset removes the
 scoped field. The Chat defaults picker saves the selected model and its run

@@ -132,16 +132,29 @@ impl Server {
                     };
                     let response = handler(&base, &request);
                     captured.lock().unwrap().push(request);
+                    let chunked = response.headers.iter().any(|(key, value)| {
+                        key.eq_ignore_ascii_case("transfer-encoding") && value == "chunked"
+                    });
                     let mut encoded = format!(
-                        "HTTP/1.1 {} Fixture\r\nContent-Length: {}\r\nConnection: close\r\n",
-                        response.status,
-                        response.body.len()
+                        "HTTP/1.1 {} Fixture\r\nConnection: close\r\n",
+                        response.status
                     );
+                    if !chunked {
+                        encoded.push_str(&format!("Content-Length: {}\r\n", response.body.len()));
+                    }
                     for (key, value) in response.headers {
                         encoded.push_str(&format!("{key}: {value}\r\n"));
                     }
                     encoded.push_str("\r\n");
-                    encoded.push_str(&response.body);
+                    if chunked {
+                        encoded.push_str(&format!(
+                            "{:x}\r\n{}\r\n0\r\n\r\n",
+                            response.body.len(),
+                            response.body
+                        ));
+                    } else {
+                        encoded.push_str(&response.body);
+                    }
                     let _ = stream.write_all(encoded.as_bytes()).await;
                 });
             }

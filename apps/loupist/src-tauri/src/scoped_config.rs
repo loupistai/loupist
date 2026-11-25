@@ -55,6 +55,10 @@ optional_config!(ConfigDocument {
     chat: ChatConfig,
     skills: BTreeMap<String, SkillConfig>,
     pi: PartialPiConfig,
+    bot: BotConfig,
+});
+optional_config!(BotConfig {
+    declined_offers: Vec<String>,
 });
 optional_config!(AppearanceConfig {
     theme: String,
@@ -881,6 +885,18 @@ fn validate(config: &ConfigDocument, scope: &ConfigScope) -> Result<(), String> 
             }
         }
     }
+    if let Some(bot) = &config.bot {
+        if let Some(keys) = &bot.declined_offers {
+            for key in keys {
+                if key.is_empty()
+                    || key.len() > 200
+                    || key.chars().any(|ch| ch.is_control() || ch == '\n')
+                {
+                    return Err("bot.declined_offers entry is empty or too long".into());
+                }
+            }
+        }
+    }
     if let Some(chat) = &config.chat {
         if let Some(id) = chat.model_profile_id.as_deref().filter(|id| !id.is_empty()) {
             bounded(id, "chat.model_profile_id", 512)?;
@@ -994,6 +1010,10 @@ fn assemble(
         );
     }
     apply_catalog_skill_defaults(&mut value);
+    // Declined offers are per-Loupist bookkeeping, not an execution setting.
+    if let Some(object) = value.as_object_mut() {
+        object.remove("bot");
+    }
     (
         serde_json::from_value(value).expect("validated configuration merge"),
         sources,
@@ -1190,6 +1210,7 @@ fn validate_unset(path: &[String], scope: &ConfigScope) -> Result<(), CommandErr
                 || (path.len() == 2 || path.len() == 3 && path[2] == "enabled")
                     && crate::skills::valid_name(&path[1])
         }
+        "bot" => path.len() == 1 || path.len() == 2 && path[1] == "declined_offers",
         "pi" => {
             path.len() == 1
                 || path.len() == 2 && ["compaction", "retry"].contains(&path[1].as_str())
@@ -1340,6 +1361,71 @@ pub fn write_global_connector_settings(
 pub fn read_hidden_model_profile_ids(global_root: &Path) -> Result<Vec<String>, CommandError> {
     Ok(resolve(global_root, None)?.models.hidden_model_profile_ids)
 }
+pub(crate) fn declined_offer_keys(
+    global_root: &Path,
+    project_dir: &Path,
+    loupist_id: &str,
+) -> Result<Vec<String>, CommandError> {
+    let scope = ConfigScope::Project {
+        loupist_id: loupist_id.to_owned(),
+    };
+    declined_keys(&read_scope(global_root, Some(project_dir), scope)?)
+}
+
+fn declined_keys(snapshot: &ConfigSnapshot) -> Result<Vec<String>, CommandError> {
+    if let Some(error) = snapshot.diagnostics.first() {
+        return Err(config_error(error.message.clone()));
+    }
+    Ok(snapshot
+        .explicit
+        .as_ref()
+        .and_then(|document| document.bot.as_ref())
+        .and_then(|bot| bot.declined_offers.clone())
+        .unwrap_or_default())
+}
+
+pub(crate) fn remember_declined_offer(
+    global_root: &Path,
+    project_dir: &Path,
+    loupist_id: &str,
+    key: &str,
+) -> Result<(), CommandError> {
+    std::fs::create_dir_all(project_dir).map_err(|error| {
+        config_error(format!(
+            "Could not create the Loupist configuration directory: {error}"
+        ))
+    })?;
+    let scope = ConfigScope::Project {
+        loupist_id: loupist_id.to_owned(),
+    };
+    loop {
+        let snapshot = read_scope(global_root, Some(project_dir), scope.clone())?;
+        let mut keys = declined_keys(&snapshot)?;
+        if keys.iter().any(|existing| existing == key) {
+            return Ok(());
+        }
+        keys.push(key.to_owned());
+        match update_scope(
+            global_root,
+            Some(project_dir),
+            &ConfigUpdateRequest {
+                scope: scope.clone(),
+                expected_revision: snapshot.revision,
+                set: ConfigDocument {
+                    bot: Some(BotConfig {
+                        declined_offers: Some(keys),
+                    }),
+                    ..Default::default()
+                },
+                unset: Vec::new(),
+            },
+        ) {
+            Err(error) if error.code == crate::app::CommandErrorCode::Conflict => continue,
+            result => return result.map(|_| ()),
+        }
+    }
+}
+
 pub fn set_model_visible(
     global_root: &Path,
     model_profile_id: &str,

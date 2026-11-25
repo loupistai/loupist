@@ -11,10 +11,455 @@ pub const MAX_TASKS_PER_LOUPIST: usize = 100;
 pub const MAX_RUN_HISTORY: usize = 50;
 pub const MAX_PROMPT_BYTES: usize = 128 * 1024;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum ReportPolicy {
+    WhenMet,
+    EveryRun,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum DeliveryTarget {
+    #[default]
+    Bot,
+    None,
+    /// Held for the next briefing. The run is not posted in Bot.
+    Briefing,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum NotifyPolicy {
+    Now,
+    #[default]
+    Digest,
+    Off,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TaskDelivery {
+    pub to: DeliveryTarget,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub notify: Option<NotifyPolicy>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(untagged, deny_unknown_fields)]
+pub enum TaskSubject {
+    Asset { asset: String },
+    Name { name: String },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum WatchPreset {
+    FilingsAndResults,
+    ThesisLines,
+    ResultsFollowUp,
+    PriceMove,
+    WeekInReview,
+}
+
+/// Which built-in briefing a task is. Missing on a briefing written before
+/// editions means the morning one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum BriefingEdition {
+    #[default]
+    Morning,
+    Evening,
+}
+
+impl BriefingEdition {
+    pub(crate) fn task_id(self, loupist_id: &str) -> String {
+        match self {
+            Self::Morning => format!("briefing-{loupist_id}"),
+            Self::Evening => format!("briefing-evening-{loupist_id}"),
+        }
+    }
+
+    pub(crate) fn stored_title(self) -> &'static str {
+        match self {
+            // The renderer localizes this exact host title.
+            Self::Morning => "Briefings",
+            Self::Evening => "Evening briefing",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TaskWatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub report: Option<ReportPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub delivery: Option<TaskDelivery>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub subjects: Option<Vec<TaskSubject>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub preset: Option<WatchPreset>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub terms: Option<String>,
+}
+
+impl TaskWatch {
+    pub(crate) fn validate(&self) -> StoreResult<()> {
+        if let Some(terms) = &self.terms {
+            bounded_text(terms, 640, false)?;
+            if terms.chars().count() > 160 || terms.chars().any(char::is_control) {
+                return Err(invalid(
+                    "watch terms must be one line of at most 160 characters",
+                ));
+            }
+        }
+        if let Some(subjects) = &self.subjects {
+            if subjects.len() > 8 {
+                return Err(invalid("a task may have at most eight subjects"));
+            }
+            for subject in subjects {
+                match subject {
+                    TaskSubject::Asset { asset } => identifier(asset)?,
+                    TaskSubject::Name { name } => bounded_text(name, 200, false)?,
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+pub const MAX_ACTIVE_TRIGGERS: usize = 10;
+pub const MIN_TRIGGER_INTERVAL_MINUTES: u32 = 5;
+pub const MAX_TRIGGER_READS_PER_EVALUATION: usize = 24;
+pub const MAX_TRIGGER_ROUNDS: u32 = 3;
+pub const MAX_TRIGGER_READS_PER_DAY: u32 = 2_000;
+pub const MAX_TRIGGER_AGENT_RUNS_PER_DAY: u32 = 3;
+pub const MAX_TRIGGERED_RUNS_PER_LOUPIST_DAY: u32 = 6;
+pub const MAX_STORED_EVALUATIONS: usize = 20;
+pub const MAX_TRIGGER_ARGS_BYTES: usize = 2 * 1024;
+pub const MAX_TRIGGER_STATE_BYTES: usize = 8 * 1024;
+pub const MAX_TRIGGER_READING_CHARS: usize = 160;
+pub const MAX_TRIGGER_EVIDENCE_BYTES: usize = 4 * 1024;
+pub const TRIGGER_TIMEOUT_SECONDS: u64 = 20;
+pub const TRIGGER_QUEUE_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
+pub const TRIGGER_DRY_RUN_DAYS: usize = 20;
+pub const TRIGGER_DRY_RUN_READS: usize = 80;
+pub const TRIGGER_STALE_AFTER_DAYS: u32 = 5;
+pub const TRIGGER_FAILURE_STREAK: u32 = 3;
+
+/// `proposed` waits for Turn on. `on` is the approved check. `update_proposed`
+/// keeps running the approved hash while a newer one waits. `failing` has
+/// stopped after three code errors.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum TriggerPhase {
+    Proposed,
+    On,
+    UpdateProposed,
+    Failing,
+}
+
+impl TriggerPhase {
+    pub(crate) fn evaluates(self) -> bool {
+        matches!(self, Self::On | Self::UpdateProposed)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum TriggerOutcome {
+    Met,
+    NotMet,
+    Error,
+    NoData,
+    RateLimited,
+    Stale,
+    SkippedBusy,
+}
+
+impl TriggerOutcome {
+    pub(crate) fn updates_state(self) -> bool {
+        matches!(self, Self::Met | Self::NotMet)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TriggerScriptRef {
+    pub name: String,
+    pub version: u32,
+    pub sha256: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TriggerActiveHours {
+    pub days: Vec<u8>,
+    pub start: String,
+    pub end: String,
+    pub timezone: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TriggerApproval {
+    pub version: u32,
+    pub sha256: String,
+    pub at_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub configuration: Option<TriggerConfiguration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub test: Option<TriggerDryRun>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TriggerToolGrant {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub provider: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TriggerConfiguration {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub summary: Option<String>,
+    #[cfg_attr(test, ts(type = "Record<string, unknown>"))]
+    pub args: serde_json::Map<String, serde_json::Value>,
+    pub tools: Vec<TriggerToolGrant>,
+    pub reads_per_check: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub active_hours: Option<TriggerActiveHours>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(skip))]
+    pub price_subjects: Option<Vec<TaskSubject>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TriggerDryDay {
+    pub date: String,
+    pub outcome: TriggerOutcome,
+    pub reading: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TriggerScoreDay {
+    pub date: String,
+    pub previous: TriggerOutcome,
+    pub next: TriggerOutcome,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TriggerScores {
+    pub previous_met: u32,
+    pub next_met: u32,
+    pub compared: u32,
+    pub days: Vec<TriggerScoreDay>,
+}
+
+/// What `trigger_save` shows on the proposal or update card.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TriggerDryRun {
+    pub today_met: bool,
+    pub today_reading: String,
+    pub today_outcome: TriggerOutcome,
+    pub fired_on: Vec<String>,
+    pub replayed: u32,
+    pub unreplayed: u32,
+    pub days: Vec<TriggerDryDay>,
+    pub reads: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub scores: Option<TriggerScores>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TriggerPending {
+    pub version: u32,
+    pub sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub test: Option<TriggerDryRun>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub configuration: Option<TriggerConfiguration>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TriggerEvaluation {
+    pub at_ms: i64,
+    pub scheduled_for_ms: i64,
+    pub outcome: TriggerOutcome,
+    pub reading: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub as_of: Option<String>,
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub evidence: serde_json::Value,
+    pub version: u32,
+    pub sha256: String,
+    pub reads: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub coalesced: bool,
+    #[cfg_attr(test, ts(type = "unknown[]"))]
+    pub ledger: Vec<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub card_message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub retry_after_seconds: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(skip))]
+    // Older input_state snapshots have no proof that earlier ledgers were complete.
+    pub replay_seed: Option<serde_json::Value>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TriggerDayCount {
+    pub day: String,
+    pub evaluations: u32,
+    pub reads: u32,
+    pub met: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TriggerCounters {
+    pub today: TriggerDayCount,
+    pub recent: Vec<TriggerDayCount>,
+    pub agent_runs_today: u32,
+    pub error_streak: u32,
+    pub no_data_streak: u32,
+    pub backoff_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub as_of_since_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub as_of_value: Option<String>,
+    #[serde(default)]
+    pub reads_blocked: bool,
+}
+
+impl Default for TriggerCounters {
+    fn default() -> Self {
+        Self {
+            today: TriggerDayCount {
+                day: String::new(),
+                evaluations: 0,
+                reads: 0,
+                met: 0,
+            },
+            recent: Vec::new(),
+            agent_runs_today: 0,
+            error_streak: 0,
+            no_data_streak: 0,
+            backoff_ms: 0,
+            as_of_since_ms: None,
+            as_of_value: None,
+            reads_blocked: false,
+        }
+    }
+}
+
+/// The check on a custom task. Code lives in `scripts`; this is the pin,
+/// the approval, and the last evaluations.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TaskTrigger {
+    pub script: TriggerScriptRef,
+    pub summary: String,
+    pub tools: Vec<TriggerToolGrant>,
+    #[cfg_attr(test, ts(type = "Record<string, unknown>"))]
+    pub args: serde_json::Map<String, serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub active_hours: Option<TriggerActiveHours>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub approved: Option<TriggerApproval>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub pending: Option<TriggerPending>,
+    pub state: TriggerPhase,
+    /// The script's `loupist.state`, kept between evaluations. Not the phase.
+    #[cfg_attr(test, ts(type = "Record<string, unknown>"))]
+    pub script_state: serde_json::Value,
+    #[serde(default)]
+    #[cfg_attr(test, ts(skip))]
+    pub(crate) replay_state_known: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub last: Option<TriggerEvaluation>,
+    #[serde(default)]
+    pub evaluations: Vec<TriggerEvaluation>,
+    #[serde(default)]
+    pub counters: TriggerCounters,
+    /// Versions the user has turned on, so Go back can re-pin only those.
+    #[serde(default)]
+    pub approved_versions: Vec<TriggerApproval>,
+    #[serde(default = "default_stale_after")]
+    pub stale_after_days: u32,
+    #[serde(default)]
+    pub reads_per_check: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub proposal_test: Option<TriggerDryRun>,
+}
+
+fn default_stale_after() -> u32 {
+    TRIGGER_STALE_AFTER_DAYS
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct RunTrigger {
+    pub version: u32,
+    pub reading: String,
+    pub as_of: String,
+}
+
 /// A saved action snapshot, displayed even if the rest of the Chat stops.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct TaskReceipt {
+    #[serde(flatten)]
+    pub watch: TaskWatch,
     pub task_id: String,
     pub title: String,
     pub revision: u64,
@@ -28,6 +473,9 @@ pub struct TaskReceipt {
     /// Created from a conversation and waiting for the user's one-tap OK in its card.
     #[serde(default)]
     pub awaiting_confirmation: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub trigger: Option<TaskTrigger>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -47,6 +495,8 @@ pub enum ScheduleAction {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(untagged)]
+// A task receipt carries the optional check, which is larger than a question.
+#[allow(clippy::large_enum_variant)]
 pub enum ScheduleReceipt {
     Task(TaskReceipt),
     Question(QuestionReceipt),
@@ -79,6 +529,7 @@ impl ScheduleReceipt {
     }
     pub fn from_task(task: &Task, action: ScheduleAction) -> Self {
         Self::Task(TaskReceipt {
+            watch: task.watch.clone(),
             task_id: task.id.clone(),
             title: task.title.clone(),
             revision: task.revision,
@@ -90,16 +541,22 @@ impl ScheduleReceipt {
             use_memory: task.use_memory,
             update_memory: task.update_memory,
             awaiting_confirmation: task.awaiting_confirmation,
+            // The Bot card loads the current check by task ID.
+            trigger: None,
         })
     }
 }
 impl TaskReceipt {
     pub fn validate(&self) -> StoreResult<()> {
+        self.watch.validate()?;
         identifier(&self.task_id)?;
         bounded_text(&self.title, 200, false)?;
         super::schedule::validate_schedule(&self.schedule)?;
         if let TaskTarget::ExistingChat { thread_id } = &self.target {
             identifier(thread_id)?;
+        }
+        if let Some(trigger) = &self.trigger {
+            trigger.validate()?;
         }
         if self.revision == 0 || self.next_run_at_ms.is_some_and(|at| at < 0) {
             return Err(invalid("invalid scheduled action receipt"));
@@ -298,6 +755,8 @@ impl TaskDraft {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Task {
+    #[serde(flatten)]
+    pub watch: TaskWatch,
     pub kind: TaskKind,
     pub id: String,
     pub loupist_id: String,
@@ -326,13 +785,68 @@ pub struct Task {
     /// in the Chat card; any later status decision clears this.
     #[serde(default)]
     pub awaiting_confirmation: bool,
+    /// Persisted host approval, including after a later pause.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, ts(skip))]
+    pub(crate) run_approved: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub declined_in_visit: Option<i64>,
     /// The reply that proposed it; that reply cannot turn it on in the user's place.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub proposed_in_message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub trigger: Option<TaskTrigger>,
+    /// Set on a briefing. Absent means morning, including tasks saved before editions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub edition: Option<BriefingEdition>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub(crate) replaces: Option<ProposalTarget>,
+    /// Lets the most recent approved edit card continue to open this task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub confirmed_proposal_id: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) struct ProposalTarget {
+    pub id: String,
+    pub revision: u64,
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct TaskDefinition {
+    pub watch: TaskWatch,
+    pub proposed_in_message_id: Option<String>,
+    pub trigger: Option<TaskTrigger>,
+    pub edition: Option<BriefingEdition>,
+    pub replaces: Option<ProposalTarget>,
 }
 
 impl Task {
+    pub(crate) fn is_unreadable_list_item(&self) -> bool {
+        // A valid saved task always has a non-empty prompt. The reserved
+        // diagnostic alone could also occur in a worker's failure message.
+        self.prompt.is_empty() && self.last_error.as_deref() == Some(super::UNREADABLE_TASK)
+    }
+
+    pub(crate) fn edition(&self) -> BriefingEdition {
+        self.edition.unwrap_or_default()
+    }
+
+    pub(crate) fn is_trigger_task(&self) -> bool {
+        self.trigger.is_some() || self.watch.preset == Some(WatchPreset::PriceMove)
+    }
+
+    pub(crate) fn delivery(&self) -> TaskDelivery {
+        self.watch.delivery.unwrap_or_default()
+    }
+
     pub(crate) fn resolve_selection(
         &mut self,
         catalog: Option<&crate::providers::selection::SelectionCatalog>,
@@ -367,6 +881,7 @@ impl Task {
     }
 
     pub fn validate(&self) -> StoreResult<()> {
+        self.watch.validate()?;
         identifier(&self.id)?;
         identifier(&self.loupist_id)?;
         valid_kind(&self.kind)?;
@@ -376,11 +891,46 @@ impl Task {
                 return Err(invalid("only a dedicated task may retain its session"));
             }
         }
+        if let Some(target) = &self.replaces {
+            identifier(&target.id)?;
+            if !self.awaiting_confirmation
+                || self.status != TaskStatus::Paused
+                || self.id == target.id
+            {
+                return Err(invalid("a replacement must be awaiting confirmation"));
+            }
+        }
         self.draft().validate_definition()?;
         if self.kind == TaskKind::Briefing
             && (self.target != TaskTarget::Dedicated || !self.use_memory || !self.update_memory)
         {
             return Err(invalid("briefings require a dedicated Memory-enabled Chat"));
+        }
+        if self.kind == TaskKind::Briefing && self.trigger.is_some() {
+            return Err(invalid("a briefing does not take a check"));
+        }
+        if let Some(trigger) = &self.trigger {
+            trigger.validate()?;
+            if let Some(subjects) = trigger
+                .approved
+                .as_ref()
+                .and_then(|approval| approval.configuration.as_ref())
+                .and_then(|plan| plan.price_subjects.as_deref())
+            {
+                if self.watch.preset != Some(WatchPreset::PriceMove)
+                    || self.watch.subjects.as_deref().unwrap_or_default() != subjects
+                {
+                    return Err(invalid("a price check uses its reviewed subjects"));
+                }
+            }
+            if let Schedule::Interval { every_minutes } = self.schedule {
+                if every_minutes < MIN_TRIGGER_INTERVAL_MINUTES {
+                    return Err(invalid("a check repeats at least every 5 minutes"));
+                }
+            }
+            if matches!(self.schedule, Schedule::Once { .. }) {
+                return Err(invalid("a check repeats on an interval, daily or weekly"));
+            }
         }
         if self.revision == 0
             || self.revision > i64::MAX as u64
@@ -403,7 +953,20 @@ impl Task {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
+pub struct FailureStreak {
+    pub id: String,
+    pub count: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Run {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub failure_streak: Option<FailureStreak>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, ts(as = "Option<bool>", optional))]
+    pub first_run: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub memory_save_skip: Option<MemorySaveSkipReason>,
@@ -430,6 +993,9 @@ pub struct Run {
     pub finished_at_ms: Option<i64>,
     pub status: RunStatus,
     pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub trigger: Option<RunTrigger>,
 }
 
 /// What a custom run is given about its task's earlier runs (`previous_run`):

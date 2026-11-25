@@ -2,3 +2,15 @@
 // LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract
 
 export type DiagnosticsRequest = { loupist_id?: string | null };
+
+export type UsageSurface =
+  | "bot"
+  | "research"
+  | "handoff"
+  | "briefing"
+  | "scheduled"
+  | "learning"
+  | "deep_research"
+  | "world"
+  | "world_schema"
+  | "method_learning";

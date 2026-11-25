@@ -14,11 +14,12 @@ import { ChevronRightIcon } from "lucide-react";
 import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
 import { LoginItemHint } from "./LoginItemHint";
 import { ScheduleTaskControls } from "./ScheduleTaskControls";
+import { TriggerCard } from "../chat/TriggerCard";
 import { Disclosure } from "../ui/disclosure";
 import { ChatMessageCard } from "../chat/ChatMessageCard";
 import { MemorySaveWarning } from "../chat/ChatReceipt";
 import { ChatExecutionProvider } from "../chat/ChatExecutionContext";
-import { cadenceLabel, cadencePhrase, friendlyTimeZone, relativeRun, scheduledTaskTitle, skippedSavedKeyLabel, skippedToolNames } from "./scheduledPresentation";
+import { cadenceLabel, cadencePhrase, friendlyTimeZone, relativeRun, scheduledTaskTitle, skippedSavedKeyLabel, skippedToolNames, unreadableTask } from "./scheduledPresentation";
 import { revealFocused } from "../../lib/revealFocused";
 import { printReader } from "../print/printDocuments";
 import { PrinterIcon } from "lucide-react";
@@ -57,7 +58,7 @@ const HISTORY_ROWS = 10;
 
 /** Active shows tasks that are on, waiting for confirmation, or running. */
 function taskListed(task: ScheduledTaskListItem, filter: "active" | "all") {
-  return filter === "all" || task.status === "active" || Boolean(task.awaiting_confirmation) || task.latest_run?.status === "running";
+  return unreadableTask(task) || filter === "all" || task.status === "active" || Boolean(task.awaiting_confirmation) || task.latest_run?.status === "running";
 }
 function taskRank(task: ScheduledTaskListItem) {
   if (task.awaiting_confirmation) return 0;
@@ -127,7 +128,9 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
     try { const runs = await bridge.scheduledTaskRuns({ loupist_id: loupist.id, task_id: taskId }); setHistory(current => ({ ...current, [taskId]: runs })); }
     catch { setError(true); }
   }, [bridge, loupist.id]);
-  useEffect(() => { if (focusTaskId) void loadHistory(focusTaskId); }, [focusTaskId, loadHistory, tasks]);
+  useEffect(() => {
+    if (focusTaskId && tasks.some(task => task.id === focusTaskId && !unreadableTask(task))) void loadHistory(focusTaskId);
+  }, [focusTaskId, loadHistory, tasks]);
   const continueInChat = (item: InboxItem) => void onOpenChat(item).then(opened => {
     if (opened) return;
     setSessionGone(true); void load(); if (focusTaskId) void loadHistory(focusTaskId);
@@ -215,7 +218,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
   const executionScope = useMemo(() => selected?.threadId
     ? { bridge, loupistId: loupist.id, threadId: selected.threadId, surface: "session" as const, theme, active: true }
     : null, [bridge, loupist.id, selected?.threadId, theme]);
-  const displayTitle = (item: { kind: string; title: string }) => scheduledTaskTitle(item.kind, item.title);
+  const displayTitle = (item: { kind: string; title: string; edition?: string | null }) => scheduledTaskTitle(item.kind, item.title, item.edition);
   /** A run is worded by its task's kind: a briefing, or scheduled research for any other task. */
   const runKind = (kind: string) => kind === "briefing" ? "briefing" : "custom";
   /** Why a run failed, when it is known; an unknown failure is said by the title alone, with Details beside it. */
@@ -236,16 +239,24 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
   const nextRun = (task: ScheduledTask) => task.status === "active" && task.next_run_at_ms
     ? t("schedule.next", { time: relativeRun(task.next_run_at_ms, Date.now(), task.schedule.kind === "weekly" || task.schedule.kind === "daily" ? task.schedule.timezone : undefined) })
     : null;
-  const ordered = [...tasks].sort((a, b) => taskRank(a) - taskRank(b) || (a.next_run_at_ms ?? Number.MAX_SAFE_INTEGER) - (b.next_run_at_ms ?? Number.MAX_SAFE_INTEGER) || displayTitle(a).localeCompare(displayTitle(b)));
+  const ordered = tasks.filter(task => task.declined_in_visit === undefined).sort((a, b) => taskRank(a) - taskRank(b) || (a.next_run_at_ms ?? Number.MAX_SAFE_INTEGER) - (b.next_run_at_ms ?? Number.MAX_SAFE_INTEGER) || displayTitle(a).localeCompare(displayTitle(b)));
   const visible = ordered.filter(listed);
   // The built-in briefing always has a row: today's row while it is on or waiting for an OK, and an
   // offer to turn it on while it is off (never created, or turned off, which pauses it).
-  const listedBriefing = ordered.find(task => task.kind === "briefing") ?? null;
-  const briefingOff = !listedBriefing || (listedBriefing.status !== "active" && !listedBriefing.awaiting_confirmation);
-  const scheduled = (task: ScheduledTaskListItem) => !(briefingOff && task.kind === "briefing");
+  const editionOf = (task: { kind: string; edition?: string | null }) => task.kind === "briefing" && task.edition === "evening" ? "evening" : task.kind === "briefing" ? "morning" : null;
+  const briefingFor = (edition: "morning" | "evening") => ordered.find(task => editionOf(task) === edition) ?? null;
+  const morningBriefing = briefingFor("morning");
+  const eveningBriefing = briefingFor("evening");
+  const briefingIsOff = (task: ScheduledTaskListItem | null) => !task || (task.status !== "active" && !task.awaiting_confirmation);
+  const morningOff = briefingIsOff(morningBriefing);
+  const eveningOff = briefingIsOff(eveningBriefing);
+  const scheduled = (task: ScheduledTaskListItem) => {
+    const edition = editionOf(task);
+    return edition === "morning" ? !morningOff : edition === "evening" ? !eveningOff : true;
+  };
   const rows = visible.filter(scheduled);
   const hiddenByFilter = ordered.some(task => scheduled(task) && !listed(task));
-  const focusTask = !focusExplicit ? null : ordered.find(task => task.id === focusTaskId) ?? null;
+  const focusTask = !focusExplicit ? null : ordered.find(task => task.id === focusTaskId && !unreadableTask(task)) ?? null;
   const readerOpen = Boolean(selected) || Boolean(focusTask);
   // One time zone for every timed task is named once in the header instead of on each row.
   const zones = new Set(ordered.flatMap(task => task.schedule.kind === "daily" || task.schedule.kind === "weekly" ? [task.schedule.timezone] : []));
@@ -264,11 +275,11 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
     } catch { setRerun("failed"); }
   };
 
-  const enableBriefing = async () => {
+  const enableBriefing = async (edition?: "morning" | "evening") => {
     setEnabling(true);
     setEnableError(false);
     try {
-      await bridge.briefingSettingsSet({ loupistId: loupist.id, enabled: true });
+      await bridge.briefingSettingsSet({ loupistId: loupist.id, enabled: true, edition });
       await load();
     } catch {
       setEnableError(true);
@@ -293,7 +304,7 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
   ].filter(Boolean).join(" · ");
   const rowState = (task: ScheduledTaskListItem) => task.awaiting_confirmation || task.status !== "active" || waiting(task) ? taskStatus(task) : null;
   const introductory = !ordered.length && !readerOpen;
-  const listShown = !introductory && (rows.length > 0 || briefingOff);
+  const listShown = !introductory && (rows.length > 0 || morningOff || eveningOff);
   const spending = <p className="briefings-meta schedule-spending" data-schedule-spending>{t("schedule.spending")}</p>;
   const builtIn = <Badge variant="outline">{t("schedule.builtIn")}</Badge>;
   const skipped = skippedToolNames(selected?.skippedTools ?? []);
@@ -334,6 +345,20 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
                 {enableError && <p role="alert" className="inline-error">{t("schedule.statusFailed")}</p>}
               </div>
               <div className="start-option-card schedule-option">
+                <h3>{t("evening")}</h3>
+                <p>{t("schedule.eveningDescription")}</p>
+                <Button type="button" data-schedule-evening disabled={enabling} onClick={() => void enableBriefing("evening")}>{t("schedule.turnOn")}</Button>
+              </div>
+              <div className="start-option-card schedule-option">
+                <h3>{t("schedule.filings")}</h3>
+                <p>{t("schedule.watchCost")}</p>
+                <Button type="button" variant="outline" disabled={enabling} onClick={() => {
+                  setEnabling(true); setEnableError(false);
+                  void bridge.scheduledTaskFromPreset({ loupistId: loupist.id, preset: "filings-and-results" })
+                    .then(() => load(), () => setEnableError(true)).finally(() => setEnabling(false));
+                }}>{t("schedule.turnOn")}</Button>
+              </div>
+              <div className="start-option-card schedule-option">
                 <h3>{t("schedule.ownTask")}</h3>
                 <p>{t("schedule.ownDescription", { example: t("schedule.ownExample") })}</p>
                 <Button type="button" variant="outline" disabled={!onAskHome} onClick={() => onAskHome?.(t("schedule.ownExample"))}>{t("schedule.askBot")}</Button>
@@ -343,7 +368,14 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
           </div>
             : <>{!rows.length && hiddenByFilter ? <div className="briefings-empty"><h3>{t("schedule.noActiveTitle")}</h3><p>{t("schedule.noActiveBody")}</p>
               <Button type="button" variant="outline" onClick={() => setFilter("all")}>{t("schedule.showAll")}</Button></div> : null}
-            {listShown ? <ul className="schedule-tasks">{rows.map(task => {
+            {listShown ? <ul className="schedule-tasks">{[false, true].flatMap(watches => {
+            const group = rows.filter(task => (task.kind === "custom" && (task.report === "when_met" || Boolean(task.preset))) === watches);
+            return [
+              ...(watches && group.length ? [<li key="watch-heading" className="schedule-section-label"><h3>{t("schedule.watches")}</h3></li>] : []),
+              ...group.map(task => {
+            if (unreadableTask(task)) return <li key={task.id} className="schedule-task" data-schedule-task={task.id} data-status="unreadable">
+              <div className="schedule-task-summary"><strong>{t("schedule.unreadableTask")}</strong><span className="briefings-meta">{task.id}</span></div>
+            </li>;
             const next = nextRun(task);
             const state = rowState(task);
             const current = focusTask?.id === task.id;
@@ -356,8 +388,10 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
                 <ChevronRightIcon className="schedule-task-chevron" aria-hidden="true" />
               </div>
             </li>;
-          })}{briefingOff ? <BriefingOffRow title={displayTitle(listedBriefing ?? { kind: "briefing", title: "" })} builtIn={builtIn} enabling={enabling} enableError={enableError}
-            current={Boolean(listedBriefing && focusTask?.id === listedBriefing.id)} onOpen={listedBriefing ? () => openTask(listedBriefing) : undefined} onTurnOn={() => void enableBriefing()} /> : null}</ul> : null}</>}
+          })]; })}{morningOff ? <BriefingOffRow marker="morning" description={t("schedule.briefingDescription")} title={displayTitle(morningBriefing ?? { kind: "briefing", title: "" })} builtIn={builtIn} enabling={enabling} enableError={enableError}
+            current={Boolean(morningBriefing && focusTask?.id === morningBriefing.id)} onOpen={morningBriefing ? () => openTask(morningBriefing) : undefined} onTurnOn={() => void enableBriefing()} /> : null}
+            {eveningOff ? <BriefingOffRow marker="evening" description={t("schedule.eveningDescription")} title={displayTitle(eveningBriefing ?? { kind: "briefing", title: "Evening briefing", edition: "evening" })} builtIn={builtIn} enabling={enabling} enableError={enableError}
+            current={Boolean(eveningBriefing && focusTask?.id === eveningBriefing.id)} onOpen={eveningBriefing ? () => openTask(eveningBriefing) : undefined} onTurnOn={() => void enableBriefing("evening")} /> : null}</ul> : null}</>}
         </section>
         {/* The footer says to tell Bot, so it leads there: Bot opens with its composer focused. */}
         {ordered.length ? <p className="briefings-meta schedule-footer">{t("schedule.locationRule")} {t("schedule.footer")}{onAskHome ? <> <Button variant="link" className="schedule-task-ask" data-schedule-footer-ask onClick={() => onAskHome("")}>{t("schedule.changeAsk")}</Button></> : null}</p> : null}
@@ -396,7 +430,10 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
           <p className="briefings-meta schedule-detail-status"><strong>{taskStatus(focusTask)}</strong>{[t(`schedule.kind.${focusTask.kind}`) === displayTitle(focusTask) ? null : t(`schedule.kind.${focusTask.kind}`), cadence(focusTask), nextRun(focusTask)].filter(Boolean).map(part => ` · ${part}`).join("")}</p></div>
           </header>
         {focusTask.model_selection && <p className="briefings-meta">{t("schedule.model", { model: focusTask.model_selection.model?.name ?? i18n.t(focusTask.model_selection.unavailable_reason === "no_connected_account" ? "chat:chatModelMenu.noAccount" : "chat:chatPendingQueue.unavailableModel") })}</p>}
+        {focusTask.last_error === "nothing_left_to_watch" && <p className="briefings-meta" role="status">{t("schedule.emptyWatch")}</p>}
         {focusTask.latest_run && ["failed", "interrupted"].includes(focusTask.latest_run.status) ? <p className="inline-error schedule-task-error" role="status">{lastFailure(focusTask)}{briefingFailure(focusTask.latest_run.error ?? focusTask.last_error) === "auth" && onOpenModelSettings ? <> <Button variant="link" onClick={onOpenModelSettings}>{t("failure.models")}</Button></> : null}</p> : null}
+        {focusTask.trigger && !focusTask.replaces && <TriggerCard trigger={focusTask.trigger} bridge={bridge} loupistId={loupist.id} taskId={focusTask.id} revision={focusTask.revision} schedule={focusTask.schedule} prompt={focusTask.prompt} onChanged={() => { void load(); }} onChangeDraft={onAskHome} />}
+        {focusTask.trigger?.last && <p className="briefings-meta" data-trigger-last>{focusTask.trigger.last.reading || focusTask.trigger.last.outcome}</p>}
         <ScheduleTaskControls key={`${focusTask.id}:${focusTask.revision}`} bridge={bridge} task={focusTask} title={displayTitle(focusTask)} running={focusTask.latest_run?.status === "running"} onAskHome={onAskHome}
           onChanged={() => { void load(); void loadHistory(focusTask.id); }} onDeleted={() => { setFocusExplicit(false); setFocusTaskId(null); void load(); }} />
         {/* A prompt that only repeats the title says nothing new; any other prompt is labelled as the request. */}
@@ -411,22 +448,27 @@ export function ScheduleView({ onOpenModelSettings, modelCatalog, bridge, loupis
 }
 
 /**
- * The built-in briefing while it is off: its name, what it does, Off and Turn on. A briefing that
- * was turned off keeps its task, so its name still opens the detail with its run history.
+ * The built-in briefing while it is off: its name, what it does, then Off beside Turn on at the row's
+ * end, centred together on the row. A briefing that was turned off keeps its task, so its name still
+ * opens the detail with its run history.
  */
-function BriefingOffRow({ title, builtIn, enabling, enableError, current, onOpen, onTurnOn }: {
+function BriefingOffRow({ title, builtIn, enabling, enableError, current, onOpen, onTurnOn, description, marker }: {
   title: string; builtIn: React.ReactNode; enabling: boolean; enableError: boolean; current: boolean; onOpen?: () => void; onTurnOn: () => void;
+  description: string; marker: "morning" | "evening";
 }) {
   const { t } = useTranslation("briefings");
   const summary = <>
-    <span className="schedule-task-heading"><strong title={title}>{title}</strong>{builtIn}<span className="schedule-task-status">{t("off")}</span></span>
-    <span className="briefings-meta">{t("schedule.briefingDescription")}</span>
+    <span className="schedule-task-heading"><strong title={title}>{title}</strong>{builtIn}</span>
+    <span className="briefings-meta">{description}</span>
   </>;
-  return <li className="schedule-task" data-schedule-briefing="off" data-status="off" data-current={current || undefined}>
+  return <li className="schedule-task" data-schedule-briefing={marker === "morning" ? "off" : undefined} data-schedule-evening={marker === "evening" ? "off" : undefined} data-status="off" data-current={current || undefined}>
     <div className="schedule-task-row">
       {onOpen ? <button type="button" className="schedule-task-summary" aria-current={current || undefined} onClick={onOpen}>{summary}</button>
         : <div className="schedule-task-summary">{summary}</div>}
-      <Button type="button" size="sm" className="schedule-task-turn-on" data-schedule-morning disabled={enabling} onClick={onTurnOn}>{t("schedule.turnOn")}</Button>
+      <div className="schedule-task-off">
+        <span className="schedule-task-status">{t("off")}</span>
+        <Button type="button" size="sm" className="schedule-task-turn-on" data-schedule-morning={marker === "morning" || undefined} data-schedule-evening={marker === "evening" || undefined} disabled={enabling} onClick={onTurnOn}>{t("schedule.turnOn")}</Button>
+      </div>
     </div>
     {enableError ? <p role="alert" className="inline-error schedule-task-error">{t("schedule.statusFailed")}</p> : null}
   </li>;
@@ -487,6 +529,9 @@ function BriefingSections({ bridge, loupistId, context, nextRun, skipped, skippe
         {skipped.length ? <li>{t("ahead.skipped", { names: skipped.join(", ") })}</li> : null}
         {skippedSavedKeys ? <li>{skippedSavedKeys}</li> : null}
       </ul>
+    </section> : null}
+    {context.backgroundRuns?.length ? <section aria-labelledby="briefing-background"><h3 id="briefing-background" className="schedule-section-label">{t("sections.background")}</h3>
+      <ul className="briefing-ahead">{context.backgroundRuns.map(run => <li key={run.runId}>{run.task}</li>)}</ul>
     </section> : null}
   </div>;
 }

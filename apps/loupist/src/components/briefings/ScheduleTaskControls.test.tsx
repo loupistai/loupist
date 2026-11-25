@@ -12,12 +12,22 @@ const task = (patch: Partial<ScheduledTask> = {}) => ({
 
 function setup(current: ScheduledTask, bridge: Partial<LoupistBridge> = {}) {
   const calls = {
+    scheduledTaskConfirm: vi.fn(async () => current),
     scheduledTaskSetStatus: vi.fn(async () => current), scheduledTaskRunNow: vi.fn(async () => ({})), scheduledTaskDelete: vi.fn(async () => undefined),
   };
   const onChanged = vi.fn(), onDeleted = vi.fn(), onAskHome = vi.fn();
   render(<ScheduleTaskControls bridge={{ ...calls, ...bridge } as unknown as LoupistBridge} task={current} title="Chip news" running={false} onChanged={onChanged} onDeleted={onDeleted} onAskHome={onAskHome} />);
   return { calls, onChanged, onDeleted, onAskHome, user: userEvent.setup() };
 }
+
+it("confirms the displayed proposal revision from the task detail", async () => {
+  const { calls, user } = setup(task({ status: "paused", awaiting_confirmation: true }));
+  await user.click(screen.getByRole("button", { name: "Turn on" }));
+  expect(calls.scheduledTaskConfirm).toHaveBeenCalledExactlyOnceWith({
+    loupist_id: "loupist", task_id: "task-1", expected_revision: 3,
+  });
+  expect(calls.scheduledTaskSetStatus).not.toHaveBeenCalled();
+});
 
 it("pauses, runs once and deletes a task with the host commands, without a model call", async () => {
   const { calls, onChanged, onDeleted, user } = setup(task());

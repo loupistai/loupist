@@ -16,7 +16,6 @@ export function useBotScheduleTasks(bridge: LoupistBridge | undefined, loupistId
     let generation = 0;
     const load = async () => {
       const request = ++generation;
-      setSnapshot(undefined);
       try {
         const tasks = await bridge.scheduledTasksList({ loupist_id: loupistId });
         if (request === generation) setSnapshot({ owner: loupistId, key: receiptKey, tasks: new Map(tasks.map(task => [task.id, task])) });

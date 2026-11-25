@@ -169,6 +169,37 @@ async fn captured_result_size_is_preserved_when_reserved_delivered_and_discarded
 }
 
 #[tokio::test]
+async fn a_pending_upstream_result_is_private_to_its_delivery() {
+    let capture = ToolCapture::default();
+    let reference = capture
+        .stage_run_result_with_delivery(
+            "read",
+            provider_result(),
+            &json!({}),
+            json!({}),
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+    let request = Value::Null;
+    let stage_dependent = || {
+        capture.stage_run_result_with_delivery(
+            "dependent",
+            provider_result(),
+            &request,
+            Value::Null,
+            vec![reference.clone()],
+            None,
+        )
+    };
+
+    assert!(stage_dependent().await.is_err());
+    capture.commit_delivery("read").await;
+    assert!(stage_dependent().await.is_ok());
+}
+
+#[tokio::test]
 async fn source_save_says_when_saved_price_data_will_not_reach_world() {
     let temporary = tempfile::tempdir().unwrap();
     let executor = executor_for(&seeded_state(&temporary), Arc::new(ToolCapture::default()));

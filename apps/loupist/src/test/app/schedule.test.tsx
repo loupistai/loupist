@@ -48,7 +48,7 @@ async function openScheduleFromResearch(bridge: MockLoupistBridge, user: ReturnT
   await user.click(await mainTab(/Schedule/));
 }
 
-it("offers a built-in briefing and a custom task in the empty Schedule, with the account note after both", async () => {
+it("offers a built-in briefing, a filings watch and a custom task in the empty Schedule, with the account note after all three", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const enable = vi.spyOn(bridge, "briefingSettingsSet");
   const user = userEvent.setup();
@@ -57,15 +57,20 @@ it("offers a built-in briefing and a custom task in the empty Schedule, with the
   const heading = await screen.findByRole("heading", { name: "Nothing is scheduled yet" });
   const choices = within(heading.parentElement!);
   expect(choices.getByText("Loupist can run work for you at set times and post the result in Bot.")).toBeVisible();
-  expect(choices.getAllByRole("heading", { level: 3 }).map(node => node.textContent)).toEqual(["Morning briefing", "Your own task"]);
-  const [turnOn, askBot] = choices.getAllByRole("button");
-  expect(turnOn).toHaveAccessibleName("Turn on");
-  expect(askBot).toHaveAccessibleName("Ask Bot");
+  const cards = choices.getAllByRole("heading", { level: 3 });
+  expect(cards.map(node => node.textContent)).toEqual(["Morning briefing", "Evening briefing", "Watch for filings and results", "Your own task"]);
+  const actionInCard = (heading: string, name: string) => within(choices.getByRole("heading", { name: heading, level: 3 }).parentElement!).getByRole("button", { name });
+  const turnOn = actionInCard("Morning briefing", "Turn on");
+  const turnOnEvening = actionInCard("Evening briefing", "Turn on");
+  const turnOnWatch = actionInCard("Watch for filings and results", "Turn on");
+  const askBot = actionInCard("Your own task", "Ask Bot");
   const note = choices.getByText(/Scheduled tasks use your AI account/);
-  expect(askBot!.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  for (const action of [turnOn, turnOnEvening, turnOnWatch, askBot]) {
+    expect(action.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }
   expect(note.closest("header")).toBeNull();
   expect(screen.getAllByText(/Scheduled tasks use your AI account/)).toHaveLength(1);
-  await user.click(turnOn!);
+  await user.click(turnOn);
   expect(send).not.toHaveBeenCalled();
   expect(enable).toHaveBeenCalledExactlyOnceWith({ loupistId: "loupist-quality", enabled: true });
   const row = await taskRow(/^Briefing/);

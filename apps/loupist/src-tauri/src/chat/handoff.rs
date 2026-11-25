@@ -1506,7 +1506,7 @@ pub(crate) fn learned_digest(
     Ok(
         crate::commands::knowledge::learned_digests(state, loupist_id, message_ids)?
             .into_iter()
-            .find(|digest| !digest.pages.is_empty()),
+            .find(|digest| !digest.pages.is_empty() || digest.scripts.is_some()),
     )
 }
 

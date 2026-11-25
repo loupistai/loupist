@@ -129,7 +129,7 @@ input[type="search"]::-webkit-search-decoration {
 .scheduled-session-origin > button { max-width: 100%; text-align: start; }
 .app-header-who[data-busy] small { color: var(--gg-color-accent-ink); }
 /* Activity and the two splits read pressed while their sheet or split is open. */
-.app-header :is(.header-panel-toggle, .header-workspace-split) { flex: none; color: var(--gg-color-text-secondary); }
+.app-header :is(.header-panel-toggle, .header-workspace-split, .header-standing) { flex: none; color: var(--gg-color-text-secondary); }
 .app-header :is(.header-panel-toggle, .header-workspace-split)[aria-pressed="true"] { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); }
 .app-header-sidebar-trigger { flex: none; margin-inline-start: calc(var(--gg-space-2) * -1); }
 /* Below the minimum window the sidebar is a drawer: the header clears the native controls itself. */

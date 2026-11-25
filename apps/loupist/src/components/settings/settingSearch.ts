@@ -21,6 +21,7 @@ export function settingControls(page: ParentNode, section: SettingsSection) {
   const results = new Map<string, { result: SettingResult; element: HTMLElement }>();
   const elements = page.querySelectorAll<HTMLElement>('label, h2, h3, h4, strong, summary, button, [role="group"][aria-label], [role="switch"], select, input[aria-label], tbody th, tbody td:first-child');
   for (const element of elements) {
+    if (section === "usage" && !element.matches(".usage-period, .usage-period button, .usage-group > h2, .usage-plan button")) continue;
     if (element.closest('[hidden]:not([data-setting-disclosure]),[aria-hidden="true"],[role="dialog"],.sr-only') || element.matches("input[type=password]")) continue;
     const heading = element.querySelector("strong, h3, h4, .skill-title");
     const label = (element.getAttribute("aria-label") || (heading && labelText(heading)) || (element.tagName === "SUMMARY" ? element.querySelector("span")?.firstChild?.textContent : element.matches("input,select") ? "" : labelText(element)))?.trim();
@@ -90,7 +91,8 @@ export function focusSetting(element: HTMLElement) {
   }
   const label = element.closest("label") ?? element.querySelector("label");
   const title = labelText(element);
-  const group = title && element.matches("h2,h3,h4") ? element.closest(".settings-page")?.querySelector<HTMLElement>(`[role="group"][aria-label="${CSS.escape(title)}"]`) : null;
+  const group = element.matches(".usage-period") ? element
+    : title && element.matches("h2,h3,h4") ? element.closest(".settings-page")?.querySelector<HTMLElement>(`[role="group"][aria-label="${CSS.escape(title)}"]`) : null;
   const choice = group?.querySelector<HTMLElement>('[aria-pressed="true"],[aria-checked="true"]') ?? group?.querySelector<HTMLElement>("button");
   const control = label?.control ?? choice ?? (element.matches("button,input,select,summary,[tabindex]") ? element : undefined)
     ?? element.closest("button") ?? element.closest(".settings-row,.agent-config-field,tr")?.querySelector<HTMLElement>("button:not(:disabled), select, input");

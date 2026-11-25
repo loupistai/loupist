@@ -30,7 +30,7 @@ import { skillBlurb, skillPresentation, visibleSkill } from "@/lib/agentSkills";
 import { formatNumber } from "@/i18n/format";
 import { composeSubmission, composerChipInlineText, contextGroupLabel, rankText, type ComposerChip, type ContextOption } from "../../chat/composerChips";
 import type { FileUIPart } from "ai";
-import type { ChatArtifactRef, KnowledgePin } from "../../types";
+import type { ChatArtifactRef, KnowledgePin, LoupistBridge } from "../../types";
 import {
   PromptInput,
   PromptInputActionAddAttachments,
@@ -62,7 +62,7 @@ import { useComposerInlineReferences, type InlineComposerItem } from "./useCompo
 import { knowledgePinKey } from "../../knowledge/location";
 import { activeTriggerAt, ComposerAssistMenu, ComposerPromptHighlight, type ActiveTrigger, type AssistOption, type ComposerOption, type ComposerSkill } from "./ComposerAssist";
 import { AsOfDatePanel } from "./ComposerAsOf";
-import { shortcutFor } from "../../app/shortcuts";
+import { isMacPlatform, shortcutFor } from "../../app/shortcuts";
 import { asOfProblem, formatAsOf, typedAsOf } from "../../chat/asOf";
 import { fileSize } from "../../chat/fileSize";
 import {
@@ -75,6 +75,7 @@ const t = i18n.getFixedT(null, "chat");
 /** Space between the composer's top edge and a menu that opens above it (`.composer-assist`). */
 const COMPOSER_MENU_GAP = 10;
 const MEMORY_SKILL_IDS: readonly string[] = ["world", "lens", "journal"];
+type ReadClipboardImage = LoupistBridge["clipboardReadImage"];
 
 const validateAttachment = (file: File) =>
   file.type.startsWith("image/") && file.size > 5 * 1024 * 1024
@@ -109,6 +110,7 @@ type Props = {
   onAddKnowledgePin?: (pin: KnowledgePin) => void;
   /** "Screenshot of World" in the + menu, available when the conversation has a World view. */
   mapScreenshot?: MapScreenshot;
+  readClipboardImage?: ReadClipboardImage;
   /** The chat's saved Sources, offered as "Add from Evidence". */
   evidenceSources?: readonly EvidenceSourceOption[];
   onSelectArtifact?: (artifact: ChatArtifactRef) => void;
@@ -121,7 +123,7 @@ type Props = {
   noAccount?: boolean;
   onChooseDefault: () => void;
   onSend: (prompt: string, files: FileUIPart[], draftText?: string) => boolean | void | Promise<boolean | void>;
-  onFollowUp: (text?: string, files?: FileUIPart[], draftText?: string) => boolean | void;
+  onFollowUp: (text?: string, files?: FileUIPart[], draftText?: string) => boolean | void | Promise<boolean | void>;
   onAbort: () => void;
   onOpenModelSettings?: () => void;
   /** Rust opens the provider's usage page from the menu's plan line. */
@@ -183,14 +185,17 @@ function ComposerIncomingFiles({ request, onTaken }: { request?: IncomingFiles; 
   return null;
 }
 
+/** The files attached to the next message; a file still being read counts, and the tray says so until it is in. */
 function ComposerAttachmentTray({ onFilesChange }: { onFilesChange: (count: number) => void}) {
   useTranslation("chat");
   const attachments = usePromptInputAttachments();
+  const { reading } = attachments;
   useEffect(() => {
-    onFilesChange(attachments.files.length);
-  }, [attachments.files, onFilesChange]);
-  if (attachments.files.length === 0) return null;
+    onFilesChange(attachments.files.length + reading);
+  }, [attachments.files, reading, onFilesChange]);
+  if (attachments.files.length === 0 && reading === 0) return null;
   const count = attachments.files.length;
+  const readingLabel = t("chatComposer.attachments.reading", { count: reading, formattedCount: formatNumber(reading) });
   const name = (filename?: string) => filename ?? t("chatComposer.attachmentName");
   // The size of the file the user picked, in the one format files use everywhere ("1.2 MB").
   const size = (bytes?: number) => bytes === undefined ? "" : fileSize(bytes);
@@ -202,7 +207,7 @@ function ComposerAttachmentTray({ onFilesChange }: { onFilesChange: (count: numb
     message?.focus();
   };
   return (
-    <div className="composer-attachments" role="group" aria-label={t("chatComposer.attachments.count", { count, formattedCount: formatNumber(count) })}>
+    <div className="composer-attachments" role="group" aria-label={count ? t("chatComposer.attachments.count", { count, formattedCount: formatNumber(count) }) : readingLabel}>
       {attachments.files.map((file) => file.mediaType.startsWith("image/") ? (
         <figure className="composer-thumb" key={file.id} title={titled(file)}>
           <img src={file.url} alt={name(file.filename)} />
@@ -221,7 +226,8 @@ function ComposerAttachmentTray({ onFilesChange }: { onFilesChange: (count: numb
         </span>
       ))}
       <span className="composer-attachments-meta">
-        {t("chatComposer.attachments.count", { count, formattedCount: formatNumber(count) })}
+        {reading ? <span className="composer-attachments-reading" role="status"><Spinner aria-hidden="true" />{readingLabel}</span> : null}
+        {count ? t("chatComposer.attachments.count", { count, formattedCount: formatNumber(count) }) : null}
         {count >= 2 ? <button type="button" onClick={(event) => { const message = event.currentTarget.closest("form")?.querySelector("textarea"); for (const file of [...attachments.files]) attachments.remove(file.id); message?.focus(); }}>{t("chatComposer.attachments.clearAll")}</button> : null}
       </span>
     </div>
@@ -313,49 +319,40 @@ function MapScreenshotAction({ mapScreenshot, onError }: { mapScreenshot: MapScr
 
 function ClipboardAttachmentAction({
   onError,
+  readClipboardImage,
 }: {
   onError: (message: string | null) => void;
+  readClipboardImage?: ReadClipboardImage;
 }) {
   useTranslation("chat");
   const attachments = usePromptInputAttachments();
 
   const attachClipboard = async () => {
     onError(null);
-    if (!navigator.clipboard?.read) {
-      onError(t("chatComposer.clipboardAttachmentsAreNotAvailableInThisEnvironment"));
-      return;
-    }
     try {
-      const items = await navigator.clipboard.read();
-      const files: File[] = [];
-      const at = new Date();
-      for (const item of items) {
-        for (const mediaType of item.types) {
-          if (!mediaType.startsWith("image/")) continue;
-          files.push(pastedImage(await item.getType(mediaType), at, files.length));
+      const image = await readClipboardImage?.();
+      switch (image?.status) {
+        case "image": {
+          const bytes = Uint8Array.from(atob(image.dataBase64), (byte) => byte.charCodeAt(0));
+          attachments.add([pastedImage(new Blob([bytes], { type: "image/png" }))]);
+          break;
         }
+        case "noImage":
+          onError(t("chatComposer.theClipboardDoesNotContainAnAttachableImage"));
+          break;
+        case "tooLarge":
+          onError(t("chatComposer.imageAttachmentsMustBe5MBOrSmaller"));
+          break;
+        default:
+          onError(t("chatComposer.clipboardNotRead", { paste: isMacPlatform() ? "⌘V" : "Ctrl+V" }));
       }
-      if (files.length === 0) {
-        onError(t("chatComposer.theClipboardDoesNotContainAnAttachableImage"));
-        return;
-      }
-      attachments.add(files);
-    } catch (cause) {
-      if (cause instanceof DOMException && cause.name === "NotAllowedError") {
-        onError(t("chatComposer.clipboardAccessWasNotAllowed"));
-      } else {
-        onError(t("chatComposer.couldNotAttachClipboardContents"));
-      }
+    } catch {
+      onError(t("chatComposer.couldNotAttachClipboardContents"));
     }
   };
 
   return (
-    <PromptInputActionMenuItem
-      onSelect={(event) => {
-        event.preventDefault();
-        void attachClipboard();
-      }}
-    >
+    <PromptInputActionMenuItem onSelect={() => { void attachClipboard(); }}>
       <ClipboardIcon />{t("chatComposer.attach.pasteImage")}</PromptInputActionMenuItem>
   );
 }
@@ -366,6 +363,7 @@ function ComposerAddMenu({
   onPrivateChatChange,
   onAttachmentError,
   mapScreenshot,
+  readClipboardImage,
   evidenceSources,
   onAddKnowledgePin,
 }: {
@@ -373,6 +371,7 @@ function ComposerAddMenu({
   onPrivateChatChange: (enabled: boolean) => void;
   onAttachmentError: (message: string | null) => void;
   mapScreenshot?: MapScreenshot;
+  readClipboardImage?: ReadClipboardImage;
   evidenceSources?: readonly EvidenceSourceOption[];
   onAddKnowledgePin?: (pin: KnowledgePin) => void;
 }) {
@@ -411,7 +410,7 @@ function ComposerAddMenu({
           }}>
           <DropdownMenuLabel>{t("chatComposer.addToThisMessage")}</DropdownMenuLabel>
           <PromptInputActionAddAttachments label={t("chatComposer.attach.files")} />
-          <ClipboardAttachmentAction onError={onAttachmentError} />
+          <ClipboardAttachmentAction onError={onAttachmentError} readClipboardImage={readClipboardImage} />
           {mapScreenshot ? <MapScreenshotAction mapScreenshot={mapScreenshot} onError={onAttachmentError} /> : null}
           {evidenceSources?.length && onAddKnowledgePin ? <>
             <DropdownMenuSeparator />
@@ -523,7 +522,8 @@ function ComposerTile({
   const attachments = usePromptInputAttachments();
   const [tooltip, setTooltip] = useState(false);
   const submitting = !running && attachments.isSubmitting;
-  const empty = !prompt.trim() && attachments.files.length === 0;
+  // A file still being read makes the message sendable: Send waits for it.
+  const empty = !prompt.trim() && attachments.files.length === 0 && attachments.reading === 0;
   const label = running ? saving ? t("memorySaving.skip") : t("chatComposer.stopResponse") : t("chatComposer.send");
   return (
     <Tooltip open={running && tooltip} onOpenChange={setTooltip}>
@@ -587,6 +587,7 @@ export function ChatComposer({
   onSearchContext,
   onAddKnowledgePin,
   mapScreenshot,
+  readClipboardImage,
   evidenceSources,
   onSelectArtifact,
   onPromptChange,
@@ -1026,7 +1027,7 @@ export function ChatComposer({
           }
           setAttachmentError(null);
           if (isRunning) {
-            const queued = onFollowUp(next, files, text);
+            const queued = await onFollowUp(next, files, text);
             keepComposerFocus();
             if (queued !== false) updateChips([]);
             return queued !== false;
@@ -1058,6 +1059,7 @@ export function ChatComposer({
             onPrivateChatChange={onPrivateChatChange}
             onAttachmentError={setAttachmentError}
             mapScreenshot={mapScreenshot}
+            readClipboardImage={readClipboardImage}
             evidenceSources={evidenceSources}
             onAddKnowledgePin={onAddKnowledgePin}
           />

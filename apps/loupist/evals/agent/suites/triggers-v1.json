@@ -1,0 +1,37 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "triggers",
+  "version": 1,
+  "description": "A fictional price check. The met run receives the trigger block and reports the move from its own read. No paid call: scripted Pi only.",
+  "scenarios": [
+    {
+      "id": "TRIG-001",
+      "title": "A met price check is reported from the trigger block",
+      "language": "en",
+      "tags": ["regression"],
+      "split": "regression",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "scheduled",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "This run started because the user's price check was met.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": ["Northwind"],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

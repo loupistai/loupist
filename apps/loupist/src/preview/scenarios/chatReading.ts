@@ -92,6 +92,24 @@ function stackedRevenueFixture(bridge: PreviewBridge) {
   });
 }
 
+/** A year of daily closes in won, as a price-history chart publishes it: a date and a price per trading day. */
+function dailyPriceFixture(bridge: PreviewBridge) {
+  const ko = previewKo();
+  const rows: Array<[string, number]> = [];
+  for (let day = Date.UTC(2025, 10, 24); day <= Date.UTC(2026, 10, 23); day += 86_400_000) {
+    if ([0, 6].includes(new Date(day).getUTCDay())) continue;
+    rows.push([new Date(day).toISOString().slice(0, 10), Math.round(520_000 + rows.length * 4_200 + Math.sin(rows.length / 9) * 90_000)]);
+  }
+  return seedRevenueChart(bridge, {
+    title: ko ? "한울정밀 최근 1년 일별 종가" : "Hanul Precision daily close, last 12 months",
+    prompt: ko ? "한울정밀 최근 1년 주가를 차트로 보여 줘." : "Chart Hanul Precision's share price over the last year.",
+    content: ko ? "최근 1년 일별 종가입니다." : "Daily closing prices for the last twelve months.",
+    columns: [{ id: "date", label: ko ? "날짜" : "Date", kind: "date" }, { id: "close_krw", label: ko ? "종가(원)" : "Close (KRW)", kind: "number" }],
+    rows,
+    view: { kind: "line", x: "date", y: ["close_krw"], color: null, semantic_types: { date: "Date", close_krw: "Price" }, title: null, subtitle: null },
+  });
+}
+
 const revenueChartReady = () => {
   const card = select('.chat-artifact-block[data-state="ready"]');
   return card && (!hasLayout() || card.querySelector(".chart-analytic-canvas svg [aria-roledescription='axis']")) ? card : null;
@@ -222,6 +240,16 @@ export const chatReadingScenarios: PreviewScenario[] = [
     revenueChartReady, centerOn('.chat-artifact-block[data-state="ready"]')), setup: groupedRevenueFixture },
   { ...base("chat-chart-stacked", "Revenue segments stack to each year's total",
     revenueChartReady, centerOn('.chat-artifact-block[data-state="ready"]')), setup: stackedRevenueFixture },
+  // W16b-003: a year of daily prices gets as many date labels as the chart's width holds, none touching.
+  { ...base("chat-chart-daily", "A year of daily prices in the answer column, one date label a month",
+    revenueChartReady, centerOn('.chat-artifact-block[data-state="ready"]')), setup: dailyPriceFixture },
+  { ...base("chat-chart-daily-panel", "The same chart in the side panel, one date label a quarter", () => {
+    const panel = select(".workspace-panel");
+    return panel?.querySelector(hasLayout() ? ".chart-analytic-canvas svg [aria-roledescription='axis']" : ".artifact-chart-shell") ? panel : null;
+  }, async () => {
+    await until(revenueChartReady, "The chart card did not draw");
+    await click('.chat-artifact-block[data-state="ready"] .open-in-panel');
+  }), setup: dailyPriceFixture },
   // B73: Rust keeps only a chart's current revision; an earlier answer says its chart changed instead of drawing the newer one.
   { ...base("chat-chart-revised", "An earlier answer's chart was revised by a later answer", () => {
     const card = select('.chat-artifact-block[data-state="revised"]');

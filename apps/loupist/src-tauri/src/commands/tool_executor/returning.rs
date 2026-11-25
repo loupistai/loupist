@@ -16,6 +16,76 @@ impl AppToolExecutor {
         result: &Value,
     ) -> Result<Option<Returning>, BrokerError> {
         match method {
+            ToolMethod::ScheduleRead
+            | ToolMethod::ScheduleCreate
+            | ToolMethod::TriggerSave
+            | ToolMethod::ScheduleHandoff
+            | ToolMethod::ScheduleBriefing
+            | ToolMethod::ScheduleUpdate
+            | ToolMethod::ScheduleSetStatus
+            | ToolMethod::ScheduleDelete
+            | ToolMethod::ScheduleRunNow
+            | ToolMethod::ScheduleStop => {
+                let mut fields = BTreeMap::new();
+                let mut check = |pointer: String| {
+                    if result
+                        .pointer(&pointer)
+                        .and_then(Value::as_str)
+                        .is_some_and(|text| !text.is_empty())
+                    {
+                        // TODO(model-text): Check the trigger result's source label.
+                        fields.insert(pointer, "trigger check result".into());
+                    }
+                };
+                for prefix in ["/trigger/last", "/dry_run"] {
+                    for field in ["reading", "today_reading", "error", "as_of"] {
+                        check(format!("{prefix}/{field}"));
+                    }
+                }
+                for (path, fields) in [
+                    ("/trigger/evaluations", &["reading", "error", "as_of"][..]),
+                    ("/dry_run/days", &["reading"][..]),
+                ] {
+                    if let Some(rows) = result.pointer(path).and_then(Value::as_array) {
+                        for index in 0..rows.len() {
+                            for field in fields {
+                                check(format!("{path}/{index}/{field}"));
+                            }
+                        }
+                    }
+                }
+                Ok((!fields.is_empty()).then_some(Returning::Fields(fields)))
+            }
+            ToolMethod::ScriptRead | ToolMethod::ScriptList | ToolMethod::ScriptSave => {
+                let mut fields = BTreeMap::new();
+                let outside = |value: &Value| {
+                    value.pointer("/metadata/afterOutsideText") == Some(&Value::Bool(true))
+                };
+                let mut script = |prefix: &str| {
+                    for field in ["title", "summary", "args"] {
+                        fields.insert(
+                            format!("{prefix}/metadata/{field}"),
+                            "saved script content".into(),
+                        );
+                    }
+                };
+                match method {
+                    ToolMethod::ScriptRead if outside(&result["summary"]) => {
+                        script("/summary");
+                        fields.insert("/code".into(), "saved Python code".into());
+                    }
+                    ToolMethod::ScriptSave if outside(result) => script(""),
+                    ToolMethod::ScriptList => {
+                        for (index, item) in result.as_array().into_iter().flatten().enumerate() {
+                            if outside(item) {
+                                script(&format!("/{index}"));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                Ok((!fields.is_empty()).then_some(Returning::Fields(fields)))
+            }
             ToolMethod::RunResultsList => {
                 // The registry stores warnings before presentation delimiters.
                 // Listing receipts must not promote provider prose to host advice.
@@ -45,11 +115,11 @@ impl AppToolExecutor {
                 Ok(Some(Returning::Fields(BTreeMap::from([
                     (
                         "/stdout".into(),
-                        "Python result from app-exported text".into(),
+                        "Python result from third-party data".into(),
                     ),
                     (
                         "/stderr".into(),
-                        "Python result from app-exported text".into(),
+                        "Python result from third-party data".into(),
                     ),
                 ]))))
             }

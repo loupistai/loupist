@@ -63,7 +63,8 @@ text sends nothing, and no request runs on typing, focus, page open or offline. 
 matches come first. For a name, common stocks, depositary receipts and ETFs precede derivatives
 and debt. Regional listings with the same OpenFIGI composite identity share one result. When
 OpenFIGI returns the composite listing, it represents the group. Different issuers and country
-listings stay separate. Each result shows its name and `ticker · exchange · security type`; a
+listings stay separate. Among composites, a listing on an exchange or country composite precedes
+trade-reporting and OTC lines, then the one with more returned venues comes first. Each result shows its name and `ticker · exchange · security type`; a
 readable exchange name takes precedence over the code in search results, followed rows
 and the command palette. When a response omits the name, the host consults the bundled
 OpenFIGI equity exchange directory. Unknown codes and codes shared by multiple venues

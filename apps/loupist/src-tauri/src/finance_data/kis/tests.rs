@@ -114,6 +114,21 @@ fn manifest_excludes_writes_and_every_read_prepares_on_its_fixed_host() {
             (KisEnvironment::Real, "openapi.koreainvestment.com"),
             (KisEnvironment::Demo, "openapivts.koreainvestment.com"),
         ] {
+            if !operation.available_in(environment) {
+                let query = tool_query_for(operation, KisEnvironment::Real);
+                assert!(matches!(
+                    prepare_kis_request(
+                        &manifest,
+                        &query,
+                        environment,
+                        Some(&profile),
+                        KisRequestAuthority::AgentRead
+                    ),
+                    Err(FinanceDataError::InvalidQuery(message))
+                        if message == manifest::ENVIRONMENT_UNSUPPORTED
+                ));
+                continue;
+            }
             let query = tool_query_for(operation, environment);
             let prepared = prepare_kis_request(
                 &manifest,
@@ -169,7 +184,7 @@ fn account_profile_values_cannot_be_supplied_as_tool_parameters() {
 fn operation_search_exposes_account_reads_only_with_a_native_profile() {
     let service = FinanceDataService::new().unwrap();
     let public = service
-        .kis_operation_search(json!({"query": "", "limit": "20"}), None)
+        .kis_operation_search(json!({"query": "", "limit": "20"}), "real", None)
         .unwrap();
     let operations = public["operations"].as_array().unwrap();
     assert!(!operations.is_empty());
@@ -186,6 +201,7 @@ fn operation_search_exposes_account_reads_only_with_a_native_profile() {
     let profiled = service
         .kis_operation_search(
             json!({"query": "inquire_balance", "limit": "20"}),
+            "real",
             Some(&complete_profile()),
         )
         .unwrap();
@@ -194,6 +210,21 @@ fn operation_search_exposes_account_reads_only_with_a_native_profile() {
         .unwrap()
         .iter()
         .any(|operation| operation["scope"] == "account"));
+}
+
+#[test]
+fn demo_discovery_excludes_the_71_real_only_market_routes() {
+    let service = FinanceDataService::new().unwrap();
+    for (environment, count) in [("demo", 20), ("real", 88)] {
+        let result = service
+            .kis_operation_search(json!({"query": "volume_rank"}), environment, None)
+            .unwrap();
+        assert_eq!(result["policy"]["public_reads_available_v1"], count);
+        assert_eq!(
+            result["operations"].as_array().unwrap().is_empty(),
+            environment == "demo"
+        );
+    }
 }
 
 #[test]
@@ -315,8 +346,8 @@ fn service_with_unresponsive_local_proxy() -> (FinanceDataService, std::net::Tcp
 }
 
 #[tokio::test]
-async fn synchronous_scope_invalidation_prevents_reusing_tokens_and_cooldowns() {
-    let (service, _proxy) = service_with_unresponsive_local_proxy();
+async fn synchronous_scope_invalidation_clears_tokens_and_retains_cooldowns() {
+    let service = FinanceDataService::new().unwrap();
     let app_key = "test-kis-application-key";
     let app_secret = "test-kis-application-secret";
     let fingerprint = kis_credential_fingerprint(KisEnvironment::Real, app_key, app_secret);
@@ -329,9 +360,10 @@ async fn synchronous_scope_invalidation_prevents_reusing_tokens_and_cooldowns() 
             expires_at: Utc::now() + ChronoDuration::hours(1),
         },
     );
-    cache
-        .issuance_blocked_until
-        .insert(fingerprint, Utc::now() + KIS_TOKEN_ISSUANCE_COOLDOWN);
+    cache.issuance_blocked_until.insert(
+        fingerprint,
+        tokio::time::Instant::now() + KIS_TOKEN_ISSUANCE_COOLDOWN,
+    );
     // A synchronous reconciliation must invalidate even while async work
     // holds the mutex. The next (cold) access must not deadlock on the cache.
     service.invalidate_kis_token_cache();
@@ -342,19 +374,15 @@ async fn synchronous_scope_invalidation_prevents_reusing_tokens_and_cooldowns() 
     )
     .await
     .expect("invalidated token access must finish its bounded request");
-    // The unanswered request ends through its own time limit: a timeout.
-    assert!(matches!(
-        result,
-        Err(FinanceDataError::Timeout(KIS_SOURCE_ID))
-    ));
+    assert!(matches!(result, Err(FinanceDataError::KisRateLimited(_))));
     let cache = service.kis_token_cache().await;
     assert!(cache.tokens.is_empty());
-    assert!(cache.issuance_blocked_until.is_empty());
+    assert_eq!(cache.issuance_blocked_until.len(), 1);
 }
 
 #[tokio::test]
-async fn kis_tokens_are_reused_and_reissue_waits_out_the_cooldown() {
-    let service = FinanceDataService::new().unwrap();
+async fn kis_verification_probes_the_provider_even_with_a_cached_token() {
+    let (service, _proxy) = service_with_unresponsive_local_proxy();
     let app_key = "test-kis-application-key";
     let app_secret = "test-kis-application-secret";
     let remembered = KisAccessToken {
@@ -362,33 +390,193 @@ async fn kis_tokens_are_reused_and_reissue_waits_out_the_cooldown() {
         environment: KisEnvironment::Demo,
         expires_at: Utc::now() + ChronoDuration::hours(1),
     };
+    let fingerprint = kis_credential_fingerprint(KisEnvironment::Demo, app_key, app_secret);
     service
-        .remember_kis_access_token(
-            KisEnvironment::Demo,
-            app_key,
-            app_secret,
-            remembered.clone(),
-        )
-        .await;
+        .kis_tokens
+        .lock()
+        .await
+        .tokens
+        .insert(fingerprint, remembered.clone());
+    let credentials = BTreeMap::from([
+        ("app_key".into(), app_key.into()),
+        ("app_secret".into(), app_secret.into()),
+    ]);
+    assert!(matches!(
+        service
+            .verify_credential(KIS_SOURCE_ID, &credentials, Some("demo"))
+            .await,
+        Err(FinanceDataError::Timeout(KIS_SOURCE_ID))
+    ));
+    assert!(service.kis_read_pace.demo.lock().await.is_some());
     let reused = service
         .kis_access_token(KisEnvironment::Demo, app_key, app_secret)
         .await
         .expect("cached KIS token should be reusable");
     assert_eq!(reused.value, remembered.value);
+}
 
-    let fingerprint = kis_credential_fingerprint(KisEnvironment::Real, app_key, app_secret);
-    service
-        .kis_tokens
-        .lock()
-        .await
-        .issuance_blocked_until
-        .insert(fingerprint, Utc::now() + ChronoDuration::seconds(60));
+#[tokio::test]
+async fn kis_token_reissue_waits_out_the_cooldown() {
+    let (service, _proxy) = service_with_unresponsive_local_proxy();
+    let app_key = "test-kis-application-key";
+    let app_secret = "test-kis-application-secret";
+    assert!(matches!(
+        service
+            .kis_access_token(KisEnvironment::Real, app_key, app_secret)
+            .await,
+        Err(FinanceDataError::Timeout(KIS_SOURCE_ID))
+    ));
     assert!(matches!(
         service
             .kis_access_token(KisEnvironment::Real, app_key, app_secret)
             .await,
         Err(FinanceDataError::KisRateLimited(_))
     ));
+}
+
+#[test]
+fn kis_token_lifetime_is_bounded_by_the_absolute_seoul_expiry() {
+    let expiry = Utc::now() + ChronoDuration::minutes(10);
+    let format_expiry = |time: DateTime<Utc>| {
+        time.with_timezone(&chrono_tz::Asia::Seoul)
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string()
+    };
+    let mut body = json!({
+        "access_token": "test-kis-access-token-value", "token_type": "Bearer",
+        "expires_in": 86400, "access_token_token_expired": format_expiry(expiry),
+    });
+    let parse = |body: &Value| {
+        parse_kis_token_response(
+            &serde_json::to_vec(body).unwrap(),
+            KisEnvironment::Real,
+            "test-app-key",
+            "test-app-secret",
+        )
+    };
+    assert_eq!(
+        parse(&body).unwrap().expires_at.timestamp(),
+        expiry.timestamp()
+    );
+    body["access_token_token_expired"] =
+        json!(format_expiry(Utc::now() - ChronoDuration::minutes(1)));
+    assert!(matches!(
+        parse(&body),
+        Err(FinanceDataError::InvalidResponse)
+    ));
+}
+
+#[test]
+fn kis_read_rate_limit_is_typed_even_on_http_500() {
+    let manifest = manifest();
+    let prepared = price_request(&manifest);
+    let rate_limit = br#"{"rt_cd":"1","msg_cd":"EGW00201"}"#;
+    assert!(matches!(
+        interpret_kis_read_status(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            raw_response(&prepared, rate_limit),
+        ),
+        Err(FinanceDataError::RateLimited(KIS_SOURCE_ID))
+    ));
+    assert!(matches!(
+        validate_kis_response(rate_limit, prepared.operation),
+        Err(FinanceDataError::RateLimited(KIS_SOURCE_ID))
+    ));
+    assert!(matches!(
+        interpret_kis_read_status(StatusCode::OK, raw_response(&prepared, rate_limit)),
+        Err(FinanceDataError::RateLimited(KIS_SOURCE_ID))
+    ));
+    assert!(matches!(
+        interpret_kis_read_status(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            raw_response(&prepared, br#"{"rt_cd":"1","msg_cd":"OTHER"}"#),
+        ),
+        Err(FinanceDataError::Provider(_))
+    ));
+}
+
+#[test]
+fn kis_read_codes_take_priority_over_status_and_provider_text() {
+    use KisReadError as E;
+    let manifest = manifest();
+    let prepared = price_request(&manifest);
+    for (code, expected) in [
+        ("EGW00121", E::TokenRejected),
+        ("EGW00122", E::TokenRejected),
+        ("EGW00123", E::TokenRejected),
+        ("EGW00103", E::CredentialRejected),
+        ("EGW00105", E::CredentialRejected),
+        ("EGW00206", E::PermissionRequired),
+        ("OPSQ2001", E::MarketCode),
+        ("OPSQ2002", E::FieldLength),
+    ] {
+        for (status, key) in [
+            (StatusCode::OK, "msg_cd"),
+            (StatusCode::FORBIDDEN, "error_code"),
+        ] {
+            let mut body = json!({"rt_cd":"1", "msg1":"token rate error"});
+            body[key] = json!(code);
+            let raw = raw_response(&prepared, &serde_json::to_vec(&body).unwrap());
+            assert!(
+                matches!(interpret_kis_read_status(status, raw), Err(FinanceDataError::KisRead(error)) if error == expected),
+                "{code}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_rejected_kis_token_retries_once_and_evicts_only_the_token_used() {
+    use KisReadError as E;
+    let service = FinanceDataService::new().unwrap();
+    let environment = KisEnvironment::Demo;
+    let key = "test-kis-application-key";
+    let secret = "test-kis-application-secret";
+    let fingerprint = kis_credential_fingerprint(environment, key, secret);
+    let mut first = KisAccessToken {
+        value: "first-test-kis-access-token".into(),
+        environment,
+        expires_at: Utc::now() + ChronoDuration::hours(1),
+    };
+    service
+        .kis_tokens
+        .lock()
+        .await
+        .tokens
+        .insert(fingerprint.clone(), first.clone());
+    first.value = "renewed-test-kis-access-token".into();
+    let mut used = Vec::new();
+    let result = service
+        .fetch_kis_with_token(environment, key, secret, |token| {
+            used.push(token.value);
+            let replacement = (used.len() == 1).then(|| first.clone());
+            let fingerprint = &fingerprint;
+            let service = &service;
+            async move {
+                if let Some(replacement) = replacement {
+                    service
+                        .kis_tokens
+                        .lock()
+                        .await
+                        .tokens
+                        .insert(fingerprint.clone(), replacement);
+                }
+                Err(FinanceDataError::KisRead(E::TokenRejected))
+            }
+        })
+        .await;
+    assert!(matches!(
+        result,
+        Err(FinanceDataError::KisRead(E::TokenRejected))
+    ));
+    assert_eq!(
+        used,
+        [
+            "first-test-kis-access-token",
+            "renewed-test-kis-access-token"
+        ]
+    );
+    assert!(service.kis_tokens.lock().await.tokens.is_empty());
 }
 
 #[test]
@@ -488,26 +676,17 @@ impl FixturePages {
     async fn collect(
         &self,
         prepared: &PreparedKisRequest<'_>,
-        paced: &std::sync::atomic::AtomicUsize,
     ) -> Result<KisPages, FinanceDataError> {
-        let pacer = || {
-            paced.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Box::pin(async {}) as futures_util::future::BoxFuture<'_, ()>
-        };
-        collect_kis_pages(
-            prepared,
-            |url, continuing| {
-                self.requests.lock().unwrap().push((url, continuing));
-                let next = self
-                    .pages
-                    .lock()
-                    .unwrap()
-                    .pop_front()
-                    .expect("the loop requested more pages than the fixture has");
-                async move { next }
-            },
-            &pacer,
-        )
+        collect_kis_pages(prepared, |url, continuing| {
+            self.requests.lock().unwrap().push((url, continuing));
+            let next = self
+                .pages
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("the loop requested more pages than the fixture has");
+            async move { next }
+        })
         .await
     }
 
@@ -541,6 +720,22 @@ fn holiday_page(days: &[&str], fk: &str, tr_cont: &str) -> RawProviderResponse {
     )
 }
 
+#[tokio::test(start_paused = true)]
+async fn kis_connections_share_separate_demo_and_real_request_clocks() {
+    let service = FinanceDataService::new().unwrap();
+    let another_turn = service.clone();
+    let start = tokio::time::Instant::now();
+    service.kis_read_pace.wait(KisEnvironment::Demo).await;
+    another_turn.kis_read_pace.wait(KisEnvironment::Real).await;
+    assert_eq!(start.elapsed(), Duration::ZERO);
+    service.kis_read_pace.wait(KisEnvironment::Real).await;
+    assert_eq!(start.elapsed(), Duration::from_millis(500));
+    another_turn.kis_read_pace.wait(KisEnvironment::Demo).await;
+    assert_eq!(start.elapsed(), Duration::from_secs(1));
+    service.kis_read_pace.wait(KisEnvironment::Demo).await;
+    assert_eq!(start.elapsed(), Duration::from_secs(2));
+}
+
 #[tokio::test]
 async fn continuation_follows_cursor_keys_and_merges_rows_in_page_order() {
     let manifest = manifest();
@@ -554,8 +749,7 @@ async fn continuation_follows_cursor_keys_and_merges_rows_in_page_order() {
         Ok(holiday_page(&["20261102", "20261103"], "cursor one  ", "M")),
         Ok(holiday_page(&["20261104"], "", "D")),
     ]);
-    let paced = std::sync::atomic::AtomicUsize::new(0);
-    let pages = provider.collect(&prepared, &paced).await.unwrap();
+    let pages = provider.collect(&prepared).await.unwrap();
     assert_eq!(pages.stop, KisPageStop::Complete);
     assert_eq!(provider.continuing(), vec![false, true]);
     assert_eq!(provider.query(0, "CTX_AREA_FK").as_deref(), Some(""));
@@ -568,7 +762,6 @@ async fn continuation_follows_cursor_keys_and_merges_rows_in_page_order() {
         Some("cursor one  -nk")
     );
     assert_eq!(provider.query(1, "BASS_DT").as_deref(), Some("20261102"));
-    assert_eq!(paced.load(std::sync::atomic::Ordering::SeqCst), 1);
 
     let result = normalize_kis_market_response(&prepared, &pages, None).unwrap();
     let days = result["data"]["response"]["output"]
@@ -614,15 +807,10 @@ async fn continuation_stops_at_the_page_cap_and_reports_truncation() {
             .map(|day| Ok(holiday_page(&[day.as_str()], day, "M")))
             .collect(),
     );
-    let paced = std::sync::atomic::AtomicUsize::new(0);
-    let pages = provider.collect(&prepared, &paced).await.unwrap();
+    let pages = provider.collect(&prepared).await.unwrap();
     assert_eq!(pages.stop, KisPageStop::PageCap);
     assert_eq!(pages.pages.len(), MAX_KIS_PAGES);
     assert_eq!(provider.continuing().len(), MAX_KIS_PAGES);
-    assert_eq!(
-        paced.load(std::sync::atomic::Ordering::SeqCst),
-        MAX_KIS_PAGES - 1
-    );
     let result = normalize_kis_market_response(&prepared, &pages, None).unwrap();
     assert_eq!(result["page"]["truncated"], true);
     assert_eq!(result["page"]["returned"], MAX_KIS_PAGES);
@@ -633,7 +821,6 @@ async fn continuation_stops_at_the_page_cap_and_reports_truncation() {
 #[tokio::test]
 async fn continuation_stops_honestly_without_a_cursor_on_a_repeat_or_a_failed_page() {
     let manifest = manifest();
-    let paced = std::sync::atomic::AtomicUsize::new(0);
 
     // CTS is not echoed in the response: no next request is possible.
     let loans = prepared_for(
@@ -648,7 +835,7 @@ async fn continuation_stops_honestly_without_a_cursor_on_a_repeat_or_a_failed_pa
         "M",
         "2026-11-02T01:15:00.000Z",
     ))]);
-    let pages = provider.collect(&loans, &paced).await.unwrap();
+    let pages = provider.collect(&loans).await.unwrap();
     assert_eq!(pages.stop, KisPageStop::MissingCursor);
     assert_eq!(provider.continuing(), vec![false]);
     let result = normalize_kis_market_response(&loans, &pages, None).unwrap();
@@ -664,7 +851,7 @@ async fn continuation_stops_honestly_without_a_cursor_on_a_repeat_or_a_failed_pa
         "2026-11-02T01:15:00.000Z",
     );
     let provider = FixturePages::new(vec![Ok(ranked.clone()), Ok(ranked)]);
-    let pages = provider.collect(&ranking, &paced).await.unwrap();
+    let pages = provider.collect(&ranking).await.unwrap();
     assert_eq!(pages.stop, KisPageStop::RepeatedPage);
     assert_eq!(pages.pages.len(), 1);
     assert_eq!(provider.continuing(), vec![false, true]);
@@ -687,7 +874,7 @@ async fn continuation_stops_honestly_without_a_cursor_on_a_repeat_or_a_failed_pa
             "2026-11-02T01:15:01.000Z",
         )),
     ]);
-    let pages = provider.collect(&holidays, &paced).await.unwrap();
+    let pages = provider.collect(&holidays).await.unwrap();
     assert_eq!(pages.stop, KisPageStop::LaterPageFailed);
     assert_eq!(pages.pages.len(), 1);
     let provider = FixturePages::new(vec![
@@ -695,7 +882,7 @@ async fn continuation_stops_honestly_without_a_cursor_on_a_repeat_or_a_failed_pa
         Err(FinanceDataError::InvalidResponse),
     ]);
     assert!(matches!(
-        provider.collect(&holidays, &paced).await,
+        provider.collect(&holidays).await,
         Err(FinanceDataError::InvalidResponse)
     ));
 }
@@ -726,8 +913,7 @@ async fn multi_page_account_reads_keep_every_result_row() {
         )),
         Ok(page(balance("000660", ""), "E", "2026-11-02T01:15:01.000Z")),
     ]);
-    let paced = std::sync::atomic::AtomicUsize::new(0);
-    let pages = provider.collect(&prepared, &paced).await.unwrap();
+    let pages = provider.collect(&prepared).await.unwrap();
     assert_eq!(
         provider.query(1, "CTX_AREA_FK100").as_deref(),
         Some("12345678^01^005930")
@@ -787,8 +973,7 @@ async fn continuation_keeps_a_per_request_summary_object_once() {
             "2026-11-02T01:15:01.000Z",
         )),
     ]);
-    let paced = std::sync::atomic::AtomicUsize::new(0);
-    let pages = provider.collect(&prepared, &paced).await.unwrap();
+    let pages = provider.collect(&prepared).await.unwrap();
     assert_eq!(pages.pages.len(), 2);
     let result = normalize_kis_market_response(&prepared, &pages, None).unwrap();
     let response = &result["data"]["response"];

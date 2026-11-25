@@ -1,0 +1,8 @@
+{
+  "title": "Price moves",
+  "terms": "A move of more than 5% from one close to the next, for {assets}",
+  "prompt": "This run started because the user's price check was met; they are not present. The trigger block names each\nasset that moved, by how much, between which two prices and dates.\n\nFor each, read the two prices again yourself and report the move with both prices and their dates. Then say\nwhat is reported about why: a filing or company release first, otherwise a news report with its publisher\nand date. When nothing establishes a reason, say that; a headline is a report, not the cause. If a move is\nan artefact (a split, a dividend adjustment, a bad print), say so plainly. Say what the move means for the\nreasons and lines the user wrote for that asset. Name any asset the check could not read.\nAnswer in {language}.",
+  "report": "every_run",
+  "every_minutes": 15,
+  "trigger": "price-band"
+}

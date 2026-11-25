@@ -7,7 +7,8 @@ import { assembleAnalyticSpec, describeAnalyticAxes } from "./analyticAdapter";
 type AnalyticView = Exclude<ChartDocument["view"], { kind: "candlestick" }>;
 type Bar = { x: number; y2: number; datum?: Record<string, unknown> };
 type Drawn = {
-  ticks: Array<Array<{ value: unknown; text: string }>>;
+  /** Each axis's shown labels, with the horizontal extent Vega gave each one. */
+  ticks: Array<Array<{ value: unknown; text: string; x1: number; x2: number }>>;
   titles: string[];
   marks: string[];
   bars: Bar[];
@@ -26,10 +27,13 @@ async function draw(spec: Record<string, unknown>): Promise<Drawn> {
     const drawn: Drawn = { ticks: [], titles: [], marks: [], bars: [], areas: [], lines: [], descriptions: [], yDomain: view.scale("y").domain() };
     type Node = { role?: string; marktype?: string; items?: Array<Node & {
       datum?: Record<string, unknown>; text?: string; x?: number; y2?: number; opacity?: number; tooltip?: Record<string, string>; description?: string;
+      bounds?: { x1: number; x2: number };
     }> };
     const visit = (node: Node | undefined) => {
       if (!node || typeof node !== "object") return;
-      if (node.role === "axis-label") drawn.ticks.push((node.items ?? []).filter((item) => item.opacity !== 0).map((item) => ({ value: item.datum?.value, text: item.text ?? "" })));
+      if (node.role === "axis-label") drawn.ticks.push((node.items ?? []).filter((item) => item.opacity !== 0).map((item) => ({
+        value: item.datum?.value, text: item.text ?? "", x1: item.bounds?.x1 ?? 0, x2: item.bounds?.x2 ?? 0,
+      })));
       else if (node.role === "axis-title") drawn.titles.push(...(node.items ?? []).map((item) => item.text ?? ""));
       else if (node.marktype === "text" && node.role === "mark") drawn.marks.push(...(node.items ?? []).map((item) => item.text ?? "").filter(Boolean));
       if (node.marktype === "rect" && node.role === "mark") drawn.bars.push(...(node.items ?? []).map((item) => ({
@@ -176,7 +180,7 @@ it.each([
 ])("renders distinct quantitative ticks for decimal values %s and %s", async (first, second) => {
   const { ticks } = await chart({ kind: "line", x: "period", y: ["amount"], semantic_types: { period: "Category", amount: "Number" } },
     [{ period: "earlier", amount: first }, { period: "later", amount: second }]);
-  const values = ticks.flat().filter((tick): tick is { value: number; text: string } => typeof tick.value === "number");
+  const values = ticks.flat().filter((tick): tick is Drawn["ticks"][number][number] & { value: number } => typeof tick.value === "number");
   expect(values.length).toBeGreaterThan(2);
   expect(new Set(values.map((tick) => tick.text)).size).toBe(values.length);
   for (const tick of values) {
@@ -249,4 +253,22 @@ it.each([
   // Identifiers stay as written, even when they look like numbers.
   const codes = await chart({ x: "code", y: ["sales"], semantic_types: { code: "ID" } }, [{ code: 5930, sales: 1 }, { code: 660, sales: 2 }]);
   expect(texts(codes.ticks[0]!).sort()).toEqual(["5930", "660"]);
+});
+
+it.each([
+  // The side panel (460 px) and the answer column, in both languages.
+  ["ko", 420, ["1월 1일", "4월 1일", "7월 1일", "10월 1일"]],
+  ["en", 420, ["Jan 1", "Apr 1", "Jul 1", "Oct 1"]],
+  ["ko", 900, ["12월 1일", "1월 1일", "2월 1일", "3월 1일", "4월 1일", "5월 1일", "6월 1일", "7월 1일", "8월 1일", "9월 1일", "10월 1일", "11월 1일"]],
+])("gives a year of daily prices as many date labels as the width holds, none touching (%s, %s px)", async (language, width, labels) => {
+  await i18n.changeLanguage(language);
+  const rows: Array<Record<string, unknown>> = [];
+  for (let day = Date.UTC(2025, 10, 24); day <= Date.UTC(2026, 10, 23); day += 86_400_000) {
+    if ([0, 6].includes(new Date(day).getUTCDay())) continue;
+    rows.push({ date: new Date(day).toISOString().slice(0, 10), close: 500_000 + rows.length * 3_000 });
+  }
+  const { ticks } = await chart({ kind: "line", x: "date", y: ["close"], semantic_types: { date: "Date", close: "Price" } }, rows,
+    [{ id: "date", label: "Date", kind: "date" }, { id: "close", label: "Close", kind: "number" }] as ChartColumn[], width);
+  expect(texts(ticks[0]!)).toEqual(labels);
+  for (const [left, right] of ticks[0]!.slice(1).map((tick, index) => [ticks[0]![index]!, tick] as const)) expect(right.x1 - left.x2).toBeGreaterThanOrEqual(8);
 });

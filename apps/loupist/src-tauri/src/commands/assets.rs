@@ -602,6 +602,9 @@ impl TurnAssets {
                     "name": unsaved.name,
                 })),
                 result_bytes: None,
+                origin: None,
+                parent_step: None,
+                python: None,
             })
             .collect()
     }

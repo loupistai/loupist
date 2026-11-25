@@ -32,11 +32,13 @@ pub(crate) mod deletion;
 mod folder;
 mod host;
 pub(crate) mod legacy_holdings;
+pub(crate) mod model_usage;
 pub(crate) mod provider_status;
 mod root_identity;
 #[cfg(all(test, unix))]
 pub(crate) use root_identity::{with_after_admission, with_before_commit};
 mod schema;
+pub(crate) mod scripts;
 mod upgrade;
 pub mod user_context;
 pub(crate) use folder::StoreConnection;
@@ -185,12 +187,35 @@ pub(crate) fn is_app_setting_id(id: &str) -> bool {
             | "model_discovery_versions"
             | "update"
             | "legacy_holdings_export"
+            | "last_composer_model"
+            | "desktop_notification_queue"
     ) || id
         .strip_prefix("default_model:")
         .is_some_and(|id| !id.is_empty())
         || id
             .strip_prefix("world_processing:")
             .is_some_and(|loupist| !loupist.is_empty())
+}
+
+pub(crate) fn last_composer_model(
+    connection: &Connection,
+) -> StoreResult<Option<crate::commands::workspace_ui::composer_model::ComposerModelSelection>> {
+    load_json_by_id(connection, "app_settings", "last_composer_model")
+}
+
+pub(crate) fn put_last_composer_model(
+    connection: &Connection,
+    value: Option<&crate::commands::workspace_ui::composer_model::ComposerModelSelection>,
+) -> StoreResult<()> {
+    if let Some(value) = value {
+        put_app_setting(connection, "last_composer_model", &to_json(value)?)
+    } else {
+        connection.execute(
+            "DELETE FROM app_settings WHERE id='last_composer_model'",
+            [],
+        )?;
+        Ok(())
+    }
 }
 
 fn put_app_setting(connection: &Connection, id: &str, data_json: &str) -> StoreResult<()> {
@@ -822,6 +847,7 @@ impl SqliteStore {
         }
         crate::knowledge::erase_loupist_private(&transaction, id)
             .map_err(|error| StoreError::Invalid(error.to_string()))?;
+        model_usage::clear_loupist(&transaction, id)?;
         transaction.commit()?;
         Ok(())
     }
@@ -950,6 +976,14 @@ impl SqliteStore {
         let mut connection = self.lock_loupist(loupist_id)?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         crate::scheduled_tasks::store::forget_chat_in(&transaction, loupist_id, id)?;
+        transaction.execute(
+            "DELETE FROM datasets WHERE loupist_id = ?1
+             AND CASE WHEN json_valid(metadata_json) THEN
+                 json_extract(metadata_json, '$.origin') = 'python_replay'
+                 AND json_extract(metadata_json, '$.chat_id') = ?2
+             ELSE 0 END",
+            params![loupist_id, id],
+        )?;
         transaction.execute(
             r#"
             DELETE FROM chart_artifact_datasets

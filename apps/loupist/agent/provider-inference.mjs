@@ -72,6 +72,10 @@ function usageOf(message) {
     const value = message.usage?.[key];
     if (Number.isSafeInteger(value) && value >= 0) result[key] = value;
   }
+  const cost = message.usage?.cost;
+  if (Number.isFinite(cost?.total) && cost.total >= 0) {
+    result.cost = { total: cost.total, totalFromProvider: cost.totalFromProvider === true };
+  }
   return result;
 }
 

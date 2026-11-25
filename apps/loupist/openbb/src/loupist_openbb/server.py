@@ -29,6 +29,7 @@ from loupist_openbb.manifest import (
 from loupist_openbb.yahoo_history import RAW_DAILY_REQUEST, apply_yahoo_history
 from loupist_openbb.destinations import guard_tool_destinations
 from loupist_openbb.network import apply_network_policy
+from loupist_openbb import failures
 from loupist_openbb.failures import (
     AlphaVantagePaidPlanRequired,
     AlphaVantageRateLimited,
@@ -42,6 +43,8 @@ from loupist_openbb.failures import (
     STATEMENT_ROUTES,
     empty_result,
     reject_no_content,
+    result_bytes,
+    result_too_large,
     YAHOO_STATEMENT_MAX_LIMIT,
     call_tool_with_failures,
     classify_rest_failures,
@@ -152,16 +155,6 @@ def _available_route_providers(
             # call. That blocks the whole server for about three minutes, so
             # every request sent meanwhile times out.
             if model == "EquityShortInterest" and name == "finra":
-                continue
-            # EIA's weekly petroleum report returns every week since 1982 by
-            # default (28.8 MB, 133,773 rows on 2026-11-23), over the host's
-            # 4 MiB MCP frame limit; that reply ends the whole session.
-            if model == "PetroleumStatusReport" and name == "eia":
-                continue
-            # The Federal Reserve's Svensson curve returns every day since
-            # 1961 by default (17,068 rows, about 73 MB per frame on
-            # 2026-11-23), over the 32 MiB frame limit as well.
-            if model == "SvenssonYieldCurve" and name == "federal_reserve":
                 continue
             provider = registry[name]
             fetcher = provider.fetcher_dict.get(model)
@@ -647,6 +640,15 @@ def mark_registered_tools_read_only(
                     if _provider_id is not None:
                         result = _canonicalize_implicit_provider_result(
                             result, _provider_id
+                        )
+                    size = result_bytes(result)
+                    if size > failures.MAX_RESULT_BYTES:
+                        return ToolResult(
+                            content="result_too_large",
+                            structured_content=result_too_large(
+                                _provider_id or arguments.get("provider"), size
+                            ),
+                            is_error=True,
                         )
                     return result
 

@@ -4,7 +4,7 @@
 import type { AgentSkillSummary } from "./agent_harness";
 import type { AppMenuContext } from "./app_menu";
 import type { BriefingSettings, BriefingSettingsRequest, BriefingsLoupistRequest, InboxPage, InboxRequest, ReadRequest, UnreadCount } from "./briefings/commands";
-import type { ResidentRequest } from "./briefings/desktop";
+import type { BotFocusRequest, ResidentRequest, TemplatesRequest } from "./briefings/desktop";
 import type { DesktopSettings, LoginItemRequest } from "./briefings/login_item";
 import type { ChatActivityDetail } from "./chat/activity";
 import type { ChatArtifact, ChatArtifactVersion } from "./chat/artifacts";
@@ -13,7 +13,10 @@ import type { ApprovalDecideRequest } from "./commands/approvals";
 import type { AssetEntitySetRequest, AssetVerdictUndoRequest } from "./commands/assets";
 import type { AssetFollowNameRequest, AssetIdRequest, AssetLookupRequest, AssetLookupResult, AssetOpenRequest, AssetPricePoint, AssetPriceSeriesRequest, AssetRow, AssetsListRequest, StoredAssetQuote, ThinAssetPageView } from "./commands/assets/wire";
 import type { AttentionItem, NotifyRequest } from "./commands/attention";
+import type { BotMemoryForgetRequest, BotMemoryListEntry, BotMemoryListRequest, BotMemoryUpdateRequest } from "./commands/bot_memory";
+import type { AskAnswerRequest, OfferRequest } from "./commands/cards";
 import type { ChatRetryReceipt, ChatRetryRequest } from "./commands/chat_runtime";
+import type { ClipboardImage } from "./commands/clipboard";
 import type { PickFileRequest } from "./commands/dialog";
 import type { ExportRequest } from "./commands/export_file";
 import type { FxDisplayRequest } from "./commands/fx_display";
@@ -32,11 +35,14 @@ import type { RemoveRequest, UndoRequest, WorldSchemaLoupistRequest } from "./co
 import type { LegacyHoldingsStatus } from "./commands/legacy_holdings";
 import type { WorldKeepAwakeRequest } from "./commands/power";
 import type { QuestionAnswerRequest } from "./commands/questions";
-import type { RevisionRequest, RunRequest, ScheduledTasksLoupistRequest, StatusRequest, TaskRequest } from "./commands/scheduled_tasks";
+import type { DeliveryRequest, FromPresetRequest, ProposalDeclineRequest, ProposalVisitRequest, RevisionRequest, RunRequest, ScheduledTasksLoupistRequest, StatusRequest, TaskRequest, TriggerGetRequest, TriggerRevertRequest, TriggerReviewRequest, TriggerView } from "./commands/scheduled_tasks";
+import type { PythonReplay, PythonStepReplayRequest, ScriptGetRequest, ScriptSaveRequest, ScriptTestRequest, ScriptsListRequest } from "./commands/scripts";
 import type { SkillCreateRequest, SkillDeleteRequest, SkillImportRequest, SkillReadRequest, SkillSaveRequest } from "./commands/skills";
 import type { ChatArtifactListRequest, ChatArtifactReadRequest, ChatArtifactRestoreRequest, ChatArtifactViewDto, ChatAttachmentReadDto, ChatAttachmentReadRequest, ChatBranchRequest, ChatControlReceiptDto, ChatControlRequestDto, ChatCreateRequest, ChatDeleteRequest, ChatFeedbackRequest, ChatMemorySetAsideRequest, ChatRenameRequest, ChatSaveState, ChatSavesRequest, ChatSendRequest, ChatThreadDto, ChatVersionSwitchRequest, ChatWatchRequest, ChatWatchSnapshot, LoupistArtifactItemDto, LoupistArtifactListRequest, LoupistCreateRequest, LoupistDeleteRequest, LoupistImportRequest, LoupistProfileUpdateRequest, LoupistReconnectRequest, LoupistSummary, LoupistWorkspace, RunStarted } from "./commands/types";
+import type { UsageSummary, UsageSummaryRequest } from "./commands/usage";
 import type { ChatActivityRequest, WorkspacePathRequest } from "./commands/workspace";
 import type { DraftAttachment, DraftIdentity, StoredChatDraft, WorkspaceUiState, WorkspaceUiWriteRequest } from "./commands/workspace_ui";
+import type { ComposerModelRead, ComposerModelSelection, ComposerModelWrite } from "./commands/workspace_ui/composer_model";
 import type { AddCommandRequest, AddJsonRequest, AddUrlRequest, ApproveRequest, AuthorizeRequest, ConfirmRequest, EnabledRequest, IdentityRequest, ListRequest, MemoryRequest } from "./custom_connections/commands";
 import type { CustomConnection } from "./custom_connections/service";
 import type { ChatFeedback } from "./domain/chat";
@@ -62,11 +68,12 @@ import type { ModelCatalogView } from "./providers/catalog";
 import type { ModelNoticeAckRequest, ProviderConfigureRequest, ProviderConnectionRequest, ProviderModelsRequest, ProviderPageRequest, ProviderSubmitCodeRequest } from "./providers/connection";
 import type { CustomProviderRequest } from "./providers/custom";
 import type { LocalDiscovery, ProviderCustomTestRequest, ProviderCustomTestResult, ProviderPresetRequest } from "./providers/local";
+import type { PythonStep } from "./python_run/ledger";
 import type { WorkbookRead, WorkbookRequest } from "./python_run/workbook";
 import type { RunActivity } from "./runs/coordinator";
 import type { DiagnosticsRequest } from "./runs/log";
 import type { WatchSnapshot } from "./scheduled_tasks";
-import type { Run, Task, TaskListItem } from "./scheduled_tasks/types";
+import type { Run, Task, TaskListItem, TriggerEvaluation } from "./scheduled_tasks/types";
 import type { ConfigReadRequest, ConfigSnapshot, ConfigUpdateRequest } from "./scoped_config";
 import type { SharingLoupistRequest } from "./sharing/commands";
 import type { PackAddRequest } from "./sharing/commands/add";
@@ -83,6 +90,7 @@ import type { DeepLinkEvent } from "./sharing/deep_link";
 import type { ItemView, OpenResult } from "./sharing/import";
 import type { SkillCatalog, SkillDocument } from "./skills";
 import type { AppSettings } from "./store/app_settings";
+import type { ScriptSummary, ScriptVersion } from "./store/scripts";
 import type { UpdateInstallRequest, UpdateInstallResult, UpdateStateDto } from "./updater";
 import type { BrowserTabBoundsRequest, BrowserTabHistoryRequest, BrowserTabNavigateRequest, BrowserTabOpenRequest, BrowserTabRequest, BrowserTabState } from "./web/browser";
 
@@ -92,6 +100,9 @@ import type { BrowserTabBoundsRequest, BrowserTabHistoryRequest, BrowserTabNavig
  */
 export type BridgeCommands = {
   app_menu_update: { request: AppMenuContext, response: null },
+  bot_offer_accept: { request: OfferRequest, response: Task },
+  bot_offer_dismiss: { request: OfferRequest, response: null },
+  bot_ask_answer: { request: AskAnswerRequest, response: null },
   briefing_settings_get: { request: BriefingsLoupistRequest, response: BriefingSettings },
   briefing_settings_set: { request: BriefingSettingsRequest, response: BriefingSettings },
   inbox_list: { request: InboxRequest, response: InboxPage },
@@ -134,7 +145,14 @@ export type BridgeCommands = {
   config_reveal: { request: ConfigReadRequest, response: null },
   config_update: { request: ConfigUpdateRequest, response: ConfigSnapshot },
   pick_file: { request: PickFileRequest, response: string | null },
+  clipboard_read_image: { request: never, response: ClipboardImage },
   export_save: { request: ExportRequest, response: string | null },
+  scripts_list: { request: ScriptsListRequest, response: Array<ScriptSummary> },
+  script_get: { request: ScriptGetRequest, response: ScriptVersion },
+  script_save: { request: ScriptSaveRequest, response: ScriptVersion },
+  script_delete: { request: ScriptGetRequest, response: null },
+  script_test: { request: ScriptTestRequest, response: PythonStep },
+  python_step_replay: { request: PythonStepReplayRequest, response: PythonReplay },
   research_handoff_start: { request: ResearchHandoffRequest, response: ResearchHandoffReceipt },
   knowledge_catalog: { request: KnowledgeCatalogRequest, response: KnowledgeCatalogDto },
   knowledge_connection_dismiss: { request: KnowledgeConnectionRequest, response: ConnectionView },
@@ -237,9 +255,21 @@ export type BridgeCommands = {
     request: LoupistArtifactListRequest,
     response: Array<LoupistArtifactItemDto>,
   },
-  scheduled_task_confirm: { request: TaskRequest, response: Task },
+  scheduled_task_confirm: { request: RevisionRequest, response: Task },
   scheduled_task_delete: { request: RevisionRequest, response: null },
+  scheduled_proposal_set_declined: { request: ProposalDeclineRequest, response: null },
+  scheduled_proposal_visit_end: { request: ProposalVisitRequest, response: null },
   scheduled_task_discard: { request: TaskRequest, response: null },
+  notification_permission_settings_open: { request: never, response: null },
+  notification_bot_focus_set: { request: BotFocusRequest, response: null },
+  notification_templates_set: { request: TemplatesRequest, response: null },
+  scheduled_task_from_preset: { request: FromPresetRequest, response: Task },
+  scheduled_trigger_get: { request: TriggerGetRequest, response: TriggerView },
+  scheduled_trigger_approve: { request: TriggerReviewRequest, response: Task },
+  scheduled_trigger_revert: { request: TriggerRevertRequest, response: Task },
+  scheduled_trigger_test: { request: TriggerReviewRequest, response: TriggerEvaluation },
+  scheduled_trigger_evaluations: { request: TaskRequest, response: Array<TriggerEvaluation> },
+  scheduled_task_set_delivery: { request: DeliveryRequest, response: Task },
   scheduled_task_get: { request: TaskRequest, response: Task | null },
   scheduled_task_run_now: { request: TaskRequest, response: Run },
   scheduled_task_runs: { request: TaskRequest, response: Array<Run> },
@@ -275,6 +305,8 @@ export type BridgeCommands = {
   chat_draft_read: { request: DraftIdentity, response: StoredChatDraft | null },
   chat_draft_write: { request: DraftIdentity, response: null },
   workspace_ui_read: { request: never, response: WorkspaceUiState | null },
+  chat_composer_model_read: { request: ComposerModelRead, response: ComposerModelSelection | null },
+  chat_composer_model_write: { request: ComposerModelWrite, response: null },
   workspace_ui_write: { request: WorkspaceUiWriteRequest, response: WorkspaceUiState },
   custom_connection_add_command: { request: AddCommandRequest, response: CustomConnection },
   custom_connection_add_json: { request: AddJsonRequest, response: Array<CustomConnection> },
@@ -332,6 +364,10 @@ export type BridgeCommands = {
   provider_models: { request: ProviderModelsRequest, response: ModelCatalogView },
   provider_open_console: { request: ProviderPageRequest, response: null },
   provider_open_usage: { request: ProviderPageRequest, response: null },
+  usage_summary: { request: UsageSummaryRequest, response: UsageSummary },
+  bot_memory_list: { request: BotMemoryListRequest, response: Array<BotMemoryListEntry> },
+  bot_memory_forget: { request: BotMemoryForgetRequest, response: Array<BotMemoryListEntry> },
+  bot_memory_update: { request: BotMemoryUpdateRequest, response: Array<BotMemoryListEntry> },
   provider_custom_test: { request: ProviderCustomTestRequest, response: ProviderCustomTestResult },
   provider_local_discover: { request: never, response: LocalDiscovery },
   provider_preset_save: { request: ProviderPresetRequest, response: ModelCatalogView },

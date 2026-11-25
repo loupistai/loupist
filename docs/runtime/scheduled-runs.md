@@ -61,6 +61,50 @@ service plist. During startup it reads the open-application Apple event's
 The installed app creates the window hidden and shows it immediately for a normal
 launch. A login launch leaves it hidden unless the tray fails to initialize.
 
+Existing v0.1.6 tasks keep their authority when their saved status is active
+or completed, or a retained run snapshot records an active task. That version
+did not store a separate approval event. A paused custom task without that
+evidence asks for approval before any run. New approvals survive later pauses.
+
+## Triggers
+
+A trigger is a pinned script version the host runs on a custom task's schedule, with no model call. The definition, the script's `script_state` (the lifecycle field is `state`), counters and up to 20 evaluations live on the task. The code lives in `scripts`. The host runs only the approved hash. A pending version waits while the approved one keeps running with its own arguments and tool and provider grants. A successful dry run saves that version’s terms, arguments, observed grants and replay scores. The card shows the candidate’s terms and arguments and the tool receipt returns its own dry run. Library changes and bundled presets need Test now before approval. Test now validates the displayed task revision, script version and hash before running the check or making a provider read. Editing an unapproved check clears its dry run and requires another test. Going back restores the tested configuration for the approved version. Evaluations use a sealed Python snapshot: no workspace files, no attachments, and nothing writable except scratch. The host serves approved reads between worker starts. Run now evaluates an enabled trigger with the same verdict requirement as the due poll. A trigger preset always uses the check proposal path. Not met writes no run. The host reserves the remaining daily read allowance before each evaluation and charges the actual reads when the worker returns. Capacity adds the live dry run’s reads per check on each local calendar day and excludes the definition being replaced. Weekly checks contribute only on their run dates, and interval checks count the active window on each eligible day. Met posts a card on the home Thread and starts at most three agent runs a day for that check, and at most six triggered runs a Loupist a day. Three code errors in a row mark the trigger `failing` and stop evaluations. Learning tasks are not in this build, so a check sits on a custom task. The task's schedule is when the check runs, at least every five minutes, daily or weekly.
+
+Checks can use `followed` and `price` for saved data, KRX daily bars and
+OpenDART filing lists, and bundled OpenBB equity history, filing lists and
+news. Provider reads use the Loupist's current connection grants and the
+usual as-of rules. OpenBB news has no historical cutoff support. A price-move
+preset with named subjects checks only followed assets matching those names or
+the selected asset IDs. The candidate’s reviewed subjects and terms take effect
+together on approval, and reverting restores the prior subjects and terms. A
+figure in a verdict requires a successful read
+with a retained source. Rate limit retry hints in the read ledger defer
+the next check even when another read succeeds and the verdict is usable.
+
+The host refuses a check whose script was saved after outside text. It screens
+the complete run before keeping a replay ledger and screens the reading,
+evidence, error and carried state before keeping or displaying them.
+Checks use the task's Memory setting. A proposal test can read Memory when
+the originating turn also allows it. Schedule tool results include a bounded
+check history when both settings allow it. Chat receipts identify the task
+and its recorded action. The task store holds the worker state and replay data.
+Check readings, errors and evidence can contain provider-authored text. The
+host treats those fields as outside text in proposal results, schedule history,
+Bot cards and the explanation turn. It raises the trust tier before handing
+the model those fields.
+Proposal replay starts with empty state on the oldest of the previous 20
+weekdays. It carries state forward through successful evaluations and charges
+every data attempt, including refusals and unavailable results, against the
+80-read proposal budget. The current follow list and saved quote cannot supply
+a historical snapshot. Version comparisons use a saved replay seed whose
+state came from a known reset and complete retained read results. Without
+such a seed, the checks are not comparable. Older saved input snapshots do
+not establish this provenance. A successful check that made no
+reads still replays and can change the carried state. A successful check
+that lost its read ledger makes its later state unavailable for replay.
+That gap stays in effect after the evaluation is pruned and clears only
+when an approval or revert resets the script state. The task store prunes the oldest evaluations when the serialized definition approaches its reader limit. The latest result keeps the displayed evidence and source names without duplicating the replay ledger. A row that cannot be decoded still appears in Schedule as unreadable.
+
 ## Runs
 
 The run coordinator allows at most four model workers and rejects concurrent runs
@@ -132,19 +176,22 @@ without a scheduled task. Typed hand-offs use the unattended allowlist; World-li
 hand-offs use the Session surface. A `created` row with no run is sent once by
 the next delivery pass in Bot, a `running` row whose run is gone is marked
 interrupted, and a run that started is never sent again. Legacy
-confirmation-pending tasks remain paused. The briefing tool in Bot handles
-explicit requests for a recurring briefing.
+confirmation-pending tasks remain paused. Bot proposes activations and recurring
+edits for the user to confirm, including briefings and schedules handed off
+from Chat. An existing task keeps its approved definition while a replacement
+waits. A triggered watch also keeps its approved script and check settings
+until a schedule edit is confirmed. Script approval binds the check card’s task revision, version, and hash. The host rejects a stale review and generic schedule controls leave unapproved checks paused.
 
 The shared Rust service handles create/edit, pause/resume, delete, Run now and
 Stop. Edits check definition revisions; Chat creation keys prevent duplicate
-schedule creation. Schedule writes commit immediately, including if the creating
-reply later fails. A task cannot overlap itself and shares ordinary Chat capacity.
-Run now attempts admission immediately; it is not a durable manual-run queue.
+schedule creation. Proposals persist immediately and remain available if the creating reply fails.
+A replacement is applied in the same transaction that consumes its proposal. A task cannot overlap itself and shares ordinary Chat capacity.
+Every schedule created by Bot or handed off from Chat waits for user confirmation, including requests to save it paused. The host blocks both manual and automatic runs until that first confirmation. Run now attempts admission immediately; it is not a durable manual-run queue.
 Pause prevents future starts; Stop cancels the current run separately. Run now also
 starts a paused task without turning on its future weekday schedule. Task detail offers Run now and Pause/Resume; a completed one-time task needs an
 edit before it can resume. Custom tasks have Delete under More, with confirmation,
 disabled while running; it takes the task's run history and the run sessions the
-user never wrote in ([run sessions](#scheduled-chats)). Briefing settings turn the briefing on or off. The user can
+user never wrote in ([run sessions](#scheduled-chats)). Briefing settings turn each edition, morning or evening, on or off. A run delivered `to: briefing` is not posted in Bot; the next briefing lists it under `backgroundRuns`. The user can
 ask Bot to change a task's timing or prompt.
 The scheduler sleeps until the next due occurrence or a schedule-change signal,
 with a 60-second maximum to recheck folders and wall-clock changes; an overdue
@@ -176,15 +223,21 @@ announced in the Loupist's [Bot](../ui/home-thread.md), and so is one that recov
 found unfinished after a crash, as one that could not finish (`deliverable` in
 `chat/home.rs`); a Stop, a quit and a quiet run post nothing. Desktop notifications
 identify custom tasks by title and distinguish stopped runs from
-failures. Only a user-stopped run says "stopped"; crash recovery and other
+failures. The notification queue commits each group’s reservation before
+submitting it to the OS. A confirmed refusal can retry, and an uncertain
+acknowledgement consumes the reservation. The Bot result stays available if
+the app exits before the OS displays its notification. Only a user-stopped run says "stopped"; crash recovery and other
 interruptions say "couldn't finish". There is no meaningful-change filter, saved
 per-task connection allowlist, or per-task native-execution preference.
 
-Each scheduled task is `custom` or `briefing`. A Loupist has at most one briefing,
-with a continuing Memory-enabled Chat titled Briefings. The default briefing is
-08:00 Monday through Friday in the device time zone. At run time Rust supplies
-the date and the previous run's start, both at the user's UTC offset, the elapsed
-time since then, the followed names and reference
+Each scheduled task is `custom` or `briefing`. A Loupist has one morning briefing
+and one evening briefing, each with its own Memory-enabled Chat. The morning
+default is 08:00 and the evening default is 18:00, Monday through Friday in the
+device time zone. Morning rows written before editions stay morning. At run time Rust supplies
+the date and the start of the latest successful briefing across both editions,
+both at the user's UTC offset, and the elapsed time since then. Growth and
+background results use that same lower bound, so results that finish while a
+briefing is running can appear in the next one. Rust also supplies the followed names and reference
 fields with saved-read state, principles, up to 40 World growth summaries, and up
 to five due Journal pointers. The briefing context keeps up to 20 disputed
 entity IDs for the World filter. The unattended agent chooses its own data reads
@@ -215,7 +268,7 @@ failed and interrupted receipts share one unread state.
 
 An alert is a custom task with a prompt specifying its condition and the evidence
 to check. A run that completes the check and finds nothing to report can call
-`schedule_quiet`. The host refuses quiet delivery if any tool was skipped or a
+`schedule_quiet`. The first run and every run of an explicit `every_run` task require a report. The host also refuses quiet delivery if any tool was skipped or a
 data call was attempted without any acknowledged original data result. The
 reply and its Memory still commit if the run can no longer be marked quiet.
 The quiet decision belongs to the saved answer. It can survive a skipped
@@ -226,3 +279,11 @@ A successful quiet run stays in history, where Schedule marks it "Nothing to
 report" and never unread. It leaves the Chat's sidebar recency unchanged and adds
 neither an inbox entry nor a Bot announcement. Failed runs use regular failure
 handling.
+
+### Watch definitions and delivery
+
+Watch metadata lives with the task definition in its existing JSON record. The store validates the eight-subject and one-line terms limits and caps active watches at 20 per Loupist. A proposal stays paused until the user confirms the revision displayed on the card. The activation transaction rejects a stale revision. Run now uses the same approval guard as the due poll. A recurring watch becomes due as soon as it is created active or confirmed. A one-time follow-up keeps its appointed time.
+
+Each run freezes the task definition it used. Its report policy controls quiet delivery, and its delivery destination controls whether the result enters the Bot inbox. A provider transport failure recorded as `unreachable` stays in run history and leaves the pause streak unchanged. Counted failures in one streak update one Bot card.
+
+A preset occurrence resolves its selected subjects against the live followed list. When a filings watch loses a followed asset, the host refreshes the bundled prompt’s asset slot for that run and retains its original language. The saved prompt stays intact and continues to identify the watch’s previous runs. If an explicit scope has no subjects left, the host pauses the watch.

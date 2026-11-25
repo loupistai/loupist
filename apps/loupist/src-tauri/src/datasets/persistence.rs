@@ -126,7 +126,7 @@ impl SqliteStore {
     ) -> Result<Option<(DatasetRef, Value, Value)>, CommandError> {
         let db = self.lock_loupist(loupist).map_err(error)?;
         let current: Option<(String, u32, String)> = db.query_row(
-                "SELECT id,revision,metadata_json FROM datasets WHERE loupist_id=?1 AND request_key=?2 ORDER BY revision DESC LIMIT 1",
+                "SELECT id,revision,metadata_json FROM datasets WHERE loupist_id=?1 AND request_key=?2 AND json_extract(metadata_json, '$.origin') IS NOT 'python_replay' ORDER BY revision DESC LIMIT 1",
                 params![loupist, request_key],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
@@ -186,9 +186,48 @@ impl SqliteStore {
         revision: u32,
         limit: usize,
     ) -> Result<(DatasetRef, Value, Value, usize), CommandError> {
+        self.load_dataset(loupist, id, revision, limit, false)
+    }
+
+    /// Private Activity data, reached only through a saved step's pinned reference.
+    pub(crate) fn python_replay(
+        &self,
+        loupist: &str,
+        reference: &DatasetRef,
+    ) -> Result<Value, CommandError> {
+        let (stored, payload, _, _) = self.load_dataset(
+            loupist,
+            &reference.dataset_id,
+            reference.revision,
+            MAX_DATASET_BYTES,
+            true,
+        )?;
+        if &stored != reference {
+            return Err(CommandError::not_found("dataset revision"));
+        }
+        Ok(payload)
+    }
+
+    fn load_dataset(
+        &self,
+        loupist: &str,
+        id: &str,
+        revision: u32,
+        limit: usize,
+        replay: bool,
+    ) -> Result<(DatasetRef, Value, Value, usize), CommandError> {
         let limit = limit.min(MAX_DATASET_BYTES) as i64;
         let db = self.lock_loupist(loupist).map_err(error)?;
-        let row:Option<(String,String,Vec<u8>)>=db.query_row("SELECT digest,metadata_json,payload FROM datasets WHERE loupist_id=?1 AND id=?2 AND revision=?3 AND length(payload)<=?4",params![loupist,id,revision,limit],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(error)?;
+        let row: Option<(String, String, Vec<u8>)> = db
+            .query_row(
+                "SELECT digest,metadata_json,payload FROM datasets
+                 WHERE loupist_id=?1 AND id=?2 AND revision=?3 AND length(payload)<=?4
+                   AND (json_extract(metadata_json, '$.origin') IS 'python_replay') = ?5",
+                params![loupist, id, revision, limit, replay],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()
+            .map_err(error)?;
         let (digest, metadata, bytes) =
             row.ok_or_else(|| CommandError::not_found("dataset revision"))?;
         if crate::util::sha256(&bytes) != digest {
@@ -216,7 +255,7 @@ impl SqliteStore {
         let db = self.lock_loupist(loupist).map_err(error)?;
         let metadata: Option<String> = db
             .query_row(
-                "SELECT metadata_json FROM datasets WHERE loupist_id=?1 AND id=?2 ORDER BY revision DESC LIMIT 1",
+                "SELECT metadata_json FROM datasets WHERE loupist_id=?1 AND id=?2 AND json_extract(metadata_json, '$.origin') IS NOT 'python_replay' ORDER BY revision DESC LIMIT 1",
                 params![loupist, id],
                 |r| r.get(0),
             )
@@ -236,7 +275,7 @@ impl SqliteStore {
         let db = self.lock_loupist(loupist).map_err(error)?;
         let metadata: Option<String> = db
             .query_row(
-                "SELECT metadata_json FROM datasets WHERE loupist_id=?1 AND id=?2 AND revision=?3",
+                "SELECT metadata_json FROM datasets WHERE loupist_id=?1 AND id=?2 AND revision=?3 AND json_extract(metadata_json, '$.origin') IS NOT 'python_replay'",
                 params![loupist, id, revision],
                 |r| r.get(0),
             )

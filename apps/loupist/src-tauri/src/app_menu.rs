@@ -273,11 +273,14 @@ fn build_menu(app: &AppHandle, state: MenuState) -> tauri::Result<()> {
     // Muda treats unescaped ampersands as mnemonics in menu titles.
     let app_name = app_display_name(app).replace('&', "&&");
     let menu = Menu::new(app)?;
-    for group in MENU.iter() {
+    // The Edit submenu's place in the bar, title and item count.
+    let mut edit = None;
+    for (position, group) in MENU.iter().enumerate() {
+        let title = group.label(state.context.language, &app_name);
         let submenu = Submenu::with_id(
             app,
             &group.id,
-            group.label(state.context.language, &app_name),
+            &title,
             group.id != "edit" || state.window.available,
         )?;
         for row in group.items.iter().filter(|row| !row.mac_only || mac) {
@@ -315,6 +318,9 @@ fn build_menu(app: &AppHandle, state: MenuState) -> tauri::Result<()> {
             )?;
             submenu.append(&item)?;
         }
+        if group.id == "edit" {
+            edit = Some((position, title, submenu.items()?.len()));
+        }
         menu.append(&submenu)?;
         #[cfg(target_os = "macos")]
         if group.id == "window" {
@@ -322,6 +328,14 @@ fn build_menu(app: &AppHandle, state: MenuState) -> tauri::Result<()> {
         }
     }
     app.set_menu(menu)?;
+    // Queued after the menu is installed on the main thread, or run straight
+    // after it there, so AppKit has appended its own Edit items.
+    #[cfg(target_os = "macos")]
+    if let Some((position, title, own)) = edit {
+        app.run_on_main_thread(move || macos::keep_own_edit_items(position, &title, own))?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = edit;
     Ok(())
 }
 

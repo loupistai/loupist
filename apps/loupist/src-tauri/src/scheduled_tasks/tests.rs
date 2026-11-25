@@ -75,6 +75,56 @@ fn draft() -> TaskDraft {
 }
 
 #[test]
+fn legacy_paused_rows_need_approval_unless_an_active_snapshot_proves_it() {
+    let store = fixture();
+    let owner = "loupist-a";
+    let mut paused = draft();
+    paused.status = TaskStatus::Paused;
+    let unapproved = store.scheduled_task_create(owner, paused, 1).unwrap();
+    let active = store.scheduled_task_create(owner, draft(), 2).unwrap();
+    let known_run = claim_task(&store, owner, &active.id, 3, true)
+        .unwrap()
+        .unwrap();
+    store
+        .scheduled_task_finish(owner, &known_run.run.run_id, RunStatus::Succeeded, None, 4)
+        .unwrap();
+    let active = store
+        .scheduled_task_get(owner, &active.id)
+        .unwrap()
+        .unwrap();
+    let approved = store
+        .scheduled_task_set_status(owner, &active.id, active.revision, TaskStatus::Paused, 5)
+        .unwrap();
+    // v0.1.6 serialized awaiting_confirmation:false for both definitions.
+    store.lock_loupist(owner).unwrap().execute(
+        "UPDATE scheduled_tasks SET data_json=json_remove(data_json,'$.run_approved') WHERE id IN (?1,?2)",
+        rusqlite::params![unapproved.id, approved.id],
+    ).unwrap();
+
+    assert!(claim_task(&store, owner, &unapproved.id, 6, true)
+        .unwrap()
+        .is_none());
+    let listed = store.scheduled_tasks_list(owner).unwrap();
+    assert!(
+        listed
+            .iter()
+            .find(|task| task.id == unapproved.id)
+            .unwrap()
+            .awaiting_confirmation
+    );
+    assert!(claim_task(&store, owner, &approved.id, 6, true)
+        .unwrap()
+        .is_some());
+    let tapped = store
+        .scheduled_task_confirm(owner, &unapproved.id, unapproved.revision, 7)
+        .unwrap();
+    assert!(tapped.run_approved);
+    assert!(claim_task(&store, owner, &tapped.id, 8, true)
+        .unwrap()
+        .is_some());
+}
+
+#[test]
 fn recurrences_are_strict_timezone_aware_and_skip_dst_gaps_and_folds() {
     let daily = |hour, minute, timezone: &str| Schedule::Daily {
         hour,
@@ -1067,6 +1117,23 @@ fn a_successful_quiet_run_stays_in_history_and_a_failed_one_enters_the_inbox() {
     let store = fixture();
     let loupist = "loupist-a";
     let task = store.scheduled_task_create(loupist, draft(), 100).unwrap();
+    let first = claim_task(&store, loupist, &task.id, 150, true)
+        .unwrap()
+        .unwrap()
+        .run;
+    assert!(first.first_run);
+    assert!(!store
+        .scheduled_run_allows_quiet(loupist, &first.run_id)
+        .unwrap());
+    store
+        .scheduled_task_finish(
+            loupist,
+            &first.run_id,
+            RunStatus::Failed,
+            Some(super::UNREACHABLE),
+            151,
+        )
+        .unwrap();
     let mut ids = Vec::new();
     for (started, status) in [(200, RunStatus::Succeeded), (300, RunStatus::Failed)] {
         let run = claim_task(&store, loupist, &task.id, started, true)
@@ -1086,8 +1153,8 @@ fn a_successful_quiet_run_stays_in_history_and_a_failed_one_enters_the_inbox() {
         ids.push(run.run_id);
     }
     let history = store.scheduled_task_runs(loupist, &task.id).unwrap();
-    assert_eq!(history.len(), 2);
-    assert!(history.iter().all(|run| run.quiet));
+    assert_eq!(history.len(), 3);
+    assert!(history.iter().take(2).all(|run| run.quiet));
     let inbox = store.inbox_runs(loupist, None, 10).unwrap();
     assert_eq!(inbox.len(), 1);
     assert_eq!(inbox[0].run_id, ids[1]);
@@ -1302,6 +1369,8 @@ fn a_run_is_given_how_its_tasks_last_run_ended_and_what_last_reached_the_user() 
 fn a_previous_summary_is_bounded_and_one_that_read_third_party_text_is_delimited() {
     use crate::custom_connections::taint::delimited_body;
     let run = |id: &str, finished: i64, summary: &str, quiet: bool| Run {
+        failure_streak: None,
+        first_run: false,
         discarded_memory_items: None,
         memory_save_skip: None,
         briefing_context: None,
@@ -1323,6 +1392,7 @@ fn a_previous_summary_is_bounded_and_one_that_read_third_party_text_is_delimited
         finished_at_ms: Some(finished),
         status: RunStatus::Succeeded,
         error: None,
+        trigger: None,
     };
     let long = "가".repeat(300);
     let quiet = run(
@@ -1365,6 +1435,8 @@ fn a_previous_summary_is_bounded_and_one_that_read_third_party_text_is_delimited
     let interrupted = PreviousRun::from_runs(
         &[
             Run {
+                failure_streak: None,
+                first_run: false,
                 discarded_memory_items: None,
                 memory_save_skip: None,
                 status: RunStatus::Interrupted,
@@ -1479,6 +1551,21 @@ fn crash_recovery_completes_scheduled_answers_with_interrupted_memory() {
         let task = store
             .scheduled_task_create("loupist-a", draft(), 100)
             .unwrap();
+        if quiet {
+            let first = claim_task(&store, "loupist-a", &task.id, 150, true)
+                .unwrap()
+                .unwrap()
+                .run;
+            store
+                .scheduled_task_finish(
+                    "loupist-a",
+                    &first.run_id,
+                    RunStatus::Failed,
+                    Some(super::UNREACHABLE),
+                    151,
+                )
+                .unwrap();
+        }
         let run = claim_task(&store, "loupist-a", &task.id, 200, true)
             .unwrap()
             .unwrap()
@@ -1671,8 +1758,20 @@ fn one_unreadable_task_or_run_never_fails_a_listing_page_or_the_due_scan() {
         [&kept.id]
     );
     let with_latest = store.scheduled_tasks_list_with_latest("loupist-a").unwrap();
-    assert_eq!(with_latest.len(), 1);
-    assert!(with_latest[0].latest_run.is_none());
+    assert_eq!(with_latest.len(), 2);
+    assert!(with_latest.iter().all(|item| item.latest_run.is_none()));
+    let unreadable = with_latest
+        .iter()
+        .find(|item| item.task.id == broken.id)
+        .unwrap();
+    assert_eq!(
+        unreadable.task.last_error.as_deref(),
+        Some(super::UNREADABLE_TASK)
+    );
+    assert!(unreadable.task.is_unreadable_list_item());
+    let mut worker_error = kept.clone();
+    worker_error.last_error = Some(super::UNREADABLE_TASK.into());
+    assert!(!worker_error.is_unreadable_list_item());
     let due = store
         .scheduled_tasks_due_for_loupists(now + 60 * 60_000, 100, &["loupist-a".into()])
         .unwrap();
@@ -1774,6 +1873,8 @@ fn sql_json_paths_name_fields_tasks_and_runs_serialize() {
     assert!(extract(&json, "$.next_run_at_ms").is_some());
 
     let run = Run {
+        failure_streak: None,
+        first_run: false,
         discarded_memory_items: None,
         memory_save_skip: None,
         read_at_ms: None,
@@ -1784,6 +1885,8 @@ fn sql_json_paths_name_fields_tasks_and_runs_serialize() {
             disputed_entity_ids: vec!["entity-1".into()],
             changed: Default::default(),
             ahead: Vec::new(),
+            edition: Default::default(),
+            background_runs: Vec::new(),
         }),
         ..run
     };
@@ -1804,6 +1907,8 @@ fn sql_json_paths_name_fields_tasks_and_runs_serialize() {
         RunStatus::Interrupted,
     ] {
         let json = serde_json::to_string(&Run {
+            failure_streak: None,
+            first_run: false,
             discarded_memory_items: None,
             memory_save_skip: None,
             status,
@@ -1812,4 +1917,190 @@ fn sql_json_paths_name_fields_tasks_and_runs_serialize() {
         .unwrap();
         assert_eq!(extract(&json, "$.status").as_deref(), Some(status.as_str()));
     }
+}
+
+#[test]
+fn watch_proposals_cannot_claim_work_until_confirmed_and_delivery_is_revision_guarded() {
+    let store = fixture();
+    let loupist = "loupist-a";
+    let mut draft = draft();
+    draft.status = TaskStatus::Paused;
+    let task = store
+        .scheduled_task_create_definition(
+            loupist,
+            "proposed-watch",
+            draft,
+            TaskKind::Custom,
+            TaskDefinition {
+                watch: TaskWatch {
+                    report: Some(ReportPolicy::WhenMet),
+                    terms: Some("Material filing".into()),
+                    subjects: Some(vec![TaskSubject::Name {
+                        name: "Northwind".into(),
+                    }]),
+                    ..Default::default()
+                },
+                proposed_in_message_id: Some("reply".into()),
+                ..Default::default()
+            },
+            100,
+        )
+        .unwrap();
+    assert!(task.awaiting_confirmation);
+    assert!(claim_task(&store, loupist, &task.id, 200, true)
+        .unwrap()
+        .is_none());
+    let json = serde_json::to_value(&task).unwrap();
+    assert_eq!(json["report"], "when_met");
+    assert_eq!(json["subjects"][0]["name"], "Northwind");
+    let updated = store
+        .scheduled_task_set_delivery(
+            loupist,
+            &task.id,
+            task.revision,
+            None,
+            Some(NotifyPolicy::Off),
+            250,
+        )
+        .unwrap();
+    assert_eq!(updated.delivery().notify, Some(NotifyPolicy::Off));
+    assert!(store
+        .scheduled_task_set_delivery(
+            loupist,
+            &task.id,
+            task.revision,
+            None,
+            Some(NotifyPolicy::Now),
+            250
+        )
+        .is_err());
+    assert!(matches!(
+        store.scheduled_task_confirm(loupist, &task.id, task.revision, 300),
+        Err(StoreError::Conflict(_))
+    ));
+    assert!(
+        store
+            .scheduled_task_get(loupist, &task.id)
+            .unwrap()
+            .unwrap()
+            .awaiting_confirmation
+    );
+    let approved = store
+        .scheduled_task_confirm(loupist, &task.id, updated.revision, 300)
+        .unwrap();
+    assert!(!approved.awaiting_confirmation);
+    assert_eq!(approved.next_run_at_ms, Some(300));
+    let first = claim_task(&store, loupist, &task.id, 300, false)
+        .unwrap()
+        .unwrap()
+        .run;
+    assert!(first.first_run);
+    assert!(!store
+        .scheduled_run_allows_quiet(loupist, &first.run_id)
+        .unwrap());
+}
+
+#[test]
+fn every_run_refuses_quiet_after_the_first_and_offline_does_not_pause() {
+    let store = fixture();
+    let loupist = "loupist-a";
+    let task = store
+        .scheduled_task_create_definition(
+            loupist,
+            "every-run",
+            draft(),
+            TaskKind::Custom,
+            TaskDefinition {
+                watch: TaskWatch {
+                    report: Some(ReportPolicy::EveryRun),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            100,
+        )
+        .unwrap();
+    for now in [200, 300, 400, 500] {
+        let run = claim_task(&store, loupist, &task.id, now, true)
+            .unwrap()
+            .unwrap()
+            .run;
+        assert!(!store
+            .scheduled_run_allows_quiet(loupist, &run.run_id)
+            .unwrap());
+        let failed = store
+            .scheduled_task_finish(
+                loupist,
+                &run.run_id,
+                RunStatus::Failed,
+                Some(super::UNREACHABLE),
+                now + 1,
+            )
+            .unwrap();
+        assert!(failed.failure_streak.is_none());
+    }
+    assert_eq!(
+        store
+            .scheduled_task_get(loupist, &task.id)
+            .unwrap()
+            .unwrap()
+            .status,
+        TaskStatus::Active
+    );
+    assert!(store.inbox_runs(loupist, None, 10).unwrap().is_empty());
+}
+
+#[test]
+fn a_declined_proposal_can_be_restored_during_its_visit_and_is_deleted_after_it() {
+    let store = fixture();
+    let loupist = "loupist-a";
+    let mut draft = draft();
+    draft.status = TaskStatus::Paused;
+    let proposal = |id| {
+        store
+            .scheduled_task_create_definition(
+                loupist,
+                id,
+                draft.clone(),
+                TaskKind::Custom,
+                TaskDefinition {
+                    proposed_in_message_id: Some("reply".into()),
+                    ..Default::default()
+                },
+                100,
+            )
+            .unwrap()
+    };
+    let restored = proposal("restored");
+    let discarded = proposal("discarded");
+    for task in [&restored, &discarded] {
+        store
+            .scheduled_proposal_set_declined(loupist, &task.id, 200, true)
+            .unwrap();
+        assert!(store
+            .scheduled_task_confirm(loupist, &task.id, task.revision, 201)
+            .is_err());
+        assert!(claim_task(&store, loupist, &task.id, 201, true)
+            .unwrap()
+            .is_none());
+    }
+    assert!(store
+        .scheduled_proposal_set_declined(loupist, &restored.id, 201, false)
+        .is_err());
+    store
+        .scheduled_proposal_set_declined(loupist, &restored.id, 200, false)
+        .unwrap();
+    assert_eq!(store.scheduled_proposal_visit_end(loupist, 199).unwrap(), 0);
+    assert!(store
+        .scheduled_task_get(loupist, &discarded.id)
+        .unwrap()
+        .is_some());
+    assert_eq!(store.scheduled_proposal_visit_end(loupist, 200).unwrap(), 1);
+    assert!(store
+        .scheduled_task_get(loupist, &discarded.id)
+        .unwrap()
+        .is_none());
+    assert!(store
+        .scheduled_task_confirm(loupist, &restored.id, restored.revision, 201)
+        .is_ok());
 }

@@ -37,7 +37,7 @@ const t = i18n.getFixedT(null, "chat");
  * button) closes a sheet that is already open.
  */
 export const OPEN_ACTIVITY_EVENT = "loupist:open-activity";
-type OpenActivityDetail = { messageId?: string; tab?: "steps" | "sources" | "learned" | "connections"; toggle?: boolean; figureIndex?: number };
+type OpenActivityDetail = { messageId?: string; tab?: "steps" | "sources" | "learned" | "connections"; toggle?: boolean; figureIndex?: number; pythonEvidenceId?: string };
 
 export type ActivityTab = "activity" | "learned" | "using";
 const TABS: ActivityTab[] = ["activity", "learned", "using"];
@@ -50,7 +50,7 @@ const CHAT_MIN_WIDTH = 420;
 const MAX_EARLIER = 6;
 const MAX_TARGETS = 3;
 
-type SheetState = { open: boolean; tab: ActivityTab; messageId: string | null; section: "sources" | null; request: number; figureIndex?: number };
+type SheetState = { open: boolean; tab: ActivityTab; messageId: string | null; section: "sources" | null; request: number; figureIndex?: number; pythonEvidenceId?: string };
 
 /**
  * Open state, placement and the `loupist:open-activity` listener for one chat. The
@@ -94,6 +94,7 @@ export function useActivitySheet(active: boolean) {
           section: detail.tab === "sources" ? "sources" : null,
           request: current.request + 1,
           figureIndex: detail.figureIndex,
+          pythonEvidenceId: detail.pythonEvidenceId,
         };
       });
     };
@@ -101,8 +102,8 @@ export function useActivitySheet(active: boolean) {
     return () => window.removeEventListener(OPEN_ACTIVITY_EVENT, listener);
   }, [active]);
   const close = useCallback(() => setState((current) => current.open ? { ...current, open: false } : current), []);
-  const setTab = useCallback((tab: ActivityTab) => setState((current) => ({ ...current, tab, section: null, figureIndex: undefined })), []);
-  const selectMessage = useCallback((messageId: string) => setState((current) => ({ ...current, tab: "activity", messageId, section: null, figureIndex: undefined })), []);
+  const setTab = useCallback((tab: ActivityTab) => setState((current) => ({ ...current, tab, section: null, figureIndex: undefined, pythonEvidenceId: undefined })), []);
+  const selectMessage = useCallback((messageId: string) => setState((current) => ({ ...current, tab: "activity", messageId, section: null, figureIndex: undefined, pythonEvidenceId: undefined })), []);
   const docked = width > 0 && width >= SHEET_WIDTH + CHAT_MIN_WIDTH;
   return { layoutRef: layoutRef as RefObject<HTMLElement>, opener, ...state, open: state.open && active, placement: docked ? "docked" as const : "overlay" as const, composerClearance, close, setTab, selectMessage };
 }
@@ -162,7 +163,11 @@ function OpenSheet({ sheet, loupist, messages, threads, running, rail, bridge, e
   const body = useRef<HTMLDivElement>(null);
   const tabsId = useId();
   const replies = useMemo(() => activityMessages(messages), [messages]);
-  const selected = (sheet.messageId ? replies.find((message) => message.id === sheet.messageId) : undefined) ?? replies.at(-1);
+  const pythonReply = sheet.pythonEvidenceId ? replies.find(reply =>
+    reply.evidence_refs?.some(evidence => evidence.id === sheet.pythonEvidenceId)) : undefined;
+  const pythonDetail = pythonReply?.progress?.items.find(item => item.kind === "tool" &&
+    item.toolName === "run_python" && item.resultIds?.some(id => id === sheet.pythonEvidenceId));
+  const selected = pythonReply ?? (sheet.messageId ? replies.find((message) => message.id === sheet.messageId) : undefined) ?? replies.at(-1);
   const { close, opener, placement, request, section } = sheet;
 
   const comparison = selected?.id === sheet.messageId && sheet.figureIndex !== undefined
@@ -248,6 +253,8 @@ function OpenSheet({ sheet, loupist, messages, threads, running, rail, bridge, e
       {sheet.tab === "activity" && selected && result && comparison &&
         <ChatToolResult evidence={result} comparison={comparison} expanded focusRequest={request}
           onToggle={() => sheet.selectMessage(selected.id)} />}
+      {sheet.tab === "activity" && pythonDetail?.kind === "tool" && pythonDetail.detailId && execution
+        ? <div className="activity-section" key={request}><ChatActivityDetailView {...execution} detailId={pythonDetail.detailId} /></div> : null}
       {sheet.tab === "activity" ? <ActivityPanel loupistId={loupist.id} key={selected?.id ?? "none"} message={selected} replies={replies} messages={messages} threads={threads} execution={execution} onSelect={sheet.selectMessage} />
         : sheet.tab === "learned" ? <LearnedPanel message={selected} rail={rail} bridge={bridge} loupistId={loupist.id} onShowOnMap={onShowOnMap} onWorldChanged={onWorldChanged} />
         : <UsingPanel rail={rail} onOpenUsing={onOpenUsing} onOpenFile={onOpenFile} onShowOnMap={onShowOnMap} />}
@@ -395,6 +402,9 @@ function StepLine({ step, label, execution, member = false }: { step: ActivitySt
     {step.target ? step.href ? <StepTarget href={step.href} target={step.target} /> : <small className="activity-step-target" data-testid="activity-step-target" title={step.target}>{step.target}</small> : null}
     {member ? <StepTime status={step.status} durationMs={step.durationMs} /> : null}
     {step.reason ? <p className="activity-step-reason">{step.reason}</p> : null}
+    {!output && step.pythonReads?.length ? <ol className="activity-step-members" aria-label={t("python.reads")}>
+      {step.pythonReads.map(read => <li key={read.id} data-progress-status={read.status}>{read.label}</li>)}
+    </ol> : null}
     {step.evidence.length ? <ul className="activity-step-sources">{step.evidence.map((evidence) => <li key={evidence.id}><EvidenceLink evidence={evidence} /></li>)}</ul> : null}
     {step.detailId && execution ? <>
       <button type="button" className="activity-step-expand" aria-expanded={output} aria-controls={output ? outputId : undefined} onClick={() => setOutput(!output)}>

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import type { ModelCatalog, ModelProviderOption, ProviderStatusView } from "../../types";
 import { ModelSettingsPanel } from "./ModelSettingsPanel";
+import { mockUsageSummary } from "../../bridge/mock/usage";
 
 const status = (overrides: Partial<ProviderStatusView> = {}): ProviderStatusView => ({
   state: "connected", credential_kind: "plan", notice: null, last_limit_at_ms: null, connected_at_ms: Date.UTC(2026, 9, 31),
@@ -41,12 +42,24 @@ function panelProps(): ComponentProps<typeof ModelSettingsPanel> {
       providerPresetSave: vi.fn().mockResolvedValue(catalog), providerLocalDiscover: vi.fn().mockResolvedValue({ engines: [] }),
       providerCustomTest: vi.fn().mockResolvedValue({ outcome: "ok", models: [] }), providerOpenConsole: vi.fn().mockResolvedValue(undefined),
       providerOpenUsage: vi.fn().mockResolvedValue(undefined),
+      usageSummary: vi.fn(async request => mockUsageSummary(request)),
     },
     onLoadModels: vi.fn().mockResolvedValue(catalog),
     onUpdateModelVisibility: vi.fn().mockResolvedValue(catalog), onDisconnect: vi.fn().mockResolvedValue(catalog),
     onRemoveCustomProvider: vi.fn().mockResolvedValue(catalog), onCatalogChange: vi.fn(),
   };
 }
+
+it("reads one weekly summary and links the card's total to Usage", async () => {
+  const props = panelProps();
+  const open = vi.fn(async () => {});
+  render(<ModelSettingsPanel {...props} onOpenUsageSettings={open} />);
+  const card = screen.getByRole("article", { name: "ChatGPT" });
+  const link = await within(card).findByRole("button", { name: "Last 7 days in Loupist: 5 requests · 8,700 tokens" });
+  await userEvent.click(link);
+  expect(open).toHaveBeenCalledOnce();
+  expect(props.bridge.usageSummary).toHaveBeenCalledTimes(1);
+});
 
 it("keeps a discovery failure with its provider and permits retry without locking another provider", async () => {
   const user = userEvent.setup();

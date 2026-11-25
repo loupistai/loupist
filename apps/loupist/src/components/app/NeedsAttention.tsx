@@ -55,9 +55,20 @@ export function attentionWhat(item: AttentionRow, threads?: Threads, nowMs = Dat
       return chat ? t("attention.question", { loupistSubject, chat }) : t("attention.questionAny", { loupistSubject });
     }
     case "savedKeyPermission": return t("attention.savedKeyPermission", { count: item.count ?? 1 });
+    case "proposal": return t("attention.proposal", { title: item.title });
+    case "taskPaused": return t("attention.taskPaused", { title: item.title });
     case "lineCrossed": return t("attention.lineCrossed", { name: item.title });
+    case "offer": return t("attention.offer", { title: item.title });
+    case "ask": {
+      const loupistSubject = subjectName(loupist, i18n.language);
+      return t("attention.ask", { loupistSubject });
+    }
+    case "watchQuiet": return t("attention.watchQuiet", { title: item.title });
+    case "watchLoud": return t("attention.watchLoud", { title: item.title });
     case "briefingConflict": return t("attention.conflict", { loupist });
     case "unreadResults": return t("attention.unreadResults", { loupist, count: item.count ?? 1, formattedCount: formatNumber(item.count ?? 1) });
+    case "triggerFailing": return t("attention.triggerFailing", { title: item.title });
+    case "triggerUpdate": return t("attention.triggerUpdate", { title: item.title });
     case "checkDue": {
       const due = item.dueDate ?? "";
       const late = due ? localDay(due) < new Date(nowMs).setHours(0, 0, 0, 0) : false;

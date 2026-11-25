@@ -22,6 +22,7 @@
 import assert from "node:assert/strict";
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { remote } from "webdriverio";
 import { createWebdriverHelpers } from "./webdriver-helpers.mjs";
@@ -646,6 +647,47 @@ async function settingsSection(id) {
   await displayed(`#settings-section-${id}[aria-current="page"]`);
 }
 
+async function usageRequests(accept = () => true) {
+  await openMainTab(browser, "settings");
+  await clickButton("Usage", await displayed("nav[aria-label='Settings sections']"));
+  let requests;
+  await browser.waitUntil(async () => {
+    for (const status of await browser.$$("#main-panel-settings [role='status']")) {
+      const text = await status.getText();
+      const count = text.match(/^(\d[\d,]*) requests?$/u);
+      const value = count ? Number(count[1].replaceAll(",", "")) : text === "No model usage in this period." ? 0 : undefined;
+      if (value !== undefined && accept(value)) {
+        requests = value;
+        return true;
+      }
+    }
+    return false;
+  }, { timeout: 15_000, timeoutMsg: "Usage did not show the expected request total" });
+  return requests;
+}
+
+function seedUsageRow(loupistId) {
+  // This suite is offline on every host. Native smoke exercises the writer
+  // with Pi; this fixture exercises persisted reads and folder portability.
+  const db = new DatabaseSync(resolve(stateRoot, "app-data", "catalog.sqlite3"));
+  try {
+    db.exec("PRAGMA busy_timeout = 3000");
+    const now = Date.now();
+    const runId = "native-persistence-usage";
+    const data = {
+      kind: "chat", surface: "research", provider: "openai", credentialKind: "plan",
+      model: "fixture-model", effort: null, chatId: null, runId, startedAtMs: now,
+      durationMs: 0, status: "ok", failureKind: null, requests: 37,
+      input: 200, cachedInput: 100, output: 30, reasoning: null,
+      costMicrousd: null, costFromProvider: null,
+    };
+    db.prepare("INSERT INTO model_usage (id, finished_at_ms, loupist_id, data_json) VALUES (?, ?, ?, ?)")
+      .run(`chat:${runId}:${now}`, now, loupistId, JSON.stringify(data));
+  } finally {
+    db.close();
+  }
+}
+
 async function expand(selector) {
   const details = await displayed(selector);
   if ((await details.getAttribute("open")) === null) await (await details.$(":scope > summary")).click();
@@ -713,6 +755,16 @@ async function assertPressed(element, message) {
   await browser.waitUntil(async () => (await element.getAttribute("aria-pressed")) === "true", { timeout: 10_000, timeoutMsg: message });
 }
 
+const notificationDetails = '[role="switch"][aria-label="Show details in notifications"]';
+
+async function verifyNotificationDetails(expected) {
+  await settingsSection("notifications");
+  await browser.waitUntil(async () => {
+    const details = await displayed(notificationDetails);
+    return (await details.isEnabled()) && (await details.getAttribute("aria-checked")) === String(expected);
+  }, { timeout: 10_000, timeoutMsg: "Notification details did not match this app profile" });
+}
+
 async function seedSettings() {
   await chatPreferences("global");
   await saveRetries(RETRIES.global);
@@ -738,6 +790,9 @@ async function seedSettings() {
   await browser.waitUntil(async () => /display_currency\s*=\s*"KRW"/.test(await tomlFile(globalConfig)), {
     timeout: 10_000, timeoutMsg: "The display currency did not reach the global config.toml",
   });
+  await verifyNotificationDetails(true);
+  await (await displayed(notificationDetails)).click();
+  await verifyNotificationDetails(false);
 }
 
 /** The display currency Appearance shows once the global configuration has loaded. */
@@ -765,6 +820,7 @@ async function verifySettings({ copied }) {
     const english = await childWithText(await displayed('#main-panel-settings [role="group"][aria-label="Language"]'), "button", "English");
     await assertPressed(english, "The interface language was not restored");
   }
+  await verifyNotificationDetails(copied);
 }
 
 // Phases ----------------------------------------------------------------------------
@@ -831,6 +887,12 @@ async function seed() {
   });
   await step("replay the saved World, pause, scrub, change speed and exit", replayMap);
   await browser.saveScreenshot(resolve(artifactRoot, "seed.png"));
+  await step("read a nonempty Usage period from the catalog", async () => {
+    const before = await usageRequests();
+    seedUsageRow(record.folderLoupistId);
+    await openMainTab(browser, "chat");
+    record.usageRequests = await usageRequests(total => total === before + 37);
+  });
   await writeFile(recordPath, `${JSON.stringify(record, null, 2)}\n`);
   report.record = record;
 }
@@ -870,6 +932,9 @@ async function verify(record, { copied }) {
   await step("the Library keeps the Journal entry", () => verifyJournal(record.journalId));
   await step("Loupist instructions", verifyInstructions);
   await step(copied ? "Loupist preferences follow the folder; global settings stay with the app" : "global and Loupist preferences", () => verifySettings({ copied }));
+  await step(copied ? "Usage stays with the original app" : "Usage request totals survive restart", async () => {
+    assert.equal(await usageRequests(), copied ? 0 : record.usageRequests);
+  });
   await browser.saveScreenshot(resolve(artifactRoot, `${phase}.png`));
 }
 

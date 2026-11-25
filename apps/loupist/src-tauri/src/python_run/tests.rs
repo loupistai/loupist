@@ -203,17 +203,19 @@ fn run_python(fixture: &Fixture, code: &str, timeout: u64) -> Value {
 
 #[test]
 fn parse_params_accepts_raw_code_and_a_bounded_timeout() {
-    let (code, timeout) = super::parse_params(&json!({"code": "  print(1)  "})).unwrap();
+    let parse = super::ledger::RunParams::parse;
+    let parsed = parse(json!({"code": "  print(1)  "})).unwrap();
+    let (code, timeout) = (parsed.code.unwrap(), parsed.timeout_seconds);
     assert_eq!(code, "  print(1)  ");
     assert_eq!(timeout, 60);
-    let (code, timeout) =
-        super::parse_params(&json!({"code": "x", "timeout_seconds": 120})).unwrap();
+    let parsed = parse(json!({"code": "x", "timeout_seconds": 120})).unwrap();
+    let (code, timeout) = (parsed.code.unwrap(), parsed.timeout_seconds);
     assert_eq!(code, "x");
     assert_eq!(timeout, 120);
     let big = "a".repeat(64 * 1024);
-    assert!(super::parse_params(&json!({"code": big})).is_ok());
+    assert!(parse(json!({"code": big})).is_ok());
 
-    let invalid = |value: Value, field: &str| match super::parse_params(&value) {
+    let invalid = |value: Value, field: &str| match parse(value) {
         Err(BrokerError::InvalidArguments { field: got, .. }) => assert_eq!(got, field),
         other => panic!("expected invalid {field}, got {other:?}"),
     };
@@ -238,12 +240,9 @@ fn parse_params_accepts_raw_code_and_a_bounded_timeout() {
         json!({"code": "x", "timeout_seconds": "60"}),
         "timeout_seconds",
     );
+    assert!(matches!(parse(json!([])), Err(BrokerError::Malformed)));
     assert!(matches!(
-        super::parse_params(&json!([])),
-        Err(BrokerError::Malformed)
-    ));
-    assert!(matches!(
-        super::parse_params(&json!({"code": "x", "command": "ls"})),
+        parse(json!({"code": "x", "command": "ls"})),
         Err(BrokerError::Malformed)
     ));
 }
@@ -1576,4 +1575,77 @@ open("/workspace/outputs/after.txt", "w").write("after")
     assert_eq!(host_text(&fixture, "outputs/before.txt"), "before");
     assert!(absent(&workspace(&fixture).join("outputs/after.txt")));
     assert_eq!(host_text(&fixture, "README.md"), README);
+}
+
+#[test]
+fn python_ledger_batches_missing_calls_and_only_the_final_round_copies_back() {
+    use super::ledger::{LedgerEntry, ReadCall, Response, RunLedger};
+    let _guard = lock_worker();
+    require_runtime();
+    let fixture = sample();
+    fs::write(
+        workspace(&fixture).join("loupist.py"),
+        "raise RuntimeError('shadowed')",
+    )
+    .unwrap();
+    let mut ledger = RunLedger {
+        id: "fixed-id".into(),
+        now: "2026-11-24".into(),
+        args: Default::default(),
+        state: serde_json::json!({}),
+        inputs: Default::default(),
+        entries: Vec::new(),
+        final_round: false,
+    };
+    let code = r#"
+import loupist, random
+with open('/workspace/outputs/test.txt', 'w') as f:
+    f.write('round')
+try:
+    print(loupist.gather([('read_a', {'name': 'first'}), ('read_b', {})]))
+except loupist.Refused as error:
+    print(str(error))
+print(round(random.random(), 6))
+"#;
+    let run = |ledger: &RunLedger, writeback| {
+        runtime()
+            .block_on(super::execute_round(
+                &fixture.roots,
+                shared_cache(),
+                code,
+                60,
+                SearchCancel::never(),
+                ledger,
+                writeback,
+            ))
+            .unwrap()
+    };
+    let writeback = || super::RoundWriteback::Allowed {
+        untrusted_inputs: false,
+    };
+    let first = run(&ledger, writeback());
+    let missing: Vec<ReadCall> = serde_json::from_value(first["_python_pending"].clone()).unwrap();
+    assert_eq!(missing.len(), 2, "{first}");
+    assert!(!workspace(&fixture).join("outputs/test.txt").exists());
+    for call in missing {
+        let response = if call.tool == "read_a" {
+            Response::Ok {
+                value: json!([1, 2, 3]),
+            }
+        } else {
+            Response::refused("not_exposed")
+        };
+        ledger.entries.push(LedgerEntry { call, response });
+    }
+    let second = run(&ledger, writeback());
+    assert_eq!(second["status"], "completed", "{second}");
+    assert!(second["stdout"]
+        .as_str()
+        .unwrap()
+        .starts_with("not_exposed\n"));
+    assert_eq!(host_text(&fixture, "outputs/test.txt"), "round");
+    ledger.final_round = true;
+    let replay = run(&ledger, super::RoundWriteback::Disabled);
+    assert_eq!(second["stdout"], replay["stdout"]);
+    assert_eq!(replay["changed_files"], json!([]));
 }

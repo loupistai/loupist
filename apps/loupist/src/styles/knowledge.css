@@ -328,3 +328,32 @@ article[data-source-id][tabindex="-1"]:focus { outline: none; }
 .source-reader .saved-passage-table { container-type: inline-size; isolation: isolate; }
 .source-reader .saved-passage-table table[data-row-labels] :is(th, td):first-child { position: sticky; inset-inline-start: 0; z-index: var(--gg-z-sticky); background: var(--gg-color-bg-app); box-shadow: inset -1px 0 0 var(--gg-color-border-subtle); }
 .source-reader .saved-passage-label { display: block; min-width: min(12ch, 45cqi); max-width: 45cqi; white-space: normal; }
+
+.map-workspace .script-library-view {
+  display: grid;
+  align-content: start;
+  gap: var(--gg-space-3);
+  padding: var(--gg-space-3);
+  min-width: 0;
+  overflow: auto;
+}
+
+.script-library-view :is(form, section) {
+  display: grid;
+  gap: var(--gg-space-2);
+  min-width: 0;
+}
+
+.script-library-view :is(pre, .script-code-editor) {
+  font-family: var(--gg-font-mono);
+  font-size: var(--gg-text-meta);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.script-library-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gg-space-2);
+}

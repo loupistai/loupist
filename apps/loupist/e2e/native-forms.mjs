@@ -197,6 +197,11 @@ export async function assertComposerSelectAll(browser, { mac = process.platform 
     for (const action of ["undo:", "redo:", "cut:", "copy:", "paste:"]) {
       assert.ok(edit.items.some((item) => item.action === action && item.enabled), `Edit has no enabled ${action}`);
     }
+    // AppKit's own Edit items (AutoFill, Start Dictation…, Emoji & Symbols, with hidden alternates) are titled
+    // in English whatever the interface language; the menu keeps only its own, each once.
+    const titles = edit.items.map((item) => item.title);
+    const added = edit.items.filter((item) => item.items || ["startDictation:", "orderFrontCharacterPalette:"].includes(item.action));
+    assert.ok(!added.length && new Set(titles).size === titles.length, `Edit must list only its own items, each once: ${JSON.stringify(titles)}`);
   }
   const textarea = await browser.$('textarea[data-chat-composer="true"]');
   await textarea.waitForDisplayed({ timeout: 10_000 });

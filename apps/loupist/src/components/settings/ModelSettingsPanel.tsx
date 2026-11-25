@@ -15,6 +15,7 @@ import type {
 } from "../../types";
 import { ConnectSheet, type ConnectSheetBridge, type ConnectSheetTarget } from "./ConnectSheet";
 import { ProviderCard, providerCardTitle, stillUsed } from "./ProviderCard";
+import { useUsageSummary } from "./UsageSettings";
 
 export type ModelProviderActions = {
   onLoadModels: (provider: string) => Promise<ModelCatalog>;
@@ -31,11 +32,12 @@ export type ModelProviderActions = {
 type Props = ModelProviderActions & {
   catalog: ModelCatalog | null;
   loadError: string | null;
-  bridge: ConnectSheetBridge & Pick<LoupistBridge, "providerOpenUsage">;
+  bridge: ConnectSheetBridge & Pick<LoupistBridge, "providerOpenUsage" | "usageSummary">;
   /** The effective Chat default; null or empty means no model is available. */
   chatModelProfileId?: string | null;
   discoverModels?: boolean;
   searchControls?: boolean;
+  onOpenUsageSettings?: () => void;
   /** A connect sheet another surface asked for (a Chat error's "Use an API key"). */
   connectTarget?: ConnectSheetTarget | null;
   onConnectTargetConsumed?: () => void;
@@ -87,6 +89,7 @@ export function ModelSettingsPanel({
   onDisconnect,
   onRemoveCustomProvider,
   onCatalogChange,
+  onOpenUsageSettings,
 }: Props) {
   useTranslation("settings");
   const [sheet, setSheet] = useState<ConnectSheetTarget | null>(null);
@@ -121,6 +124,7 @@ export function ModelSettingsPanel({
     [catalog],
   );
   const cards = useMemo(() => options.filter(shownAsCard), [options]);
+  const weeklyUsage = useUsageSummary(bridge, 7, discoverModels && cards.length > 0);
   const connectedProviders = useMemo(() => cards.filter((option) => option.credential_source !== "missing"), [cards]);
   const hiddenModels = useMemo(() => new Set(catalog?.hidden_model_profile_ids ?? []), [catalog]);
   const chatDefault = chatModelProfileId ? catalog?.models.find((model) => model.id === chatModelProfileId) : undefined;
@@ -292,6 +296,8 @@ export function ModelSettingsPanel({
                 locked={providerMutationBusy || visibilityBusyId !== null}
                 reloadDisabled={loadingProviderIds.size > 0 || providerMutationBusy || visibilityBusyId !== null}
                 visibilityBusyId={visibilityBusyId}
+                weeklyUsage={weeklyUsage ? weeklyUsage.accounts.find(({ provider }) => provider === option.id)?.totals ?? { requests: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 } : undefined}
+                onOpenUsageSettings={onOpenUsageSettings}
                 onReload={() => void refreshModels(option.id)}
                 onConnect={openSheet}
                 onOpenUsage={(provider) => { void bridge.providerOpenUsage({ provider }).catch((cause) => setError(errorMessage(cause, i18n.t("settings:modelSettingsPanel.providerUpdateFailed")))); }}

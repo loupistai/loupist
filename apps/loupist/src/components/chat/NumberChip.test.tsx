@@ -973,3 +973,16 @@ it("names attachment inputs in copied formulas and exported footnotes", async ()
     messages: [message] }, "Quality", Date.parse("2026-03-20"));
   expect(markdown).toContain("inputs: Supplier ledger.xlsx, 2026-03-18; Files, 2026-03-18");
 });
+
+it("opens the Python step from a cited figure", async () => {
+  const evidence = evidenceFixture({ id: "ev_python", title: "Python output", kind: "derived", tool_name: "run_python", excerpt: "42.1%" });
+  const check: NumberCheck = { link_index: 0, text: "42.1%", evidence_id: evidence.id, kind: "step", status: "matched" };
+  const open = vi.fn();
+  window.addEventListener("loupist:open-activity", open, { once: true });
+  renderWithOpen(<NumberChip check={check} evidence={evidence} evidenceRefs={[evidence]}>42.1%</NumberChip>);
+  fireEvent.click(await chip("42.1"));
+  fireEvent.click(await screen.findByRole("button", { name: "Show the math" }));
+  expect(open).toHaveBeenCalledWith(expect.objectContaining({
+    detail: { tab: "steps", pythonEvidenceId: "ev_python" },
+  }));
+});

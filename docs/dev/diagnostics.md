@@ -22,7 +22,9 @@ node scripts/runs.mjs tail --app /absolute/path/to/app-data
 
 `tail` prints the latest 20 matching entries; it does not follow the file.
 `summary` reports counts, failures by run kind, nearest-rank p50/p95 duration in
-milliseconds, and known token totals. `--since` accepts minutes (`30m`), hours
+milliseconds, known token totals, model requests and a cost estimate.
+`tail` includes requests and cost as `req=` and `cost=`.
+`--since` accepts minutes (`30m`), hours
 (`24h`), or days (`7d`) and selects runs completed within that interval. Both
 commands accept `--kind` and `--failed`. Missing logs produce an empty result;
 malformed or incomplete lines are skipped with a count on stderr.
@@ -32,8 +34,11 @@ terminal status (`ok`, `failed`, `cancelled`, `deferred`), stable failure catego
 known token usage, tool/refusal counts, and Memory change counts. Unknown usage is
 `null`, not zero. Input counts include cache writes; cached input counts cache
 reads. World and learning aggregate the same provider measurements across their
-calls without changing World budget accounting. Token totals measure consumption,
-not a billed currency amount. Truncated tool traces carry a host-authored note.
+calls without changing World budget accounting. The optional `requests` counts
+assistant responses, including retries and errors, plus measured compactions or
+sent isolated model calls. The optional `costEstimate { microusd, fromProvider }`
+records the estimated cost as integer micro-USD and marks service-reported charges
+as billed. Truncated tool traces carry a host-authored note.
 Scheduled executions produce both their ordinary Chat entry and a `scheduled`
 or `briefing` receipt; summary counts include both kinds, while usage totals
 count the same execution once when both entries are selected.

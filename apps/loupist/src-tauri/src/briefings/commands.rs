@@ -18,6 +18,9 @@ use tauri::State;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct LoupistRequest {
     pub loupist_id: String,
+    #[serde(default)]
+    #[cfg_attr(test, ts(optional))]
+    pub edition: Option<crate::scheduled_tasks::types::BriefingEdition>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable), ts(rename = "BriefingSettingsRequest"))]
@@ -28,6 +31,9 @@ pub(crate) struct SettingsRequest {
     #[serde(default, deserialize_with = "exact_schedule")]
     #[cfg_attr(test, ts(as = "Option<Schedule>"))]
     pub schedule: Option<Schedule>,
+    #[serde(default)]
+    #[cfg_attr(test, ts(optional))]
+    pub edition: Option<crate::scheduled_tasks::types::BriefingEdition>,
 }
 
 /// A schedule as the renderer sends it, checked exactly. Saved schedules
@@ -165,19 +171,32 @@ pub(crate) fn settings_get(
     state: &AppState,
     loupist_id: &str,
 ) -> Result<BriefingSettings, CommandError> {
+    settings_for(
+        state,
+        loupist_id,
+        crate::scheduled_tasks::types::BriefingEdition::Morning,
+    )
+}
+
+pub(crate) fn settings_for(
+    state: &AppState,
+    loupist_id: &str,
+    edition: crate::scheduled_tasks::types::BriefingEdition,
+) -> Result<BriefingSettings, CommandError> {
     service::ensure_visible(state, loupist_id)?;
     let task = state
         .store
         .scheduled_tasks_list(loupist_id)
         .map_err(map_store)?
         .into_iter()
-        .find(|t| t.kind == TaskKind::Briefing)
+        .find(|task| task.kind == TaskKind::Briefing && task.edition() == edition)
         .map(|task| service::present(state, task));
     let schedule = match &task {
         Some(task) => task.schedule.clone(),
-        None => super::default_schedule(
+        None => super::edition_schedule(
             iana_time_zone::get_timezone()
                 .map_err(|_| CommandError::internal("System time zone is unavailable"))?,
+            edition,
         ),
     };
     Ok(BriefingSettings {
@@ -193,25 +212,79 @@ pub(crate) fn settings_set(
     state: &AppState,
     request: SettingsRequest,
 ) -> Result<BriefingSettings, CommandError> {
+    set_settings(state, request, None)
+}
+
+pub(crate) fn propose_settings(
+    state: &AppState,
+    request: SettingsRequest,
+    message_id: &str,
+) -> Result<BriefingSettings, CommandError> {
+    set_settings(state, request, Some(message_id))
+}
+
+fn set_settings(
+    state: &AppState,
+    request: SettingsRequest,
+    proposal: Option<&str>,
+) -> Result<BriefingSettings, CommandError> {
     let _activity = state
         .maintenance
         .admit_kind(MaintenanceActivityKind::ChatMutation)?;
     state.ensure_loupist_available(&request.loupist_id)?;
-    let previous = settings_get(state, &request.loupist_id)?;
+    let edition = request.edition.unwrap_or_default();
+    let previous = settings_for(state, &request.loupist_id, edition)?;
     // A schedule saved while briefings are off still needs a (paused) task to live in.
-    let create = request.enabled || request.schedule.is_some();
+    let explicit_schedule = request.schedule.is_some();
+    let create = request.enabled || explicit_schedule;
     let schedule = request.schedule.unwrap_or(previous.schedule);
     super::super::scheduled_tasks::schedule::validate_schedule(&schedule).map_err(map_store)?;
-    let status = if request.enabled {
+    let status = if request.enabled && proposal.is_none() {
         TaskStatus::Active
     } else {
         TaskStatus::Paused
     };
     if let Some(task) = previous.task {
         let mut draft = task.draft();
-        draft.schedule = schedule;
+        draft.schedule = schedule.clone();
         draft.status = status;
-        state
+        if let Some(message_id) = proposal {
+            let task = if task.awaiting_confirmation {
+                state
+                    .store
+                    .scheduled_task_update(
+                        &request.loupist_id,
+                        &task.id,
+                        task.revision,
+                        draft,
+                        now_ms(),
+                    )
+                    .map_err(map_store)?
+            } else {
+                service::propose_change(
+                    state,
+                    &task,
+                    task.revision,
+                    draft,
+                    task.watch.clone(),
+                    message_id,
+                )?
+            };
+            return Ok(BriefingSettings {
+                enabled: previous.enabled,
+                schedule,
+                task: Some(task),
+            });
+        }
+        if task.awaiting_confirmation {
+            if request.enabled && !explicit_schedule {
+                return Err(CommandError::conflict(
+                    "Review the current briefing proposal before turning it on",
+                ));
+            }
+            draft.status = TaskStatus::Paused;
+        }
+        let saved = state
             .store
             .scheduled_task_update(
                 &request.loupist_id,
@@ -221,6 +294,12 @@ pub(crate) fn settings_set(
                 now_ms(),
             )
             .map_err(map_store)?;
+        if request.enabled && saved.awaiting_confirmation {
+            state
+                .store
+                .scheduled_task_confirm(&request.loupist_id, &saved.id, saved.revision, now_ms())
+                .map_err(map_store)?;
+        }
     } else if create {
         let config = crate::commands::loupist_configuration(state, &request.loupist_id)?;
         let model_id = config.chat.model_profile_id.unwrap_or_default();
@@ -249,7 +328,7 @@ pub(crate) fn settings_set(
             (requested_level, config.chat.run_options)
         };
         let draft = TaskDraft {
-            title: "Briefings".into(),
+            title: edition.stored_title().into(),
             prompt: super::PROMPT.into(),
             schedule,
             target: TaskTarget::Dedicated,
@@ -264,21 +343,26 @@ pub(crate) fn settings_set(
         // readiness, including immediately after loupistCreate.
         state
             .store
-            .scheduled_task_create_kind(
+            .scheduled_task_create_definition(
                 &request.loupist_id,
-                &format!("briefing-{}", request.loupist_id),
+                &edition.task_id(&request.loupist_id),
                 draft,
                 TaskKind::Briefing,
+                crate::scheduled_tasks::types::TaskDefinition {
+                    proposed_in_message_id: proposal.map(str::to_owned),
+                    edition: Some(edition).filter(|edition| *edition != Default::default()),
+                    ..Default::default()
+                },
                 now_ms(),
             )
             .map_err(map_store)?;
     }
-    if request.enabled {
+    if request.enabled && proposal.is_none() {
         super::desktop::enable(state)?;
     }
     state.scheduled.changed();
     super::desktop::changed(&request.loupist_id);
-    settings_get(state, &request.loupist_id)
+    settings_for(state, &request.loupist_id, edition)
 }
 
 pub(crate) fn unread_counts(state: &AppState) -> Result<Vec<UnreadCount>, CommandError> {
@@ -303,7 +387,10 @@ pub(crate) fn briefing_settings_get(
     request: LoupistRequest,
     state: State<'_, AppState>,
 ) -> Result<BriefingSettings, CommandError> {
-    settings_get(&state, &request.loupist_id)
+    match request.edition {
+        None => settings_get(&state, &request.loupist_id),
+        Some(edition) => settings_for(&state, &request.loupist_id, edition),
+    }
 }
 #[tauri::command(async)]
 pub(crate) fn briefing_settings_set(

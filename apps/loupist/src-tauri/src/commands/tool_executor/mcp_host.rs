@@ -879,7 +879,7 @@ impl AppToolExecutor {
             payload
         } else {
             let reused = retained.is_some();
-            let compact = payload.to_string().len() > 16 * 1024;
+            let compact = !super::python_reads::nested() && payload.to_string().len() > 16 * 1024;
             let (reference, fetched_at) = match retained {
                 Some(retained) => retained,
                 None => {
@@ -1050,6 +1050,9 @@ impl AppToolExecutor {
             .local_tools
             .contains(&request.tool_name);
         let data_tool = !control_tool && !local_tool;
+        if super::python_reads::nested() && !data_tool {
+            return Err(BrokerError::MethodDenied);
+        }
         let mut arguments = request.arguments.clone();
         // `max_age` is a host argument added to OpenBB data cards; never forwarded.
         let max_age = if data_tool
@@ -1542,7 +1545,10 @@ fn provider_failure(
 ) -> BrokerError {
     if is_argument_failure(&error)
         || is_sec_contact_required(&error)
-        || matches!(error, BrokerError::EmptyResult)
+        || matches!(
+            error,
+            BrokerError::EmptyResult | BrokerError::ResultTooLarge { .. }
+        )
     {
         return error;
     }
@@ -4443,6 +4449,114 @@ done
         assert_eq!(step["refusal"], "sec_contact_required");
         turn.shutdown_mcp().await;
         wait_for_exit_marker(&spawned.exited).await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn python_reads_capture_quarterly_income_in_the_parent_delivery() {
+        let _guard = crate::mcp::MCP_PROCESS_TEST_LOCK.lock().await;
+        let temporary = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(temporary.path().join("app"));
+        let (_workspace, roots) = crate::python_run::ledger::empty_roots().unwrap();
+        let turn = Arc::new(ToolCapture {
+            native: NativeGate::for_turn(roots),
+            ..ToolCapture::default()
+        });
+        let route = "equity_fundamental_income";
+        let script = ISOLATION_MCP_SCRIPT
+            .replace("equity_quote", route)
+            .replace(
+                r#""symbol":{"type":"string"},"provider""#,
+                r#""symbol":{"type":"string"},"period":{"type":"string"},"limit":{"type":"integer"},"provider""#,
+            )
+            .replace(
+                r#"    *'"method":"tools/call"'*'"name":"equity_fundamental_income"'*)"#,
+                r#"    *'"method":"tools/call"'*'"name":"equity_fundamental_income"'*)
+      case "$line" in
+        *'"symbol":"AMD"'*) revenue=123 ;;
+        *'"symbol":"AVGO"'*) revenue=456 ;;
+        *) exit 1 ;;
+      esac"#,
+            )
+            .replace(r#""price":123"#, r#""results":[{"period_ending":"2025-03-31","total_revenue":%s}]"#)
+            .replace(r#""$id" "$provider""#, r#""$id" "$provider" "$revenue""#);
+        let spawned =
+            spawn_script_server(&temporary, "quarterly-income", "yfinance", None, &script).await;
+        install(&turn, spawned.server).await;
+        let executor = turn_executor(&temporary, &state, "loupist-a", turn.clone());
+        let policy = policy("loupist-a", None);
+        state
+            .store
+            .create_chat(&crate::commands::tests::chat(
+                &policy.session_id,
+                "loupist-a",
+                1,
+            ))
+            .unwrap();
+
+        let delivery = "python-income";
+        let result = executor
+            .execute_for_delivery(
+                &policy,
+                ToolMethod::PythonRun,
+                json!({"code": r#"
+import loupist
+
+for symbol in ("AMD", "AVGO"):
+    arguments = dict(symbol=symbol, provider="yfinance", period="quarter", limit=4)
+    income = loupist.call("mcp__openbb__equity_fundamental_income", **arguments)
+    assert income == loupist.call("mcp__openbb__equity_fundamental_income", **arguments)
+    print(symbol, income["structuredContent"]["results"][0]["total_revenue"])
+"#}),
+                delivery,
+            )
+            .await;
+        turn.shutdown_mcp().await;
+        wait_for_exit_marker(&spawned.exited).await;
+
+        let result = result.unwrap();
+        assert_eq!(result["status"], "completed", "{result}");
+        assert_eq!(result["rounds"], 3);
+        let stdout = result["stdout"].as_str().unwrap();
+        assert!(stdout.contains("AMD 123\nAVGO 456\n"), "{stdout}");
+        let reads = result["reads"].as_array().unwrap();
+        assert_eq!(reads.len(), 2);
+        for read in reads {
+            assert_eq!(read["status"], "ok", "{read}");
+        }
+        let transcript = fs::read_to_string(spawned.transcript).unwrap();
+        let income_calls: Vec<_> = transcript
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .filter(|call| call["method"] == "tools/call" && call["params"]["name"] == route)
+            .map(|call| call["params"]["arguments"].clone())
+            .collect();
+        assert_eq!(
+            income_calls,
+            [
+                json!({"symbol":"AMD", "provider":"yfinance", "period":"quarter", "limit":4}),
+                json!({"symbol":"AVGO", "provider":"yfinance", "period":"quarter", "limit":4}),
+            ]
+        );
+
+        let parent_ref = result["result_ref"].as_str().unwrap();
+        assert!(turn.run_result(parent_ref).await.is_none());
+        assert_eq!(
+            turn.pending_deliveries.lock().await[delivery]
+                .run_results
+                .len(),
+            3
+        );
+        executor.commit_delivery(&policy, delivery).await.unwrap();
+        let parent = turn.run_result(parent_ref).await.unwrap();
+        assert_eq!(parent.upstream_result_refs.len(), 2);
+        let mut symbols = BTreeSet::new();
+        for reference in parent.upstream_result_refs {
+            let read = turn.run_result(&reference).await.unwrap();
+            assert_eq!(read.producer.tool_name, route);
+            symbols.insert(read.origin.unwrap());
+        }
+        assert_eq!(symbols, BTreeSet::from(["AMD".into(), "AVGO".into()]));
     }
 
     /// A market-data server for host refreshes: SEC filings for MORR (a 10-K on

@@ -3,6 +3,7 @@
 
 import type { ChatApproval } from "../chat/approvals";
 import type { ChatQuestion } from "../chat/questions";
+import type { ToolTraceOrigin } from "../domain/chat";
 
 export type ChatPlan = { items: Array<ChatPlanItem> };
 
@@ -50,6 +51,8 @@ export type ChatProgressItem =
      * localizes steps by it; absent only on steps recorded before it existed.
      */
     toolName?: string,
+    origin?: ToolTraceOrigin,
+    parentStep?: string,
     category: ChatProgressCategory,
     operation: ChatProgressOperation,
     action: string,

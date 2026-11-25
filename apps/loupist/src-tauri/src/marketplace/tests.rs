@@ -576,10 +576,21 @@ fn changing_kis_environment_disables_bindings_and_deletes_credentials() {
 
 #[test]
 fn credential_verification_separates_rejection_from_outage() {
+    use crate::finance_data::{FinanceDataError, KisReadError};
+
     assert_eq!(
         credential_verification_outcome::<()>(&Err(
             crate::finance_data::FinanceDataError::CredentialRejected("provider"),
         )),
+        crate::finance_credentials::VerificationOutcome::Rejected
+    );
+    let rejected_probe = FinanceDataError::KisRead(KisReadError::CredentialRejected);
+    assert_eq!(
+        super::credentials::credential_verification_error(&rejected_probe).code,
+        "credential_rejected"
+    );
+    assert_eq!(
+        credential_verification_outcome::<()>(&Err(rejected_probe)),
         crate::finance_credentials::VerificationOutcome::Rejected
     );
     // OpenDART's own key statuses (unregistered, unusable, address, expired).

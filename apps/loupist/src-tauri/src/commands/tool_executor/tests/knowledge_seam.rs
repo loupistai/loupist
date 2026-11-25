@@ -471,6 +471,76 @@ fn world_scope_merge_puts_world_rows_before_higher_fused_knowledge_scores() {
     );
 }
 
+/// A saved Source turns up once, as a hit that opens it and says where it was
+/// saved from. Its title, indexed on its own as well, matched too, but a
+/// span hit is preferred when both are ranked.
+#[tokio::test]
+async fn a_saved_source_is_one_hit_that_opens_it_and_names_where_it_came_from() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let source = retain_publisher_source(&state, b"Notes on memory packaging and bandwidth.");
+    let executor = executor_for(&state, Arc::new(ToolCapture::default()));
+    let policy = policy(true, false);
+    let found = executor
+        .world_search(&policy, json!({"query": "Notes bandwidth"}))
+        .await
+        .unwrap();
+    let hits: Vec<_> = found["hits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|hit| hit["recordId"] == source.record_id)
+        .collect();
+    let [hit] = hits[..] else {
+        panic!("one hit for the Source: {found}");
+    };
+    assert_eq!(hit["readArgs"]["spanId"], source.span_id, "{hit}");
+    assert_eq!(hit["origin"], "https://example.test/notes");
+    assert_eq!(hit["sourceClass"], "publisher_document");
+    let read = executor
+        .world_read(&policy, hit["readArgs"].clone(), "open-hit")
+        .await
+        .unwrap();
+    assert_eq!(read["recordId"], source.record_id);
+}
+
+#[tokio::test]
+async fn a_title_only_source_hit_opens_a_span_from_its_revision() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let source = retain_publisher_source(&state, b"Retained report text.");
+    // Model a ranked window containing the title row but no span hit.
+    // The canonical revision still holds the exact span.
+    let removed = state
+        .store
+        .lock_loupist("loupist-a")
+        .unwrap()
+        .execute(
+            "DELETE FROM knowledge_search_documents WHERE record_id = ?1 AND span_id = ?2",
+            rusqlite::params![source.record_id, source.span_id],
+        )
+        .unwrap();
+    assert_eq!(removed, 1);
+    let executor = executor_for(&state, Arc::new(ToolCapture::default()));
+    let policy = policy(true, false);
+    let found = executor
+        .world_search(&policy, json!({"query": "Notes", "scope": "source"}))
+        .await
+        .unwrap();
+    let hit = &found["hits"][0];
+    assert_eq!(hit["coverage"], "metadata_only", "{found}");
+    let args = &hit["readArgs"];
+    assert_eq!(args["revisionId"], hit["revisionId"]);
+    assert_eq!(args["spanId"], source.span_id);
+    let read = executor
+        .world_read(&policy, args.clone(), "title-hit")
+        .await
+        .unwrap();
+    assert_eq!(read["recordId"], source.record_id);
+    assert_eq!(read["revisionId"], hit["revisionId"]);
+    assert_eq!(read["source"]["spanId"], source.span_id);
+}
+
 #[tokio::test]
 async fn world_search_hit_opens_the_matched_claim_beyond_the_first_page() {
     let temporary = tempfile::tempdir().unwrap();

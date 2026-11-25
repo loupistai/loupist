@@ -417,14 +417,14 @@ fn new_chat(state: &AppState, loupist_id: &str, title: &str) -> Result<ChatSessi
     Ok(chat)
 }
 /// The turn's message: a host-built procedure or briefing first, then the user text.
-fn turn_prompt(state: &AppState, chat: &ChatSession, turn: &Turn, since_ms: i64) -> Result<String> {
+fn turn_prompt(state: &AppState, chat: &ChatSession, turn: &Turn) -> Result<String> {
     let mut parts = Vec::new();
     if turn.briefing {
         let (prompt, _) = crate::briefings::build_prompt(
             state,
             &chat.loupist_id,
-            Some(since_ms),
             chrono::Utc::now().timestamp_millis(),
+            crate::scheduled_tasks::types::BriefingEdition::Morning,
         )
         .map_err(|error| error.message)?;
         parts.push(prompt);
@@ -649,10 +649,11 @@ fn enable_connections(state: &AppState, loupist: &str, connections: &[String]) -
             return Err(format!("unknown connection: {id}").into());
         };
         if entry == "koreainvestment.market-data" {
+            let environment = replay::kis_environment(&state.credential_environment);
             crate::scoped_config::write_global_connector_settings(
                 &state.artifacts.app_data_dir,
                 entry,
-                &BTreeMap::from([("environment".into(), "demo".into())]),
+                &BTreeMap::from([("environment".into(), environment.into())]),
             )?;
             crate::marketplace::connector_config::apply_pending_credential_scope(
                 state,
@@ -761,8 +762,7 @@ async fn run_turn(
                 run_id: run_id.clone(),
                 loupist_id: chat.loupist_id.clone(),
                 thread_id: chat.id.clone(),
-                prompt: turn_prompt(state, chat, turn, chat.created_at_ms - 60_000)
-                    .map_err(|error| error.to_string())?,
+                prompt: turn_prompt(state, chat, turn).map_err(|error| error.to_string())?,
                 use_memory: policy.use_memory,
                 update_memory: policy.update_memory,
                 as_of: turn.as_of.clone(),
@@ -846,14 +846,14 @@ async fn run_turn(
     }
     // Observe canonical state independently of tool output or the assistant’s claim.
     result["lens"] = trace::lens_state(state, chat, message.map(|m| m.id.as_str()))?;
-    result["scheduled_tasks"] = json!(state.store.scheduled_tasks_list(&chat.loupist_id)?.iter().map(|task| {
-        trace::bounded_json(&json!({"task_id":task.id,"title":task.title,"status":task.status,"revision":task.revision,
-            "schedule":task.schedule,"target":task.target,"session_thread_id":task.session_thread_id,
-            "model_profile_id":task.model_profile_id,"thinking_level":task.thinking_level,
-            "use_memory":task.use_memory,"update_memory":task.update_memory,
-            "next_run_at_ms":task.next_run_at_ms,"awaiting_confirmation":task.awaiting_confirmation,"prompt":task.prompt.chars().take(1500).collect::<String>(),
-            "prompt_sha256":crate::util::sha256(task.prompt.as_bytes())}))
-    }).collect::<Vec<_>>());
+    result["scheduled_tasks"] = Value::Array(
+        state
+            .store
+            .scheduled_tasks_list(&chat.loupist_id)?
+            .iter()
+            .map(trace::scheduled_task)
+            .collect(),
+    );
     result["followed_assets"] = json!(state.store.assets_list(&chat.loupist_id, true)?);
     if let Some(query) = &turn.replay_price {
         let rows = state.store.assets_list(&chat.loupist_id, false)?;

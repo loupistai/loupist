@@ -61,7 +61,7 @@ use crate::{
     pi::{PiError, PiEvent, PiImageContent, PiLaunchConfig, PiProcess},
     providers::catalog::ExecutionModelLock,
     runs::coordinator::{RunKind, RunRegistration, RunTarget},
-    runs::log::{ChatStartFailure, ChatStartPhase},
+    runs::log::{ChatStartFailure, ChatStartPhase, UsageSurface},
 };
 use tokio::time::{timeout, Instant};
 
@@ -81,7 +81,10 @@ use super::{
     MAX_CHAT_OUTPUT_BYTES, MAX_PROMPT_BYTES,
 };
 
-use crate::domain::ChatFailureKind;
+use crate::{
+    domain::{ChatCostEstimate, ChatFailureKind},
+    providers::status::{live_credential_kind, CredentialKind},
+};
 
 type ChatEventCallback = dyn Fn(ChatStreamEvent) -> Result<(), ()> + Send + Sync;
 type ChatRunLogCapture =
@@ -110,6 +113,7 @@ pub(crate) struct ChatEventSink {
     failure_kind: Arc<std::sync::Mutex<ChatFailureKind>>,
     retry_after_seconds: Arc<std::sync::Mutex<Option<u32>>>,
     run_log: ChatRunLogCapture,
+    assistant_usage: Arc<std::sync::Mutex<ChatModelUsage>>,
     /// Provider status (W17): each terminal outcome on the run's credential.
     provider_outcome: Option<Arc<ProviderOutcomeCallback>>,
     replaced_model: Arc<std::sync::Mutex<Option<String>>>,
@@ -139,6 +143,7 @@ impl ChatEventSink {
             failure_kind: Arc::default(),
             retry_after_seconds: Arc::default(),
             run_log: Arc::default(),
+            assistant_usage: Arc::default(),
             provider_outcome: None,
             replaced_model: Arc::default(),
         }
@@ -212,18 +217,10 @@ impl ChatEventSink {
                     ChatStreamEvent::MemoryUpdate { result, .. } => record.memory(result),
                     ChatStreamEvent::Completed {
                         execution_model,
-                        performance,
                         memory_save_skip,
                         ..
                     } => {
                         record.model(execution_model);
-                        record.usage = Some(crate::runs::log::Usage {
-                            input: performance
-                                .input_tokens
-                                .saturating_add(performance.cache_write_tokens),
-                            cached_input: performance.cache_read_tokens,
-                            output: performance.output_tokens,
-                        });
                         record.memory_save_skip = *memory_save_skip;
                         record.finish("ok", None);
                     }
@@ -241,6 +238,10 @@ impl ChatEventSink {
                     | ChatStreamEvent::Aborted { .. }
             ) {
                 if let Some((store, mut record)) = pending.take() {
+                    self.assistant_usage
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .apply(&mut record);
                     record.refusals(&self.tool_refusals());
                     record.trace(&self.tool_trace.snapshot());
                     record.connector_keychain_statuses =
@@ -266,6 +267,43 @@ impl ChatEventSink {
             observe(&serde_json::json!({"type":"eval_terminal","terminal":terminal}));
         }
         result
+    }
+
+    fn observe_assistant_usage(
+        &self,
+        observe: impl Fn(&mut AssistantTokenUsage),
+    ) -> AssistantTokenUsage {
+        let mut usage = self
+            .assistant_usage
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let ChatModelUsage {
+            turn,
+            provider,
+            accounts,
+        } = &mut *usage;
+        observe(turn);
+        if let Some(account) = provider
+            .as_ref()
+            .and_then(|provider| accounts.get_mut(provider))
+        {
+            observe(account);
+        }
+        *turn
+    }
+
+    fn set_usage_account(&self, provider: &str, credential_kind: CredentialKind) {
+        let mut usage = self
+            .assistant_usage
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        usage.turn.credential_kind = Some(credential_kind);
+        usage.provider = Some(provider.into());
+        usage
+            .accounts
+            .entry(provider.into())
+            .or_default()
+            .credential_kind = Some(credential_kind);
     }
 
     fn set_retry_after_seconds(&self, seconds: Option<u32>) {
@@ -379,28 +417,135 @@ struct AssistantTokenUsage {
     output: u64,
     cache_read: u64,
     cache_write: u64,
+    reasoning: Option<u64>,
+    requests: u32,
+    tokens_measured: bool,
+    tokens_partial: bool,
+    cost: crate::runs::log::PiCost,
+    credential_kind: Option<CredentialKind>,
+}
+
+#[derive(Default)]
+struct ChatModelUsage {
+    turn: AssistantTokenUsage,
+    provider: Option<String>,
+    accounts: BTreeMap<String, AssistantTokenUsage>,
+}
+
+impl ChatModelUsage {
+    fn apply(&self, log: &mut crate::runs::log::RunLog) {
+        use crate::store::model_usage::{ModelUsageAccount, ModelUsageMeasures};
+
+        self.turn.apply(log);
+        let final_provider = log
+            .model
+            .as_deref()
+            .and_then(|model| model.split_once('/'))
+            .map(|(provider, _)| provider);
+        let measured = self.accounts.iter().filter(|(_, usage)| usage.requests > 0);
+        if measured
+            .clone()
+            .all(|(provider, _)| Some(provider.as_str()) == final_provider)
+        {
+            return;
+        }
+        log.account_usage = measured
+            .map(|(provider, usage)| {
+                let tokens = usage.token_totals();
+                let cost = usage.cost_estimate();
+                ModelUsageAccount {
+                    provider: provider.clone(),
+                    credential_kind: usage.credential_kind,
+                    measures: ModelUsageMeasures {
+                        requests: usage.model_requests().map(u64::from),
+                        input: tokens.as_ref().map(|tokens| tokens.input),
+                        cached_input: tokens.as_ref().map(|tokens| tokens.cached_input),
+                        output: tokens.as_ref().map(|tokens| tokens.output),
+                        tokens_partial: usage.tokens_partial,
+                        reasoning: usage.reasoning,
+                        cost_microusd: cost.map(|estimate| estimate.microusd),
+                        cost_from_provider: cost.map(|estimate| estimate.from_provider),
+                    },
+                }
+            })
+            .collect();
+    }
 }
 
 impl AssistantTokenUsage {
     fn observe_message_end(&mut self, payload: &Value) {
-        let Some(usage) = payload
-            .get("message")
-            .and_then(|message| message.get("usage"))
-        else {
-            return;
-        };
+        let message = &payload["message"];
+        if message["role"].as_str() == Some("assistant") {
+            self.observe(&message["usage"]);
+        }
+    }
+
+    fn observe_compaction_end(&mut self, payload: &Value) {
+        if let Some(usage) = crate::runs::log::compaction_usage(payload) {
+            self.observe(usage);
+        }
+    }
+
+    fn observe(&mut self, usage: &Value) {
+        self.requests = self.requests.saturating_add(1);
         self.input = self
             .input
-            .saturating_add(usage.get("input").and_then(Value::as_u64).unwrap_or(0));
+            .saturating_add(usage["input"].as_u64().unwrap_or(0));
         self.output = self
             .output
-            .saturating_add(usage.get("output").and_then(Value::as_u64).unwrap_or(0));
+            .saturating_add(usage["output"].as_u64().unwrap_or(0));
         self.cache_read = self
             .cache_read
-            .saturating_add(usage.get("cacheRead").and_then(Value::as_u64).unwrap_or(0));
+            .saturating_add(usage["cacheRead"].as_u64().unwrap_or(0));
         self.cache_write = self
             .cache_write
-            .saturating_add(usage.get("cacheWrite").and_then(Value::as_u64).unwrap_or(0));
+            .saturating_add(usage["cacheWrite"].as_u64().unwrap_or(0));
+        if let Some(reasoning) = usage["reasoning"].as_u64() {
+            self.reasoning = Some(self.reasoning.unwrap_or(0).saturating_add(reasoning));
+        }
+        let measured =
+            ["input", "output", "cacheRead", "cacheWrite"].map(|key| usage[key].as_u64().is_some());
+        self.tokens_measured |= measured.contains(&true);
+        self.tokens_partial |= measured.contains(&false);
+        if self.key_account() {
+            self.cost.observe(&usage["cost"]);
+        }
+    }
+
+    fn model_requests(&self) -> Option<u32> {
+        (self.requests > 0).then_some(self.requests)
+    }
+
+    fn cost_estimate(&self) -> Option<ChatCostEstimate> {
+        if self.key_account() {
+            self.cost.estimate(u64::from(self.requests))
+        } else {
+            None
+        }
+    }
+
+    fn key_account(&self) -> bool {
+        matches!(
+            self.credential_kind,
+            Some(CredentialKind::ApiKey | CredentialKind::Environment)
+        )
+    }
+
+    fn token_totals(&self) -> Option<crate::runs::log::Usage> {
+        self.tokens_measured.then_some(crate::runs::log::Usage {
+            input: self.input.saturating_add(self.cache_write),
+            cached_input: self.cache_read,
+            output: self.output,
+        })
+    }
+
+    fn apply(&self, log: &mut crate::runs::log::RunLog) {
+        log.requests = self.model_requests().map(u64::from);
+        log.usage = self.token_totals();
+        log.tokens_partial = self.tokens_partial;
+        log.cost_estimate = self.cost_estimate();
+        log.credential_kind = self.credential_kind;
+        log.reasoning = self.reasoning;
     }
 }
 
@@ -481,6 +626,8 @@ pub(crate) struct ChatAdmission {
     pub(crate) scheduled: Option<crate::domain::ScheduledTurn>,
     /// For a custom scheduled run, how its task's last finished run ended.
     pub(crate) previous_run: Option<crate::scheduled_tasks::types::PreviousRun>,
+    pub(crate) trigger: Option<crate::commands::triggers::TriggerContext>,
+    pub(crate) scheduled_followed_ids: Option<Vec<String>>,
     pub(crate) price_setup: bool,
     pub(crate) handoff: Option<crate::chat::handoff::HandoffAdmission>,
 }
@@ -515,6 +662,8 @@ impl ChatAdmission {
             untrusted_text: false,
             scheduled: None,
             previous_run: None,
+            trigger: None,
+            scheduled_followed_ids: None,
             price_setup: false,
             handoff: None,
         })
@@ -566,6 +715,18 @@ pub(crate) async fn send_chat(
     let mut record =
         crate::runs::log::RunLog::new("chat", &request.loupist_id, &request.run_id, now_ms());
     record.chat_id = Some(request.thread_id.clone());
+    let (surface, task_id) = chat_usage_surface(
+        admission
+            .as_ref()
+            .and_then(|admission| admission.scheduled.as_ref()),
+        admission
+            .as_ref()
+            .is_some_and(|admission| admission.handoff.is_some()),
+        &request.loupist_id,
+        &request.thread_id,
+    );
+    record.surface = Some(surface);
+    record.task_id = task_id;
     *on_event.run_log.lock().unwrap_or_else(|e| e.into_inner()) =
         Some((state.store.clone(), record));
     send_chat_inner(request, on_event.clone(), state, admission)
@@ -590,6 +751,28 @@ pub(crate) async fn send_chat(
             }
             failure.user_error()
         })
+}
+
+fn chat_usage_surface(
+    scheduled: Option<&crate::domain::ScheduledTurn>,
+    handoff: bool,
+    loupist_id: &str,
+    thread_id: &str,
+) -> (UsageSurface, Option<String>) {
+    if let Some(turn) = scheduled {
+        let surface = if turn.task_kind == crate::scheduled_tasks::types::TaskKind::Briefing {
+            UsageSurface::Briefing
+        } else {
+            UsageSurface::Scheduled
+        };
+        (surface, Some(turn.task_id.clone()))
+    } else if handoff {
+        (UsageSurface::Handoff, None)
+    } else if thread_id == crate::chat::home::home_thread_id(loupist_id) {
+        (UsageSurface::Bot, None)
+    } else {
+        (UsageSurface::Research, None)
+    }
 }
 
 /// Runs one Chat turn through its phases. Setup and launch run inline, so a
@@ -621,6 +804,11 @@ async fn send_chat_inner(
         ControlFlow::Break(settled) => return Ok(settled),
     };
     let run_id = launched.run_id.clone();
+    let provider = launched.execution_model.provider.clone();
+    let credential_kind = live_credential_kind(state, &provider);
+    launched
+        .on_event
+        .set_usage_account(&provider, credential_kind);
     tauri::async_runtime::spawn(async move {
         let mut streamed = stream::stream_chat_turn(&mut launched).await;
         if model_gone::retryable(&launched, &streamed) {
@@ -629,6 +817,15 @@ async fn send_chat_inner(
                     let mut relaunched = *relaunched;
                     // The renderer's progress continues in sequence.
                     relaunched.carried_progress = Some(streamed.progress);
+                    if relaunched.execution_model.provider != provider {
+                        let kind = live_credential_kind(
+                            &relaunched.app_state,
+                            &relaunched.execution_model.provider,
+                        );
+                        relaunched
+                            .on_event
+                            .set_usage_account(&relaunched.execution_model.provider, kind);
+                    }
                     streamed = stream::stream_chat_turn(&mut relaunched).await;
                     relaunched
                 }
@@ -648,6 +845,8 @@ async fn send_chat_inner(
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod usage_tests;
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]

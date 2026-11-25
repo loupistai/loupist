@@ -299,11 +299,13 @@ assert "finviz" in keyless["/api/v1/equity/screener"]
 # FINRA's short interest blocks the server while it downloads its archive;
 # no other provider serves the route, and FINRA's other route stays.
 assert with_keys["/api/v1/equity/shorts/short_interest"] == []
-# EIA's petroleum report is over the host's frame limit; its outlook stays.
-assert with_keys["/api/v1/commodity/petroleum_status_report"] == []
+# Undated, EIA's petroleum report and the Svensson curve are over the host's
+# frame limit; that one call is refused, and a dated read fits.
+assert with_keys["/api/v1/commodity/petroleum_status_report"] == ["eia"]
 assert "eia" in with_keys["/api/v1/commodity/short_term_energy_outlook"]
-# So is the Svensson curve; the nominal yield curve stays.
-assert with_keys["/api/v1/fixedincome/government/svensson_yield_curve"] == []
+assert keyless["/api/v1/fixedincome/government/svensson_yield_curve"] == [
+    "federal_reserve"
+]
 assert "federal_reserve" in keyless["/api/v1/fixedincome/government/yield_curve"]
 assert "finra" in keyless["/api/v1/equity/darkpool/otc"]
 assert "yfinance" in keyless["/api/v1/equity/price/quote"]

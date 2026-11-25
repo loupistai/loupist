@@ -216,6 +216,7 @@ fn folder_tables(connection: &Connection) -> KnowledgeResult<Vec<String>> {
         "chat_sessions",
         "scheduled_tasks",
         "scheduled_task_runs",
+        "scripts",
     ] {
         if !tables.iter().any(|table| table == required) {
             return Err(KnowledgeError::Invalid(

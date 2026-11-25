@@ -183,3 +183,47 @@
   [data-surface="bot"] .message.assistant[data-bot-message][data-entering],
   .bot-greeting[aria-busy="false"] > :not(.bot-greeting-top) { animation: none; }
 }
+
+.bot-standing-strip,
+.bot-needs-you {
+  border-block: 1px solid var(--border);
+  padding: 0.5rem 1rem;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.bot-standing-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.bot-standing-strip > button {
+  margin-inline-start: auto;
+}
+
+.bot-needs-you ul {
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bot-needs-you li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding-block: 0.25rem;
+}
+
+.bot-away-block {
+  margin: 0.5rem 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.bot-away-block summary,
+.bot-result-menu summary {
+  cursor: pointer;
+}

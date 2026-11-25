@@ -227,6 +227,7 @@ pub async fn chat_activity_read(
     }
     let active = state.run_coordinator.activities()?;
     let root = state.loupist_files_root(&request.loupist_id)?;
+    let store = state.store.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let mut detail = crate::chat::activity::read(
             &root,
@@ -241,6 +242,36 @@ pub async fn chat_activity_read(
                 })
             },
         )?;
+        if let Some(step_id) = detail.step_id.as_deref() {
+            for message in &chat.messages {
+                if let Some(record) = crate::commands::scripts::saved_python_step(
+                    &store,
+                    &chat.loupist_id,
+                    message,
+                    step_id,
+                ) {
+                    detail.python = crate::commands::scripts::step_view(&record);
+                    if let Some(python) = &detail.python {
+                        let evidence: Vec<_> = message
+                            .evidence_refs
+                            .iter()
+                            .filter(|evidence| {
+                                python.reads.iter().any(|read| {
+                                    read.citation_url
+                                        .as_deref()
+                                        .and_then(|url| url.strip_prefix("#evidence-"))
+                                        == Some(evidence.id.as_str())
+                                })
+                            })
+                            .cloned()
+                            .collect();
+                        detail.python_sources = (!evidence.is_empty()).then_some(evidence);
+                    }
+                    detail.python_message_id = Some(message.id.clone());
+                    break;
+                }
+            }
+        }
         crate::chat::local_files::FileLabels::for_chat(&chat).project_activity(&mut detail);
         Ok(detail)
     })

@@ -33,11 +33,13 @@ fn catalog_declares_max_age(method: ToolMethod) -> bool {
         .is_some_and(|tool| tool.pointer("/parameters/properties/max_age").is_some())
 }
 
-const NATIVE_FINANCE_READS: [ToolMethod; 13] = [
+const NATIVE_FINANCE_READS: [ToolMethod; 15] = [
     M::WorldbankSeries,
     M::DefillamaRead,
     M::KrxDailyQuote,
     M::KisOperationSearch,
+    M::KisSymbolLookup,
+    M::KisDividendCalendar,
     M::KisRead,
     M::DartFinancials,
     M::DartFilingSearch,
@@ -48,8 +50,9 @@ const NATIVE_FINANCE_READS: [ToolMethod; 13] = [
     M::DartDividends,
     M::DartReportItems,
 ];
-const SCHEDULE_CHANGES: [ToolMethod; 6] = [
+const SCHEDULE_CHANGES: [ToolMethod; 7] = [
     M::ScheduleCreate,
+    M::TriggerSave,
     M::ScheduleHandoff,
     M::ScheduleBriefing,
     M::ScheduleUpdate,
@@ -83,6 +86,8 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
         "defillama_read",
         "krx_daily_quote",
         "kis_operation_search",
+        "kis_symbol_lookup",
+        "kis_dividend_calendar",
         "kis_read",
         "dart_financials",
         "dart_filing_search",
@@ -107,6 +112,8 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
         "asset_lookup",
         "price_read_save",
         "schedule_quiet",
+        "bot_offer",
+        "ask_later",
         "fx_rate",
         "asset_page_read",
         "thesis_update",
@@ -114,8 +121,14 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
         "artifact_read",
         "chart_query",
         "run_python",
+        "script_save",
+        "script_list",
+        "script_read",
     ];
     let refused_after_dont_save = [
+        M::BotOffer,
+        M::AskLater,
+        M::ScriptSave,
         M::SourceSave,
         M::NoteSave,
         M::JournalSave,
@@ -130,6 +143,9 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
         M::PriceReadSave,
     ];
     let credential_screened = [
+        M::BotOffer,
+        M::AskLater,
+        M::ScriptSave,
         M::NoteSave,
         M::BotMemory,
         M::PrincipleSave,
@@ -152,7 +168,10 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
         let after_text = if mcp {
             AfterText::CustomPaused
         } else if SCHEDULE_CHANGES.contains(&method)
-            || matches!(method, M::ScheduleDelete | M::ScheduleStop)
+            || matches!(
+                method,
+                M::ScheduleDelete | M::ScheduleStop | M::BotOffer | M::AskLater
+            )
         {
             AfterText::Paused
         } else {
@@ -161,17 +180,21 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
         assert_eq!(class.after_text, after_text, "{method:?} after text");
         let result_text = match method {
             M::McpCall => ResultText::ByRoute,
-            M::DartFilingRead | M::WebSearch | M::WebFetch => ResultText::ThirdParty,
+            M::DartFilingRead
+            | M::KisSymbolLookup
+            | M::KisDividendCalendar
+            | M::WebSearch
+            | M::WebFetch => ResultText::ThirdParty,
             _ => ResultText::Own,
         };
         assert_eq!(class.result_text, result_text, "{method:?} result text");
         assert_eq!(
-            class.memory.refused_after_dont_save(),
+            class.write.refused_after_dont_save(),
             refused_after_dont_save.contains(&method),
             "{method:?} Don't save"
         );
         assert_eq!(
-            class.memory.screened_for_credentials(),
+            class.write.screened_for_credentials(),
             credential_screened.contains(&method),
             "{method:?} credential screen"
         );
@@ -182,6 +205,20 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
         } else {
             Unattended::Refused
         };
+        let exposure = match method {
+            M::McpCall => PythonExposure::RouteChecked,
+            M::DatasetDescribe
+            | M::DatasetQuery
+            | M::WorldSearch
+            | M::WorldRead
+            | M::LensSearch
+            | M::LensRead
+            | M::AssetPageRead => PythonExposure::MemoryRead,
+            M::AssetLookup | M::FxRate => PythonExposure::DataRead,
+            method if NATIVE_FINANCE_READS.contains(&method) => PythonExposure::DataRead,
+            _ => PythonExposure::NoPython,
+        };
+        assert_eq!(class.python, exposure, "{method:?} Python");
         assert_eq!(class.unattended, run, "{method:?} unattended");
         assert_eq!(
             class.pack_text == PackText::Delimited,
@@ -207,6 +244,8 @@ fn every_method_keeps_its_reviewed_provenance_and_retention() {
         (M::DefillamaRead, "native-finance", AcquiredOriginal),
         (M::KrxDailyQuote, "native-finance", AcquiredOriginal),
         (M::KisOperationSearch, "native-finance", Discovery),
+        (M::KisSymbolLookup, "native-finance", Discovery),
+        (M::KisDividendCalendar, "native-finance", AcquiredOriginal),
         (M::KisRead, "native-finance", AcquiredOriginal),
         (M::DartFinancials, "native-finance", AcquiredOriginal),
         (M::DartFilingSearch, "native-finance", AcquiredOriginal),
@@ -230,6 +269,8 @@ fn every_method_keeps_its_reviewed_provenance_and_retention() {
         (M::Calculate, "host-calculation", Derived),
     ];
     let publisher = [
+        M::KisSymbolLookup,
+        M::KisDividendCalendar,
         M::AssetLookup,
         M::FxRate,
         M::WebFetch,
@@ -269,7 +310,13 @@ fn every_method_keeps_its_reviewed_provenance_and_retention() {
             Retention::Dataset
         } else if !NATIVE_FINANCE_READS.contains(&method) {
             Retention::Turn
-        } else if matches!(method, M::KisOperationSearch | M::DartCompanyLookup) {
+        } else if matches!(
+            method,
+            M::KisOperationSearch
+                | M::KisSymbolLookup
+                | M::KisDividendCalendar
+                | M::DartCompanyLookup
+        ) {
             Retention::Dataset
         } else {
             Retention::DatasetMaxAge
@@ -297,22 +344,27 @@ fn classification_columns_agree_with_each_other_and_the_catalog() {
         if producer.is_some_and(|p| p.origin == RunResultOrigin::AcquiredOriginal) {
             assert_eq!(safety.reach, Reach::Outbound, "{method:?}");
         }
-        // Every Memory write needs a Memory permission, and the reverse.
+        // Memory writes require Memory permission. Script saves stay available
+        // with Memory off, subject to the privacy and credential gates above.
         let permission = match method {
             M::NativeAuthorize | M::NativeDeliveredText | M::McpConnect | M::McpCall => {
                 ToolPermission::Always
             }
             method => method.permission(),
         };
-        if permission == ToolPermission::MemoryWrite {
-            assert_ne!(safety.memory, MemoryWrite::NoWrite, "{method:?}");
+        match safety.write {
+            PersistentWrite::NoWrite => {
+                assert_ne!(permission, ToolPermission::MemoryWrite, "{method:?}")
+            }
+            PersistentWrite::Text | PersistentWrite::Retained => {
+                assert_ne!(permission, ToolPermission::Always, "{method:?}");
+            }
+            PersistentWrite::Script | PersistentWrite::Card => {
+                assert_eq!(permission, ToolPermission::Always, "{method:?}")
+            }
         }
-        if safety.memory != MemoryWrite::NoWrite {
-            assert_ne!(permission, ToolPermission::Always, "{method:?}");
-        }
-        // A briefing starts at the untrusted-text tier, so a tool that tier
-        // pauses could never run unattended.
-        if safety.unattended == Unattended::Allowed {
+        // Unattended card tools may run before they receive outside text.
+        if safety.unattended == Unattended::Allowed && safety.write != PersistentWrite::Card {
             assert_eq!(safety.after_text, AfterText::Open, "{method:?}");
         }
     }

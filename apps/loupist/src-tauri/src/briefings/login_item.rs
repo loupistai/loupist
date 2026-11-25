@@ -88,6 +88,7 @@ fn service() -> Option<&'static dyn Service> {
 pub(super) enum Action {
     Read,
     MenuBar(bool),
+    Notifications(super::desktop::NotificationSettings),
     Login(bool),
     Dismiss,
 }
@@ -113,6 +114,11 @@ fn update(
 
     match action {
         Action::Read => {}
+        Action::Notifications(settings) => {
+            settings.validate()?;
+            resident.notifications = settings;
+            save = true;
+        }
         Action::Dismiss => {
             resident.login_hint_dismissed = true;
             save = true;

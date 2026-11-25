@@ -264,6 +264,8 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
             publish_progress(on_event, task_run_id, progress, commentary);
         }
         Some("compaction_end") => {
+            *token_usage =
+                on_event.observe_assistant_usage(|usage| usage.observe_compaction_end(payload));
             match compaction_outcome(payload) {
                 CompactionOutcome::Cancelled => progress.discard_system("compaction"),
                 CompactionOutcome::Succeeded => {
@@ -359,7 +361,8 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
                     }
                 }
             }
-            token_usage.observe_message_end(payload);
+            *token_usage =
+                on_event.observe_assistant_usage(|usage| usage.observe_message_end(payload));
             let ended = assistant_capture.observe_message_end(payload, MAX_CHAT_OUTPUT_BYTES);
             // A busy answer counts down from the provider's own hint; any later
             // message replaces it.
@@ -463,6 +466,8 @@ pub(super) async fn apply_pi_rpc(turn: PiRpcTurn<'_>, payload: &Value) -> PiRpcS
                                             output_tokens: token_usage.output,
                                             cache_read_tokens: token_usage.cache_read,
                                             cache_write_tokens: token_usage.cache_write,
+                                            model_requests: token_usage.model_requests(),
+                                            cost_estimate: token_usage.cost_estimate(),
                                         },
                                     });
                                 }

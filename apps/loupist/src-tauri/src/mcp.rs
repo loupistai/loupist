@@ -1,3 +1,4 @@
+mod oversized;
 pub(crate) mod pool;
 
 use serde::{Deserialize, Serialize};
@@ -41,11 +42,10 @@ pub(crate) const MCP_PROTOCOL_VERSION: &str = "2025-11-25";
 /// Revisions a server may answer with during `initialize` negotiation.
 pub(crate) const MCP_SUPPORTED_PROTOCOL_VERSIONS: &[&str] =
     &[MCP_PROTOCOL_VERSION, "2025-06-18", "2025-03-26"];
-/// One stdio line. A larger reply fails every pending call and ends the
-/// session, so this matches the 32 MiB that native vendor reads and retained
+/// One stdio line. This matches the 32 MiB that native vendor reads and retained
 /// datasets allow: a long daily price history or yield curve is delivered and
-/// compacted like any large result. The reader holds one frame at a time.
-const MAX_FRAME_BYTES: usize = 32 * 1024 * 1024;
+/// compacted like any large result. Custom servers' longer lines are drained.
+pub(crate) const MAX_FRAME_BYTES: usize = 32 * 1024 * 1024;
 const MAX_BOOTSTRAP_BYTES: usize = 64 * 1024;
 const MAX_TOOLS: usize = 512;
 const MAX_TOOL_LIST_PAGES: usize = 64;
@@ -803,8 +803,8 @@ impl McpSession {
         let reader = tokio::spawn(async move {
             let mut stdout = BufReader::new(stdout);
             loop {
-                match read_frame(&mut stdout).await {
-                    Ok(Some(frame)) => {
+                match read_frame(&mut stdout, !bundled).await {
+                    Ok(Some(StdioFrame::Message(frame))) => {
                         if dispatch_frame(
                             &frame,
                             &reader_pending,
@@ -816,6 +816,13 @@ impl McpSession {
                         {
                             fail_pending(&reader_pending, PendingFailure::Protocol).await;
                             break;
+                        }
+                    }
+                    Ok(Some(StdioFrame::Oversized(request_id))) => {
+                        if let Some(id) = request_id {
+                            if let Some(sender) = reader_pending.lock().await.remove(&id) {
+                                let _ = sender.send(Err(McpError::FrameTooLarge));
+                            }
                         }
                     }
                     Ok(None) => {
@@ -1397,7 +1404,15 @@ async fn fail_pending(pending: &Pending, failure: PendingFailure) {
     }
 }
 
-async fn read_frame<R>(reader: &mut R) -> Result<Option<Vec<u8>>, McpError>
+enum StdioFrame {
+    Message(Vec<u8>),
+    Oversized(Option<String>),
+}
+
+async fn read_frame<R>(
+    reader: &mut R,
+    recover_oversized: bool,
+) -> Result<Option<StdioFrame>, McpError>
 where
     R: AsyncBufRead + Unpin,
 {
@@ -1416,7 +1431,11 @@ where
             None => (available.len(), false),
         };
         if frame.len() + take > MAX_FRAME_BYTES {
-            return Err(McpError::FrameTooLarge);
+            if !recover_oversized {
+                return Err(McpError::FrameTooLarge);
+            }
+            let id = oversized::drain(reader, frame).await?;
+            return Ok(Some(StdioFrame::Oversized(id)));
         }
         frame.extend_from_slice(&available[..take]);
         reader.consume(take + usize::from(complete));
@@ -1427,7 +1446,7 @@ where
             return if frame.is_empty() {
                 Err(McpError::Protocol)
             } else {
-                Ok(Some(frame))
+                Ok(Some(StdioFrame::Message(frame)))
             };
         }
     }
@@ -1847,8 +1866,12 @@ while IFS= read -r line; do
       ;;
     *'"method":"tools/call"'*'"name":"equity_quote"'*)
       id=${line#*\"id\":\"}; id=${id%%\"*}
-      printf '{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}\n'
-      printf '{"jsonrpc":"2.0","id":"%s","result":{"content":[{"type":"text","text":"quote"}],"structuredContent":{"price":123},"isError":false}}\n' "$id"
+      if [[ "$line" == *'"symbol":"OVERSIZED"'* ]]; then
+        printf '{"jsonrpc":"2.0","result":{"structuredContent":{"id":"nested","message":"%*s"}},"id":"%s"}\n' "$1" x "$id"
+      else
+        printf '{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}\n'
+        printf '{"jsonrpc":"2.0","id":"%s","result":{"content":[{"type":"text","text":"quote"}],"structuredContent":{"price":123},"isError":false}}\n' "$id"
+      fi
       ;;
     *'"method":"tools/call"'*'"name":"hang"'*)
       ;;
@@ -1883,7 +1906,12 @@ done
         let config = McpLaunchConfig {
             server_id: "mock".into(),
             executable,
-            arguments: vec!["-c".into(), MOCK_MCP_SCRIPT.into()],
+            arguments: vec![
+                "-c".into(),
+                MOCK_MCP_SCRIPT.into(),
+                "mock-mcp".into(),
+                MAX_FRAME_BYTES.to_string(),
+            ],
             private_working_dir: temporary.path().join(format!("{name}-scratch")),
             lease_dir: temporary.path().join("leases"),
             environment,
@@ -2509,13 +2537,16 @@ done
             writer.write_all(b"\n").await.unwrap();
         });
         let mut reader = BufReader::new(reader);
-        let frame = read_frame(&mut reader).await.unwrap().unwrap();
+        let StdioFrame::Message(frame) = read_frame(&mut reader, true).await.unwrap().unwrap()
+        else {
+            panic!("a frame at the size limit must be read whole");
+        };
         assert_eq!(frame.len(), 32 * 1024 * 1024);
     }
 
     #[tokio::test]
-    async fn oversized_frames_fail_closed() {
-        let (mut writer, reader) = duplex(MAX_FRAME_BYTES + 32);
+    async fn oversized_bundled_frames_fail_closed() {
+        let (mut writer, reader) = duplex(64 * 1024);
         let payload = vec![b'x'; MAX_FRAME_BYTES + 1];
         tokio::spawn(async move {
             writer.write_all(&payload).await.unwrap();
@@ -2523,9 +2554,39 @@ done
         });
         let mut reader = BufReader::new(reader);
         assert!(matches!(
-            read_frame(&mut reader).await,
+            read_frame(&mut reader, false).await,
             Err(McpError::FrameTooLarge)
         ));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_oversized_custom_reply_fails_one_call_and_leaves_the_session_running() {
+        let _guard = MCP_PROCESS_TEST_LOCK.lock().await;
+        let temporary = tempfile::tempdir().unwrap();
+        let (config, _, _) = mock_mcp_config(&temporary, "oversized");
+        let (session, _) = McpSession::spawn_custom(config).await.unwrap();
+        assert!(matches!(
+            session
+                .call_tool(
+                    "equity_quote",
+                    json!({"symbol": "OVERSIZED"}),
+                    Duration::from_secs(10),
+                )
+                .await,
+            Err(McpError::FrameTooLarge)
+        ));
+        assert!(session.is_running().await.unwrap());
+        let next = session
+            .call_tool(
+                "equity_quote",
+                json!({"symbol": "TEST"}),
+                Duration::from_secs(1),
+            )
+            .await
+            .unwrap();
+        assert_eq!(next.structured_content.unwrap()["price"], 123);
+        session.shutdown(Duration::from_secs(1)).await.unwrap();
     }
 
     #[cfg(unix)]

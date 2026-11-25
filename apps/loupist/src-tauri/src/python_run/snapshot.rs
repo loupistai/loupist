@@ -59,6 +59,7 @@ pub(crate) struct Prepared {
     pub(crate) untrusted_inputs: bool,
 }
 
+#[derive(Default)]
 pub(crate) struct WriteReport {
     pub changed: Vec<String>,
     pub conflicts: Vec<Conflict>,
@@ -118,6 +119,40 @@ struct Budget {
     bytes: u64,
     entries: usize,
     candidates: Vec<Candidate>,
+}
+
+/// A check sees an empty workspace and empty attachments. Scratch is the only
+/// writable preopen; `outputs/` is not granted.
+pub(crate) fn prepare_sealed() -> Result<Prepared, PythonError> {
+    let staging = tempfile::Builder::new()
+        .permissions(std::os::unix::fs::PermissionsExt::from_mode(0o700))
+        .tempdir()
+        .map_err(|_| PythonError::failed("workspace snapshot failed"))?;
+    let host = staging.path().join("sealed-host");
+    std::fs::create_dir(&host).map_err(|_| PythonError::failed("workspace snapshot failed"))?;
+    let workspace_fd = open_dir(&host)?;
+    let root_stat =
+        fstat(&workspace_fd).map_err(|_| PythonError::failed("workspace snapshot failed"))?;
+    mkdir(&staging, "workspace")?;
+    mkdir(&staging, "attachments")?;
+    let scratch = mkdir(&staging, "scratch")?;
+    mkdir_at(&scratch, "matplotlib", Mode::from_raw_mode(0o755))?;
+    Ok(Prepared {
+        staging,
+        workspace: host.clone(),
+        roots: NativeRoots::new(&host, &host, &host, &host, &host, &host, None),
+        root: DirStamp {
+            dev: device(&root_stat),
+            ino: root_stat.st_ino,
+        },
+        writable: Vec::new(),
+        files: BTreeMap::new(),
+        dirs: BTreeMap::new(),
+        omitted: Vec::new(),
+        omitted_count: 0,
+        scan_truncated: false,
+        untrusted_inputs: false,
+    })
 }
 
 pub(crate) fn prepare(roots: &NativeRoots) -> Result<Prepared, PythonError> {
@@ -612,15 +647,17 @@ fn write_file(
     }
     let bytes = read_limited(&snap_file, MAX_FILE_BYTES)?;
     let snap_hash = sha256(&bytes);
-    if prepared.untrusted_inputs {
-        // Tag exact derived bytes before publishing them; the tag stays valid
-        // when a later turn reads a renamed or copied result.
-        crate::commands::export_trust::record_digest(
-            &prepared.roots.app_data,
-            &hex::encode(snap_hash),
-        )
-        .map_err(|_| PythonError::failed("workspace output trust could not be retained"))?;
-    }
+    let tag_output = || {
+        if prepared.untrusted_inputs {
+            // Tag the bytes before publishing them so copies in later turns carry the tag.
+            crate::commands::export_trust::record_digest(
+                &prepared.roots.app_data,
+                &hex::encode(snap_hash),
+            )
+            .map_err(|_| PythonError::failed("workspace output trust could not be retained"))?;
+        }
+        Ok::<_, PythonError>(())
+    };
     match statat(host_dir, name, AtFlags::SYMLINK_NOFOLLOW) {
         Err(_) => {
             if prepared.files.contains_key(path) {
@@ -633,6 +670,7 @@ fn write_file(
             if !write_fits(bytes.len() as u64, report) {
                 return Ok(());
             }
+            tag_output()?;
             if create_exclusive(host_dir, name, &bytes)? {
                 record_written(path, bytes.len() as u64, report);
             } else {
@@ -707,6 +745,7 @@ fn write_file(
             if !write_fits(bytes.len() as u64, report) {
                 return Ok(());
             }
+            tag_output()?;
             match replace_same_inode(host_dir, name, &meta, &host_file, &bytes, stamp)? {
                 ReplaceOutcome::Wrote => record_written(path, bytes.len() as u64, report),
                 ReplaceOutcome::Conflict(reason) => {
@@ -1284,5 +1323,16 @@ mod selection_tests {
         assert_eq!(files[1].guest_path(), "/scratch/outputs/new.txt");
         assert_eq!(files[7].guest_path(), "notes/a.txt");
         assert_eq!(files[8].guest_path(), "notes/z.txt");
+    }
+
+    #[test]
+    fn a_check_snapshot_sees_no_workspace_file() {
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret.txt"), b"secret").unwrap();
+        let prepared = prepare_sealed().unwrap();
+        assert!(prepared.files.is_empty());
+        assert!(prepared.writable.is_empty());
+        assert!(!prepared.workspace.join("secret.txt").exists());
+        assert_ne!(prepared.workspace, outside.path());
     }
 }

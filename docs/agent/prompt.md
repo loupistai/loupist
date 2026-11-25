@@ -85,7 +85,10 @@ used to:
 
 - **Register.** Answers use the language the user writes in, which is not
   always the interface's (under the earlier prompt GPT-6.1 Sol answered some
-  messages in the `interface` block's language instead), in the register of a
+  messages in the `interface` block's language instead), and so do the notes
+  written while working; a user-written turn names its message's
+  [script](context-delivery.md#memory-and-context) (`current_message_script`).
+  Answers are in the register of a
   careful analyst writing to a client. Where a language marks politeness or formality the
   answer uses its formal polite level, never the informal-polite or casual one,
   with no exclamations, emoji or filler. Brevity comes from saying less.
@@ -319,3 +322,8 @@ for acquisition, refinement, fresh-Chat reuse and save restraint. Keep training 
 validation cases separate and introduce later source files only at their declared
 turn. Record model, inputs, expected outcome, actual trace, latency and limits.
 Use repeated matched runs before claiming superiority.
+
+
+## Standing work in Bot
+
+Bot registers a clear scheduling request in the reply that receives it. When Bot suggests standing work, its proposal remains paused until the user confirms it. The bundled watch presets cover material filings and results, thesis lines, a one-time results follow-up, and a weekly review. A preset the Bot suggests is a `bot_offer` card, not a task, until the user turns it on. An unattended run reports dated evidence and its bearing on the user's stated reasons and lines, and leaves at most one `ask_later` question without waiting.

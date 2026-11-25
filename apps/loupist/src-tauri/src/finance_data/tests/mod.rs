@@ -1,5 +1,6 @@
 use super::{world_bank::*, *};
 
+mod live;
 mod requests;
 
 #[test]
@@ -39,4 +40,40 @@ async fn a_read_that_never_reaches_its_server_is_offline_not_a_provider_failure(
         FinanceDataError::from_send(&error, "fixture.provider"),
         FinanceDataError::Offline("fixture.provider")
     ));
+}
+
+#[tokio::test]
+async fn declared_and_streamed_oversized_responses_return_the_limit() {
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
+
+    let service = FinanceDataService::new().unwrap();
+    let client = Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .unwrap();
+    for response in [
+        b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n12345".as_slice(),
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\n123\r\n2\r\n45\r\n0\r\n\r\n",
+    ] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 1024];
+            assert!(socket.read(&mut request).await.unwrap() > 0);
+            socket.write_all(response).await.unwrap();
+        });
+        let result = service
+            .send_provider_bounded(client.get(&url), "fixture.provider", url, 4)
+            .await;
+        server.await.unwrap();
+        assert!(matches!(
+            result,
+            Err(FinanceDataError::ResultTooLarge { limit_bytes: 4 })
+        ));
+    }
 }

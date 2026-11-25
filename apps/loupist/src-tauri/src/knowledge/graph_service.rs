@@ -1126,7 +1126,10 @@ impl Inner {
                 ("byCode".to_string(), u64::from(tally.by_code)),
             ]);
         }
-        run_log.usage = usage.lock().unwrap_or_else(|e| e.into_inner()).snapshot();
+        usage
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .apply(&mut run_log);
         run_log.stage_ms = std::mem::take(&mut *stage_ms.lock().unwrap_or_else(|e| e.into_inner()));
         calls.record(&mut run_log);
         match &driven {
@@ -1272,7 +1275,7 @@ impl Inner {
                 &reply.body["usage"],
                 reply.disposition == super::graph_inference::InferenceDisposition::NotSent,
             );
-            run_log.usage = usage.snapshot();
+            usage.apply(&mut run_log);
         }
         super::schema_writer::note_finish(&mut run_log, finish);
         run_log.record(self.store.as_ref());
@@ -1418,7 +1421,7 @@ impl Inner {
                 &reply.body["usage"],
                 reply.disposition == super::graph_inference::InferenceDisposition::NotSent,
             );
-            run_log.usage = usage.snapshot();
+            usage.apply(&mut run_log);
             let finished =
                 knowledge.transact(|w| super::learning::finish(w, &attempt, &reply, now_ms()));
             if finished.is_err() {

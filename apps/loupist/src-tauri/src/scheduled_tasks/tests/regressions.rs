@@ -536,12 +536,17 @@ fn batched_lists_preserve_missing_and_foreign_chat_rejection() {
                 store.scheduled_tasks_list("loupist-a").unwrap().len(),
                 usize::from(readable)
             );
+            let listed = store.scheduled_tasks_list_with_latest("loupist-a").unwrap();
+            assert_eq!(listed.len(), 1);
+            assert_eq!(listed[0].task.id, task.id);
+            assert_eq!(listed[0].task.is_unreadable_list_item(), !readable);
             assert_eq!(
-                store
-                    .scheduled_tasks_list_with_latest("loupist-a")
-                    .unwrap()
-                    .len(),
-                usize::from(readable)
+                listed[0].task.target,
+                if readable {
+                    task.target
+                } else {
+                    TaskTarget::NewChat
+                }
             );
         }
     }

@@ -80,9 +80,8 @@
     "noMatchingItem": "일치하는 항목이 없습니다",
     "results": "결과",
     "promptShortcuts": "자주 쓰는 요청",
-    "clipboardAttachmentsAreNotAvailableInThisEnvironment": "이 환경에서는 클립보드에서 첨부할 수 없습니다.",
     "theClipboardDoesNotContainAnAttachableImage": "클립보드에 첨부할 이미지가 없습니다.",
-    "clipboardAccessWasNotAllowed": "클립보드 접근이 허용되지 않았습니다.",
+    "clipboardNotRead": "클립보드를 읽지 않았습니다. 이미지를 첨부하려면 메시지 입력란에서 {{paste}} 키를 누르십시오.",
     "couldNotAttachClipboardContents": "클립보드 내용을 첨부하지 못했습니다. 다시 시도하십시오.",
     "addToThisMessage": "메시지에 추가",
     "manageSkillsTools": "스킬 및 도구 관리",
@@ -129,7 +128,8 @@
     "moreChips": "{{formattedCount}}개 더",
     "attachments": {
       "count_other": "첨부 {{formattedCount}}개",
-      "clearAll": "모두 지우기"
+      "clearAll": "모두 지우기",
+      "reading_other": "파일 {{formattedCount}}개 읽는 중…"
     },
     "drop": {
       "title": "놓으면 다음 메시지에 첨부됩니다",
@@ -156,6 +156,7 @@
     "addToQuestion": "질문에 추가"
   },
   "chatMessageCard": {
+    "modelRequests_other": "모델 요청 {{formattedCount}}회",
     "tokenUsageUnavailable": "토큰 사용량을 확인할 수 없습니다",
     "previewUnavailable": "미리보기를 사용할 수 없습니다",
     "you": "나",
@@ -399,6 +400,11 @@
     "readPrinciples_other": "내 원칙 {{formattedCount}}개 참고"
   },
   "messageSchedules": {
+    "notTurnedOn": "켜지 않음",
+    "undoDecline": "되돌리기",
+    "firstCheckRunning": "첫 확인을 실행 중입니다",
+    "replaced": "변경됨",
+    "expired": "확인 시간이 지났습니다",
     "draftFilesFailed": "첨부파일을 이 Mac에 임시 저장하지 못했습니다.",
     "needsTime": "봇에서 시간 확인",
     "handedToBot": "봇에 전달됨 · {{status}}",
@@ -1257,6 +1263,14 @@
       "running": "질문하는 중",
       "done": "질문함"
     },
+    "bot_offer": {
+      "running": "단계 제안 중",
+      "done": "단계 제안함"
+    },
+    "ask_later": {
+      "running": "질문 남기는 중",
+      "done": "질문 남김"
+    },
     "research_open": {
       "running": "리서치 세션 여는 중",
       "done": "리서치 세션 열었음"
@@ -1276,6 +1290,14 @@
     "kis_operation_search": {
       "running": "시장 데이터 항목 찾는 중",
       "done": "시장 데이터 항목 찾음"
+    },
+    "kis_symbol_lookup": {
+      "running": "한국투자 종목 찾는 중",
+      "done": "한국투자 종목 찾음"
+    },
+    "kis_dividend_calendar": {
+      "running": "예탁원 배당 일정 읽는 중",
+      "done": "예탁원 배당 일정 읽음"
     },
     "kis_read": {
       "running": "시장 데이터 읽는 중",
@@ -1443,6 +1465,28 @@
     "declined": "비밀번호나 키 같은 비밀 정보로 보이는 항목 하나는 저장하지 않았습니다."
   },
   "thread": {
+    "firstCheck": "첫 확인",
+    "resultEvidence": "검증한 수치 {{figures}}개 · 출처 {{sources}}개",
+    "unmatchedFigures_other": "일치하지 않은 수치 {{count}}개",
+    "failureStreak_other": "{{count}}번 연속으로 확인하지 못했습니다",
+    "askAboutResult": "이 결과에 대해 묻기",
+    "moreResultActions": "추가 작업",
+    "notifyNow": "바로 알림 받기",
+    "notifyQuietly": "알림 모아 받기",
+    "notUseful": "도움이 되지 않음",
+    "awayResults_other": "자리를 비운 사이 도착한 결과 {{count}}개",
+    "feedbackLabels": {
+      "tooMinor": "중요하지 않음",
+      "knew": "이미 알던 내용",
+      "wrong": "틀린 내용",
+      "stop": "지켜보기 중지"
+    },
+    "resultFeedback": {
+      "tooMinor": "{{title}}의 결과는 중요하지 않았습니다.",
+      "knew": "{{title}}의 결과는 이미 알고 있었습니다.",
+      "wrong": "{{title}}의 결과에 오류가 있습니다.",
+      "stop": "{{title}} 지켜보기를 중지하겠습니다."
+    },
     "scheduleOrigin": "예약 · {{title}} · {{time}}",
     "open": "열기",
     "couldNotFinish": "이번 실행을 끝내지 못했습니다.",
@@ -2418,5 +2462,50 @@
   },
   "botCards": {
     "lineCrossed": "기준선 도달"
+  },
+  "standing": {
+    "open": "지침",
+    "openHint": "봇이 기억해 두기로 한 내용",
+    "label": "상시 지침",
+    "close": "상시 지침 닫기",
+    "intro": "이 루피스트에 지켜 두라고 한 내용입니다. 여기서 잊거나 고칠 수 있습니다. 선호는 브리핑과 예약 실행에도 전달됩니다.",
+    "empty": "아직 없습니다. 대화에서 봇에게 말씀하십시오.",
+    "loading": "불러오는 중",
+    "loadError": "기억을 읽지 못했습니다.",
+    "kinds": {
+      "preference": "선호",
+      "decision": "결정",
+      "open": "남은 요청",
+      "context": "맥락"
+    },
+    "edit": "편집",
+    "editText": "항목 내용",
+    "save": "저장",
+    "cancel": "취소",
+    "forget": "잊기",
+    "saving": "저장 중",
+    "saveError": "변경을 저장하지 못했습니다.",
+    "updated": "{{date}} 수정",
+    "usage": "작업별 사용량",
+    "usageEmpty": "최근 30일간 작업 사용량이 없습니다.",
+    "usageError": "작업 사용량을 읽지 못했습니다.",
+    "runs_one": "{{formattedCount}}회",
+    "runs_other": "{{formattedCount}}회",
+    "requests_one": "{{formattedCount}}회 요청",
+    "requests_other": "{{formattedCount}}회 요청",
+    "removedTask": "삭제된 작업"
+  },
+  "python": {
+    "reads": "파이썬에서 읽은 자료",
+    "showMath": "계산 과정 보기",
+    "printed": "출력",
+    "rounds_other": "파이썬 {{count}}회 실행",
+    "replaying": "다시 실행 중…",
+    "replay": "같은 데이터로 다시 실행",
+    "same": "이전 실행과 결과가 같습니다.",
+    "changed": "이전 실행과 결과가 다릅니다.",
+    "error": "이전 실행을 재현하지 못했습니다.",
+    "savedScripts": "저장한 스크립트",
+    "undoError": "저장한 스크립트 버전을 삭제하지 못했습니다."
   }
 }

@@ -858,3 +858,29 @@ fn dormant_skill_preferences_are_hidden_from_resolved_config_and_retained_on_dis
     assert!(effective.skills["personal"].enabled);
     assert!(effective.skills["skill-creator"].enabled);
 }
+
+#[test]
+fn concurrent_offer_declines_merge_beyond_two_hundred_entries() {
+    let global = directory();
+    let project = directory();
+    let keys: Vec<_> = (0..240)
+        .map(|i| format!("results-follow-up:asset-{i}:"))
+        .collect();
+    let start = std::sync::Barrier::new(4);
+    std::thread::scope(|scope| {
+        for shard in keys.chunks(60) {
+            let (global, project, start) = (&global, &project, &start);
+            scope.spawn(move || {
+                start.wait();
+                for key in shard {
+                    remember_declined_offer(global.path(), project.path(), "loupist", key).unwrap();
+                }
+            });
+        }
+    });
+    let mut saved = declined_offer_keys(global.path(), project.path(), "loupist").unwrap();
+    saved.sort_unstable();
+    let mut expected = keys;
+    expected.sort_unstable();
+    assert_eq!(saved, expected);
+}

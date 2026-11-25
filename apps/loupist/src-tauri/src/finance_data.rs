@@ -46,12 +46,12 @@ pub(super) const OPENDART_API_ROOT: &str = "https://opendart.fss.or.kr";
 pub(crate) const KRX_SOURCE_ID: &str = "krx.market-data";
 const KRX_API_ROOT: &str = "https://data-dbg.krx.co.kr";
 pub(crate) const KIS_SOURCE_ID: &str = "koreainvestment.market-data";
-const KIS_REAL_API_ROOT: &str = "https://openapi.koreainvestment.com:9443";
+pub(crate) const KIS_REAL_API_ROOT: &str = "https://openapi.koreainvestment.com:9443";
 const KIS_DEMO_API_ROOT: &str = "https://openapivts.koreainvestment.com:29443";
 const KIS_TOKEN_PATH: &str = "/oauth2/tokenP";
 const KIS_UPSTREAM_COMMIT: &str = "b093e42ba32d1df5f5ddad7a71cb715cbc800832";
 const KIS_MANIFEST_SHA256: &str =
-    "39550150b13f20bcb01838809bdf644672faa5da271e4c78afaacba31c4477ce";
+    "e0a63b24cbbea825501ca1584e7995713fdc037c6b4b6d6f9ada80fb4f3ee9c4";
 const KIS_EXCLUDED_WRITE_OPERATION_IDS: [&str; 18] = [
     "domestic_bond.buy",
     "domestic_bond.order_rvsecncl",
@@ -75,7 +75,7 @@ const KIS_EXCLUDED_WRITE_OPERATION_IDS: [&str; 18] = [
 const KIS_MANIFEST_JSON: &str = include_str!("../../marketplace/kis-read-api-v1.json");
 const MAX_KIS_PARAMETER_CHARS: usize = 1_024;
 const MAX_KIS_TOKEN_CACHE_ENTRIES: usize = 4;
-const KIS_TOKEN_ISSUANCE_COOLDOWN: ChronoDuration = ChronoDuration::seconds(60);
+const KIS_TOKEN_ISSUANCE_COOLDOWN: Duration = Duration::from_secs(60);
 const MAX_KIS_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_KIS_OPERATION_SEARCH_RESULTS: usize = 20;
 const MAX_PROVIDER_BYTES: usize = 2 * 1024 * 1024;
@@ -142,12 +142,21 @@ pub enum FinanceDataError {
     KisCredentialRejected(SafeProviderDiagnostic),
     #[error("finance data provider rate limit was reached: {0}")]
     RateLimited(&'static str),
+    #[error("finance data provider rate limit was reached: {provider}")]
+    RateLimitedWithRetry {
+        provider: &'static str,
+        retry_after: u64,
+    },
     #[error("KIS token verification is temporarily limited: {0}")]
     KisRateLimited(SafeProviderDiagnostic),
+    #[error("KIS read failed: {0:?}")]
+    KisRead(KisReadError),
     #[error("finance data provider returned no matching data: {0}")]
     NoData(&'static str),
     #[error("finance data provider rejected the request: {0}")]
     Provider(String),
+    #[error("finance data response exceeded the {limit_bytes}-byte limit")]
+    ResultTooLarge { limit_bytes: u64 },
     #[cfg(feature = "eval-harness")]
     #[error("{0}")]
     Replay(String),
@@ -157,6 +166,15 @@ pub enum FinanceDataError {
     KisResponseContract { operation: String, detail: String },
     #[error("finance data configuration is invalid: {0}")]
     Configuration(String),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KisReadError {
+    TokenRejected,
+    CredentialRejected,
+    PermissionRequired,
+    MarketCode,
+    FieldLength,
 }
 
 impl From<reqwest::Error> for FinanceDataError {
@@ -233,9 +251,20 @@ impl FinanceDataError {
                 Self::KisCredentialRejected(diagnostic.clone())
             }
             Self::RateLimited(provider) => Self::RateLimited(provider),
+            Self::RateLimitedWithRetry {
+                provider,
+                retry_after,
+            } => Self::RateLimitedWithRetry {
+                provider,
+                retry_after: *retry_after,
+            },
             Self::KisRateLimited(diagnostic) => Self::KisRateLimited(diagnostic.clone()),
+            Self::KisRead(error) => Self::KisRead(*error),
             Self::NoData(provider) => Self::NoData(provider),
             Self::Provider(message) => Self::Provider(message.clone()),
+            Self::ResultTooLarge { limit_bytes } => Self::ResultTooLarge {
+                limit_bytes: *limit_bytes,
+            },
             #[cfg(feature = "eval-harness")]
             Self::Replay(message) => Self::Replay(message.clone()),
             Self::InvalidResponse => Self::InvalidResponse,
@@ -292,7 +321,7 @@ impl std::fmt::Display for SafeProviderDiagnostic {
 #[derive(Default)]
 struct KisTokenCache {
     tokens: BTreeMap<String, KisAccessToken>,
-    issuance_blocked_until: BTreeMap<String, DateTime<Utc>>,
+    issuance_blocked_until: BTreeMap<String, tokio::time::Instant>,
 }
 
 #[derive(Clone)]
@@ -301,6 +330,7 @@ pub struct FinanceDataService {
     /// The client for OpenDART, whose servers need the system's TLS (see `new`).
     dart_client: Client,
     kis_manifest: Arc<KisManifest>,
+    kis_read_pace: Arc<KisReadPace>,
     kis_tokens: Arc<Mutex<KisTokenCache>>,
     kis_tokens_invalidated: Arc<std::sync::atomic::AtomicBool>,
     entity_directories: Arc<Mutex<entity::EntityDirectoryCache>>,
@@ -344,6 +374,7 @@ impl FinanceDataService {
             client,
             dart_client,
             kis_manifest,
+            kis_read_pace: Arc::default(),
             kis_tokens: Arc::new(Mutex::new(KisTokenCache::default())),
             kis_tokens_invalidated: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             entity_directories: Arc::new(Mutex::new(entity::EntityDirectoryCache::default())),
@@ -399,19 +430,21 @@ impl FinanceDataService {
             }
             Some(VendorCredential::KisAppKey) => {
                 let (app_key, app_secret) = kis_credentials(credentials)?;
-                let environment = KisEnvironment::parse(provider_context.ok_or(
-                    FinanceDataError::InvalidQuery("KIS environment is required"),
-                )?)?;
-                // Verification must always reach the selected authority. An
-                // execution token cached for the same pair cannot promote a
-                // newly staged credential candidate. Cache the freshly issued
-                // token afterward so Chat does not burn the one-per-minute
-                // issuance budget immediately after Save & verify.
-                let token = self
-                    .issue_kis_token(environment, app_key, app_secret)
-                    .await?;
-                self.remember_kis_access_token(environment, app_key, app_secret, token)
-                    .await;
+                let environment = provider_context.ok_or(FinanceDataError::InvalidQuery(
+                    "KIS environment is required",
+                ))?;
+                // A cached token is not proof that KIS still accepts the key pair.
+                self.kis_read_data(
+                    json!({
+                        "operation_id": "domestic_stock.inquire_price",
+                        "params": {"fid_cond_mrkt_div_code": "J", "fid_input_iscd": "005930"}
+                    }),
+                    environment,
+                    app_key,
+                    app_secret,
+                    None,
+                )
+                .await?;
             }
             Some(VendorCredential::Keyless | VendorCredential::OptionalOpenFigiKey) | None => {
                 return Err(FinanceDataError::InvalidQuery(
@@ -506,13 +539,27 @@ impl FinanceDataService {
             .await
             .map_err(|error| FinanceDataError::from_send(&error, provider))?;
         let status = response.status();
+        if matches!(provider, KRX_SOURCE_ID | OPENDART_SOURCE_ID)
+            && status == StatusCode::TOO_MANY_REQUESTS
+        {
+            if let Some(delay) = crate::web::parse_retry_after_header(
+                response.headers().get(reqwest::header::RETRY_AFTER),
+            ) {
+                return Err(FinanceDataError::RateLimitedWithRetry {
+                    provider,
+                    retry_after: delay
+                        .as_secs()
+                        .saturating_add(u64::from(delay.subsec_nanos() > 0)),
+                });
+            }
+        }
         if response
             .content_length()
             .is_some_and(|length| length > maximum_bytes as u64)
         {
-            return Err(FinanceDataError::Provider(format!(
-                "{provider} response exceeded the bounded size"
-            )));
+            return Err(FinanceDataError::ResultTooLarge {
+                limit_bytes: maximum_bytes as u64,
+            });
         }
         let continuation = response
             .headers()
@@ -536,9 +583,9 @@ impl FinanceDataService {
                 .checked_add(chunk.len())
                 .is_none_or(|length| length > maximum_bytes)
             {
-                return Err(FinanceDataError::Provider(format!(
-                    "{provider} response exceeded the bounded size"
-                )));
+                return Err(FinanceDataError::ResultTooLarge {
+                    limit_bytes: maximum_bytes as u64,
+                });
             }
             bytes.extend_from_slice(&chunk);
         }

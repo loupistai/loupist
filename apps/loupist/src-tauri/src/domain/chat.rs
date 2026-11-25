@@ -434,6 +434,20 @@ pub struct ChatPerformance {
     pub output_tokens: u64,
     pub cache_read_tokens: u64,
     pub cache_write_tokens: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub model_requests: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub cost_estimate: Option<ChatCostEstimate>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ChatCostEstimate {
+    pub microusd: u64,
+    pub from_provider: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -632,6 +646,12 @@ pub struct ChatMessage {
     pub vocabulary: Option<HomeVocabulary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<HomeLink>,
+    /// Preset offers on this message. Empty when the reply made none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub offers: Vec<HomeOffer>,
+    /// One question a scheduled run left for later.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ask: Option<HomeAsk>,
     /// The as-of date the user set for this request (`YYYY-MM-DD`), kept on
     /// the request and on its answer (finance-point-in-time.md).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -698,6 +718,70 @@ pub struct HomeLink {
     pub far_name: String,
     pub path: Vec<HomeLinkHop>,
     pub node_ids: Vec<String>,
+}
+
+/// A preset the user can turn on with a tap. Nothing is scheduled until they do.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct HomeOffer {
+    pub id: String,
+    pub preset: crate::scheduled_tasks::types::WatchPreset,
+    pub asset_id: String,
+    pub asset_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub results_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub run_at_ms: Option<i64>,
+    pub reason: String,
+    pub created_at_ms: i64,
+    pub expires_at_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, ts(as = "Option<bool>", optional))]
+    pub dismissed: bool,
+}
+
+impl HomeOffer {
+    pub(crate) fn open(&self, now: i64) -> bool {
+        !self.dismissed
+            && self.task_id.is_none()
+            && now < self.expires_at_ms
+            && self.run_at_ms.is_none_or(|at| now < at)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct HomeAskOption {
+    pub label: String,
+}
+
+/// One question a scheduled run left. The run does not wait.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct HomeAsk {
+    pub id: String,
+    pub question: String,
+    pub options: Vec<HomeAskOption>,
+    pub recommended: u8,
+    pub created_at_ms: i64,
+    pub expires_at_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub choice: Option<u8>,
+}
+
+impl HomeAsk {
+    pub(crate) fn open(&self, now: i64) -> bool {
+        self.choice.is_none() && now < self.expires_at_ms
+    }
 }
 
 impl From<&crate::knowledge::ConnectionView> for HomeLink {
@@ -819,11 +903,34 @@ impl ScheduledTurn {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct HomeResultEvidence {
+    #[serde(rename = "figuresChecked")]
+    pub figures_checked: u32,
+    #[serde(rename = "figuresUnmatched")]
+    pub figures_unmatched: u32,
+    pub sources: u32,
+}
+
 /// Where a host-posted Thread message came from: one finished scheduled run.
 /// The text is the run's first paragraph; the run's own Chat keeps the answer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct HomeDelivery {
+    #[serde(
+        default,
+        skip_serializing_if = "std::ops::Not::not",
+        rename = "firstRun"
+    )]
+    #[cfg_attr(test, ts(as = "Option<bool>", optional))]
+    pub first_run: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub evidence: Option<HomeResultEvidence>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub failure_streak: Option<crate::scheduled_tasks::types::FailureStreak>,
     pub run_id: String,
     pub task_id: String,
     pub task_title: String,
@@ -845,6 +952,26 @@ pub struct HomeDelivery {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub learned: Option<crate::knowledge::LearnedDigest>,
+    /// Set when a check was met. The same card is filled when its run ends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub trigger: Option<HomeTrigger>,
+}
+
+/// The reading a check posted, labelled as from the user's check.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct HomeTrigger {
+    pub reading: String,
+    pub as_of: String,
+    pub sources: Vec<String>,
+    pub checked_at_ms: i64,
+    pub explained: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub coalesced: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -937,6 +1064,7 @@ pub const MAX_TOOL_TRACE_VALUE_BYTES: usize = 2048;
 
 /// Portable per-turn diagnostics. `truncated` also covers omitted calls.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatToolTrace {
     pub entries: Vec<ChatToolTraceEntry>,
     pub truncated: bool,
@@ -993,6 +1121,8 @@ impl ChatMessage {
             scheduled: None,
             vocabulary: None,
             link: None,
+            offers: Vec::new(),
+            ask: None,
             number_checks: Vec::new(),
             as_of_report: None,
         })
@@ -1011,14 +1141,22 @@ impl ChatMessage {
 
     pub(crate) fn has_untrusted_text(&self) -> bool {
         self.role == ChatRole::Assistant
-            && self
-                .tool_trace
-                .as_ref()
-                .is_some_and(|trace| trace.untrusted_text)
+            && (self.has_trigger_card()
+                || self
+                    .tool_trace
+                    .as_ref()
+                    .is_some_and(|trace| trace.untrusted_text))
+    }
+
+    pub(crate) fn has_trigger_card(&self) -> bool {
+        self.delivery
+            .as_ref()
+            .is_some_and(|delivery| delivery.trigger.is_some())
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatToolTraceEntry {
     pub call_id: Option<String>,
     pub name: String,
@@ -1030,9 +1168,39 @@ pub struct ChatToolTraceEntry {
     /// The broker's model-facing envelope, with bounded/redacted text.
     pub error: Option<serde_json::Value>,
     pub result_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub origin: Option<ToolTraceOrigin>,
+    #[serde(
+        default,
+        rename = "parentStep",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[cfg_attr(test, ts(optional))]
+    pub parent_step: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub python: Option<PythonRunTrace>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum ToolTraceOrigin {
+    Python,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct PythonRunTrace {
+    pub reads: u32,
+    pub rounds: u32,
+    #[cfg_attr(test, ts(skip))]
+    pub replay: Option<crate::datasets::DatasetRef>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ToolTraceOutcome {
     Ok,

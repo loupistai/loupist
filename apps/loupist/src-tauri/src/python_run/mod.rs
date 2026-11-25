@@ -13,6 +13,7 @@
 //! quota beyond these copy bounds and the parent's kill. Live host
 //! directories are never writable preopens.
 
+pub(crate) mod ledger;
 pub(crate) mod workbook;
 
 #[cfg(unix)]
@@ -67,42 +68,13 @@ impl From<PythonError> for BrokerError {
     }
 }
 
-/// `{code, timeout_seconds?}`. Code is raw bytes: it is not trimmed, and a
-/// NUL or more than 64 KiB is rejected.
-pub(crate) fn parse_params(params: &Value) -> Result<(String, u64), BrokerError> {
-    let object = params.as_object().ok_or(BrokerError::Malformed)?;
-    if object
-        .keys()
-        .any(|key| key != "code" && key != "timeout_seconds")
-    {
-        return Err(BrokerError::Malformed);
-    }
-    let code = object
-        .get("code")
-        .and_then(Value::as_str)
-        .ok_or_else(|| BrokerError::invalid("code", "a string of 1 to 65536 bytes"))?;
-    if code.is_empty() || code.len() > CODE_BYTES || code.contains('\0') {
-        return Err(BrokerError::invalid(
-            "code",
-            "a string of 1 to 65536 bytes without a NUL",
-        ));
-    }
-    let timeout = match object.get("timeout_seconds") {
-        None => DEFAULT_TIMEOUT_SECONDS,
-        Some(Value::Number(number)) => number
-            .as_u64()
-            .filter(|seconds| (1..=MAX_TIMEOUT_SECONDS).contains(seconds))
-            .ok_or_else(|| BrokerError::invalid("timeout_seconds", "an integer from 1 to 120"))?,
-        Some(_) => {
-            return Err(BrokerError::invalid(
-                "timeout_seconds",
-                "an integer from 1 to 120",
-            ))
-        }
-    };
-    Ok((code.to_owned(), timeout))
-}
-
+/// Offline host probes use the same bootstrap and worker as tool runs,
+/// with a sealed empty ledger and no host reads. Production turns call
+/// `execute_round`; this entry stays for the macOS helper preflight, evals and tests.
+#[cfg_attr(
+    not(any(test, feature = "eval-harness", target_os = "macos")),
+    allow(dead_code)
+)]
 pub(crate) async fn execute(
     roots: &NativeRoots,
     cache_root: &Path,
@@ -110,7 +82,27 @@ pub(crate) async fn execute(
     timeout_seconds: u64,
     cancel: SearchCancel,
 ) -> Result<Value, BrokerError> {
-    run_owned(roots, cache_root, code, timeout_seconds, cancel, None).await
+    let ledger = ledger::RunLedger {
+        id: uuid::Uuid::new_v4().to_string(),
+        now: chrono::Utc::now().to_rfc3339(),
+        args: Default::default(),
+        state: serde_json::json!({}),
+        inputs: Default::default(),
+        entries: Vec::new(),
+        final_round: true,
+    };
+    execute_round(
+        roots,
+        cache_root,
+        code,
+        timeout_seconds,
+        cancel,
+        &ledger,
+        RoundWriteback::Allowed {
+            untrusted_inputs: false,
+        },
+    )
+    .await
 }
 
 #[cfg(all(test, unix))]
@@ -129,8 +121,102 @@ pub(crate) async fn execute_observed(
         timeout_seconds,
         cancel,
         Some(started),
+        None,
     )
     .await
+}
+
+pub(crate) fn validate_code(code: &str, timeout_seconds: u64) -> Result<(), BrokerError> {
+    if !(1..=MAX_TIMEOUT_SECONDS).contains(&timeout_seconds)
+        || code.is_empty()
+        || code.len() > CODE_BYTES
+        || code.contains('\0')
+    {
+        return Err(BrokerError::invalid(
+            "code",
+            "a string of 1 to 65536 bytes and a timeout from 1 to 120 seconds",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) enum RoundWriteback {
+    Disabled,
+    Allowed { untrusted_inputs: bool },
+}
+
+pub(crate) async fn execute_round(
+    roots: &NativeRoots,
+    cache_root: &Path,
+    code: &str,
+    timeout_seconds: u64,
+    cancel: SearchCancel,
+    ledger: &ledger::RunLedger,
+    writeback: RoundWriteback,
+) -> Result<Value, BrokerError> {
+    let bytes = serde_json::to_vec(ledger).map_err(|_| BrokerError::Malformed)?;
+    if bytes.len() > ledger::MAX_LEDGER_BYTES {
+        return Err(BrokerError::Execution(
+            "Python read ledger exceeds its size limit".into(),
+        ));
+    }
+    run_owned(
+        roots,
+        cache_root,
+        code,
+        timeout_seconds,
+        cancel,
+        None,
+        Some(Round {
+            bytes,
+            writeback,
+            sealed: false,
+            queue_limit: None,
+        }),
+    )
+    .await
+}
+
+/// One check round: empty workspace, scratch only, and a queue wait the caller caps.
+pub(crate) async fn execute_sealed(
+    cache_root: &Path,
+    code: &str,
+    timeout_seconds: u64,
+    cancel: SearchCancel,
+    ledger: &ledger::RunLedger,
+    queue_limit: std::time::Duration,
+) -> Result<Value, BrokerError> {
+    let bytes = serde_json::to_vec(ledger).map_err(|_| BrokerError::Malformed)?;
+    if bytes.len() > ledger::MAX_LEDGER_BYTES {
+        return Err(BrokerError::Execution(
+            "Python read ledger exceeds its size limit".into(),
+        ));
+    }
+    let (_folder, roots) = ledger::empty_roots()?;
+    run_owned(
+        &roots,
+        cache_root,
+        code,
+        timeout_seconds,
+        cancel,
+        None,
+        Some(Round {
+            bytes,
+            writeback: RoundWriteback::Disabled,
+            sealed: true,
+            queue_limit: Some(queue_limit),
+        }),
+    )
+    .await
+}
+
+struct Round {
+    bytes: Vec<u8>,
+    writeback: RoundWriteback,
+    /// No workspace files and no writable workspace directory.
+    sealed: bool,
+    /// How long to wait for the one worker. None uses the call's own timeout.
+    queue_limit: Option<std::time::Duration>,
 }
 
 /// A broker disconnect may drop its request future. Keep the snapshot owned
@@ -142,6 +228,7 @@ async fn run_owned(
     timeout_seconds: u64,
     cancel: SearchCancel,
     started: Option<tokio::sync::oneshot::Sender<PathBuf>>,
+    round: Option<Round>,
 ) -> Result<Value, BrokerError> {
     struct CancelOnDrop(tokio::sync::watch::Sender<bool>);
     impl Drop for CancelOnDrop {
@@ -154,7 +241,10 @@ async fn run_owned(
     let (roots, cache_root, code) = (roots.clone(), cache_root.to_path_buf(), code.to_owned());
     tokio::spawn(async move {
         let disconnected = SearchCancel::from_watch(receiver);
-        let wait = queue_wait(&cache_root, timeout_seconds);
+        let wait = round
+            .as_ref()
+            .and_then(|round| round.queue_limit)
+            .unwrap_or_else(|| queue_wait(&cache_root, timeout_seconds));
         // Bound total compiler/guest RSS for the app, not just each wasm
         // memory. A queued call owns no snapshot and can still be cancelled.
         let _permit = tokio::select! {
@@ -171,6 +261,7 @@ async fn run_owned(
             cancel,
             disconnected,
             started,
+            round,
         )
         .await
     })
@@ -197,6 +288,7 @@ fn queue_wait(cache_root: &Path, timeout_seconds: u64) -> std::time::Duration {
 }
 
 #[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
 async fn drive(
     roots: &NativeRoots,
     cache_root: &Path,
@@ -205,24 +297,25 @@ async fn drive(
     cancel: SearchCancel,
     disconnected: SearchCancel,
     started: Option<tokio::sync::oneshot::Sender<PathBuf>>,
+    round: Option<Round>,
 ) -> Result<Value, BrokerError> {
     use std::os::unix::fs::PermissionsExt;
 
-    if !(1..=MAX_TIMEOUT_SECONDS).contains(&timeout_seconds)
-        || code.is_empty()
-        || code.len() > CODE_BYTES
-        || code.contains('\0')
-    {
-        return Err(BrokerError::invalid(
-            "code",
-            "a string of 1 to 65536 bytes and a timeout from 1 to 120 seconds",
-        ));
-    }
-    let mut secrets = host_secrets(roots);
+    validate_code(code, timeout_seconds)?;
+    let sealed = round.as_ref().is_some_and(|round| round.sealed);
+    let mut secrets = if sealed {
+        Vec::new()
+    } else {
+        host_secrets(roots)
+    };
     let roots = roots.clone();
-    let prepared = tokio::task::spawn_blocking(move || snapshot::prepare(&roots))
-        .await
-        .map_err(|_| BrokerError::Execution("Python execution failed".into()))??;
+    let mut prepared = if sealed {
+        snapshot::prepare_sealed().map_err(BrokerError::from)?
+    } else {
+        tokio::task::spawn_blocking(move || snapshot::prepare(&roots))
+            .await
+            .map_err(|_| BrokerError::Execution("Python execution failed".into()))??
+    };
     let snapshot = prepared.snapshot_dir().to_path_buf();
     if let Some(started) = started {
         let _ = started.send(snapshot.clone());
@@ -241,8 +334,28 @@ async fn drive(
         runtime.clone(),
         worker.clone(),
     ]);
+    let launch = match &round {
+        Some(round) => {
+            let scratch = snapshot.join("scratch");
+            let stage = |name: &str, bytes: &[u8]| -> Result<(), BrokerError> {
+                use std::io::Write;
+                use std::os::unix::fs::OpenOptionsExt;
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(scratch.join(name))
+                    .and_then(|mut file| file.write_all(bytes))
+                    .map_err(|_| BrokerError::Execution("Python inputs could not be staged".into()))
+            };
+            stage(".loupist-code.py", code.as_bytes())?;
+            stage(".loupist-ledger.json", &round.bytes)?;
+            ledger::BOOTSTRAP
+        }
+        None => code,
+    };
     let request = WorkerRequest {
-        code: code.to_owned(),
+        code: launch.to_owned(),
         timeout_seconds,
         runtime,
         cache: cache.compiled.clone(),
@@ -262,11 +375,39 @@ async fn drive(
             cache.mark_compiled(identity);
         }
     }
-    let report = tokio::task::spawn_blocking(move || prepared.writeback())
-        .await
-        .map_err(|_| BrokerError::Execution("Python execution failed".into()))??;
+    let outcome = outcome?;
+    let pending = if round.is_some() {
+        read_requests(&snapshot.join("scratch/.loupist-requests.json"))?
+    } else {
+        None
+    };
+    let verdict = round
+        .as_ref()
+        .filter(|round| round.sealed)
+        .and_then(|_| read_json_file(&snapshot.join("scratch/.loupist-verdict.json")).ok())
+        .flatten();
+    let failure = round
+        .as_ref()
+        .filter(|round| round.sealed)
+        .and_then(|_| read_json_file(&snapshot.join("scratch/.loupist-failure.json")).ok())
+        .flatten();
+    let writeback = round.map_or(
+        RoundWriteback::Allowed {
+            untrusted_inputs: false,
+        },
+        |round| round.writeback,
+    );
+    let report = match writeback {
+        RoundWriteback::Allowed { untrusted_inputs } if pending.is_none() => {
+            prepared.untrusted_inputs |= untrusted_inputs;
+            tokio::task::spawn_blocking(move || prepared.writeback())
+                .await
+                .map_err(|_| BrokerError::Execution("Python execution failed".into()))??
+        }
+        _ => snapshot::WriteReport::default(),
+    };
     let mut result = result_value(
-        &outcome?,
+        &outcome,
         &report,
         omitted,
         &omitted_paths,
@@ -274,10 +415,22 @@ async fn drive(
         &secret_text(&secrets),
     );
     result["untrusted_input"] = json!(untrusted_inputs);
+    if let Some(verdict) = verdict {
+        result["check_verdict"] = verdict;
+    }
+    if let Some(failure) = failure {
+        result["check_failure"] = failure;
+    }
+    if outcome.status == "completed" {
+        if let Some(pending) = pending {
+            result["_python_pending"] = pending;
+        }
+    }
     Ok(result)
 }
 
 #[cfg(not(unix))]
+#[allow(clippy::too_many_arguments)]
 async fn drive(
     _roots: &NativeRoots,
     _cache_root: &Path,
@@ -286,10 +439,85 @@ async fn drive(
     _cancel: SearchCancel,
     _disconnected: SearchCancel,
     _started: Option<tokio::sync::oneshot::Sender<PathBuf>>,
+    _round: Option<Round>,
 ) -> Result<Value, BrokerError> {
     Err(BrokerError::Execution(
         "Python execution is unavailable".into(),
     ))
+}
+
+#[cfg(unix)]
+fn read_json_file(path: &Path) -> Result<Option<Value>, BrokerError> {
+    use std::io::Read;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let file = match std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => {
+            return Err(BrokerError::Execution(
+                "Python produced an invalid result".into(),
+            ))
+        }
+    };
+    if !file
+        .metadata()
+        .map_err(|_| BrokerError::Execution("Python produced an invalid result".into()))?
+        .is_file()
+    {
+        return Err(BrokerError::Execution(
+            "Python produced an invalid result".into(),
+        ));
+    }
+    let mut bytes = Vec::new();
+    file.take(64 * 1024 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| BrokerError::Execution("Python produced an invalid result".into()))?;
+    if bytes.len() > 64 * 1024 {
+        return Err(BrokerError::Execution(
+            "Python produced an invalid result".into(),
+        ));
+    }
+    Ok(Some(serde_json::from_slice(&bytes).map_err(|_| {
+        BrokerError::Execution("Python produced an invalid result".into())
+    })?))
+}
+
+#[cfg(unix)]
+fn read_requests(path: &Path) -> Result<Option<Value>, BrokerError> {
+    use std::io::Read;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let invalid = || BrokerError::Execution("Python produced an invalid read request".into());
+    let file = match std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(invalid()),
+    };
+    if !file.metadata().map_err(|_| invalid())?.is_file() {
+        return Err(invalid());
+    }
+    let mut bytes = Vec::new();
+    file.take(ledger::MAX_REQUEST_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| invalid())?;
+    if bytes.len() > ledger::MAX_REQUEST_BYTES {
+        return Err(invalid());
+    }
+    let calls = serde_json::from_slice::<Vec<ledger::ReadCall>>(&bytes).map_err(|_| invalid())?;
+    if calls.is_empty() || calls.len() > ledger::MAX_CALLS || calls.iter().any(|call| !call.valid())
+    {
+        return Err(invalid());
+    }
+    Ok(Some(serde_json::to_value(calls).map_err(|_| invalid())?))
 }
 
 fn host_secrets(roots: &NativeRoots) -> Vec<PathBuf> {

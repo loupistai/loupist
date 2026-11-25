@@ -5,8 +5,11 @@ import type { CalcOperation } from "../calculations";
 import type { HandoffStatus, HandoffStopReason } from "../chat/handoff";
 import type { DatasetRef } from "../datasets";
 import type { KnowledgeReference } from "../domain/memory";
+import type { JsonValue } from "../external";
 import type { LearnedDigest } from "../knowledge/lens";
-import type { RunStatus, Schedule, TaskKind } from "../scheduled_tasks/types";
+import type { FailureStreak, RunStatus, Schedule, TaskKind, WatchPreset } from "../scheduled_tasks/types";
+
+export type ChatCostEstimate = { microusd: number, fromProvider: boolean };
 
 export type ChatEvidenceDelivery = {
   coverage: ChatEvidenceDeliveryCoverage,
@@ -117,6 +120,8 @@ export type ChatPerformance = {
   outputTokens: number,
   cacheReadTokens: number,
   cacheWriteTokens: number,
+  modelRequests?: number,
+  costEstimate?: ChatCostEstimate,
 };
 
 export type ChatSessionCacheStatus = "cold" | "warm";
@@ -136,6 +141,33 @@ export type ChatToolRefusalReason =
   | "sensitive_memory"
   | "declined"
   | "other";
+
+/** Portable per-turn diagnostics. `truncated` also covers omitted calls. */
+export type ChatToolTrace = {
+  entries: Array<ChatToolTraceEntry>,
+  truncated: boolean,
+  /**
+   * Host trust receipt, persisted in the existing message JSON. It remains
+   * meaningful when diagnostic entries are bounded or omitted.
+   */
+  untrusted_text: boolean,
+};
+
+export type ChatToolTraceEntry = {
+  call_id: string | null,
+  name: string,
+  component: string | null,
+  args: JsonValue | null,
+  start_offset_ms: number,
+  duration_ms: number,
+  outcome: ToolTraceOutcome,
+  /** The broker's model-facing envelope, with bounded/redacted text. */
+  error: JsonValue | null,
+  result_bytes: number | null,
+  origin?: ToolTraceOrigin,
+  parentStep?: string,
+  python?: PythonRunTrace,
+};
 
 export type DiscardedMemoryItem = { kind: DiscardedMemoryKind, title: string };
 
@@ -180,11 +212,27 @@ export type HomeAlert = {
   source_title: string,
 };
 
+/** One question a scheduled run left. The run does not wait. */
+export type HomeAsk = {
+  id: string,
+  question: string,
+  options: Array<HomeAskOption>,
+  recommended: number,
+  createdAtMs: number,
+  expiresAtMs: number,
+  choice?: number,
+};
+
+export type HomeAskOption = { label: string };
+
 /**
  * Where a host-posted Thread message came from: one finished scheduled run.
  * The text is the run's first paragraph; the run's own Chat keeps the answer.
  */
 export type HomeDelivery = {
+  firstRun?: boolean,
+  evidence?: HomeResultEvidence,
+  failure_streak?: FailureStreak,
   run_id: string,
   task_id: string,
   task_title: string,
@@ -198,6 +246,8 @@ export type HomeDelivery = {
   finished_at_ms: number,
   skipped_saved_keys?: Array<string>,
   learned?: LearnedDigest,
+  /** Set when a check was met. The same card is filled when its run ends. */
+  trigger?: HomeTrigger,
 };
 
 /**
@@ -225,6 +275,38 @@ export type HomeLink = {
 };
 
 export type HomeLinkHop = { name: string, relation: string, reversed?: boolean };
+
+/** A preset the user can turn on with a tap. Nothing is scheduled until they do. */
+export type HomeOffer = {
+  id: string,
+  preset: WatchPreset,
+  assetId: string,
+  assetName: string,
+  resultsDate?: string,
+  runAtMs?: number,
+  reason: string,
+  createdAtMs: number,
+  expiresAtMs: number,
+  taskId?: string,
+  dismissed?: boolean,
+};
+
+export type HomeResultEvidence = {
+  figuresChecked: number,
+  figuresUnmatched: number,
+  sources: number,
+};
+
+/** The reading a check posted, labelled as from the user's check. */
+export type HomeTrigger = {
+  reading: string,
+  as_of: string,
+  sources: Array<string>,
+  checked_at_ms: number,
+  explained: boolean,
+  reason?: string,
+  coalesced: boolean,
+};
 
 export type HomeVocabulary = {
   changeId: string,
@@ -270,6 +352,8 @@ export type MemoryUpdateResult = {
 
 export type MemoryUpdateStatus = "applied" | "no_change";
 
+export type PythonRunTrace = { reads: number, rounds: number };
+
 /** Which run of which scheduled task sent a request into its Chat. */
 export type ScheduledTurn = {
   task_id: string,
@@ -284,6 +368,10 @@ export type SetupChange =
   | { "change": "unfollowed", symbol: string, market?: string }
   | { "change": "focus", focus: string }
   | { "change": "tracks", kinds: Array<MapKind> };
+
+export type ToolTraceOrigin = "python";
+
+export type ToolTraceOutcome = "ok" | "error";
 
 /**
  * A thesis update the tool accepted but the reply's commit did not save,

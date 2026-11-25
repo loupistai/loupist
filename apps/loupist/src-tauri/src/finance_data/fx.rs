@@ -777,13 +777,19 @@ fn clone_error(error: &BrokerError) -> BrokerError {
         FrameTooLarge => FrameTooLarge,
         Execution(message) => Execution(message.clone()),
         EmptyResult => EmptyResult,
+        ResultTooLarge { bytes, limit_bytes } => ResultTooLarge {
+            bytes: *bytes,
+            limit_bytes: *limit_bytes,
+        },
         ProviderFailure {
             kind,
             message,
+            retry_after,
             next,
         } => ProviderFailure {
             kind: *kind,
             message: message.clone(),
+            retry_after: *retry_after,
             next: next.clone(),
         },
         SecContactRequired(message) => SecContactRequired(message),

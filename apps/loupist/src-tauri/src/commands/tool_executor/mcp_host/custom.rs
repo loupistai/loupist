@@ -29,6 +29,9 @@ fn card_answer(outcome: AskOutcome) -> CardAnswer {
     }
 }
 
+const TOO_LARGE_NEXT: &str = "The connection is still running: call it again asking for less (a shorter range, fewer rows or one item) if its arguments allow; otherwise continue without it and say the reply was too large.";
+const IN_USE_NEXT: &str = "Call it once more later in this reply, after other work; if it is still in use, continue without this connection and say so.";
+
 fn failure(error: ConnectionError, connection_id: &str, tool_name: &str) -> BrokerError {
     match error {
         ConnectionError::ApprovalRequired => BrokerError::CustomApprovalRequired {
@@ -41,6 +44,13 @@ fn failure(error: ConnectionError, connection_id: &str, tool_name: &str) -> Brok
             BrokerError::KeychainBusy
         }
         ConnectionError::KeychainUnavailable => BrokerError::KeychainUnavailable,
+        // Another request holds the connection; its key is not involved.
+        ConnectionError::InUse => BrokerError::Execution(error.to_string()).with_next(IN_USE_NEXT),
+        ConnectionError::ResultTooLarge { limit_bytes } => BrokerError::ResultTooLarge {
+            bytes: None,
+            limit_bytes: Some(limit_bytes),
+        }
+        .with_next(TOO_LARGE_NEXT),
         _ => BrokerError::Execution(error.to_string()),
     }
 }
@@ -53,7 +63,10 @@ impl AppToolExecutor {
         connection: &service::ConnectionView,
         tool_name: &str,
     ) -> Option<service::ToolCard> {
-        if self.capture.unattended_run_id.is_some() || self.capture.approval_sink.is_none() {
+        if self.capture.unattended_run_id.is_some()
+            || self.capture.approval_sink.is_none()
+            || super::super::python_reads::nested()
+        {
             return None;
         }
         connection
@@ -149,7 +162,7 @@ impl AppToolExecutor {
                 &request.server_id,
                 &request.tool_name,
                 request.arguments.clone(),
-                self.capture.unattended_run_id.is_some(),
+                self.capture.unattended_run_id.is_some() || super::super::python_reads::nested(),
             )
             .await;
         // An interactive turn asks the user instead of refusing a read-only tool outright.
@@ -348,5 +361,29 @@ mod tests {
             failure(ConnectionError::KeychainUnavailable, "fixture", ""),
             BrokerError::KeychainUnavailable
         ));
+        // A connection another request holds is not a key being changed.
+        assert!(matches!(
+            failure(ConnectionError::InUse, "fixture", ""),
+            BrokerError::WithNext { source, next }
+                if matches!(source.as_ref(), BrokerError::Execution(message) if message.contains("in use"))
+                    && next == IN_USE_NEXT
+        ));
+        // An oversized reply is its own refusal; the session keeps running.
+        for limit_bytes in [
+            crate::custom_connections::http::MAX_RESPONSE_BYTES as u64,
+            crate::mcp::MAX_FRAME_BYTES as u64,
+        ] {
+            let body = crate::broker::error_body(&failure(
+                ConnectionError::ResultTooLarge { limit_bytes },
+                "fixture",
+                "",
+            ));
+            assert_eq!(body["code"], "result_too_large");
+            assert_eq!(body["limit_bytes"], limit_bytes);
+            assert!(body["next"]
+                .as_str()
+                .unwrap()
+                .starts_with("The connection is still running"));
+        }
     }
 }

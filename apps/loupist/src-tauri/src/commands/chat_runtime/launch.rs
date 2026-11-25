@@ -155,6 +155,11 @@ pub(super) async fn launch_chat_turn(
         capture.admit_untrusted_context(
             untrusted_context
                 || retained_handoff_text
+                || envelope.trigger.is_some()
+                || chat
+                    .messages
+                    .iter()
+                    .any(crate::domain::ChatMessage::has_trigger_card)
                 || handoff_trust
                     .as_ref()
                     .is_some_and(|trust| trust.untrusted())
@@ -586,8 +591,11 @@ pub(super) async fn build_turn_envelope(
         selected_references,
         working_context,
         bot_memory,
+        standing_preferences,
         left_out,
         previous_run,
+        trigger,
+        current_message,
     } = inputs;
     capture.note_left_out(left_out);
     let (learned_index, charter, charter_read_ref) = if let Some(memory) = &host_memory {
@@ -674,15 +682,32 @@ pub(super) async fn build_turn_envelope(
         Some(run) => agent_harness::attach_previous_run(&turn_envelope, run),
         None => turn_envelope,
     };
+    let turn_envelope = match &trigger {
+        Some(trigger) => agent_harness::attach_trigger(&turn_envelope, trigger),
+        None => turn_envelope,
+    };
     let turn_envelope = agent_harness::attach_interface(
         &turn_envelope,
         !surface.interactive() || capture.host_handoff,
         &appearance,
     );
+    let turn_envelope = match current_message.as_deref() {
+        Some(message) => {
+            agent_harness::message_script::attach_current_message_script(&turn_envelope, message)
+        }
+        None => turn_envelope,
+    };
     let turn_envelope = match bot_memory {
         Some(memory) => {
             memory.protect(&capture.turn_taint);
             crate::chat::bot_memory::attach(&turn_envelope, memory.block)
+        }
+        None => turn_envelope,
+    };
+    let turn_envelope = match standing_preferences {
+        Some(standing) => {
+            standing.protect(&capture.turn_taint);
+            crate::chat::bot_memory::attach_standing(&turn_envelope, standing.block)
         }
         None => turn_envelope,
     };

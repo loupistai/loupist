@@ -91,7 +91,7 @@ pub fn run() {
         (context, deferred)
     };
     #[cfg(target_os = "macos")]
-    app_menu::macos::disable_automatic_fullscreen_item();
+    app_menu::macos::disable_automatic_menu_items();
     let builder = tauri::Builder::default();
     // `main` starts the Windows UI on an explicitly sized worker thread so
     // debug startup has enough stack. Opt Tauri's event loop into that
@@ -142,6 +142,7 @@ pub fn run() {
     let builder = builder.on_web_content_process_terminate(|webview| {
         // Registering this hook replaces Tauri's default macOS reload.
         app_menu::renderer_reset(webview);
+        briefings::desktop::renderer_reset(webview);
         let _ = webview.reload();
     });
     builder
@@ -149,10 +150,11 @@ pub fn run() {
         .on_page_load(|webview, payload| {
             if payload.event() == tauri::webview::PageLoadEvent::Started {
                 app_menu::renderer_reset(webview);
+                briefings::desktop::renderer_reset(webview);
             }
         })
         .on_window_event(|window, event| {
-            briefings::desktop::close_requested(window, event);
+            briefings::desktop::window_event(window, event);
             commands::attention::window_event(window, event);
             app_menu::window_event(window, event);
         })
@@ -318,6 +320,9 @@ pub fn run() {
             app_menu::app_menu_update,
             #[cfg(all(target_os = "macos", feature = "e2e"))]
             app_menu::macos::e2e_native_menu_snapshot,
+            commands::cards::bot_offer_accept,
+            commands::cards::bot_offer_dismiss,
+            commands::cards::bot_ask_answer,
             briefings::commands::briefing_settings_get,
             briefings::commands::briefing_settings_set,
             briefings::commands::inbox_list,
@@ -335,7 +340,14 @@ pub fn run() {
             commands::loupist::loupist_profile_update,
             commands::loupist::loupist_choose_folder,
             commands::dialog::pick_file,
+            commands::clipboard::clipboard_read_image,
             commands::export_file::export_save,
+            commands::scripts::scripts_list,
+            commands::scripts::script_get,
+            commands::scripts::script_save,
+            commands::scripts::script_delete,
+            commands::scripts::script_test,
+            commands::scripts::python_step_replay,
             commands::legacy_holdings::legacy_holdings_status,
             commands::legacy_holdings::legacy_holdings_retry,
             commands::legacy_holdings::legacy_holdings_reveal,
@@ -371,8 +383,20 @@ pub fn run() {
             commands::scheduled_tasks::scheduled_tasks_activity,
             commands::scheduled_tasks::scheduled_task_watch,
             commands::scheduled_tasks::scheduled_task_get,
+            commands::scheduled_tasks::scheduled_task_from_preset,
+            commands::scheduled_tasks::scheduled_trigger_get,
+            commands::scheduled_tasks::scheduled_trigger_approve,
+            commands::scheduled_tasks::scheduled_trigger_revert,
+            commands::scheduled_tasks::scheduled_trigger_test,
+            commands::scheduled_tasks::scheduled_trigger_evaluations,
+            briefings::desktop::notification_templates_set,
+            briefings::desktop::notification_bot_focus_set,
+            briefings::desktop::notification_permission_settings_open,
+            commands::scheduled_tasks::scheduled_task_set_delivery,
             commands::scheduled_tasks::scheduled_task_confirm,
             commands::scheduled_tasks::scheduled_task_discard,
+            commands::scheduled_tasks::scheduled_proposal_set_declined,
+            commands::scheduled_tasks::scheduled_proposal_visit_end,
             commands::scheduled_tasks::scheduled_tasks_list,
             commands::scheduled_tasks::scheduled_task_set_status,
             commands::scheduled_tasks::scheduled_task_delete,
@@ -402,6 +426,8 @@ pub fn run() {
             commands::workspace_ui::chat_draft_read,
             commands::workspace_ui::chat_draft_write,
             commands::workspace_ui::workspace_ui_read,
+            commands::workspace_ui::composer_model::chat_composer_model_read,
+            commands::workspace_ui::composer_model::chat_composer_model_write,
             commands::workspace_ui::workspace_ui_write,
             commands::chat_runtime::chat_send,
             commands::chat_runtime::chat_watch,
@@ -483,6 +509,10 @@ pub fn run() {
             providers::connection::provider_disconnect,
             providers::connection::provider_open_console,
             providers::connection::provider_open_usage,
+            commands::usage::usage_summary,
+            commands::bot_memory::bot_memory_list,
+            commands::bot_memory::bot_memory_forget,
+            commands::bot_memory::bot_memory_update,
             providers::connection::model_notice_ack,
             providers::local::provider_local_discover,
             providers::local::provider_custom_test,

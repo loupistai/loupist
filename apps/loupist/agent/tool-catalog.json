@@ -235,13 +235,10 @@
       "permission": "always",
       "component": null,
       "label": "Run Python",
-      "description": "Run Python for analysis, charts and file work. Pass the program as code (at most 64 KiB of UTF-8). timeout_seconds is optional, defaults to 60 and cannot exceed 120. The working directory is /workspace, a private copy of this Loupist folder made for the call: dot folders are left out, and so is any file over 8 MiB. Files at its top level are read-only. /attachments is this Chat's attachments, read-only. /scratch is writable and discarded when the call ends. Create or change files under /workspace/outputs/ or inside an existing top-level folder; those changes are copied back to the Loupist folder, including ones made before a timeout. There is no network, no shell, no other program and no package install. Installed: numpy, pandas, scipy, statsmodels, scikit-learn, matplotlib, seaborn, sympy, networkx, xarray, openpyxl, XlsxWriter, xlrd, python-docx, python-pptx, pypdf, pdfplumber, reportlab, Pillow, lxml, BeautifulSoup, PyYAML, tabulate and Jinja2. Fonts cover Latin text only, so Korean, Japanese or Chinese labels in a figure or PDF show as empty boxes. Save a chart as a PNG under outputs/ and the app shows it. The result has status (completed, failed, timed_out or cancelled), exit_code, stdout and stderr (64 KiB each; printing more ends the run), changed_files, and conflicts listing writes that were not copied back. Large folders use a partial snapshot: outputs first, then recent files; the result reports the omitted count and a few omitted paths, and snapshot_scan_truncated means that count is a lower bound. Output is a calculation, not a Source. Available after web pages and in unattended runs.",
+      "description": "Run Python for analysis, charts and file work. Pass the program as code (at most 64 KiB of UTF-8). timeout_seconds is optional, defaults to 60 and cannot exceed 120. The working directory is /workspace, a private copy of this Loupist folder made for the call: dot folders are left out, and so is any file over 8 MiB. Files at its top level are read-only. /attachments is this Chat's attachments, read-only. /scratch is writable and discarded when the call ends. Create or change files under /workspace/outputs/ or inside an existing top-level folder; those changes are copied back to the Loupist folder, including ones made before a timeout. There is no network, no shell, no other program and no package install. Data comes through the loupist module, which reads what you may read in this reply and nothing else. loupist.call(tool, **arguments) runs a data or Memory read by the name and arguments you would use yourself and returns its whole result as Python data; loupist.dataset, loupist.followed, loupist.price, loupist.sources and loupist.source cover the common reads, and loupist.gather takes several calls at once. Use it whenever the work is over many rows or several reads that feed each other: fetch and compute in the code and print only what you will say, because rows you pull into the conversation cost the user tokens and invite copying errors. A single figure you will quote is still a direct call, and text you have to judge (a filing, a transcript, a news report) is still yours to read. inputs names reads or datasets to fetch before the code starts, which saves a pass: the code runs again from the top each time it asks for a read it does not have yet, so ask for reads early and together. A read that is refused or fails raises loupist.Refused or loupist.Unavailable with a code (rate_limited carries retry_after); catch it when the rest of the work can go on, and say what was not read. No write, web request or question to the user is reachable from code. script runs a saved script by name (name or name@version) with args in place of code. The result lists the reads the code made, each with its citation link: a figure you take from this result cites this step, and the user can open the code and its reads and run it again on the same data. Installed: numpy, pandas, scipy, statsmodels, scikit-learn, matplotlib, seaborn, sympy, networkx, xarray, openpyxl, XlsxWriter, xlrd, python-docx, python-pptx, pypdf, pdfplumber, reportlab, Pillow, lxml, BeautifulSoup, PyYAML, tabulate and Jinja2. Fonts cover Latin text only, so Korean, Japanese or Chinese labels in a figure or PDF show as empty boxes. Save a chart as a PNG under outputs/ and the app shows it. The result has status (completed, failed, timed_out or cancelled), exit_code, stdout and stderr (64 KiB each; printing more ends the run), changed_files, and conflicts listing writes that were not copied back. Large folders use a partial snapshot: outputs first, then recent files; the result reports the omitted count and a few omitted paths, and snapshot_scan_truncated means that count is a lower bound. Output is a calculation, not a Source. Available after web pages and in unattended runs.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "code"
-        ],
         "properties": {
           "code": {
             "type": "string",
@@ -252,6 +249,84 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 120
+          },
+          "script": {
+            "type": "string",
+            "maxLength": 59
+          },
+          "args": {
+            "type": "object"
+          },
+          "inputs": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "call"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "call": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "tool",
+                        "arguments"
+                      ],
+                      "properties": {
+                        "tool": {
+                          "type": "string"
+                        },
+                        "arguments": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "dataset"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "dataset": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "dataset_id",
+                        "revision"
+                      ],
+                      "properties": {
+                        "dataset_id": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 4294967295
+                        },
+                        "pointer": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
           }
         }
       },
@@ -260,6 +335,101 @@
         "operation": "execute",
         "running": "Running Python",
         "done": "Ran Python"
+      }
+    },
+    {
+      "name": "script_save",
+      "method": "script.save",
+      "permission": "always",
+      "component": null,
+      "label": "Save script",
+      "description": "Save Python that worked and that you or the user will run again, under a short name, with a one-sentence summary of what it does and its arguments. Saving never overwrites: it writes the next version, and every version stays. Look with script_list before writing a second script for the same job; improve the one that exists. A script a check is running keeps its approved version until the user turns the new one on, so saving here changes nothing that is live. Code is at most 32 KiB.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "summary",
+          "code"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 48
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "args": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "default",
+                "description"
+              ],
+              "properties": {
+                "default": {},
+                "description": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 32768
+          }
+        }
+      }
+    },
+    {
+      "name": "script_list",
+      "method": "script.list",
+      "permission": "always",
+      "component": null,
+      "label": "List scripts",
+      "description": "The scripts saved in this Loupist, with their summaries, arguments, latest versions and what uses each. Pass words to search. Use it before writing code for a job that may have been done before.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      }
+    },
+    {
+      "name": "script_read",
+      "method": "script.read",
+      "permission": "always",
+      "component": null,
+      "label": "Read script",
+      "description": "One script's code, summary, arguments, the reads its last run made and its last test, at its latest version or the one you name.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          }
+        }
       }
     },
     {
@@ -503,7 +673,7 @@
       "permission": "memory_write",
       "component": "memory-save",
       "label": "Save a source",
-      "description": "Stage the exact delivered payload of a current-turn source result_ref. A workspace_capture retains a local user_file, not verified external origin. A pasted_capture retains a user_provided Source: the user's exact pasted text with the link and publisher they stated, none of it verified; give it a title, the date the user stated as publicationTime, and included_full only when the user pasted the whole document. Only a result that a read tool acquired from outside can be saved: a web page, a filing, a data provider's result. A dataset_query slice, a calculate or run_python result, a chart, a file you wrote and saved memory are derived and are refused here; their figures stay cited through the result they came from, so there is nothing to save. Summary-only bounded_sample results must be reread with a narrower request before saving. The host rejects an unknown coverage and will not store a snippet as a full original. Saving must be on. The host returns a saveRef with status staged, durable false, and graph after_turn_commit, or graph not_added_price_data for price data (bars, quotes, exchange rates, index levels, rate series and tables made only of them): such a Source is kept, searchable and citable, and World reads nothing from it, so save it for its figures and never to teach World. A save becomes durable only when the reply commits, then automatic World processing can begin for the others. Never wait for graph completion inside this turn. At most 16 source saves per turn, and none in a Bot quick ask. Prioritize originals supplied by the user and evidence needed for the answer. Reuse an unchanged saved Source after reading it; do not fetch and save it again just to cite it.",
+      "description": "Stage the exact delivered payload of a current-turn source result_ref. A workspace_capture retains a local user_file, not verified external origin. A pasted_capture retains a user_provided Source: the user's exact pasted text with the link and publisher they stated, none of it verified; give it a title, the date the user stated as publicationTime, and included_full only when the user pasted the whole document. Only a result that a read tool acquired from outside can be saved: a web page, a filing, a data provider's result. A dataset_query slice, a calculate or run_python result, a chart, a file you wrote and saved memory are derived and are refused here; their figures stay cited through the result they came from, so there is nothing to save. A data result that reached you as a summary (model_delivery coverage bounded_sample) is kept whole as the host retained it: save it as it is, as included_full, rather than reading it again narrower to make it fit. Only a result the host refuses as larger than one Source holds (8 MiB) calls for a narrower read, and you save that narrower result instead. The host rejects an unknown coverage and will not store a snippet as a full original. Saving must be on. The host returns a saveRef with status staged, durable false, and graph after_turn_commit, or graph not_added_price_data for price data (bars, quotes, exchange rates, index levels, rate series and tables made only of them): such a Source is kept, searchable and citable, and World reads nothing from it, so save it for its figures and never to teach World. A save becomes durable only when the reply commits, then automatic World processing can begin for the others. Never wait for graph completion inside this turn. At most 16 source saves per turn, and none in a Bot quick ask. Prioritize originals supplied by the user and evidence needed for the answer. Reuse an unchanged saved Source after reading it; do not fetch and save it again just to cite it.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -2325,6 +2495,87 @@
       }
     },
     {
+      "name": "bot_offer",
+      "method": "bot.offer",
+      "permission": "always",
+      "component": null,
+      "label": "Offer a step",
+      "description": "Offer the user one standing step they can turn on with a tap: a watch preset on something they follow, or a one-time results follow-up. Use it when this reply or run met a concrete reason for it (a results date within two weeks, a line with no check, a move the user asked about twice) and no listed task already does the work. Give the preset, its parameters, the followed asset it concerns and one sentence of reason in the user's language. The offer appears as a card and creates nothing until they turn it on; if they decline, the same offer is not made again. At most two per reply or run. In a scheduled run this is the only way to suggest future work: the run cannot create or change a task.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["preset", "asset_id", "reason"],
+        "properties": {
+          "preset": {
+            "type": "string",
+            "enum": ["filings-and-results", "thesis-lines", "results-follow-up", "week-in-review"]
+          },
+          "asset_id": {
+            "type": "string",
+            "pattern": "^ast_[0-9a-f]{16}$",
+            "description": "The assetId of an asset this Loupist follows."
+          },
+          "results_date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "YYYY-MM-DD. Only for results-follow-up."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "One sentence, in the user's language, of why this step is worth turning on."
+          }
+        }
+      },
+      "progress": {
+        "category": "capability",
+        "operation": "generic",
+        "running": "Offering a step",
+        "done": "Offered a step"
+      }
+    },
+    {
+      "name": "ask_later",
+      "method": "bot.ask_later",
+      "permission": "always",
+      "component": null,
+      "label": "Leave a question",
+      "description": "Scheduled runs only. Leave the user one question this run could not settle and that changes what the task should do next time: which of two listings they meant, whether a changed metric definition still fits their line. Give 2 to 4 concrete choices and mark the one you would pick. The question appears in the Bot as a card; their choice goes to the Bot as their message, and this run does not wait for it. Finish the run on your recommended choice and say in the answer what you assumed. With no answer by the time the card expires, nothing changes. One per run; never for permission to use a tool, and never for a password, key or account number.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["question", "options", "recommended"],
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "options": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["label"],
+              "properties": {
+                "label": { "type": "string", "minLength": 1, "maxLength": 60 }
+              }
+            }
+          },
+          "recommended": { "type": "integer", "minimum": 0, "maximum": 3 }
+        }
+      },
+      "progress": {
+        "category": "capability",
+        "operation": "generic",
+        "running": "Leaving a question",
+        "done": "Left a question"
+      }
+    },
+    {
       "name": "research_open",
       "method": "research.open",
       "permission": "always",
@@ -2639,7 +2890,7 @@
       "permission": "always",
       "component": "krx",
       "label": "Get a KRX daily quote",
-      "description": "Fetch official KRX daily prices (KOSPI or KOSDAQ) for a 6-digit issue code: one date, or start and end covering up to 31 weekdays. Needs the KRX connection key approved for the requested market. Auto checks accessible markets independently; needs_approval names a missing daily trading service. Every successful read returns a turn-local result_ref.",
+      "description": "Fetch official KRX daily prices (KOSPI or KOSDAQ) for a 6-digit issue code: one date, or start and end covering up to 31 weekdays, from 2010-01-04. Needs the KRX connection key approved for the requested market. Auto checks accessible markets independently; needs_approval names a missing daily trading service. Every successful read returns a turn-local result_ref.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -2755,6 +3006,63 @@
         "target_args": [
           "query"
         ],
+        "source": "finance"
+      }
+    },
+    {
+      "name": "kis_symbol_lookup",
+      "method": "kis.symbol_lookup",
+      "permission": "always",
+      "component": "koreainvestment",
+      "label": "Find a Korea Investment symbol",
+      "description": "Find a Korea Investment symbol by name, in Korean or English, or by symbol, in KIS's public master files: domestic stocks (kospi, kosdaq, konex), ELWs, bonds and derivatives, and overseas stocks, futures and options. Set market to search one directory. Each match gives its market, symbol and name, and the code a KIS read takes for it: market_code for a domestic read's market field (J for stocks, W for ELWs) or exchange_code for an overseas read's exchange field. match_type symbol_exact or name_exact is the instrument asked for; name_prefix and name_contains are candidates to confirm before reading. failed_sources names directories that could not be read, so a symbol missing from the matches may be in one of them, and warnings say how to narrow a list that was cut.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["query"],
+        "properties": {
+          "query": {"type": "string", "minLength": 1, "maxLength": 128},
+          "market": {
+            "type": "string",
+            "enum": ["kospi", "kosdaq", "konex", "elw", "domestic_bond", "domestic_derivatives", "overseas_equity", "overseas_futures", "overseas_options"]
+          },
+          "limit": {"type": "integer", "minimum": 1, "maximum": 20}
+        }
+      },
+      "progress": {
+        "category": "finance",
+        "operation": "search",
+        "running": "Finding a Korea Investment symbol",
+        "done": "Searched Korea Investment symbols",
+        "target_args": ["query"],
+        "source": "finance"
+      }
+    },
+    {
+      "name": "kis_dividend_calendar",
+      "method": "kis.dividend_calendar",
+      "permission": "always",
+      "component": "koreainvestment",
+      "label": "Read KSD dividend calendar",
+      "description": "Read KSD's dividend calendar through Korea Investment, on a real connection only: the cash and stock dividends whose record date falls from start to end (YYYY-MM-DD, both included, at most 366 days), for every issue or one six-character domestic symbol, and of kind all (the default), annual or interim. Each row gives the record date (holders of the shares on that date receive the dividend), the cash amount per share, the cash and stock dividend rates, and the cash and stock payment dates, which come later and can be empty until set. The calendar shows the dates as KSD holds them now, not when each was announced, so it cannot answer as of an earlier date. When page.truncated is true, warnings say which windows or dates to read again. Every successful read returns a turn-local result_ref.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["start", "end"],
+        "properties": {
+          "start": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+          "end": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+          "symbol": {"type": "string", "pattern": "^[A-Z0-9]{6}$"},
+          "kind": {"type": "string", "enum": ["all", "annual", "interim"]}
+        }
+      },
+      "progress": {
+        "category": "finance",
+        "operation": "read",
+        "running": "Reading the KSD dividend calendar",
+        "done": "Read the KSD dividend calendar",
+        "target": "join",
+        "target_args": ["symbol", "start", "end"],
         "source": "finance"
       }
     },
@@ -5128,12 +5436,45 @@
       }
     },
     {
+      "name": "trigger_save",
+      "method": "trigger.save",
+      "permission": "always",
+      "component": "schedules",
+      "label": "Propose a check",
+      "description": "Bot only. Propose a check the app runs by itself on a schedule, with no model, and that starts you only when it is met. Use it when the user wants to be told about something data can decide: a price outside a band, a volume spike, a level crossed, a new filing in a list, a macro release. A condition that takes judgment (\"anything material\", \"a change in tone\") is a watch you run yourself (schedule_create), and the two combine: a new-filing check can start the run that judges it. script names a saved script, or template with template_params uses a bundled one; the script follows the check contract in the triggers Skill. prompt is what you will do once it is met, written for a run that knows nothing of this conversation. terms is one line saying what it checks, as the user would say it. This tool runs the check on today's data and on recent days and returns that dry run: read it, and if the check failed, could not read something, or would have fired on most days or on none when it should have, fix the script and save again before you answer. It always creates a proposal: code that runs unattended starts only when the user turns it on from its card, and each later change to its code is proposed again while the approved version keeps running. Tell the user in plain words what it checks, what it reads, how often it runs and when it would have fired, and that it uses no AI until it is met. Refused for the rest of a reply that has read outside text.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["prompt", "terms"],
+        "properties": {
+          "task_id": { "type": "string" },
+          "title": { "type": "string" },
+          "prompt": { "type": "string" },
+          "terms": { "type": "string" },
+          "script": { "type": "string" },
+          "template": {
+            "type": "string",
+            "description": "A bundled check, in place of script: price-band, level-cross, volume-spike or new-item. Its parameters go in template_params."
+          },
+          "template_params": {
+            "type": "object",
+            "description": "The template's parameters. price-band: band_percent (default 5), asset_ids (default every followed asset). level-cross: levels, {assetId: level} for each asset to check. volume-spike: tool, calls ({assetId: that asset's arguments} for a read that returns daily rows with a volume), rows, date_field, volume_field, multiple (default 3), window (default 20 days). new-item: tool, call (its arguments), rows, id_field, date_field, title_field. rows is the dotted path to the list in the read's result; the field names are those of its rows, so make the read yourself first and take them from what it returns."
+          },
+          "args": { "type": "object" },
+          "schedule": { "type": "object" },
+          "active_hours": { "type": "object" },
+          "notify": { "type": "string" },
+          "subjects": { "type": "array" }
+        }
+      }
+    },
+    {
       "name": "schedule_list",
       "method": "schedule.list",
       "permission": "always",
       "component": "schedules",
       "label": "List scheduled tasks",
-      "description": "List and search this Loupist’s saved schedules, including paused and completed tasks, next runs, current time and device time zone. Use before creating to avoid duplicates and before resolving a task by name. If more than one matches an ambiguous request, ask the user which task; do not guess. Each task has a kind: briefing (the one briefing on what the user follows, changed with schedule_briefing) or custom.",
+      "description": "List and search this Loupist’s saved schedules, including paused and completed tasks, next runs, current time and device time zone. Use before creating to avoid duplicates and before resolving a task by name. If more than one matches an ambiguous request, ask the user which task; do not guess. Each task has a kind: briefing (a morning and an evening edition, each its own task, set with schedule_briefing) or custom.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -5192,7 +5533,7 @@
       "permission": "always",
       "component": "schedules",
       "label": "Create a scheduled task",
-      "description": "Create a durable LOCAL app schedule when the user explicitly requests future or recurring work. Saves immediately even if the reply later fails. Each task has its own execution mode. Inherits this Chat’s selected model, effort and Memory settings. Use a distinct request_key per task, reusing the same key ONLY on retries. The Bot registers an explicit, unambiguous request immediately. State the next execution time and timezone. The app must be open to run it. Clear instructions authorize saving without asking first; ask only for material missing details. Check schedule_list first. A request for work a listed task already does is a change to that task (schedule_read, then schedule_update), or no change when it already matches: say what exists and what changed, and never create a second task for the same work. Create another only when the user asks for one in addition or the work differs; when you cannot tell, ask with ask_user. A briefing on what the user follows is never created here: set it with schedule_briefing. An alert, where the user wants to hear only when something happens, is a task whose prompt states the condition, what to read to test it and what to report when it is met, and says that a run which made the check and found the condition not met calls schedule_quiet, which posts nothing; without that every run announces itself. Each run is a model call and happens only while the app is open, so conditions on several assets go in one task. The saved prompt names the requested answer language, defaulting to the language the user writes in. The run is unattended. It can use data connections, web research, calculate, run_python and Memory reads and saves (Sources, notes, Lens pages, asset reads). It has no read, ls, find, grep, write or edit tools, but run_python can read files in the Loupist folder (/workspace) and write under outputs/ or an existing subfolder (top-level files are read-only), so a task that summarizes a file or writes a report there is fine. dataset_export, dataset_import and workspace_capture are unavailable: fetched rows reach Python only as values written into its code. It has no Skills, no charts, tables or documents, no questions to the user and no Journal or principle saves. Write a prompt that needs none of those, tells the run to use run_python for any workspace file, and says what a finished result contains.",
+      "description": "Create a durable LOCAL app schedule when the user explicitly requests future or recurring work. Saves immediately even if the reply later fails. Each task has its own execution mode. Inherits this Chat’s selected model, effort and Memory settings. Use a distinct request_key per task, reusing the same key ONLY on retries. The Bot registers an explicit, unambiguous request immediately. State the next execution time and timezone. The app must be open to run it. Clear instructions authorize saving without asking first; ask only for material missing details. Check schedule_list first. A request for work a listed task already does is a change to that task (schedule_read, then schedule_update), or no change when it already matches: say what exists and what changed, and never create a second task for the same work. Create another only when the user asks for one in addition or the work differs; when you cannot tell, ask with ask_user. A briefing on what the user follows is never created here: set it with schedule_briefing. A watch, where the user wants to hear only when something happens, sets report to when_met. Its prompt states the condition, what to read to test it and what to report when it is met, and says that a run which made the check and found the condition not met calls schedule_quiet, which posts nothing. The first run of any task always reports, so the user sees where things stand and what a report looks like. When a preset fits (preset, with preset_params), pass it and leave prompt out: the app fills the check. terms is one line the task's card shows as what it checks, in the user's language. subjects names the followed assets the task is about, by the ids in What the user follows, so their pages can show it. notify says how a result reaches the user: now interrupts them, digest waits for the next digest, off stays in the Bot; leave it out unless they said. Each run is a model call and happens only while the app is open, so conditions on several assets go in one task and a daily check is usual. status proposed creates the task paused, waiting for the user's OK in its card; use it only for a task you suggested. The saved prompt names the requested answer language, defaulting to the language the user writes in. The run is unattended. It can use data connections, web research, calculate, run_python and Memory reads and saves (Sources, notes, Lens pages, asset reads). It has no read, ls, find, grep, write or edit tools, but run_python can read files in the Loupist folder (/workspace) and write under outputs/ or an existing subfolder (top-level files are read-only), so a task that summarizes a file or writes a report there is fine. Its run_python also reads the run's data connections and Memory through the loupist module and runs scripts saved in this Loupist, so the prompt can name a saved script and its arguments, or ask for work over many rows, many assets or reads that feed each other to be done in code; text the run must judge, such as a filing or a news report, it reads itself. dataset_export, dataset_import and workspace_capture are unavailable. It has no Skills, no charts, tables or documents, no question it can wait on and no Journal or principle saves. Write a prompt that needs none of those, tells the run to use run_python for any workspace file, and says what a finished result contains.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -5334,20 +5675,95 @@
             "type": "string",
             "enum": [
               "active",
-              "paused"
+              "paused",
+              "proposed"
             ]
           },
           "handoff_id": {
             "type": "string",
             "description": "For an answer to a Bot clarification, use the matching handoff_id from schedule_list.pending_questions, so the original request and permissions apply."
+          },
+          "report": {
+            "type": "string",
+            "enum": [
+              "when_met",
+              "every_run"
+            ],
+            "description": "when_met for a watch that speaks only when its condition is met; every_run for work that reports each time."
+          },
+          "notify": {
+            "type": "string",
+            "enum": [
+              "now",
+              "digest",
+              "off"
+            ],
+            "description": "now, digest or off. How a delivered result reaches the user; omit unless they said."
+          },
+          "subjects": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "asset": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "asset"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "description": "up to 8 followed assets this task is about, each {asset: id} from What the user follows, or {name} for something not followed."
+          },
+          "terms": {
+            "type": "string",
+            "maxLength": 160,
+            "description": "one line, at most 160 characters, saying what the task checks, as the user would say it."
+          },
+          "preset": {
+            "type": "string",
+            "enum": [
+              "filings-and-results",
+              "thesis-lines",
+              "results-follow-up"
+            ],
+            "description": "filings-and-results, thesis-lines or results-follow-up. With preset_params; prompt is then omitted."
+          },
+          "preset_params": {
+            "type": "object",
+            "properties": {
+              "language": {
+                "type": "string"
+              },
+              "results_date": {
+                "type": "string",
+                "format": "date"
+              }
+            },
+            "additionalProperties": false
           }
         },
         "required": [
           "request_key",
           "title",
-          "prompt",
-          "schedule",
-          "session_mode",
           "status"
         ]
       },
@@ -5367,7 +5783,7 @@
       "permission": "always",
       "component": "schedules",
       "label": "Hand a request to Bot",
-      "description": "Forward every explicit scheduling request from this session to Bot. With a clear time, provide schedule, session_mode and status (active unless the user asked for paused). Otherwise provide a short self-contained prompt and question for Bot to ask. Never ask the scheduling question in this session.",
+      "description": "Forward every explicit scheduling request from this session to Bot. With a clear time, provide schedule, session_mode and status (active unless the user asked for paused). Otherwise provide a short self-contained prompt and question for Bot to ask. Never ask the scheduling question in this session. When this session computed the result in code that the task should repeat, save the script with script_save first and name it in the prompt, so each run makes the same reads and the same calculation.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -5385,7 +5801,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 131072,
-            "description": "Self-contained work to perform at execution time, with inputs, scope and desired output. Never copy the request to create a schedule. Do not rely on this creation Chat or temporary attachments. The run is unattended. It can use data connections, web research, calculate, run_python and Memory reads and saves (Sources, notes, Lens pages, asset reads). It has no read, ls, find, grep, write or edit tools, but run_python can read files in the Loupist folder (/workspace) and write under outputs/ or an existing subfolder (top-level files are read-only), so a task that summarizes a file or writes a report there is fine. dataset_export, dataset_import and workspace_capture are unavailable: fetched rows reach Python only as values written into its code. It has no Skills, no charts, tables or documents, no questions to the user and no Journal or principle saves. Write a prompt that needs none of those, tells the run to use run_python for any workspace file, and says what a finished result contains. For an alert, where the user wants to hear only when something happens, the prompt states the condition, what to read to test it and what to report when it is met, and says that a run which made the check and found the condition not met calls schedule_quiet, which posts nothing; conditions on several assets go in one task, because each run is a model call."
+            "description": "Self-contained work to perform at execution time, with inputs, scope and desired output. Never copy the request to create a schedule. Do not rely on this creation Chat or temporary attachments. The run is unattended. It can use data connections, web research, calculate, run_python and Memory reads and saves (Sources, notes, Lens pages, asset reads). It has no read, ls, find, grep, write or edit tools, but run_python can read files in the Loupist folder (/workspace) and write under outputs/ or an existing subfolder (top-level files are read-only), so a task that summarizes a file or writes a report there is fine. Its run_python also reads the run's data connections and Memory through the loupist module and runs scripts saved in this Loupist, so the prompt can name a saved script and its arguments, or ask for work over many rows, many assets or reads that feed each other to be done in code; text the run must judge, such as a filing or a news report, it reads itself. dataset_export, dataset_import and workspace_capture are unavailable. It has no Skills, no charts, tables or documents, no question it can wait on and no Journal or principle saves. Write a prompt that needs none of those, tells the run to use run_python for any workspace file, and says what a finished result contains. For an alert, where the user wants to hear only when something happens, the prompt states the condition, what to read to test it and what to report when it is met, and says that a run which made the check and found the condition not met calls schedule_quiet, which posts nothing; conditions on several assets go in one task, because each run is a model call."
           },
           "schedule": {
             "oneOf": [
@@ -5516,6 +5932,23 @@
             "type": "string",
             "maxLength": 1000,
             "description": "If the time or scope is unclear, write the one question Bot should ask in the user’s language. Omit schedule, session_mode and status."
+          },
+          "report": {
+            "type": "string",
+            "enum": [
+              "when_met",
+              "every_run"
+            ],
+            "description": "when_met for a watch that speaks only when its condition is met; every_run for work that reports each time."
+          },
+          "notify": {
+            "type": "string",
+            "enum": [
+              "now",
+              "digest",
+              "off"
+            ],
+            "description": "now, digest or off. How a delivered result reaches the user; omit unless they said."
           }
         },
         "required": [
@@ -5540,7 +5973,7 @@
       "permission": "always",
       "component": "schedules",
       "label": "Schedule the Bot briefing",
-      "description": "Bot only. Set the one briefing on what the user follows; schedule_list shows it with kind briefing. Each run is given the followed list and what this Loupist's Memory gained since the last one, and decides for itself what to read. Use it whenever the user asks for a recurring briefing on what they follow, at any cadence: there is one per Loupist, so a new time or cadence replaces the old one, and the answer says what it was and what it is now. Needs Memory reads and saving on in this Chat.",
+      "description": "Bot only. Set a briefing on what the user follows; schedule_list shows it with kind briefing. There are two editions, each its own task: morning, which covers what changed since the last briefing and what is due today, and evening, which covers the day and what is due the next trading day. A call sets the edition it names, the morning one when edition is omitted, and leaves the other as it is. Each run is given the followed list and what this Loupist's Memory gained since the last one, and decides for itself what to read. Use it whenever the user asks for a recurring briefing on what they follow, at any cadence, and the answer says what it was and what it is now. Needs Memory reads and saving on in this Chat.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -5657,6 +6090,11 @@
           },
           "enabled": {
             "type": "boolean"
+          },
+          "edition": {
+            "type": "string",
+            "enum": ["morning", "evening"],
+            "description": "morning or evening; omitted means morning. Each edition is its own task with its own time and on or off."
           }
         },
         "required": [
@@ -5671,7 +6109,7 @@
       "permission": "always",
       "component": "schedules",
       "label": "Update a scheduled task",
-      "description": "Change only requested fields of an existing schedule using its current revision from schedule_read. Preserves unmentioned settings, including model and Memory. Changing session mode starts a new execution context on the next run; existing results stay readable. A conflict requires a fresh read, never a duplicate replacement. Update affects future runs; pause/resume uses schedule_set_status.",
+      "description": "Change only requested fields of an existing schedule using its current revision from schedule_read. Preserves unmentioned settings, including model and Memory. Changing session mode starts a new execution context on the next run; existing results stay readable. A conflict requires a fresh read, never a duplicate replacement. Update affects future runs; pause/resume uses schedule_set_status. report, notify, subjects and terms change the same way; changing a watch's condition means changing its prompt and its terms together.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -5813,6 +6251,61 @@
               "continue"
             ],
             "description": "fresh: every run gets a new session, with the task prompt, Memory and a short record of the previous run. continue: the task keeps one session of its own and each run also sees its earlier runs there; never the conversation the task was created in. Omit to keep the current mode. Either way runs are listed under the task in Schedule and reported in Bot, so the mode is not explained to the user unless they ask. Both retain the captured Loupist Memory settings."
+          },
+          "report": {
+            "type": "string",
+            "enum": [
+              "when_met",
+              "every_run"
+            ],
+            "description": "when_met for a watch that speaks only when its condition is met; every_run for work that reports each time."
+          },
+          "notify": {
+            "type": "string",
+            "enum": [
+              "now",
+              "digest",
+              "off"
+            ],
+            "description": "now, digest or off. How a delivered result reaches the user; omit unless they said."
+          },
+          "subjects": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "asset": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "asset"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "description": "up to 8 followed assets this task is about, each {asset: id} from What the user follows, or {name} for something not followed."
+          },
+          "terms": {
+            "type": "string",
+            "maxLength": 160,
+            "description": "one line, at most 160 characters, saying what the task checks, as the user would say it."
           }
         },
         "required": [

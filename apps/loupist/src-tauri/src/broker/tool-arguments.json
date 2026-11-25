@@ -47,6 +47,36 @@
     }
   },
   {
+    "name": "script_save",
+    "method": "script.save",
+    "args": {
+      "name": "price-band",
+      "summary": "Print the price band",
+      "args": {
+        "band_percent": {
+          "default": 5,
+          "description": "Price band as a percentage"
+        }
+      },
+      "code": "import loupist\nprint(loupist.args['band_percent'])\n"
+    }
+  },
+  {
+    "name": "script_list",
+    "method": "script.list",
+    "args": {
+      "query": "price band"
+    }
+  },
+  {
+    "name": "script_read",
+    "method": "script.read",
+    "args": {
+      "name": "price-band",
+      "version": 1
+    }
+  },
+  {
     "name": "connection_setup",
     "method": "connection.setup",
     "args": {
@@ -266,6 +296,22 @@
     "method": "kis.operation_search",
     "args": {
       "query": "research"
+    }
+  },
+  {
+    "name": "kis_symbol_lookup",
+    "method": "kis.symbol_lookup",
+    "args": {
+      "query": "삼성전자"
+    }
+  },
+  {
+    "name": "kis_dividend_calendar",
+    "method": "kis.dividend_calendar",
+    "args": {
+      "start": "2026-01-01",
+      "end": "2026-06-01",
+      "symbol": "005930"
     }
   },
   {
@@ -513,6 +559,18 @@
     "args": {}
   },
   {
+    "name": "trigger_save",
+    "method": "trigger.save",
+    "args": {
+      "prompt": "Report the move.",
+      "terms": "A followed price moved",
+      "template": "price-band",
+      "template_params": {
+        "band_percent": 5
+      }
+    }
+  },
+  {
     "name": "schedule_read",
     "method": "schedule.read",
     "args": {
@@ -626,5 +684,26 @@
     "name": "schedule_quiet",
     "method": "schedule.quiet",
     "args": {}
+  },
+  {
+    "name": "bot_offer",
+    "method": "bot.offer",
+    "args": {
+      "preset": "filings-and-results",
+      "asset_id": "ast_0123456789abcdef",
+      "reason": "Results are due within two weeks and nothing checks them."
+    }
+  },
+  {
+    "name": "ask_later",
+    "method": "bot.ask_later",
+    "args": {
+      "question": "Which listing did you mean?",
+      "options": [
+        { "label": "The common stock" },
+        { "label": "The ADR" }
+      ],
+      "recommended": 0
+    }
   }
 ]

@@ -9,6 +9,9 @@ use crate::mcp::{McpTool, MCP_PROTOCOL_VERSION, MCP_SUPPORTED_PROTOCOL_VERSIONS}
 // The session transport negotiates the host-wide MCP revision; OAuth
 // independently follows the 2026-07-28 authorization specification.
 pub const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+const RESPONSE_TOO_LARGE: ConnectionError = ConnectionError::ResultTooLarge {
+    limit_bytes: MAX_RESPONSE_BYTES as u64,
+};
 
 pub fn checked_url(value: &str) -> Result<Url, ConnectionError> {
     let url = Url::parse(value).map_err(|_| ConnectionError::InvalidUrl)?;
@@ -85,7 +88,7 @@ pub async fn bounded_body(mut response: Response) -> Result<Vec<u8>, ConnectionE
         .content_length()
         .is_some_and(|size| size > MAX_RESPONSE_BYTES as u64)
     {
-        return Err(ConnectionError::Protocol);
+        return Err(RESPONSE_TOO_LARGE);
     }
     let mut bytes = Vec::new();
     while let Some(chunk) = response
@@ -94,7 +97,7 @@ pub async fn bounded_body(mut response: Response) -> Result<Vec<u8>, ConnectionE
         .map_err(|_| ConnectionError::Network)?
     {
         if bytes.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
-            return Err(ConnectionError::Protocol);
+            return Err(RESPONSE_TOO_LARGE);
         }
         bytes.extend_from_slice(&chunk);
     }
@@ -314,7 +317,7 @@ impl HttpTransport {
         {
             total = total.saturating_add(chunk.len());
             if total > MAX_RESPONSE_BYTES {
-                return Err(ConnectionError::Protocol);
+                return Err(RESPONSE_TOO_LARGE);
             }
             buffer.extend_from_slice(&chunk);
             while let Some((offset, delimiter)) = [

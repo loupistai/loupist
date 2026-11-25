@@ -1,8 +1,9 @@
-//! Host-authored unattended research, with one schedule and one continuing Chat per Loupist.
+//! Host-authored unattended research, with one continuing Chat per briefing edition.
 pub(crate) mod commands;
 mod conflicts;
 pub(crate) mod desktop;
 pub(crate) mod login_item;
+mod notification_os;
 pub(crate) mod policy;
 
 use crate::{
@@ -26,6 +27,37 @@ pub struct BriefingContext {
     pub changed: BriefingChanged,
     #[serde(default)]
     pub ahead: Vec<BriefingCheck>,
+    /// Missing on a briefing saved before editions means morning.
+    #[serde(default)]
+    #[cfg_attr(
+        test,
+        ts(
+            as = "Option<crate::scheduled_tasks::types::BriefingEdition>",
+            optional
+        )
+    )]
+    pub edition: crate::scheduled_tasks::types::BriefingEdition,
+    /// Watches and other runs since the previous briefing that were not posted in Bot.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<Vec<BackgroundRun>>", optional))]
+    pub background_runs: Vec<BackgroundRun>,
+}
+
+/// One unannounced run the briefing may mention.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct BackgroundRun {
+    pub task_id: String,
+    pub task: String,
+    pub ran_at_ms: i64,
+    pub run_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub thread_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub message_id: Option<String>,
 }
 
 /// What changed in World since the previous briefing, counted by the host.
@@ -64,10 +96,16 @@ const MAX_CHANGE_ROWS: usize = 8;
 
 pub(crate) const PROMPT: &str = include_str!("../../../agent/prompts/briefing.md");
 
-pub(crate) fn default_schedule(timezone: String) -> Schedule {
+pub(crate) fn edition_schedule(
+    timezone: String,
+    edition: crate::scheduled_tasks::types::BriefingEdition,
+) -> Schedule {
     Schedule::Weekly {
         days: vec![1, 2, 3, 4, 5],
-        hour: 8,
+        hour: match edition {
+            crate::scheduled_tasks::types::BriefingEdition::Morning => 8,
+            crate::scheduled_tasks::types::BriefingEdition::Evening => 18,
+        },
         minute: 0,
         timezone,
     }
@@ -154,6 +192,52 @@ fn due_journal_reviews(
         .map_err(|e| CommandError::internal(e.to_string()))
 }
 
+/// Runs since the previous briefing that were not posted in Bot: quiet checks
+/// and anything delivered to the briefing rather than the conversation.
+fn background_runs(
+    state: &AppState,
+    loupist_id: &str,
+    since_ms: i64,
+    now: i64,
+) -> Result<Vec<BackgroundRun>, CommandError> {
+    let connection = state.store.lock_loupist(loupist_id).map_err(map_store)?;
+    let mut statement = connection
+        .prepare(
+            "SELECT json_extract(data_json,'$.task_title'),
+                    finished_at_ms,
+                    run_id,
+                    thread_id,
+                    json_extract(data_json,'$.message_id'),
+                    task_id
+             FROM scheduled_task_runs
+             WHERE loupist_id=?1 AND status='succeeded'
+               AND finished_at_ms>?2 AND finished_at_ms<=?3
+               AND coalesce(json_extract(data_json,'$.kind'),'')<>'briefing'
+               AND (
+                 coalesce(json_extract(data_json,'$.quiet'),0)
+                 OR coalesce(json_extract(task_snapshot_json,'$.delivery.to'),'bot')='briefing'
+               )
+             ORDER BY finished_at_ms DESC, run_id DESC
+             LIMIT 12",
+        )
+        .map_err(|error| CommandError::internal(error.to_string()))?;
+    let rows = statement
+        .query_map(rusqlite::params![loupist_id, since_ms, now], |row| {
+            Ok(BackgroundRun {
+                task: row.get(0)?,
+                ran_at_ms: row.get(1)?,
+                run_id: row.get(2)?,
+                thread_id: row.get(3)?,
+                message_id: row.get(4)?,
+                task_id: row.get(5)?,
+            })
+        })
+        .map_err(|error| CommandError::internal(error.to_string()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| CommandError::internal(error.to_string()))?;
+    Ok(rows)
+}
+
 pub(crate) fn system_language() -> String {
     // GUI launches on macOS need not inherit LANG. Read only the OS language
     // preference; no user workspace command or shell is involved.
@@ -190,9 +274,23 @@ pub(crate) fn system_language() -> String {
 pub(crate) fn build_prompt(
     state: &AppState,
     loupist_id: &str,
-    previous: Option<i64>,
     now: i64,
+    edition: crate::scheduled_tasks::types::BriefingEdition,
 ) -> Result<(String, BriefingContext), CommandError> {
+    // Use the previous briefing's snapshot time. Results that finished while
+    // it was running were outside its window and belong to this briefing.
+    let previous = {
+        let connection = state.store.lock_loupist(loupist_id).map_err(map_store)?;
+        connection
+            .query_row(
+                "SELECT max(started_at_ms) FROM scheduled_task_runs
+                 WHERE loupist_id=?1 AND status='succeeded'
+                   AND finished_at_ms<=?2 AND json_extract(data_json,'$.kind')='briefing'",
+                rusqlite::params![loupist_id, now],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .map_err(|error| CommandError::internal(error.to_string()))?
+    };
     let context = state.store.map_context(loupist_id).map_err(map_store)?;
     let disputed_entity_ids =
         conflicts::entity_ids(state, loupist_id, previous.unwrap_or(0), now, &context)?;
@@ -266,6 +364,7 @@ pub(crate) fn build_prompt(
         )
     };
     let due_reviews = due_journal_reviews(state, loupist_id, now)?;
+    let background_runs = background_runs(state, loupist_id, previous.unwrap_or(0), now)?;
     let briefing_context = BriefingContext {
         disputed_entity_ids,
         symbols: followed,
@@ -302,6 +401,8 @@ pub(crate) fn build_prompt(
                 })
             })
             .collect(),
+        edition,
+        background_runs: background_runs.clone(),
     };
     let mut world_growth =
         serde_json::to_value(&growth).map_err(|e| CommandError::internal(e.to_string()))?;
@@ -316,7 +417,9 @@ pub(crate) fn build_prompt(
         "dueJournalReviews":due_reviews,
         "disputedEntityIds":briefing_context.disputed_entity_ids,
         "principles":principles,
-        "followed": rows
+        "followed": rows,
+        "edition": edition,
+        "backgroundRuns": background_runs,
     });
     let prompt = format!(
         "{PROMPT}\n{}",

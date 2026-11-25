@@ -1,3 +1,6 @@
+import { BotStandingStrip } from "./BotStandingStrip";
+import { botNewsDue } from "../../chat/morningMessage";
+import { lastSeenAt, useCurrentVisit } from "../../app/loupistVisit";
 import type { ChatVersionSummary } from "../../contracts/chat";
 import i18n, { useTranslation } from "@/i18n";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -24,6 +27,7 @@ import { ThreadHandoff } from "./ThreadHandoff";
 import { ThreadAlert } from "./ThreadAlert";
 import { ThreadLink } from "./ThreadLink";
 import { ThreadVocabulary } from "./ThreadVocabulary";
+import { ThreadCards } from "./ThreadCards";
 import { ChatDivider } from "./ChatDivider";
 import { chatSeenAt, dividersBefore, firstNewSince, markChatSeen } from "../../chat/dividers";
 import { lastTurnMessageIndex } from "../../chat/turnMessages";
@@ -58,6 +62,7 @@ type Props = {
   onReadWorldJob?: (jobId: string) => Promise<GraphJobView>;
   onWorldChanged?: () => void;
   onSuggestion: (suggestion: string) => void;
+  onResultFeedback?: (text: string) => void;
   /** False with no AI account: the first-visit checklist asks to connect one. */
   accountConnected?: boolean;
   onConnectAccount?: () => void;
@@ -116,6 +121,7 @@ export function ChatConversation({
   onReadWorldJob,
   onWorldChanged,
   onSuggestion,
+  onResultFeedback,
   accountConnected,
   onConnectAccount,
   onOpenFollowing,
@@ -302,7 +308,14 @@ export function ChatConversation({
     .filter(receipt => "revision" in receipt)
     .map(({ task_id, revision, action, status, next_run_at_ms }) => [task_id, revision, action, status, next_run_at_ms].join(":"))
     .join(",") : "";
-  const botTasks = useBotScheduleTasks(bridge, loupistId, receiptKey);
+  const botTasks = useBotScheduleTasks(bridge, loupistId, home && active ? receiptKey || "bot" : "");
+  const visit = useCurrentVisit(loupistId);
+  const seenBeforeVisit = lastSeenAt(loupistId);
+  const awaySince = Number.isFinite(lastWrote) ? Math.max(seenBeforeVisit ?? 0, lastWrote) : seenBeforeVisit;
+  const grouped = home && !repliedThisVisit && !visit?.active && awaySince !== undefined && botNewsDue(awaySince, visit?.openedAtMs ?? visitStartMs)
+    ? messages.filter(message => message.delivery && message.delivery.finished_at_ms > awaySince && message.delivery.finished_at_ms < (visit?.openedAtMs ?? visitStartMs)).reverse()
+    : [];
+  const groupedIds = new Set(grouped.map(message => message.id));
   const dividerKey = JSON.stringify(messages.map(({ id, created_at }) => [id, created_at]));
   const dividerDay = new Date().toDateString();
   // Bot keeps the day between messages; "new since you left" belongs to research sessions read later.
@@ -311,6 +324,7 @@ export function ChatConversation({
     [dividerKey, dividerDay, newSinceId, i18n.language, home]);
   return (
     <ChatSurfaceProvider value={surface}><BotScheduleTasks.Provider value={botTasks}>
+    {home && <BotStandingStrip tasks={botTasks.tasks} accountConnected={accountConnected} loupist={{ id: loupistId, name: loupistName, avatar: loupistAvatar }} />}
     <Conversation
       className="message-scroll"
       data-surface={home ? "bot" : undefined}
@@ -332,7 +346,7 @@ export function ChatConversation({
             const latestTurn = turnIndex === turns.length - 1;
             return <section key={turn.start === null ? "lead" : messageKeys[turn.start] ?? messages[turn.start]?.id} className="turn" data-turn=""
               data-turn-latest={latestTurn || undefined} data-turn-reserve={(latestTurn && reserve) || undefined}>
-          {turn.indexes.map((index) => { const message = messages[index]!; return <Fragment key={messageKeys[index] ?? message.id}>
+          {turn.indexes.map((index) => { const message = messages[index]!; return grouped.length > 1 && groupedIds.has(message.id) ? null : <Fragment key={messageKeys[index] ?? message.id}>
             {dividers[index]?.map((divider) => <ChatDivider key={divider.kind} divider={divider} onPassed={divider.kind === "new" ? clearNewSince : undefined} />)}
             {message.vocabulary ? (
             <ThreadVocabulary message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} />
@@ -342,10 +356,13 @@ export function ChatConversation({
           ) : message.alert ? (
             <ThreadAlert message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} />
           ) : message.delivery ? (
-            <ThreadDelivery message={message} loupistName={loupistName} />
+            <ThreadDelivery message={message} loupistName={loupistName} onAsk={onSuggestion} onFeedback={onResultFeedback} />
           ) : message.handoff ? (
             <ThreadHandoff message={message} loupistName={loupistName} />
+          ) : message.host_composed && (message.offers?.length || message.ask) ? (
+            <ThreadCards host message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} />
           ) : (
+            <>
             <ChatMessageCard
               bridge={bridge}
               active={active}
@@ -394,11 +411,19 @@ export function ChatConversation({
                 : undefined}
               entering={message.role === "user" && !message.steer && !openedWith.has(messageKeys[index] ?? message.id)}
             />
+            {(message.offers?.length || message.ask) ? <ThreadCards message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} /> : null}
+            </>
           )}
+          {(message.delivery || message.handoff) && (message.offers?.length || message.ask)
+            ? <ThreadCards message={message} bridge={bridge} loupistId={loupistId} loupistName={loupistName} /> : null}
           </Fragment>; })}
             {latestTurn && shell ? <ChatMessageCard key={shell.id} bridge={bridge} active={active} message={shell} loupistId={loupistId} chatId={chatId} loupistName={loupistName}
               workspacePath={workspacePath} guiding={guiding} stopping={Boolean(run?.stopping)} onReadAttachment={onReadAttachment} entering /> : null}
           </section>; })}
+          {grouped.length > 1 && <details className="bot-away-block">
+            <summary>{t("thread.awayResults", { count: grouped.length })}</summary>
+            {grouped.map(message => <ThreadDelivery key={message.id} message={message} loupistName={loupistName} onAsk={onSuggestion} onFeedback={onResultFeedback} />)}
+          </details>}
           {/* Bot greets until the user writes; setup steps live in the greeting, never under the conversation. */}
           {home && !hasUserMessage ? greeting : home && !repliedThisVisit ? morning("news") : null}
         </>)}

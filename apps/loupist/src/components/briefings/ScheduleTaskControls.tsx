@@ -8,7 +8,7 @@ import { MoreHorizontalIcon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
 
-type Busy = "status" | "run" | "delete" | null;
+type Busy = "status" | "run" | "delete" | "delivery" | null;
 
 /**
  * A task's own controls. Pausing, running once and deleting go straight to the host,
@@ -33,20 +33,27 @@ export function ScheduleTaskControls({ bridge, task, title, running, onChanged, 
   const nextStatus = task.status === "active" && !task.awaiting_confirmation ? "paused" : "active";
   const statusLabel = task.awaiting_confirmation ? t("schedule.turnOn") : nextStatus === "paused" ? t("schedule.pause") : t("schedule.resume");
   // A completed one-time task cannot be reactivated without an edit; that edit is a conversation.
-  const canToggle = task.status !== "completed";
+  const canToggle = task.status !== "completed"
+    && task.declined_in_visit === undefined
+    && !(task.awaiting_confirmation && task.trigger && !task.replaces);
   // The briefing is turned off, not deleted.
   const canDelete = task.kind === "custom";
   // A proposed task is not running yet: turning it on is its primary action, as Resume is.
   const paused = nextStatus === "active";
   const statusButton = (variant: "default" | "ghost") => <Button variant={variant} size="sm" disabled={busy !== null} data-schedule-status={nextStatus}
-    onClick={() => void act("status", () => bridge.scheduledTaskSetStatus({ ...identity, expected_revision: task.revision, status: nextStatus }), t("schedule.statusFailed")).then(ok => { if (ok) onChanged(); })}>
+    onClick={() => void act("status", () => {
+      const request = { ...identity, expected_revision: task.revision };
+      return task.awaiting_confirmation
+        ? bridge.scheduledTaskConfirm(request)
+        : bridge.scheduledTaskSetStatus({ ...request, status: nextStatus });
+    }, t("schedule.statusFailed")).then(ok => { if (ok) onChanged(); })}>
     {busy === "status" ? <Spinner /> : null}{statusLabel}
   </Button>;
   return <div className="schedule-task-controls" data-print="omit">
     {/* Active: Run now, then a quiet Pause. Paused: Resume is the one filled button. Delete sits in More. */}
     <div className="schedule-task-actions">
       {paused && canToggle ? statusButton("default") : null}
-      <Button variant="outline" size="sm" disabled={busy !== null || running} data-schedule-run-now title={t("schedule.runNowCost")}
+      <Button variant="outline" size="sm" disabled={busy !== null || running || task.awaiting_confirmation} data-schedule-run-now title={t("schedule.runNowCost")}
         onClick={() => void act("run", () => bridge.scheduledTaskRunNow(identity), t("schedule.runNowFailed")).then(ok => { if (ok) onChanged(); })}>
         {busy === "run" || running ? <Spinner /> : null}{running ? t("schedule.runningNow") : t("schedule.runNow")}
       </Button>
@@ -58,6 +65,28 @@ export function ScheduleTaskControls({ bridge, task, title, running, onChanged, 
         </DropdownMenuContent>
       </DropdownMenu> : null}
     </div>
+    <dl className="schedule-delivery">
+      {task.terms && <div><dt>{t("schedule.checks")}</dt><dd>{task.terms}</dd></div>}
+      <div><dt>{t("schedule.tellsYou")}</dt><dd>{t(task.report === "when_met" ? "schedule.whenMet" : "schedule.everyRun")}</dd></div>
+      <div><dt>{t("schedule.postsTo")}</dt><dd><select aria-label={t("schedule.postsTo")} disabled={busy !== null}
+        value={task.delivery?.to ?? "bot"} onChange={event => {
+          const to = event.currentTarget.value as "bot" | "none";
+          void act("delivery", () => bridge.scheduledTaskSetDelivery({ loupistId: task.loupist_id, taskId: task.id, expectedRevision: task.revision, to }), t("schedule.statusFailed")).then(ok => { if (ok) onChanged(); });
+        }}>
+        <option value="bot">{t("schedule.postBot")}</option>
+        <option value="none">{t("schedule.postSchedule")}</option>
+      </select></dd></div>
+      <div><dt>{t("schedule.notifies")}</dt><dd><select aria-label={t("schedule.notifies")} disabled={busy !== null || task.delivery?.to === "none"}
+        value={task.delivery?.notify ?? ""} onChange={event => {
+          const notify = event.currentTarget.value as "now" | "digest" | "off";
+          void act("delivery", () => bridge.scheduledTaskSetDelivery({ loupistId: task.loupist_id, taskId: task.id, expectedRevision: task.revision, notify }), t("schedule.statusFailed")).then(ok => { if (ok) onChanged(); });
+        }}>
+        <option value="" disabled>{t("schedule.notifyInherited")}</option>
+        <option value="now">{t("schedule.notifyNow")}</option>
+        <option value="digest">{t("schedule.notifyDigest")}</option>
+        <option value="off">{t("schedule.notifyOff")}</option>
+      </select></dd></div>
+    </dl>
     {error && !confirming ? <p className="inline-error" role="alert">{error}</p> : null}
     <p className="briefings-meta schedule-task-change">{t(task.kind === "briefing" ? "schedule.briefingChangeHint" : "schedule.changeHint")}{onAskHome ? <> <Button variant="link" className="schedule-task-ask" onClick={() => onAskHome(t("schedule.changePrompt", { title }))}>{t("schedule.changeAsk")}</Button></> : null}</p>
     <Dialog open={confirming} onOpenChange={value => { if (busy !== "delete") setConfirming(value); }}>

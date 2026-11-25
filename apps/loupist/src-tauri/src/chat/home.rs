@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 
-use rusqlite::params;
+use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
 use crate::{
@@ -12,11 +12,11 @@ use crate::{
     commands::{map_internal, map_store, new_id, now_ms},
     domain::{
         memory_refs_digest, ChatMessage, ChatMessageStatus, ChatRole, ChatSession, HomeAlert,
-        HomeDelivery, HomeLink, MemoryPolicy,
+        HomeDelivery, HomeLink, HomeResultEvidence, MemoryPolicy, NumberCheckStatus,
     },
     runs::coordinator::{RunKind, RunTarget},
     scheduled_tasks::types::{Run, RunStatus},
-    store::StoreResult,
+    store::{StoreError, StoreResult},
 };
 
 /// Stored title; the renderer shows the localized "Thread" label instead.
@@ -102,6 +102,30 @@ pub(crate) fn delivery_message(state: &AppState, run: &Run) -> Result<ChatMessag
         .store
         .scheduled_task_get(&run.loupist_id, &run.task_id)
         .map_err(map_store)?;
+    let trigger_card = if let Some(trigger) = &run.trigger {
+        let mut details = state
+            .store
+            .scheduled_run_trigger_evaluation(run)
+            .map_err(map_store)?
+            .as_ref()
+            .map(trigger_details)
+            .unwrap_or_else(|| crate::domain::HomeTrigger {
+                reading: trigger.reading.clone(),
+                as_of: trigger.as_of.clone(),
+                sources: Vec::new(),
+                checked_at_ms: run.started_at_ms,
+                explained: false,
+                reason: None,
+                coalesced: false,
+            });
+        details.explained = run.status == RunStatus::Succeeded && !run.quiet;
+        if !details.explained {
+            details.reason = Some("The explanation did not finish.".into());
+        }
+        Some(details)
+    } else {
+        None
+    };
     let finished = run.finished_at_ms.unwrap_or(run.started_at_ms);
     let skipped_saved_keys = run
         .skipped_tools
@@ -109,6 +133,25 @@ pub(crate) fn delivery_message(state: &AppState, run: &Run) -> Result<ChatMessag
         .filter(|tool| tool.reason == crate::scheduled_tasks::types::SAVED_KEY_PERMISSION_SKIP)
         .map(|tool| tool.name.clone())
         .collect::<Vec<_>>();
+    let evidence = if run.status == RunStatus::Succeeded {
+        run.thread_id
+            .as_ref()
+            .zip(run.message_id.as_ref())
+            .and_then(|(thread, id)| {
+                state
+                    .store
+                    .get_chat(thread)
+                    .ok()
+                    .flatten()
+                    .and_then(|chat| {
+                        all_messages(&chat)
+                            .find(|answer| &answer.id == id)
+                            .map(result_evidence)
+                    })
+            })
+    } else {
+        None
+    };
     Ok(ChatMessage {
         tool_refusals: Vec::new(),
         feedback: None,
@@ -145,6 +188,9 @@ pub(crate) fn delivery_message(state: &AppState, run: &Run) -> Result<ChatMessag
         retry_after_seconds: None,
         replaced_model: None,
         delivery: Some(HomeDelivery {
+            first_run: run.first_run,
+            evidence,
+            failure_streak: run.failure_streak.clone(),
             run_id: run.run_id.clone(),
             task_id: run.task_id.clone(),
             task_title: run.task_title.clone(),
@@ -161,6 +207,7 @@ pub(crate) fn delivery_message(state: &AppState, run: &Run) -> Result<ChatMessag
                 .as_ref()
                 .filter(|_| run.memory_save_skip.is_none())
                 .and_then(|id| super::handoff::card_learned(state, &run.loupist_id, id)),
+            trigger: trigger_card,
         }),
         as_of: None,
         number_checks: Vec::new(),
@@ -174,7 +221,39 @@ pub(crate) fn delivery_message(state: &AppState, run: &Run) -> Result<ChatMessag
         handoff_action: None,
         scheduled: None,
         link: None,
+        offers: Vec::new(),
+        ask: None,
     })
+}
+
+fn result_evidence(answer: &ChatMessage) -> HomeResultEvidence {
+    let checked = answer
+        .number_checks
+        .iter()
+        .filter(|check| {
+            matches!(
+                check.status,
+                NumberCheckStatus::Matched | NumberCheckStatus::Rounded
+            )
+        })
+        .count() as u32;
+    let sources = answer
+        .evidence_refs
+        .iter()
+        .filter(|source| !source.user_provided && source.calc_operation.is_none())
+        .map(|source| {
+            (
+                &source.tool_name,
+                source.url.as_ref().unwrap_or(&source.content_sha256),
+            )
+        })
+        .collect::<HashSet<_>>()
+        .len() as u32;
+    HomeResultEvidence {
+        figures_checked: checked,
+        figures_unmatched: answer.number_checks.len() as u32 - checked,
+        sources,
+    }
 }
 
 fn trim_number(value: f64) -> String {
@@ -257,6 +336,8 @@ pub(crate) fn alert_message(
         handoff_action: None,
         scheduled: None,
         link: None,
+        offers: Vec::new(),
+        ask: None,
     })
 }
 
@@ -308,6 +389,8 @@ pub(crate) fn host_message(
         handoff_action: None,
         scheduled: None,
         link: None,
+        offers: Vec::new(),
+        ask: None,
     })
 }
 
@@ -603,8 +686,27 @@ pub(crate) fn deliver_finished_runs(
             ));
         posted.push(message);
     }
+    let mut chat = expected.clone();
+    let mut changed = 0;
     for run in &pending {
-        posted.push(delivery_message(state, run)?);
+        let mut message = delivery_message(state, run)?;
+        let prior = run.failure_streak.as_ref().and_then(|streak| {
+            chat.messages.iter().position(|message| {
+                message
+                    .delivery
+                    .as_ref()
+                    .and_then(|post| post.failure_streak.as_ref())
+                    .is_some_and(|existing| existing.id == streak.id)
+            })
+        });
+        if let Some(index) = prior {
+            message.id.clone_from(&chat.messages[index].id);
+            message.created_at_ms = chat.messages[index].created_at_ms;
+            chat.messages[index] = message;
+            changed += 1;
+        } else {
+            posted.push(message);
+        }
     }
     let price_setup_replies = pending_price_setup_replies(state, loupist_id).map_err(map_store)?;
     for (_, content, at) in &price_setup_replies {
@@ -612,8 +714,6 @@ pub(crate) fn deliver_finished_runs(
         message.host_composed = false;
         posted.push(message);
     }
-    let mut chat = expected.clone();
-    let mut changed = 0;
     let research = super::handoff::for_delivery(state, loupist_id)?;
     for (handoff, index) in research_changes(&expected, &research) {
         let message =
@@ -626,8 +726,9 @@ pub(crate) fn deliver_finished_runs(
             None => posted.push(message),
         }
     }
-    for alert in pending_alerts(state, loupist_id, &expected)? {
-        posted.push(alert_message(&alert)?);
+    let alerts = pending_alerts(state, loupist_id, &expected)?;
+    for alert in &alerts {
+        posted.push(alert_message(alert)?);
     }
     for change in pending_vocabulary(state, loupist_id, &expected)? {
         posted.push(vocabulary_message(&change)?);
@@ -667,6 +768,173 @@ pub(crate) fn deliver_finished_runs(
             Ok(())
         })
         .map_err(map_store)?;
+    for alert in &alerts {
+        crate::briefings::desktop::queue_crossing(
+            state,
+            loupist_id,
+            &alert.name,
+            &alert.line.claim,
+        );
+    }
     crate::briefings::desktop::changed(loupist_id);
     Ok(count)
+}
+
+fn trigger_card_id(task_id: &str, scheduled_for_ms: i64) -> String {
+    let occurrence = format!("{task_id}:{scheduled_for_ms}");
+    format!("trigger-{}", crate::util::sha256(occurrence.as_bytes()))
+}
+
+/// One card per schedule slot, carrying the evaluation that met the check.
+pub(crate) fn trigger_card(
+    task: &crate::scheduled_tasks::types::Task,
+    evaluation: &crate::scheduled_tasks::types::TriggerEvaluation,
+    reason: Option<&str>,
+) -> Result<ChatMessage, CommandError> {
+    let mut message = host_message("trigger", evaluation.reading.clone(), evaluation.at_ms)?;
+    message.id = trigger_card_id(&task.id, evaluation.scheduled_for_ms);
+    let mut details = trigger_details(evaluation);
+    details.reason = reason.map(str::to_owned);
+    message.delivery = Some(HomeDelivery {
+        first_run: false,
+        evidence: None,
+        failure_streak: None,
+        run_id: format!("check-{}", message.id),
+        task_id: task.id.clone(),
+        task_title: task.title.clone(),
+        task_kind: task.kind.clone(),
+        schedule: Some(task.schedule.clone()),
+        run_thread_id: None,
+        status: RunStatus::Succeeded,
+        memory_save_skip: None,
+        discarded_memory_items: None,
+        finished_at_ms: evaluation.at_ms,
+        skipped_saved_keys: None,
+        learned: None,
+        trigger: Some(details),
+    });
+    Ok(message)
+}
+
+fn trigger_details(
+    evaluation: &crate::scheduled_tasks::types::TriggerEvaluation,
+) -> crate::domain::HomeTrigger {
+    crate::domain::HomeTrigger {
+        reading: evaluation.reading.clone(),
+        as_of: evaluation.as_of.clone().unwrap_or_default(),
+        sources: crate::scheduled_tasks::trigger::successful_read_sources(&evaluation.ledger),
+        checked_at_ms: evaluation.at_ms,
+        explained: false,
+        reason: None,
+        coalesced: evaluation.coalesced,
+    }
+}
+
+fn home_in(connection: &Connection, loupist_id: &str) -> StoreResult<Option<ChatSession>> {
+    let json: Option<String> = connection
+        .query_row(
+            "SELECT data_json FROM chat_sessions WHERE id=?1 AND loupist_id=?2",
+            params![home_thread_id(loupist_id), loupist_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    json.map(|data| Ok(serde_json::from_str(&data)?))
+        .transpose()
+}
+
+fn save_home_in(connection: &Connection, mut home: ChatSession, now: i64) -> StoreResult<()> {
+    home.pi_session_cache = None;
+    home.updated_at_ms = now.max(home.updated_at_ms.saturating_add(1));
+    home.validate()
+        .map_err(|error| StoreError::Invalid(error.to_string()))?;
+    connection.execute(
+        "UPDATE chat_sessions SET updated_at_ms=?2,data_json=?3 WHERE id=?1 AND loupist_id=?4",
+        params![
+            home.id,
+            home.updated_at_ms,
+            serde_json::to_string(&home)?,
+            home.loupist_id
+        ],
+    )?;
+    Ok(())
+}
+
+pub(crate) fn insert_trigger_card_in(
+    connection: &Connection,
+    loupist_id: &str,
+    mut card: ChatMessage,
+    run: Option<&Run>,
+    reason: Option<&str>,
+    now: i64,
+) -> StoreResult<()> {
+    let mut home =
+        home_in(connection, loupist_id)?.ok_or(StoreError::Conflict("home Thread is missing"))?;
+    if all_messages(&home).any(|message| message.id == card.id) {
+        return Err(StoreError::Conflict("trigger occurrence already delivered"));
+    }
+    let delivery = card.delivery.as_mut().expect("trigger card delivery");
+    if let Some(run) = run {
+        delivery.run_id.clone_from(&run.run_id);
+        delivery.run_thread_id.clone_from(&run.thread_id);
+        delivery.status = RunStatus::Running;
+    } else if let Some(reason) = reason {
+        delivery
+            .trigger
+            .as_mut()
+            .expect("trigger card reading")
+            .reason = Some(reason.into());
+    }
+    home.messages.push(card);
+    save_home_in(connection, home, now)
+}
+
+/// Settle the card in the same transaction as the terminal run, including crash recovery.
+pub(crate) fn finish_trigger_card_in(
+    connection: &Connection,
+    run: &Run,
+    explanation: &str,
+    now: i64,
+) -> StoreResult<()> {
+    let Some(mut home) = home_in(connection, &run.loupist_id)? else {
+        return Ok(());
+    };
+    let id = trigger_card_id(&run.task_id, run.scheduled_for_ms);
+    let mut changed = false;
+    for message in home
+        .messages
+        .iter_mut()
+        .chain(
+            home.versions
+                .iter_mut()
+                .flat_map(|version| version.messages.iter_mut()),
+        )
+        .filter(|message| message.id == id)
+    {
+        let Some(delivery) = message
+            .delivery
+            .as_mut()
+            .filter(|delivery| delivery.run_id == run.run_id)
+        else {
+            continue;
+        };
+        let Some(check) = delivery.trigger.as_mut() else {
+            continue;
+        };
+        delivery.status = run.status;
+        delivery.finished_at_ms = run.finished_at_ms.unwrap_or(now);
+        check.explained = run.status == RunStatus::Succeeded && !run.quiet;
+        check.reason = if check.explained {
+            if !explanation.is_empty() {
+                message.content = explanation.to_owned();
+            }
+            None
+        } else {
+            Some("The explanation did not finish.".into())
+        };
+        changed = true;
+    }
+    if changed {
+        save_home_in(connection, home, now)?;
+    }
+    Ok(())
 }

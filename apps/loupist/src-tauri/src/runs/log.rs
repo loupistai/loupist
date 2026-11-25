@@ -1,8 +1,15 @@
 //! Content-free, local run diagnostics. Never pass payloads or error bodies here.
 use crate::{
     app::{AppState, CommandError},
+    domain::{ChatCostEstimate as CostEstimate, ChatPerformance},
     fs::secure_delete::{PrivateDirectoryGuard, SecureDeletionRoot},
-    store::SqliteStore,
+    providers::status::CredentialKind,
+    store::{
+        model_usage::{
+            ModelUsageAccount, ModelUsageData, ModelUsageKind, ModelUsageMeasures, ModelUsageRow,
+        },
+        SqliteStore,
+    },
 };
 use chrono::{TimeZone, Utc};
 use serde::{Deserialize, Serialize};
@@ -15,6 +22,12 @@ use std::{
 
 const DAILY_BYTES: usize = 20 * 1024 * 1024;
 const DAY_MS: i64 = 86_400_000;
+
+pub(crate) fn compaction_usage(event: &serde_json::Value) -> Option<&serde_json::Value> {
+    event
+        .pointer("/result/usage")
+        .filter(|usage| usage.is_object())
+}
 
 /// Fixed host commit phases and reasons; never serialize an error body here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -119,6 +132,22 @@ pub(crate) enum ChatSavePath {
     Waited,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum UsageSurface {
+    Bot,
+    Research,
+    Handoff,
+    Briefing,
+    Scheduled,
+    Learning,
+    DeepResearch,
+    World,
+    WorldSchema,
+    MethodLearning,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RunLog {
@@ -143,7 +172,27 @@ pub(crate) struct RunLog {
     pub model: Option<String>,
     pub effort: Option<String>,
     pub usage: Option<Usage>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub tokens_partial: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requests: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_estimate: Option<CostEstimate>,
+    #[serde(skip)]
+    pub surface: Option<UsageSurface>,
+    #[serde(skip)]
+    pub task_id: Option<String>,
+    #[serde(skip)]
+    pub credential_kind: Option<CredentialKind>,
+    #[serde(skip)]
+    pub account_usage: Vec<ModelUsageAccount>,
+    #[serde(skip)]
+    pub reasoning: Option<u64>,
     pub tools: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub python_reads: u64,
+    #[serde(default)]
+    pub python_rounds: u64,
     pub refused_tools: Vec<RefusedTool>,
     pub memory_changes: BTreeMap<String, u64>,
     pub notes: Vec<String>,
@@ -186,6 +235,8 @@ pub(crate) struct InferenceUsage {
     started: u64,
     finished: u64,
     unknown: bool,
+    requests: u64,
+    cost: PiCost,
     input: u64,
     cached_input: u64,
     output: u64,
@@ -199,6 +250,8 @@ impl InferenceUsage {
         if not_sent {
             return;
         }
+        self.requests = self.requests.saturating_add(1);
+        self.cost.observe(&usage["cost"]);
         match (
             usage["input"].as_u64(),
             usage["cacheRead"].as_u64(),
@@ -213,11 +266,47 @@ impl InferenceUsage {
             _ => self.unknown = true,
         }
     }
-    pub fn snapshot(&self) -> Option<Usage> {
+    pub fn apply(&self, log: &mut RunLog) {
+        log.usage = self.snapshot();
+        log.requests = Some(self.requests);
+        log.cost_estimate = self.cost.estimate(self.requests);
+    }
+
+    fn snapshot(&self) -> Option<Usage> {
         (!self.unknown && self.started == self.finished).then_some(Usage {
             input: self.input,
             cached_input: self.cached_input,
             output: self.output,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct PiCost {
+    microusd: u64,
+    billed: u64,
+}
+
+impl PiCost {
+    pub fn observe(&mut self, cost: &serde_json::Value) {
+        if let Some(total) = cost["total"]
+            .as_f64()
+            .filter(|n| n.is_finite() && *n >= 0.0)
+        {
+            self.microusd = self
+                .microusd
+                .saturating_add((total * 1_000_000.0).round() as u64);
+            if cost["totalFromProvider"].as_bool() == Some(true) {
+                self.billed = self.billed.saturating_add(1);
+            }
+        }
+    }
+
+    pub fn estimate(&self, requests: u64) -> Option<CostEstimate> {
+        let from_provider = requests > 0 && self.billed == requests;
+        (self.microusd > 0 || from_provider).then_some(CostEstimate {
+            microusd: self.microusd,
+            from_provider,
         })
     }
 }
@@ -246,7 +335,17 @@ impl RunLog {
             model: None,
             effort: None,
             usage: None,
+            tokens_partial: false,
+            requests: None,
+            cost_estimate: None,
+            surface: None,
+            task_id: None,
+            credential_kind: None,
+            account_usage: Vec::new(),
+            reasoning: None,
             tools: BTreeMap::new(),
+            python_reads: 0,
+            python_rounds: 0,
             refused_tools: vec![],
             memory_changes: BTreeMap::new(),
             notes: vec![],
@@ -277,12 +376,8 @@ impl RunLog {
         if let Some(model) = &message.execution_model {
             self.model(model);
         }
-        if let Some(p) = &message.performance {
-            self.usage = Some(Usage {
-                input: p.input_tokens.saturating_add(p.cache_write_tokens),
-                cached_input: p.cache_read_tokens,
-                output: p.output_tokens,
-            });
+        if let Some(performance) = &message.performance {
+            self.performance(performance);
         }
         self.refusals(&message.tool_refusals);
         if let Some(trace) = &message.tool_trace {
@@ -292,6 +387,18 @@ impl RunLog {
             self.memory(update);
         }
     }
+    fn performance(&mut self, performance: &ChatPerformance) {
+        self.usage = Some(Usage {
+            input: performance
+                .input_tokens
+                .saturating_add(performance.cache_write_tokens),
+            cached_input: performance.cache_read_tokens,
+            output: performance.output_tokens,
+        });
+        self.requests = performance.model_requests.map(u64::from);
+        self.cost_estimate = performance.cost_estimate;
+    }
+
     pub fn observe_pi_tool(&mut self, event: &serde_json::Value) {
         if event.get("type").and_then(serde_json::Value::as_str) != Some("tool_execution_start") {
             return;
@@ -307,6 +414,13 @@ impl RunLog {
     }
     pub fn trace(&mut self, trace: &crate::domain::ChatToolTrace) {
         for entry in &trace.entries {
+            if let Some(run) = &entry.python {
+                self.python_reads += u64::from(run.reads);
+                self.python_rounds += u64::from(run.rounds);
+            }
+            if entry.origin == Some(crate::domain::ToolTraceOrigin::Python) {
+                continue;
+            }
             if !entry
                 .call_id
                 .as_ref()
@@ -393,6 +507,64 @@ impl RunLog {
         if result.is_err() {
             eprintln!("Run diagnostics could not be written");
         }
+        if let Some(row) = self.model_usage_row() {
+            let id = format!("{}:{}:{}", self.kind, self.run_id, self.started_at_ms);
+            if store.put_model_usage(&id, &row).is_err() {
+                eprintln!("Model usage could not be recorded");
+            }
+        }
+    }
+
+    fn model_usage_row(&self) -> Option<ModelUsageRow> {
+        let (kind, surface) = match self.kind.as_str() {
+            "chat" => (
+                ModelUsageKind::Chat,
+                self.surface.unwrap_or(UsageSurface::Research),
+            ),
+            "world" => (ModelUsageKind::World, UsageSurface::World),
+            "schema" => (ModelUsageKind::Schema, UsageSurface::WorldSchema),
+            "learning" => (ModelUsageKind::Learning, UsageSurface::MethodLearning),
+            _ => return None,
+        };
+        let (provider, model) = self.model.as_deref()?.split_once('/')?;
+        let status = serde_json::from_value(serde_json::Value::String(self.status.clone())).ok()?;
+        let failure_kind = self
+            .failure_kind
+            .as_ref()
+            .and_then(|kind| serde_json::from_value(serde_json::Value::String(kind.clone())).ok());
+        let usage = self.usage.as_ref();
+        Some(ModelUsageRow {
+            finished_at_ms: self
+                .started_at_ms
+                .saturating_add(i64::try_from(self.duration_ms).unwrap_or(i64::MAX)),
+            loupist_id: self.loupist_id.clone(),
+            task_id: self.task_id.clone(),
+            data: ModelUsageData {
+                kind,
+                surface,
+                provider: provider.into(),
+                credential_kind: self.credential_kind,
+                model: model.into(),
+                effort: self.effort.clone(),
+                chat_id: self.chat_id.clone(),
+                run_id: self.run_id.clone(),
+                started_at_ms: self.started_at_ms,
+                duration_ms: self.duration_ms,
+                status,
+                failure_kind,
+                measures: ModelUsageMeasures {
+                    requests: self.requests,
+                    input: usage.map(|usage| usage.input),
+                    cached_input: usage.map(|usage| usage.cached_input),
+                    output: usage.map(|usage| usage.output),
+                    tokens_partial: self.tokens_partial,
+                    reasoning: self.reasoning,
+                    cost_microusd: self.cost_estimate.map(|cost| cost.microusd),
+                    cost_from_provider: self.cost_estimate.map(|cost| cost.from_provider),
+                },
+                accounts: self.account_usage.clone(),
+            },
+        })
     }
 }
 pub(crate) fn enum_name(value: &impl Serialize) -> String {
@@ -883,6 +1055,140 @@ mod tests {
     }
 
     #[test]
+    fn measured_inference_writes_requests_and_cost_even_when_tokens_are_unknown() {
+        let mut log = RunLog::new("world", "loupist", "run", 1);
+        let mut usage = InferenceUsage::default();
+        usage.begin();
+        usage.observe(&serde_json::Value::Null, true);
+        usage.begin();
+        usage.observe(
+            &serde_json::json!({"cost":{"total":0.0000016,"totalFromProvider":true}}),
+            false,
+        );
+        usage.apply(&mut log);
+        let billed = serde_json::to_value(&log).unwrap();
+        assert_eq!(billed["requests"], 1);
+        assert_eq!(
+            billed["costEstimate"],
+            serde_json::json!({"microusd":2,"fromProvider":true})
+        );
+        usage.begin();
+        usage.observe(&serde_json::Value::Null, false);
+        usage.apply(&mut log);
+        let estimated = serde_json::to_value(&log).unwrap();
+        assert_eq!(estimated["requests"], 2);
+        assert_eq!(
+            estimated["costEstimate"],
+            serde_json::json!({"microusd":2,"fromProvider":false})
+        );
+        assert!(estimated["usage"].is_null());
+        for key in ["surface", "taskId", "credentialKind", "reasoning"] {
+            assert!(estimated.get(key).is_none());
+        }
+    }
+
+    #[test]
+    fn message_diagnostics_preserve_chat_usage_fields() {
+        let mut message = crate::test_fixtures::chat_message(
+            "answer",
+            crate::domain::ChatRole::Assistant,
+            "Done.",
+        );
+        let mut log = RunLog::new("scheduled", "loupist", "run", 1);
+        log.message(&message);
+        assert!(serde_json::to_value(&log)
+            .unwrap()
+            .get("requests")
+            .is_none());
+        message.performance = Some(ChatPerformance {
+            input_tokens: 8,
+            cache_read_tokens: 5,
+            cache_write_tokens: 2,
+            output_tokens: 4,
+            model_requests: Some(2),
+            cost_estimate: Some(CostEstimate {
+                microusd: 250,
+                from_provider: false,
+            }),
+            ..Default::default()
+        });
+        log.message(&message);
+        let record = serde_json::to_value(log).unwrap();
+        assert_eq!(record["requests"], 2);
+        assert_eq!(
+            record["costEstimate"],
+            serde_json::json!({"microusd":250,"fromProvider":false})
+        );
+        assert_eq!(
+            record["usage"],
+            serde_json::json!({"input":10,"cachedInput":5,"output":4})
+        );
+    }
+
+    #[test]
+    fn recording_model_runs_replaces_attempts_and_excludes_receipts() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SqliteStore::open_catalog(dir.path().join("catalog.sqlite3")).unwrap();
+        crate::test_fixtures::create_folder_loupist(&store, "usage", &dir.path().join("workspace"));
+        let now = crate::commands::now_ms();
+        for kind in [
+            "chat",
+            "world",
+            "schema",
+            "learning",
+            "scheduled",
+            "briefing",
+            "unset",
+            "app",
+        ] {
+            let mut record = RunLog::new(
+                if kind == "unset" { "chat" } else { kind },
+                "usage",
+                kind,
+                now,
+            );
+            record.model = (kind != "unset").then(|| "openrouter/vendor/model".into());
+            record.requests = Some(1);
+            record.usage = Some(Usage {
+                input: 2,
+                cached_input: 3,
+                output: 4,
+            });
+            if kind == "chat" {
+                record.surface = Some(UsageSurface::Bot);
+                record.credential_kind = Some(CredentialKind::ApiKey);
+            }
+            if kind == "app" {
+                record.kind = "chat".into();
+                record.record_app(dir.path());
+                continue;
+            }
+            record.record(&store);
+            record.requests = Some(2);
+            record.record(&store);
+        }
+        let rows = store.model_usage_in_range(now, now + 1).unwrap();
+        assert_eq!(
+            rows.iter().map(|row| row.data.surface).collect::<Vec<_>>(),
+            [
+                UsageSurface::Bot,
+                UsageSurface::MethodLearning,
+                UsageSurface::WorldSchema,
+                UsageSurface::World
+            ],
+        );
+        for row in rows {
+            assert_eq!(row.data.model, "vendor/model");
+            assert_eq!(row.data.measures.requests, Some(2));
+            assert_eq!(row.data.measures.input, Some(2));
+            assert_eq!(
+                row.data.credential_kind,
+                (row.data.surface == UsageSurface::Bot).then_some(CredentialKind::ApiKey)
+            );
+        }
+    }
+
+    #[test]
     fn torn_append_is_repaired_before_the_next_complete_record() {
         let temporary = tempfile::tempdir().unwrap();
         let root = temporary.path().canonicalize().unwrap();
@@ -940,6 +1246,9 @@ mod tests {
                 outcome: crate::domain::ToolTraceOutcome::Ok,
                 error: None,
                 result_bytes: None,
+                origin: None,
+                parent_step: None,
+                python: None,
             }],
             truncated: false,
             untrusted_text: false,
@@ -963,6 +1272,9 @@ mod tests {
                 outcome: crate::domain::ToolTraceOutcome::Ok,
                 error: None,
                 result_bytes: None,
+                origin: None,
+                parent_step: None,
+                python: None,
             }
         };
         let mut log = RunLog::new("chat", "loupist", "run", 1);

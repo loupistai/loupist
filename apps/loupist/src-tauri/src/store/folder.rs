@@ -403,6 +403,7 @@ impl SqliteStore {
             "DELETE FROM app_settings WHERE id = ?1",
             [format!("default_model:{}", expected.id)],
         )?;
+        super::model_usage::clear_loupist(&transaction, &expected.id)?;
         transaction.commit()?;
         Ok(())
     }

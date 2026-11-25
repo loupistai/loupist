@@ -1,3 +1,4 @@
+import { NotificationsSettings } from "./settings/NotificationsSettings";
 import { SettingsSearchPanel } from "./settings/SettingsSearchPanel";
 import type { SettingResult } from "./settings/settingSearch";
 import { ApplicationSettings } from "./settings/ApplicationSettings";
@@ -17,6 +18,7 @@ import { KeyboardSettings } from "./settings/KeyboardSettings";
 import type { ModelCatalog } from "../types";
 import { AppearanceSettings } from "./settings/AppearanceSettings";
 import { ModelSettingsPanel, type ModelProviderActions } from "./settings/ModelSettingsPanel";
+import { UsageSettings } from "./settings/UsageSettings";
 import type { ConnectSheetTarget } from "./settings/ConnectSheet";
 import { UpdateSettingsCard } from "./settings/UpdateSettingsCard";
 import type { useAppUpdate } from "./settings/useAppUpdate";
@@ -44,6 +46,8 @@ type Props = {
   onOpenLoupistConnections?: (id: string) => void;
   currentLoupistId: string | null;
   onManageProviders: () => void;
+  onOpenUsage?: () => void;
+  onOpenUsageProgram?: (loupistId: string, taskId: string) => void;
   onConnectAccount?: () => void;
   /** A Chat default was saved here; the composer's earlier pick yields to it. */
   onChatDefaultSaved?: (scope: ConfigScope) => void;
@@ -83,7 +87,7 @@ function SettingsPage({
   bridge,
   loupists, connectionsEntryId, permissionNoticeRequest, onOpenLoupistSettings, onCreateLoupist, onImportLoupist, onRemoveLoupist, onOpenLoupists, onOpenLoupistConnections,
   currentLoupistId,
-  onManageProviders, onConnectAccount, onChatDefaultSaved,
+  onManageProviders, onOpenUsage, onOpenUsageProgram, onConnectAccount, onChatDefaultSaved,
   onDraftSkill,
   appearanceConfiguration,
   section,
@@ -125,8 +129,10 @@ function SettingsPage({
           {showSharing && shareTarget ? <ShareSheet bridge={bridge} loupistId={shareTarget.id} loupistName={shareTarget.name} scope={{ kind: "loupist" }} open onOpenChange={open => { if (!open) setShareTarget(null); }} /> : null}</div> : null}
         {section === "model" ? (
           <ModelSettingsPanel searchControls={searchControls} discoverModels={!indexing} catalog={catalog} loadError={loadError} bridge={bridge} chatModelProfileId={appearanceConfiguration.snapshot?.modelSelection?.model?.id}
+            onOpenUsageSettings={onOpenUsage}
             connectTarget={connectTarget} onConnectTargetConsumed={onConnectTargetConsumed} {...providerActions} />
         ) : null}
+        {section === "usage" ? <UsageSettings bridge={bridge} catalog={catalog} active={!indexing} onOpenProgram={onOpenUsageProgram} /> : null}
 
         {section === "appearance" ? (
           <><AppearanceSettings language={language} onLanguageChange={onLanguageChange} theme={theme} onThemeChange={onThemeChange} priceColors={appearanceConfiguration.snapshot?.effective.appearance.price_colors} onPriceColorsChange={(price_colors) => { void appearanceConfiguration.update({ appearance: { price_colors } }); }}
@@ -142,6 +148,7 @@ function SettingsPage({
 
         {section === "agent" ? <AgentSettings onConnectAccount={onConnectAccount} onChatDefaultSaved={onChatDefaultSaved} bridge={bridge} loupists={loupists} catalog={catalog} scope={{ kind: "global" }} /> : null}
         {section === "general" ? <ApplicationSettings bridge={bridge} /> : null}
+        {section === "notifications" ? <NotificationsSettings bridge={bridge} /> : null}
 
         {section === "updates" ? (
           <UpdateSettingsCard status={update.status} phase={update.phase} error={update.error} onCheck={update.checkForUpdates} onInstall={update.installUpdate} />

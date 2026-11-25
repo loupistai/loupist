@@ -96,46 +96,68 @@ describe("startup model discovery", () => {
   });
 });
 
-describe("composer picks for this app session", () => {
+describe("composer picks for this app session, by chat", () => {
   const claude = { model_profile_id: "anthropic/claude-sonnet-4-5", thinking_level: "medium", run_options: {} };
   const luna = { model_profile_id: "model-test", thinking_level: "high", run_options: { performance: "standard" } };
+  // `chatSessionKey`: a chat of each Loupist.
+  const quality = "loupist-quality:thread-margin", cycle = "loupist-cycle:thread-inventory";
   async function twoAccounts() {
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     await bridge.providerConfigure({ provider: "anthropic", api_key: "test-key" });
     const view = renderHook(() => useModelCatalog(bridge));
     await waitFor(() => expect(view.result.current.resolved).toBe(true));
     act(() => {
-      view.result.current.changeSelection("loupist-quality", claude);
-      view.result.current.changeSelection("loupist-cycle", luna);
+      view.result.current.changeSelection(quality, claude);
+      view.result.current.changeSelection(cycle, luna);
     });
     return { bridge, ...view };
   }
 
-  it("drops a pick once its account is disconnected, and keeps it dropped when the account returns", async () => {
+  it("turns a pick into its chat's Default row once its account is disconnected, and keeps it there when the account returns", async () => {
     const { bridge, result } = await twoAccounts();
-    expect(result.current.selections).toEqual({ "loupist-quality": claude, "loupist-cycle": luna });
+    await act(() => result.current.saveSent(quality, claude, claude));
+    expect(result.current.selections).toEqual({ [quality]: claude, [cycle]: luna });
+    expect(result.current.lastSent).toEqual(claude);
     await act(() => result.current.providerActions.onDisconnect("anthropic"));
-    expect(result.current.selections).toEqual({ "loupist-cycle": luna });
+    expect(result.current.selections).toEqual({ [quality]: null, [cycle]: luna });
+    expect(result.current.lastSent).toBeUndefined();
     await act(async () => { result.current.setCatalog(await bridge.providerConfigure({ provider: "anthropic", api_key: "test-key" })); });
     expect(result.current.catalog?.models.some((model) => model.id === claude.model_profile_id)).toBe(true);
-    expect(result.current.selections).toEqual({ "loupist-cycle": luna });
+    expect(result.current.selections).toEqual({ [quality]: null, [cycle]: luna });
   });
 
   it("drops a pick whose model is hidden from Chat or no longer offered", async () => {
     const { bridge, result } = await twoAccounts();
     await act(() => result.current.providerActions.onUpdateModelVisibility({ model_profile_id: claude.model_profile_id, visible_in_chat: false }));
-    expect(result.current.selections).toEqual({ "loupist-cycle": luna });
+    expect(result.current.selections).toEqual({ [quality]: null, [cycle]: luna });
     const catalog = await bridge.modelCatalogGet();
     act(() => result.current.setCatalog({ ...catalog, models: catalog.models.filter((model) => model.id !== luna.model_profile_id) }));
+    expect(result.current.selections).toEqual({ [quality]: null, [cycle]: null });
+  });
+
+  it("yields a Loupist's chats to its saved Chat default, every chat to the app's, and new chats to the default", async () => {
+    const { result } = await twoAccounts();
+    await act(() => result.current.saveSent(quality, claude, claude));
+    act(() => result.current.yieldToChatDefault({ kind: "project", loupistId: "loupist-quality" }));
+    expect(result.current.selections).toEqual({ [cycle]: luna });
+    expect(result.current.lastSent).toBeUndefined();
+    act(() => result.current.changeSelection(quality, claude));
+    act(() => result.current.yieldToChatDefault({ kind: "global" }));
     expect(result.current.selections).toEqual({});
   });
 
-  it("yields a Loupist's pick to its saved Chat default, and every pick to the app's", async () => {
+  it("hands a new chat's choice to the chat its first message creates", async () => {
     const { result } = await twoAccounts();
-    act(() => result.current.yieldToChatDefault({ kind: "project", loupistId: "loupist-quality" }));
-    expect(result.current.selections).toEqual({ "loupist-cycle": luna });
-    act(() => result.current.changeSelection("loupist-quality", claude));
-    act(() => result.current.yieldToChatDefault({ kind: "global" }));
-    expect(result.current.selections).toEqual({});
+    const draft = "loupist-quality:__empty-chat__", created = "loupist-quality:thread-new";
+    act(() => result.current.changeSelection(draft, luna));
+    act(() => result.current.moveSelection(draft, created, luna));
+    expect(result.current.selections).toEqual({ [quality]: claude, [cycle]: luna, [created]: luna });
+    // Its Default row moves too; nothing chosen leaves the next new chat to start afresh.
+    act(() => result.current.resetSelection(draft));
+    act(() => result.current.moveSelection(draft, "loupist-quality:thread-next", null));
+    act(() => result.current.moveSelection(draft, "loupist-quality:thread-last", undefined));
+    expect(result.current.selections).toMatchObject({ "loupist-quality:thread-next": null });
+    expect(Object.keys(result.current.selections)).not.toContain(draft);
+    expect(Object.keys(result.current.selections)).not.toContain("loupist-quality:thread-last");
   });
 });

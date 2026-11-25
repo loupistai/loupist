@@ -70,6 +70,14 @@ impl PreparedChatTurn {
             capabilities,
             workspace,
         )?;
+        let kis_source = crate::finance_data::KIS_SOURCE_ID;
+        let kis_real = capabilities.iter().any(|id| id == kis_source)
+            && crate::marketplace::connector_config_value(state, kis_source, "environment")
+                .ok()
+                .flatten()
+                .as_deref()
+                == Some("real");
+        context.agent_runtime = context.agent_runtime.with_kis_dividend_calendar(kis_real);
         context
             .agent_runtime
             .mark_saved_keys_needing_permission(&connector_authority.saved_keys_needing_permission)
@@ -83,7 +91,7 @@ impl PreparedChatTurn {
         let runtime_surface_sha256 = crate::util::sha256(
             format!(
                 "{}:{}",
-                pi_session_cache_runtime_surface_sha256(capabilities)?,
+                pi_session_cache_runtime_surface_sha256(capabilities, kis_real)?,
                 context.surface.name()
             )
             .as_bytes(),
@@ -185,10 +193,16 @@ pub(super) struct TurnEnvelopeInputs {
     pub working_context: Option<WorkingNote>,
     /// The Bot's memory of its conversation; Bot turns with Memory on only.
     pub bot_memory: Option<crate::chat::bot_memory::BotMemoryContext>,
+    /// Preference entries for an unattended run with Memory on.
+    pub standing_preferences: Option<crate::chat::bot_memory::StandingPreferences>,
     /// Memory the as-of cutoff left out of the automatic context.
     pub left_out: crate::commands::knowledge::as_of::LeftOut,
     /// A custom scheduled run's facts about its task's last finished run.
     pub previous_run: Option<crate::scheduled_tasks::types::PreviousRun>,
+    pub trigger: Option<crate::commands::triggers::TriggerContext>,
+    /// The user's own message on a Bot or research turn they wrote, whose
+    /// writing script the turn context names.
+    pub current_message: Option<String>,
 }
 
 /// Setup → launch handoff: the admitted run, its durable user turn and the
@@ -314,6 +328,8 @@ fn prepare_chat_turn(
     let untrusted_context = admission.untrusted_text;
     let scheduled_turn = admission.scheduled;
     let previous_run = admission.previous_run;
+    let trigger_context = admission.trigger;
+    let scheduled_followed_ids = admission.scheduled_followed_ids;
     let scheduled_custom = scheduled_turn
         .as_ref()
         .is_some_and(|turn| turn.task_kind == crate::scheduled_tasks::types::TaskKind::Custom);
@@ -532,7 +548,11 @@ fn prepare_chat_turn(
         left_out.merge(std::mem::take(&mut memory.left_out));
     }
     let followed = if request.use_memory {
-        Some(agent_harness::followed_context(state, &profile.id)?)
+        Some(agent_harness::followed_context_for(
+            state,
+            &profile.id,
+            scheduled_followed_ids.as_deref(),
+        )?)
     } else {
         None
     };
@@ -575,19 +595,8 @@ fn prepare_chat_turn(
         Default::default()
     };
     let bot_memory = (surface.is_bot() && request.use_memory).then(|| {
-        let known = cutoff.map(|cutoff| {
-            move |message: &ChatMessage| {
-                crate::commands::knowledge::as_of::message_known(message, cutoff)
-            }
-        });
-        let context = crate::chat::bot_memory::context_after(
-            &chat,
-            known
-                .as_ref()
-                .map(|known| known as &dyn Fn(&ChatMessage) -> bool),
-            &pending_review,
-            &leaving,
-        );
+        let context =
+            crate::chat::bot_memory::context_after(&chat, cutoff, &pending_review, &leaving);
         left_out.notes.extend(context.left_out.iter().cloned());
         // A turn that cannot keep anything is not asked to review.
         if request.update_memory {
@@ -596,6 +605,14 @@ fn prepare_chat_turn(
             context.without_review()
         }
     });
+    let standing_preferences = standing_preferences_for_turn(
+        state,
+        &profile.id,
+        &chat,
+        &surface,
+        request.use_memory,
+        cutoff,
+    )?;
     let execution_session =
         ChatExecutionSession::prepare(state.artifacts.deletion_root.clone(), &chat)?;
     // Validate activity storage before accepting the user turn, so a local
@@ -711,6 +728,8 @@ fn prepare_chat_turn(
             .and_then(|admission| admission.action.clone()),
         scheduled: scheduled_turn,
         link: None,
+        offers: Vec::new(),
+        ask: None,
         id: user_message_id.clone(),
         role: ChatRole::User,
         status: ChatMessageStatus::Complete,
@@ -807,6 +826,7 @@ fn prepare_chat_turn(
             ),
         ));
     }
+    let current_message = (surface.interactive() && !host_handoff).then(|| prompt.clone());
     Ok(ControlFlow::Continue(AdmittedChatTurn {
         #[cfg(feature = "eval-harness")]
         pi_agent_data_dir,
@@ -850,8 +870,11 @@ fn prepare_chat_turn(
             selected_references,
             working_context,
             bot_memory,
+            standing_preferences,
             left_out,
             previous_run,
+            trigger: trigger_context,
+            current_message,
         },
         activity_recorder,
         memory_revision,
@@ -864,6 +887,44 @@ fn prepare_chat_turn(
         should_generate_title,
         assistant_message_id,
     }))
+}
+
+/// Preference entries from the home Thread, for an unattended run with Memory
+/// on. A private turn and every interactive surface receive none. The run's
+/// own chat is not a source: only the home Thread's stored preferences are.
+fn standing_preferences_for_turn(
+    state: &AppState,
+    profile_id: &str,
+    chat: &crate::domain::ChatSession,
+    surface: &ChatSurface,
+    use_memory: bool,
+    cutoff: Option<crate::commands::knowledge::as_of::Cutoff>,
+) -> Result<Option<crate::chat::bot_memory::StandingPreferences>, CommandError> {
+    if surface.interactive() || !use_memory {
+        return Ok(None);
+    }
+    let home_id = crate::chat::home::home_thread_id(profile_id);
+    let loaded = if chat.id == home_id {
+        None
+    } else {
+        state
+            .store
+            .get_chat(&home_id)
+            .map_err(map_store)?
+            .filter(|row| row.loupist_id == profile_id)
+    };
+    let home = if chat.id == home_id {
+        chat
+    } else {
+        match loaded.as_ref() {
+            Some(home) => home,
+            None => return Ok(None),
+        }
+    };
+    let (_, leaving) = super::saves::pending_bot_memory(state, profile_id, &home.id)?;
+    Ok(crate::chat::bot_memory::standing_preferences(
+        true, true, home, cutoff, &leaving,
+    ))
 }
 
 /// The host user's home folder, as the extension resolves `~` (Node's

@@ -148,6 +148,10 @@ their height; next steps and the as-of note render below the footer. The commit 
 waits until the answer's last received word is shown, at most 400 ms after the host's
 `completed`, and changes no wrapping and no position of anything already read. On
 older answers only Copy and feedback wait for hover; Sources and a failure stay visible.
+Response details shows input and output tokens, including measured compactions.
+It also shows the model request count when available. For an API-key account,
+the details show an estimated cost or the amount billed when the service reports
+it. Scheduled replies use the same answer card in the Schedule reader.
 While a turn is active, feedback on earlier answers and Edit explain that they
 will be available when the current reply finishes. The answer being written has
 its own completion hint. Copy, sources, receipts, figures and Activity remain

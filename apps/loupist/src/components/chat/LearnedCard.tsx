@@ -1,3 +1,4 @@
+import { SavedScripts } from "./SavedScripts";
 import { useEffect, useState } from "react";
 import i18n, { useTranslation } from "@/i18n";
 import type { LearnedDigest, LoupistBridge, PageView, SectionView } from "../../types";
@@ -42,7 +43,7 @@ export function LearnedCard({ id, bridge, loupistId, digest, onChanged }: {
       .then(read => { if (live) setPages(new Map(read.flatMap(page => page ? [[page.recordId, page] as const] : []))); });
     return () => { live = false; };
   }, [bridge, loupistId, recordIds]);
-  if (!summary) return null;
+  if (!summary && !digest.scripts?.length) return null;
 
   const cell = (recordId: string, key: string) => `${recordId}\n${key}`;
   const current = (recordId: string, key: string) => {
@@ -70,7 +71,8 @@ export function LearnedCard({ id, bridge, loupistId, digest, onChanged }: {
   };
 
   return <div className="learned-card" id={id} role="group" aria-label={t("learnedCard.label")}>
-    {summary.pages.map(page => {
+    {digest.scripts?.length ? <SavedScripts scripts={digest.scripts} bridge={bridge} loupistId={loupistId} /> : null}
+    {summary?.pages.map(page => {
       const view = pages.get(page.recordId);
       const changes: Change[] = page.outcomes.flatMap(outcome => CHANGED.includes(outcome.outcome as Change["outcome"]) && outcome.key ? [{ opId: outcome.opId, key: outcome.key, outcome: outcome.outcome as Change["outcome"] }] : []);
       return <section key={page.recordId} className="learned-page" data-learned-page={page.recordId}>

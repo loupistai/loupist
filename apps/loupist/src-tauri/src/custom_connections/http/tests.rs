@@ -83,7 +83,7 @@ async fn cross_origin_redirects_are_refused_before_token_can_reach_second_server
 }
 
 #[tokio::test]
-async fn malformed_ids_and_oversized_responses_fail_closed() {
+async fn malformed_ids_fail_closed() {
     let server =
         Server::start(|_, _| Response::json(json!({"jsonrpc":"2.0","id":"wrong-id","result":{}})))
             .await;
@@ -92,6 +92,61 @@ async fn malformed_ids_and_oversized_responses_fail_closed() {
         transport.request("tools/list", json!({}), None).await,
         Err(ConnectionError::Protocol)
     ));
+}
+
+#[tokio::test]
+async fn oversized_http_replies_report_the_transport_limit_and_keep_the_session() {
+    for (sse, chunked) in [(false, false), (false, true), (true, true)] {
+        let server = Server::start(move |_, request| {
+            let request = request.json();
+            let id = &request["id"];
+            if request["params"]["large"] != true {
+                return Response::json(json!({"jsonrpc":"2.0","id":id,"result":{}}));
+            }
+            let body = if sse {
+                let comment = format!(": {}\n\n", "x".repeat(4096));
+                format!(
+                    "{}data: {}\n\n",
+                    comment.repeat(MAX_RESPONSE_BYTES / 4096),
+                    json!({"jsonrpc":"2.0","id":id,"result":{}})
+                )
+            } else {
+                json!({"jsonrpc":"2.0","id":id,"result":{"text":"x".repeat(MAX_RESPONSE_BYTES)}})
+                    .to_string()
+            };
+            let response = Response {
+                status: 200,
+                headers: vec![],
+                body,
+            }
+            .header(
+                "Content-Type",
+                if sse {
+                    "text/event-stream"
+                } else {
+                    "application/json"
+                },
+            );
+            if chunked {
+                response.header("Transfer-Encoding", "chunked")
+            } else {
+                response
+            }
+        })
+        .await;
+        let mut transport = HttpTransport::new(&server.url).unwrap();
+        assert!(
+            matches!(
+                transport.request("tools/call", json!({"large":true}), None).await,
+                Err(ConnectionError::ResultTooLarge { limit_bytes }) if limit_bytes == MAX_RESPONSE_BYTES as u64
+            ),
+            "sse: {sse}, chunked: {chunked}"
+        );
+        assert!(matches!(
+            transport.request("tools/call", json!({}), None).await,
+            Ok(Reply::Result(_))
+        ));
+    }
 }
 
 #[test]

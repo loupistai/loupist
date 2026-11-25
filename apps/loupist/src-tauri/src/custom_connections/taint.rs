@@ -489,7 +489,7 @@ impl TurnTaint {
         if untrusted_text && command_or_outbound_write(method, params) {
             return Err(BrokerError::UntrustedTextPaused);
         }
-        if self.memory_blocked() && method.safety().memory.refused_after_dont_save() {
+        if self.memory_blocked() && method.safety().write.refused_after_dont_save() {
             return Err(BrokerError::ConnectionDontSave);
         }
         Ok(())

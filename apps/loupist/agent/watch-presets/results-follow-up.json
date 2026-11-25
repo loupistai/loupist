@@ -1,0 +1,9 @@
+{
+  "title": "Results follow-up",
+  "terms": "Read {asset} results against your reasons",
+  "prompt": "This is a one-time scheduled check, and the user is not present. {asset} was due to report results on\n{results_date}. They asked you to read those results against the reasons they follow it for.\n\nRead the results from the filing or the company's release, and the guidance if any. Say first whether the\nresults were published; if they were not, say so and stop. Otherwise give the figures that bear on each of\nthe user's reasons and lines, each with its period and source link, then what management said about the\nnext period. Say for each reason whether these results support it, weaken it or leave it open, and record a\nline's reading with thesis_update when you read its metric. This check reports once, whatever it finds.\nAnswer in {language}.",
+  "report": "every_run",
+  "days": [],
+  "hour": 8,
+  "minute": 0
+}

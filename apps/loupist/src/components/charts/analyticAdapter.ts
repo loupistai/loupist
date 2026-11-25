@@ -19,6 +19,8 @@ const LABEL_TYPES = /date|time|year|quarter|month|week|day|hour|decade|period|fi
 // Semantic types that say a value is a quantity, so even integers in 1800–2200 are counted, not read as years.
 const QUANTITY_TYPES = /amount|price|profit|quantity|count|percent|revenue|sales|income|value|volume/iu;
 const FOLDED_SERIES = "__flint_series_key";
+/** Plot width a time axis gives each label: "Mar 31" / "3월 31일", "Mar 2026" / "2026년 3월", "2026". */
+const DATE_LABEL_ROOM: Record<DateGrain, number> = { day: 80, month: 110, year: 60 };
 const GROUP_PADDING = 0.25;
 
 const flintType = {
@@ -318,6 +320,14 @@ const finalizeAnalyticSpec = (
           axis.labelAngle = 0;
           axis.labelOverlap = grouped ? "greedy" : false;
           axis.labelLimit = 160;
+          if (xEnc.type === "temporal" && !grouped) {
+            // A time axis gets as many ticks as its plot has room for labels: a narrow side panel
+            // shows quarters where a wide column shows months. A label that still touches its
+            // neighbour (a longer language, say) is dropped, every other one at a time.
+            axis.tickCount = { expr: `ceil(width / ${DATE_LABEL_ROOM[grain]})` };
+            axis.labelOverlap = "parity";
+            axis.labelSeparation = 8;
+          }
           xEnc.axis = axis;
         }
         if (xEnc.type === "temporal" || groupedDate) formatDateAxis(xEnc);

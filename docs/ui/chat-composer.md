@@ -99,11 +99,18 @@ appear on that tab; when all work settles, the tab shows the chat's learned name
 
 The composer's "+" menu opens above the composer, aligned to its left edge like the `@` and `/` menus, and holds
 Files…, Paste image, Screenshot of World (disabled with a reason when World is not
-open or it is empty) and Add from Evidence (this chat's saved Sources as pins);
-dragging files over the chat column shows one drop overlay with the limits. The tray shows each file's size. Each file may be up to 25 MB (images 5 MB); Rust enforces it in `prepare_chat_attachments` and refuses a larger file with `attachment_too_large`, which the composer words in the reader's language.
+open or it is empty) and Add from Evidence (this chat's saved Sources as pins).
+Choosing Files… or Paste image closes the menu. On macOS, Paste image reads a PNG
+from the native pasteboard or converts TIFF to PNG through the host. It attaches one
+image of up to 5 MB and reports an empty or oversized image. The OS paste shortcut
+also works in the message field and is offered where the native read is unavailable.
+Dragging files over the chat column shows one drop overlay with the limits. The tray shows each file's size. Each file may be up to 25 MB (images 5 MB); Rust enforces it in `prepare_chat_attachments` and refuses a larger file with `attachment_too_large`, which the composer words in the reader's language.
 The composer reads each added file once, into a `data:` URL: that is the image's thumbnail, the draft's
 saved copy and what is sent, because the app's [Content-Security-Policy](../runtime/permissions.md#renderer-content-security-policy)
-blocks `blob:` images and reads. ⌘V attaches what the clipboard holds as files through the same checks
+blocks `blob:` images and reads. While a file is being read the tray says "Reading 1 file…"
+and the file counts toward the message: Send pressed meanwhile waits for the read and sends the file with
+the message. A file that cannot be read, or does not fit the tray's four, stops that send with its alert and
+keeps the message. ⌘V attaches what the clipboard holds as files through the same checks
 (size, count of four, type): a screenshot or a copied image, several at once, or files copied in Finder
 under their own names. A clipboard image gets a name of its own, "Pasted image 2026-11-23 21.04.png"
 ("붙여넣은 이미지 …"), numbered when one paste holds several. A copied spreadsheet range or web selection
@@ -211,14 +218,22 @@ The composer names the model that will answer and its reasoning level, for examp
 “GPT-6.2 Sol · Medium”. Chat defaults and each Loupist’s settings use the same
 account-grouped picker. The checked model carries a Default tag while Rust selects
 it. Choosing that tagged row keeps the model preference unset. Choosing another
-model sets an explicit choice. A composer choice covers every chat of that Loupist
-for the current app session (no chat keeps a model of its own; a queued message
-keeps the one it was queued with) until one of these ends it: choosing the Default
-row, saving a Chat model, reasoning level or run option in Settings (for the app,
-every Loupist's choice; for a Loupist, its own), or its model leaving Chat (its
-account disconnected, or the model hidden or no longer offered). The next reply then
-uses the Loupist's default as Rust resolves it for a new session, and the control
-names that model at once; reconnecting the account does not bring the old choice back.
+model sets an explicit choice. Each saved chat restores its own model, reasoning level,
+and run options when opened, including after an app restart. If reading the choice
+fails, Send stays disabled with the error. Chat retries when the window regains
+focus or the chat is reopened. Choosing a model explicitly also resolves the
+selection. A pick saves immediately
+in a saved chat. A queued message keeps the settings it was queued with. A new chat
+starts from the last model submitted from any chat in this app profile, including a
+default resolved on send. Its selection saves when its first message creates it.
+A choice lasts until one of these
+ends it: choosing the Default row in that chat, saving a Chat model, reasoning level or
+run option in Settings (for the app, every chat's choice; for a Loupist, its chats'; a
+new chat then starts on the default), or its model leaving Chat (its account
+disconnected, or the model hidden or no longer offered). The next reply then uses the
+Loupist's default as Rust resolves it for a new session, and the control names that
+model at once. Once the composer drops that choice, reconnecting the account leaves
+the chat on its default.
 The picker shows the answering account’s plan and exposes reasoning and performance
 under Advanced. A model switch keeps the current reasoning level when supported.
 A stored Chat default that cannot run (its account signed out or disconnected, or the

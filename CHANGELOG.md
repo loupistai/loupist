@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.1.7 - 2026-11-25
+
+- Pick a model for one chat without changing another: each chat keeps its own choice, Default included, and a new chat starts on the model your last message ran on.
+- Reopen a saved chat after a restart on its own model, reasoning and run options, instead of the defaults.
+- See what your AI accounts were used for in Settings › Usage: totals per account and per kind of work, and each account's last seven days, counted on this Mac.
+- See in an answer's details how many model requests it made and, for an account connected with an API key, what they are estimated to cost.
+- Send a message right after adding a file: Send waits while the file is still being read ("Reading 1 file…") and sends it with the message, instead of sending without it and leaving it for the next one.
+- Close the + menu by choosing Files… or Paste image: it no longer stays open behind the file dialog or the Paste confirmation.
+- Paste images straight from the + menu on macOS.
+- Read the notes written while an answer is being worked out in the language of your question, also in a Loupist whose name or focus is in another language.
+- Have a question that a saved Source answers open that Source before any web search, and have a connected official source such as OpenDART read and cited ahead of a copy of the same filing saved from another site.
+- Save a company's full statements or a long price history as a Source: a result too large to show whole is kept with every line item, where it was refused or saved only as a narrower read. A result over 8 MiB is refused when you save it, with a narrower read to try.
+- See a research session you just started named from its question in the waiting save line while its first answer runs, instead of "Untitled research session".
+- Keep market data working when one request returns too much: only that request is refused, with its size and a shorter range or narrower selection to ask for, and the petroleum status report and the Svensson yield curve are offered again.
+- See a data connection's reply too large to read reported as such, with a narrower request or another source to try, instead of "the provider rejected the request".
+- Read a DeFi protocol with a long history from DefiLlama, Curve DEX among them, instead of being told the provider rejected the request.
+- Follow "Samsung Electronics" and find its KRX listing (005930) first, instead of only its bonds and overseas trading lines.
+- Read KRX daily prices across a trading halt: the halted days are named apart from holidays instead of failing the whole read, and a date before 2010-01-04, where KRX's data starts, is refused with a pointer to another source instead of returning no data.
+- Keep Korea Investment reads within its per-second limit across chats and continuation pages, and see one that still came too fast reported as a rate limit to wait out, instead of a failed read.
+- See why a Korea Investment read failed: an expired session is renewed once on its own, a refused app key or secret comes with the setup card to fix it, and a missing API permission, a wrong market code or a value of the wrong length is named.
+- Use a Korea Investment demo account without dead ends: only the reads demo serves are offered, and a real-only read is refused before any request.
+- Find a Korea Investment symbol by its Korean or English name or its code, across KIS's domestic and overseas markets, with the market or exchange code its reads need.
+- Read KSD's dividend calendar through a real Korea Investment connection: record and payment dates, per-share cash and dividend rates for a date range, for one company or every issue.
+- Read the dates on a chart's time axis: a year of daily prices in the side panel shows one label a quarter instead of twelve that run together, and a wide chart keeps one a month.
+- Find Schedule laid out like the other pages: centred, with Off beside Turn on in the briefing's row and the footer right after the list.
+- Read the Edit menu in your interface language: macOS's AutoFill, Start Dictation and Emoji & Symbols items, which showed in English, are no longer added to it.
+- Ask the Bot to watch what you follow and hear from it only when something matters: material filings and results, where the measures behind your lines stand, or a company's next results. A watch reports on its first check so you see what it reads, then stays quiet until its condition is met; turn one on from the Bot or from the asset's page.
+- See the Bot's standing work above its conversation: what is checking now, how many checks found nothing, and a task paused after repeated failures. Results that arrived while you were away are grouped together.
+- Read the evidence under each Bot result: which of the figures it cites were checked against their source, and the run behind it, with Ask about this to continue from there.
+- Turn on a task the Bot suggests from its card: nothing runs until you do, and declining one can be undone while you are still in the Bot.
+- Choose how each kind of Bot update reaches you in Settings › Notifications: now, with the next update, or in Bot only, with quiet hours, a daily cap, a switch for showing details, and a link to the macOS notification settings. Line crossings, filings watches and briefings notify now by default; other results wait, with quiet hours from 22:00 to 07:00 and at most six a day. Each watch can keep its own setting.
+- Bot sends no notification for its conversation while you are reading it, and a watch drops an asset you stop following.
+- Let Python read your connected data and saved Sources through Loupist, so work over many rows is computed in code instead of copied into the answer. Show the math on a calculated figure opens the code and the reads behind it, and Run again on the same data repeats them.
+- Keep scripts that work in Library › Scripts: every version stays, and you can edit, restore, test, copy or export one as a .py file. A version the agent saved can be undone from its answer.
+- Have the Bot offer a watch or a weekly review on an asset you follow when it sees a reason, such as results due within two weeks. Turn on creates that task and nothing else, and Not now keeps the same offer from coming back. A scheduled run can also leave you one question with a suggested answer instead of waiting for you.
+- Get an evening briefing beside the morning one: what happened today and what is due the next trading day, with its own time and its own switch. The next briefing also covers what your watches checked without telling you.
+- See under Needs you a watch that has stayed quiet for six checks or notified you four times in a week, so you can change it or have it notify more quietly.
+- Open Standing from the Bot's header to see everything it keeps in mind, edit or forget an entry without a model call, and see what each scheduled task used in the last 30 days. Only the preferences you gave it reach briefings and scheduled runs.
+- Have the Bot set up a check the app runs by itself, such as a price moving more than 5% from one close to the next or crossing a level you name: it uses no AI until the check is met, then the Bot reads what happened and reports it, at most three times a day for one check.
+- See a proposed check before it runs: what it checks, what it reads and how it did on recent days. Turn on runs exactly the code you approved, and a later change to it waits for your OK while the approved version keeps running.
+- Get a met check's card in the Bot at once, filled in by the Bot's report as soon as it can run. A check whose code fails three times in a row stops and says so.
+- Turn on price moves from an asset's page, and see each check's reads and results in Schedule and Usage.
+
 ## 0.1.6 - 2026-11-24
 
 - Attach files and images to a message again: the composer shows each image's thumbnail and sends the files, where every signed build until now refused to send them ("could not read or send the attached message") and showed no preview.
