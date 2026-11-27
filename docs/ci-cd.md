@@ -147,7 +147,9 @@ Syft 1.50.0. Node setup in CI and release validation/signature verification read
 the same pin. npm caching is explicit and disabled in signing/publication jobs.
 
 Source jobs use the same bounded check runner as local development, with a
-60-minute job limit and per-command timeouts. Native and package jobs also have
+60-minute job limit and per-command timeouts. The Rust `tests` leg on Linux and
+macOS passes `--timeout 3600` and its job limit is 90 minutes, so the lib suite
+can finish on the macOS runner. Native and package jobs also have
 a 60-minute job limit. Their receipts and logs upload on
 success or failure and expire after seven days. The web gate includes agent and
 World evaluator regression tests; Rust also checks the `eval-harness` contracts.

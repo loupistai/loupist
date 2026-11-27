@@ -168,7 +168,9 @@ jobs:
   verify-rust:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    timeout-minutes: 60
+    # The tests leg's lib suite exceeds the runner's 1800s default on a slow host.
+    # 90 minutes leaves the previous setup margin after a 3600s command.
+    timeout-minutes: ${{ case(matrix.leg == 'tests', 90, 60) }}
     name: Rust ${{ matrix.leg }} (Linux)
     strategy:
       fail-fast: false
@@ -258,7 +260,11 @@ jobs:
       - name: Verify desktop Rust
         run: |
           set -euo pipefail
-          sh apps/loupist/scripts/check.sh rust --only "${{ matrix.steps }}"
+          if [ "${{ matrix.leg }}" = "tests" ]; then
+            sh apps/loupist/scripts/check.sh rust --only "${{ matrix.steps }}" --timeout 3600
+          else
+            sh apps/loupist/scripts/check.sh rust --only "${{ matrix.steps }}"
+          fi
 
       - name: Retain rust check evidence
         if: always()
@@ -365,7 +371,8 @@ jobs:
   verify-rust-macos:
     needs: changes
     if: needs.changes.outputs.rust == 'true' && needs.changes.outputs.macos == 'true'
-    timeout-minutes: 60
+    # Same tests-leg budget as verify-rust. macos-15 stopped the lib suite at 1800s.
+    timeout-minutes: ${{ case(matrix.leg == 'tests', 90, 60) }}
     name: Rust ${{ matrix.leg }} (macOS)
     strategy:
       fail-fast: false
@@ -426,7 +433,11 @@ jobs:
       - name: Verify desktop Rust
         run: |
           set -euo pipefail
-          sh apps/loupist/scripts/check.sh rust --only "${{ matrix.steps }}"
+          if [ "${{ matrix.leg }}" = "tests" ]; then
+            sh apps/loupist/scripts/check.sh rust --only "${{ matrix.steps }}" --timeout 3600
+          else
+            sh apps/loupist/scripts/check.sh rust --only "${{ matrix.steps }}"
+          fi
 
       - name: Retain rust check evidence
         if: always()
