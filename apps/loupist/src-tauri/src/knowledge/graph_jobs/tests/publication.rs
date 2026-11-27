@@ -254,6 +254,7 @@ fn repeated_authorized_spans_do_not_hide_a_later_foreign_span() {
         claims,
         annotations,
         relation_vocabulary: Vec::new(),
+        temporal: Default::default(),
     };
     store
         .read(|read| crate::knowledge::world::authorize_spans(read.tx, LOUPIST, &body))
@@ -386,4 +387,282 @@ fn growth_records_no_single_source_for_a_manual_publication_with_several_sources
     let publication = event.publication.as_ref().unwrap();
     assert_eq!(publication.revision_id, published.revision_id);
     assert!(publication.source.is_none());
+}
+
+#[test]
+fn source_chunks_record_exact_character_ranges_and_bound_episode_changes() {
+    let (_directory, store) = open();
+    let mut settings = enabled();
+    let body = format!(
+        "{}\n\nSecond filing paragraph",
+        "한".repeat(EPISODE_CHUNK_CHARS - 2)
+    );
+    let first = queued(&store, &settings, LOUPIST, body.as_bytes());
+    let source = first.document.source_binding.as_ref().unwrap();
+
+    let mut artifact: Value = serde_json::from_str(&world_artifact(&[&source.span_id])).unwrap();
+    let template = artifact["claims"][0].clone();
+    let rows = artifact["claims"].as_array_mut().unwrap();
+    for i in 0..260 {
+        let mut claim = template.clone();
+        claim["adapter_id"] = json!(format!("clm_{i:032x}"));
+        claim["proposition"] = json!(format!("The source records observation {i}."));
+        rows.push(claim);
+    }
+    let first_done = publish(&store, &mut settings, &first, &artifact.to_string(), AT).unwrap();
+    let next = store
+        .graph_jobs(LOUPIST)
+        .unwrap()
+        .into_iter()
+        .find(|job| job.document.chunk_index == Some(1))
+        .unwrap();
+    let second_done = publish(
+        &store,
+        &mut settings,
+        &next,
+        &artifact.to_string(),
+        AT + 1_000,
+    )
+    .unwrap();
+    let episodes = store
+        .read(|read| {
+            super::super::super::world_episodes::by_source(
+                read.tx,
+                LOUPIST,
+                &source.source_record_id,
+            )
+        })
+        .unwrap();
+    assert_eq!(episodes.len(), 2);
+    assert_eq!(
+        episodes[0].sealed_revision_id,
+        first_done.document.sealed_revision_id.unwrap()
+    );
+    assert_eq!(
+        episodes[1].sealed_revision_id,
+        second_done.document.sealed_revision_id.unwrap()
+    );
+    assert_eq!(episodes[0].changes.created.len(), 256);
+    assert_eq!(episodes[0].changes.truncated["created"], 5);
+    assert!(episodes[1].changes.created.is_empty());
+    assert!(episodes[1].changes.ended.is_empty());
+    assert_eq!(episodes[0].reference_basis, Some(ReferenceBasis::Received));
+    assert_eq!(
+        episodes[0].model.as_ref().unwrap().model_profile,
+        first.document.extraction.model_profile
+    );
+    let chars: Vec<_> = body.chars().collect();
+    assert_eq!(episodes[0].char_start, Some(0));
+    assert_eq!(episodes[0].char_end, episodes[1].char_start);
+    assert_eq!(episodes[1].char_end, Some(chars.len() as u32));
+    for (row, job) in episodes.iter().zip([first, next]) {
+        let actual: String = chars
+            [row.char_start.unwrap() as usize..row.char_end.unwrap() as usize]
+            .iter()
+            .collect();
+        assert_eq!(actual, job.document.body);
+        assert_eq!(row.chunk_count, Some(2));
+    }
+}
+
+fn episode_count(store: &crate::knowledge::KnowledgeStore) -> i64 {
+    store
+        .read(|read| {
+            Ok(read
+                .tx
+                .query_row("SELECT COUNT(*) FROM knowledge_world_episodes", [], |row| {
+                    row.get(0)
+                })?)
+        })
+        .unwrap()
+}
+
+fn published_revisions(
+    store: &crate::knowledge::KnowledgeStore,
+) -> std::collections::BTreeSet<String> {
+    store
+        .growth_events(&crate::knowledge::GrowthEventsQuery {
+            loupist_id: LOUPIST.into(),
+            since_ms: None,
+            until_ms: None,
+            world_revision_id: None,
+            limit: None,
+            cursor: None,
+        })
+        .unwrap()
+        .events
+        .into_iter()
+        .filter_map(|event| event.publication.map(|publication| publication.revision_id))
+        .collect()
+}
+
+#[test]
+fn a_chunk_episode_commits_with_its_seal_and_an_aborted_step_leaves_nothing_to_resume() {
+    let (directory, store) = open();
+    let mut settings = enabled();
+    let publications = prepare(&store, &settings);
+    assert_eq!(episode_count(&store), 0);
+    let first = publish(
+        &store,
+        &mut settings,
+        &publications.first,
+        &publications.first_artifact,
+        AT,
+    )
+    .unwrap();
+    let first_revision = first.document.sealed_revision_id.clone().unwrap();
+    assert_eq!(head(&store, LOUPIST, &publications.world), first_revision);
+    let source = publications
+        .first
+        .document
+        .source_binding
+        .as_ref()
+        .unwrap()
+        .source_record_id
+        .clone();
+    let episodes = store
+        .read(|read| super::super::super::world_episodes::by_source(read.tx, LOUPIST, &source))
+        .unwrap();
+    assert_eq!(episodes.len(), 1);
+    assert_eq!(episodes[0].job_id, first.job_id);
+    assert_eq!(episodes[0].sealed_revision_id, first_revision);
+    assert!(!episodes[0].backfilled);
+    let events = store
+        .growth_events(&crate::knowledge::GrowthEventsQuery {
+            loupist_id: LOUPIST.into(),
+            since_ms: None,
+            until_ms: None,
+            world_revision_id: Some(first_revision.clone()),
+            limit: None,
+            cursor: None,
+        })
+        .unwrap()
+        .events;
+    let for_seal = |kind: &str| {
+        events
+            .iter()
+            .filter(|event| {
+                event.kind == kind
+                    && event
+                        .publication
+                        .as_ref()
+                        .is_some_and(|publication| publication.revision_id == first_revision)
+            })
+            .filter_map(|event| event.subject_id.clone())
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    let added = for_seal("claim_added");
+    assert!(!added.is_empty());
+    assert_eq!(
+        episodes[0]
+            .changes
+            .created
+            .iter()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>(),
+        added
+    );
+    assert_eq!(
+        episodes[0]
+            .changes
+            .entities_added
+            .iter()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>(),
+        for_seal("entity_added")
+    );
+    let revisions = published_revisions(&store);
+
+    let second = claim(&store, &settings, &publications.second.job_id, AT + 300);
+    let attempt = second.document.attempt_id.clone().unwrap();
+    let aborted: KnowledgeResult<()> = store.transact(|write| {
+        publish_and_complete(
+            write,
+            &mut settings,
+            &second.job_id,
+            &attempt,
+            &publications.second_artifact,
+            &sha256(publications.second_artifact.as_bytes()),
+            AT + 400,
+            false,
+            &[],
+        )?;
+        Err(KnowledgeError::Invalid("fixture transaction rollback"))
+    });
+    assert!(matches!(
+        aborted,
+        Err(KnowledgeError::Invalid("fixture transaction rollback"))
+    ));
+    assert_eq!(episode_count(&store), 1);
+    assert_eq!(head(&store, LOUPIST, &publications.world), first_revision);
+    assert_eq!(published_revisions(&store), revisions);
+    let parked = store.graph_job(LOUPIST, &second.job_id).unwrap();
+    assert_eq!(parked.status, JOB_RUNNING);
+    assert_eq!(
+        parked.document.sealed_revision_id.as_deref(),
+        Some(first_revision.as_str()),
+        "the claim keeps the head it read; the aborted seal writes no new revision"
+    );
+    let second_source = publications
+        .second
+        .document
+        .source_binding
+        .as_ref()
+        .unwrap()
+        .source_record_id
+        .clone();
+    assert!(store
+        .read(|read| {
+            super::super::super::world_episodes::by_source(read.tx, LOUPIST, &second_source)
+        })
+        .unwrap()
+        .is_empty());
+
+    let path = directory.path().join("knowledge.sqlite");
+    drop(store);
+    let store = KnowledgeStore::open(&path).unwrap();
+    assert_eq!(episode_count(&store), 1);
+    assert_eq!(head(&store, LOUPIST, &publications.world), first_revision);
+    assert_eq!(
+        store.graph_job(LOUPIST, &second.job_id).unwrap().status,
+        JOB_RUNNING
+    );
+    let recovered = store
+        .transact(|write| super::super::recover_interrupted(write.tx))
+        .unwrap();
+    assert_eq!(recovered, 1);
+    let resumed = store.graph_job(LOUPIST, &second.job_id).unwrap();
+    assert_eq!(resumed.status, JOB_QUEUED);
+    assert_eq!(
+        resumed.document.sealed_revision_id.as_deref(),
+        Some(first_revision.as_str())
+    );
+    assert_eq!(episode_count(&store), 1);
+    let done = publish(
+        &store,
+        &mut settings,
+        &resumed,
+        &publications.second_artifact,
+        AT + 1_000,
+    )
+    .unwrap();
+    let second_revision = done.document.sealed_revision_id.unwrap();
+    assert_eq!(done.status, JOB_COMPLETED);
+    assert_ne!(second_revision, first_revision);
+    assert_eq!(head(&store, LOUPIST, &publications.world), second_revision);
+    assert_eq!(episode_count(&store), 2);
+    let episodes = store
+        .read(|read| super::super::super::world_episodes::by_source(read.tx, LOUPIST, &source))
+        .unwrap();
+    assert_eq!(episodes.len(), 1, "the second chunk has its own source");
+    let second_episodes = store
+        .read(|read| {
+            super::super::super::world_episodes::by_source(read.tx, LOUPIST, &second_source)
+        })
+        .unwrap();
+    assert_eq!(second_episodes.len(), 1);
+    assert_eq!(second_episodes[0].job_id, second.job_id);
+    assert_eq!(second_episodes[0].sealed_revision_id, second_revision);
+    assert!(published_revisions(&store).contains(&second_revision));
+    assert!(published_revisions(&store).contains(&first_revision));
 }

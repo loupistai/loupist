@@ -1,7 +1,7 @@
 import i18n, { useTranslation } from "@/i18n";
 import "@/styles/answer-checks.css";
 import { CalendarIcon, XIcon } from "lucide-react";
-import { useId, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { asOfProblem, EARLIEST_AS_OF, formatAsOf, quickAsOf, todayIso } from "../../chat/asOf";
 import { AppDateField } from "../ui/app-date-field";
 import { Button } from "../ui/button";
@@ -10,8 +10,8 @@ const t = i18n.getFixedT(null, "chat");
 
 /**
  * The `/asof` date panel (finance-point-in-time.md §2.1): it takes the
- * assist menu's frame. Enter in the field sets the date; Escape returns to
- * the menu (the composer handles it).
+ * assist menu's frame. Escape returns to the command menu after the date
+ * dropdown is closed.
  */
 export function AsOfDatePanel({ initial, onSet, onCancel, onBack }: {
   initial?: string;
@@ -24,11 +24,13 @@ export function AsOfDatePanel({ initial, onSet, onCancel, onBack }: {
   const [value, setValue] = useState(initial ?? "");
   const headingId = useId();
   const errorId = useId();
+  const errorRef = useRef<HTMLParagraphElement>(null);
   const problem = value ? asOfProblem(value) : "invalid";
   const error = value && problem === "future" ? t("asOf.invalidFuture") : value && problem === "early" ? t("asOf.invalidEarly") : null;
+  useEffect(() => { if (error) errorRef.current?.focus(); }, [error]);
   const set = () => { if (!problem) onSet(value); };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Escape") {
+    if (event.key === "Escape" && !event.defaultPrevented) {
       event.preventDefault();
       event.stopPropagation();
       onBack();
@@ -36,17 +38,15 @@ export function AsOfDatePanel({ initial, onSet, onCancel, onBack }: {
   };
   return <div className="composer-assist composer-asof-panel" role="group" aria-labelledby={headingId} onKeyDown={onKeyDown}>
     <p id={headingId} className="composer-asof-title">{t("asOf.panelTitle")}</p>
-    <AppDateField autoFocus grouped={false} value={value} min={EARLIEST_AS_OF} max={todayIso()} aria-label={t("asOf.panelTitle")}
+    {error ? <p ref={errorRef} tabIndex={-1} id={errorId} className="composer-asof-error" role="alert">{error}</p> : null}
+    <AppDateField autoFocus={!error} grouped={false} value={value} min={EARLIEST_AS_OF} max={todayIso()} aria-label={t("asOf.panelTitle")}
       aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined}
-      onChange={setValue}
-      onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); set(); } }} />
-    {error ? <p id={errorId} className="composer-asof-error" role="alert">{error}</p> : null}
+      onChange={setValue} />
     <div className="composer-asof-quick">
       <Button type="button" variant="outline" size="sm" onClick={() => setValue(quickAsOf("month"))}>{t("asOf.quickMonth")}</Button>
       <Button type="button" variant="outline" size="sm" onClick={() => setValue(quickAsOf("yearStart"))}>{t("asOf.quickYearStart")}</Button>
       <Button type="button" variant="outline" size="sm" onClick={() => setValue(quickAsOf("year"))}>{t("asOf.quickYear")}</Button>
     </div>
-    <p className="composer-asof-explain">{t("asOf.explain")}</p>
     <div className="composer-asof-actions">
       <Button type="button" variant="ghost" size="sm" onClick={onCancel}>{t("asOf.cancel")}</Button>
       <Button type="button" size="sm" disabled={Boolean(problem)} onClick={set}>{t("asOf.set")}</Button>

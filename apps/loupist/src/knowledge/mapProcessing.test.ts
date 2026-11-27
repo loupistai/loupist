@@ -1,5 +1,5 @@
 import type { GraphProcessingView, KnowledgeCatalog } from "../types";
-import { sourceDisplayStatus, sourceProcessingLabel, stoppedSources, waitingLabel, worldProcessing } from "./mapProcessing";
+import { sourceDisplayStatus, sourceHold, sourceHoldLine, sourceProcessingLabel, sourceRetryOffered, stoppedSourceLine, stoppedSources, waitingLabel, worldProcessing, type StoppedSource } from "./mapProcessing";
 
 function catalog(statuses: readonly string[]): KnowledgeCatalog {
   return {
@@ -81,4 +81,41 @@ it("counts the Sources stopped at the request limit by record and says so on Wor
   const after = records([["completed"], ["paused_budget", "completed"], ["running"], ["paused"], [undefined], ["queued"]]);
   expect(worldProcessing(after, ready).activity).toEqual({ kind: "building", sourceCount: 2 });
   expect(stoppedSources(after, ready)).toEqual(["source-1"]);
+});
+
+it.each([
+  ["invalid_json", "The model's reply could not be used.", true],
+  ["schema_mismatch", "The model's reply could not be used.", true],
+  ["incomplete_response", "The model's reply could not be used.", true],
+  ["output_size", "The model's reply could not be used.", true],
+  ["content_type", "The model's reply could not be used.", true],
+  ["provider_error", "The AI provider returned an error.", true],
+  ["world_full", "World is full. This Source is kept but not read into World.", false],
+  ["interrupted", "World building was interrupted", true],
+] as const)("says why a Source stopped for %s and offers Try again only when it can run again", (kind, line, retry) => {
+  const model = kind === "invalid_json" || kind === "schema_mismatch" || kind === "incomplete_response" || kind === "output_size" || kind === "content_type";
+  const stop = { status: kind === "world_full" ? "paused_budget" : model ? "failed_extraction" : kind, failure: { kind }, retryable: true };
+  expect(stoppedSourceLine(stop)).toBe(line);
+  expect(sourceRetryOffered(stop)).toBe(retry);
+  expect(sourceRetryOffered({ ...stop, retryable: undefined })).toBe(false);
+});
+
+it("keeps the status sentence when a stop has no recorded failure", () => {
+  expect(stoppedSourceLine({ status: "paused_budget", retryable: true })).toBe("World building paused for this source: it reached the request allowance set in World building settings.");
+  expect(sourceRetryOffered({ status: "paused_budget", retryable: true })).toBe(true);
+  expect(sourceRetryOffered({ status: "paused_budget" })).toBe(false);
+  expect(sourceRetryOffered({ status: "interrupted" })).toBe(false);
+  expect(stoppedSourceLine({ status: "failed_extraction" })).toBe("The model's reply could not be used.");
+});
+
+it("names a Source waiting on an allowance or a plan limit", () => {
+  expect(sourceHold({ status: "queued", hold: { cause: "allowance" } } as StoppedSource)).toBe("allowance");
+  expect(sourceHold({ status: "queued", hold: { cause: "plan_limit", provider: "openai" } } as StoppedSource)).toBe("plan_limit");
+  expect(sourceHold({ status: "queued", hold: { cause: "out_of_credit", provider: "openai" } } as StoppedSource)).toBe("out_of_credit");
+  expect(sourceHold({ status: "paused", hold: "daily_allowance" } as StoppedSource)).toBe("daily_allowance");
+  expect(sourceHold({ status: "out_of_credit" })).toBe("out_of_credit");
+  expect(sourceHold({ status: "paused_budget", retryable: true })).toBeUndefined();
+  expect(sourceHoldLine("allowance")).toBe("Waiting for tomorrow's allowance.");
+  expect(sourceHoldLine("plan_limit")).toBe("Your AI plan's limit was reached. Reading resumes tomorrow.");
+  expect(sourceHoldLine("out_of_credit")).toBe("Your AI plan's limit was reached. Reading resumes tomorrow.");
 });

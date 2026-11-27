@@ -6,7 +6,7 @@ import type { CustomOrigin } from "../custom_connections/taint";
 import type { SourceProcessing } from "../knowledge";
 import type { GraphPublicSettings } from "../knowledge/graph_jobs";
 import type { LensKind } from "../knowledge/lens_page";
-import type { GraphCoverage, GraphEdge, GraphNode, IndexingState, JournalSourceInput, ProvidedOrigin, QueryScan, RecordKind, TimePoint } from "../knowledge/model";
+import type { GraphCoverage, GraphEdge, GraphNode, IndexingState, JournalSourceInput, ProvidedOrigin, QueryScan, RecordKind, TimePoint, WorldAsOfReport } from "../knowledge/model";
 import type { SourceWorldClaim, WorldSourceTarget } from "../knowledge/world_source";
 
 export type JournalSourceReadDto = {
@@ -71,6 +71,8 @@ export type KnowledgeLensSearchRequest = {
 
 export type KnowledgeObjectRefDto = {
   origin?: CustomOrigin,
+  /** A table Source's row count and the span of its leading period column. */
+  table?: KnowledgeTablePreviewDto,
   summary: string | null,
   originLabel: string | null,
   acquiredAt: TimePoint | null,
@@ -143,6 +145,12 @@ export type KnowledgeSourceRetainRequest = {
   file?: KnowledgeSourceFile | null,
 };
 
+/**
+ * Row count and the first and last period of a table Source. Absent unless
+ * the object's leading column is a date or a fiscal period. Nothing here is stored.
+ */
+export type KnowledgeTablePreviewDto = { rows: number, first: string, last: string };
+
 export type LensSearchHitDto = {
   recordId: string,
   revisionId: string,
@@ -153,6 +161,8 @@ export type LensSearchHitDto = {
 };
 
 export type MemoryLearnedRequest = { loupistId: string, messageIds: Array<string> };
+
+export type MemoryMessageUndoRequest = { loupistId: string, messageId: string };
 
 export type MemoryOpUndoRequest = { loupistId: string, opId: string };
 
@@ -220,6 +230,8 @@ export type SourceSpanViewDto = {
 export type WorldQueryDto = {
   originLabel: string,
   appliedCursor: string | null,
+  /** What the query's `asOf` left out; absent without one. */
+  asOfReport?: WorldAsOfReport,
   sourceTargets: { [key in string]: WorldSourceTarget },
   recordId: string,
   revisionId: string,

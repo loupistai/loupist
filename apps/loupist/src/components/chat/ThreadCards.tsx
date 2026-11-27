@@ -14,6 +14,8 @@ function presetLabel(preset: HomeOffer["preset"]) {
     case "results-follow-up": return "schedule.results" as const;
     case "week-in-review": return "schedule.week" as const;
     case "price-move": return "schedule.priceMoves" as const;
+    case "fact-changes": return "schedule.factChanges" as const;
+    case "asset-daily": return "schedule.learning.trackDaily" as const;
   }
 }
 

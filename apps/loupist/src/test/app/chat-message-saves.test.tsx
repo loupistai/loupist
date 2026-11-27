@@ -75,7 +75,6 @@ it("frees the conversation once the answer is stored and keeps the wait and Skip
   await waitFor(() => expect(status).toHaveTextContent(`Saving to Memory · waiting for “${BLOCKER}” to finish`));
   const skipHere = first.getByRole("button", { name: "Skip saving" });
   expect(skipHere).toHaveAttribute("title", "Keep the answer and skip saving it to Memory.");
-  expect(first.getByRole("button", { name: "Helpful" })).toBeDisabled();
   // The conversation takes its next message while that reply waits to save.
   expect(screen.getByRole("button", { name: "Send" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Stop response" })).toBeNull();

@@ -95,6 +95,8 @@ pub(crate) async fn execute(
         inputs: Default::default(),
         entries: Vec::new(),
         final_round: true,
+        bar_dates: Default::default(),
+        check_stale_days: None,
     };
     execute_round(
         roots,
@@ -256,7 +258,7 @@ async fn run_owned(
             permit = WORKERS.acquire() => permit.map_err(|_| BrokerError::Execution("Python execution is unavailable".into()))?,
             _ = cancel.cancelled() => return Err(BrokerError::Execution("Python execution was cancelled".into())),
             _ = disconnected.cancelled() => return Err(BrokerError::Execution("Python execution was cancelled".into())),
-            _ = tokio::time::sleep(wait) => return Err(BrokerError::Execution("Python execution timed out while waiting for another run".into())),
+            _ = tokio::time::sleep(wait) => return Err(BrokerError::PythonWorkerBusy),
         };
         drive(
             &roots,

@@ -64,8 +64,28 @@ pub enum MemorySaveSkipReason {
     User,
     Deadline,
     Interrupted,
+    /// The save failed without a recorded cause, as every save before causes
+    /// were recorded did.
     Failed,
     PolicyChanged,
+    /// A staged item or the receipt was refused as invalid.
+    Invalid,
+    /// The store stayed busy past the save budget.
+    StoreBusy,
+    /// Loupist could not read or write this Loupist's data.
+    Storage,
+    /// The conversation or Memory changed while the save ran.
+    Conflict,
+}
+
+impl MemorySaveSkipReason {
+    /// A save that ran and failed, rather than one skipped, cut short or reset.
+    pub fn is_failure(self) -> bool {
+        matches!(
+            self,
+            Self::Failed | Self::Invalid | Self::StoreBusy | Self::Storage | Self::Conflict
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,8 +113,17 @@ pub enum DiscardedMemoryKind {
 pub struct DiscardedMemoryItem {
     pub kind: DiscardedMemoryKind,
     pub title: String,
+    /// Why a save that kept the rest of its turn left this item out. Absent
+    /// when the whole save was skipped, whose receipt gives the reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub reason: Option<MemorySaveSkipReason>,
 }
 
+/// A reply's receipt lists each non-price change its turn could stage: 16
+/// Sources, a note's two entries, 8 principles and 8 filed Lens pages. A
+/// smaller bound refuses the receipt and so loses the turn's whole save.
+pub(crate) const MAX_MEMORY_UPDATE_CHANGES: usize = 34;
 pub(crate) const MAX_DISCARDED_MEMORY_ITEMS: usize = 32;
 pub(crate) const MAX_DISCARDED_MEMORY_TITLE_CHARS: usize = 160;
 
@@ -307,8 +336,9 @@ impl SetupChange {
 impl MemoryUpdateResult {
     pub fn validate(&self) -> Result<(), DomainError> {
         // A saved reply lists only what its own commit could not keep: a price
-        // read for an asset no longer followed, or a Bot memory change whose
-        // entry an earlier reply's save resolved or forgot.
+        // read for an asset no longer followed, a Bot memory change whose
+        // entry an earlier reply's save resolved or forgot, or an item a
+        // failed attempt refused, left out so the rest of the turn saved.
         validate_discarded_memory_items(
             self.discarded_memory_items.as_deref(),
             self.skip_reason.is_some()
@@ -317,7 +347,7 @@ impl MemoryUpdateResult {
                         matches!(
                             item.kind,
                             DiscardedMemoryKind::PriceRead | DiscardedMemoryKind::BotMemory
-                        )
+                        ) || item.reason.is_some_and(MemorySaveSkipReason::is_failure)
                     })
                 }),
         )?;
@@ -328,7 +358,7 @@ impl MemoryUpdateResult {
             .iter()
             .filter(|change| change.kind != PRICE_READ_CHANGE_KIND)
             .count()
-            > 18
+            > MAX_MEMORY_UPDATE_CHANGES
         {
             return Err(DomainError::Invalid("memory update has too many changes"));
         }
@@ -2044,6 +2074,38 @@ mod tests {
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     );
+
+    /// A receipt stored before save failures named a cause, or an item a reason,
+    /// still reads as written and stays valid; a saved receipt still may not list
+    /// a non-price item it did not keep without saying why.
+    #[test]
+    fn a_receipt_stored_before_save_causes_still_reads() {
+        let stored = r#"{"status":"no_change","skipReason":"failed","discardedMemoryItems":[{"kind":"source","title":"Annual report"}],"commitId":null,"changes":[]}"#;
+        let receipt: MemoryUpdateResult = serde_json::from_str(stored).unwrap();
+        assert_eq!(receipt.skip_reason, Some(MemorySaveSkipReason::Failed));
+        let items = receipt.discarded_memory_items.as_deref().unwrap();
+        assert_eq!(items[0].reason, None);
+        receipt.validate().unwrap();
+        assert_eq!(
+            serde_json::to_value(&receipt).unwrap(),
+            serde_json::from_str::<serde_json::Value>(stored).unwrap()
+        );
+
+        let saved = MemoryUpdateResult {
+            status: MemoryUpdateStatus::NoChange,
+            skip_reason: None,
+            ..receipt.clone()
+        };
+        assert!(saved.validate().is_err());
+        let partly = MemoryUpdateResult {
+            discarded_memory_items: Some(vec![DiscardedMemoryItem {
+                reason: Some(MemorySaveSkipReason::Invalid),
+                ..items[0].clone()
+            }]),
+            ..saved
+        };
+        partly.validate().unwrap();
+    }
 
     #[test]
     fn an_unfinished_reply_titles_only_an_untitled_session_and_a_finished_one_replaces_it() {

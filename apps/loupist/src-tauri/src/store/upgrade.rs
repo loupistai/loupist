@@ -34,6 +34,10 @@
 //! Store 11→12 keeps asset names and references and drops the app-wide followed list.
 //! Knowledge 7→8 binds existing prices to each page's legacy listing.
 //! Knowledge 9→10 adds where a user-provided Source capture came from.
+//! Knowledge 11→12 adds immutable World episodes.
+#[cfg(test)]
+use std::cell::Cell;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
@@ -72,6 +76,7 @@ const KNOWLEDGE_STEPS: &[Step] = &[
     knowledge_8_to_9,
     knowledge_9_to_10,
     knowledge_10_to_11,
+    knowledge_11_to_12,
 ];
 
 const _: () = assert!(STORE_BASELINE_VERSION + STORE_STEPS.len() as i64 == STORE_SCHEMA_VERSION);
@@ -986,6 +991,308 @@ fn knowledge_10_to_11(tx: &Transaction<'_>) -> StoreResult<()> {
     Ok(())
 }
 
+/// The v11 outbox's fields that prove a Source publication. The rest of
+/// its document is irrelevant to this step and may have changed over time.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EpisodeJobV11 {
+    episode_kind: String,
+    source_binding: EpisodeBindingV11,
+    sealed_revision_id: String,
+    chunk_index: Option<u32>,
+    chunk_count: Option<u32>,
+    char_start: Option<u32>,
+    char_end: Option<u32>,
+    reference_time: Option<String>,
+    publication_time: Option<serde_json::Value>,
+    extraction: Option<EpisodeModelV11>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EpisodeBindingV11 {
+    source_record_id: String,
+    source_revision_id: String,
+    span_id: String,
+    source_id: String,
+    capture_id: String,
+    representation_id: String,
+    payload_digest: String,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EpisodeModelV11 {
+    model_profile: String,
+    thinking_level: String,
+}
+
+fn knowledge_id_v11(value: &str, prefix: &str) -> bool {
+    value.strip_prefix(prefix).is_some_and(|suffix| {
+        suffix.len() == 32
+            && suffix
+                .bytes()
+                .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    })
+}
+
+impl EpisodeJobV11 {
+    fn selected(&self) -> bool {
+        let binding = &self.source_binding;
+        self.episode_kind == "source_span"
+            && knowledge_id_v11(&self.sealed_revision_id, "rev_")
+            && knowledge_id_v11(&binding.source_record_id, "rec_")
+            && knowledge_id_v11(&binding.source_revision_id, "rev_")
+            && knowledge_id_v11(&binding.span_id, "spn_")
+            && knowledge_id_v11(&binding.source_id, "src_")
+            && knowledge_id_v11(&binding.capture_id, "cap_")
+            && knowledge_id_v11(&binding.representation_id, "rep_")
+            && binding.payload_digest.len() == 64
+            && binding
+                .payload_digest
+                .bytes()
+                .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static KNOWLEDGE_12_UNREADABLE: Cell<u32> = const { Cell::new(0) };
+}
+
+/// How many rows the last Knowledge 11→12 step on this thread could not read.
+#[cfg(test)]
+pub(crate) fn knowledge_12_unreadable_for_test() -> u32 {
+    KNOWLEDGE_12_UNREADABLE.with(Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) fn reset_knowledge_12_unreadable_for_test() {
+    KNOWLEDGE_12_UNREADABLE.with(|cell| cell.set(0));
+}
+
+fn knowledge_11_to_12(tx: &Transaction<'_>) -> StoreResult<()> {
+    let mut skipped = 0_u32;
+    tx.execute_batch(
+        r#"
+ALTER TABLE knowledge_capture_lineage
+    ADD COLUMN allowance_origin TEXT CHECK (allowance_origin IN ('background', 'chat'));
+CREATE TABLE knowledge_world_episodes (
+    episode_id TEXT PRIMARY KEY NOT NULL,
+    loupist_id TEXT NOT NULL,
+    world_record_id TEXT NOT NULL,
+    job_id TEXT NOT NULL UNIQUE,
+    sealed_revision_id TEXT NOT NULL UNIQUE,
+    previous_revision_id TEXT,
+    source_record_id TEXT NOT NULL,
+    source_revision_id TEXT NOT NULL,
+    span_id TEXT NOT NULL,
+    chunk_index INTEGER CHECK (chunk_index >= 0),
+    chunk_count INTEGER CHECK (chunk_count >= 1),
+    char_start INTEGER CHECK (char_start >= 0),
+    char_end INTEGER CHECK (char_end >= char_start),
+    reference_time TEXT,
+    reference_basis TEXT,
+    publication_json TEXT,
+    model_json TEXT,
+    changes_json TEXT NOT NULL,
+    backfilled INTEGER NOT NULL DEFAULT 0 CHECK (backfilled IN (0, 1)),
+    created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
+    CHECK ((char_start IS NULL) = (char_end IS NULL)),
+    CHECK (chunk_index < chunk_count),
+    CHECK (backfilled = 1 OR (
+        chunk_index IS NOT NULL AND chunk_count IS NOT NULL
+        AND char_start IS NOT NULL AND char_end IS NOT NULL
+        AND reference_time IS NOT NULL AND reference_basis IS NOT NULL
+        AND model_json IS NOT NULL
+    ))
+) STRICT;
+CREATE INDEX knowledge_world_episodes_by_source
+    ON knowledge_world_episodes (loupist_id, source_record_id, chunk_index);
+CREATE INDEX knowledge_world_episodes_by_time
+    ON knowledge_world_episodes (loupist_id, created_at_ms);
+CREATE TRIGGER knowledge_world_episodes_no_update BEFORE UPDATE ON knowledge_world_episodes
+BEGIN SELECT RAISE(ABORT, 'immutable'); END;
+CREATE TRIGGER knowledge_world_episodes_no_delete BEFORE DELETE ON knowledge_world_episodes
+BEGIN
+  SELECT RAISE(ABORT, 'immutable')
+  WHERE NOT EXISTS (
+    SELECT 1 FROM knowledge_erasure WHERE id = 1 AND armed = 1
+  );
+END;
+"#,
+    )?;
+    let mut jobs = tx.prepare(
+        "SELECT job_id, loupist_id, world_record_id, world_revision_id, created_at_ms, payload_json
+         FROM knowledge_graph_outbox WHERE status = 'completed' ORDER BY job_id",
+    )?;
+    let mut rows = jobs.query([])?;
+    let mut candidates = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut duplicate = BTreeSet::new();
+    while let Some(row) = rows.next()? {
+        let Ok(payload) = row
+            .get_ref(5)
+            .and_then(|value| value.as_str().map_err(|_| rusqlite::Error::InvalidQuery))
+        else {
+            skipped += 1;
+            continue;
+        };
+        let Ok(job) = serde_json::from_str::<EpisodeJobV11>(payload) else {
+            skipped += 1;
+            continue;
+        };
+        if !job.selected() {
+            continue;
+        }
+        let (Ok(id), Ok(owner), Ok(world), Ok(previous), Ok(at_ms)) = (
+            row.get::<_, String>(0),
+            row.get::<_, String>(1),
+            row.get::<_, String>(2),
+            row.get::<_, String>(3),
+            row.get::<_, i64>(4),
+        ) else {
+            skipped += 1;
+            continue;
+        };
+        if !seen.insert(job.sealed_revision_id.clone()) {
+            duplicate.insert(job.sealed_revision_id.clone());
+        }
+        candidates.push((id, owner, world, previous, at_ms, job));
+    }
+    let mut growth = tx.prepare(
+        "SELECT rowid, kind, subject_id, publication_json
+         FROM knowledge_growth_events
+         WHERE loupist_id = ?1 AND record_id = ?2 AND publication_json IS NOT NULL
+           AND subject_id IS NOT NULL AND kind IN ('claim_added', 'entity_added')
+         ORDER BY rowid",
+    )?;
+    let mut unreadable_growth = BTreeSet::new();
+    let mut insert = tx.prepare(
+        "INSERT INTO knowledge_world_episodes (
+           episode_id, loupist_id, world_record_id, job_id, sealed_revision_id,
+           previous_revision_id, source_record_id, source_revision_id, span_id,
+           chunk_index, chunk_count, char_start, char_end,
+           reference_time, reference_basis, publication_json, model_json, changes_json,
+           backfilled, created_at_ms
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, 1, ?19)",
+    )?;
+    for (id, owner, world, previous, at_ms, job) in candidates {
+        if duplicate.contains(&job.sealed_revision_id) {
+            continue;
+        }
+        let mut created = BTreeSet::new();
+        let mut entities = BTreeSet::new();
+        let mut rows = growth.query(rusqlite::params![owner, world])?;
+        while let Some(row) = rows.next()? {
+            let row_id: i64 = row.get(0)?;
+            let (Ok(kind), Ok(subject), Ok(publication)) = (
+                row.get::<_, String>(1),
+                row.get::<_, String>(2),
+                row.get::<_, String>(3),
+            ) else {
+                if unreadable_growth.insert(row_id) {
+                    skipped += 1;
+                }
+                continue;
+            };
+            let Ok(publication) = serde_json::from_str::<serde_json::Value>(&publication) else {
+                if unreadable_growth.insert(row_id) {
+                    skipped += 1;
+                }
+                continue;
+            };
+            if publication["revisionId"].as_str() == Some(&job.sealed_revision_id) {
+                if kind == "claim_added" {
+                    created.insert(subject);
+                } else {
+                    entities.insert(subject);
+                }
+            }
+        }
+        let mut truncated = BTreeMap::new();
+        for (kind, total) in [
+            ("created", created.len()),
+            ("entities_added", entities.len()),
+        ] {
+            if total > 256 {
+                truncated.insert(kind, total - 256);
+            }
+        }
+        let changes = serde_json::json!({
+            "created": created.into_iter().take(256).collect::<Vec<_>>(),
+            "supported": [],
+            "ended": [],
+            "reopened": [],
+            "conflicts": [],
+            "entities_added": entities.into_iter().take(256).collect::<Vec<_>>(),
+            "entities_touched": [],
+            "truncated": truncated,
+        });
+        let publication = job.publication_time.filter(|value| {
+            matches!(
+                value["precision"].as_str(),
+                Some("year" | "month" | "date" | "instant")
+            ) && value["value"].as_str().is_some_and(|time| !time.is_empty())
+        });
+        let reference_time = job
+            .reference_time
+            .filter(|time| chrono::DateTime::parse_from_rfc3339(time).is_ok());
+        let basis = reference_time.as_ref().map(|_| {
+            if publication.is_some() {
+                "published"
+            } else {
+                "received"
+            }
+        });
+        let model = job.extraction.as_ref().and_then(|model| {
+            if model.model_profile.is_empty() || model.thinking_level.is_empty() {
+                return None;
+            }
+            serde_json::to_string(model).ok()
+        });
+        let binding = job.source_binding;
+        let chunks = job
+            .chunk_index
+            .zip(job.chunk_count)
+            .filter(|(index, count)| index < count);
+        let offsets = job
+            .char_start
+            .zip(job.char_end)
+            .filter(|(start, end)| start <= end);
+        let episode_id = format!("eps_{}", uuid::Uuid::new_v4().simple());
+        insert.execute(rusqlite::params![
+            episode_id,
+            owner,
+            world,
+            id,
+            job.sealed_revision_id,
+            (!previous.is_empty() && previous != job.sealed_revision_id).then_some(previous),
+            binding.source_record_id,
+            binding.source_revision_id,
+            binding.span_id,
+            chunks.map(|(index, _)| index),
+            chunks.map(|(_, count)| count),
+            offsets.map(|(start, _)| start),
+            offsets.map(|(_, end)| end),
+            reference_time,
+            basis,
+            publication.map(|value| value.to_string()),
+            model,
+            changes.to_string(),
+            at_ms,
+        ])?;
+    }
+    if skipped > 0 {
+        eprintln!(
+            "Loupist skipped {skipped} Knowledge rows it could not read while upgrading to schema 12"
+        );
+    }
+    #[cfg(test)]
+    KNOWLEDGE_12_UNREADABLE.with(|cell| cell.set(skipped));
+    Ok(())
+}
+
 // --- Table rebuilds -------------------------------------------------------
 
 fn shape_error(table: &str, problem: impl std::fmt::Display) -> StoreError {
@@ -1366,11 +1673,25 @@ pub(crate) const BASELINE_FIXTURE: &str =
 /// Builds historical fixture versions through their frozen steps, without a file backup.
 #[cfg(test)]
 pub(crate) fn upgrade_store_for_test(connection: &mut Connection, version: i64) {
-    let ladder = Ladder {
-        steps: &STORE_STEPS[..(version - STORE_BASELINE_VERSION) as usize],
+    upgrade_ladders_for_test(connection, version, KNOWLEDGE_SCHEMA_VERSION);
+}
+
+/// Store and Knowledge versions a fixture has reached, without a file backup.
+#[cfg(test)]
+pub(crate) fn upgrade_ladders_for_test(
+    connection: &mut Connection,
+    store_version: i64,
+    knowledge_version: i64,
+) {
+    let store = Ladder {
+        steps: &STORE_STEPS[..(store_version - STORE_BASELINE_VERSION) as usize],
         ..STORE
     };
-    upgrade_with(connection, None, &[ladder, KNOWLEDGE]).unwrap();
+    let knowledge = Ladder {
+        steps: &KNOWLEDGE_STEPS[..(knowledge_version - KNOWLEDGE_BASELINE_VERSION) as usize],
+        ..KNOWLEDGE
+    };
+    upgrade_with(connection, None, &[store, knowledge]).unwrap();
 }
 
 /// Test support: gives a current database the baseline shape and versions, as
@@ -1476,7 +1797,11 @@ pub(crate) fn restore_baseline_for_test(connection: &mut Connection) {
          DROP TABLE thin_test_pages;",
     ).unwrap();
     transaction
-        .execute_batch("ALTER TABLE knowledge_growth_events DROP COLUMN publication_json;")
+        .execute_batch(
+            "DROP TABLE knowledge_world_episodes;
+             ALTER TABLE knowledge_capture_lineage DROP COLUMN allowance_origin;
+             ALTER TABLE knowledge_growth_events DROP COLUMN publication_json;",
+        )
         .unwrap();
     for (table, _) in STORE_5_ENUMERATIONS.iter().chain(KNOWLEDGE_7_ENUMERATIONS) {
         let start = BASELINE_FIXTURE

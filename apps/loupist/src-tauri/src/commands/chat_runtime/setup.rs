@@ -27,6 +27,7 @@ pub(super) struct PreparedChatTurn {
 }
 
 impl PreparedChatTurn {
+    #[allow(clippy::too_many_arguments)]
     pub fn resolve(
         state: &AppState,
         request: &ChatSendRequest,
@@ -34,12 +35,16 @@ impl PreparedChatTurn {
         mut execution: PiExecutionConfig,
         prompt: &str,
         surface: ChatSurface,
+        learning: Option<&crate::scheduled_tasks::types::Task>,
         phase: &mut ChatStartPhase,
     ) -> Result<Self, CommandError> {
         *phase = ChatStartPhase::Configuration;
         let config = loupist_configuration(state, &profile.id)?;
         let skill_ids = config.enabled_skill_ids();
-        let run_skill_ids = agent_harness::run_skill_ids(&skill_ids).map_err(map_internal)?;
+        let mut run_skill_ids = agent_harness::run_skill_ids(&skill_ids).map_err(map_internal)?;
+        if learning.is_some() && !run_skill_ids.iter().any(|id| id == "learning") {
+            run_skill_ids.push("learning".into());
+        }
         let agent_root =
             execution.artifacts.system_prompt.parent().ok_or_else(|| {
                 CommandError::new("pi_unavailable", "Pi agent resource is invalid")
@@ -47,7 +52,16 @@ impl PreparedChatTurn {
         let skill_files = agent_harness::resolve_skill_paths(agent_root, &run_skill_ids)
             .map_err(|error| CommandError::new("pi_unavailable", error.to_string()))?;
         *phase = ChatStartPhase::ConnectorAuthority;
-        let connector_authority = capture_chat_connector_authority(state, &profile.id)?;
+        let mut connector_authority = capture_chat_connector_authority(state, &profile.id)?;
+        let program = learning.and_then(|task| task.program.as_ref());
+        if let Some(program) = program {
+            let permits =
+                |id: &String| crate::scheduled_tasks::learning::allows_connection(program, id);
+            connector_authority.capability_ids.retain(permits);
+            connector_authority
+                .saved_keys_needing_permission
+                .retain(permits);
+        }
         let capabilities = &connector_authority.capability_ids;
         let web_search_policy = if capabilities.iter().any(|id| id == "community.web-research") {
             crate::marketplace::web_research_policy(state)?
@@ -263,21 +277,7 @@ pub(super) struct AdmittedChatTurn {
 /// An as-of date is a calendar day from 1990-01-01 to today on this device
 /// (docs/runtime/chat-turns.md#turn-authority-and-finalization).
 pub(in crate::commands) fn validate_turn_as_of(as_of: Option<&str>) -> Result<(), CommandError> {
-    let Some(value) = as_of else {
-        return Ok(());
-    };
-    let date = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
-        .ok()
-        .filter(|_| value.len() == 10)
-        .ok_or_else(|| CommandError::invalid("as_of must be a date in YYYY-MM-DD format"))?;
-    let earliest = chrono::NaiveDate::from_ymd_opt(1990, 1, 1).expect("valid date");
-    if date < earliest {
-        return Err(CommandError::invalid("as_of must be 1990-01-01 or later"));
-    }
-    if date > crate::local_time::today() {
-        return Err(CommandError::invalid("as_of must be today or earlier"));
-    }
-    Ok(())
+    crate::commands::knowledge::as_of::Cutoff::requested(as_of).map(|_| ())
 }
 
 /// `Err` returns before the user turn is appended. `Break` means the user
@@ -330,15 +330,19 @@ fn prepare_chat_turn(
     let previous_run = admission.previous_run;
     let trigger_context = admission.trigger;
     let scheduled_followed_ids = admission.scheduled_followed_ids;
-    let scheduled_custom = scheduled_turn
-        .as_ref()
-        .is_some_and(|turn| turn.task_kind == crate::scheduled_tasks::types::TaskKind::Custom);
+    let scheduled_custom = scheduled_turn.as_ref().is_some_and(|turn| {
+        matches!(
+            turn.task_kind,
+            crate::scheduled_tasks::types::TaskKind::Custom
+                | crate::scheduled_tasks::types::TaskKind::Learning
+        )
+    });
     let mut handoff = admission.handoff;
     let host_handoff = handoff.is_some();
     let registration = admission.registration;
     let chat_controls = admission.controls;
     let cancel = registration.cancel;
-    let run_lease = registration.lease;
+    let mut run_lease = registration.lease;
     *phase = ChatStartPhase::Scratch;
     let run_scratch = crate::runs::scratch::RunScratch::create(
         state.artifacts.deletion_root.clone(),
@@ -446,6 +450,27 @@ fn prepare_chat_turn(
             handoff.as_ref().map(|admission| admission.id.as_str()),
         )
     };
+    let scheduled_run = scheduled_turn
+        .as_ref()
+        .map(|turn| {
+            state
+                .store
+                .scheduled_task_run_get(&profile.id, &turn.run_id)
+                .map_err(map_store)
+        })
+        .transpose()?
+        .flatten();
+    let learning_task = scheduled_run
+        .as_ref()
+        .filter(|run| run.kind == crate::scheduled_tasks::types::TaskKind::Learning)
+        .map(|run| {
+            state
+                .store
+                .scheduled_run_task_snapshot(&profile.id, &run.run_id)
+                .map_err(map_store)
+        })
+        .transpose()?
+        .flatten();
     let setup::PreparedChatTurn {
         execution: pi_execution,
         mut context,
@@ -463,8 +488,66 @@ fn prepare_chat_turn(
         pi_execution,
         if handoff.is_some() { "" } else { &prompt },
         surface,
+        learning_task.as_ref(),
         phase,
     )?;
+    if let Some(run) = scheduled_run.as_ref() {
+        if let Some(budget) = run.budget {
+            let learning = learning_task
+                .as_ref()
+                .and_then(|task| task.program.as_ref().map(|program| (task, program)))
+                .map(|(task, program)| {
+                    crate::scheduled_tasks::learning::build_context(
+                        state,
+                        task,
+                        run,
+                        program,
+                        &appearance.language,
+                    )
+                })
+                .transpose()?;
+            if let Some(learning) = &learning {
+                let omit = |name: &str| match name {
+                    "source_save" => !learning.keeps.sources,
+                    "lens_file" => !learning.keeps.lens,
+                    "thesis_update" | "price_read_save" => {
+                        !learning.keeps.asset_reads || learning.asset_ids.is_empty()
+                    }
+                    _ => false,
+                };
+                context
+                    .agent_runtime
+                    .core_tool_names
+                    .retain(|name| !omit(name));
+                context.agent_runtime.components.retain_mut(|component| {
+                    component.tool_names.retain(|name| !omit(name));
+                    component.kind != "tool" || !component.tool_names.is_empty()
+                });
+                if context.agent_runtime.components.is_empty() {
+                    context
+                        .agent_runtime
+                        .core_tool_names
+                        .retain(|name| name != "capability_load");
+                }
+                if !context
+                    .explicit_skill_names
+                    .iter()
+                    .any(|name| name == "learning")
+                {
+                    context.explicit_skill_names.push("learning".into());
+                }
+            }
+            let elapsed = now_ms().saturating_sub(run.started_at_ms).max(0) as u64;
+            context.agent_runtime.budget = Some(budget);
+            run_lease.budget = Some(crate::runs::budget::BudgetLease::bind(
+                &profile.id,
+                &request.thread_id,
+                budget,
+                std::time::Duration::from_millis(elapsed),
+                learning,
+            ));
+        }
+    }
     if !scheduled_custom {
         context
             .agent_runtime

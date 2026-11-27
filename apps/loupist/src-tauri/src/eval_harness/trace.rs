@@ -9,6 +9,9 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, time::Instant};
 
+#[path = "progress.rs"]
+mod progress;
+
 #[derive(Default)]
 pub(crate) struct PiTrace {
     calls: Vec<ToolCall>,
@@ -20,6 +23,10 @@ pub(crate) struct PiTrace {
     error: Option<Value>,
     /// Pi failed to start before the prompt, so the turn reached no model.
     startup_failed: bool,
+    /// The host's own reason for a failed turn, such as Pi's exit code.
+    failure_reason: Option<String>,
+    /// Each assistant message's streamed text, which times the progress notes.
+    streamed_text: Vec<progress::StreamedText>,
 }
 
 /// Each assistant message_end is one model round, including retries and errors.
@@ -41,6 +48,10 @@ struct ToolCall {
     outcome: Option<ToolTraceOutcome>,
     error_code: Option<Value>,
     error_message: Option<String>,
+    /// The host's typed reason for a refusal (`needs_approval`,
+    /// `connection_dont_save`), when the refusal carries one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error_reason: Option<String>,
     result_bytes: Option<u64>,
     /// Actual Pi-delivered response, separate from the host display trace.
     result: Option<Value>,
@@ -66,6 +77,7 @@ impl ToolCall {
             error_message: error
                 .and_then(|e| e["message"].as_str())
                 .map(safe_error_text),
+            error_reason: error.and_then(refusal_reason),
             result_bytes: entry.result_bytes,
             result: None,
             result_redacted: None,
@@ -78,6 +90,7 @@ impl ToolCall {
         self.duration_ms = host.duration_ms.or(self.duration_ms);
         self.error_code = host.error_code.or(self.error_code.take());
         self.error_message = host.error_message.or(self.error_message.take());
+        self.error_reason = host.error_reason.or(self.error_reason.take());
         self.result_bytes = host.result_bytes.or(self.result_bytes);
         // Pi records submitted arguments before the host applies its display cap.
         if self.args.is_null() {
@@ -98,6 +111,9 @@ impl PiTrace {
     pub fn record_startup_failure(&self, record: &mut Value) {
         if self.startup_failed {
             record["startup_failed"] = json!(true);
+        }
+        if let Some(reason) = &self.failure_reason {
+            record["failure_reason"] = json!(reason);
         }
     }
 
@@ -121,10 +137,33 @@ impl PiTrace {
         {
             self.error = Some(json!(diagnostic.to_string()));
         }
+        let assistant = event.pointer("/message/role").and_then(Value::as_str) == Some("assistant");
         match event["type"].as_str() {
-            Some("message_end")
-                if event.pointer("/message/role").and_then(Value::as_str) == Some("assistant") =>
-            {
+            Some("message_start") if assistant => {
+                self.streamed_text.push(progress::StreamedText {
+                    at_ms: None,
+                    text: String::new(),
+                });
+            }
+            Some("message_update") => {
+                let delta = event
+                    .pointer("/assistantMessageEvent/delta")
+                    .and_then(Value::as_str)
+                    .filter(|delta| !delta.is_empty());
+                if let (Some(delta), Some(message), Some("text_delta")) = (
+                    delta,
+                    self.streamed_text.last_mut(),
+                    event
+                        .pointer("/assistantMessageEvent/type")
+                        .and_then(Value::as_str),
+                ) {
+                    message
+                        .at_ms
+                        .get_or_insert_with(|| chrono::Utc::now().timestamp_millis());
+                    message.text.push_str(delta);
+                }
+            }
+            Some("message_end") if assistant => {
                 let usage = event.pointer("/message/usage");
                 self.usage_seen |= usage.is_some();
                 self.round_usage.push(RoundUsage {
@@ -140,6 +179,9 @@ impl PiTrace {
                 self.startup_failed |= event["phase"] == "launch";
                 if self.error.is_none() {
                     self.error = Some(bounded_json(&event["message"]));
+                }
+                if self.failure_reason.is_none() {
+                    self.failure_reason = event["reason"].as_str().map(safe_error_text);
                 }
             }
             Some("tool_execution_start") => {
@@ -163,6 +205,7 @@ impl PiTrace {
                     outcome: None,
                     error_code: None,
                     error_message: None,
+                    error_reason: None,
                     result_bytes: None,
                     result: None,
                     result_redacted: None,
@@ -195,6 +238,7 @@ impl PiTrace {
                         .map(|bytes| bytes.len() as u64);
                     if failed == Some(true) {
                         (call.error_code, call.error_message) = tool_error(result);
+                        call.error_reason = refusal_reason(result);
                     }
                 }
             }
@@ -235,6 +279,18 @@ fn tool_error(result: &Value) -> (Option<Value>, Option<String>) {
             _ => None,
         });
     (code, text.as_deref().map(safe_error_text))
+}
+
+/// A refusal's typed reason from the host's error body, as the broker writes it
+/// and as a structured tool result delivers it. Free text never becomes one.
+fn refusal_reason(body: &Value) -> Option<String> {
+    let reason = body.get("reason").and_then(Value::as_str)?;
+    let typed = !reason.is_empty()
+        && reason.len() <= 128
+        && reason
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
+    typed.then(|| reason.to_owned())
 }
 
 fn redact(value: &Value) -> Value {
@@ -311,17 +367,41 @@ pub(crate) fn bounded_json(value: &Value) -> Value {
     bounded_value(value, MAX_DIAGNOSTIC_BYTES)
 }
 
-/// The store bounds the definition. Keep its identity and complete prompt for
-/// assertions and judging, with the same redaction as other diagnostics.
+/// Keep a saved task's identity and its prompt up to the 8 KiB a saved request
+/// may hold, with the same redaction as other diagnostics. A longer prompt keeps
+/// the hash of the whole text and says it was cut.
 pub(super) fn scheduled_task(task: &crate::scheduled_tasks::types::Task) -> Value {
-    redact(&json!({
+    let mut snapshot = redact(&json!({
         "task_id": task.id, "title": task.title, "status": task.status, "revision": task.revision,
         "schedule": task.schedule, "target": task.target, "session_thread_id": task.session_thread_id,
         "model_profile_id": task.model_profile_id, "thinking_level": task.thinking_level,
         "use_memory": task.use_memory, "update_memory": task.update_memory,
         "next_run_at_ms": task.next_run_at_ms, "awaiting_confirmation": task.awaiting_confirmation,
-        "prompt": task.prompt, "prompt_sha256": crate::util::sha256(task.prompt.as_bytes()),
-    }))
+        "prompt": task.prompt,
+    }));
+    if let Some(prompt) = snapshot["prompt"].as_str().map(str::to_owned) {
+        let kept = prefix_within(&prompt, MAX_TRACE_PROMPT_BYTES);
+        if kept.len() < prompt.len() {
+            snapshot["prompt_truncated"] = json!(true);
+            snapshot["prompt_bytes"] = json!(prompt.len());
+            snapshot["prompt"] = json!(kept);
+        }
+    }
+    snapshot["prompt_sha256"] = json!(crate::util::sha256(task.prompt.as_bytes()));
+    snapshot
+}
+
+/// The longest saved request text (`MAX_LEARNING_BRIEF_BYTES`, the Bot question's
+/// request) a trace keeps whole.
+const MAX_TRACE_PROMPT_BYTES: usize = 8 * 1024;
+
+/// The longest prefix of `text` within `max_bytes`, ending on a character boundary.
+fn prefix_within(text: &str, max_bytes: usize) -> &str {
+    let mut end = text.len().min(max_bytes);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
 }
 
 // Eval evidence needs complete Journal/note arguments, which routinely exceed
@@ -448,6 +528,9 @@ pub(crate) fn persisted(message: &ChatMessage, pi: &PiTrace) -> Value {
     {
         record["memory_save_skip"] = json!(reason);
     }
+    if let Some(notes) = progress::notes(message.progress.as_ref(), &pi.streamed_text) {
+        record["progress_notes"] = notes;
+    }
     pi.record_startup_failure(&mut record);
     pi.record_round_usage(&mut record);
     record
@@ -470,8 +553,16 @@ pub(crate) fn lens_state(
         let sections = body["sections"].as_array().cloned().unwrap_or_default().into_iter().map(|s| {
             let refs = s["basis"]["refs"].as_array().cloned().unwrap_or_default();
             let ref_kinds = refs.iter().filter_map(|r| r["kind"].as_str().map(str::to_owned)).collect::<Vec<_>>();
+            // The page view states a Superseded section by when and by which claims.
+            let state = if s["contested"] == true {
+                json!({"kind":"contested","claim_ids":s["contestedClaimIds"]})
+            } else if s["claimIds"].is_array() {
+                json!({"kind":"superseded","since_ms":s["sinceMs"],"claim_ids":s["claimIds"]})
+            } else {
+                json!({"kind":"current"})
+            };
             json!({"key":s["key"],"heading":s["heading"],"markdown":s["markdown"],"chip":s["chip"],"origin":s["origin"],
-                "contested":s["contested"],"basis":ref_kinds,"uncertainty":s["basis"]["uncertainty"]})
+                "contested":s["contested"],"state":state,"basis":ref_kinds,"uncertainty":s["basis"]["uncertainty"]})
         }).collect::<Vec<_>>();
         let ops = page
             .history
@@ -596,22 +687,54 @@ fn content_excerpt(title: &str, content: &Value) -> String {
     text.chars().take(1500).collect()
 }
 
+// The runner's staging records: World publications, scheduled occurrences and check dry runs.
+
+/// `world_staged`: the publications staged before this record and the World
+/// they left, by claim count, ended claims and claims in conflict.
+pub(crate) fn world_staged(
+    publications: &[Value],
+    claims: usize,
+    ended: usize,
+    conflicts: usize,
+) -> Value {
+    json!({"publications": publications, "claims": claims, "ended": ended, "conflicts": conflicts})
+}
+
+/// `trigger_dry_run`: the days a check's dry run was met on and the tools it read.
+pub(crate) fn trigger_dry_run(days: Vec<String>, tools: Vec<String>) -> Value {
+    json!({"days": days, "tools": tools})
+}
+
+/// `scheduled_run`: a Learning or check occurrence as the scheduler stored it.
+/// A held occurrence has no run row; its hold is recorded instead.
+pub(crate) fn scheduled_run(
+    run: Option<&crate::scheduled_tasks::types::Run>,
+    hold: Option<Value>,
+) -> Value {
+    match run {
+        Some(run) => json!({
+            "status": run.status, "quiet": run.quiet, "budget": run.budget, "usage": run.usage,
+            "run_id": run.run_id, "kind": run.kind, "hold": hold,
+        }),
+        None => {
+            json!({"status": null, "quiet": false, "budget": null, "usage": null, "hold": hold})
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn scheduled_task_trace_keeps_the_full_saved_prompt_and_identity() {
+    fn saved_task(prompt: &str) -> crate::scheduled_tasks::types::Task {
         use crate::scheduled_tasks::types::{Schedule, TaskDraft, TaskStatus, TaskTarget};
 
         let store = crate::store::SqliteStore::open_in_memory().unwrap();
         let profile = crate::test_fixtures::loupist_profile("eval-profile");
         store.create_loupist(&profile).unwrap();
-        let mut prompt = "Read the market data (\u{c2dc}\u{c7a5}).\n".repeat(100);
-        prompt.push_str("Stay quiet when nothing changes.");
         let draft = TaskDraft {
             title: "Market baseline".into(),
-            prompt: prompt.clone(),
+            prompt: prompt.into(),
             schedule: Schedule::Interval { every_minutes: 5 },
             target: TaskTarget::NewChat,
             model_profile_id: "fixture/model".into(),
@@ -622,14 +745,56 @@ mod tests {
             status: TaskStatus::Active,
         };
         let task = store.scheduled_task_create(&profile.id, draft, 1).unwrap();
-        let mut task = store
+        store
             .scheduled_task_get(&profile.id, &task.id)
             .unwrap()
-            .unwrap();
+            .unwrap()
+    }
+
+    #[test]
+    fn scheduled_task_trace_keeps_saved_prompts_whole_up_to_the_stored_limit() {
+        // A 3,200-byte Korean request (the old 1,500-character cut lost its end)
+        // and a 1,845-character English one survive whole, with their identity.
+        let mut korean =
+            "알더 레일의 분기 실적을 읽고, 바뀐 점이 없으면 조용히 넘어가 주세요. ".repeat(40);
+        korean.truncate(prefix_within(&korean, 3_200).len());
+        while korean.len() < 3_200 {
+            korean.push('.');
+        }
+        let english = format!(
+            "{}End of the whole request.",
+            "Review the Ostrava Grid filing and compare it with the prior quarter. ".repeat(26)
+        );
+        assert_eq!(korean.len(), 3_200);
+        assert_eq!(english.chars().count(), 1_845);
+        for prompt in [korean, english] {
+            let task = saved_task(&prompt);
+            let snapshot = scheduled_task(&task);
+            assert_eq!(snapshot["task_id"], task.id);
+            assert_eq!(snapshot["status"], "active");
+            assert_eq!(snapshot["prompt"], prompt);
+            assert_eq!(
+                snapshot["prompt_sha256"],
+                crate::util::sha256(prompt.as_bytes())
+            );
+            assert!(snapshot.get("prompt_truncated").is_none());
+        }
+    }
+
+    #[test]
+    fn a_saved_prompt_beyond_the_stored_limit_keeps_its_identity_and_says_it_was_cut() {
+        // Three-byte characters straddle the 8 KiB boundary.
+        let prompt = "Lies den Bericht von Kraków Mills. 決算を確認する。".repeat(200);
+        assert!(prompt.len() > MAX_TRACE_PROMPT_BYTES);
+        let mut task = saved_task(&prompt);
         let snapshot = scheduled_task(&task);
+        let kept = snapshot["prompt"].as_str().unwrap();
+        assert!(kept.len() <= MAX_TRACE_PROMPT_BYTES);
+        assert!(kept.len() > MAX_TRACE_PROMPT_BYTES - 4);
+        assert!(prompt.starts_with(kept));
+        assert_eq!(snapshot["prompt_truncated"], true);
+        assert_eq!(snapshot["prompt_bytes"], prompt.len());
         assert_eq!(snapshot["task_id"], task.id);
-        assert_eq!(snapshot["status"], "active");
-        assert_eq!(snapshot["prompt"], prompt);
         assert_eq!(
             snapshot["prompt_sha256"],
             crate::util::sha256(prompt.as_bytes())
@@ -640,6 +805,96 @@ mod tests {
         let redacted = scheduled_task(&task);
         assert_eq!(redacted["task_id"], task.id);
         assert_eq!(redacted["prompt"], "[redacted]");
+        assert!(redacted.get("prompt_truncated").is_none());
+    }
+
+    #[test]
+    fn refused_calls_keep_the_hosts_typed_reason_from_three_tools() {
+        use crate::broker::{error_body, BrokerError, CustomApprovalRefusal};
+        // The persisted host trace keeps an approval refusal's reason; Pi sees
+        // only the sentence. The body comes from the production error mapping.
+        let host_entry = |id: &str, name: &str, error: &BrokerError| {
+            let body = error_body(error);
+            json!({"call_id":id, "name":name, "component":null, "args":{},
+                "start_offset_ms":0, "duration_ms":3, "outcome":"error", "result_bytes":null,
+                "error":{"code":body["code"], "message":body["message"], "retryable":body["retryable"],
+                    "next":body["next"], "connection_id":body["connection_id"],
+                    "tool_name":body["tool_name"], "reason":body["reason"]}})
+        };
+        let stored: ChatToolTrace = serde_json::from_value(json!({"truncated":false, "entries":[
+            host_entry("custom-1", "mcp__ledgerline__filings", &BrokerError::CustomApprovalRefused {
+                connection_id: "ledgerline".into(), tool_name: "filings".into(),
+                cause: CustomApprovalRefusal::Unattended,
+            }),
+            host_entry("provider-1", "krx_daily_trading", &BrokerError::ProviderApprovalRequired {
+                provider: "krx.market-data".into(),
+                services: vec!["KOSDAQ daily trading (ksq_bydd_trd)".into()],
+                next: "Approve KOSDAQ daily trading for this key.".into(),
+            }),
+        ]}))
+        .unwrap();
+        let mut pi = PiTrace::default();
+        // A scripted Pi delivers the broker's error body as the tool result.
+        for (id, name, result) in [
+            (
+                "custom-1",
+                "mcp__ledgerline__filings",
+                json!({"content":[{"type":"text","text":"Refused."}]}),
+            ),
+            (
+                "provider-1",
+                "krx_daily_trading",
+                json!({"content":[{"type":"text","text":"Refused."}]}),
+            ),
+            (
+                "save-1",
+                "source_save",
+                error_body(&BrokerError::ConnectionDontSave),
+            ),
+            (
+                "page-1",
+                "lens_file",
+                error_body(&BrokerError::invalid(
+                    "page",
+                    "existing_page:rec_1:Ostrava Grid",
+                )),
+            ),
+        ] {
+            pi.observe(
+                &json!({"type":"tool_execution_start","toolCallId":id,"toolName":name,"args":{}}),
+            );
+            pi.observe(&json!({"type":"tool_execution_end","toolCallId":id,"isError":true,"result":result}));
+        }
+        let calls = json!(tool_calls(Some(&stored), &pi));
+        let reasons: Vec<_> = calls
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|call| {
+                (
+                    call["name"].as_str().unwrap(),
+                    call.get("error_reason").cloned(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            reasons,
+            [
+                (
+                    "mcp__ledgerline__filings",
+                    Some(json!("blocked_unattended"))
+                ),
+                (
+                    "krx_daily_trading",
+                    Some(json!("provider_service_approval"))
+                ),
+                ("source_save", Some(json!("connection_dont_save"))),
+                // Free text never becomes a typed reason.
+                ("lens_file", None),
+            ]
+        );
+        assert_eq!(calls[0]["error_code"], "needs_approval");
+        assert_eq!(calls[2]["error_code"], "proposal_disabled");
     }
 
     #[test]

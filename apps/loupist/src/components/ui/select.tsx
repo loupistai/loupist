@@ -3,6 +3,7 @@ import { Select as SelectPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
+import { fieldControlStyles } from "./field-styles"
 
 function Select({
   ...props
@@ -42,11 +43,17 @@ function SelectTrigger({
   )
 }
 
+/**
+ * The option list. As a popper it opens like the app's menus (`DropdownMenuContent`):
+ * 4 px off the trigger, at least as wide, with the same inset, so an option's highlight
+ * never touches the list's clipped edge.
+ */
 function SelectContent({
   className,
   children,
   position = "item-aligned",
   align = "center",
+  sideOffset = position === "popper" ? 4 : undefined,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   return (
@@ -54,9 +61,10 @@ function SelectContent({
       <SelectPrimitive.Content
         data-slot="select-content"
         data-align-trigger={position === "item-aligned"}
-        className={cn("relative z-[var(--gg-z-dialog)] max-h-(--radix-select-content-available-height) min-w-36 origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", position ==="popper"&&"data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1", className )}
+        className={cn("relative z-[var(--gg-z-dialog)] max-h-(--radix-select-content-available-height) min-w-36 origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
         position={position}
         align={align}
+        sideOffset={sideOffset}
         {...props}
       >
         <SelectScrollUpButton />
@@ -78,11 +86,13 @@ function SelectContent({
 function SelectItem({
   className,
   children,
+  textValue = typeof children === "string" || typeof children === "number" ? String(children) : undefined,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Item>) {
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
+      textValue={textValue}
       className={cn(
         "relative flex w-full cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
         className
@@ -137,9 +147,31 @@ function SelectScrollDownButton({
   )
 }
 
+type SelectFieldProps = Omit<React.ComponentProps<typeof SelectTrigger>, "value" | "onChange" | "defaultValue" | "name"> &
+  Pick<React.ComponentProps<typeof Select>, "name" | "required" | "form"> & {
+    value: string;
+    onValueChange: (value: string) => void;
+    placeholder?: React.ReactNode;
+    compact?: boolean;
+  };
+
+function SelectField({ children, value, onValueChange, disabled, required, name, form, placeholder, compact, className, ...trigger }: SelectFieldProps) {
+  return <Select value={value} onValueChange={onValueChange} disabled={disabled} required={required} name={name} form={form}>
+    <SelectTrigger size={compact ? "sm" : "default"} className={cn(fieldControlStyles,
+      compact ? "w-fit max-w-full data-[size=sm]:h-[var(--gg-size-control-sm)]" : "data-[size=default]:h-[var(--gg-size-control-md)]",
+      className)} {...trigger}>
+      <SelectValue placeholder={placeholder} />
+    </SelectTrigger>
+    <SelectContent position="popper" align="start" onKeyDown={event => event.stopPropagation()}>
+      {children}
+    </SelectContent>
+  </Select>;
+}
+
 export {
   Select,
   SelectContent,
+  SelectField,
   SelectItem,
   SelectTrigger,
   SelectValue,

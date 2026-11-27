@@ -25,10 +25,18 @@ or when the user picks it, while the Bot answers a question about a move as a
 [quick ask](../agent/prompt.md#quick-asks-in-the-bot)) and `goal-math` (`goal_grid` over
 several rates or `dca_history`, using only the numbers the user gives). The `filings`
 Skill's `references/korea-statements.md` sets statement basis, periods and the Korean
-disclosure and flow reads for KRX companies. In debug builds with user Skills available, Skill Creator starts off in each
+disclosure and flow reads for KRX companies, and its `references/filing-changes.md` compares a filing with the one before it (`world_changes` with `between`, then narrative as text). In debug builds with user Skills available, Skill Creator starts off in each
 scope until the user turns it on. Settings imports Skills directly. The included catalog in
 `src-tauri/src/agent_harness.rs` is authoritative. Optional/custom Skills use scoped TOML enablement; see
 [Scoped configuration](../runtime/storage-authority.md#scoped-configuration).
+
+The bundled `deep-research` Skill is on by default. It asks the user to approve a
+written research plan, records progress in that plan, and publishes a cited report
+that covers the evidence for and against the conclusion.
+
+The host seals the bundled `learning` Skill into each
+[learning program](../knowledge/learning.md) run. Its instructions are also
+selectable in research sessions.
 
 The bundled file workflows use only `run_python` in the pinned offline WASI
 worker: `word-documents` reads/writes `.docx` with python-docx, `presentations`

@@ -41,6 +41,9 @@ traces offline.
 | `memory-evidence.mjs` | Completed save claims checked against persisted commits |
 | `source-evidence.mjs` | Figures linked to an exact read of a seeded Source span |
 | `language-evidence.mjs` | The answer’s language from Unicode script share and offline language identification |
+| `run-evidence.mjs` | A scheduled occurrence's stored run record, a saved check's dry run and the language of progress notes |
+| `refusal-evidence.mjs` | First-attempt tool refusals by tool and reason, and one judge item per pair |
+| `judge-agreement.mjs` | Agreement of two judges on the same items |
 | `measurement.mjs` | Expected coverage and judgment ownership |
 | `grade.mjs`, `judge.mjs`, `report.mjs` | Assertions, rubric calls, and report/comparison assembly |
 | `cli.mjs` | The commands below |
@@ -52,6 +55,8 @@ node apps/loupist/evals/agent/cli.mjs grade --suite <suite.json> --traces <trace
 node apps/loupist/evals/agent/cli.mjs judge --suite <suite.json> --traces <traces.jsonl>
 node apps/loupist/evals/agent/cli.mjs report --suite <suite.json> --traces <traces.jsonl> [--judgments <judgments.jsonl>] --trials 3
 node apps/loupist/evals/agent/cli.mjs compare --suite <suite.json> --baseline <baseline.jsonl> --candidate <candidate.jsonl> --trials 3
+node apps/loupist/evals/agent/cli.mjs agree --a <judgments.jsonl> --b <other-judge.jsonl>
+node apps/loupist/evals/agent/cli.mjs refusals --traces <traces.jsonl>[,<more.jsonl>] [--catalog <tool-catalog.json>] [--backend claude]
 node apps/loupist/evals/agent/cli.mjs label --judgments <judgments.jsonl> --traces <traces.jsonl>
 node apps/loupist/evals/agent/cli.mjs label --import <labels.jsonl> --judgments <judgments.jsonl>
 node apps/loupist/evals/agent/cli.mjs calibrate --suite <suite.json> --traces <traces.jsonl> \
@@ -98,6 +103,30 @@ staged tool arguments do not fill missing commit evidence. Legacy `prediction` a
 Positive save checks accompany restraint checks where the scenario permits a
 save; an idle agent must fail the positive control. Disabled/read-only writes and
 prompt-injection refusals use `boundary`, separately from reusable-save quality.
+
+**Agreement.** `agree` pairs two judgment files by `item_id` and calls no model. It
+writes `agreement.json`: agreement per criterion, the disagreements with both reasons, and
+`unreliable`, the criteria on which the judges agree on fewer than 85% of the shared items
+or that have fewer than ten shared items. A criterion is its rubric `id` wherever it is
+asked, so a question asked of several scenarios with one `id` and one wording pools its
+items; a criterion asked of one scenario needs ten trials to count. An unreliable criterion
+is reported and must not decide a keep, a revert or a release: rewrite it, or replace it
+with a deterministic check. Agreement is not calibration: it needs no human label and
+proves no accuracy.
+
+**Refusals.** `refusals` reads traces and the tool catalog (`--catalog` names a candidate
+catalog; the default is the checkout's). A refusal is a failed call of a known tool that
+carries the host's typed reason (`error.reason`), or, in a trace without one, an error
+code that is not a data or transport outcome (`empty_result`, `provider_error`, ...);
+argument-schema failures stay with `tool_validity`. It is first-attempt when the turn had
+not yet returned that reason for that tool, so the model could have known the rule only
+from the tool's description. Without `--backend` the command counts and calls no model
+(`refusals.json`: the refusals, the pairs, `repeated_refusals`). With one it asks the judge
+once per distinct (tool, reason) pair whether the description or a parameter description
+states the rule; the input is the description, the parameters and the refusal message, so
+the verdict is cached until one of them changes. `hidden_rule_refusal` is the number of
+pairs judged not stated, and null until every pair has a verdict. `suites/refusals-v1.json`
+leads into six such rules on purpose; the count is taken over every trace of a run.
 
 **Calibration.** Human labels are pass/fail plus a note, joined to judgments by an
 opaque `item_id`. A judge is ready only with at least 30 matched labels, 10 human
@@ -296,7 +325,11 @@ cargo run --locked --offline --features eval-harness --example agent_eval -- \
   runtime. `--pi-agent-dir` is absolute and passed to Pi in place; credential files
   are never opened or copied. `LOUPIST_EVAL_PERFORMANCE=fast` asks for the provider's
   priority tier on a model that offers the Performance control; a choice the model
-  does not declare is refused. Without `--model`, the runner picks the last
+  does not declare is refused. Paid eval runs use fast: the same model and effort,
+  served faster. The agent runner and the World runner give it to their models, the
+  codex judge takes it as `--performance` (or the same variable), and each trace's
+  `harness.performance` and the loop ledger's arm row (`--performance`) record it, so a
+  comparison reads like with like. Without `--model`, the runner picks the last
   `openai-codex` model ID that supports the requested thinking level. For a development profile connected under `openai`, pass a model from that provider, for example `--model openai/gpt-6-luna`.
 - Scenarios tagged `scripted` need fixture state that only their `eval-harness` test
   creates: `suites/handoff-v1.json`'s H-004 asks Bot about a finished hand-off card
@@ -304,10 +337,20 @@ cargo run --locked --offline --features eval-harness --example agent_eval -- \
   them, refuses one named in `--scenarios`, and exits 0 without writing traces when
   nothing else is selected, so live arms never spend a turn on them. Grade the
   scripted test's record instead (`LOUPIST_HANDOFF_PROOF=<path>`).
-- Each scenario/trial gets temporary app data and a fresh Loupist; each session is a
-  new Chat. Seeds use canonical Memory transactions: Lens/Source seeds,
+- One runner process runs every scenario and trial; each trial gets temporary app
+  data and a fresh Loupist, and each session is a new Chat. A suite states its
+  `version`: 1, or 2 for the World, Learning and card keys below. A key the
+  runner does not stage fails validation by scenario, object and name, unless
+  only the judge reads it (scenario `split`, `hidden`, `replay_needs`; turn
+  `expect`, `discriminator`) or the suite lists it in `optional_keys` as
+  `<object>.<key>` (`suite`, `scenario`, `seed`, `source`, `session`, `turn`,
+  `scheduled` or `publication`); a listed key is ignored, said so on stderr and
+  recorded in `harness.optional_keys`. Seeds use
+  canonical Memory transactions: Lens/Source seeds,
   `workspace_files` (cannot escape the folder or touch `.loupist`), `watchlist` (the
-  assets the user follows, as `{name, reference?}` with optional ticker and exchange), `principles`, and
+  assets the user follows, as `{name, reference?}` with optional ticker and exchange,
+  followed from the scenario's clock, or from its earliest World publication when that
+  is earlier, and a read at an earlier cutoff does not see them), `principles`, and
   `journal` (an asset page's reasons and lines: `judgment`,
   `thesis {asset, role}`, optional `check` and `createdAtMs`). The thesis names its followed asset.
   No seed states what the user owns: the app keeps no such record, and the suite
@@ -319,6 +362,26 @@ cargo run --locked --offline --features eval-harness --example agent_eval -- \
   Loupist as a merge (ways of working, rules and the map; no perspective) and every item,
   flagged ones included, is accepted before the first turn; a pack the validator rejects
   fails the seed. Memory modes are `remember`, `read_only` and `off`.
+  A Source seed may carry an `id` (what `world`, `lens_pages` and `asset_links`
+  name), `publication_time` (YYYY-MM-DD or RFC 3339), `company`, `form` and
+  `language` (BCP 47). The Source is retained as its `text`, which the agent reads and
+  cites; a stored Source has no field for company, form or language, so those
+  keys stay fixture metadata, and `world_changes` pairs two seeded reports only
+  when the call names both.
+  `lens_pages` files research pages, `{title, summary, kind, sections: [{key,
+  heading, markdown, refs: [{source, fact?}]}]}`, after the seed's World
+  publications: a ref cites the Source's span and, with `fact`, the World claim
+  that scripted fact became. `asset_links` (`{asset, company}`) links a followed
+  asset to the World company a scripted publication names. `programs` saves Learning
+  programs turned on, each with `id` and `learning_program_save`'s arguments; a
+  subject names a followed asset (`{asset}`), a World entity (`{world}`) or a
+  Lens page title (`{lens}`), and `previous_run: {clock}` adds a completed
+  earlier occurrence started then. `learning_allowance` records all but that many
+  of the day's Learning requests as used before the first occurrence. `checks`
+  saves checks from a bundled template, each with `id` and `trigger_save`'s
+  `title`, `prompt`, `terms`, `when_met_summary`, `template` and
+  `template_params`, through `trigger_save`'s own path and production dry run,
+  and turns each on from its card; a check whose dry run fails fails the seed.
   A turn's optional `attachments` list takes text fixtures as
   `{filename, media_type, text}`. They go through production attachment intake,
   persistence and the attachment manifest; their bytes and filenames are part of
@@ -329,13 +392,37 @@ cargo run --locked --offline --features eval-harness --example agent_eval -- \
   The connection list is exhaustive; aliases are `opendart`, `krx`,
   `kis`/`koreainvestment`, `worldbank`/`world-bank`, `defillama` and `web`/`web-research`. KIS uses the demo
   environment and public reads.
+- A scenario's `world` block, `{mode, publications: [{source, after,
+  recorded_time?, script}]}`, publishes seeded Sources into the World through the
+  production job, publication transaction and Lens marks. `mode: "scripted"`
+  answers every extraction stage from the `script` — `entities [{name, type,
+  codes}]`, `facts [{id, subject, object, relation, text, valid_at, invalid_at}]`
+  and `resolutions {<fact id>: {duplicates, contradicts, same_assertion}}` — with
+  no model call; a code is a listing ticker, or `exchange:`, `identifier:` or
+  `original_name:` and its value. `mode: "live"` sends the same jobs to the World
+  model. `after` is `"seed"` or `{session, turn}` (0-based). A publication is
+  recorded at its `recorded_time`, else its Source's `publication_time`, under
+  that clock, in that order; one placed after a turn is recorded later than that
+  turn's clock. A scripted Source's job is queued at seed and extracted at its
+  publication point, so the change feed counts it pending until then; a live
+  one is queued at its publication. `asset_links` apply as soon as a publication
+  has introduced their company. A Source the agent saves in a scripted
+  World yields no claims. `LOUPIST_WORLD_STAGE_LOG` and the World runner's
+  `LOUPIST_EVAL_WORLD_PROMPTS` apply.
 - The prompt, extension and Skill bytes are frozen into a batch-local snapshot
   validated against the production asset authority and recorded as
   `harness.agent_snapshot_sha256`. `--agent-assets <dir>` admits a sparse
   candidate snapshot (see [Meta-harness optimization](#meta-harness-optimization)).
-- The unattended runner declines any host approval card with "Not now" and
-  continues with the refusal. `web_fetch` does not create an approval card after
-  third-party text; the host applies the current tool permissions directly.
+- A turn's `approvals` answers its host cards. `decline`, the default, says "Not
+  now" to an approval card, leaves a question unanswered so its call continues
+  with the recommended option, and leaves a schedule proposal unconfirmed.
+  `accept` allows the card once, answers the question with its recommended
+  option and confirms each schedule proposal the reply saved, as the user's yes
+  on its card; a check turns on at the version its card shows, and a card the
+  host refuses to confirm, such as a check without a successful dry run, is
+  recorded with the host's reason. `web_fetch` does
+  not create an approval card after third-party text; the host applies the
+  current tool permissions directly.
 - `--turn-timeout-ms` (default 600000) covers submission and execution. A timeout
   records `status: "failed", error: "timeout"`, aborts that trial's dependent
   sessions and continues with the next trial. A Pi that fails before the prompt
@@ -376,7 +463,26 @@ seeds, workspace files, connections, sessions, timeout and replay bytes.
 count and whether the Pi session resumed. `resolved_appearance` and
 `display_currency` come from admitted Chat configuration. `interface_label_calls`
 counts all attempts recorded in `tool_calls`, including validation failures and
-host refusals. Missing tool evidence leaves the count unknown.
+host refusals. Missing tool evidence leaves the count unknown. A scenario with a
+`world` block records `world_staged {publications, claims, ended, conflicts}`:
+each publication staged before the record, with its recorded time, job status,
+the stages a script answered and any resolution the pipeline gave no chance to
+apply, and the World's claim, ended-claim and conflicting-claim counts. A
+Learning occurrence records `scheduled_run {status, quiet, budget, usage}`;
+budget is the stored `requests, soft, hard, left_at_start, outcome`, and a held
+occurrence has no run and records the scheduler's `hold`. A check occurrence
+records the check's state and last evaluation, and with `dry_run: true`
+`trigger_dry_run {days, tools, error}`: a dry run at the occurrence's clock, run
+as `trigger_save` runs it, with the days it would have been met on and the
+tools it reads; an occurrence of a check that is not turned on records that and
+runs nothing. A turn with `approvals` records the answer, the tasks it confirmed
+and the cards the host refused. Each Lens section carries its `state`: current, contested or
+superseded, with the claims and, when superseded, since when.
+`harness.world_prompts_sha256` names a `LOUPIST_EVAL_WORLD_PROMPTS` override.
+
+Broker refusals carry a host-authored `error_reason` beside `error_code` in the
+trace. It identifies a specific refusal when one is available and otherwise
+uses the broker's fixed code.
 
 The Rust gate's `cargo test --features eval-harness --lib eval_harness::` covers the
 scripted-Pi and replay paths without paid calls.
@@ -480,11 +586,18 @@ for hill-climbing; **heldout** is for final adoption only (see
 | `suites/personalization-v1.json` | Followed-asset context, sizing and ownership questions without a known position, private Source cross-references | 5 | 7 | |
 | `suites/judgment-v1.json` | Grounded views, honest uncertainty, no orders, user-owned Journals | | 17 | |
 | `suites/security-v1.json` | Source injection, impersonation, principle poisoning, exfiltration, injected shared packs ([fixtures](sharing/README.md)), held quantities hidden from account reads | | 9 | |
-| `suites/scheduling-v1.json` | Task creation, changes, lifecycle, session ownership and conditional delivery | 1 | 8 | |
+| `suites/scheduling-v1.json` | Task creation, changes, lifecycle, session ownership, conditional delivery, and a proposal that waits for its card | 1 | 9 | |
 | `suites/smoke-v1.json` | Minimal cross-Chat Lens recall | | 1 | |
 | `suites/lens-lifecycle-v1.json` | [Lens lifecycle](#lens-lifecycle): create, reuse, update, stale premise, alias, detail retention, single-case restraint, read-only, method scope, a method the user asks to keep | 8 | 2 | |
 | `suites/citations-v1.json` | Inline citations and Source retention for attached and workspace notes | | 2 | |
 | `suites/language-v1.json` | [Answer language](#answer-language-suite) when the interface and the user write different languages, in the Bot and a research session, with a same-language control for each interface language | 8 | | |
+| `suites/release-v018.json` (version 2) | The ten release units: cited comparison and margin research, a saved Source before the web, progress notes in the user's language, a Bot preference accepted on its card, an idea with unreferenced checks, a filing comparison, a guidance check, and a learning update with its quiet control. Its staged units' seeds are also in `fixtures/release-v018.json` | 8 | 2 | |
+| `suites/change-feed-v1.json` | A scheduled check across two new filings and an unchanged repeat, a filing comparison, an as-of answer across an ending, on scripted World (`fixtures/change-feed-v1.json`) | 3 | | |
+| `suites/global-v1.json` | Six user languages (Japanese, German, Portuguese, Chinese, Indian English with lakh and crore, Korean), each in a research session and with Bot, on Sources from six market profiles; two save a check from a request in the user's language and one is a user's correction of a figure | 12 | | |
+| `suites/refusals-v1.json` | Six probes that each lead into one host rule; the task is done another way or the reason is told | 6 | | |
+| `suites/learning-programs-v1.json` | Six learning program occurrences through the production scheduler: first run, update, quiet control, pending Source, soft budget note, a brief in Japanese | 6 | | |
+| `suites/deep-research-v1.json` | One replay unit for the `deep-research` Skill: the plan file before the first web read, citations that resolve, the conclusion first. Run it with `--turn-timeout-ms 1800000` | 1 | | |
+| `suites/corrections-v1.json` | The agent meets a correction the user made in the app: a claim marked wrong, a Lens section resting on it, an alias for an entity, an ending marked as not having happened | 4 | | |
 | `suites/research-probe-v1.json` | [Research session cost](#research-session-cost-probe) on replay: two followed companies' latest quarter compared, and why one company's margin fell; time, model rounds, calls by tool and failed calls | 2 | | |
 | `heldout/learning-heldout-v1.json` | Adoption check for learning and transfer | | | 6 |
 | `heldout/tool-use-heldout-v1.json` | Adoption check for tools and connection honesty | | | 6 |
@@ -527,6 +640,42 @@ L-025; `lens-behavior-heldout-v1` HV-001, HV-003, HV-004 and HV-006;
 `tool-use-heldout-v1`. `agent/suites.test.mjs` lists them by id. It fails on any
 other scenario without a language and when a listed scenario gains one, so the
 list empties as those scenarios are given a language.
+
+A suite file is named `<suite>-v<version>.json`. A release suite is named for the release
+it gates and counts its revisions in `version`: `release-v018.json` is version 2.
+
+**Seeds a suite states.** A scenario carries everything the runner stages, and the
+validator rejects any key the runner does not read: a typo is an error, not a fixture
+silently ignored.
+
+| Key | States |
+| --- | --- |
+| `seed.sources[]` | `title`, `text`, `origin`, and for a Source other keys name: `id`, `company`, `form`, `publication_time` (YYYY-MM-DD or RFC 3339), `language` (BCP 47) |
+| `world` | `mode` (`scripted` or `live`) and `publications`: `source` (a seeded id), `after` (`"seed"` or `{session, turn}`), optional `recorded_time`, and in scripted mode `script` |
+| `script` | What the Source says as data: `entities` (`name`, `type`, `codes`), `facts` (`id`, `subject`, `object`, `relation`, `text`, `valid_at`, `invalid_at`) and `resolutions` by fact id (`duplicates`, `contradicts`, `same_assertion`), each naming facts recorded earlier |
+| `seed.asset_links[]` | `asset` (a followed name) and `company` (a scripted entity) |
+| `seed.lens_pages[]` | `title`, `summary`, `kind`, `sections` with `refs` naming `{source, fact}` |
+| `seed.programs[]` | `id`, the arguments of `learning_program_save`, and `previous_run: {clock}` for a completed earlier occurrence |
+| `seed.checks[]` | `id` and the arguments of `trigger_save` for a bundled template, saved as turned on |
+| `seed.learning_allowance` | Requests left for learning today when the first occurrence starts |
+| `seed.corrections[]` | The user's own marks, applied through the bridge commands once World is staged: `{claim: {source, fact}, action}` with `dispute` or `keep_current`, or `{entity, action: "add_alias", alias}` |
+| turn `scheduled` | `{kind: "learning", program, clock}` or `{kind: "check", task, clock, dry_run}` beside `briefing` and `custom`; the turn's `user` describes the fixture |
+| turn `approvals` | `accept` or `decline` (the default) for the host cards of that turn |
+
+A publication is recorded at its Source's `publication_time`, or at its `recorded_time`,
+and publications run in that order, so a fixture's timeline is what the change feed sees.
+One placed after a turn must be recorded later than that turn's clock; until then its
+Source is still being read. A fact's two entities, a resolution's facts, a section's refs,
+a link's asset and an occurrence's program or check must exist in the scenario. Scripted
+World costs no model call: publication, endings, conflicts and Lens states come from
+production code. A suite with a `setup_fixture` keeps what its units share (Sources with
+their document metadata, the script of each) in that file under `agent/fixtures/`, with each
+unit's seeds by reference; `suites.test.mjs` proves every scenario's inline seeds equal its
+unit, and that one Source or fact id means the same in every suite.
+
+A rubric criterion is binary and asks one thing. Where several units ask the same
+question (the language of progress notes, what a saved check's summary says), they share
+one `id` and one wording, so [agreement](#agent-evals) can pool them.
 
 - **Judgment** binary rubrics assess `grounded-view` (a clear or conditional view,
   reasons, two supplied dated facts, the main risk and what would change it),
@@ -580,6 +729,25 @@ offline with the pinned [Efficient Language Detector](https://github.com/nitotm/
 Japanese and Chinese are classified with both Han and kana available to
 the detector. Matching-script text in languages outside the detector's
 coverage stays unmeasured. Short ambiguous text can still need a human read.
+
+`scheduled_run` reads the stored run record of a `learning` or `check` occurrence
+(`scheduled_run` in the trace): `status`, `quiet` and `budget` (the outcome: `none`,
+`soft`, `refused` or `cancelled`), each optional. `after_soft_note: true` is for a fixture
+built to reach the soft level (`seed.learning_allowance`): it passes when the run finished
+there, fails past the hard level, and is unmeasured when the run never reached the note.
+`check_dry_run` takes `met_on` and `not_met_on` dates and `tools` and `no_tools` names. It
+reads the replay of a `check` occurrence (`trigger_dry_run`), or, for a check the model
+saved in the turn, the dry run its last successful `trigger_save` returned; that one lists
+no tools, so a tool expectation stays unmeasured there. `progress_language` takes a BCP 47
+`language` and a `min` (default 1) and reads the progress notes the user saw
+(`progress_notes`) together, with the script and detector rules of `answer_language`. Too
+few notes fail; an absent record, or no note under `min: 0`, is unmeasured. The judge's
+input carries the notes, the run record and the dry run when the trace recorded them.
+
+`file_written_before` takes a `path_matching` pattern and the tools in `before`. It passes
+when the first successful native `write` whose path matches comes before the first call of
+any of those tools, failed calls included; a write whose path or outcome the trace does not
+show leaves it unmeasured.
 
 `skill_read` takes an `id` and requires an `outcome: "ok"` native `read` with
 host-recorded `native_authorization.class: "BundledSkill"` and that `skill_id`.
@@ -855,10 +1023,11 @@ persistence and observes the Bot Thread after delivery.
 
 `scheduled_delivery` needs one successful occurrence, its terminal assistant
 message, one persisted Bot delivery with linked task, run and thread IDs, and
-matching saved and admitted prompts. The JSONL `answer` is the exact Bot
-delivery body used by deterministic answer checks. For a verified scheduled
-delivery, the judge reads the full originating reply as `answer` and the Bot
-delivery as `bot_preview`. `session_answer` carries the full originating reply and
+matching saved and admitted prompts. The JSONL `answer` is the run's full
+reply, which deterministic answer checks read, and `delivered_summary` is the
+exact Bot delivery body; a quiet occurrence has none. For a verified scheduled
+delivery, the judge reads the full reply as `answer` and the Bot delivery as
+`bot_preview`. `session_answer` carries the full originating reply and
 `terminal_event` links it to the actual completion. The scheduled run ID
 lives in `admission`, `runs` and `deliveries`. Wall-clock timestamps in
 `runs` record the due, start and finish independently of the fixture's model
@@ -1018,6 +1187,29 @@ Clear requests for active schedules register immediately. A research-session
 probe uses the handoff tool. Unit and native checks separately cover admission,
 overlap prevention, session reuse and receipt rendering.
 
+Its proposals wait for the user's yes: S-010 leaves its proposal unanswered and
+checks that the program stays paused, while the other units that save a
+proposal accept their cards with `approvals: "accept"`.
+
+A Learning occurrence is a turn `scheduled: {kind: "learning", program,
+clock}` naming a `seed.programs` entry. The runner makes that program's next
+occurrence due and dispatches it through the production scheduler, so the
+Learning allowance, the frozen soft and hard budget levels, one Learning run at
+a time and the earlier occurrence's start (`since: previous_run`) all apply.
+The turn's `user` only describes the occurrence; the run's prompt is the
+program's. Its record carries the run's own answer, tool calls, Memory commits,
+Lens state and `scheduled_run`. `seed.learning_allowance` sets how many
+requests are left when the first occurrence starts, so a unit can meet the soft
+note or the hold on purpose; a held occurrence leaves no run and records the
+hold. A check occurrence is `scheduled: {kind: "check", task?, clock,
+dry_run?}`: the seeded check `task` names, or the Loupist's one saved check
+(which an earlier Bot turn may have saved and accepted on its card), is made due
+and evaluated by the production scheduler; only a met check starts its run, so
+an unmet occurrence makes no model call. `suites/learning-programs-v1.json`
+covers the Learning occurrences. The runner
+validates its whole suite before the first trial, and an `eval-harness` test
+validates every repository suite the same way.
+
 Edit loop: run the `regression` tag, grade, inspect failed state or tool arguments,
 fix the owning layer and rerun; then run the untouched `validation` tag. A
 validation failure becomes a regression case and needs a new validation case.
@@ -1087,6 +1279,32 @@ headline, check or trial rate or denominator; and requires mean input tokens per
 turn (input + cache read + cache write) to grow at most 10% unless an explicit
 `--reason` is recorded. Unknown usage fails. A judge score or a reason never waives
 a security or regression failure. A passing check is evidence for a human decision.
+
+### Paid-call ledger
+
+Every improvement loop keeps `ledger.jsonl` beside its outputs
+(`evals/output/paid/<loop>/`): its cap, one row per measured arm and one per iteration.
+`evals/loop/ledger.mjs` calls no model. A call is one model round of an agent turn
+(`model_rounds` in agent traces), one World inference (an `llm` record of a
+`LOUPIST_WORLD_STAGE_LOG` file) or one uncached judgment (a judgment row not marked
+`cache: "hit"`).
+
+```sh
+L=apps/loupist/evals/loop/ledger.mjs
+node $L cap --ledger <ledger.jsonl> --loop <name> --cap 2000
+node $L plan --ledger <ledger.jsonl> --calls 380            # exits 1: the arm would pass the cap
+node $L arm --ledger <ledger.jsonl> --label baseline --pin <commit> --suite <name> --model <id> --trials 1 \
+  --traces <traces.jsonl> --judgments <judgments.jsonl> --stage-logs <stages.jsonl>
+node $L iteration --ledger <ledger.jsonl> --class <failure class> --hypothesis <text> --commit <sha> \
+  --result <text> --decision kept
+node $L sum --ledger <ledger.jsonl>                         # exits 1 past the cap
+```
+
+Counts come from the files a run wrote. The same bytes are never counted twice; a turn
+without `model_rounds` (other than one that never started) is refused until
+`--charge-unknown <rounds>` charges it; a count from elsewhere is `--calls <n> --note
+<where it comes from>`. A changed cap is a new row with its `--reason`. An arm row is
+written even when it passes the cap, because the calls were spent.
 
 ## Meta-harness optimization
 
@@ -1185,6 +1403,15 @@ then drains World and learning work. The `two-chats` arm asks them in two Chats.
 then asks two read-only probes in new Chats: a third company's capacity ramp, with
 its own attached report, and an unrelated insurer question. The `one-chat` arm asks
 both questions in one Chat.
+
+`lens/research-macro-v1.json` and `lens/research-theme-v1.json` are the same shape with
+subjects that are not companies. The first teaches from two fictional countries' consumer
+price releases, each with a one-off that flatters the headline rate (an energy base effect,
+a harvest), and probes a third country's release and an unrelated bond question. The second
+teaches from two build-out themes whose announced pipeline is far above what operates (grid
+batteries, electrolysers), and probes a third (heat pumps) and an unrelated retail question.
+A method learned from them has to be about the series or the theme, since no issuer appears.
+`lens-research.test.mjs` checks every fixture's shape against what the runner reads.
 
 The test fails only on deterministic invariants. The one-chat arm has no review. The
 two-chats arm has exactly one settled review. Probes commit no Memory, file no Lens

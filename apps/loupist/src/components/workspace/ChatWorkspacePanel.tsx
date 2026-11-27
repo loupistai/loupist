@@ -529,10 +529,12 @@ function ScopedChatWorkspacePanel({
         <span className="workspace-status-text">{evidenceStatus(evidenceEntryShown, loupistName)}</span>
         {evidenceEntryShown.kind === "evidence" ? <LivePageButton evidence={evidenceEntryShown.evidence} /> : null}
       </div> : null}
+      <div className="workspace-tab-body">
       {!evidenceEntryShown ? <div className="artifact-empty workspace-empty"><p>{t("chatWorkspacePanel.evidenceEmpty")}</p></div>
       : evidenceEntryShown.kind === "evidence" ? <WorkspaceEvidence key={evidenceEntryShown.key} evidence={evidenceEntryShown.evidence} step={evidenceEntryShown.step} onRevealStep={onRevealProgress} />
       : <WorkspaceKnowledgeReader key={`${loupistId}:${evidenceEntryShown.key}`} bridge={bridge} location={evidenceEntryShown.location} sourceOpen={evidenceEntryShown.sourceOpen} onOpen={onOpenKnowledge} onOpenPage={onOpenKnowledgePage} onAsk={onAskKnowledge} onOpenLink={onOpenLink}
         onPatch={(location) => onUpdateTab(EVIDENCE_TAB_ID, (tab) => tab.kind === "evidence" ? updateCurrentEvidenceEntry(tab, (entry) => entry.kind === "knowledge" && entry.key === evidenceEntryShown.key ? { ...entry, location } : entry) : tab)} />}
+      </div>
     </div>
   ) : null;
 
@@ -565,6 +567,7 @@ function ScopedChatWorkspacePanel({
         {restored && shownRevision === null ? <p className="work-version-restored" role="status" data-work-version-restored>
           {t("workVersions.restored", { from: formatNumber(restored.from), to: formatNumber(restored.to) })}
         </p> : null}
+        <div className="workspace-tab-body">
         {loadingArtifact ? (
           <div className="artifact-panel-state" role="status">
             <Spinner />
@@ -580,7 +583,8 @@ function ScopedChatWorkspacePanel({
         ) : view ? (
           <ArtifactContent view={view} theme={theme} workspacePath={workspacePath} loupistId={loupistId} onAsk={onAskArtifact} askDisabled={askArtifactDisabled} onExport={(request) => bridge.exportSave(titledExport(request))} toolbarTarget={statusSlot} />
         ) : null}
-      </> : <WorkspaceWorkList bridge={bridge} loupistId={loupistId} threadId={threadId} messages={workMessages} onOpenFile={onOpenFiles} refreshKey={workRefreshKey} building={buildingWork} returnTo={returnToWork} onReturned={workReturned}
+        </div>
+      </> : <div className="workspace-tab-body"><WorkspaceWorkList bridge={bridge} loupistId={loupistId} threadId={threadId} messages={workMessages} onOpenFile={onOpenFiles} refreshKey={workRefreshKey} building={buildingWork} returnTo={returnToWork} onReturned={workReturned}
         onOpen={async (artifact) => {
           // Read first: the reference the panel keeps carries the revision's digest.
           const opened = await bridge.chatArtifactRead(loupistId, artifact.chat_session_id, artifact.id);
@@ -588,7 +592,7 @@ function ScopedChatWorkspacePanel({
           onOpenArtifact(chatArtifactRef(opened), artifact.chat_session_id);
           // The pressed row gives way to the item; keyboard focus moves to the way back.
           requestAnimationFrame(() => focusForKeyboard(allWorkRef.current));
-        }} />}
+        }} /></div>}
     </div>
   ) : null;
 
@@ -599,6 +603,7 @@ function ScopedChatWorkspacePanel({
       id={workspaceTabPanelId(activeTab.id)}
       aria-labelledby={workspaceTabButtonId(activeTab.id)}
     >
+      <div className="workspace-tab-body">
       {activeTab.kind === "files" ? <WorkspaceFiles bridge={bridge} loupistId={loupistId} rootPath={workspacePath} path={activeTab.path} filePath={activeTab.filePath}
         onNavigate={(path, filePath) => onUpdateTab(activeTab.id, (tab) => tab.kind === "files" ? { ...tab, path, filePath } : tab)}
         onAsk={(file) => onAskFile?.(file)} />
@@ -615,6 +620,7 @@ function ScopedChatWorkspacePanel({
           onViewSaved={viewSavedPassage}
         />
       ) : null}
+      </div>
     </div>
   ) : null);
 
@@ -690,7 +696,7 @@ function ScopedChatWorkspacePanel({
           <Button ref={backToChatRef} type="button" variant="ghost" onClick={() => setExpanded(false)}><ArrowLeftIcon aria-hidden="true" />{t("chatWorkspacePanel.backToChat")}</Button>
         </div> : null}
         <div className="workspace-materials-content">
-        {showMap ? <div className="workspace-tabpanel" role="tabpanel" id={workspaceTabPanelId(CHAT_MAP_TAB_ID)} aria-labelledby={workspaceTabButtonId(CHAT_MAP_TAB_ID)}><ChatMiniMap onOpenFull={openFullMap} /></div>
+        {showMap ? <div className="workspace-tabpanel" role="tabpanel" id={workspaceTabPanelId(CHAT_MAP_TAB_ID)} aria-labelledby={workspaceTabButtonId(CHAT_MAP_TAB_ID)}><div className="workspace-tab-body"><ChatMiniMap onOpenFull={openFullMap} /></div></div>
           // One wrapper in both modes, so expanding keeps the reader's state and scroll position.
           : <div className="workspace-reading-column">{tabPanel}</div>}
         </div>

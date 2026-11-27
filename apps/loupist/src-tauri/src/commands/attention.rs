@@ -4,6 +4,7 @@
 //! list; Rust decides what belongs in it.
 use std::{
     collections::HashMap,
+    path::Path,
     sync::Mutex,
     time::{Duration, Instant},
 };
@@ -591,9 +592,20 @@ pub(crate) fn preview(text: &str) -> String {
     crate::util::shorten(&line, PREVIEW_CHARS)
 }
 
+/// Body for a chat notification. A missing settings file keeps the default, which
+/// shows a preview. Details off, or a file that cannot be read, send an empty body.
+fn notification_body(app_data_dir: &Path, answer: &str) -> String {
+    if crate::briefings::desktop::notification_shows_details(app_data_dir) {
+        preview(answer)
+    } else {
+        String::new()
+    }
+}
+
 /// An OS notification for a chat that finished or needs the user while it is not
-/// visible. The body comes from the stored chat, never from the renderer; nothing is
-/// sent unless the user granted notification permission.
+/// visible. The body comes from the stored chat, never from the renderer, and is
+/// empty when desktop notification details are off or that setting cannot be read.
+/// Nothing is sent unless the user granted notification permission.
 #[tauri::command(async)]
 pub(crate) fn attention_notify(
     request: NotifyRequest,
@@ -632,7 +644,10 @@ pub(crate) fn attention_notify(
     Ok(notifications
         .builder()
         .title(title)
-        .body(preview(&answer.content))
+        .body(notification_body(
+            &state.artifacts.app_data_dir,
+            &answer.content,
+        ))
         .show()
         .is_ok())
 }
@@ -644,6 +659,8 @@ mod tests {
 
     fn run(id: &str, finished: i64, quiet: bool) -> Run {
         Run {
+            usage: None,
+            budget: None,
             failure_streak: None,
             first_run: false,
             memory_save_skip: None,
@@ -668,6 +685,8 @@ mod tests {
             status: RunStatus::Succeeded,
             error: None,
             trigger: None,
+            undo: None,
+            provider: None,
         }
     }
 
@@ -951,5 +970,36 @@ mod tests {
         assert_eq!(preview("**Hanul**  margin\nfell"), "Hanul margin fell");
         let long = "a".repeat(80);
         assert_eq!(preview(&long).chars().count(), PREVIEW_CHARS);
+    }
+
+    /// A stored desktop setting with details off hides the reply. The same answer
+    /// is previewed when details are on, and hidden again when the file cannot be read.
+    #[test]
+    fn hidden_details_omit_the_answer_even_when_the_reply_has_text() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path();
+        let answer = "Hanul margin fell after the filing";
+        assert!(!preview(answer).is_empty());
+        assert_eq!(notification_body(root, answer), preview(answer));
+
+        let mut settings = crate::briefings::desktop::ResidentSettings::default();
+        settings.notifications.show_details = false;
+        std::fs::write(
+            root.join("briefings-settings.json"),
+            serde_json::to_vec(&settings).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(notification_body(root, answer), "");
+
+        settings.notifications.show_details = true;
+        std::fs::write(
+            root.join("briefings-settings.json"),
+            serde_json::to_vec(&settings).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(notification_body(root, answer), preview(answer));
+
+        std::fs::write(root.join("briefings-settings.json"), b"{").unwrap();
+        assert_eq!(notification_body(root, answer), "");
     }
 }

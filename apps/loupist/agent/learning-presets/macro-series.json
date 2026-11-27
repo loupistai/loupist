@@ -1,0 +1,34 @@
+{
+  "id": "macro-series",
+  "title": "Track {series}",
+  "brief": "Keep what this Loupist knows about the series {series} current. New since the previous run means a release, a revision of an earlier value or a change in the publisher's schedule. Read the official publisher first. Keep one Lens page with the latest values, each with its period, unit, release date and source, and with what the release revised. Report a release or a revision with its date and source; stay quiet when nothing was published.",
+  "slots": {
+    "series": {
+      "max_chars": 120
+    }
+  },
+  "subject_kind": "name",
+  "subject_slot": "series",
+  "schedule": {
+    "kind": "weekly",
+    "days": [3],
+    "hour": 8,
+    "minute": 5
+  },
+  "program": {
+    "depth": "light",
+    "scope": {
+      "connections": "all_enabled",
+      "web": true
+    },
+    "keeps": {
+      "sources": true,
+      "lens": true,
+      "asset_reads": false
+    }
+  },
+  "report": "when_new",
+  "delivery": {
+    "to": "bot"
+  }
+}

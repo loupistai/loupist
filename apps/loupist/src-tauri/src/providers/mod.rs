@@ -8,6 +8,7 @@ pub(crate) mod custom;
 pub(crate) mod inference;
 pub(crate) mod local;
 pub(crate) mod manifest;
+pub(crate) mod openrouter_quota;
 pub(crate) mod selection;
 pub(crate) mod status;
 pub(crate) mod support;

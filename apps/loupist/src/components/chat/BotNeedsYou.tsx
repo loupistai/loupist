@@ -5,7 +5,7 @@ import type { AttentionItem } from "../../contracts/attention";
 import type { LoupistBridge, ScheduledTaskListItem } from "../../types";
 import { useBotScheduleTasks } from "./BotScheduleTasks";
 import { cadenceLabel, scheduledTaskTitle } from "../briefings/scheduledPresentation";
-import { attentionWhat } from "../app/NeedsAttention";
+import { attentionItemKey, attentionWhat, settleAttention, useSettledAttention } from "../app/NeedsAttention";
 import { Button } from "../ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
 
@@ -22,14 +22,14 @@ export function BotNeedsYou({ items, bridge, onOpen, onAsk, loupistId }: {
   const [busy, setBusy] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [deleting, setDeleting] = useState<AttentionItem | null>(null);
-  const waiting = items;
+  const settled = useSettledAttention();
+  const waiting = items.filter((item) => !settled.has(attentionItemKey(item)));
   const { tasks } = useBotScheduleTasks(bridge, loupistId, items.some(item => item.kind === "proposal") ? "proposals" : "");
   const collapsed = waiting.length > 3 && !expanded;
   if (waiting.length === 0) return null;
-  const act = async (item: AttentionItem | ScheduledTaskListItem, action: "discard" | "resume" | "delete" | "confirm") => {
-    const proposal = "revision" in item ? item : undefined;
-    const identity = "revision" in item
-      ? { loupist_id: item.loupist_id, task_id: item.id }
+  const act = async (item: AttentionItem, action: "discard" | "resume" | "delete" | "confirm", proposal?: ScheduledTaskListItem) => {
+    const identity = proposal
+      ? { loupist_id: proposal.loupist_id, task_id: proposal.id }
       : item.recordId ? { loupist_id: item.loupistId, task_id: item.recordId } : undefined;
     if (!identity || busy) return;
     setBusy(identity.task_id);
@@ -53,6 +53,7 @@ export function BotNeedsYou({ items, bridge, onOpen, onAsk, loupistId }: {
           setDeleting(null);
         }
       }
+      settleAttention(item);
     } catch {
       setFailed(true);
     } finally {
@@ -66,7 +67,7 @@ export function BotNeedsYou({ items, bridge, onOpen, onAsk, loupistId }: {
       const proposal = item.kind === "proposal" && item.recordId ? tasks?.get(item.recordId) : undefined;
       return <li key={`${item.kind}:${item.recordId ?? item.chatId ?? item.title}`}>
       <span>{attentionWhat(proposal ? { ...item, title: scheduledTaskTitle(proposal.kind, proposal.title) } : item)}</span>
-      {item.kind === "triggerFailing" ? <div>
+      {item.kind === "triggerFailing" ? <div className="bot-needs-you-actions">
         <Button size="sm" onClick={() => onAsk(t("schedule.check.stopped", { title: item.title, error: item.title }))}>{t("schedule.check.askFix")}</Button>
         <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => {
           if (!item.recordId) return;
@@ -84,20 +85,20 @@ export function BotNeedsYou({ items, bridge, onOpen, onAsk, loupistId }: {
             await bridge.scheduledTaskSetStatus({ loupist_id: item.loupistId, task_id: item.recordId!, expected_revision: task.revision, status: "paused" });
           }).finally(() => setBusy(null));
         }}>{t("schedule.pause")}</Button>
-      </div> : item.kind === "triggerUpdate" ? <div>
+      </div> : item.kind === "triggerUpdate" ? <div className="bot-needs-you-actions">
         <Button size="sm" variant="ghost" onClick={() => onOpen(item)}>{t("schedule.turnOn")}</Button>
-      </div> : item.kind === "offer" && item.recordId ? <div>
+      </div> : item.kind === "offer" && item.recordId ? <div className="bot-needs-you-actions">
         {item.dueDate
           ? <Button size="sm" variant="ghost" onClick={() => onOpen(item)}>{t("schedule.open")}</Button>
           : <Button size="sm" disabled={busy !== null} onClick={() => void bridge.botOfferAccept({ loupistId: item.loupistId, offerId: item.recordId! }).catch(() => setFailed(true))}>{t("schedule.turnOn")}</Button>}
         <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void bridge.botOfferDismiss({ loupistId: item.loupistId, offerId: item.recordId! }).catch(() => setFailed(true))}>{t("standing.notNow")}</Button>
-      </div> : item.kind === "watchQuiet" && item.recordId ? <div>
+      </div> : item.kind === "watchQuiet" && item.recordId ? <div className="bot-needs-you-actions">
         <Button size="sm" disabled={busy !== null} onClick={() => void (async () => {
           const task = await bridge.scheduledTaskGet({ loupist_id: item.loupistId, task_id: item.recordId! });
           if (!task) return;
           await bridge.scheduledTaskSetStatus({ loupist_id: item.loupistId, task_id: item.recordId!, expected_revision: task.revision, status: "paused" });
         })().catch(() => setFailed(true))}>{t("schedule.pause")}</Button>
-      </div> : item.kind === "watchLoud" && item.recordId ? <div>
+      </div> : item.kind === "watchLoud" && item.recordId ? <div className="bot-needs-you-actions">
         <Button size="sm" disabled={busy !== null} onClick={() => void (async () => {
           const task = await bridge.scheduledTaskGet({ loupist_id: item.loupistId, task_id: item.recordId! });
           if (!task) return;
@@ -105,11 +106,11 @@ export function BotNeedsYou({ items, bridge, onOpen, onAsk, loupistId }: {
         })().catch(() => setFailed(true))}>{t("standing.notifyQuietly")}</Button>
       </div> : item.kind === "proposal" && proposal && (proposal.trigger || proposal.preset === "price-move") && !proposal.replaces
         ? <Button size="sm" variant="ghost" onClick={() => onOpen(item)}>{t("schedule.open")}</Button>
-        : item.kind === "proposal" ? <div>
+        : item.kind === "proposal" ? <div className="bot-needs-you-actions">
         {proposal && <span>{cadenceLabel(proposal.schedule)}</span>}
-        <Button size="sm" disabled={busy !== null || !proposal?.awaiting_confirmation} onClick={() => { if (proposal) void act(proposal, "confirm"); }}>{t("schedule.turnOn")}</Button>
+        <Button size="sm" disabled={busy !== null || !proposal?.awaiting_confirmation} onClick={() => { if (proposal) void act(item, "confirm", proposal); }}>{t("schedule.turnOn")}</Button>
         <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void act(item, "discard")}>{t("standing.notNow")}</Button>
-      </div> : item.kind === "taskPaused" ? <div>
+      </div> : item.kind === "taskPaused" ? <div className="bot-needs-you-actions">
         <Button size="sm" disabled={busy !== null} onClick={() => void act(item, "resume")}>{t("schedule.resume")}</Button>
         <Button size="sm" variant="ghost" onClick={() => onAsk(t("schedule.changePrompt", { title: item.title }))}>{t("schedule.askBot")}</Button>
         {item.recordId === `briefing-${item.loupistId}`

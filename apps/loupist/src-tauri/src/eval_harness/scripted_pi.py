@@ -183,7 +183,8 @@ for line in sys.stdin:
             args = {"pages": [{"page": {"create": {"kind": "subject", "title": "Hanbit Battery"}},
                                "ops": [{"op": "put", "key": "facts", "heading": "Facts",
                                         "markdown": "Supplies [Northgate](world:northgate-motors).",
-                                        "basis": {"refs": [{"said": True}]}}]}],
+                                        "basis": {"refs": [{"said": True}]}},
+                                       {"op": "summary", "text": "The user's account of who Hanbit supplies."}]}],
                     "rationale": "The user said who Hanbit supplies."}
         elif "TEACH_EVAL" in request["message"]:
             name, method = "lens_file", "lens.file"
@@ -193,7 +194,9 @@ for line in sys.stdin:
                                         "basis": {"refs": [{"said": True}]}},
                                        {"op": "put", "key": "steps", "heading": "Steps",
                                         "markdown": "Divide equity value by fully diluted shares including warrants.",
-                                        "basis": {"refs": [{"said": True}]}}]}],
+                                        "basis": {"refs": [{"said": True}]}},
+                                       {"op": "summary", "text": "Value fictional Hanbit companies using fully diluted shares.",
+                                        "said": True}]}],
                     "rationale": "The user taught a reusable valuation method."}
         else:
             assert learned, "new chat host memory context did not include the learned Lens"

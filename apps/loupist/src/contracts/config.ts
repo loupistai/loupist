@@ -6,7 +6,7 @@ export type ConfigScope = Wire.ConfigScope;
 export type ConfigSource = "default" | "global" | "project";
 
 /** TOML keys intentionally retain their spelling at the file/bridge boundary. */
-export type ConfigDocument = {
+export type ConfigDocument = Pick<Wire.ConfigDocument, "background_daily_requests" | "world_chat_daily_requests" | "learning_daily_requests" | "learning_program_cap"> & {
   appearance?: { theme?: "light" | "dark" | "system"; language?: LanguagePreference; price_colors?: PriceColorsPreference; display_currency?: string };
   models?: { hidden_model_profile_ids?: string[] };
   connectors?: Record<string, Record<string, string>>;
@@ -20,7 +20,7 @@ export type ConfigDocument = {
   bot?: { declined_offers?: string[] };
 };
 
-export type EffectiveConfig = {
+export type EffectiveConfig = Pick<Wire.ResolvedConfig, "background_daily_requests" | "world_chat_daily_requests" | "learning_daily_requests" | "learning_program_cap"> & {
   appearance: { theme: "light" | "dark" | "system"; language: LanguagePreference; price_colors: PriceColorsPreference; display_currency?: string };
   models: { hidden_model_profile_ids: string[] };
   connectors: Record<string, Record<string, string>>;

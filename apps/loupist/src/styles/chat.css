@@ -449,7 +449,8 @@ svg foreignObject .katex:has(> math) {
   text-underline-offset: 2px;
 }
 
-[data-streamdown="link"].loupist-external-link {
+[data-streamdown="link"].loupist-external-link,
+[data-streamdown="link"].loupist-lens-link {
   display: inline;
   padding: 0;
   border: 0;
@@ -1405,8 +1406,8 @@ div.message-action-bar > .message-actions { margin-top: 0; }
 .message-action-bar > .memory-row[data-expanded="true"] { flex-basis: 100%; }
 .message-action-bar > .message-sources { border: 0; background: transparent; border-radius: 0; overflow: visible; }
 .message-action-bar > .message-sources { margin-top: 0; }
-/* Sources and feedback each start at the reading edge; the receipt shares its row with Copy. */
-article[data-turn-message] > .turn-footer .message-action-bar > :is(.message-sources, .answer-feedback) { flex-basis: 100%; }
+/* Sources start at the reading edge; the receipt shares its row with Copy. */
+article[data-turn-message] > .turn-footer .message-action-bar > .message-sources { flex-basis: 100%; }
 article[data-turn-message] > .turn-footer .message-action-bar > .message-actions { margin-inline-start: auto; }
 .message-action-bar > details > summary { width: auto; padding: 0 2px; }
 .message-outputs { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); margin-top: var(--gg-space-3); }
@@ -1678,20 +1679,7 @@ article[data-turn-message] > .turn-footer .message-action-bar > .message-actions
   .chat-status-pill-jump-label { display: none; }
 }
 
-.answer-feedback { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; min-width: 0; }
-.answer-feedback .message-actions { flex-wrap: wrap; margin-top: 0; }
-.answer-feedback .message-actions button { width: auto; min-width: var(--gg-size-control-sm); padding-inline: 6px; }
-.answer-feedback .message-actions button:not(:has(svg)) { white-space: nowrap; }
-.answer-feedback button[aria-pressed="true"] { color: var(--gg-color-text-primary); background: var(--gg-color-bg-selected); }
-div.message-action-bar > .answer-correction { order: 1; }
-.answer-correction { display: grid; gap: 6px; flex: 1 0 100%; width: 100%; max-width: 620px; padding-block: var(--gg-space-2); }
-.answer-correction label, .answer-correction small { font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
-.answer-correction textarea { width: 100%; min-height: 80px; resize: vertical; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-xs); padding: var(--gg-space-2); background: var(--gg-color-bg-raised); color: var(--gg-color-text-primary); }
-.answer-correction > [role="alert"], .answer-correction > [role="status"] { font-size: var(--gg-text-meta); }
 
-.answer-saved-correction { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--gg-text-control); color: var(--gg-color-text-secondary); }
-.answer-saved-correction-label { font-size: var(--gg-text-meta); color: var(--gg-color-text-tertiary); }
-.answer-correction .message-actions button { width: auto; padding: var(--gg-space-1) var(--gg-space-2); }
 
 .message-schedules { display: grid; gap: var(--gg-space-2); max-width: 440px; margin: var(--gg-space-3) 0; }
 .message-schedule-open { display: flex; align-items: center; gap: var(--gg-space-3); width: 100%; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); padding: var(--gg-space-3) 14px; background: transparent; color: var(--gg-color-text-primary); font: inherit; font-size: var(--gg-text-control); text-align: left; }
@@ -1706,11 +1694,11 @@ button.message-schedule-open:not(:disabled):hover { background: var(--gg-color-b
 .message-schedule-heading > span, .message-schedule-cadence { color: var(--gg-color-text-secondary); }
 .message-schedule-cadence { display: block; overflow-wrap: anywhere; }
 /* A proposed routine: the one-tap OK sits under the card, outside its open button. */
+.trigger-review { min-inline-size: 0; max-inline-size: 100%; overflow-wrap: anywhere; }
+.trigger-review [data-trigger-code] { max-inline-size: 100%; overflow-x: auto; white-space: pre; }
 .message-schedule-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-2); margin-top: var(--gg-space-2); }
 .message-schedule-actions [role="alert"] { color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
 
-.answer-correction .message-actions { flex-wrap:wrap; }
-.answer-correction .message-actions button { white-space:normal; height:auto; min-height:var(--gg-size-control-sm); text-align:start; }
 .saved-principle { display: grid; gap: var(--gg-space-2); min-width: 0; max-width: 100%; }
 .saved-principle-label { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
 .saved-principle-quote { margin: 0; padding: var(--gg-space-2) 0 var(--gg-space-2) 14px; border-left: 1px solid var(--gg-color-border-subtle); color: var(--gg-color-text-primary); }
@@ -1770,10 +1758,10 @@ button.message-schedule-open:not(:disabled):hover { background: var(--gg-color-b
 
 /* Offline (X11): a quiet note at the top of the thread; the composer keeps working and queues. */
 .chat-offline-banner { margin: var(--gg-space-2) auto 0; width: min(calc(100% - 2 * var(--chat-gutter, var(--gg-space-5))), var(--gg-size-chat-column)); padding: var(--gg-space-2) var(--gg-space-3); border-radius: var(--gg-radius-sm); background: var(--gg-color-info-soft); color: var(--gg-color-text-primary); font-size: var(--gg-text-meta); }
-/* Message actions (X1): the newest answer keeps Copy and feedback showing; earlier answers reveal them on hover or focus. Sources, the receipt and a stopped or failed state stay visible. */
+/* Message actions (X1): the newest answer keeps Copy showing; earlier answers reveal it on hover or focus. Sources, the receipt and a stopped or failed state stay visible. */
 @media (hover: hover) {
-  .message.assistant:not([data-latest]) .message-action-bar > :is(.message-actions, .answer-feedback) { opacity: 0; transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
-  .message.assistant:not([data-latest]):is(:hover, :focus-within) .message-action-bar > :is(.message-actions, .answer-feedback) { opacity: 1; }
+  .message.assistant:not([data-latest]) .message-action-bar > .message-actions { opacity: 0; transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
+  .message.assistant:not([data-latest]):is(:hover, :focus-within) .message-action-bar > .message-actions { opacity: 1; }
 }
 
 /* The composer tray (context-rail.md R2): square thumbnails and compact file chips, then the count and Clear all. */
@@ -1962,6 +1950,9 @@ button.sent-image { cursor: zoom-in; }
 .message.user:not([data-latest]):is(:hover, :focus-within) .message-action-bar { opacity: 1; }
 /* 34. Scheduled work says it uses the AI account, before its buttons. */
 .message-schedule-spending { margin: 0; padding: 0 var(--gg-space-4); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.learning-program-kicker { display: block; margin-bottom: 2px; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.learning-program-card .schedule-section-label, .learning-program-card .schedule-subject-chips, .learning-program-card .schedule-learning-fields { margin-left: 0; margin-right: 0; padding-inline: var(--gg-space-4); }
+.learning-program-card .message-schedule-actions, .learning-program-card .schedule-learn-brief { margin-inline: var(--gg-space-4); }
 /* 27. A long Loupist name does not take over the answer's meta row. */
 .message-meta > span:first-child { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

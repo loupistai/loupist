@@ -7,6 +7,7 @@ const { instance, init, dispose, registerOverlay, registerIndicator } = vi.hoist
     setDataLoader: vi.fn(), setSymbol: vi.fn(), setPeriod: vi.fn(), setTimezone: vi.fn(), setStyles: vi.fn(), setLocale: vi.fn(),
     createIndicator: vi.fn(), createOverlay: vi.fn().mockReturnValue("agent-drawing"), removeOverlay: vi.fn(), getOverlays: vi.fn(() => []),
     overrideOverlay: vi.fn(), zoomAtCoordinate: vi.fn(), scrollToRealTime: vi.fn(), resize: vi.fn(), setPaneOptions: vi.fn(), overrideYAxis: vi.fn(),
+    getSize: vi.fn(), setBarSpace: vi.fn(), setOffsetRightDistance: vi.fn(), overrideXAxis: vi.fn(), setLeftMinVisibleBarCount: vi.fn(), setRightMinVisibleBarCount: vi.fn(),
   };
   return { instance, init: vi.fn(() => instance), dispose: vi.fn(), registerOverlay: vi.fn(), registerIndicator: vi.fn() };
 });
@@ -60,10 +61,16 @@ it("draws saved custom series using exact timestamp-bound data and named panes",
   expect(definition.calc([{ timestamp: Date.parse("2026-08-01") }, { timestamp: Date.parse("2026-08-02") }], { extendData: { [Date.parse("2026-08-02")]: 1009 } })).toEqual([{ value: undefined }, { value: 1009 }]);
 });
 
-it("selects a concrete range without a model call", () => {
+it("selects a concrete range without a model call", async () => {
   const onAskRange = vi.fn();
   render(<FinancialChart chart={chart} dataset={dataset} theme="light" onAskRange={onAskRange} />);
-  fireEvent.change(screen.getByLabelText("Range start"), { target: { value: "1" } });
+  const user = userEvent.setup();
+  const start = screen.getByRole("combobox", { name: "Range start" });
+  start.focus();
+  await user.keyboard("{ArrowDown}");
+  await screen.findByRole("listbox");
+  await user.keyboard("{ArrowDown}{Enter}");
+  expect(start).toHaveFocus();
   fireEvent.click(screen.getByRole("button", { name: "Ask about range" }));
   expect(onAskRange).toHaveBeenCalledWith({ start: "2026-08-02", end: "2026-08-02" });
 });
@@ -92,6 +99,38 @@ it("keeps price axis labels out from under the last-price tag", () => {
   // A short pane puts the library's ticks 13 px apart; the last close is 106.00, which the tag covers.
   const ticks = ([["108.00", 10], ["107.00", 23], ["106.00", 36], ["105.00", 49], ["104.00", 62]] as const).map(([value, coord]) => ({ value, text: value, coord }));
   expect(createTicks({ defaultTicks: ticks }).map((tick) => tick.text)).toEqual(["108.00", "104.00"]);
+});
+
+it("opens a one-year chart on the whole range and refits when the selected range changes", async () => {
+  instance.getSize.mockReturnValue({ width: 400, height: 280, x: 0, y: 0 });
+  const width = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(400);
+  try {
+    const rows = Array.from({ length: 251 }, (_, index) => {
+      const day = new Date(Date.UTC(2025, 0, 1 + index)).toISOString().slice(0, 10);
+      return [day, 100, 110, 90, 155.3800048828125];
+    });
+    render(<FinancialChart chart={chart} dataset={{ ...dataset, rows }} theme="light" />);
+    await waitFor(() => expect(instance.setBarSpace).toHaveBeenCalled());
+    const space = instance.setBarSpace.mock.calls.at(-1)![0] as number;
+    expect(space * 251).toBeLessThanOrEqual(400);
+    expect(screen.getByRole("group", { name: "Interactive financial chart" })).toHaveAccessibleDescription("Latest close 155.38.");
+    expect(screen.getByRole("group", { name: "Interactive financial chart" })).not.toHaveAccessibleDescription(/155\.3800048828125/);
+    const { chooseSelectOption } = await import("../../test/selectOption");
+    const user = userEvent.setup();
+    await chooseSelectOption(user, screen.getByRole("combobox", { name: "Range end" }), "Jan 1, 2025");
+    await waitFor(() => expect(instance.setBarSpace.mock.calls.length).toBeGreaterThan(1));
+    const narrowed = instance.setBarSpace.mock.calls.at(-1)![0] as number;
+    expect(narrowed).toBeGreaterThan(space);
+    const createTicks = instance.overrideXAxis.mock.calls.at(-1)![0].createTicks as (params: { defaultTicks: { coord: number; value: number; text: string }[]; bounding: { width: number } }) => { coord: number; text: string }[];
+    const fitted = createTicks({ bounding: { width: 400 }, defaultTicks: [{ coord: 398, value: 1, text: "Sep 2026" }] });
+    const last = fitted.at(-1)!;
+    expect(last.text).toBe("Sep 2026");
+    expect(last.coord).toBeLessThan(398);
+    expect(last.coord).toBeLessThanOrEqual(400);
+  } finally {
+    width.mockRestore();
+    instance.getSize.mockReset();
+  }
 });
 
 it("gives a panel chart's study panes a quarter of its height, so a short dock keeps room for the bars", () => {

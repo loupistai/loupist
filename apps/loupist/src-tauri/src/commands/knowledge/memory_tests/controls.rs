@@ -112,7 +112,7 @@ fn paused_principles_and_methods_leave_context_search_and_exact_reads_until_resu
 }
 
 #[test]
-fn context_only_delivery_counts_once_per_completed_turn_and_records_kind() {
+fn context_only_delivery_is_recorded_and_does_not_count() {
     let temp = tempfile::tempdir().unwrap();
     let state = AppState::for_test(temp.path().join("app"));
     state
@@ -149,9 +149,10 @@ fn context_only_delivery_counts_once_per_completed_turn_and_records_kind() {
         Ok(())
     }).unwrap();
     let usage = super::super::memory_usage::usage(&state, "loupist-a").unwrap();
-    assert_eq!(usage[0].record_id, p.record_id);
-    assert_eq!(usage[0].used_count, 1);
-    assert_eq!(usage[0].used_in[0].chat_id, "chat-1");
+    assert!(
+        usage.iter().all(|entry| entry.record_id != p.record_id),
+        "a principle only carried in the envelope does not count"
+    );
 }
 
 #[test]

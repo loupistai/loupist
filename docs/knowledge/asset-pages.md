@@ -23,7 +23,9 @@ Multiple matches at the selected step return candidates. Reference fields
 describe the listing the user or agent chose. An exchange code and a supplied exchange name have separate fields. A code alone leaves the name unknown.
 
 A read under a historical cutoff keeps the earlier reasons, lines and dated
-moves. It leaves out the current read, price and saved call.
+moves. The current read, price, saved call and feed since the latest move are
+available on live reads. While Sources are still being read, that feed says so
+and does not say nothing changed.
 
 ### Saved links
 
@@ -181,3 +183,5 @@ entity: its supplier and customer counts, Open, and "Not this company", which un
 ### Bot on this asset
 
 A followed asset's sidebar can turn on the filings and results watch for that asset. An asset with thesis lines also offers a lines watch. Each switch shows the saved task's current state and pauses or resumes it directly. The first occurrence reports, and later occurrences report when the watch finds a change that meets its terms.
+
+Track daily sits under those watches, including when the asset is not followed. Turning it on creates the asset-daily learning program for that asset; turning it off pauses the program. The row is off, on, running, or waiting for the allowance, and shows the last outcome. Other learning programs about the asset link to Schedule. Until the asset is followed the switch stays disabled and says to follow it. Loupist settings → Learning links to the programs and names the default weekday time, 06:30 in the viewer's time zone. It also holds the daily learning allowance (`learning_daily_requests`, inside the background allowance; 0 turns learning runs off and says so; otherwise at least a light update's budget) and the cap of active programs (`learning_program_cap`, 1 to 50). Each saves on its own; the host's refusal shows under its field, worded from its reason and bounds.

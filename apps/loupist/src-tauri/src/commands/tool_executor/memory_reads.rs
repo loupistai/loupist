@@ -46,17 +46,18 @@ impl AppToolExecutor {
             .as_str()
             .ok_or(BrokerError::Malformed)?
             .to_owned();
+        let delivered_revision = delivered["revisionId"]
+            .as_str()
+            .ok_or(BrokerError::Malformed)?
+            .to_string();
         crate::commands::knowledge::lens_read(
             &self.state,
             crate::commands::knowledge::KnowledgeLensReadRequest {
                 loupist_id: policy.loupist_id.clone(),
                 record_id: record_id.clone(),
-                revision_id: Some(
-                    delivered["revisionId"]
-                        .as_str()
-                        .ok_or(BrokerError::Malformed)?
-                        .to_string(),
-                ),
+                // Under a cutoff the delivered revision is the page as it stood
+                // then, not necessarily its head.
+                revision_id: policy.as_of.is_none().then_some(delivered_revision),
             },
         )
         .map_err(command_error)?;
@@ -183,7 +184,8 @@ impl AppToolExecutor {
         let state = self.state.clone();
         let loupist_id = policy.loupist_id.clone();
         let owned_query = query.clone();
-        let owned_scope = scope.to_owned();
+        // World adds graph retrieval to the default local search.
+        let local_scope = if scope == "world" { "all" } else { scope }.to_owned();
         let owned_options = options.clone();
         let cutoff = crate::commands::knowledge::as_of::Cutoff::parse(policy.as_of.as_deref());
         // Source hits name their origin and sourceClass. SYSTEM.md's Memory
@@ -198,7 +200,7 @@ impl AppToolExecutor {
                 &state,
                 &loupist_id,
                 &owned_query,
-                &owned_scope,
+                &local_scope,
                 &owned_options,
             )?;
             let capped = hits
@@ -257,6 +259,11 @@ impl AppToolExecutor {
             retrieval_warnings.push(MODEL_LOADING);
         }
         self.as_of_hits(policy, &mut hits)?;
+        for hit in hits.as_array_mut().into_iter().flatten() {
+            if let Some(view) = hit.get_mut("view") {
+                figure_on_edges(view);
+            }
+        }
         let mut page = discovery_page(hits, offset, capped)?;
         page["partial"] = json!(!retrieval_warnings.is_empty());
         page["warnings"] = json!(retrieval_warnings);
@@ -350,6 +357,205 @@ impl AppToolExecutor {
         self.read_record(policy, params, delivery_id).await
     }
 
+    pub(super) async fn world_changes(
+        &self,
+        policy: &crate::broker::ToolPolicy,
+        params: Value,
+        delivery_id: &str,
+    ) -> Result<Value, BrokerError> {
+        if !policy.use_memory {
+            return Err(BrokerError::MemoryDisabled);
+        }
+        let object = exact_object(
+            &params,
+            &[],
+            &["since", "axis", "about", "kinds", "limit", "between"],
+        )?;
+        if object.contains_key("since") && object.contains_key("between") {
+            return Err(BrokerError::invalid(
+                "between",
+                "pass since or between, not both",
+            ));
+        }
+        if let Some(between) = object.get("between") {
+            return self.world_between(policy, between, delivery_id).await;
+        }
+        let since_text = bounded_text(object.get("since"), 1, 4096)?;
+        let axis_explicit = object.contains_key("axis");
+        let axis = match object.get("axis").and_then(Value::as_str) {
+            None => crate::knowledge::world_changes::Axis::Recorded,
+            Some("recorded") => crate::knowledge::world_changes::Axis::Recorded,
+            Some("published") => crate::knowledge::world_changes::Axis::Published,
+            Some(_) => return Err(BrokerError::invalid("axis", "recorded or published")),
+        };
+        let since = if let Some(token) = since_text.strip_prefix("wch1.") {
+            let _ = token;
+            crate::knowledge::world_changes::Since::Cursor(since_text)
+        } else if since_text == "previous_run" {
+            let Some(ms) = self.capture.previous_run_started_at_ms else {
+                return Err(BrokerError::invalid(
+                    "since",
+                    "since_previous_run_unavailable: this turn has no previous run start",
+                ));
+            };
+            crate::knowledge::world_changes::Since::Millis {
+                ms,
+                inclusive: true,
+            }
+        } else if let Ok(date) = chrono::NaiveDate::parse_from_str(&since_text, "%Y-%m-%d") {
+            crate::knowledge::world_changes::Since::Date(date)
+        } else {
+            return Err(BrokerError::invalid(
+                "since",
+                "a YYYY-MM-DD date, previous_run, or a next cursor",
+            ));
+        };
+        let about = parse_change_about(object.get("about"))?;
+        let kinds = parse_change_kinds(object.get("kinds"))?;
+        let limit = match object.get("limit") {
+            None | Some(Value::Null) => crate::knowledge::world_changes::DEFAULT_LIMIT,
+            Some(Value::Number(number)) => number
+                .as_u64()
+                .and_then(|limit| u32::try_from(limit).ok())
+                .filter(|limit| (1..=50).contains(limit))
+                .ok_or(BrokerError::Malformed)?,
+            Some(_) => return Err(BrokerError::Malformed),
+        };
+        let read = crate::commands::knowledge::read_changes(
+            &self.state,
+            &policy.loupist_id,
+            crate::knowledge::world_changes::FeedQuery {
+                loupist_id: policy.loupist_id.clone(),
+                since,
+                axis,
+                axis_explicit,
+                about,
+                kinds,
+                limit,
+                first_run: self.capture.first_run,
+                cutoff: crate::commands::knowledge::as_of::Cutoff::parse(policy.as_of.as_deref())
+                    .map(|cutoff| cutoff.0),
+            },
+        )
+        .map_err(change_feed_error)?;
+        let read_ref = format!("rdg_{}", uuid::Uuid::new_v4().simple());
+        let mut body = read.body;
+        body["readRef"] = json!(read_ref.clone());
+        if !read.revision_id.is_empty() {
+            let view_json = read.view_json.clone();
+            let view_digest = crate::util::sha256(view_json.as_bytes());
+            let staged = super::StagedKnowledgeRead {
+                read_ref: read_ref.clone(),
+                scope: "world".into(),
+                record_id: read.record_id.clone(),
+                span_id: None,
+                revision_id: read.revision_id.clone(),
+                object_id: read.record_id.clone(),
+                title: "World changes".into(),
+                evidence_origin: None,
+                payload: super::AckedPayload::World {
+                    revision_digest: read.revision_digest.clone(),
+                    view_json,
+                    view_digest,
+                },
+            };
+            self.capture
+                .stage(delivery_id, |pending| pending.staged_reads.push(staged))
+                .await;
+            self.stage_memory(
+                delivery_id,
+                crate::domain::MemoryRefSnapshot {
+                    read_ref: read_ref.clone(),
+                    kind: "world".into(),
+                    title: "World changes".into(),
+                    excerpt: String::new(),
+                    as_of: None,
+                    section: None,
+                    access: crate::domain::MemoryAccess::ExactRead,
+                    full_record_digest: None,
+                    object_id: read.record_id.clone(),
+                    record_id: read.record_id,
+                    revision_id: read.revision_id,
+                    span_id: None,
+                    receipt_id: Some(read_ref),
+                },
+            )
+            .await?;
+        }
+        Ok(body)
+    }
+
+    async fn world_between(
+        &self,
+        policy: &crate::broker::ToolPolicy,
+        between: &Value,
+        delivery_id: &str,
+    ) -> Result<Value, BrokerError> {
+        let object = between.as_object().ok_or(BrokerError::Malformed)?;
+        if object.keys().any(|key| key != "to" && key != "from") {
+            return Err(BrokerError::Malformed);
+        }
+        let to = bounded_text(object.get("to"), 1, 128)?;
+        let from = optional_bounded_text(object.get("from"), 1, 128)?;
+        let read = crate::commands::knowledge::read_between(
+            &self.state,
+            &policy.loupist_id,
+            crate::knowledge::world_changes::BetweenQuery {
+                loupist_id: policy.loupist_id.clone(),
+                to,
+                from,
+                cutoff: crate::commands::knowledge::as_of::Cutoff::parse(policy.as_of.as_deref())
+                    .map(|cutoff| cutoff.0),
+            },
+        )
+        .map_err(change_feed_error)?;
+        let read_ref = format!("rdg_{}", uuid::Uuid::new_v4().simple());
+        let mut body = read.body;
+        body["readRef"] = json!(read_ref.clone());
+        if !read.revision_id.is_empty() {
+            let view_json = read.view_json.clone();
+            let view_digest = crate::util::sha256(view_json.as_bytes());
+            let staged = super::StagedKnowledgeRead {
+                read_ref: read_ref.clone(),
+                scope: "world".into(),
+                record_id: read.record_id.clone(),
+                span_id: None,
+                revision_id: read.revision_id.clone(),
+                object_id: read.record_id.clone(),
+                title: "World changes".into(),
+                evidence_origin: None,
+                payload: super::AckedPayload::World {
+                    revision_digest: read.revision_digest,
+                    view_json,
+                    view_digest,
+                },
+            };
+            self.capture
+                .stage(delivery_id, |pending| pending.staged_reads.push(staged))
+                .await;
+            self.stage_memory(
+                delivery_id,
+                crate::domain::MemoryRefSnapshot {
+                    read_ref: read_ref.clone(),
+                    kind: "world".into(),
+                    title: "World changes".into(),
+                    excerpt: String::new(),
+                    as_of: None,
+                    section: None,
+                    access: crate::domain::MemoryAccess::ExactRead,
+                    full_record_digest: None,
+                    object_id: read.record_id.clone(),
+                    record_id: read.record_id,
+                    revision_id: read.revision_id,
+                    span_id: None,
+                    receipt_id: Some(read_ref),
+                },
+            )
+            .await?;
+        }
+        Ok(body)
+    }
+
     async fn read_record(
         &self,
         policy: &ToolPolicy,
@@ -373,12 +579,32 @@ impl AppToolExecutor {
                 "edgeLimit",
                 "byteLimit",
                 "status",
+                "asOf",
+                "history",
             ],
         )?;
         let scope = bounded_text(object.get("scope"), 1, 16)?;
         let record_id = bounded_text(object.get("recordId"), 1, 128)?;
+        let tool_as_of = match object.get("asOf") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(value)) => parse_as_of_date(Some(value))?,
+            Some(_) => {
+                return Err(BrokerError::invalid(
+                    "asOf",
+                    "expected a calendar date in YYYY-MM-DD format",
+                ))
+            }
+        };
+        let turn_as_of = parse_as_of_date(policy.as_of.as_deref())?;
+        let history = object
+            .get("history")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         let request = crate::commands::knowledge::HostReadRequest {
-            as_of: parse_as_of_date(policy.as_of.as_deref())?,
+            as_of: match (turn_as_of, tool_as_of) {
+                (Some(turn), Some(tool)) => Some(turn.min(tool)),
+                (turn, tool) => turn.or(tool),
+            },
             scope: scope.clone(),
             record_id: record_id.clone(),
             revision_id: optional_bounded_text(object.get("revisionId"), 1, 128)?,
@@ -406,12 +632,48 @@ impl AppToolExecutor {
         if let Some(cutoff) = request.as_of.map(crate::commands::knowledge::as_of::Cutoff) {
             self.as_of_read(policy, &request, cutoff)?;
         }
-        let (text, staged) = crate::commands::knowledge::host_prepare_read(
+        let (mut text, mut staged) = crate::commands::knowledge::host_prepare_read(
             &self.state,
             &policy.loupist_id,
             &request,
         )
         .map_err(command_error)?;
+        if let super::AckedPayload::World {
+            view_json,
+            view_digest,
+            ..
+        } = &mut staged.payload
+        {
+            // The delivered text and the staged view stay one string, so a
+            // citation of this read verifies against what the model saw.
+            if let Ok(mut view) = serde_json::from_str::<Value>(view_json) {
+                if figure_on_edges(&mut view) {
+                    *view_json = view.to_string();
+                    *view_digest = crate::util::sha256(view_json.as_bytes());
+                    text = view_json.clone();
+                }
+            }
+        }
+        let lineage = if history && scope == "world" {
+            request.center_claim_id.as_deref().and_then(|claim_id| {
+                let replay = request.as_of.map(|day| {
+                    (
+                        staged.revision_id.as_str(),
+                        crate::commands::knowledge::as_of::Cutoff(day),
+                    )
+                });
+                crate::commands::knowledge::read_lineage(
+                    &self.state,
+                    &policy.loupist_id,
+                    claim_id,
+                    replay,
+                )
+                .ok()
+                .flatten()
+            })
+        } else {
+            None
+        };
         let read_ref = staged.read_ref.clone();
         let revision_id = staged.revision_id.clone();
         let span_id = staged.span_id.clone();
@@ -493,11 +755,15 @@ impl AppToolExecutor {
         if let Some(disagreement) = disagreement {
             delivered["sources_disagree"] = disagreement;
         }
+        if let Some(lineage) = lineage {
+            delivered["lineage"] = lineage;
+        }
         Ok(delivered)
     }
 
-    /// Under a cutoff, a later Source or method is left out and a World read
-    /// counts the relationships published later.
+    /// Under a cutoff, a later Source or a page made later is left out and a
+    /// World read counts the relationships published later. A Lens page that
+    /// existed then reads as it stood then.
     fn as_of_read(
         &self,
         policy: &ToolPolicy,
@@ -524,9 +790,13 @@ impl AppToolExecutor {
                 })
             }
             "lens" => {
-                let known =
-                    as_of::lens_known(&self.state, &policy.loupist_id, &request.record_id, cutoff)
-                        .map_err(execution)?;
+                let known = as_of::lens_created_by(
+                    &self.state,
+                    &policy.loupist_id,
+                    &request.record_id,
+                    cutoff,
+                )
+                .map_err(execution)?;
                 (!known).then(|| {
                     left.methods.insert(request.record_id.clone());
                     "method"
@@ -578,6 +848,92 @@ impl AppToolExecutor {
             .await;
         Ok(())
     }
+}
+
+fn change_feed_error(error: crate::app::CommandError) -> BrokerError {
+    for code in [
+        "cursor_axis_mismatch",
+        "since_after_cutoff",
+        "between_needs_from",
+        "change_cursor_invalid",
+        "change_limit_invalid",
+        "change_about_invalid",
+        "change_kinds_invalid",
+        "change_since_invalid",
+    ] {
+        if error.message.contains(code) {
+            return BrokerError::invalid("since", format!("{code}: {}", error.message));
+        }
+    }
+    command_error(error)
+}
+
+fn parse_change_about(
+    value: Option<&Value>,
+) -> Result<Vec<crate::knowledge::world_changes::AboutRef>, BrokerError> {
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    let rows = value
+        .as_array()
+        .filter(|rows| rows.len() <= 16)
+        .ok_or(BrokerError::Malformed)?;
+    rows.iter()
+        .map(|item| match item {
+            Value::String(id) if id.starts_with("ast_") => {
+                Ok(crate::knowledge::world_changes::AboutRef::Asset { id: id.clone() })
+            }
+            Value::String(id) if id.starts_with("rec_") => {
+                Ok(crate::knowledge::world_changes::AboutRef::Lens { id: id.clone() })
+            }
+            Value::String(id) => {
+                Ok(crate::knowledge::world_changes::AboutRef::Node { id: id.clone() })
+            }
+            Value::Object(object) => {
+                let one = |key: &str| object.get(key).and_then(Value::as_str).map(str::to_owned);
+                match (one("node"), one("asset"), one("lens")) {
+                    (Some(id), None, None) => {
+                        Ok(crate::knowledge::world_changes::AboutRef::Node { id })
+                    }
+                    (None, Some(id), None) => {
+                        Ok(crate::knowledge::world_changes::AboutRef::Asset { id })
+                    }
+                    (None, None, Some(id)) => {
+                        Ok(crate::knowledge::world_changes::AboutRef::Lens { id })
+                    }
+                    _ => Err(BrokerError::invalid(
+                        "about",
+                        "a node id, an asset id, or a Lens record id",
+                    )),
+                }
+            }
+            _ => Err(BrokerError::Malformed),
+        })
+        .collect()
+}
+
+fn parse_change_kinds(
+    value: Option<&Value>,
+) -> Result<
+    Option<std::collections::BTreeSet<crate::knowledge::world_changes::ChangeKind>>,
+    BrokerError,
+> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let rows = value.as_array().ok_or(BrokerError::Malformed)?;
+    let mut kinds = std::collections::BTreeSet::new();
+    for row in rows {
+        let name = row.as_str().ok_or(BrokerError::Malformed)?;
+        let kind = crate::knowledge::world_changes::ChangeKind::parse(name).ok_or_else(|| {
+            BrokerError::invalid(
+                "kinds",
+                "added, supported, ended, conflict, disputed, withdrawn, or lens",
+            )
+        })?;
+        kinds.insert(kind);
+    }
+    Ok(Some(kinds))
 }
 
 fn optional_limit(value: Option<&Value>) -> Result<Option<u32>, BrokerError> {
@@ -662,6 +1018,42 @@ async fn merge_graph_retrieval(
     }
     warnings.dedup();
     (hits, warnings)
+}
+
+/// A relationship whose stored support did not find its figure in the cited
+/// passage carries `figure: "not_found"`; no other verdict reaches the model.
+/// The per-support verdicts are removed and each support keeps its passage.
+/// Returns whether the view changed.
+fn figure_on_edges(view: &mut Value) -> bool {
+    let view = if view.get("view").is_some_and(Value::is_object) {
+        &mut view["view"]
+    } else {
+        view
+    };
+    let Some(edges) = view.get_mut("edges").and_then(Value::as_array_mut) else {
+        return false;
+    };
+    let mut changed = false;
+    for edge in edges {
+        let mut not_found = false;
+        for path in ["/evidence", "/claim/evidence"] {
+            let Some(evidence) = edge.pointer_mut(path).and_then(Value::as_array_mut) else {
+                continue;
+            };
+            for support in evidence.iter_mut().filter_map(Value::as_object_mut) {
+                for key in ["figure_check", "figureCheck"] {
+                    if let Some(verdict) = support.remove(key) {
+                        changed = true;
+                        not_found |= verdict == "not_found";
+                    }
+                }
+            }
+        }
+        if not_found {
+            edge["figure"] = json!("not_found");
+        }
+    }
+    changed
 }
 
 const MODEL_LOADING: &str = "The local embedding model is still loading, so these results match words and World names only and can miss a Source written in another language. Search again shortly before concluding the information is absent.";

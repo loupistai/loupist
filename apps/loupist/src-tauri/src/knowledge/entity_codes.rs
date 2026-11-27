@@ -18,7 +18,17 @@
 //!
 //! Names agree when, without their code, legal forms, punctuation and case, they
 //! are equal or one's words begin the other's ("Toyota", "Toyota Motor",
-//! "Toyota Motor Corporation"). Names in different scripts do not agree.
+//! "Toyota Motor Corporation"), and a spelling stored on the node counts the
+//! same way. Names in different scripts do not agree unless one of those
+//! spellings does. A single letter after a dot is a share class (`BRK.B`), not
+//! an exchange. A bare number names no market: six digits are Korean, Shanghai
+//! and Shenzhen codes, four digits Tokyo and Hong Kong codes, so a bare code
+//! joins a listed form only when a stored `exchange` names its market or the
+//! names agree. A trailing capital that abbreviates the name is not a code.
+//! Different tickers in one market never join. Across markets, names must agree
+//! through a spelling or the two must share an identifying code. A stored
+//! node's codes include those its stored spellings state, so a node that took
+//! one share class's name refuses the other class.
 
 use std::collections::BTreeSet;
 
@@ -76,8 +86,8 @@ impl Code {
 
     /// Whether an equal pair names one entity on its own: a ticker both sides
     /// write with its exchange, or a checked ISIN, FIGI or LEI, a CIK or a DART
-    /// corp code. An unclassified identifier or a ticker without its exchange
-    /// does not.
+    /// corp code. An unclassified identifier or a ticker without its exchange,
+    /// a bare number included, does not.
     fn identifies(&self, other: &Code) -> bool {
         match self.scheme {
             Scheme::Isin | Scheme::Figi | Scheme::Lei | Scheme::Cik | Scheme::Dart => true,
@@ -135,6 +145,10 @@ pub(crate) struct Codes {
     /// The name outside its parentheses without its code, legal forms,
     /// punctuation and case, word by word ([`super::identity::name_words`]).
     name: Vec<String>,
+    /// The primary name and any stored spellings, each as [`Self::name`].
+    spellings: Vec<Vec<String>>,
+    /// Whether the node's kind carries codes at all ([`UNCODED_KINDS`]).
+    coded: bool,
 }
 
 /// `text`'s words as identity keys them, without a leading "the" or legal forms.
@@ -262,7 +276,8 @@ fn lei(token: &str) -> bool {
 }
 
 /// `BASE.SUFFIX` with a one-to-four-letter exchange suffix (`0489.HK`,
-/// `VOLCAR-B.ST`, `BRK.B`).
+/// `VOLCAR-B.ST`). A single letter that is not an exchange suffix is a share
+/// class kept on the ticker (`BRK.B`, `NYSE:BRK.B`), not a market.
 fn suffixed(token: &str) -> Option<Code> {
     let (base, suffix) = token.rsplit_once('.')?;
     let base_ok = !base.is_empty()
@@ -274,12 +289,16 @@ fn suffixed(token: &str) -> Option<Code> {
             .is_some_and(|c| c.is_ascii_alphanumeric());
     let suffix_ok =
         (1..=4).contains(&suffix.len()) && suffix.chars().all(|c| c.is_ascii_uppercase());
-    (base_ok && suffix_ok).then(|| {
-        let market = market_family(suffix)
-            .map(str::to_string)
-            .unwrap_or_else(|| suffix.to_string());
-        Code::ticker(base, Some(market))
-    })
+    if !(base_ok && suffix_ok) {
+        return None;
+    }
+    if suffix.len() == 1 && market_family(suffix).is_none() {
+        return Some(Code::ticker(token, None));
+    }
+    let market = market_family(suffix)
+        .map(str::to_string)
+        .unwrap_or_else(|| suffix.to_string());
+    Some(Code::ticker(base, Some(market)))
 }
 
 /// `EXCH:CODE` or `EXCH: CODE`, with the exchange's family when it has one.
@@ -333,16 +352,35 @@ fn stated_code(token: &str) -> Option<Code> {
     digits.then(|| Code::ticker(token, None))
 }
 
-/// The initials of `words`, with and without their small words.
-fn initials(words: &[&str]) -> [String; 2] {
-    let first = |word: &&str| word.chars().next().map(|c| c.to_uppercase().to_string());
-    [
-        words.iter().filter_map(first).collect(),
+/// Abbreviations of `words`: the first letter of each word, and, for a word
+/// already written in capitals, all of its letters (`LG` in `LG Energy
+/// Solution` yields `LGES`). With and without small words.
+fn abbreviations(words: &[&str]) -> Vec<String> {
+    let piece = |word: &str, expand_caps: bool| -> String {
+        if expand_caps
+            && word
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+        {
+            return word.to_string();
+        }
+        word.chars()
+            .next()
+            .map(|c| c.to_uppercase().to_string())
+            .unwrap_or_default()
+    };
+    let build = |expand_caps: bool, skip_stops: bool| -> String {
         words
             .iter()
-            .filter(|word| !STOP_WORDS.contains(&word.to_lowercase().as_str()))
-            .filter_map(first)
-            .collect(),
+            .filter(|word| !skip_stops || !STOP_WORDS.contains(&word.to_lowercase().as_str()))
+            .map(|word| piece(word, expand_caps))
+            .collect()
+    };
+    vec![
+        build(false, false),
+        build(false, true),
+        build(true, false),
+        build(true, true),
     ]
 }
 
@@ -366,7 +404,11 @@ fn trailing_code(token: &str, before: &[&str]) -> Option<Code> {
     {
         return None;
     }
-    if token.len() >= 2 && initials(before).iter().any(|initials| initials == token) {
+    if token.len() >= 2
+        && abbreviations(before)
+            .iter()
+            .any(|initials| initials == token)
+    {
         return None;
     }
     Some(Code::ticker(token, None))
@@ -379,21 +421,29 @@ impl Codes {
         let text: String = name.nfkc().collect();
         let parts = segments(&text);
         let (outer, inner) = parts.split_first().expect("the outer segment");
-        if UNCODED_KINDS.contains(&kind) {
+        codes.coded = !UNCODED_KINDS.contains(&kind);
+        if !codes.coded {
             codes.words = fold_words(&text).collect();
             codes.name = name_key(outer);
+            codes.note_spelling();
             return codes;
         }
         let tickered = TICKERED_KINDS.contains(&kind);
         let tokens: Vec<&str> = outer.split_whitespace().collect();
         let mut kept: Vec<&str> = tokens.clone();
-        if let Some((last, before)) = tokens.split_last().filter(|(_, before)| !before.is_empty()) {
-            if let Some(code) = stated_code(last) {
+        if let Some((last, before)) = tokens.split_last() {
+            if let Some(code) = stated_code(last).filter(|_| {
+                !before.is_empty()
+                    || last.contains([':', '.'])
+                    || last.bytes().all(|byte| byte.is_ascii_digit())
+            }) {
                 codes.stated.push(code);
                 kept.pop();
-            } else if let Some(code) = tickered.then(|| trailing_code(last, before)).flatten() {
-                codes.trailing.push(code);
-                kept.pop();
+            } else if !before.is_empty() {
+                if let Some(code) = tickered.then(|| trailing_code(last, before)).flatten() {
+                    codes.trailing.push(code);
+                    kept.pop();
+                }
             }
         }
         let outer_words: Vec<&str> = kept.clone();
@@ -416,7 +466,71 @@ impl Codes {
             .words
             .extend(kept.iter().flat_map(|word| fold_words(word)));
         codes.name = name_key(&kept.join(" "));
+        codes.note_spelling();
         codes
+    }
+
+    fn note_spelling(&mut self) {
+        if !self.name.is_empty() {
+            self.spellings = vec![self.name.clone()];
+        }
+    }
+
+    /// A name stored beside this one (an alias, or a name the resolver merged
+    /// into the node) is another way [`Self::names_agree`] can hold, and the
+    /// codes it states are the node's codes: a node that took "Kestrel (NYSE:
+    /// KSTL.A)" holds `KSTL.A` and refuses `KSTL.B`. A trailing capital in a
+    /// spelling stays a word.
+    pub(crate) fn add_spellings<'a>(&mut self, spellings: impl IntoIterator<Item = &'a str>) {
+        for spelling in spellings {
+            let key = name_key(spelling);
+            if !key.is_empty() && !self.spellings.contains(&key) {
+                self.spellings.push(key);
+            }
+            if self.coded {
+                for code in Codes::of_name(spelling, "Entity").stated {
+                    if !self.stated.contains(&code) {
+                        self.stated.push(code);
+                    }
+                }
+            }
+        }
+        self.stated.sort();
+    }
+
+    /// Tickers that differ inside one market: both unstated, or the same
+    /// family. Share classes and two listings on one exchange. A bare code
+    /// beside its suffixed form, and listings on two markets, do not.
+    pub(crate) fn market_split(&self, other: &Codes) -> bool {
+        let left: Vec<&Code> = self
+            .beside(other)
+            .into_iter()
+            .filter(|code| code.scheme == Scheme::Ticker)
+            .collect();
+        let right: Vec<&Code> = other
+            .beside(self)
+            .into_iter()
+            .filter(|code| code.scheme == Scheme::Ticker)
+            .collect();
+        if left.is_empty() || right.is_empty() {
+            return false;
+        }
+        if left
+            .iter()
+            .any(|left| right.iter().any(|right| left.agrees(right)))
+        {
+            return false;
+        }
+        let same_venue = |left: &Code, right: &Code| match (&left.market, &right.market) {
+            (Some(left), Some(right)) => left == right,
+            (None, None) => true,
+            _ => false,
+        };
+        left.iter().any(|left| {
+            right
+                .iter()
+                .any(|right| !left.pairs_with(right) && same_venue(left, right))
+        })
     }
 
     /// The codes of a stored node: its name's, and those its properties state
@@ -569,14 +683,20 @@ impl Codes {
     }
 
     /// Whether the two names are equal, or one's words begin the other's,
-    /// once codes, legal forms, punctuation and case are set aside.
+    /// once codes, legal forms, punctuation and case are set aside. A stored
+    /// spelling agrees the same way as the primary name.
     pub(crate) fn names_agree(&self, other: &Codes) -> bool {
-        let (short, long) = if self.name.len() <= other.name.len() {
-            (&self.name, &other.name)
-        } else {
-            (&other.name, &self.name)
+        let agrees = |left: &[String], right: &[String]| {
+            let (short, long) = if left.len() <= right.len() {
+                (left, right)
+            } else {
+                (right, left)
+            };
+            !short.is_empty() && long.starts_with(short)
         };
-        !short.is_empty() && long.starts_with(short)
+        self.spellings
+            .iter()
+            .any(|left| other.spellings.iter().any(|right| agrees(left, right)))
     }
 
     /// Whether the host refuses to treat the two as one entity: their codes
@@ -585,13 +705,124 @@ impl Codes {
         self.differs_from(other) && !self.names_agree(other)
     }
 
+    /// Whether the codes hold the two apart whoever proposes the join: the
+    /// host refuses them, or their tickers split one market. The resolver's
+    /// merge veto, same-chunk deduplication and repair all ask this.
+    pub(crate) fn keeps_apart(&self, other: &Codes) -> bool {
+        self.refuses(other) || self.market_split(other)
+    }
+
+    /// Whether the host may make the two one node with no model in the loop
+    /// once something else (a shared name key) proposes it: the codes do not
+    /// hold them apart, and an equal code joins them ([`Self::joins`]) rather
+    /// than being all they share. A bare `600731` beside `SSE:600731` under
+    /// another issuer's name is not one node.
+    pub(crate) fn may_join_unasked(&self, other: &Codes) -> bool {
+        !self.keeps_apart(other) && (self.relation(other) != Relation::Same || self.joins(other))
+    }
+
     /// Whether the host joins the two without the model: a code is equal, and
-    /// it identifies the entity on its own or the names agree.
+    /// it identifies the entity on its own or the names agree. Tickers that
+    /// differ inside one market veto the join, including when a CIK or
+    /// another identifying code is shared. Repair and the resolver both use
+    /// this.
     pub(crate) fn joins(&self, other: &Codes) -> bool {
+        if self.market_split(other) {
+            return false;
+        }
         let pairs = self.agreeing(other);
         !pairs.is_empty()
             && (pairs.iter().any(|(left, right)| left.identifies(right)) || self.names_agree(other))
     }
+}
+
+/// Groups `count` items into the nodes the host makes of them, whatever their
+/// order: the connected components of `joins`, where a component that holds
+/// two items `apart` says must stay apart loses its bridges (the items that
+/// join both of such a pair) to groups of their own, and a component whose
+/// conflict no single bridge explains stays unmerged. Each group lists its
+/// items in ascending order. Repair and same-chunk deduplication both group
+/// by this, so neither depends on which name came first.
+pub(crate) fn partition(
+    count: usize,
+    joins: impl Fn(usize, usize) -> bool,
+    apart: impl Fn(usize, usize) -> bool,
+) -> Vec<Vec<usize>> {
+    let edge = |left: usize, right: usize| {
+        let (low, high) = (left.min(right), left.max(right));
+        joins(low, high) && !apart(low, high)
+    };
+    let pair_apart = |left: usize, right: usize| apart(left.min(right), left.max(right));
+    let mut groups = Vec::new();
+    let mut pending: Vec<Vec<usize>> = vec![(0..count).collect()];
+    while let Some(items) = pending.pop() {
+        for component in components(&items, &edge) {
+            let conflicts: Vec<(usize, usize)> = component
+                .iter()
+                .enumerate()
+                .flat_map(|(position, left)| {
+                    component[position + 1..]
+                        .iter()
+                        .filter(|right| pair_apart(*left, **right))
+                        .map(move |right| (*left, *right))
+                })
+                .collect();
+            if conflicts.is_empty() {
+                groups.push(component);
+                continue;
+            }
+            let bridges: Vec<usize> = component
+                .iter()
+                .copied()
+                .filter(|middle| {
+                    conflicts.iter().any(|(left, right)| {
+                        middle != left
+                            && middle != right
+                            && edge(*middle, *left)
+                            && edge(*middle, *right)
+                    })
+                })
+                .collect();
+            if bridges.is_empty() {
+                groups.extend(component.into_iter().map(|item| vec![item]));
+                continue;
+            }
+            groups.extend(bridges.iter().map(|item| vec![*item]));
+            pending.push(
+                component
+                    .into_iter()
+                    .filter(|item| !bridges.contains(item))
+                    .collect(),
+            );
+        }
+    }
+    groups.sort();
+    groups
+}
+
+/// The connected components of `edge` over `items`, each ascending.
+fn components(items: &[usize], edge: &dyn Fn(usize, usize) -> bool) -> Vec<Vec<usize>> {
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for start in items {
+        if !seen.insert(*start) {
+            continue;
+        }
+        let mut component = vec![*start];
+        let mut frontier = vec![*start];
+        while let Some(at) = frontier.pop() {
+            for next in items {
+                if !seen.contains(next) && edge(at, *next) {
+                    seen.insert(*next);
+                    component.push(*next);
+                    frontier.push(*next);
+                }
+            }
+        }
+        component.sort_unstable();
+        out.push(component);
+    }
+    out
 }
 
 /// Whether a node of `left` kind and one of `right` kind may be one entity
@@ -784,5 +1015,78 @@ mod tests {
             org("Apple (US5949181045)").relation(&apple),
             Relation::Different
         );
+    }
+
+    #[test]
+    fn classes_krx_codes_and_stored_spellings_follow_one_rule() {
+        let listed = org("Berkshire Hathaway (NYSE:BRK.B)");
+        assert_eq!(listed.stated.len(), 1, "{listed:?}");
+        assert_eq!(listed.stated[0].value, "BRK.B");
+        assert_eq!(listed.stated[0].market.as_deref(), Some("US"));
+        assert_eq!(org("BRK.B").stated[0].value, "BRK.B");
+        assert_eq!(org("BRK.B").stated[0].market, None);
+
+        let cases = [
+            ("BRK.A", "BRK.B", false, true),
+            // A bare number names no market, and the names say nothing.
+            ("005930", "005930.KS", false, false),
+            ("005930.KS", "000660.KS", false, true),
+        ];
+        for (left, right, joins, refuses) in cases {
+            assert_eq!(
+                org(left).joins(&org(right)),
+                joins,
+                "{left} / {right} joins"
+            );
+            assert_eq!(
+                org(left).refuses(&org(right)),
+                refuses,
+                "{left} / {right} refuses"
+            );
+        }
+        assert!(org("BRK.A").market_split(&org("BRK.B")));
+        assert!(!org("005930").market_split(&org("005930.KS")));
+        assert!(org("Samsung Electronics 005930").joins(&org("Samsung Electronics 005930.KS")));
+        let listed_here = node(
+            "Samsung Electronics",
+            json!({"ticker": "005930", "exchange": "KRX"}),
+        );
+        assert!(listed_here.joins(&org("삼성전자 005930.KS")));
+        let class_a = node(
+            "Berkshire Hathaway",
+            json!({"ticker": "BRK.A", "exchange": "NYSE", "cik": "0001067983"}),
+        );
+        let class_b = node(
+            "Berkshire Hathaway",
+            json!({"ticker": "BRK.B", "exchange": "NYSE", "cik": "0001067983"}),
+        );
+        assert!(class_a.market_split(&class_b));
+        assert!(!class_a.joins(&class_b));
+        assert!(!class_b.joins(&class_a));
+
+        let korean = node("삼성전자", json!({"ticker": "005930.KS"}));
+        let english = node("Samsung Electronics", json!({"ticker": "SSNLF"}));
+        assert!(!korean.names_agree(&english));
+        assert!(!korean.joins(&english));
+        assert!(korean.refuses(&english));
+        let shared = "US0378331005";
+        let korean_isin = node("삼성전자", json!({"ticker": "005930.KS", "isin": shared}));
+        let english_isin = node(
+            "Samsung Electronics",
+            json!({"ticker": "SSNLF", "isin": shared}),
+        );
+        assert!(korean_isin.joins(&english_isin));
+        assert!(!korean_isin.refuses(&english_isin));
+
+        let mut stored = node("삼성전자", json!({"ticker": "005930.KS"}));
+        stored.add_spellings(["Samsung Electronics"]);
+        let spelled = org("Samsung Electronics Inc. SSNLF");
+        assert!(stored.names_agree(&spelled));
+        assert!(!stored.refuses(&spelled));
+        assert!(!stored.joins(&spelled));
+
+        let lges = org("LG Energy Solution LGES");
+        assert!(lges.trailing.is_empty(), "{lges:?}");
+        assert!(lges.stated.is_empty(), "{lges:?}");
     }
 }

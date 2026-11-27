@@ -9,6 +9,8 @@ import type { ChatMessage } from "../../types";
 import { formatDateTime } from "@/i18n/format";
 import { scheduledTaskTitle, skippedSavedKeyLabel, skippedToolNames } from "../briefings/scheduledPresentation";
 import { BotPostBody } from "./BotPost";
+import { SafeMessageResponse } from "./SafeMessageResponse";
+import { withoutCitationLinks } from "../../chat/citedText";
 import { briefingFailure } from "../briefings/briefingFailure";
 import { MemorySaveWarning } from "./ChatReceipt";
 import { ContextTitle, titlePlaceholder } from "../ui/context-title";
@@ -68,7 +70,9 @@ export function ThreadDelivery({ message, loupistName, onAsk, onFeedback }: {
           {delivery.trigger.coalesced ? ` · ${i18n.t("briefings:schedule.check.checkedAfterClosed", { time: formatDateTime(delivery.trigger.checked_at_ms) })}` : ""}
           {!delivery.trigger.explained && delivery.trigger.reason ? ` · ${i18n.t("briefings:schedule.check.noExplanation", { reason: delivery.trigger.reason })}` : ""}
         </p>}
-        <p className="thread-delivery-text">{finished ? message.content : t("thread.couldNotFinish")}</p>
+        {/* The result's explanation is the run's answer in Markdown; its citations have no evidence here. */}
+        {finished ? <div className="thread-delivery-text" data-delivery-explanation=""><SafeMessageResponse text={withoutCitationLinks(message.content)} isAnimating={false} /></div>
+          : <p className="thread-delivery-text">{t("thread.couldNotFinish")}</p>}
         {!finished && failure !== "generic" && <p className="thread-delivery-source">{i18n.t(`briefings:failure.${failure}`)}</p>}
         {!finished && task?.next_run_at_ms != null && <p className="thread-delivery-source">{t("messageSchedules.nextRun", { date: formatDateTime(task.next_run_at_ms) })}</p>}
         {skipped.length > 0 && <p className="thread-delivery-source">{i18n.t("briefings:skipped", { names: skipped.join(", ") })}</p>}

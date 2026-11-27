@@ -5,7 +5,7 @@ import { useTranslation } from "../../i18n";
 import { AppDateField } from "../ui/app-date-field";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { NativeSelect } from "../ui/native-select";
+import { SelectField, SelectItem } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 
 export function ResearchJournalForm({ bridge, loupistId, entry, checkOpen = false, onSaved, onCancel }: {
@@ -62,16 +62,15 @@ export function ResearchJournalForm({ bridge, loupistId, entry, checkOpen = fals
       <label htmlFor={`${id}-claim`}>{t("journal.claim")}</label><Input ref={claimRef} id={`${id}-claim`} value={claim} onChange={e => setClaim(e.target.value)} maxLength={2000} required />
       <label htmlFor={`${id}-metric`}>{t("journal.metric")}</label><Input id={`${id}-metric`} value={metric} onChange={e => setMetric(e.target.value)} maxLength={200} required />
       <div className="journal-form-grid">
-        <label>{t("journal.direction")}<NativeSelect value={direction} onChange={e => setDirection(e.target.value as JournalCheck["direction"])}><option value="above">{t("journal.above")}</option><option value="below">{t("journal.below")}</option></NativeSelect></label>
+        <label>{t("journal.direction")}<SelectField disabled={frozen} value={direction} onValueChange={value => setDirection(value as JournalCheck["direction"])}><SelectItem value="above">{t("journal.above")}</SelectItem><SelectItem value="below">{t("journal.below")}</SelectItem></SelectField></label>
         <label>{t("journal.threshold")}<Input type="number" step="any" value={threshold} onChange={e => setThreshold(e.target.value)} required /></label>
         <label>{t("journal.unit")}<Input value={unit} onChange={e => setUnit(e.target.value)} maxLength={80} /></label>
-        <div className="journal-date"><span>{t("journal.byDate")}</span><AppDateField aria-label={t("journal.byDate")} value={byDate} onChange={setByDate} required={!undatedLine} /></div>
+        <div className="journal-date"><span>{t("journal.byDate")}</span><AppDateField aria-label={t("journal.byDate")} value={byDate} disabled={frozen} onChange={setByDate} required={!undatedLine} /></div>
       </div>
-      <label htmlFor={`${id}-confidence`}>{t("journal.confidence")}</label><NativeSelect id={`${id}-confidence`} value={confidence} onChange={e => setConfidence(e.target.value)}><option value="">{t("journal.notSure")}</option>{Array.from({ length: 9 }, (_, index) => (index + 1) * 10).map(value => <option key={value} value={value}>{t("journal.confidenceOption", { value })}</option>)}</NativeSelect>
+      <label htmlFor={`${id}-confidence`}>{t("journal.confidence")}</label><SelectField id={`${id}-confidence`} value={confidence} disabled={frozen} placeholder={t("journal.notSure")} onValueChange={setConfidence}><SelectItem value="">{t("journal.notSure")}</SelectItem>{Array.from({ length: 9 }, (_, index) => (index + 1) * 10).map(value => <SelectItem key={value} value={String(value)}>{t("journal.confidenceOption", { value })}</SelectItem>)}</SelectField>
       <Button type="button" variant="link" className="journal-check-remove" disabled={frozen} onClick={() => { checkFocus.current = "toggle"; setHasCheck(false); }}>{t("journal.removeCheck")}</Button>
       </div>
     </fieldset> : null}
-    <p className="journal-caption">{t("journal.caption")}</p>
     {error ? <p role="alert">{t("journal.saveError")}</p> : null}
     <div className="journal-actions"><Button type="submit" disabled={busy || !judgment.trim()}>{t(busy ? "journal.saving" : "journal.save")}</Button><Button type="button" variant="ghost" disabled={busy} onClick={onCancel}>{t("journal.cancel")}</Button></div>
   </form>;

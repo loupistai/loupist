@@ -32,12 +32,13 @@ export function useSourceRetry(retry: () => Promise<GraphJobView>, onRetried: (j
   return { pending, error, run };
 }
 
-export function SourceRetry({ retry, onRetried }: { retry: () => Promise<GraphJobView>; onRetried: (job: GraphJobView) => void }) {
+export function SourceRetry({ retry, onRetried, allowance = false, readNow = false }: { retry: () => Promise<GraphJobView>; onRetried: (job: GraphJobView) => void; allowance?: boolean; readNow?: boolean }) {
   const { t } = useTranslation("knowledge");
   const { pending, error, run } = useSourceRetry(retry, onRetried);
+  const label = readNow ? "sourceWorkspace.readNow" : "sourceRetry.tryAgain";
   return <div className="source-retry">
-    <Button type="button" variant="ghost" size="xs" disabled={pending} onClick={() => void run()}>{pending ? t("sourceRetry.tryingAgain") : t("sourceRetry.tryAgain")}</Button>
-    <span className="knowledge-hint">{t("sourceRetry.usesOneMoreAllowance")}</span>
+    <Button type="button" variant="ghost" size="xs" disabled={pending} onClick={() => void run()}>{pending ? t("sourceRetry.tryingAgain") : t(label)}</Button>
+    {allowance ? <span className="knowledge-hint">{t("sourceRetry.usesOneMoreAllowance")}</span> : null}
     {error ? <p role="alert">{error}</p> : null}
   </div>;
 }

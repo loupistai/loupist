@@ -552,6 +552,79 @@ export const knowledgeCatalog = async (
   };
 };
 
+const emptyChanges = (): import("../../contracts/knowledge").WorldChangesView => ({
+  mode: "between",
+  pair: null,
+  from: null,
+  to: null,
+  endedByTo: [],
+  newInTo: [],
+  restated: [],
+  notRestated: [],
+  conflicts: [],
+  window: null,
+  pending: 0,
+  failed: 0,
+  changes: [],
+  lens: [],
+  firstRun: false,
+  capped: false,
+  next: null,
+});
+
+/** A local calendar day, as the host's as-of cutoff counts it. */
+const localDay = (ms: number) => {
+  const day = new Date(ms);
+  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+};
+const MOCK_PAGE = "mock-page:";
+
+/** A World as-of date: a calendar day no later than today. */
+function checkAsOf(asOf: string | undefined) {
+  if (asOf === undefined) return;
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(asOf)) throw commandError("invalid_request", "as_of must be a date in YYYY-MM-DD format");
+  if (asOf > localDay(Date.now())) throw commandError("as_of_future", "as_of must be today or earlier");
+}
+
+export const knowledgeWorldChanges = async (
+  state: MockBridgeState,
+  request: import("../../contracts/knowledge").WorldChangesRequest,
+): Promise<import("../../contracts/knowledge").WorldChangesView> => {
+  checkAsOf(request.asOf);
+  if (request.between && request.asOf) throw commandError("invalid", "asOf applies to a since read");
+  if (request.between?.asset) return emptyChanges();
+  const window = { since: request.since ?? null, until: null, axis: request.axis ?? "recorded" };
+  const node = request.about?.flatMap(about => typeof about === "object" && about.node ? [about.node] : [])[0];
+  if (!node || request.axis !== "published") return { ...emptyChanges(), mode: "since", window };
+  // One entity's feed on the published axis: the Map fixture's relationships, in publication order.
+  const map = await knowledgeMap(state, { loupistId: request.loupistId, ...(request.asOf ? { asOf: request.asOf } : {}) });
+  const label = (id: string) => map.nodes.find(item => item.id === id)?.label ?? id;
+  const kinds = request.kinds ?? [];
+  const rows = map.edges
+    .filter(item => item.kind === "claim" && (item.source === node || item.target === node) && item.firstSeenAtMs !== undefined && (!kinds.length || kinds.includes("added")))
+    .sort((left, right) => left.firstSeenAtMs! - right.firstSeenAtMs! || left.id.localeCompare(right.id))
+    .map(item => ({
+      kind: "added", claimId: item.id, proposition: `${label(item.source)} ${item.relation?.replace(/_/gu, " ") ?? ""} ${label(item.target)}`,
+      relation: item.relation ?? "", validAt: null, invalidAt: null, status: item.status ?? "active",
+      source: { title: "", publicationTime: localDay(item.firstSeenAtMs!), readArgs: null },
+    }));
+  const offset = request.since?.startsWith(MOCK_PAGE) ? Number(request.since.slice(MOCK_PAGE.length)) : 0;
+  const limit = request.limit ?? 50;
+  const page = rows.slice(offset, offset + limit);
+  return { ...emptyChanges(), mode: "since", window, changes: page, next: offset + limit < rows.length ? `${MOCK_PAGE}${offset + limit}` : null };
+};
+
+export const knowledgeWorldClaimHistory = async (
+  _request: import("../../contracts/knowledge").ClaimHistoryRequest,
+): Promise<import("../../contracts/knowledge").ClaimHistory> => ({
+  created: null,
+  supported: [],
+  ended: null,
+  endings: [],
+  endedClaims: [],
+  endedByClaimId: null,
+});
+
 export const knowledgeWorldQuery = async (
   state: MockBridgeState,
   request: WorldGraphQuery,
@@ -560,7 +633,8 @@ export const knowledgeWorldQuery = async (
   const store = ensure(state, request.loupistId);
   if (request.recordId !== WORLD) throw new Error("World not found.");
   if (request.cursor && request.revisionId !== OWNED) throw new Error("World revision not found.");
-  const graph = store.owned;
+  checkAsOf(request.asOf);
+  const { graph, report } = graphAsOf(store, store.owned, request.asOf);
   request = { ...request, revisionId: OWNED };
   const queryKey = worldQueryKey(request);
   let offset = 0;
@@ -610,8 +684,23 @@ export const knowledgeWorldQuery = async (
     originLabel: graph.originLabel ?? "",
     appliedCursor: request.cursor ?? null,
     scan: { strategy: "scan", nodesScanned: projected.nodes.length, claimsScanned: projected.edges.length },
+    ...(report ? { asOfReport: report } : {}),
   });
 };
+
+/**
+ * The mock's prefix World: relationships published by `asOf` and the names they connect.
+ * An undated relationship counts as later, as under a chat cutoff.
+ */
+function graphAsOf(store: Store, graph: GraphBody, asOf: string | undefined) {
+  if (!asOf) return { graph, report: undefined };
+  const published = (item: GraphEdge) => item.claim.publicationTime?.precision === "date" && !!item.claim.publicationTime.value && item.claim.publicationTime.value <= asOf;
+  const edges = graph.edges.filter(published);
+  const later = graph.edges.filter(item => !published(item));
+  const named = new Set(edges.flatMap(item => item.endpoints.map(endpoint => endpoint.nodeId)));
+  const sources = new Set(later.flatMap(item => item.claim.evidence.flatMap(binding => store.sources.filter(source => source.spans.some(span => span.spanId === binding.spanId)).map(source => source.recordId))));
+  return { graph: { ...graph, edges, nodes: graph.nodes.filter(node => named.has(node.id)) }, report: { facts: later.length, sources: sources.size } };
+}
 
 export const knowledgeSourceRead = async (
   state: MockBridgeState,
@@ -740,6 +829,77 @@ export const memoryOpUndo = async (state: MockBridgeState, request: { loupistId:
   store.log.push({ recordId: row.recordId, entry: { opId: makeId("op"), op: row.entry.outcome === "retired" ? "put" : "retire", outcome: row.entry.outcome === "retired" ? "added" : "retired", key, sectionHeading: row.entry.sectionHeading, origin: "user", createdAtMs: now, undoesOpId: request.opId } });
   return readPage(store, page);
 };
+
+const undoneMessages = new WeakMap<MockBridgeState, Map<string, { undone: number; kept: number }>>();
+
+/** Counts stored with a message undo, the same record a loaded run returns. */
+export function recordedMessageUndo(state: MockBridgeState, messageId: string | null | undefined) {
+  if (!messageId) return undefined;
+  return undoneMessages.get(state)?.get(messageId);
+}
+
+export const memoryMessageUndo = async (state: MockBridgeState, request: { loupistId: string; messageId: string }): Promise<{ undone: number; kept: number }> => {
+  await shortPause(state);
+  return recordedMessageUndo(state, request.messageId) ?? mockUndoMessages(state, request.loupistId, [request.messageId], true);
+};
+
+/**
+ * Mirrors the host's undo of several messages as one transaction, newest message first: a
+ * message already undone is skipped, and a section another message changed since is kept and
+ * counted once. Ops of the messages in the set never count as a change since. Without `apply`
+ * it only counts.
+ */
+export function mockUndoMessages(state: MockBridgeState, loupistId: string, messageIds: readonly string[], apply: boolean): { undone: number; kept: number } {
+  const settled = undoneMessages.get(state) ?? new Map<string, { undone: number; kept: number }>();
+  undoneMessages.set(state, settled);
+  const store = ensure(state, loupistId);
+  const own = new Set(messageIds);
+  const keptSections = new Set<string>();
+  let undone = 0;
+  for (const messageId of messageIds) {
+    if (settled.has(messageId)) continue;
+    const rows = store.log.filter((row) => row.entry.messageId === messageId && !row.entry.undoesOpId);
+    const groups = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const key = `${row.recordId}\0${row.entry.key ?? row.entry.op}`;
+      groups.set(key, [...(groups.get(key) ?? []), row]);
+    }
+    let messageUndone = 0;
+    let messageKept = 0;
+    for (const [key, group] of groups) {
+      const last = group[group.length - 1]!;
+      const later = keptSections.has(key) || store.log.some((item) => item.recordId === last.recordId && item.entry.key === last.entry.key && item.entry.createdAtMs > last.entry.createdAtMs && !own.has(item.entry.messageId ?? ""));
+      if (later) {
+        if (!keptSections.has(key)) messageKept += 1;
+        keptSections.add(key);
+        continue;
+      }
+      messageUndone += 1;
+      if (!apply) continue;
+      const page = store.lenses.find((item) => item.recordId === last.recordId);
+      if (!page || page.body.kind === "principle" || !last.entry.key) continue;
+      const before = group[0]?.before;
+      page.body.sections = before
+        ? page.body.sections.some((item) => item.key === last.entry.key) ? page.body.sections.map((item) => item.key === last.entry.key ? before : item) : [...page.body.sections, before]
+        : page.body.sections.filter((item) => item.key !== last.entry.key);
+    }
+    undone += messageUndone;
+    if (apply) settled.set(messageId, { undone: messageUndone, kept: messageKept });
+  }
+  return { undone, kept: keptSections.size };
+}
+
+/** The newest op on each section of a page, for the learned mark the host computes on read. */
+export function mockNewestSectionOps(state: MockBridgeState, loupistId: string, recordId: string): Map<string, { messageId?: string; createdAtMs: number }> {
+  const newest = new Map<string, { messageId?: string; createdAtMs: number }>();
+  for (const row of ensure(state, loupistId).log) {
+    const key = row.entry.key;
+    if (row.recordId !== recordId || !key) continue;
+    const prior = newest.get(key);
+    if (!prior || prior.createdAtMs <= row.entry.createdAtMs) newest.set(key, { messageId: row.entry.messageId ?? undefined, createdAtMs: row.entry.createdAtMs });
+  }
+  return newest;
+}
 
 export const memoryLearned = async (state: MockBridgeState, request: { loupistId: string; messageIds: string[] }): Promise<LearnedDigest[]> => {
   await shortPause(state);
@@ -1091,6 +1251,7 @@ export async function knowledgeMap(state: MockBridgeState, request: import("../.
   const limit = request.maxNodes ?? 1000;
   if (!Number.isInteger(limit) || limit < 1 || limit > 1500) throw new Error("map maxNodes must be between 1 and 1500");
   ensure(state, request.loupistId);
+  checkAsOf(request.asOf);
   const start = Date.UTC(2026, 8, 1);
   const day = 86_400_000;
   const labels: Array<[string, string, string[]?]> = [
@@ -1126,6 +1287,17 @@ export async function knowledgeMap(state: MockBridgeState, request: import("../.
     edges.push({ id: "map-application-subject", kind: "applies_to", source: "map-lens-3", target: "map-entity-00", weight: 10, firstSeenAtMs: start + 28 * day }, { id: "map-application-idea", kind: "applies_to", source: "map-lens-4", target: "map-entity-01", weight: 8, firstSeenAtMs: start + 29 * day });
     for (let i = 0; i < 10; i++) edges.push({ id: `map-application-${i}`, kind: "applies_to", source: `map-lens-${i % 2 + 1}`, target: nodes[i]!.id, weight: 12 - i, firstSeenAtMs: start + (28 + i % 2) * day });
   }
+  let asOfReport: import("../../contracts/knowledge").WorldAsOfReport | undefined;
+  if (request.asOf) {
+    // The fixture publishes one Source a day: a name or relationship is published on the day it was first seen.
+    const later = (ms?: number) => ms !== undefined && localDay(ms) > request.asOf!;
+    const hidden = new Set(nodes.filter(node => node.kind === "entity" && later(node.firstSeenAtMs)).map(node => node.id));
+    const leftOut = edges.filter(edge => (edge.kind === "claim" || edge.kind === "fact") && (later(edge.firstSeenAtMs) || hidden.has(edge.source) || hidden.has(edge.target)));
+    const dropped = new Set(leftOut.map(edge => edge.id));
+    asOfReport = { facts: leftOut.length, sources: new Set(leftOut.map(edge => localDay(edge.firstSeenAtMs ?? start))).size };
+    nodes.splice(0, nodes.length, ...nodes.filter(node => !hidden.has(node.id)));
+    edges.splice(0, edges.length, ...edges.filter(edge => !dropped.has(edge.id) && !hidden.has(edge.source) && !hidden.has(edge.target)));
+  }
   for (const edge of edges) for (const id of new Set([edge.source, edge.target])) { const node = nodes.find((n) => n.id === id); if (node) node.degree++; }
   const ranked = [...nodes].sort((a, b) => Number(b.watched) - Number(a.watched) || Number(b.kind !== "entity") - Number(a.kind !== "entity") || b.degree - a.degree || a.id.localeCompare(b.id));
   const chosen = new Set(ranked.slice(0, limit).map((node) => node.id));
@@ -1137,7 +1309,7 @@ export async function knowledgeMap(state: MockBridgeState, request: import("../.
     const shown = shownNodes.filter((node) => node.kind === kind).length + shownEdges.filter((edge) => edge.kind === kind).length;
     counts[kind] = { total, shown, truncated: shown < total };
   }
-  return { nodes: shownNodes, edges: shownEdges, counts, unmatchedWatchlist: [], worldRevisionId: nodes.length ? OWNED : null, generatedAtMs: Math.max(nodes.length ? start + 29 * day : 0, ...ensure(state,request.loupistId).principles.map(p => p.updatedAtMs)) };
+  return { ...(asOfReport ? { asOfReport } : {}), nodes: shownNodes, edges: shownEdges, counts, unmatchedWatchlist: [], worldRevisionId: nodes.length ? OWNED : null, generatedAtMs: Math.max(nodes.length ? start + 29 * day : 0, ...ensure(state,request.loupistId).principles.map(p => p.updatedAtMs)) };
 }
 
 function principleLens(p: Principle): PageView {
@@ -1197,6 +1369,11 @@ export async function learningReviewList(state: MockBridgeState, request: import
 }
 export async function memoryLearningSettingsGet(state: MockBridgeState, request: { loupistId: string }) {
   return { learnMethods: ensure(state, request.loupistId).learnMethods ?? true };
+}
+/** The mock files no research, so learning waits for a second case unless it is off. */
+export async function knowledgeLearningState(state: MockBridgeState, request: { loupistId: string }): Promise<import("../../contracts/knowledge").LearningState> {
+  const on = ensure(state, request.loupistId).learnMethods ?? true;
+  return { state: "waiting", reason: { kind: on ? "no_second_case" : "off" }, cases: 0 };
 }
 export async function memoryLearningSettingsSet(state: MockBridgeState, request: { loupistId: string; learnMethods: boolean }) {
   ensure(state, request.loupistId).learnMethods = request.learnMethods;

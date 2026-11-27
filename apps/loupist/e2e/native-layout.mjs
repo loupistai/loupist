@@ -61,7 +61,7 @@ export function measureChatLayout() {
     const toolbars = [...card.querySelectorAll(".chat-artifact-block-header, .chart-local-toolbar, .grid-card-header")]
       .flatMap((toolbar) => {
         const bounds = box(toolbar);
-        return bounds ? [{ bounds, controls: [...toolbar.querySelectorAll("button, select, [role='combobox']")].map(box).filter(Boolean) }] : [];
+        return bounds ? [{ bounds, controls: [...toolbar.querySelectorAll("button, [role='combobox']")].map(box).filter(Boolean) }] : [];
       });
     return [{ bounds: cardBox, toolbars, failedBody: card.querySelector(".chat-artifact-block-state[role='alert']")
       ? box(card.querySelector(".chat-artifact-block-body")) : null }];

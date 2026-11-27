@@ -862,14 +862,30 @@ async fn broker_tool_trace_records_model_facing_success_and_errors() {
             match params["mode"].as_str() {
                 Some("ok" | "mcp") => Ok(json!({"count": 3})),
                 Some("large") => Ok(json!({"body": "x".repeat(MAX_FRAME_BYTES)})),
+                Some("execution") => Err(BrokerError::Execution("looks_like_a_reason".into())),
+                Some("existing") => {
+                    Err(BrokerError::invalid("page", "existing_page:rec_1:Example")
+                        .with_next("Revise the existing page.")
+                        .with_reason(BrokerRefusalReason::Command(
+                            crate::app::CommandErrorCode::ExistingPage,
+                        )))
+                }
                 _ => Err(BrokerError::Malformed),
             }
         }
     }
     let capture = Arc::new(ToolTraceCapture::default());
-    for (index, mode) in ["ok", "bad", "large", "denied", "mcp"]
-        .into_iter()
-        .enumerate()
+    for (index, mode) in [
+        "ok",
+        "bad",
+        "large",
+        "denied",
+        "mcp",
+        "execution",
+        "existing",
+    ]
+    .into_iter()
+    .enumerate()
     {
         let (server, mut client) = tokio::io::duplex(4096);
         let executor = Arc::new(Executor(capture.clone()));
@@ -949,15 +965,27 @@ async fn broker_tool_trace_records_model_facing_success_and_errors() {
             assert_eq!(entry.error, None);
         } else {
             assert_eq!(entry.outcome, crate::domain::ToolTraceOutcome::Error);
-            assert_eq!(entry.error.as_ref(), response.get("error"));
+            let (code, reason) = match mode {
+                "bad" => ("malformed_request", "malformed_request"),
+                "denied" => ("memory_disabled", "memory_disabled"),
+                "execution" => ("execution_failed", "execution_failed"),
+                "existing" => ("malformed_request", "existing_page"),
+                _ => ("frame_too_large", "frame_too_large"),
+            };
+            let mut traced = entry.error.clone().unwrap();
+            assert_eq!(traced["code"], code);
             assert_eq!(
-                entry.error.as_ref().unwrap()["code"],
-                match mode {
-                    "bad" => "malformed_request",
-                    "denied" => "memory_disabled",
-                    _ => "frame_too_large",
-                }
+                traced.as_object_mut().unwrap().remove("reason"),
+                Some(json!(reason))
             );
+            assert_eq!(Some(&traced), response.get("error"));
+            if mode == "existing" {
+                assert_eq!(
+                    response["error"]["message"],
+                    "page: existing_page:rec_1:Example."
+                );
+                assert_eq!(response["error"]["next"], "Revise the existing page.");
+            }
         }
         let serialized = serde_json::to_string(&trace).unwrap();
         assert!(!serialized.contains("test-auth"));
@@ -981,6 +1009,7 @@ fn broker_tool_trace_bounds_redacts_and_marks_truncation() {
     assert_eq!(trace_value(&json!([])), json!([]));
     let error = trace_error(
         &json!({"code": "execution_failed", "message": "\u{0001}".repeat(3000), "retryable": false, "next": "Change the request"}),
+        "execution_failed",
     );
     assert_eq!(error["code"], "execution_failed");
     assert!(error["message"].as_str().unwrap().contains("[truncated]"));
@@ -1066,7 +1095,13 @@ fn the_trace_tells_which_tool_call_the_untrusted_text_rule_refused() {
             None,
             Some(&json!({"name": "write"})),
         )
-        .finish(Some(&error_body(&BrokerError::UntrustedTextPaused)), None);
+        .finish(
+            Some(trace_error(
+                &error_body(&BrokerError::UntrustedTextPaused),
+                "untrusted_text_paused",
+            )),
+            None,
+        );
     capture
         .clone()
         .begin(
@@ -1076,7 +1111,10 @@ fn the_trace_tells_which_tool_call_the_untrusted_text_rule_refused() {
             Some(&json!({})),
         )
         .finish(
-            Some(&error_body(&BrokerError::Execution("bad cron".into()))),
+            Some(trace_error(
+                &error_body(&BrokerError::Execution("bad cron".into())),
+                "execution_failed",
+            )),
             None,
         );
     capture

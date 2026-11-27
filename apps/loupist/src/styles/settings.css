@@ -53,6 +53,11 @@
 .settings-row-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); }
 /* Compact rows so the whole page fits a 1280×820 window (direction T11). */
 .settings-general .settings-row { padding-block: var(--gg-space-3); }
+.settings-quiet-hour { display: grid; gap: var(--gg-space-1); font-size: var(--gg-text-control); }
+.settings-quiet-hour [data-slot="input"] { width: 8rem; }
+/* A block fieldset keeps the heading full width in WKWebView. */
+.settings-notification-defaults { display: block; min-width: 0; margin: 0; padding: 0; border: 0; }
+.settings-notification-defaults > legend { display: block; width: 100%; margin: 0 0 var(--gg-space-2); padding: 0; }
 .settings-caption-label { margin: 0; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); font-weight: var(--gg-weight-medium); letter-spacing: .06em; text-transform: uppercase; }
 .settings-caption-label:lang(ko) { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); letter-spacing: 0; text-transform: none; }
 .settings-privacy { padding: var(--gg-space-3) var(--gg-space-5); border: 1px solid var(--gg-color-border-default); border-radius: var(--gg-radius-md); background: var(--gg-color-bg-raised); container: settings-privacy / inline-size; }
@@ -75,7 +80,6 @@
 .settings-section-heading p, .agent-config-group > p { margin: 6px 0 0; font-size: var(--gg-text-control); line-height: 1.6; color: var(--gg-color-text-secondary); }
 .agent-config-scope { display: grid; grid-template-columns: minmax(0,1fr) minmax(180px, 240px); gap: var(--gg-space-6); align-items: center; padding: 18px 22px; background: var(--gg-color-bg-hover); border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-md); }
 .agent-config-scope-copy label { font-size: var(--gg-text-control); font-weight: var(--gg-weight-semibold); }
-.agent-config-scope-copy p { margin: var(--gg-space-1) 0 0; font-size: var(--gg-text-meta); line-height: 1.5; color: var(--gg-color-text-secondary); }
 .agent-config-save-status { display: flex; align-items: center; gap: 6px; min-height: 18px; margin-top: -10px; padding-inline: 2px; font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
 .agent-config-save-status svg { width: 14px; height: 14px; }
 .agent-config-fields { display: grid; }
@@ -96,7 +100,6 @@
 .agent-config-file code { overflow-wrap: anywhere; font-size: var(--gg-text-meta); color: var(--gg-color-text-secondary); }
 .agent-config-file > div { display: flex; gap: var(--gg-space-2); flex-wrap: wrap; }
 .config-diagnostics { overflow-wrap: anywhere; }
-.settings-footnote { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gg-space-3); color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .update-card-content {
   display: grid;
   gap: 18px;
@@ -318,6 +321,7 @@
 .usage-list > li { padding-block: var(--gg-space-2); }
 .usage-list > li + li { border-top: 1px solid var(--gg-color-border-subtle); }
 .usage-row { display: flex; justify-content: space-between; align-items: baseline; gap: var(--gg-space-3); }
+.usage-program-activity { display: block; margin-top: var(--gg-space-1); }
 .usage-value { flex-shrink: 0; text-align: end; font-variant-numeric: tabular-nums; }
 .usage-muted, .usage-plan { color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
 .usage-plan { display: grid; justify-items: start; gap: var(--gg-space-1); margin-top: var(--gg-space-2); }

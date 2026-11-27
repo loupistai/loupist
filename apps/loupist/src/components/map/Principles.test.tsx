@@ -30,7 +30,8 @@ it("preserves a failed draft for retry and gives duplicates a specific message",
   const { bridge, loupistId, user } = await fixture();
   const create = vi.spyOn(bridge, "principleCreate").mockRejectedValueOnce(new Error("Offline"));
   const saved = vi.fn();
-  render(<PrincipleForm bridge={bridge} loupistId={loupistId} initialStatement="Compare cash flows." onSaved={saved} onCancel={vi.fn()} />);
+  render(<PrincipleForm bridge={bridge} loupistId={loupistId} onSaved={saved} onCancel={vi.fn()} />);
+  await user.type(screen.getByRole("textbox", { name: "Statement" }), "Compare cash flows.");
   await user.click(screen.getByRole("button", { name: "Save" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Could not save this change.");
   expect(screen.getByRole("textbox", { name: "Statement" })).toHaveValue("Compare cash flows.");

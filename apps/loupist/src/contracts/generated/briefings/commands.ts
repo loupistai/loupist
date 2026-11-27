@@ -2,6 +2,7 @@
 // LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract
 
 import type { BriefingContext } from "../briefings";
+import type { MessageUndo } from "../knowledge/lens";
 import type { BriefingEdition, RunStatus, Schedule, SkippedTool, Task, TaskKind } from "../scheduled_tasks/types";
 
 export type BriefingSettings = { enabled: boolean, schedule: Schedule, task: Task | null };
@@ -30,6 +31,7 @@ export type InboxItem = {
   threadId: string | null,
   messageId: string | null,
   skippedTools: Array<SkippedTool>,
+  undo?: MessageUndo,
 };
 
 export type InboxPage = { items: Array<InboxItem>, nextCursor: string | null };

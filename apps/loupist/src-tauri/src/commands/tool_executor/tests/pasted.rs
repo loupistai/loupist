@@ -449,7 +449,14 @@ fn a_user_provided_source_needs_its_pasted_message() {
         crate::commands::knowledge::knowledge_blobs(&state).unwrap(),
     );
     let retain = |request: crate::knowledge::RetainNewSource, provided: Option<&ProvidedOrigin>| {
-        store.transact(|write| write.retain_new_source_with_origin(request, "turn-1", provided))
+        store.transact(|write| {
+            write.retain_new_source_with_origin(
+                request,
+                "turn-1",
+                crate::knowledge::JobOrigin::Chat,
+                provided,
+            )
+        })
     };
     // A user-provided class without the message, or a message on another class.
     assert!(retain(request(SourceClass::UserProvided, Authorship::User), None).is_err());

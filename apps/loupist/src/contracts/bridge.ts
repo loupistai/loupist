@@ -1,4 +1,4 @@
-import type { AppMenuContext, BotFocusRequest, BotMemoryForgetRequest, BotMemoryListEntry, BotMemoryListRequest, BotMemoryUpdateRequest, DeliveryRequest, FromPresetRequest, PermissionProgress, ProposalDeclineRequest, ProposalVisitRequest, ResidentRequest, TemplatesRequest, UsageSummary, UsageSummaryRequest } from "./generated";
+import type { AppMenuContext, BotFocusRequest, BotMemoryForgetRequest, BotMemoryForgetResponse, BotMemoryListEntry, BotMemoryListRequest, BotMemoryUpdateRequest, DeliveryRequest, MessageUndo, OpenRouterQuota, PermissionProgress, PresetCommand, ProposalDeclineRequest, ProposalVisitRequest, ResidentRequest, RunNowRequest, TemplatesRequest, UsageSummary, UsageSummaryRequest } from "./generated";
 import type { LegacyHoldingsStatus } from "./legacyHoldings";
 import type { NoticeSettings } from "../bridge/notice";
 import type { AttentionItem, AttentionNotifyRequest } from "./attention";
@@ -125,6 +125,7 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
   noticeAcknowledge(): Promise<NoticeSettings>;
   learningReviewList(request: import("./knowledge").LearningReviewQuery): Promise<import("./knowledge").LearningReview[]>;
   memoryLearningSettingsGet(request: { loupistId: string }): Promise<import("./knowledge").MemoryLearningSettings>;
+  knowledgeLearningState(request: { loupistId: string }): Promise<import("./knowledge").LearningState>;
   memoryLearningSettingsSet(request: { loupistId: string; learnMethods: boolean }): Promise<import("./knowledge").MemoryLearningSettings>;
   onLearningReviewFinished(handler: (event: import("./knowledge").LearningReviewFinishedEvent) => void): () => void;
   worldSchemaGet(request: { loupistId: string }): Promise<import("./knowledge").WorldSchemaView>;
@@ -183,17 +184,21 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
   attentionList(): Promise<AttentionItem[]>;
   /** An OS notification for a chat the user is not watching; false when not sent. */
   attentionNotify(request: AttentionNotifyRequest): Promise<boolean>;
-  scheduledTaskFromPreset(request: FromPresetRequest): Promise<ScheduledTask>;
+  scheduledTaskFromPreset(request: PresetCommand): Promise<ScheduledTask>;
   scheduledTriggerGet(request: import("./generated").TriggerGetRequest): Promise<import("./generated").TriggerView>;
   scheduledTriggerApprove(request: import("./generated").TriggerReviewRequest): Promise<ScheduledTask>;
   scheduledTriggerRevert(request: import("./generated").TriggerRevertRequest): Promise<ScheduledTask>;
   scheduledTriggerTest(request: import("./generated").TriggerReviewRequest): Promise<import("./generated").TriggerEvaluation>;
   scheduledTriggerEvaluations(request: ScheduledTaskIdentity): Promise<import("./generated").TriggerEvaluation[]>;
   scheduledTaskSetDelivery(request: DeliveryRequest): Promise<ScheduledTask>;
+  /** The user's own edit of a learning program. A refused field is `invalid_request` with `ProgramFieldRefusal`; a stale revision is `stale_revision`. */
+  learningProgramUpdate(request: import("./scheduled").LearningProgramUpdateRequest): Promise<ScheduledTask>;
+  /** Undoes every run of a learning program in one transaction; `preview` counts and changes nothing. */
+  learningProgramUndoAll(request: import("./scheduled").LearningProgramUndoAllRequest): Promise<import("./scheduled").ProgramUndo>;
   notificationPermissionSettingsOpen(): Promise<void>;
   notificationBotFocusSet(request: BotFocusRequest): Promise<void>;
   notificationTemplatesSet(request: TemplatesRequest): Promise<void>;
-  scheduledTaskRunNow(request: ScheduledTaskIdentity): Promise<ScheduledRun>;
+  scheduledTaskRunNow(request: RunNowRequest): Promise<ScheduledRun>;
   /** Every scheduled task of the Loupist with its latest run, for the Schedule tab. */
   scheduledTasksList(request: { loupist_id: string }): Promise<ScheduledTaskListItem[]>;
   /** Pause or resume; the revision guards against a concurrent edit. */
@@ -220,6 +225,8 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
     request: ModelVisibilityUpdateRequest,
   ): Promise<ModelCatalog>;
   providerModels(provider: string): Promise<ModelCatalog>;
+  /** OpenRouter credit, or null. Other providers and a failed read are null. */
+  providerQuotaRead(provider: string): Promise<OpenRouterQuota | null>;
   providerConfigure(request: ProviderConfigureRequest): Promise<ModelCatalog>;
   providerConnect(
     provider: string,
@@ -245,8 +252,8 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
   usageSummary(request: UsageSummaryRequest): Promise<UsageSummary>;
   /** Entries the Bot keeps on the shown path. */
   botMemoryList(request: BotMemoryListRequest): Promise<BotMemoryListEntry[]>;
-  /** Forgets one entry on every path, without a model call. */
-  botMemoryForget(request: BotMemoryForgetRequest): Promise<BotMemoryListEntry[]>;
+  /** Forgets one entry on every path, without a model call. `principles` are Lens principles whose statement folds to the forgotten text; Forget does not delete them. */
+  botMemoryForget(request: BotMemoryForgetRequest): Promise<BotMemoryForgetResponse>;
   /** Replaces one entry's text and keeps its kind, without a model call. */
   botMemoryUpdate(request: BotMemoryUpdateRequest): Promise<BotMemoryListEntry[]>;
   /** Saves a preset endpoint (Upstage Solar); rejects with code `key_rejected` when the key is refused. */
@@ -380,6 +387,8 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
   knowledgeGrowthEvents(request: import("./knowledge").GrowthEventsQuery): Promise<import("./knowledge").GrowthEventsPage>;
   knowledgeCatalog(request: KnowledgeCatalogRequest): Promise<KnowledgeCatalog>;
   knowledgeWorldQuery(request: WorldGraphQuery): Promise<WorldGraphView>;
+  knowledgeWorldChanges: ScriptCommand<"knowledge_world_changes">;
+  knowledgeWorldClaimHistory: ScriptCommand<"knowledge_world_claim_history">;
   knowledgeMap(request: import("./knowledge").KnowledgeMapQuery): Promise<import("./knowledge").KnowledgeMap>;
   knowledgeSourceSelectionResolve(request: KnowledgeSourceSelectionRequest): Promise<KnowledgePin>;
   knowledgeSourceRead(request: KnowledgeSourceReadRequest): Promise<SourceDetail>;
@@ -395,6 +404,8 @@ export interface LoupistBridge extends CustomConnectionsBridge, AssetBridge, Sha
   /** Retires one section as the user; the newest history entry of the returned page is the op Undo reverses. */
   memorySectionForget(request: { loupistId: string; recordId: string; key: string }): Promise<import("./lens").PageView>;
   memoryOpUndo(request: { loupistId: string; opId: string }): Promise<import("./lens").PageView>;
+  /** Restores sections one message filed and reports how many a later edit kept. */
+  memoryMessageUndo(request: { loupistId: string; messageId: string }): Promise<MessageUndo>;
   memoryLearned(request: { loupistId: string; messageIds: string[] }): Promise<import("./lens").LearnedDigest[]>;
   knowledgeWorkingNoteRead(request: WorkingNoteReadRequest): Promise<WorkingNote>;
   knowledgeWorkingNotes(request: WorkingNotesRequest): Promise<WorkingNotesPage>;

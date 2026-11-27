@@ -6,7 +6,10 @@ use crate::{
     app::{AppState, CommandError},
     scheduled_tasks::{
         service,
-        types::{Run, Task, TaskListItem, TaskStatus, TaskSubject},
+        types::{
+            LearningPresetId, PresetId, Run, Task, TaskListItem, TaskStatus, TaskSubject,
+            WatchPreset,
+        },
         WatchSnapshot,
     },
 };
@@ -24,6 +27,16 @@ pub(crate) struct LoupistRequest {
 pub(crate) struct TaskRequest {
     loupist_id: String,
     task_id: String,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RunNowRequest {
+    loupist_id: String,
+    task_id: String,
+    #[cfg_attr(test, ts(optional))]
+    confirm: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -59,9 +72,27 @@ pub(crate) struct RunRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct FromPresetRequest {
     pub loupist_id: String,
-    pub preset: crate::scheduled_tasks::types::WatchPreset,
+    pub preset: WatchPreset,
     pub subjects: Option<Vec<TaskSubject>>,
     pub params: Option<crate::scheduled_tasks::presets::PresetParams>,
+}
+
+/// Watch presets and learning presets share this command. `preset` is the watch
+/// id or a learning preset id such as `asset-daily` or `market`. `subject` is
+/// the one learning subject; watch presets keep using `subjects`. `slots` fills
+/// a learning preset's text slots, such as the market's name.
+#[derive(Clone, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct PresetCommand {
+    pub loupist_id: String,
+    pub preset: PresetId,
+    pub subjects: Option<Vec<TaskSubject>>,
+    pub subject: Option<TaskSubject>,
+    pub params: Option<crate::scheduled_tasks::presets::PresetParams>,
+    /// A learning preset's text slots by name, such as the market's name.
+    /// Watch presets take none.
+    pub slots: Option<std::collections::BTreeMap<String, String>>,
 }
 
 #[derive(Deserialize)]
@@ -77,10 +108,43 @@ pub(crate) struct DeliveryRequest {
 
 #[tauri::command(rename_all = "snake_case")]
 pub(crate) async fn scheduled_task_from_preset(
-    request: FromPresetRequest,
+    request: PresetCommand,
     state: State<'_, AppState>,
 ) -> Result<Task, CommandError> {
-    let task = from_preset(request, &state)?;
+    open_preset(request, &state).await
+}
+
+pub(crate) async fn open_preset(
+    request: PresetCommand,
+    state: &AppState,
+) -> Result<Task, CommandError> {
+    let subjects = preset_subjects(&request)?;
+    let task = open_definition(
+        &request.loupist_id,
+        request.preset,
+        subjects,
+        request.params,
+        request.slots,
+        state,
+    )?;
+    finish_preset(state, task).await
+}
+
+fn preset_subjects(request: &PresetCommand) -> Result<Option<Vec<TaskSubject>>, CommandError> {
+    match (&request.subjects, &request.subject) {
+        (Some(subjects), Some(subject)) if subjects.as_slice() != std::slice::from_ref(subject) => {
+            Err(CommandError::invalid("Use either subject or subjects"))
+        }
+        (Some(subjects), _) => Ok(Some(subjects.clone())),
+        (None, Some(subject)) => Ok(Some(vec![subject.clone()])),
+        (None, None) => Ok(None),
+    }
+}
+
+async fn finish_preset(state: &AppState, task: Task) -> Result<Task, CommandError> {
+    if task.kind == crate::scheduled_tasks::types::TaskKind::Learning {
+        return start_learning_run(state, task).await;
+    }
     if task.status == TaskStatus::Active
         && task.last_run_at_ms.is_none()
         && task
@@ -88,42 +152,251 @@ pub(crate) async fn scheduled_task_from_preset(
             .is_some_and(|due| due <= super::now_ms())
         && state
             .scheduled
-            .dispatch(&state, &task.loupist_id, &task.id, false)
+            .dispatch(state, &task.loupist_id, &task.id, false)
             .await
             .is_ok()
     {
-        return Ok(service::find(&state, &task.loupist_id, &task.id)?.unwrap_or(task));
+        return Ok(service::find(state, &task.loupist_id, &task.id)?.unwrap_or(task));
     }
     Ok(task)
 }
 
+async fn start_learning_run(state: &AppState, task: Task) -> Result<Task, CommandError> {
+    let pending = task.status == TaskStatus::Active
+        && task.last_run_at_ms.is_none()
+        && service::runs(state, &task.loupist_id, &task.id)?.is_empty();
+    if pending {
+        if let Err(error) = service::run_now(state, &task.loupist_id, &task.id, false).await {
+            if service::runs(state, &task.loupist_id, &task.id)?.is_empty() {
+                return Err(error);
+            }
+        }
+    }
+    Ok(service::find(state, &task.loupist_id, &task.id)?.unwrap_or(task))
+}
+
+fn preset_thinking_level(
+    state: &AppState,
+    model_profile_id: &str,
+    saved_level: Option<&str>,
+) -> Result<String, CommandError> {
+    let level = saved_level.unwrap_or_default();
+    if level.is_empty() && !crate::providers::auto::uses_default(model_profile_id) {
+        // Chat may save the model on its own. A task with a concrete model
+        // needs that model's resolved level even when Chat leaves it implicit.
+        return Ok(crate::providers::auto::admit(
+            state,
+            model_profile_id,
+            "",
+            &Default::default(),
+        )?
+        .thinking_level);
+    }
+    Ok(level.to_owned())
+}
+
+#[test]
+fn scheduled_presets_resolve_an_unspecified_level_for_a_concrete_model() {
+    let temp = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(temp.path().join("app"));
+    let level = preset_thinking_level(&state, "fixture", None).unwrap();
+    assert!(state.model_catalog().unwrap().models[0]
+        .thinking_levels
+        .contains(&level));
+    assert_eq!(
+        preset_thinking_level(&state, "fixture", Some("off")).unwrap(),
+        "off"
+    );
+    assert_eq!(preset_thinking_level(&state, "", None).unwrap(), "");
+}
+
+/// Fill a learning preset for a Loupist: its asset subject must be followed,
+/// and every other preset takes its subject from its slots. Every entry
+/// point that turns a learning preset into a program fills it here.
+pub(crate) fn fill_learning_preset(
+    state: &AppState,
+    loupist_id: &str,
+    preset_id: LearningPresetId,
+    subjects: &[TaskSubject],
+    slots: &std::collections::BTreeMap<String, String>,
+    local_timezone: chrono_tz::Tz,
+) -> Result<crate::scheduled_tasks::learning::FilledProgram, CommandError> {
+    use crate::scheduled_tasks::learning::{PresetAsset, SubjectKind};
+    let agent_root = state
+        .artifacts
+        .pi
+        .as_ref()
+        .and_then(|pi| pi.system_prompt.parent())
+        .ok_or_else(|| CommandError::invalid("Unknown learning preset"))?;
+    let preset = crate::scheduled_tasks::learning::load_preset(agent_root, preset_id)?;
+    let followed;
+    let asset = match (preset.subject_kind, subjects) {
+        (SubjectKind::Asset, [TaskSubject::Asset { asset }]) => {
+            followed = state
+                .store
+                .assets_list(loupist_id, true)
+                .map_err(map_store)?;
+            let row = followed
+                .iter()
+                .find(|row| row.asset_id == *asset)
+                .ok_or_else(|| {
+                    CommandError::invalid("This learning preset needs a followed asset")
+                })?;
+            Some(PresetAsset {
+                id: asset,
+                name: &row.name,
+                reference: row
+                    .reference
+                    .as_ref()
+                    .and_then(|reference| reference.fields.ticker.as_deref())
+                    .unwrap_or(asset),
+            })
+        }
+        (SubjectKind::Asset, _) => {
+            return Err(CommandError::invalid(
+                "This learning preset needs one asset subject",
+            ))
+        }
+        (SubjectKind::Name | SubjectKind::None, []) => None,
+        (SubjectKind::Name | SubjectKind::None, _) => {
+            return Err(CommandError::invalid(
+                "This learning preset takes its subject from its slots",
+            ))
+        }
+    };
+    preset.fill(asset, slots, local_timezone)
+}
+
+fn learning_from_preset(
+    loupist_id: &str,
+    preset_id: LearningPresetId,
+    subjects: Option<Vec<TaskSubject>>,
+    slots: std::collections::BTreeMap<String, String>,
+    state: &AppState,
+    local_timezone: chrono_tz::Tz,
+) -> Result<Task, CommandError> {
+    use crate::scheduled_tasks::types::{TaskDefinition, TaskDraft, TaskTarget, TaskWatch};
+    let filled = fill_learning_preset(
+        state,
+        loupist_id,
+        preset_id,
+        &subjects.unwrap_or_default(),
+        &slots,
+        local_timezone,
+    )?;
+    // The same preset, subject and slots open the program they made before.
+    // A slotless asset preset keeps Track daily's original key.
+    let key = match filled.subjects.as_slice() {
+        [TaskSubject::Asset { asset }] if slots.is_empty() => {
+            serde_json::to_vec(&(preset_id.as_str(), asset))
+        }
+        subjects => serde_json::to_vec(&(preset_id.as_str(), subjects, &slots)),
+    }
+    .map_err(super::map_internal)?;
+    let id = format!("learning-{}", &crate::util::sha256(&key)[..32]);
+    if let Some(existing) = service::find(state, loupist_id, &id)? {
+        return Ok(existing);
+    }
+    state.ensure_loupist_available(loupist_id)?;
+    let config = super::loupist_configuration(state, loupist_id)?.chat;
+    let model_profile_id = config.model_profile_id.unwrap_or_default();
+    let thinking_level =
+        preset_thinking_level(state, &model_profile_id, config.thinking_level.as_deref())?;
+    let draft = TaskDraft {
+        title: filled.title,
+        prompt: filled.prompt,
+        schedule: filled.schedule,
+        target: TaskTarget::NewChat,
+        model_profile_id,
+        thinking_level,
+        run_options: config.run_options,
+        use_memory: true,
+        update_memory: true,
+        status: TaskStatus::Active,
+    };
+    service::create_definition(
+        state,
+        loupist_id,
+        draft,
+        &id,
+        TaskDefinition {
+            program: Some(filled.program),
+            watch: TaskWatch {
+                report: Some(filled.report),
+                delivery: Some(filled.delivery),
+                subjects: Some(filled.subjects),
+                // Watch runs scope themselves by `watch.preset`; of the
+                // learning presets only Track daily is recognised there.
+                preset: (preset_id == LearningPresetId::AssetDaily)
+                    .then_some(WatchPreset::AssetDaily),
+                ..TaskWatch::default()
+            },
+            ..TaskDefinition::default()
+        },
+    )
+}
+
+#[cfg(test)]
 pub(crate) fn from_preset(
     request: FromPresetRequest,
     state: &AppState,
 ) -> Result<Task, CommandError> {
+    open_definition(
+        &request.loupist_id.clone(),
+        PresetId::Watch(request.preset),
+        request.subjects,
+        request.params,
+        None,
+        state,
+    )
+}
+
+/// The one place a preset becomes a task, for every watch and learning preset.
+fn open_definition(
+    loupist_id: &str,
+    preset: PresetId,
+    subjects: Option<Vec<TaskSubject>>,
+    params: Option<crate::scheduled_tasks::presets::PresetParams>,
+    slots: Option<std::collections::BTreeMap<String, String>>,
+    state: &AppState,
+) -> Result<Task, CommandError> {
+    let watch = match preset.normalized() {
+        PresetId::Learning(learning) => {
+            if params.is_some_and(|params| params.results_date.is_some()) {
+                return Err(CommandError::invalid(
+                    "Only a results follow-up takes a results date",
+                ));
+            }
+            return learning_from_preset(
+                loupist_id,
+                learning,
+                subjects,
+                slots.unwrap_or_default(),
+                state,
+                crate::scheduled_tasks::presets::local_timezone(),
+            );
+        }
+        PresetId::Watch(watch) => watch,
+    };
+    if let Some(slot) = slots.as_ref().and_then(|slots| slots.keys().next()) {
+        return Err(CommandError::with_detail(
+            crate::app::CommandErrorCode::PresetSlot,
+            "This preset has no slot of that name",
+            serde_json::json!({"preset": watch, "slot": slot, "reason": "unknown"}),
+        ));
+    }
+    let request = FromPresetRequest {
+        loupist_id: loupist_id.to_owned(),
+        preset: watch,
+        subjects,
+        params,
+    };
     let loupist_id = request.loupist_id.clone();
     let mut prepared = preset_definition(request, state, None)?;
     if let Some(existing) = service::find(state, &loupist_id, &prepared.id)? {
         return Ok(existing);
     }
-    let trigger = prepared
-        .trigger_template
-        .as_deref()
-        .map(|template| {
-            preset_trigger(
-                state,
-                &loupist_id,
-                template,
-                &prepared.definition.watch,
-                &prepared.draft.title,
-            )
-        })
-        .transpose()?;
-    if trigger.is_some() {
-        prepared.draft.status = crate::scheduled_tasks::types::TaskStatus::Paused;
-        prepared.definition.proposed_in_message_id = Some(format!("preset-{}", prepared.id));
-        prepared.definition.trigger = trigger;
-    }
+    attach_preset_check(state, &loupist_id, &mut prepared)?;
     service::create_definition(
         state,
         &loupist_id,
@@ -131,6 +404,29 @@ pub(crate) fn from_preset(
         &prepared.id,
         prepared.definition,
     )
+}
+
+/// A check preset is stored paused, with its trigger. It does not become an
+/// active model task when the trigger cannot be attached.
+pub(crate) fn attach_preset_check(
+    state: &AppState,
+    loupist_id: &str,
+    prepared: &mut PreparedPreset,
+) -> Result<(), CommandError> {
+    let Some(template) = prepared.trigger_template.clone() else {
+        return Ok(());
+    };
+    let trigger = preset_trigger(
+        state,
+        loupist_id,
+        &template,
+        &prepared.definition.watch,
+        &prepared.draft.title,
+    )?;
+    prepared.draft.status = crate::scheduled_tasks::types::TaskStatus::Paused;
+    prepared.definition.proposed_in_message_id = Some(format!("preset-{}", prepared.id));
+    prepared.definition.trigger = Some(trigger);
+    Ok(())
 }
 
 pub(crate) fn preset_trigger(
@@ -144,6 +440,9 @@ pub(crate) fn preset_trigger(
     let mut trigger = crate::scheduled_tasks::types::TaskTrigger {
         script: crate::commands::triggers::script_ref(&saved),
         summary: watch.terms.clone().unwrap_or_else(|| title.to_owned()),
+        when_met_summary: watch
+            .preset
+            .and_then(crate::scheduled_tasks::presets::preset_when_met_key),
         tools: Vec::new(),
         args: serde_json::json!({"band_percent": 5})
             .as_object()
@@ -159,7 +458,7 @@ pub(crate) fn preset_trigger(
         evaluations: Vec::new(),
         counters: Default::default(),
         approved_versions: Vec::new(),
-        stale_after_days: 5,
+        stale_after_days: crate::scheduled_tasks::trigger::DEFAULT_STALE_AFTER_DAYS,
         reads_per_check: 0,
         proposal_test: None,
     };
@@ -201,13 +500,16 @@ pub(crate) fn preset_definition(
     ))
     .map_err(super::map_internal)?;
     let id = format!("watch-{}", &crate::util::sha256(&key)[..32]);
+    let model_profile_id = config.model_profile_id.unwrap_or_default();
+    let thinking_level =
+        preset_thinking_level(state, &model_profile_id, config.thinking_level.as_deref())?;
     let draft = TaskDraft {
         title: filled.title,
         prompt: filled.prompt,
         schedule: filled.schedule,
         target: TaskTarget::NewChat,
-        model_profile_id: config.model_profile_id.unwrap_or_default(),
-        thinking_level: config.thinking_level.unwrap_or_default(),
+        model_profile_id,
+        thinking_level,
         run_options: config.run_options,
         use_memory: config.use_memory,
         update_memory: config.update_memory,
@@ -241,10 +543,16 @@ pub(crate) fn scheduled_task_set_delivery(
 
 #[tauri::command(rename_all = "snake_case")]
 pub(crate) async fn scheduled_task_run_now(
-    request: TaskRequest,
+    request: RunNowRequest,
     state: State<'_, AppState>,
 ) -> Result<Run, CommandError> {
-    service::run_now(&state, &request.loupist_id, &request.task_id).await
+    service::run_now(
+        &state,
+        &request.loupist_id,
+        &request.task_id,
+        request.confirm.unwrap_or(false),
+    )
+    .await
 }
 
 #[tauri::command(async, rename_all = "snake_case")]
@@ -278,6 +586,66 @@ pub(crate) fn scheduled_task_watch(
 mod tests;
 
 /// The current state of a task a Chat card shows; `None` once it was deleted.
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct LearningProgramUpdateRequest {
+    loupist_id: String,
+    task_id: String,
+    revision: u64,
+    patch: crate::scheduled_tasks::program_edit::ProgramPatch,
+}
+
+/// The user's own edit of a learning program from Schedule: no proposal.
+#[tauri::command(async, rename_all = "snake_case")]
+pub(crate) fn learning_program_update(
+    request: LearningProgramUpdateRequest,
+    state: State<'_, AppState>,
+) -> Result<Task, CommandError> {
+    crate::scheduled_tasks::program_edit::update(
+        &state,
+        &request.loupist_id,
+        &request.task_id,
+        request.revision,
+        request.patch,
+    )
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct LearningProgramUndoAllRequest {
+    loupist_id: String,
+    task_id: String,
+    /// Counts what Undo all would do and changes nothing.
+    #[cfg_attr(test, ts(optional))]
+    preview: Option<bool>,
+}
+
+/// Undoes every run of a learning program in one transaction, newest first.
+#[tauri::command(async, rename_all = "snake_case")]
+pub(crate) fn learning_program_undo_all(
+    request: LearningProgramUndoAllRequest,
+    state: State<'_, AppState>,
+) -> Result<crate::knowledge::ProgramUndo, CommandError> {
+    let _activity = super::knowledge::admit_mutation(&state, &request.loupist_id)?;
+    let task = service::find(&state, &request.loupist_id, &request.task_id)?
+        .ok_or_else(|| CommandError::not_found("learning program"))?;
+    if task.kind != crate::scheduled_tasks::types::TaskKind::Learning {
+        return Err(CommandError::invalid(
+            "Only a learning program is undone here",
+        ));
+    }
+    super::knowledge::with_loupist_knowledge(&state, &request.loupist_id, |tx, blobs| {
+        crate::knowledge::KnowledgeWrite::bind(tx, blobs).undo_program(
+            &request.loupist_id,
+            &request.task_id,
+            request.preview.unwrap_or(false),
+            crate::commands::now_ms(),
+        )
+    })
+}
+
 #[tauri::command(async, rename_all = "snake_case")]
 pub(crate) fn scheduled_task_get(
     request: TaskRequest,

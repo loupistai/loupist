@@ -18,8 +18,8 @@
     "costEstimate": "about {{price}} (estimate)",
     "costBilled": "billed {{price}}",
     "costUnderCent": "< $0.01",
-    "plan": "{{account}} does not tell apps how much of the plan is left. These are the requests Loupist sent.",
-    "weeklyLimit": "To set a weekly limit for Loupist, open Settings › Usage in ChatGPT.",
+    "plan": "Remaining {{account}} quota unavailable.",
+    "weeklyLimit": "Set weekly limits in ChatGPT.",
     "weeklyAccount": "Last 7 days in Loupist: {{requests}} requests · {{tokens}} tokens",
     "daily": "Daily requests",
     "date": "Date",
@@ -29,7 +29,15 @@
     "work": "By kind of work",
     "loupists": "By Loupist",
     "programs": "Programs",
-    "checks": "{{evaluations}} checks, {{reads}} reads, {{met}} met",
+    "lastCheck": "Last check {{time}}",
+    "checks_one": "{{formattedCount}} check",
+    "checks_other": "{{formattedCount}} checks",
+    "checksToday_one": "{{formattedCount}} check today",
+    "checksToday_other": "{{formattedCount}} checks today",
+    "dataReads_one": "{{formattedCount}} data read",
+    "dataReads_other": "{{formattedCount}} data reads",
+    "met": "{{formattedCount}} met",
+    "modelRequests": "Model requests {{formattedCount}}",
     "removedLoupist": "Removed Loupist",
     "removedProgram": "Deleted program",
     "surfaces": {
@@ -43,6 +51,29 @@
       "world": "World building",
       "world_schema": "Updating what World tracks",
       "method_learning": "Method learning"
+    },
+    "allowance": {
+      "title": "Allowance",
+      "background": "Background work",
+      "sources": "Sources from Chat",
+      "off": "Off",
+      "backgroundOk": "Background work: {{used}} of {{limit}} requests today.",
+      "backgroundWarning": "Background work has used {{used}} of {{limit}} requests today.",
+      "sourcesOk": "Sources from Chat: {{used}} of {{limit}} requests today.",
+      "sourcesWarning": "Sources from Chat have used {{used}} of {{limit}} requests today.",
+      "waiting": "Waiting for tomorrow's allowance.",
+      "worldShare": "World uses {{used}} of {{limit}} of the background allowance.",
+      "planLimit": "{{name}} reached its plan limit.",
+      "planLimitUnnamed": "This account reached its plan limit.",
+      "outOfCredit": "{{name}} is out of credit.",
+      "outOfCreditUnnamed": "This account is out of credit.",
+      "creditLeft": "{{remaining}} of {{limit}} left",
+      "creditLeftReset": "{{remaining}} of {{limit}} left · resets {{when}}",
+      "reset": {
+        "daily": "daily",
+        "weekly": "weekly",
+        "monthly": "monthly"
+      }
     }
   },
   "general": {
@@ -52,16 +83,14 @@
     "keepRunning": "Keep running in the menu bar",
     "keepRunningDescription": "Scheduled tasks run only while Loupist is open or in the menu bar.",
     "loginItem": "Open Loupist at login",
-    "loginItemDescription": "Loupist starts in the menu bar when you log in, so scheduled tasks can run.",
     "loginItemTurnedOff": "Open at login was turned off as well",
     "loginItemDisabled": "Turned off in System Settings.",
     "openLoginItems": "Open Login Items",
     "loginItemDenied": "macOS did not allow this",
     "loginItemUnavailable": "Available in the installed app",
-    "keepRunningAutomatic": "On because a scheduled task was enabled. You can turn it off here.",
+    "keepRunningAutomatic": "Enabled with scheduled work.",
     "loadFailed": "Couldn't load this setting.",
     "saveFailed": "Couldn't change this setting. Try again.",
-    "betaNotice": "Beta. Official macOS releases use Developer ID signing and Apple notarization.",
     "aboutTitle": "About & privacy",
     "privacyTitle": "What leaves this Mac",
     "privacyStays": "Stays on this Mac: chats, sources, World, Lens and Journal, in each Loupist's folder. No Loupist account, no sync.",
@@ -87,13 +116,11 @@
     },
     "language": {
       "label": "Language",
-      "description": "Interface language. Saved sources, Lens documents and chat content keep their original language.",
       "system": "System",
       "pseudo": "Pseudo (en-XA)"
     },
     "priceColors": {
       "label": "Price colors",
-      "description": "The color that shows a rising or falling price. Automatic follows the convention of the interface language. Choose one if the markets you follow use the other.",
       "auto": "Automatic",
       "autoDescription": "Follow the interface language",
       "redUp": "Red up, blue down",
@@ -101,7 +128,6 @@
     },
     "displayCurrency": {
       "label": "Display currency",
-      "description": "Adds an approximate amount in this currency under a price quoted in another one. Prices, charts and results stay in the currency they are reported in.",
       "asListed": "As listed",
       "option": "{{code}} — {{name}}",
       "unsupported": "{{code}} (not in the reference rates)",
@@ -126,12 +152,9 @@
       }
     }
   },
-  "settingsView": {
-    "savedAutomaticallyForAllLoupistsOnThisDevice": "Saved automatically for all Loupists on this Mac."
-  },
   "agentSettings": {
     "performanceGroup": "Response speed",
-    "performanceDescription": "Fast asks your AI provider for its priority tier. It may cost more on API keys.",
+    "performanceDescription": "Fast may cost more with an API key.",
     "diagnosticLine": "Problem in your preferences file (line {{line}}) — {{message}}",
     "diagnostic": "Problem in your preferences file — {{message}}",
     "unavailableThinking": "{{level}} (unavailable)",
@@ -150,20 +173,15 @@
     "save": "Save",
     "newResponsesStayPausedUntilThisIsFixed": "New responses stay paused until this is fixed.",
     "settingsApplyTo": "Settings apply to",
-    "setTheDefaultsEveryLoupistStartsWith": "Set the defaults every Loupist starts with.",
-    "customizeThisLoupistOtherSettingsFollowYourGlobal": "Customize this Loupist. Other settings follow your global defaults.",
     "globalDefaults": "Global defaults",
     "saving": "Saving…",
     "unsavedAdvancedChangesUseSaveBesideEachField": "Unsaved advanced changes. Use Save beside each field.",
     "savedAppliesToNewResponses": "Saved · Applies to new responses",
-    "selectionsSaveAutomaticallyChangesApplyToNewResponses": "Selections save automatically. Changes apply to new responses.",
     "reload": "Reload",
     "defaultModel": "Default model",
-    "theModelToUseWhenStartingAChat": "The model to use when starting a conversation.",
     "storedModelUnavailable": "Not available now. Chat uses the recommended model until it is.",
     "unavailableModel": "Unavailable model",
     "reasoningLevel": "Reasoning level",
-    "howMuchTimeTheModelSpendsThinkingBefore": "How much time the model spends thinking before it responds.",
     "useGlobalDefaultReasoningLevel": "Use global default reasoning level",
     "modelDefault": "Model default",
     "none": "None",
@@ -187,7 +205,6 @@
     "recentTokensToKeep": "Recent tokens to keep",
     "keepThisMuchRecentConversationBeforeSummarizingOlder": "Keep this much recent conversation before summarizing older messages.",
     "requestRecovery": "Request recovery",
-    "retryAutomaticallyWhenAProviderHasATemporary": "Retry automatically when your AI provider has a temporary problem.",
     "retryFailedRequests": "Retry failed requests",
     "maximumRetries": "Maximum retries",
     "numberOfAttemptsAfterTheFirstFailure": "Number of attempts after the first failure (0–10).",
@@ -286,8 +303,6 @@
     "couldNotOpenThisSkill": "Could not open this skill.",
     "couldNotOpenASkillDraft": "Could not open a skill draft.",
     "availableTo": "Available to",
-    "personalSkillsAndDefaultsForAllYourLoupists": "Personal skills and defaults for all your Loupists.",
-    "skillsAndOverridesForThisLoupistPersonalSkills": "Skills and overrides for this Loupist. Personal skills are included.",
     "allLoupistsPersonal": "All Loupists · Personal",
     "searchSkills": "Search skills",
     "addSkill": "Add skill",
@@ -387,13 +402,15 @@
       "map": "Processing World",
       "update": "Installing an update",
       "other": "Work in progress"
-    }
+    },
+    "waitingForWork_one": "Waiting for {{formattedCount}} thing to finish",
+    "waitingForWork_other": "Waiting for {{formattedCount}} things to finish"
   },
   "worldSettings": {
     "loupist": "Loupist",
     "readiness": {
       "recoveryRequired": "World building was interrupted. Recover the last confirmed World to continue. The interrupted source will not be processed again automatically.",
-      "recovering": "Restoring the last confirmed World. This does not use a model or retry interrupted processing.",
+      "recovering": "Restoring the last confirmed World without model calls.",
       "runtimeUnavailable": "World building is unavailable. Update or reinstall the app to restore it.",
       "awaitingProvider": "Waiting for a supported AI account. A recommended World building model will be selected when one is connected.",
       "chooseModel": "Choose a World building model.",
@@ -540,6 +557,10 @@
       "name": "Research",
       "description": "Investigate a financial question across sources or challenge an investment thesis with evidence, counterevidence, and observable catalysts. Use for multi-step research; answer isolated facts and calculations directly."
     },
+    "deep-research": {
+      "name": "deep-research",
+      "description": "Research one question in depth from a plan the user approves, keeping a checkpoint file, looking for counterevidence and ending in a cited report. Use when the user picks this Skill or asks for deep research; skip a question a few reads can answer."
+    },
     "valuation": {
       "name": "Valuation",
       "description": "Build or audit an intrinsic valuation model, cash-flow forecast, sum-of-parts valuation, or sensitivity range. Use for a substantive valuation workflow; skip a quote lookup or an isolated arithmetic question."
@@ -550,7 +571,7 @@
     },
     "filings": {
       "name": "Filings and earnings",
-      "description": "Analyze filings, financial statements, earnings releases, guidance changes, or earnings quality, including a Korean company's capital decisions, ownership reports, dividends and investor flows. Use for a document-based financial review; skip a price lookup or an isolated calculation with complete supplied inputs."
+      "description": "Analyze filings, financial statements, earnings releases, guidance changes, or earnings quality, including capital decisions, ownership reports, dividends and investor flows where a connected source reads them. Use for a document-based financial review; skip a price lookup or an isolated calculation with complete supplied inputs."
     },
     "rule-test": {
       "name": "Backtesting",

@@ -59,6 +59,10 @@ pub enum KnowledgeError {
     EarlierVersion,
     #[error("this Loupist was saved by a newer version of the app")]
     NewerVersion,
+    /// A subject page already covers this subject. `record_id` and `title`
+    /// name that page.
+    #[error("existing_page:{record_id}:{title}")]
+    ExistingPage { record_id: String, title: String },
 }
 
 impl KnowledgeError {
@@ -86,6 +90,7 @@ impl KnowledgeError {
             Self::LockPoisoned => "lock_poisoned",
             Self::EarlierVersion => "loupist_earlier_version",
             Self::NewerVersion => "loupist_newer_version",
+            Self::ExistingPage { .. } => "existing_page",
         }
     }
 }

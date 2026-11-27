@@ -844,3 +844,60 @@ fn python_ledger_replay_is_removed_with_its_parent_chat() {
         .dataset(owner, &independent.dataset_id, independent.revision)
         .is_ok());
 }
+
+/// The Chat save budget bounds the wait for the store, not the writes: a save
+/// whose writes all succeeded commits even when they finish past it.
+#[test]
+fn a_chat_save_whose_writes_finish_after_the_budget_is_kept() {
+    let store = SqliteStore::open_in_memory().unwrap();
+    seed_loupist(&store, &loupist());
+    let expected = chat_session("chat-slow", "loupist-1");
+    store.create_chat(&expected).unwrap();
+    let chat = ChatSession {
+        updated_at_ms: expected.updated_at_ms + 1,
+        ..expected.clone()
+    };
+    let budget = std::time::Duration::from_millis(250);
+    crate::store::bounded_chat_save_within(budget, || {
+        store.replace_chat_with(&expected, &chat, |_| {
+            std::thread::sleep(budget * 2);
+            Ok(())
+        })
+    })
+    .unwrap();
+    assert_eq!(store.get_chat("chat-slow").unwrap().unwrap(), chat);
+}
+
+#[test]
+fn a_chat_save_that_cannot_reach_the_store_within_the_budget_writes_nothing() {
+    let store = SqliteStore::open_in_memory().unwrap();
+    seed_loupist(&store, &loupist());
+    let expected = chat_session("chat-blocked", "loupist-1");
+    store.create_chat(&expected).unwrap();
+    let chat = ChatSession {
+        updated_at_ms: expected.updated_at_ms + 1,
+        ..expected.clone()
+    };
+    let store = &store;
+    std::thread::scope(|scope| {
+        let (locked, held) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        // Another writer, such as a World publication, holds the store.
+        scope.spawn(move || {
+            let _connection = store.lock_loupist("loupist-1").unwrap();
+            locked.send(()).unwrap();
+            let _ = released.recv();
+        });
+        held.recv().unwrap();
+        let blocked =
+            crate::store::bounded_chat_save_within(std::time::Duration::from_millis(250), || {
+                store.replace_chat_with(&expected, &chat, |_| Ok(()))
+            });
+        assert!(
+            matches!(blocked, Err(StoreError::ChatSaveDeadline)),
+            "{blocked:?}"
+        );
+        release.send(()).unwrap();
+    });
+    assert_eq!(store.get_chat("chat-blocked").unwrap().unwrap(), expected);
+}

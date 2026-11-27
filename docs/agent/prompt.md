@@ -77,10 +77,13 @@ to 12.0 KB) and compared both versions on GPT-6.1 Sol at medium.
 ## Language-neutral model text
 
 Model-facing text (`SYSTEM.md`, prompt files, Skills, tool descriptions, surface
-hints and host notes) is written in English and names no user language. It holds
-no word, example or rule that exists for one language; a market or data source
+hints, host notes and the World extraction prompts, policy and type descriptions)
+is written in English and names no user language. It holds
+no word, example or rule that exists for one language or one market; a market or data source
 (KRX, OpenDART, K-IFRS) is named in English, with filing kinds described rather
-than quoted in their original script. Three rules carry what a per-language rule
+than quoted in their original script. An example that needs a company invents one, and examples vary the currency and
+the place rather than repeat one market.
+Three rules carry what a per-language rule
 used to:
 
 - **Register.** Answers use the language the user writes in, which is not
@@ -173,7 +176,10 @@ also the English text the interface matches to find the Skill's localized name
 (`src/lib/agentSkills.ts`), so a change to it is made together with
 `bundledSkills.why-it-moved.description` in the English locale file.
 
-A quick ask uses no Memory searches and no Skill the user did not
+A quick ask reads a data source the turn has, or searches what the Loupist
+has saved once when no source serves the question (with "no Memory searches",
+GPT-6.2 Sol told a user it could not verify a figure that a saved Source
+stated). It uses no Skill the user did not
 choose, files nothing to Lens and saves no Source. With saving on, it does
 save the price read of a followed asset whose row carries `price_read`, which
 is how the app shows that price and not research; the Bot hint says so too.
@@ -326,4 +332,4 @@ Use repeated matched runs before claiming superiority.
 
 ## Standing work in Bot
 
-Bot registers a clear scheduling request in the reply that receives it. When Bot suggests standing work, its proposal remains paused until the user confirms it. The bundled watch presets cover material filings and results, thesis lines, a one-time results follow-up, and a weekly review. A preset the Bot suggests is a `bot_offer` card, not a task, until the user turns it on. An unattended run reports dated evidence and its bearing on the user's stated reasons and lines, and leaves at most one `ask_later` question without waiting.
+Bot saves a clear scheduling request in the reply that receives it. Every task Bot creates is a proposal, whoever asked for it: it stays paused until the user accepts it in its card, and so do a task Bot turns back on and a change to a recurring one ([Scheduled Chats](../runtime/scheduled-runs.md#scheduled-chats)). `SYSTEM.md` and `schedule_create` say so, because a reply may promise a later check only for a task that is on. The bundled watch presets cover material filings and results, thesis lines, a one-time results follow-up, and a weekly review. A preset the Bot suggests is a `bot_offer` card, not a task, until the user turns it on. An unattended run reports dated evidence and its bearing on the user's stated reasons and lines, and leaves at most one `ask_later` question without waiting.

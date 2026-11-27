@@ -58,12 +58,21 @@ impl ChatSurface {
             // The Bot keeps its conversation in bot_memory; a working note is a session's research record.
             Self::Bot => !matches!(
                 name,
-                "schedule_handoff" | "note_save" | "schedule_quiet" | "ask_later"
+                "schedule_handoff"
+                    | "learning_handoff"
+                    | "note_save"
+                    | "schedule_quiet"
+                    | "ask_later"
             ),
             Self::Session => {
                 !matches!(
                     name,
-                    "research_open" | "bot_memory" | "trigger_save" | "bot_offer" | "ask_later"
+                    "research_open"
+                        | "bot_memory"
+                        | "trigger_save"
+                        | "bot_offer"
+                        | "ask_later"
+                        | "learning_program_save"
                 ) && (!name.starts_with("schedule_")
                     || matches!(name, "schedule_list" | "schedule_read" | "schedule_handoff"))
             }
@@ -179,7 +188,11 @@ mod tests {
         assert!(!session.iter().any(|name| name == "research_open"));
         assert!(!session.iter().any(|name| name == "schedule_create"));
         assert!(!session.iter().any(|name| name == "trigger_save"));
+        assert!(bot.iter().any(|name| name == "learning_program_save"));
+        assert!(!session.iter().any(|name| name == "learning_program_save"));
         assert!(session.iter().any(|name| name == "schedule_handoff"));
+        assert!(session.iter().any(|name| name == "learning_handoff"));
+        assert!(!bot.iter().any(|name| name == "learning_handoff"));
         assert!(session.iter().any(|name| name == "loupist_setup"));
 
         for unattended in [

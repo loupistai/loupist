@@ -1205,8 +1205,10 @@ async fn a_memory_reset_while_waiting_leaves_staged_changes_behind() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_failed_commit_names_the_memory_it_rolled_back() {
-    assert_pending_reply_is_kept(Some(crate::domain::MemorySaveSkipReason::Failed), true).await;
+async fn a_refused_item_is_named_with_its_cause_and_the_rest_saves() {
+    // The staged principle names a revision that does not exist. Its stage is
+    // left out; the note saves and the receipt names the principle and why.
+    assert_pending_reply_is_kept(Some(crate::domain::MemorySaveSkipReason::Invalid), true).await;
 }
 
 #[tokio::test(start_paused = true)]
@@ -1302,10 +1304,12 @@ async fn assert_pending_reply_is_kept(
             DiscardedMemoryItem {
                 kind: DiscardedMemoryKind::Note,
                 title: "Short overlap check".into(),
+                reason: None,
             },
             DiscardedMemoryItem {
                 kind: DiscardedMemoryKind::Principle,
                 title: "Check cash flow in both years".into(),
+                reason: None,
             },
         ]
     });
@@ -1332,7 +1336,7 @@ async fn assert_pending_reply_is_kept(
         capture.staged_principles.lock().await.push(
             crate::commands::tool_executor::StagedPrinciple {
                 record_id: staged_id.clone(),
-                expected_revision_id: (expected_skip == Some(MemorySaveSkipReason::Failed))
+                expected_revision_id: (expected_skip == Some(MemorySaveSkipReason::Invalid))
                     .then(|| format!("rev_{}", uuid::Uuid::new_v4().simple())),
                 input: crate::knowledge::PrincipleInput {
                     statement: "Check cash flow in both years".into(),
@@ -1483,8 +1487,8 @@ async fn assert_pending_reply_is_kept(
             tx.commit().unwrap();
             drop(older.take());
         }
-        Some(MemorySaveSkipReason::Failed) | None => drop(older.take()),
-        Some(MemorySaveSkipReason::Deadline | MemorySaveSkipReason::Interrupted) => {}
+        Some(MemorySaveSkipReason::Invalid) | None => drop(older.take()),
+        Some(_) => {}
     }
     if expected_skip == Some(MemorySaveSkipReason::Interrupted) {
         drop(turn);
@@ -1497,7 +1501,23 @@ async fn assert_pending_reply_is_kept(
     let persisted = state.store.get_chat(&chat.id).unwrap().unwrap();
     let answer = persisted.messages.last().unwrap();
     assert_eq!(answer.content, "The chart compares both years.");
-    let expected_items = expected_items.filter(|_| expected_skip.is_some());
+    // A refused item does not skip the save: it alone is listed, with its cause.
+    let partly = expected_skip == Some(MemorySaveSkipReason::Invalid);
+    let expected_items = if partly {
+        expected_items.map(|items| {
+            items
+                .into_iter()
+                .filter(|item| item.kind == DiscardedMemoryKind::Principle)
+                .map(|item| DiscardedMemoryItem {
+                    reason: Some(MemorySaveSkipReason::Invalid),
+                    ..item
+                })
+                .collect()
+        })
+    } else {
+        expected_items.filter(|_| expected_skip.is_some())
+    };
+    let recorded_skip = expected_skip.filter(|_| !partly);
     {
         let mut connection = state.store.lock_loupist(&earlier.id).unwrap();
         let tx = connection.transaction().unwrap();
@@ -1508,8 +1528,12 @@ async fn assert_pending_reply_is_kept(
     }
     assert_eq!(
         answer.memory_update.as_ref().unwrap().skip_reason,
-        expected_skip,
+        recorded_skip,
     );
+    if partly {
+        let changes = &answer.memory_update.as_ref().unwrap().changes;
+        assert_eq!(changes.len(), 1, "{changes:?}");
+    }
     assert_eq!(
         answer
             .memory_update
@@ -1545,7 +1569,7 @@ async fn assert_pending_reply_is_kept(
     }
     assert_eq!(activity.blocking_chat_id.as_deref(), Some("older-chat"));
     assert_eq!(events.lock().unwrap().iter().any(|event| matches!(
-        event, ChatStreamEvent::Completed { memory_save_skip: reason, save_activity: Some(live), discarded_memory_items, .. } if live == activity && *reason == expected_skip && discarded_memory_items == &expected_items
+        event, ChatStreamEvent::Completed { memory_save_skip: reason, save_activity: Some(live), discarded_memory_items, .. } if live == activity && *reason == recorded_skip && discarded_memory_items == &expected_items
     )), expected_skip != Some(MemorySaveSkipReason::Interrupted));
     drop(settled);
     assert_eq!(
@@ -1594,6 +1618,8 @@ fn terminal_replies_keep_acknowledged_records_across_reopen_without_a_renderer()
         upstream_evidence_ids: vec![],
     };
     let receipt = ScheduleReceipt::Task(crate::scheduled_tasks::types::TaskReceipt {
+        program: None,
+        budget: None,
         watch: Default::default(),
         task_id: "schedule-survives-stop".into(),
         title: "Daily research".into(),
@@ -2057,6 +2083,159 @@ fn saved_key_permission_is_in_run_context_and_scheduled_delivery_without_a_secre
         crate::domain::ChatToolRefusalReason::SavedKeyPermission
     );
     assert_eq!(test_store::secret_reads(environment, entry), reads);
+}
+
+#[tokio::test]
+async fn scheduled_runs_fill_previous_run_and_the_first_learning_run_reports_it() {
+    use std::sync::Arc;
+
+    use crate::broker::{ToolExecutor, ToolMethod, ToolPolicy};
+    use crate::scheduled_tasks::types::{
+        AllLearningConnections, LearningConnections, LearningDepth, LearningKeeps, LearningProgram,
+        LearningScope, RunStatus, Schedule, TaskDefinition, TaskDraft, TaskKind, TaskStatus,
+        TaskSubject, TaskTarget, TaskWatch,
+    };
+
+    let root = tempfile::tempdir().unwrap();
+    let state = AppState::for_test(root.path().join("app"));
+    let loupist = "loupist-a";
+    crate::test_fixtures::create_folder_loupist(&state.store, loupist, root.path());
+    state
+        .store
+        .create_chat(&crate::commands::tests::chat("chat-a", loupist, 1))
+        .unwrap();
+    let mut blank = ToolCapture::default();
+    launch::bind_scheduled_run_context(&mut blank, &state, loupist, "not-a-run");
+    assert!(blank.previous_run_started_at_ms.is_none());
+    assert!(!blank.first_run);
+
+    let draft = |title: &str, update_memory: bool| TaskDraft {
+        title: title.into(),
+        prompt: "Read what changed.".into(),
+        schedule: Schedule::Interval { every_minutes: 5 },
+        target: TaskTarget::NewChat,
+        model_profile_id: "fixture".into(),
+        thinking_level: "off".into(),
+        run_options: Default::default(),
+        use_memory: true,
+        update_memory,
+        status: TaskStatus::Active,
+    };
+    let claim = |id: &str, now: i64| {
+        state
+            .store
+            .scheduled_task_claim_with(loupist, id, now, true, |_| Ok(()))
+            .unwrap()
+            .unwrap()
+            .0
+            .run
+    };
+    let finish = |run_id: &str, status: RunStatus, now: i64| {
+        state
+            .store
+            .scheduled_task_finish(loupist, run_id, status, None, now)
+            .unwrap();
+    };
+    let bounds = |run_id: &str| {
+        let mut capture = ToolCapture::default();
+        launch::bind_scheduled_run_context(&mut capture, &state, loupist, run_id);
+        (
+            capture.previous_run_started_at_ms.unwrap(),
+            capture.first_run,
+        )
+    };
+    let feed = |run_id: &str| {
+        let mut capture = ToolCapture::default();
+        launch::bind_scheduled_run_context(&mut capture, &state, loupist, run_id);
+        let executor = crate::commands::tool_executor::AppToolExecutor {
+            state: state.clone(),
+            capture: Arc::new(capture),
+            loupist_id: loupist.into(),
+            capability_ids: Default::default(),
+        };
+        let policy = ToolPolicy {
+            loupist_id: loupist.into(),
+            session_id: "chat-a".into(),
+            use_memory: true,
+            propose_memory_updates: false,
+            memory_proposal_budget: 0,
+            as_of: None,
+            display_currency: None,
+        };
+        async move {
+            executor
+                .execute(
+                    &policy,
+                    ToolMethod::WorldChanges,
+                    json!({"since": "previous_run"}),
+                )
+                .await
+                .unwrap()
+        }
+    };
+
+    let custom = state
+        .store
+        .scheduled_task_create(loupist, draft("Notes", false), 1_000)
+        .unwrap();
+    let first = claim(&custom.id, 2_000);
+    assert_eq!(bounds(&first.run_id), (1_000, true));
+    finish(&first.run_id, RunStatus::Failed, 2_100);
+    let failed_next = claim(&custom.id, 3_000);
+    assert_eq!(bounds(&failed_next.run_id), (1_000, false));
+    finish(&failed_next.run_id, RunStatus::Succeeded, 3_100);
+    let succeeded_next = claim(&custom.id, 4_000);
+    assert_eq!(bounds(&succeeded_next.run_id), (3_000, false));
+    let custom_feed = feed(&succeeded_next.run_id).await;
+    assert_eq!(custom_feed["window"]["since"], 3_000);
+    assert_eq!(custom_feed["first_run"], false);
+
+    let learning = state
+        .store
+        .scheduled_task_create_definition(
+            loupist,
+            "learning-1",
+            draft("Learn the asset", true),
+            TaskKind::Learning,
+            TaskDefinition {
+                program: Some(LearningProgram {
+                    depth: LearningDepth::Standard,
+                    scope: LearningScope {
+                        connections: LearningConnections::All(AllLearningConnections::AllEnabled),
+                        web: false,
+                    },
+                    keeps: LearningKeeps {
+                        sources: true,
+                        lens: true,
+                        asset_reads: true,
+                    },
+                    preset: None,
+                }),
+                watch: TaskWatch {
+                    subjects: Some(vec![TaskSubject::Asset {
+                        asset: "asset-a".into(),
+                    }]),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            5_000,
+        )
+        .unwrap();
+    let opening = claim(&learning.id, 6_000);
+    assert_eq!(bounds(&opening.run_id), (5_000, true));
+    let opening_feed = feed(&opening.run_id).await;
+    assert_eq!(opening_feed["window"]["since"], 5_000);
+    assert_eq!(opening_feed["first_run"], true);
+    finish(&opening.run_id, RunStatus::Failed, 6_100);
+    let still_first = claim(&learning.id, 7_000);
+    assert_eq!(bounds(&still_first.run_id), (5_000, true));
+    finish(&still_first.run_id, RunStatus::Succeeded, 7_100);
+    let later = claim(&learning.id, 8_000);
+    assert_eq!(bounds(&later.run_id), (7_000, false));
+    let later_feed = feed(&later.run_id).await;
+    assert_eq!(later_feed["window"]["since"], 7_000);
+    assert_eq!(later_feed["first_run"], false);
 }
 
 mod message_saves;

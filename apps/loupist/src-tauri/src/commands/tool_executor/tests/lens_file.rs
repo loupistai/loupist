@@ -37,7 +37,8 @@ fn subject_fact(basis: Value) -> Value {
     json!({
         "pages": [{
             "page": {"create": {"kind": "subject", "title": "Analytical Engine", "about": [{"name": "Analytical Engine"}]}},
-            "ops": [{"op": "put", "key": "facts", "heading": "Facts", "markdown": "Ada described the engine.", "basis": basis}]
+            "ops": [{"op": "put", "key": "facts", "heading": "Facts", "markdown": "Ada described the engine.", "basis": basis},
+                {"op": "summary", "text": "The history of the Analytical Engine."}]
         }],
         "rationale": "The source states who described the engine."
     })
@@ -119,6 +120,166 @@ fn field_of(error: BrokerError) -> String {
 }
 
 #[tokio::test]
+async fn filing_checks_basis_for_creates_and_puts_and_keeps_the_summary() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let mut policy = policy(true, true);
+    policy.as_of = Some("2026-04-01".into());
+    for kind in ["subject", "idea"] {
+        for grounded in [false, true] {
+            let capture = turn_capture();
+            let executor = executor_for(&state, capture.clone());
+            let title = format!("{kind} case {grounded}");
+            let summary = "This page tracks operating risks.";
+            let missing_summary = json!({
+                "pages": [{"page": {"create":{"kind":kind,"title":title}},
+                    "ops":[{"op":"put","key":"facts","heading":"Facts","markdown":"A dated report.", "basis":said()}]}],
+                "rationale":"Record the operating risks."
+            });
+            let error = executor
+                .stage_lens_file(&policy, missing_summary, "missing")
+                .await
+                .unwrap_err();
+            assert_eq!(field_of(error), "pages[0].ops");
+            let cases = [
+                ("checks", None, false, true, grounded),
+                ("would-break", None, false, true, grounded),
+                ("question", Some("open_question"), false, true, grounded),
+                ("unsure", Some("check"), false, false, false),
+                ("assertion", Some("fact"), false, true, false),
+                ("plain", None, false, true, false),
+                ("view", Some("view"), true, false, false),
+                ("assessed-view", Some("view"), true, true, true),
+                ("evidence-for", None, true, false, true),
+            ];
+            let ops_for = |suffix: &str| {
+                cases
+                    .iter()
+                    .map(|(key, role, cited, uncertain, _)| {
+                        let mut basis = if *cited { said() } else { json!({}) };
+                        if *uncertain {
+                            basis["uncertainty"] = json!("Pending the operator's next report.");
+                        }
+                        json!({"op":"put", "key":format!("{key}{suffix}"), "heading":"Review",
+                        "markdown":"Review the operating risks.", "basis":basis, "role":role})
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let mut create_ops = ops_for("");
+            if grounded {
+                create_ops.push(json!({"op":"put","key":"facts","heading":"Facts",
+                    "markdown":"A dated report.", "basis":said()}));
+            } else {
+                // Without a grounded section in this request, preserve only
+                // the variations that don't themselves establish one.
+                create_ops.truncate(7);
+            }
+            create_ops.push(json!({"op":"summary","text":summary}));
+            let stage = |page, ops| json!({"pages":[{"page":page,"ops":ops}], "rationale":"Track the operating risks."});
+            executor
+                .stage_lens_file(
+                    &policy,
+                    stage(json!({"create":{"kind":kind,"title":title}}), create_ops),
+                    "create",
+                )
+                .await
+                .unwrap();
+            capture.commit_delivery("create").await;
+            let created = commit_turn(&state, &capture, &format!("{kind}-{grounded}-create")).await;
+            let verify = |change: &crate::domain::MemoryUpdateChange, skip: usize| {
+                for ((key, _, _, _, allowed), outcome) in
+                    cases.iter().take(skip).zip(&change.outcomes)
+                {
+                    assert_eq!(outcome.key.as_deref(), Some(*key), "{kind} {grounded}");
+                    assert_eq!(
+                        outcome.outcome,
+                        if *allowed { "added" } else { "refused_basis" },
+                        "{kind} {grounded} {key}"
+                    );
+                }
+            };
+            let case_count = if grounded { cases.len() } else { 7 };
+            verify(&created[0], case_count);
+            let record = &created[0].record_id;
+            let capture = turn_capture();
+            let executor = executor_for(&state, capture.clone());
+            let read_policy = ToolPolicy {
+                as_of: None,
+                ..policy.clone()
+            };
+            executor
+                .lens_read(&read_policy, json!({"recordId":record}), "read")
+                .await
+                .unwrap();
+            capture.commit_delivery("read").await;
+            let mut puts = ops_for("");
+            puts.truncate(case_count);
+            let exact = knowledge(&state)
+                .read(|read| read.read_page("loupist-a", record))
+                .unwrap();
+            for op in &mut puts {
+                if let Some(section) = exact
+                    .body
+                    .sections()
+                    .iter()
+                    .find(|section| Some(section.key.as_str()) == op["key"].as_str())
+                {
+                    op["expected"] = json!(section.digest);
+                    op["markdown"] = json!("Review the latest operating risks.");
+                }
+            }
+            let mut future = puts[0].clone();
+            future["asOf"] = json!("2026-04-02");
+            let error = executor
+                .stage_lens_file(
+                    &policy,
+                    stage(json!({"recordId":record}), vec![future]),
+                    "future",
+                )
+                .await
+                .unwrap_err();
+            assert_eq!(field_of(error), "pages[0].ops[0].asOf");
+            executor
+                .stage_lens_file(&policy, stage(json!({"recordId":record}), puts), "put")
+                .await
+                .unwrap();
+            capture.commit_delivery("put").await;
+            let updated = commit_turn(&state, &capture, &format!("{kind}-{grounded}-put")).await;
+            for ((key, _, _, _, allowed), outcome) in
+                cases.iter().take(case_count).zip(&updated[0].outcomes)
+            {
+                assert_eq!(outcome.key.as_deref(), Some(*key));
+                assert_eq!(
+                    outcome.outcome,
+                    if *allowed {
+                        "replaced"
+                    } else {
+                        "refused_basis"
+                    }
+                );
+            }
+            let page = knowledge(&state)
+                .read(|read| read.read_page("loupist-a", record))
+                .unwrap();
+            assert_eq!(page.body.to_body().summary(), summary);
+            if grounded {
+                let check = page
+                    .body
+                    .sections()
+                    .iter()
+                    .find(|section| section.key.as_str() == "checks")
+                    .unwrap();
+                assert_eq!(
+                    check.role,
+                    Some(crate::knowledge::lens_page::SectionRole::Check)
+                );
+                assert_eq!(check.as_of.as_deref(), Some("2026-04-01"));
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn a_world_fact_files_a_section_with_a_claim_basis_and_a_log_row_at_commit() {
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
@@ -156,7 +317,7 @@ async fn a_world_fact_files_a_section_with_a_claim_basis_and_a_log_row_at_commit
         ("Lens", "create")
     );
     assert_eq!(change.title, "Analytical Engine");
-    assert_eq!(change.outcomes.len(), 1);
+    assert_eq!(change.outcomes.len(), 2);
     assert_eq!(change.outcomes[0].outcome, "added");
     assert_eq!(change.outcomes[0].key.as_deref(), Some("facts"));
     assert!(!change.outcomes[0].op_id.is_empty());
@@ -169,7 +330,14 @@ async fn a_world_fact_files_a_section_with_a_claim_basis_and_a_log_row_at_commit
     );
     assert_eq!(
         log_rows(&state),
-        vec![("added".into(), "turn".into(), Some("assistant-1".into()))]
+        vec![
+            ("added".into(), "turn".into(), Some("assistant-1".into())),
+            (
+                "summarized".into(),
+                "turn".into(),
+                Some("assistant-1".into())
+            ),
+        ]
     );
     let learned =
         crate::chat::handoff::learned_digest(&state, "loupist-a", &["assistant-1".into()])
@@ -581,7 +749,8 @@ async fn a_handoff_card_and_a_scheduled_delivery_carry_what_the_run_learned() {
             json!({
                 "pages": [{
                     "page": {"create": {"kind": "method", "title": "Covenant headroom check"}},
-                    "ops": [{"op": "put", "basis": {"refs": [{"said": true}]}, "key": "steps", "heading": "Steps", "markdown": "Compare cash to the covenant floor."}]
+                    "ops": [{"op": "put", "basis": {"refs": [{"said": true}]}, "key": "steps", "heading": "Steps", "markdown": "Compare cash to the covenant floor."},
+                        {"op": "summary", "text": "Check covenant headroom.", "said": true}]
                 }],
                 "rationale": "A reusable check from this session."
             }),
@@ -622,10 +791,13 @@ async fn a_handoff_card_and_a_scheduled_delivery_carry_what_the_run_learned() {
     assert_eq!(learned.message_id, "final-1");
     let wire = json!({"messageId": "final-1", "pages": [{"recordId": record_id,
         "title": "Covenant headroom check", "kind": "method", "created": true,
-        "outcomes": [{"opId": learned.pages[0].outcomes[0].op_id, "outcome": "added", "key": "steps"}]}]});
+        "outcomes": [{"opId": learned.pages[0].outcomes[0].op_id, "outcome": "added", "key": "steps"},
+            {"opId": learned.pages[0].outcomes[1].op_id, "outcome": "summarized"}]}]});
     assert_eq!(serde_json::to_value(&card).unwrap()["learned"], wire);
 
     let run = crate::scheduled_tasks::types::Run {
+        usage: None,
+        budget: None,
         failure_streak: None,
         first_run: false,
         discarded_memory_items: None,
@@ -650,6 +822,8 @@ async fn a_handoff_card_and_a_scheduled_delivery_carry_what_the_run_learned() {
         status: crate::scheduled_tasks::types::RunStatus::Succeeded,
         error: None,
         trigger: None,
+        undo: None,
+        provider: None,
     };
     let post = crate::chat::home::delivery_message(&state, &run).unwrap();
     let delivery = post.delivery.unwrap();
@@ -744,7 +918,8 @@ async fn text_the_commit_would_refuse_is_refused_at_staging_by_its_field() {
             &policy(true, true),
             ToolMethod::LensFile,
             json!({"pages": [subject(json!([{"nodeId": "ada"}]), json!([{"op": "put", "key": "facts",
-                "heading": "Facts", "markdown": "Read by [Ada](world:ada).", "basis": said()}]))],
+                "heading": "Facts", "markdown": "Read by [Ada](world:ada).", "basis": said()},
+                {"op": "summary", "text": "The user's account of Ada."}]))],
                 "rationale": "What the user said."}),
         )
         .await
@@ -768,7 +943,8 @@ async fn an_op_the_policy_refuses_at_commit_is_logged_and_the_reply_still_commit
                 "ops": [{"op": "put", "key": "facts", "heading": "Facts",
                         "markdown": "Ada described [the engine](world:engine).", "basis": said()},
                     {"op": "put", "key": "overview", "heading": "Overview",
-                        "markdown": "A mechanical computer.", "basis": said()}]}],
+                        "markdown": "A mechanical computer.", "basis": said()},
+                    {"op": "summary", "text": "The history of the Analytical Engine."}]}],
                 "rationale": "What the user said."}),
             "file",
         )
@@ -807,14 +983,18 @@ async fn an_op_the_policy_refuses_at_commit_is_logged_and_the_reply_still_commit
         .collect();
     assert_eq!(
         outcomes,
-        [("refused_text", None), ("added", Some("overview"))]
+        [
+            ("refused_text", None),
+            ("added", Some("overview")),
+            ("summarized", None)
+        ]
     );
     assert_eq!(
         log_rows(&state)
             .iter()
             .map(|(outcome, ..)| outcome.as_str())
             .collect::<Vec<_>>(),
-        ["refused_text", "added"]
+        ["refused_text", "added", "summarized"]
     );
 }
 
@@ -868,7 +1048,8 @@ async fn a_page_archived_or_removed_before_the_reply_commits_is_logged_refused_a
             &policy,
             json!({"pages": [revise(&pages[0]), revise(&pages[1]),
                 {"page": {"create": {"kind": "method", "title": "Fresh check"}},
-                    "ops": [{"op": "put", "basis": {"refs": [{"said": true}]}, "key": "steps", "heading": "Steps", "markdown": "Start here."}]}],
+                    "ops": [{"op": "put", "basis": {"refs": [{"said": true}]}, "key": "steps", "heading": "Steps", "markdown": "Start here."},
+                        {"op": "summary", "text": "A fresh check.", "said": true}]}],
                 "rationale": "Revised two checks and wrote a third."}),
             "file",
         )
@@ -907,7 +1088,7 @@ async fn a_page_archived_or_removed_before_the_reply_commits_is_logged_refused_a
         [
             ("Archived check", vec!["refused_inactive"]),
             ("Removed check", vec!["refused_inactive"]),
-            ("Fresh check", vec!["added"]),
+            ("Fresh check", vec!["added", "summarized"]),
         ]
     );
     assert!(
@@ -923,10 +1104,10 @@ fn method_pages(prefix: &str, pages: usize, ops: usize) -> Value {
         .map(|page| {
             json!({
                 "page": {"create": {"kind": "method", "title": format!("{prefix} method {page}")}},
-                "ops": (0..ops).map(|op| json!({
+                "ops": std::iter::once(json!({"op": "summary", "text": "A check.", "said": true})).chain((1..ops).map(|op| json!({
                     "op": "put", "basis": {"refs": [{"said": true}]}, "key": format!("s{op}"), "heading": format!("Step {op}"),
                     "markdown": format!("Check {op}.")
-                })).collect::<Vec<_>>()
+                }))).collect::<Vec<_>>()
             })
         })
         .collect();
@@ -1130,7 +1311,8 @@ async fn research_filed_in_two_chats_from_two_saved_sources_queues_one_method_re
                         "page": {"create": {"kind": "subject", "title": company, "about": [{"name": company}]}},
                         "ops": [{"op": "put", "key": "ramp", "heading": "Capacity ramp",
                             "markdown": "Margins fell while the new line ramped.",
-                            "basis": {"refs": [{"source": saved["saveRef"]}]}}]
+                            "basis": {"refs": [{"source": saved["saveRef"]}]}},
+                            {"op": "summary", "text": "Margin pressure during the capacity ramp."}]
                     }],
                     "rationale": "The filing reports margin pressure during the ramp."
                 }),
@@ -1194,7 +1376,8 @@ async fn a_turn_writes_a_method_only_from_the_users_words() {
     let executor = executor_for(&state, turn_capture());
     let method = |basis: Value| {
         json!({"pages": [{"page": {"create": {"kind": "method", "title": "Margin ramp check"}},
-            "ops": [{"op": "put", "key": "steps", "heading": "Steps", "markdown": "Compare utilization with ramp cost.", "basis": basis}]}],
+            "ops": [{"op": "put", "key": "steps", "heading": "Steps", "markdown": "Compare utilization with ramp cost.", "basis": basis},
+                {"op": "summary", "text": "Compare utilization with ramp cost.", "said": true}]}],
             "rationale": "A check from this research."})
     };
     let unasked = executor
@@ -1290,4 +1473,130 @@ async fn retiring_or_resummarizing_a_method_needs_the_users_words() {
         )
         .await
         .expect("the user's words admit a summary change");
+}
+
+/// A one-section fact page over a World claim, with the given role.
+fn figure_page(read_ref: &str, claim_id: &str, markdown: &str, role: Option<&str>) -> Value {
+    let title = format!("Example Holdings {}", role.unwrap_or("results"));
+    json!({
+        "pages": [{
+            "page": {"create": {"kind": "subject", "title": title, "about": [{"name": title}]}},
+            "ops": [{"op": "put", "key": "results", "heading": "Results", "markdown": markdown, "role": role,
+                    "basis": {"refs": [{"world": read_ref, "claimId": claim_id}]}},
+                {"op": "summary", "text": "Example Holdings' reported results."}]
+        }],
+        "rationale": "The filing states the year's results."
+    })
+}
+
+async fn world_with(
+    state: &AppState,
+    proposition: &str,
+) -> (Arc<ToolCapture>, AppToolExecutor, String, String) {
+    let source = retain_publisher_source(state, proposition.as_bytes());
+    let world = seal_world(state, &source, &[proposition]);
+    let capture = turn_capture();
+    let executor = executor_for(state, capture.clone());
+    let world = json!({"recordId": world.record_id, "revisionId": world.revision_id});
+    let (read_ref, claim_id) = acknowledged_world_read(&executor, &world).await;
+    (capture, executor, read_ref, claim_id)
+}
+
+#[tokio::test]
+async fn a_fact_section_whose_amount_differs_from_its_claim_is_refused_and_nothing_is_filed() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let (capture, executor, read_ref, claim_id) = world_with(
+        &state,
+        "Example Holdings reported revenue of KRW 123.4 billion in 2025.",
+    )
+    .await;
+    for role in [None, Some("fact")] {
+        let error = executor
+            .stage_lens_file(
+                &policy(true, true),
+                figure_page(
+                    &read_ref,
+                    &claim_id,
+                    "Revenue was KRW 12.34 billion in 2025.",
+                    role,
+                ),
+                "file",
+            )
+            .await
+            .unwrap_err();
+        let BrokerError::FigureDiffers { field, figures } = &error else {
+            panic!("expected figure_differs, got {error:?}");
+        };
+        assert_eq!(field, "pages[0].ops[0].markdown");
+        assert_eq!(figures.len(), 1, "{figures:?}");
+        assert!(figures[0].0.contains("12.34"), "{figures:?}");
+        assert!(figures[0].1.contains("123.4"), "{figures:?}");
+        let body = crate::broker::error_body(&error);
+        assert_eq!(body["code"], "figure_differs", "{body}");
+        assert_eq!(body["figures"][0]["cited"], json!(figures[0].1), "{body}");
+    }
+    capture.commit_delivery("file").await;
+    assert!(capture.staged_filings.lock().await.is_empty());
+    assert!(commit_turn(&state, &capture, "assistant-1")
+        .await
+        .iter()
+        .all(|change| change.kind != "Lens"));
+    assert!(log_rows(&state).is_empty());
+}
+
+#[tokio::test]
+async fn a_check_section_may_state_another_figure_and_a_derived_one_files_as_not_found() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let (capture, executor, read_ref, claim_id) = world_with(
+        &state,
+        "Beispiel GmbH reported revenue of EUR 80 Mio. and operating profit of EUR 10 Mio. for the half year.",
+    )
+    .await;
+    let threshold = executor
+        .stage_lens_file(
+            &policy(true, true),
+            figure_page(
+                &read_ref,
+                &claim_id,
+                "Recheck if half-year revenue falls below EUR 8 Mio.",
+                Some("check"),
+            ),
+            "check",
+        )
+        .await
+        .unwrap();
+    assert!(threshold.get("number_checks").is_none(), "{threshold}");
+    capture.commit_delivery("check").await;
+    let margin = executor
+        .stage_lens_file(
+            &policy(true, true),
+            figure_page(
+                &read_ref,
+                &claim_id,
+                "Revenue was EUR 80 Mio. at an operating margin of 12.5%.",
+                None,
+            ),
+            "margin",
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        margin["number_checks"],
+        json!([{"field": "pages[0].ops[0].markdown", "text": "12.5%", "status": "not_found"}]),
+        "{margin}"
+    );
+    capture.commit_delivery("margin").await;
+    let changes = commit_turn(&state, &capture, "assistant-1").await;
+    let filed = changes
+        .iter()
+        .filter(|change| change.kind == "Lens")
+        .collect::<Vec<_>>();
+    assert!(!filed.is_empty());
+    assert!(filed
+        .iter()
+        .flat_map(|change| &change.outcomes)
+        .any(|outcome| outcome.key.as_deref() == Some("results")
+            && matches!(outcome.outcome.as_str(), "added" | "replaced")));
 }

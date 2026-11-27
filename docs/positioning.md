@@ -29,6 +29,9 @@ Lead with the user's question, result or next action. Use concrete words and sho
 failures with a recovery action. Distinguish retained evidence, processing status,
 a proposed change and a committed save. Do not call a retrieval hit, record count
 or saved method proof of better analysis; evaluation must test subsequent work.
+Keep incidental product explanations in the relevant guide. Put short notices at
+the action that can incur charges, reach a plan limit, send data off the Mac, or
+make a permanent change. Preserve required disclosures.
 
 Korean copy is formal (…습니다, …하십시오, never 해요체); the rules are in
 [Interface localization](../apps/loupist/src/i18n/README.md#interface-localization).

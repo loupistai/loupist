@@ -1010,9 +1010,17 @@ fn search_with_options(
         )?;
         ranked.prune_cache(&current);
         let mut world_claims = std::collections::BTreeMap::new();
+        let mut world_ends = std::collections::BTreeMap::new();
         for (revision_id, payload) in world_payloads {
             let body: crate::knowledge::WorldSnapshotBody = serde_json::from_str(&payload)
                 .map_err(|error| CommandError::internal(error.to_string()))?;
+            let mut ends = std::collections::BTreeMap::new();
+            for claim in &body.claims {
+                if let Some(mark) = crate::knowledge::world_changes::ended_mark(claim) {
+                    ends.insert(claim.id.clone(), mark);
+                }
+            }
+            world_ends.insert(revision_id.clone(), ends);
             world_claims.insert(
                 revision_id,
                 body.claims
@@ -1035,6 +1043,13 @@ fn search_with_options(
                 "matched_terms": document.matched_terms,
                 "retrieval": document.retrieval,
             });
+            if let Some(mark) = world_ends
+                .get(&document.revision_id)
+                .and_then(|ends| ends.get(&document.object_id))
+            {
+                hit["ended"] = serde_json::json!(true);
+                hit["end"] = mark["end"].clone();
+            }
             // A Source still in the World queue: its relationships are not on
             // the Map yet, so an empty World result says nothing about them.
             if document.kind == "source" && awaiting_world.contains(&document.record_id) {
@@ -1447,11 +1462,36 @@ impl SpanAuthorship {
 
 /// Resolve the evidence behind a delivered World view or lexical claim hit.
 /// The canonical revision, not extraction text or a Source URL, owns this binding.
+/// The evidence a delivered edge shows: its claim's (`claim.evidence`) or a
+/// graph view's own (`evidence`). `None` when the edge carries neither.
+fn delivered_edge_spans(edge: &serde_json::Value) -> Option<Vec<String>> {
+    let evidence = edge
+        .pointer("/claim/evidence")
+        .or_else(|| edge.get("evidence"))
+        .and_then(serde_json::Value::as_array)?;
+    Some(
+        evidence
+            .iter()
+            .filter_map(|binding| {
+                binding
+                    .get("spanId")
+                    .or_else(|| binding.get("span_id"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+            })
+            .collect(),
+    )
+}
+
+/// The Sources whose text a World result shows, for its label. A delivered
+/// view names its own (projected) evidence; a bare claim hit uses the claim
+/// as the cutoff projects it. A Source the view does not show never labels it.
 pub(in crate::commands) fn returning_world_sources(
     state: &AppState,
     loupist_id: &str,
     result: &serde_json::Value,
     view: Option<&serde_json::Value>,
+    cutoff: Option<as_of::Cutoff>,
 ) -> Result<(Vec<crate::knowledge::WorldSourceTarget>, bool), CommandError> {
     with_loupist_knowledge(state, loupist_id, |tx, blobs| {
         let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
@@ -1465,35 +1505,53 @@ pub(in crate::commands) fn returning_world_sources(
         if revision.record_id != record_id {
             return Err(KnowledgeError::Unauthorized("World revision mismatch"));
         }
-        let body: crate::knowledge::WorldSnapshotBody = serde_json::from_value(revision.payload)?;
+        let mut body: crate::knowledge::WorldSnapshotBody =
+            serde_json::from_value(revision.payload)?;
+        if let Some(cutoff) = cutoff {
+            let projected = as_of::world_claims_as_of(&write, loupist_id, revision_id, cutoff)?;
+            body.claims = projected.into_values().collect();
+        }
         let view = view.map(|value| value.get("view").unwrap_or(value));
         let edges = view
             .and_then(|value| value.get("edges"))
             .and_then(serde_json::Value::as_array);
         let object_id = result.get("objectId").and_then(serde_json::Value::as_str);
-        let spans = body
-            .claims
-            .iter()
-            .filter(|claim| match edges {
-                Some(edges) => edges.iter().any(|edge| {
-                    edge.pointer("/claim/id")
-                        // Indexed graph retrieval uses the canonical claim id
-                        // as adapter_id rather than the native view's claim.id.
-                        .or_else(|| edge.get("adapter_id"))
-                        .and_then(serde_json::Value::as_str)
-                        == Some(claim.id.as_str())
-                }),
-                None => object_id.is_none_or(|id| id == claim.id),
-            })
-            .flat_map(|claim| {
-                claim
-                    .evidence
+        let edge_claim = |edge: &serde_json::Value| {
+            edge.pointer("/claim/id")
+                // Indexed graph retrieval uses the canonical claim id
+                // as adapter_id rather than the native view's claim.id.
+                .or_else(|| edge.get("adapter_id"))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        };
+        let mut spans = std::collections::BTreeSet::new();
+        match edges {
+            Some(edges) => {
+                for edge in edges {
+                    match delivered_edge_spans(edge) {
+                        Some(shown) => spans.extend(shown),
+                        None => {
+                            let id = edge_claim(edge);
+                            spans.extend(
+                                body.claims
+                                    .iter()
+                                    .filter(|claim| id.as_deref() == Some(claim.id.as_str()))
+                                    .flat_map(|claim| claim.evidence.iter())
+                                    .map(|evidence| evidence.span_id.clone()),
+                            );
+                        }
+                    }
+                }
+            }
+            None => spans.extend(
+                body.claims
                     .iter()
-                    .map(|evidence| evidence.span_id.clone())
-            })
-            .collect::<std::collections::BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
+                    .filter(|claim| object_id.is_none_or(|id| id == claim.id))
+                    .flat_map(|claim| claim.evidence.iter())
+                    .map(|evidence| evidence.span_id.clone()),
+            ),
+        }
+        let spans = spans.into_iter().collect::<Vec<_>>();
         let mut targets = Vec::new();
         for chunk in spans.chunks(256) {
             targets.extend(
@@ -1752,7 +1810,7 @@ pub(in crate::commands) fn capture_world_read(
         binding_roles,
         statuses,
         publication_times: Vec::new(),
-        published_by: request.as_of.map(|cutoff| cutoff.to_string()),
+        as_of: request.as_of.map(|cutoff| cutoff.to_string()),
         cursor: None,
         node_limit: request.node_limit,
         edge_limit: request.edge_limit,
@@ -1829,13 +1887,34 @@ pub(in crate::commands) fn capture_lens_read(
             "lens use status is invalid",
         ));
     }
-    let mut page = write.read_page(loupist_id, &request.record_id)?;
+    let mut page = if let Some(cutoff) = request.as_of.map(super::as_of::Cutoff) {
+        // After a reading the cutoff does not know, section states come from
+        // the replay, as the feed's Lens rows do.
+        let tx = write.transaction();
+        let replayed = match crate::knowledge::world_changes::world_head_revision(tx, loupist_id)? {
+            Some(revision_id) => {
+                super::as_of::episodes_as_of(write, tx, loupist_id, &revision_id, cutoff)?
+                    .1
+                    .lens
+            }
+            None => None,
+        };
+        write.read_lens_page_as_of(
+            loupist_id,
+            &request.record_id,
+            cutoff.end_ms(),
+            replayed.as_ref(),
+        )?
+    } else {
+        write.read_page(loupist_id, &request.record_id)?
+    };
     if page.revision_id != revision.revision_id {
         // Only the head is readable: history lives in the log, not in revisions.
         return Err(crate::knowledge::KnowledgeError::NotFound);
     }
     if let Some(cutoff) = request.as_of.map(super::as_of::Cutoff) {
-        // The page itself passed `as_of::lens_visible`; what surrounds it keeps to the cutoff too.
+        // The page existed by then (`as_of::lens_created_by`) and reads as it
+        // stood; what surrounds it keeps to the cutoff too.
         page.history
             .retain(|entry| cutoff.recorded(entry.created_at_ms));
         let mut backlinks = Vec::with_capacity(page.backlinks.len());

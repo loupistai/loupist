@@ -2,6 +2,55 @@ use super::*;
 use serde_json::json;
 
 #[test]
+fn chat_measures_input_and_output_without_cache_counters() {
+    let mut chat = ChatModelUsage::default();
+    chat.turn.observe_message_end(&json!({"message":{
+        "role":"assistant","usage":{"input":500,"output":120}
+    }}));
+    let mut log = crate::runs::log::RunLog::new("chat", "test", "run", 0);
+    chat.apply(&mut log);
+    assert!(!log.tokens_partial);
+    let totals = log.usage.unwrap();
+    assert_eq!(
+        (totals.input, totals.cached_input, totals.output),
+        (500, 0, 120)
+    );
+
+    chat.turn.observe(&json!({"input":30,"output":null}));
+    assert!(chat.turn.tokens_partial);
+    assert_eq!(chat.turn.token_totals().unwrap().input, 530);
+}
+
+#[test]
+fn chat_marks_per_request_and_aggregate_overflow_partial() {
+    for (first, second) in [
+        (
+            json!({"input":1,"output":1}),
+            json!({"input":u64::MAX,"cacheWrite":1,"output":1}),
+        ),
+        (
+            json!({"input":1,"output":1}),
+            json!({"input":u64::MAX,"output":1}),
+        ),
+        (
+            json!({"input":1,"output":1}),
+            json!({"input":1,"output":u64::MAX}),
+        ),
+    ] {
+        let mut usage = AssistantTokenUsage::default();
+        usage.observe(&first);
+        usage.observe(&second);
+        assert!(usage.tokens_partial);
+        assert_eq!(usage.model_requests(), Some(2));
+        let totals = usage.token_totals().unwrap();
+        assert_eq!(
+            (totals.input, totals.cached_input, totals.output),
+            (1, 0, 1)
+        );
+    }
+}
+
+#[test]
 fn assistant_attempts_and_measured_compaction_share_the_turn_counter() {
     let mut usage = AssistantTokenUsage {
         credential_kind: Some(CredentialKind::ApiKey),
@@ -81,7 +130,7 @@ fn auto_retry_counts_requests_on_each_account_and_only_one_turn() {
     sink.observe_assistant_usage(|usage| {
         usage.observe_message_end(
             &json!({"message":{"role":"assistant","stopReason":"error","usage":{
-                "input": 5, "cacheRead": 0, "cacheWrite": 0, "output": 0, "cost": {"total":1}
+                "input": 5, "output": 0, "cost": {"total":1}
             }}}),
         );
     });
@@ -127,6 +176,8 @@ fn auto_retry_counts_requests_on_each_account_and_only_one_turn() {
     };
     assert_eq!(plan.provider, "openai-codex");
     assert_eq!((plan.totals.requests, plan.totals.input_tokens), (1, 5));
+    assert_eq!(plan.totals.unknown_runs, 0);
+    assert_eq!(summary.totals.unknown_runs, 0);
     assert!(plan.totals.cost_estimate.is_none());
     assert_eq!(key.provider, "openrouter");
     assert_eq!((key.totals.requests, key.totals.input_tokens), (1, 9));

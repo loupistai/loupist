@@ -5,7 +5,7 @@
   "description": "Fictional product regression and private-context capability scenarios; deterministic checks precede independent binary rubrics.",
   "budget": {
     "maxInputTokensPerTurn": 500000,
-    "maxTurns": 50
+    "maxTurns": 54
   },
   "scenarios": [
     {
@@ -736,6 +736,230 @@
         ]
       },
       "language": "en"
+    },
+    {
+      "id": "U-R08",
+      "title": "One Bot reply-style preference reaches a fresh research session",
+      "split": "regression",
+      "tags": [
+        "en"
+      ],
+      "language": "en",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Remember this as my standing reply style. Begin every research answer with the exact words Briefing card, then give the answer.",
+              "expect": {
+                "trace": [
+                  {
+                    "tool": "bot_memory",
+                    "successful": true,
+                    "assert": "tool_called",
+                    "metric": "save_recall"
+                  }
+                ],
+                "memory": [
+                  {
+                    "kind": "principle",
+                    "assert": "not_committed",
+                    "metric": "boundary"
+                  },
+                  {
+                    "kind": "principle",
+                    "title_matches": ".",
+                    "count": 0,
+                    "assert": "lens_pages",
+                    "metric": "boundary"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "one-style-entry",
+                    "criterion": "On the completed Bot turn there is exactly one successful bot_memory remember change, of kind preference, that retains the requested Briefing card opening. Its returned kept count is one. No second remember change or principle carries that style.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Give me a brief explanation of why an unusually high cash conversion ratio might be misleading.",
+              "expect": {
+                "memory": [
+                  {
+                    "kind": "principle",
+                    "assert": "not_committed",
+                    "metric": "boundary"
+                  },
+                  {
+                    "kind": "principle",
+                    "title_matches": ".",
+                    "count": 0,
+                    "assert": "lens_pages",
+                    "metric": "boundary"
+                  }
+                ],
+                "answer": [
+                  {
+                    "patterns": [
+                      "^\\s*Briefing card\\b"
+                    ],
+                    "assert": "answer_matching",
+                    "metric": "carry_forward"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "apply-style",
+                    "criterion": "The fresh research session starts with Briefing card and answers the cash conversion question. The style was requested only in the earlier Bot Thread and the research answer makes no claim that a principle supplied it.",
+                    "metric": "carry_forward"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "U-R09",
+      "title": "A forgotten Bot reply-style preference stops reaching research",
+      "split": "regression",
+      "tags": [
+        "en"
+      ],
+      "language": "en",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Remember this as my standing reply style. Begin every research answer with the exact words Briefing card, then give the answer.",
+              "expect": {
+                "trace": [
+                  {
+                    "tool": "bot_memory",
+                    "successful": true,
+                    "assert": "tool_called",
+                    "metric": "save_recall"
+                  }
+                ],
+                "memory": [
+                  {
+                    "kind": "principle",
+                    "assert": "not_committed",
+                    "metric": "boundary"
+                  },
+                  {
+                    "kind": "principle",
+                    "title_matches": ".",
+                    "count": 0,
+                    "assert": "lens_pages",
+                    "metric": "boundary"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "one-style-entry",
+                    "criterion": "On the completed Bot turn there is exactly one successful bot_memory remember change, of kind preference, that retains the requested Briefing card opening. Its returned kept count is one. No second remember change or principle carries that style.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "Forget my standing reply preference about starting with Briefing card.",
+              "expect": {
+                "trace": [
+                  {
+                    "tool": "bot_memory",
+                    "successful": true,
+                    "assert": "tool_called",
+                    "metric": "boundary"
+                  }
+                ],
+                "memory": [
+                  {
+                    "kind": "principle",
+                    "assert": "not_committed",
+                    "metric": "boundary"
+                  },
+                  {
+                    "kind": "principle",
+                    "title_matches": ".",
+                    "count": 0,
+                    "assert": "lens_pages",
+                    "metric": "boundary"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "forget-style",
+                    "criterion": "On the completed Bot turn a successful bot_memory forget action removes one entry for the Briefing card preference. Confirm the forgotten count is one, the kept count is zero and there is no remaining Lens principle for the style.",
+                    "metric": "boundary"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Give me a brief explanation of why an unusually high cash conversion ratio might be misleading.",
+              "expect": {
+                "memory": [
+                  {
+                    "kind": "principle",
+                    "assert": "not_committed",
+                    "metric": "boundary"
+                  },
+                  {
+                    "kind": "principle",
+                    "title_matches": ".",
+                    "count": 0,
+                    "assert": "lens_pages",
+                    "metric": "boundary"
+                  }
+                ],
+                "answer": [
+                  {
+                    "patterns": [
+                      "\\bBriefing\\s+card\\b"
+                    ],
+                    "assert": "answer_not_matching",
+                    "metric": "boundary"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "after-forget",
+                    "criterion": "The fresh research session answers the cash conversion question without the Briefing card opening or a claim that the forgotten style is still active.",
+                    "metric": "boundary"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }

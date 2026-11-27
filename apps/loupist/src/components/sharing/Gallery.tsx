@@ -7,7 +7,7 @@ import type { GalleryEntry, GalleryIndex, PackAssetClass, PackOpenResult } from 
 import { commandErrorCode, errorMessage } from "../../lib/errors";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { NativeSelect } from "../ui/native-select";
+import { SelectField, SelectItem } from "../ui/select";
 import { Spinner } from "../ui/spinner";
 import { licenseName } from "./sharingText";
 import "@/styles/sharing.css";
@@ -113,22 +113,22 @@ export function Gallery({ bridge, onBack, onOpened, onUseLinkOrFile }: {
         <div className="gallery-search"><Input type="search" aria-label={t("search")} placeholder={t("search")} value={query} onChange={event => setQuery(event.target.value)} />
           {query ? <Button variant="ghost" size="icon-sm" aria-label={t("clearSearch")} onClick={() => setQuery("")}><XIcon /></Button> : null}</div>
         <label className="gallery-filter"><span>{t("language")}</span>
-          <NativeSelect value={filters.language} onChange={event => update({ language: event.target.value })}>
-            <option value="all">{t("all")}</option>
-            {languages.map(code => <option key={code} value={code}>{languageName(code)}</option>)}
-          </NativeSelect>
+          <SelectField value={filters.language} onValueChange={value => update({ language: value })}>
+            <SelectItem value="all">{t("all")}</SelectItem>
+            {languages.map(code => <SelectItem key={code} value={code}>{languageName(code)}</SelectItem>)}
+          </SelectField>
         </label>
         <label className="gallery-filter"><span>{t("covers")}</span>
-          <NativeSelect value={filters.covers} onChange={event => update({ covers: event.target.value })}>
-            <option value="all">{t("all")}</option>
-            {CLASSES.map(value => <option key={value} value={value}>{t(`class.${value}`)}</option>)}
-          </NativeSelect>
+          <SelectField value={filters.covers} onValueChange={value => update({ covers: value })}>
+            <SelectItem value="all">{t("all")}</SelectItem>
+            {CLASSES.map(value => <SelectItem key={value} value={value}>{t(`class.${value}`)}</SelectItem>)}
+          </SelectField>
         </label>
         <label className="gallery-filter"><span>{t("sort")}</span>
-          <NativeSelect value={filters.sort} onChange={event => update({ sort: event.target.value === "recent" ? "recent" : "popular" })}>
-            <option value="popular">{t("sortPopular")}</option>
-            <option value="recent">{t("sortRecent")}</option>
-          </NativeSelect>
+          <SelectField value={filters.sort} onValueChange={value => update({ sort: value === "recent" ? "recent" : "popular" })}>
+            <SelectItem value="popular">{t("sortPopular")}</SelectItem>
+            <SelectItem value="recent">{t("sortRecent")}</SelectItem>
+          </SelectField>
         </label>
       </div>
       {!index ? <div className="gallery-grid" role="status" aria-label={t("galleryLoading")}>

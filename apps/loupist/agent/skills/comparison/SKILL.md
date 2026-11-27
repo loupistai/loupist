@@ -10,7 +10,11 @@ generation, or market valuation. Select metrics and peers for that question.
 Read [peer analysis](references/peer-analysis.md) when building a comparable
 company table, applying peer multiples, or reconciling inconsistent metrics.
 
-Fix the universe and common measurement basis before ranking. Explain
+Fix the universe and common measurement basis before ranking. Fiscal years
+end in different months, so compare like periods (the same calendar quarter,
+or trailing twelve months) and name each figure's period; convert currencies
+at a stated, dated rate, or compare ratios that need no conversion. A figure a
+source does not give is missing and is shown as missing, never as zero. Explain
 exclusions and material differences in business mix, geography, scale, and
 capital structure. Keep unmatched observations visible rather than silently
 dropping an inconvenient company.

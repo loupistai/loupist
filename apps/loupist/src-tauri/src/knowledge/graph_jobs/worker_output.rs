@@ -10,7 +10,9 @@ use serde_json::{json, Value};
 use super::clip;
 use crate::knowledge::error::{KnowledgeError, KnowledgeResult};
 use crate::knowledge::lens::fold_lens_title;
-use crate::knowledge::model::{GraphClaim, GraphNode, TopicAnnotation};
+use crate::knowledge::model::{
+    is_temporal_qualifier, GraphClaim, GraphNode, Qualifier, TopicAnnotation, WorldTemporal,
+};
 use crate::knowledge::worker::{adapt_worker_claim, adapt_worker_node};
 
 type WorkerProjection = (Vec<GraphNode>, Vec<GraphClaim>, Vec<TopicAnnotation>);
@@ -177,11 +179,30 @@ fn relates_one_entity(claim: &GraphClaim, nodes: &HashMap<&str, &GraphNode>) -> 
 }
 
 /// The worker's snapshot as bounded nodes, claims and topic annotations.
+#[cfg(test)]
 pub(super) fn project_worker_artifact(
     artifact_utf8: &str,
     previous_nodes: &[GraphNode],
 ) -> KnowledgeResult<WorkerProjection> {
+    let (rows, _) = project_artifact(artifact_utf8, previous_nodes, false)?;
+    Ok(rows)
+}
+
+pub(super) fn project_artifact(
+    artifact_utf8: &str,
+    previous_nodes: &[GraphNode],
+    host: bool,
+) -> KnowledgeResult<(WorkerProjection, Option<WorldTemporal>)> {
     let snapshot: Value = serde_json::from_str(artifact_utf8)?;
+    let temporal = if host {
+        snapshot
+            .get("temporal")
+            .cloned()
+            .map(serde_json::from_value)
+            .transpose()?
+    } else {
+        None
+    };
     let previous_ids: HashSet<_> = previous_nodes.iter().map(|node| node.id.as_str()).collect();
     let mut nodes = Vec::new();
     let mut non_entities = HashSet::new();
@@ -231,9 +252,27 @@ pub(super) fn project_worker_artifact(
         .ok_or(KnowledgeError::Invalid("snapshot claims are invalid"))?
     {
         let mut claim = claim.clone();
+        let mut temporal_qualifiers = Vec::new();
+        if let Some(items) = claim.get_mut("qualifiers").and_then(Value::as_array_mut) {
+            items.retain(|item| {
+                if !item["key"].as_str().is_some_and(is_temporal_qualifier) {
+                    return true;
+                }
+                if host {
+                    if let Ok(qualifier) = serde_json::from_value::<Qualifier>(item.clone()) {
+                        temporal_qualifiers.push(qualifier);
+                    }
+                }
+                false
+            });
+        }
         sanitize_worker_claim(&mut claim);
         match adapt_worker_claim(&claim) {
             Ok(mut adapted) => {
+                adapted
+                    .qualifiers
+                    .truncate(QUALIFIER_CAP.saturating_sub(temporal_qualifiers.len()));
+                adapted.qualifiers.extend(temporal_qualifiers);
                 // An old-style response may put a reported value behind a new
                 // value node. Keep that REPORTS claim on its admitted subject.
                 // Other relationships are not reinterpreted.
@@ -294,7 +333,7 @@ pub(super) fn project_worker_artifact(
             });
         }
     }
-    Ok((nodes, claims, annotations))
+    Ok(((nodes, claims, annotations), temporal))
 }
 
 #[cfg(test)]

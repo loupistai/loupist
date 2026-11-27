@@ -702,6 +702,7 @@ fn retain_staged_sources(
                 material,
             },
             origin_message_id,
+            source.admitted,
             source.provided.as_ref(),
         )?;
         retained.push((save_ref.to_owned(), saved));

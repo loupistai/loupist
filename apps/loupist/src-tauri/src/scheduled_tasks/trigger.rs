@@ -7,13 +7,14 @@ use serde_json::{Map, Value};
 use super::{
     schedule::next_run_after,
     types::{
-        invalid, ReplayBoundary, ReplayBoundaryKind, ReplayFreshness, RunTrigger, Schedule, Task,
-        TaskTrigger, TriggerActiveHours, TriggerApproval, TriggerCounters, TriggerDayCount,
-        TriggerDryDay, TriggerDryRun, TriggerEvaluation, TriggerOutcome, TriggerPhase,
-        TriggerScoreDay, TriggerScores, TriggerScriptRef, TriggerToolGrant, MAX_STORED_EVALUATIONS,
-        MAX_TRIGGERED_RUNS_PER_LOUPIST_DAY, MAX_TRIGGER_AGENT_RUNS_PER_DAY, MAX_TRIGGER_ARGS_BYTES,
-        MAX_TRIGGER_EVIDENCE_BYTES, MAX_TRIGGER_READING_CHARS, MAX_TRIGGER_READS_PER_DAY,
-        MAX_TRIGGER_STATE_BYTES, TRIGGER_FAILURE_STREAK,
+        invalid, validate_when_met_summary, ReplayBoundary, ReplayBoundaryKind, ReplayFreshness,
+        RunTrigger, Schedule, Task, TaskTrigger, TriggerActiveHours, TriggerApproval,
+        TriggerCounters, TriggerDayCount, TriggerDryDay, TriggerDryRun, TriggerEvaluation,
+        TriggerOutcome, TriggerPhase, TriggerScoreDay, TriggerScores, TriggerScriptRef,
+        TriggerToolGrant, MAX_STORED_EVALUATIONS, MAX_TRIGGERED_RUNS_PER_LOUPIST_DAY,
+        MAX_TRIGGER_AGENT_RUNS_PER_DAY, MAX_TRIGGER_ARGS_BYTES, MAX_TRIGGER_EVIDENCE_BYTES,
+        MAX_TRIGGER_READING_CHARS, MAX_TRIGGER_READS_PER_DAY, MAX_TRIGGER_STATE_BYTES,
+        TRIGGER_FAILURE_STREAK,
     },
 };
 use crate::store::StoreResult;
@@ -26,6 +27,7 @@ pub(crate) struct CheckOutput {
     pub outcome: TriggerOutcome,
     pub reading: String,
     pub as_of: Option<String>,
+    pub per_item_dates: bool,
     pub evidence: Value,
     pub state: Value,
     pub error: Option<String>,
@@ -120,6 +122,7 @@ pub(crate) fn set_price_subject_args(
         match subject {
             super::types::TaskSubject::Asset { asset } => ids.push(asset),
             super::types::TaskSubject::Name { name } => names.push(name),
+            super::types::TaskSubject::World { .. } | super::types::TaskSubject::Lens { .. } => {}
         }
     }
     if !ids.is_empty() {
@@ -169,6 +172,7 @@ impl TaskTrigger {
     pub(crate) fn configuration(&self) -> super::types::TriggerConfiguration {
         super::types::TriggerConfiguration {
             summary: Some(self.summary.clone()),
+            when_met_summary: self.when_met_summary.clone(),
             args: self.args.clone(),
             tools: self.tools.clone(),
             reads_per_check: self.reads_per_check,
@@ -181,6 +185,7 @@ impl TaskTrigger {
         if let Some(summary) = change.summary {
             self.summary = summary;
         }
+        self.when_met_summary = change.when_met_summary;
         self.args = change.args;
         self.tools = change.tools;
         self.reads_per_check = change.reads_per_check;
@@ -211,6 +216,9 @@ impl TaskTrigger {
             return Err(invalid("a check names one saved script version"));
         }
         validate_summary(&self.summary)?;
+        if let Some(line) = &self.when_met_summary {
+            validate_when_met_summary(line)?;
+        }
         if serde_json::to_vec(&self.args)
             .map_err(|_| invalid("check arguments are not valid JSON"))?
             .len()
@@ -267,6 +275,10 @@ impl TaskTrigger {
                 if configuration.summary.is_none() {
                     current.summary = None;
                 }
+                // A snapshot saved before when_met_summary does not pin the line.
+                if configuration.when_met_summary.is_none() {
+                    current.when_met_summary = None;
+                }
                 current
                     .price_subjects
                     .clone_from(&configuration.price_subjects);
@@ -281,12 +293,13 @@ impl TaskTrigger {
             if pending.version == 0 || pending.sha256.len() != 64 {
                 return Err(invalid("a pending check version is invalid"));
             }
-            if let Some(summary) = pending
-                .configuration
-                .as_ref()
-                .and_then(|plan| plan.summary.as_deref())
-            {
-                validate_summary(summary)?;
+            if let Some(plan) = pending.configuration.as_ref() {
+                if let Some(summary) = plan.summary.as_deref() {
+                    validate_summary(summary)?;
+                }
+                if let Some(line) = plan.when_met_summary.as_deref() {
+                    validate_when_met_summary(line)?;
+                }
             }
         }
         Ok(())
@@ -554,7 +567,8 @@ pub(crate) fn apply_output(
             "it tried to read {tool}, which you did not approve"
         ));
     }
-    if matches!(outcome, TriggerOutcome::Met | TriggerOutcome::NotMet)
+    if outcome.updates_state()
+        && !output.per_item_dates
         && stale_or_advance(
             &mut trigger.counters.as_of_value,
             &mut trigger.counters.as_of_since_ms,
@@ -682,6 +696,26 @@ fn data_timestamp(value: &str) -> Option<DateTime<Utc>> {
     }
 }
 
+pub(crate) const DEFAULT_STALE_AFTER_DAYS: u32 = 5;
+
+pub(crate) fn outside_data_age(
+    as_of: Option<&str>,
+    now: DateTime<chrono::FixedOffset>,
+    stale_after_days: u32,
+) -> bool {
+    let Some(value) = as_of else { return true };
+    if value.len() == 10 {
+        return value.parse::<NaiveDate>().map_or(true, |date| {
+            let age = (now.date_naive() - date).num_days();
+            !(0..=i64::from(stale_after_days)).contains(&age)
+        });
+    }
+    data_timestamp(value).is_none_or(|timestamp| {
+        timestamp > now
+            || (now.to_utc() - timestamp) > chrono::Duration::days(stale_after_days.into())
+    })
+}
+
 pub(crate) fn stale_or_advance(
     latest: &mut Option<String>,
     unchanged_since_ms: &mut Option<i64>,
@@ -689,6 +723,11 @@ pub(crate) fn stale_or_advance(
     as_of: Option<&str>,
     now_ms: i64,
 ) -> bool {
+    if crate::local_time::at_ms(now_ms)
+        .is_none_or(|now| outside_data_age(as_of, now, stale_after_days))
+    {
+        return true;
+    }
     let Some((as_of, timestamp)) = as_of.and_then(|value| Some((value, data_timestamp(value)?)))
     else {
         return true;
@@ -866,6 +905,7 @@ pub(crate) fn output_from_worker(result: &Value, ledger: Vec<Value>, reads: u32)
                 outcome: TriggerOutcome::RateLimited,
                 reading: String::new(),
                 as_of: None,
+                per_item_dates: false,
                 evidence: Value::Null,
                 state: Value::Object(Map::new()),
                 error: Some(line),
@@ -878,16 +918,21 @@ pub(crate) fn output_from_worker(result: &Value, ledger: Vec<Value>, reads: u32)
         }
         if kind == "unavailable" {
             return CheckOutput {
-                outcome: TriggerOutcome::NoData,
+                outcome: if code == "stale" {
+                    TriggerOutcome::Stale
+                } else {
+                    TriggerOutcome::NoData
+                },
                 reading: String::new(),
                 as_of: None,
+                per_item_dates: false,
                 evidence: json_tool(code),
                 state: Value::Object(Map::new()),
                 error: Some(line),
                 reads,
                 tools: Vec::new(),
                 ledger,
-                retry_after_seconds: None,
+                retry_after_seconds: retry_hint,
                 refused_tool: None,
             };
         }
@@ -939,6 +984,7 @@ pub(crate) fn output_from_worker(result: &Value, ledger: Vec<Value>, reads: u32)
         outcome,
         reading: reading.to_owned(),
         as_of: Some(as_of.to_owned()),
+        per_item_dates: false,
         evidence,
         state,
         error: None,
@@ -959,6 +1005,7 @@ pub(crate) fn errored(line: &str, ledger: Vec<Value>, reads: u32) -> CheckOutput
         outcome: TriggerOutcome::Error,
         reading: String::new(),
         as_of: None,
+        per_item_dates: false,
         evidence: Value::Null,
         state: Value::Object(Map::new()),
         error: Some(line.to_owned()),
@@ -1106,6 +1153,7 @@ mod tests {
                 sha256: "ab".repeat(32),
             },
             summary: "Prices outside a 5 percent band".into(),
+            when_met_summary: None,
             tools: vec![TriggerToolGrant {
                 name: "price".into(),
                 provider: Some("saved".into()),
@@ -1133,17 +1181,49 @@ mod tests {
                 configuration: None,
                 test: None,
             }],
-            stale_after_days: 5,
+            stale_after_days: crate::scheduled_tasks::trigger::DEFAULT_STALE_AFTER_DAYS,
             reads_per_check: 1,
             proposal_test: None,
         }
+    }
+
+    #[test]
+    fn when_met_summary_uses_the_terms_line_rule_and_old_triggers_still_load() {
+        let long = "a".repeat(160);
+        let longer = "a".repeat(161);
+        let cases = [
+            ("", false),
+            ("   ", false),
+            ("Tell me the move.", true),
+            ("line\nbreak", false),
+            ("bell\u{0007}here", false),
+            (long.as_str(), true),
+            (longer.as_str(), false),
+        ];
+        for (value, ok) in cases {
+            assert_eq!(validate_when_met_summary(value).is_ok(), ok, "{value:?}");
+        }
+        let mut saved = trigger();
+        saved.when_met_summary = Some("Tell me the move.".into());
+        let mut check = trigger();
+        check.validate().unwrap();
+        check.when_met_summary = Some(longer);
+        assert!(check.validate().is_err());
+        let encoded = serde_json::to_value(trigger()).unwrap();
+        assert!(encoded.get("when_met_summary").is_none());
+        let loaded: TaskTrigger = serde_json::from_value(encoded).unwrap();
+        assert_eq!(loaded.when_met_summary, None);
+        let round: TaskTrigger =
+            serde_json::from_value(serde_json::to_value(&saved).unwrap()).unwrap();
+        assert_eq!(round.when_met_summary.as_deref(), Some("Tell me the move."));
     }
 
     fn met(reading: &str) -> CheckOutput {
         CheckOutput {
             outcome: TriggerOutcome::Met,
             reading: reading.into(),
-            as_of: Some("2026-11-24".into()),
+            as_of: Some("1970-01-01T00:00:00Z".into()),
+            per_item_dates: false,
             evidence: json!({"moved": 1}),
             state: json!({"a": "2026-11-24"}),
             error: None,
@@ -1243,7 +1323,7 @@ mod tests {
     fn numeric_met_verdicts_need_a_successful_read_with_a_named_source() {
         let mut check = trigger();
         let result = json!({"status": "completed", "check_verdict": {
-            "met": true, "reading": "Moved 7%", "as_of": "2026-11-24", "state": {"sent":true}
+            "met": true, "reading": "Moved 7%", "as_of": "1970-01-01T00:00:00Z", "state": {"sent":true}
         }});
         for ledger in [
             vec![],
@@ -1349,11 +1429,14 @@ mod tests {
         apply_output(&mut check, 2, 2, limited, 0);
         assert_eq!(check.counters.backoff_ms, 30_000);
         assert_eq!(check.counters.no_data_streak, 0);
+        let first = DateTime::parse_from_rfc3339("2026-11-19T15:00:00Z")
+            .unwrap()
+            .timestamp_millis();
         check.counters.as_of_value = Some("2026-11-19".into());
-        check.counters.as_of_since_ms = Some(0);
+        check.counters.as_of_since_ms = Some(first);
         let mut old = met("still");
         old.as_of = Some("2026-11-19".into());
-        let later = 6 * 24 * 60 * 60 * 1000;
+        let later = first + 6 * 24 * 60 * 60 * 1000;
         let effect = apply_output(&mut check, later, later, old, 0);
         assert_eq!(check.last.as_ref().unwrap().outcome, TriggerOutcome::Stale);
         assert!(!effect.start_run && !effect.post_card);
@@ -1382,22 +1465,52 @@ mod tests {
     #[test]
     fn a_regressing_or_invalid_timestamp_cannot_alert_or_reset_freshness() {
         let mut check = trigger();
-        apply_output(&mut check, 1, 1, met("newest"), 0);
+        let at = DateTime::parse_from_rfc3339("2026-11-24T15:00:00Z")
+            .unwrap()
+            .timestamp_millis();
+        let mut first = met("newest");
+        first.as_of = Some("2026-11-24".into());
+        assert!(apply_output(&mut check, at, at, first, 0).start_run);
         let prior_state = check.script_state.clone();
-        let later = 6 * 24 * 60 * 60 * 1000;
-        for as_of in ["2026-11-23", "2026-11-31", "2026-11-24T09:00:00+09:00"] {
+        let later = at + 86_400_000;
+        for as_of in ["2026-11-23", "2026-11-31", "2026-11-24T08:59:59+09:00"] {
             let mut older = met("old");
             older.as_of = Some(as_of.to_owned());
             older.state = json!({"old": true});
             let effect = apply_output(&mut check, later, later, older, 0);
             assert!(!effect.post_card && !effect.start_run);
-            assert_eq!(check.counters.as_of_since_ms, Some(1));
+            assert_eq!(check.counters.as_of_since_ms, Some(at));
             assert_eq!(check.script_state, prior_state);
         }
         let mut newer = met("fresh");
         newer.as_of = Some("2026-11-25".into());
         assert!(apply_output(&mut check, later, later, newer, 0).start_run);
         assert_eq!(check.counters.as_of_since_ms, Some(later));
+    }
+
+    #[test]
+    fn first_seen_dates_and_timestamps_must_be_within_the_allowed_age() {
+        let now = DateTime::parse_from_rfc3339("2026-12-02T08:00:00+09:00").unwrap();
+        let at = now.timestamp_millis();
+        let local_day = crate::local_time::at(now.to_utc()).date_naive();
+        for offset in -40..=4 {
+            let date = local_day + chrono::Duration::days(offset);
+            let mut check = trigger();
+            let mut output = met("Crossed");
+            output.as_of = Some(date.to_string());
+            let effect = apply_output(&mut check, at, at, output, 0);
+            let eligible = (-5..=0).contains(&offset);
+            assert_eq!((effect.post_card, effect.start_run), (eligible, eligible));
+            assert_eq!(check.counters.as_of_value.is_some(), eligible);
+        }
+        for offset in [-432001, -432000, -1, 0, 1] {
+            let date = (now + chrono::Duration::seconds(offset)).to_rfc3339();
+            let mut check = trigger();
+            let mut output = met("Crossed");
+            output.as_of = Some(date);
+            let effect = apply_output(&mut check, at, at, output, 0);
+            assert_eq!(effect.start_run, (-432000..=0).contains(&offset));
+        }
     }
 
     #[test]

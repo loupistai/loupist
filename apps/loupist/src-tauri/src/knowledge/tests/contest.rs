@@ -70,6 +70,89 @@ fn file(store: &KnowledgeStore, delta: PageDelta, at_ms: i64) -> lens_page::File
 }
 
 #[test]
+fn a_scheduled_ending_is_recorded_when_due_without_a_new_world_publication() {
+    use crate::knowledge::world_changes::{self, Axis, FeedQuery, Since};
+
+    let (directory, store) = open_store();
+    let due = AT + 1_000;
+    let mut ending = claim("c1", "Alpha supplies Beta", "a", "b");
+    ending.invalid_at = Some(TimePoint::from_unix_ms(due));
+    let world = new_world(&store, LOUPIST, nodes(), vec![ending]);
+    let record = file(
+        &store,
+        alpha(None, vec![put("facts", "Alpha supplies Beta.", "c1", None)]),
+        AT + 100,
+    )
+    .record_id;
+    let query = FeedQuery {
+        loupist_id: LOUPIST.into(),
+        since: Since::Millis {
+            ms: due - 500,
+            inclusive: false,
+        },
+        axis: Axis::Recorded,
+        axis_explicit: true,
+        about: Vec::new(),
+        kinds: None,
+        limit: 8,
+        first_run: false,
+        cutoff: None,
+    };
+    let cursor = store
+        .transact(|write| {
+            assert_eq!(
+                crate::knowledge::reconcile_due_endings(write.tx, LOUPIST, due - 1)?,
+                Some(due)
+            );
+            let before = write.read_lens_page_for_cutoff(LOUPIST, &record)?;
+            assert_eq!(before.body.sections()[0].since_ms, None);
+            let page = world_changes::finish(world_changes::collect(write.tx, &query)?);
+            assert_eq!(page.body["changes"], json!([]));
+            assert_eq!(page.body["lens"], json!([]));
+            Ok(page.body["next"].as_str().unwrap().to_owned())
+        })
+        .unwrap();
+    // The head stays fixed, but a later check sees the transition once.
+    store
+        .transact(|write| {
+            assert_eq!(
+                crate::knowledge::reconcile_due_endings(write.tx, LOUPIST, due)?,
+                None
+            );
+            Ok(())
+        })
+        .unwrap();
+    drop(store);
+    KnowledgeStore::open(directory.path().join("knowledge.sqlite"))
+        .unwrap()
+        .transact(|write| {
+            assert_eq!(
+                crate::knowledge::reconcile_due_endings(write.tx, LOUPIST, due + 1)?,
+                None
+            );
+            let after = write.read_lens_page_for_cutoff(LOUPIST, &record)?;
+            let section = &after.body.sections()[0];
+            assert_eq!(section.since_ms, Some(due));
+            assert_eq!(section.claim_ids.as_deref().unwrap(), ["c1"]);
+            let page = world_changes::finish(world_changes::collect(
+                write.tx,
+                &FeedQuery {
+                    since: Since::Cursor(cursor),
+                    ..query
+                },
+            )?);
+            assert_eq!(page.revision_id, world.revision_id);
+            assert_eq!(page.body["changes"].as_array().unwrap().len(), 1);
+            assert_eq!(page.body["changes"][0]["kind"], "ended");
+            assert_eq!(page.body["changes"][0]["recordedAtMs"], due);
+            assert_eq!(page.body["lens"].as_array().unwrap().len(), 1);
+            assert_eq!(page.body["lens"][0]["state"], "superseded");
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
 fn a_section_citing_a_withdrawn_or_missing_claim_is_written_contested() {
     let (_directory, store) = open_store();
     let first = new_world(

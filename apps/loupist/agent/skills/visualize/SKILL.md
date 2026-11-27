@@ -37,5 +37,5 @@ measure, and value, then distinguish the proposed level. Date every anchor
 explicitly; "last day" or the chart's overall range does not date that value.
 
 Preserve studies, custom series, and drawings the user did not ask to change.
-A successful publish confirms storage, not visual inspection or the truth of
-inputs. State when you could not inspect the rendered result.
+A successful publish confirms that the chart was stored, not that its inputs
+are true.

@@ -66,7 +66,6 @@ export function AppearanceSettings({ theme, onThemeChange, language, onLanguageC
           })}
         </div>
         <h3 className="text-sm font-semibold">{t("appearance.language.label")}</h3>
-        <p className="text-sm text-muted-foreground">{t("appearance.language.description")}</p>
         <div className="theme-grid" role="group" aria-label={t("appearance.language.label")}>
           {languages.map((option) => (
             <button type="button" key={option.id} className="theme-card" data-active={language === option.id}
@@ -76,7 +75,6 @@ export function AppearanceSettings({ theme, onThemeChange, language, onLanguageC
           ))}
         </div>
         <h3 className="text-sm font-semibold">{t("appearance.priceColors.label")}</h3>
-        <p className="text-sm text-muted-foreground">{t("appearance.priceColors.description")}</p>
         <div className="theme-grid" role="group" aria-label={t("appearance.priceColors.label")} data-price-colors-setting>
           {priceChoices.map((option) => (
             <button type="button" key={option.id} className="theme-card price-colors-card" data-active={priceColors === option.id}

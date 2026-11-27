@@ -5,7 +5,7 @@ import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { settingsSections } from "../../app/navigation";
 import { openApp, mainTab } from "../renderApp";
 
-it("finds Appearance controls from another section by either language or the description and focuses the control", async () => {
+it("finds Appearance controls from another section by either language and focuses the control", async () => {
   const user = userEvent.setup();
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const refreshModels = vi.spyOn(bridge, "providerModels");
@@ -14,7 +14,7 @@ it("finds Appearance controls from another section by either language or the des
   const search = await screen.findByRole("searchbox", { name: "Search settings" });
   const nav = screen.getByRole("navigation", { name: "Settings sections" });
   refreshModels.mockClear();
-  for (const query of ["Display currency", i18n.t("settings:appearance.displayCurrency.label", { lng: "ko" }), i18n.t("settings:appearance.displayCurrency.description")]) {
+  for (const query of ["Display currency", i18n.t("settings:appearance.displayCurrency.label", { lng: "ko" })]) {
     fireEvent.change(search, { target: { value: query } });
     expect(await within(nav).findByRole("button", { name: "Display currency" })).toBeVisible();
   }

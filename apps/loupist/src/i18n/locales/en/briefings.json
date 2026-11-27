@@ -20,7 +20,8 @@
   "preparing": "Preparing…",
   "preparingBody": {
     "briefing": "Preparing your briefing…",
-    "custom": "Running this research…"
+    "custom": "Running this research…",
+    "learning": "Running this learning…"
   },
   "off": "Off",
   "today": "Today",
@@ -46,7 +47,8 @@
   "failure": {
     "title": {
       "briefing": "Couldn't finish this briefing",
-      "custom": "Couldn't finish this scheduled research"
+      "custom": "Couldn't finish this scheduled research",
+      "learning": "Couldn't finish this learning"
     },
     "unreachable": "Couldn't reach your AI provider. Check your connection and try again.",
     "auth": "Your AI account needs to sign in again.",
@@ -61,6 +63,7 @@
     "checks": "Checks",
     "tellsYou": "Tells you",
     "whenMet": "When the condition is met",
+    "whenCheckMet": "When the check is met",
     "everyRun": "Every run",
     "postsTo": "Posts to",
     "postBot": "Bot",
@@ -75,10 +78,8 @@
     "lines": "Watch my lines",
     "results": "Results follow-up",
     "week": "Week in review",
-    "watchCost": "Each check is a model run on your AI account while Loupist is open.",
-    "locationRule": "Runs stay here. A run you continue also appears under Research sessions.",
+    "watchCost": "Checks may incur AI charges.",
     "openSession": "Open the session",
-    "continueHelp": "Sending a message adds this session to Research sessions.",
     "model": "Model: {{model}}",
     "title": "Schedule",
     "summary_one": "{{formattedCount}} scheduled task",
@@ -89,15 +90,13 @@
     "tasks": "Scheduled work",
     "open": "Open",
     "emptyTitle": "Nothing is scheduled yet",
-    "emptyBody": "Loupist can run work for you at set times and post the result in Bot.",
     "filterLabel": "Show",
-    "loginHint": "Scheduled tasks run only while Loupist is open.",
+    "loginHint": "Keep scheduled work running.",
     "openAtLogin": "Open at login",
     "willOpenAtLogin": "Loupist will open at login",
     "filterActive": "Active",
     "filterAll": "All",
     "noActiveTitle": "No active tasks",
-    "noActiveBody": "Paused and finished tasks are still saved.",
     "showAll": "Show all",
     "status": {
       "active": "Active",
@@ -107,21 +106,43 @@
     },
     "kind": {
       "briefing": "Briefing",
-      "custom": "Scheduled research"
+      "check": "Check",
+      "custom": "Scheduled research",
+      "learning": "Learning"
+    },
+    "sections": {
+      "briefings": "Briefings"
     },
     "next": "Next: {{time}}",
     "pause": "Pause",
     "resume": "Resume",
     "turnOn": "Turn on",
     "priceMoves": "Price moves",
+    "factChanges": "Fact changes",
+    "preset": {
+      "priceMove": {
+        "whenMet": "You are told the move, both prices and their dates, and what is reported about why."
+      },
+      "factChanges": {
+        "whenMet": "You are told what changed, what was stated before and now, and the Sources with their dates."
+      }
+    },
     "check": {
       "fromYourCheck": "From your check",
       "reads": "Reads",
       "runs": "Runs",
       "dryRun": "Dry run",
       "whenMet": "When it is met",
-      "cost": "No AI use until it is met. Then one model run on your AI account, at most 3 a day.",
+      "whenMetGeneric": "You are told when the check is met.",
+      "showInstructions": "Show instructions",
+      "hideInstructions": "Hide instructions",
+      "cost": "Matching checks may incur AI charges. Up to 3 runs a day.",
+      "noModelUntilMet": "No model runs until the check is met.",
       "viewCode": "View code",
+      "hideCode": "Hide code",
+      "assets": "Assets",
+      "removedAsset": "Removed asset",
+      "metDays": "Days the check would have been met",
       "testNow": "Test now",
       "notNow": "Not now",
       "change": "Change",
@@ -133,7 +154,7 @@
       "noExplanation": "No explanation. {{reason}}",
       "checkedAfterClosed": "Checked at {{time}} after Loupist was closed",
       "waitingRate": "Waiting for a provider: rate limit",
-      "stale": "Data hasn't changed since {{date}}",
+      "stale": "Stale data · {{date}}",
       "couldNotRead": "Couldn't read data since {{time}}",
       "unreplayed": "{{count}} days could not be replayed",
       "firedOn": "Would have been met on {{count}} of the last {{replayed}} trading days",
@@ -157,33 +178,141 @@
     "deleteWhileRunning": "Wait for this run to finish before deleting the task.",
     "deleteTitle": "Delete “{{title}}”?",
     "deleteBody": "It stops running. Its run history and the run sessions you never wrote in are deleted with it. Sessions you wrote in stay in Research sessions, and what it saved to Memory stays. Summaries already delivered to Bot stay, without a link to the run.",
-    "briefingChangeHint": "To change the briefing’s days and time, tell Bot.",
-    "changeHint": "To change a task's time or prompt, tell Bot.",
-    "changeAsk": "Ask in Bot",
+    "changeAsk": "Change in Bot",
     "changePrompt": "Change my scheduled task “{{title}}”: ",
     "lastFailed": "The last run didn't finish.",
     "lastFailedReason": "The last run didn't finish. {{reason}}",
     "history": "Runs of {{title}}",
     "noRuns": "No runs yet.",
+    "checkHistory": "Check history",
+    "noChecks": "No checks yet",
+    "checkOutcome": {
+      "met": "Met",
+      "not_met": "Not met",
+      "error": "Error",
+      "no_data": "Data unavailable",
+      "rate_limited": "Rate limited",
+      "stale": "Stale data",
+      "skipped_busy": "Skipped"
+    },
     "back": "← Schedule",
     "backTo": "← {{title}}",
     "prompt": "Prompt",
     "runs": "Runs",
     "quiet": "Nothing to report",
-    "waitingPlan": "Waiting: ChatGPT plan at its limit",
+    "waitingPlan": "Waiting: AI plan limit reached",
     "waitingReconnect": "Waiting: sign-in needs reconnect",
-    "spending": "Scheduled tasks use your AI account each run. They run only while Loupist is open or in the menu bar.",
-    "runNowCost": "Uses your AI account",
+    "spending": "Scheduled runs may incur AI charges.",
+    "runNowCost": "May incur AI charges",
     "moreActions": "More actions for {{title}}",
     "deleteEllipsis": "Delete…",
-    "footer": "To add or change a task, tell Bot what you want and when.",
-    "briefingDescription": "What changed for the assets you follow, on weekday mornings. Built in.",
-    "eveningDescription": "What happened today and what is due the next trading day. Built in.",
+    "briefingDescription": "Followed assets on weekday mornings.",
+    "eveningDescription": "Trading-day close and the next session.",
     "ownTask": "Your own task",
     "ownDescription": "Tell Bot what to do and when, for example: {{example}}",
     "ownExample": "Every Monday at 8, summarize semiconductor news.",
     "askBot": "Ask Bot",
-    "builtIn": "Built in"
+    "builtIn": "Built in",
+    "learning": {
+      "preset": {
+        "theme": "Theme",
+        "companyFilings": "Company filings",
+        "macroSeries": "Economic series",
+        "question": "Question",
+        "market": "Market",
+        "label": "Template"
+      },
+      "limits": {
+        "allowance": "Daily learning allowance",
+        "allowanceHint": "Requests a day for learning runs, inside the background allowance. 0 turns learning runs off.",
+        "off": "Learning runs are off.",
+        "allowanceRefused": "Enter 0 to turn learning runs off, or at least {{minimum}} requests.",
+        "cap": "Active learning programs",
+        "capHint": "How many learning programs can be on at once.",
+        "capRefused": "Enter a number from {{minimum}} to {{maximum}}.",
+        "save": "Save {{label}}",
+        "saveShort": "Save",
+        "saveFailed": "Couldn't save this setting. Try again."
+      },
+      "entry": {
+        "learnAbout": "Learn about this",
+        "keepCurrent": "Keep this page current",
+        "noAccount": "Needs an AI account",
+        "memoryOff": "Memory saving is off",
+        "requestWorld": "Propose a learning program about {{name}} that keeps what you know about it current.",
+        "requestLens": "Propose a learning program that keeps my Lens page “{{title}}” current."
+      },
+      "trackDaily": "Track daily",
+      "trackDailyLine": "Learns about {{name}} each weekday before your briefing, on your AI account.",
+      "followToTrack": "Follow {{name}} to track it daily.",
+      "thisAsset": "this asset",
+      "alsoLearned": "Also learned in: {{program}} · {{outcome}}",
+      "openPrograms": "Learning programs",
+      "defaultTime": "Default time: {{cadence}}.",
+      "what": "What to learn",
+      "about": "About",
+      "when": "When",
+      "depthLabel": "Depth",
+      "sources": "Sources",
+      "keeps": "Keeps",
+      "reports": "Reports",
+      "delivers": "Delivers",
+      "askChange": "Ask Bot to change",
+      "beyondAllowance": "This runs beyond today's allowance.",
+      "allowanceUsed": "{{pct}}% of today's allowance used",
+      "allowanceWaiting": "Waiting for tomorrow's allowance",
+      "holdPlan": "Your AI plan's limit was reached. Runs resume tomorrow.",
+      "waitingOther": "Waiting for another learning run",
+      "stoppedLimit": "Stopped at its request limit.",
+      "undo": "Undo this run",
+      "undid": "Undid this run. {{formattedCount}} sections changed since and were kept.",
+      "usage_one": "{{formattedCount}} request · {{outcome}}",
+      "usage_other": "{{formattedCount}} requests · {{outcome}}",
+      "usageOutcome": {
+        "limit": "stopped at its request limit",
+        "finished": "finished",
+        "quiet": "nothing to report",
+        "failed": "couldn't finish",
+        "running": "running"
+      },
+      "learned_one": "Learned {{formattedCount}} thing",
+      "learned_other": "Learned {{formattedCount}} things",
+      "moreSubjects": "+{{formattedCount}}",
+      "subjectWorld": "World",
+      "subjectLens": "Lens",
+      "depth": {
+        "light": "Light",
+        "standard": "Standard",
+        "deep": "Deep"
+      },
+      "scope": {
+        "all": "Every connection turned on for this Loupist",
+        "some_one": "{{formattedCount}} connection",
+        "some_other": "{{formattedCount}} connections",
+        "webOn": "Web research on",
+        "webOff": "Web research off"
+      },
+      "keep": {
+        "sources": "Sources",
+        "lens": "Lens",
+        "reads": "Asset reads",
+        "none": "Nothing kept"
+      },
+      "report": {
+        "whenNew": "When there is something new",
+        "condition": "When its condition is met"
+      },
+      "delivery": {
+        "briefing": "The next briefing"
+      },
+      "budgetLabel": "Budget",
+      "budget": "Up to {{hard}} requests a run, wrapping up near {{soft}}.",
+      "outcome": {
+        "added": "Added",
+        "updated": "Updated",
+        "retired": "Retired"
+      }
+    }
   },
   "sections": {
     "changed": "What changed",
@@ -226,6 +355,38 @@
     "typedOpen": "Open “{{name}}”",
     "typedFollowed": "Already followed",
     "nameOnly": "Name only",
+    "priceNone": "No price yet",
+    "priceFinding": "Finding the price…",
+    "currencyUnstated": "Currency not stated",
+    "changeVersus": "vs close on {{date}}",
+    "newMove": "New move",
+    "badge": {
+      "check": "Check",
+      "watch": "Watch",
+      "watches": "{{count}} watches",
+      "daily": "Daily"
+    },
+    "view": {
+      "label": "Following",
+      "list": "List",
+      "ahead": "Ahead"
+    },
+    "ahead": {
+      "overdue": "Overdue",
+      "today": "Today",
+      "tomorrow": "Tomorrow",
+      "followUp": "Results follow-up runs",
+      "results": "Results {{date}}",
+      "resultsExpected": "Results expected around {{date}}",
+      "checkDue": "Check due: {{claim}}",
+      "untied": "Not tied to an asset",
+      "undated": "No date",
+      "fromBriefing": "From the briefing of {{date}}",
+      "open": "Open",
+      "empty": "Nothing ahead for the assets you follow. Ask Bot for a results follow-up.",
+      "loading": "Loading what is ahead…",
+      "failed": "Couldn't load what is ahead."
+    },
     "securityType": {
       "commonStock": "Common Stock",
       "preferredStock": "Preferred Stock",
@@ -299,7 +460,10 @@
     "stop": {
       "action": "Stop following",
       "label": "Stop following {{name}}",
-      "failed": "Couldn't stop following {{name}}."
+      "failed": "Couldn't stop following {{name}}.",
+      "confirm": "Stop following {{name}}?",
+      "pauseDaily": "Also pause Track daily for {{name}}?",
+      "cancel": "Cancel"
     }
   },
   "standing": {
@@ -328,5 +492,96 @@
       "quiet": "{{title}} has been quiet",
       "loud": "{{title}} is notifying often",
       "notifyQuietly": "Notify quietly"
+    },
+  "programs": {
+    "edit": "Edit",
+    "editor": {
+      "heading": "Edit learning program",
+      "description": "Changes apply from the next run. A run in progress keeps what it started with.",
+      "title": "Title",
+      "briefSize": "{{used}} KB of {{limit}} KB",
+      "aboutHint": "Up to {{formattedCount}}: followed assets, World names, Lens pages or plain names.",
+      "removeSubject": "Remove {{name}}",
+      "addName": "Add a name",
+      "addNamePlaceholder": "A name, theme or market",
+      "add": "Add",
+      "addAsset": "Add a followed asset",
+      "repeat": "Repeats",
+      "kind": {
+        "once": "Once",
+        "daily": "Every day",
+        "weekly": "On chosen days",
+        "interval": "Every few hours"
+      },
+      "days": "Days",
+      "time": "Time",
+      "every": "How often",
+      "everyHours_one": "Every hour",
+      "everyHours_other": "Every {{formattedCount}} hours",
+      "everyMinutes_one": "Every minute",
+      "everyMinutes_other": "Every {{formattedCount}} minutes",
+      "onceAt": "Runs once, on {{date}}.",
+      "timeZone": "Times are in {{zone}}.",
+      "depthHint": {
+        "light": "Fewer requests each run.",
+        "standard": "A balanced number of requests each run.",
+        "deep": "More requests each run, for a closer read."
+      },
+      "connections": "Data connections",
+      "chosenConnections_one": "Only the connection chosen for it",
+      "chosenConnections_other": "Only the {{formattedCount}} connections chosen for it",
+      "web": "Web research",
+      "save": "Save",
+      "saving": "Saving…",
+      "saveFailed": "Couldn't save your changes. Try again.",
+      "stale": "This program changed. Reload",
+      "reload": "Reload",
+      "paused": "This program is paused. Your changes apply when you resume it.",
+      "noAccount": "This program can't run until an AI account is connected. You can still edit it."
+    },
+    "problems": {
+      "titleRequired": "Give the program a title.",
+      "titleTooLong": "Use a shorter title.",
+      "titleInvalid": "Keep the title on one line.",
+      "promptRequired": "Say what to learn.",
+      "promptTooLong": "Shorten this to 8 KB or less.",
+      "subjectsTooMany": "Choose up to {{formattedCount}} subjects.",
+      "scheduleRequired": "Choose at least one day.",
+      "scheduleInvalid": "Choose a time that is still ahead.",
+      "sourcesNotGranted": "This Loupist doesn't allow these sources. Choose from the ones it allows.",
+      "keepsInvalid": "Keeping asset reads needs a followed asset under About.",
+      "fallback": "Check this field."
+    },
+    "discard": {
+      "title": "Discard your changes?",
+      "body": "Your edits to this program are not saved.",
+      "keep": "Keep editing",
+      "discard": "Discard"
+    },
+    "undoAll": {
+      "button": "Undo all runs",
+      "title": "Undo every run of “{{title}}”?",
+      "keeps": "Sources stay in the Library, and a thesis move keeps its own Undo on the asset page.",
+      "counting": "Counting what this undoes…",
+      "previewFailed": "Couldn't count what this undoes.",
+      "previewRuns_one": "{{formattedCount}} run is undone.",
+      "previewRuns_other": "{{formattedCount}} runs are undone.",
+      "previewUndone_one": "{{formattedCount}} section goes back to how it was.",
+      "previewUndone_other": "{{formattedCount}} sections go back to how they were.",
+      "previewKept_one": "{{formattedCount}} section changed since and is kept.",
+      "previewKept_other": "{{formattedCount}} sections changed since and are kept.",
+      "nothing": "There is nothing left to undo.",
+      "confirm": "Undo all runs",
+      "failed": "Couldn't undo these runs. Nothing was changed.",
+      "done": "Undid {{runs}} ({{kept}})",
+      "runs_one": "{{formattedCount}} run",
+      "runs_other": "{{formattedCount}} runs",
+      "keptSince_one": "{{formattedCount}} section changed since and was kept",
+      "keptSince_other": "{{formattedCount}} sections changed since and were kept"
+    },
+    "learned": {
+      "chip": "Learned {{date}} · {{program}}",
+      "open": "Opens this run in Schedule"
     }
+  }
 }

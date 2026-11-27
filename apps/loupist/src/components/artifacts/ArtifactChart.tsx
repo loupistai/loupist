@@ -3,7 +3,8 @@ import i18n, { useTranslation } from "@/i18n";
 import { lazy, Suspense, useId } from "react";
 import type { ChartDataset, ChartDocument } from "../../types";
 import { Spinner } from "../ui/spinner";
-import { datasetRows } from "../charts/dataset";
+import { datasetRows, numericValue } from "../charts/dataset";
+import { formatChartPrice } from "../charts/financialAdapter";
 import { CitedNote } from "../chat/CitedNote";
 
 const t = i18n.getFixedT(null, "chat");
@@ -31,13 +32,14 @@ export default function ArtifactChart({ chart, dataset, theme, onAskRange, compa
   const rows = financial ? datasetRows(dataset) : [];
   const first = rows[0];
   const latest = rows.at(-1);
+  const latestClose = financial && latest ? numericValue(latest[view.close]) : undefined;
   const financialDescription = financial
     ? [
         t("artifactChart.priceDescription", { symbol: view.symbol, interval: view.interval, count: rows.length, formattedCount: formatNumber(rows.length) }),
         first && latest
           ? t("artifactChart.dateRange", { value1: String(first[view.time]), value2: String(latest[view.time]) })
           : null,
-        latest ? t("artifactChart.latestClose", { value1: String(latest[view.close]) }) : null,
+        latestClose === undefined ? null : t("artifactChart.latestClose", { value1: formatChartPrice(latestClose, view.price_precision ?? 2) }),
         chart.studies.length > 0
           ? t("artifactChart.indicators", { value1: chart.studies.map((study) => study.module_id).join(", ") })
           : null,

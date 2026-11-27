@@ -37,7 +37,7 @@ import { accessLabel, setupEntryLabel } from "./MarketplaceCard";
 type SetupMessage = {
   tone: "error" | "success";
   title: string;
-  detail: string;
+  detail?: string;
 };
 
 const VERIFICATION_LABELS: Record<
@@ -217,7 +217,7 @@ export function MarketplaceSetupDialog({
     const refreshed = await refreshSnapshot(entryId, operation);
     if (selectedEntryIdRef.current === entryId && operationRef.current === operation) {
       setSetupBusy(null);
-      if (refreshed) setSetupMessage({ tone: "success", title: i18n.t("connections:marketplaceSetupDialog.statusRefreshed"), detail: i18n.t("connections:marketplaceSetupDialog.theLatestConnectionStatusIsShownAbove") });
+      if (refreshed) setSetupMessage({ tone: "success", title: i18n.t("connections:marketplaceSetupDialog.statusRefreshed") });
     }
     if (activeOperationRef.current === operation) activeOperationRef.current = null;
   }
@@ -402,7 +402,7 @@ export function MarketplaceSetupDialog({
     try {
       await here.enable();
       if (selectedEntryIdRef.current !== operationEntryId) return;
-      setSetupMessage({ tone: "success", title: i18n.t("connections:marketplaceSetupDialog.onForTitle", { loupist: here.loupist }), detail: i18n.t("connections:marketplaceSetupDialog.onForDetail", { name: connectionText(entry.name), loupist: here.loupist }) });
+      setSetupMessage({ tone: "success", title: i18n.t("connections:marketplaceSetupDialog.onForTitle", { loupist: here.loupist }) });
     } catch {
       if (selectedEntryIdRef.current !== operationEntryId) return;
       setSetupMessage({ tone: "error", title: i18n.t("connections:marketplaceSetupDialog.couldNotTurnOn", { name: connectionText(entry.name), loupist: here.loupist }), detail: i18n.t("connections:marketplaceSetupDialog.tryAgainOrLoupistAccess") });
@@ -479,7 +479,7 @@ export function MarketplaceSetupDialog({
               ) : null}
 
               <fieldset className="marketplace-setup-fields" disabled={Boolean(setupBusy) || connector?.readiness === "runtime_unavailable"}>
-                {entry.setup?.config_fields.length ? <div className="marketplace-form-section-title"><h3>{entry.id === "community.web-research" ? i18n.t("connections:marketplaceSetupDialog.searchRouting") : i18n.t("connections:marketplaceSetupDialog.connectionSettings")}</h3><p>{entry.id === "community.web-research" ? i18n.t("connections:marketplaceSetupDialog.automaticChoosesAnAvailableSearchServiceForYour") : i18n.t("connections:marketplaceSetupDialog.theseSettingsApplyToThisConnectionAcrossYour")}</p></div> : null}
+                {entry.setup?.config_fields.length ? <div className="marketplace-form-section-title"><h3>{entry.id === "community.web-research" ? i18n.t("connections:marketplaceSetupDialog.searchRouting") : i18n.t("connections:marketplaceSetupDialog.connectionSettings")}</h3></div> : null}
                 {entry.setup?.config_fields.map((field) => {
                   const inputId = `marketplace-${entry.id}-${field.id}`;
                   return (
@@ -556,7 +556,7 @@ export function MarketplaceSetupDialog({
                   </div>
                 )}
 
-                {entry.setup?.credential_fields.length ? <div className="marketplace-form-section-title"><h3>{i18n.t("connections:marketplaceSetupDialog.apiCredentials")}</h3><p>{isAssetLookup ? i18n.t("connections:marketplaceSetupDialog.openFigiKeyHelp") : connector?.credentials.some((credential) => credential.stored) ? i18n.t("connections:marketplaceSetupDialog.leaveSavedFieldsBlankToKeepTheCurrent") : i18n.t("connections:marketplaceSetupDialog.addYourProviderCredentialsThenVerifyTheConnection")}</p></div> : null}
+                {entry.setup?.credential_fields.length ? <div className="marketplace-form-section-title"><h3>{i18n.t("connections:marketplaceSetupDialog.apiCredentials")}</h3>{isAssetLookup ? <p>{i18n.t("connections:marketplaceSetupDialog.openFigiKeyHelp")}</p> : connector?.credentials.some((credential) => credential.stored) ? <p>{i18n.t("connections:marketplaceSetupDialog.leaveSavedFieldsBlankToKeepTheCurrent")}</p> : null}</div> : null}
                 {entry.setup?.credential_fields.map((field) => {
                   const inputId = `marketplace-${entry.id}-${field.id}`;
                   const status = connector?.credentials.find(
@@ -638,7 +638,7 @@ export function MarketplaceSetupDialog({
                   role={setupMessage.tone === "error" ? "alert" : "status"}
                 >
                   <strong>{setupMessage.title}</strong>
-                  <p>{setupMessage.detail}</p>
+                  {setupMessage.detail ? <p>{setupMessage.detail}</p> : null}
                 </div>
               )}
 
@@ -664,14 +664,6 @@ export function MarketplaceSetupDialog({
                   <ShieldCheckIcon aria-hidden="true" />
                   <p>
                     {i18n.t("connections:marketplaceSetupDialog.automaticUsesBuiltInWebSearchWithOpenai")}</p>
-                </div>
-              )}
-
-              {(entry.setup?.credential_fields.length ?? 0) > 0 && (
-                <div className="marketplace-credential-note">
-                  <ShieldCheckIcon aria-hidden="true" />
-                  <p>
-                    {i18n.t("connections:marketplaceSetupDialog.keysAreStoredSecurelyOnThisDeviceAnd")}</p>
                 </div>
               )}
 

@@ -27,6 +27,16 @@ it.each([
   },
 );
 
+it("keeps a lens link inline with the punctuation that follows it", async () => {
+  const { screen } = await import("@testing-library/react");
+  const { renderWithOpen } = await import("../../test/open");
+  renderWithOpen(<MessageResponse mode="static">{"I [checked cash flow first](lens:rec_0123456789abcdef0123456789abcdef)."}</MessageResponse>);
+  const link = await screen.findByRole("link", { name: "checked cash flow first" });
+  expect(link).toHaveClass("loupist-lens-link");
+  expect(link.parentElement).toHaveClass("number-keep");
+  expect(link.parentElement).toHaveTextContent("checked cash flow first.");
+});
+
 it("draws a Mermaid fence as a ruled frame instead of code while diagrams are held", async () => {
   const text = "Before.\n\n```mermaid\ngraph TD\n  A-->B\n```\n\nAfter.";
   const held = render(<MessageResponse mode="static" holdDiagrams>{text}</MessageResponse>);

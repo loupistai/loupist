@@ -25,6 +25,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useInputModality } from "@/lib/inputModality";
+import { hasAiAccount } from "@/lib/modelSelection";
 import { useExtensionAvailability } from "@/app/extensionAvailability";
 import { skillBlurb, skillPresentation, visibleSkill } from "@/lib/agentSkills";
 import { formatNumber } from "@/i18n/format";
@@ -557,9 +558,6 @@ function ComposerTile({
   );
 }
 
-/** Any AI account can run a model: without one, the composer asks to connect instead of offering Send. */
-const hasAccount = (models: readonly ConfiguredModel[], providers: readonly ModelProviderOption[]) =>
-  providers.some((provider) => provider.credential_source !== "missing") || models.some((model) => model.credential_source !== "missing");
 
 export function ChatComposer({
   attachmentDraft,
@@ -663,7 +661,7 @@ export function ChatComposer({
   const selectedModel = models.find(
     (model) => model.id === modelSelection.model_profile_id,
   );
-  const accountConnected = noAccount === undefined ? hasAccount(models, providers) : !noAccount;
+  const accountConnected = noAccount === undefined ? hasAiAccount({ models, providers }) : !noAccount;
   const canSetAsOf = Boolean(onAsOfChange);
   const assistOptions = useMemo<AssistOption[]>(() => {
     if (!activeTrigger) return [];

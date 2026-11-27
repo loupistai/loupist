@@ -1,0 +1,15 @@
+{
+  "id": "asset-daily",
+  "title": "Track {asset} daily",
+  "brief": "Keep what this Loupist knows about {asset} current. New since the previous run means a filing, results, a change in guidance, official data or material news about it. Keep its Lens page a current account, move its thesis read only when dated evidence earns it, and save a price read when it has none. Report what is new with dates and sources, and stay quiet when nothing is.",
+  "slots": {},
+  "subject_kind": "asset",
+  "schedule": { "kind": "weekly", "days": [1, 2, 3, 4, 5], "hour": 6, "minute": 30 },
+  "program": {
+    "depth": "standard",
+    "scope": { "connections": "all_enabled", "web": true },
+    "keeps": { "sources": true, "lens": true, "asset_reads": true }
+  },
+  "report": "when_new",
+  "delivery": { "to": "briefing" }
+}

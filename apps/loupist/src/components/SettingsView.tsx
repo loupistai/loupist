@@ -140,7 +140,7 @@ function SettingsPage({
             /* A code is set globally; As listed removes the key. */
             onDisplayCurrencyChange={(code) => { void (code ? appearanceConfiguration.update({ appearance: { display_currency: code } }) : appearanceConfiguration.update({}, [["appearance", "display_currency"]])); }}
             onConnectMarketData={currentLoupistId && onOpenLoupistConnections ? () => onOpenLoupistConnections(currentLoupistId) : undefined}
-            disabled={appearanceConfiguration.busy || !appearanceConfiguration.snapshot || Boolean(appearanceConfiguration.snapshot.diagnostics.length)} />{appearanceConfiguration.error ? <p role="alert" className="inline-error">{appearanceConfiguration.error}</p> : null}<ConfigurationDiagnostics snapshot={appearanceConfiguration.snapshot} /><p className="settings-footnote"><span>{i18n.t("settings:settingsView.savedAutomaticallyForAllLoupistsOnThisDevice")}</span></p></>
+            disabled={appearanceConfiguration.busy || !appearanceConfiguration.snapshot || Boolean(appearanceConfiguration.snapshot.diagnostics.length)} />{appearanceConfiguration.error ? <p role="alert" className="inline-error">{appearanceConfiguration.error}</p> : null}<ConfigurationDiagnostics snapshot={appearanceConfiguration.snapshot} /></>
         ) : null}
 
         {section === "keyboard" ? <KeyboardSettings /> : null}

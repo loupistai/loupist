@@ -17,6 +17,9 @@ service handlers independently validate arguments, ownership and evidence.
 Host-handled `as_of` treats null as absent and rejects other non-string values;
 non-null optional `world_read` revision, span and center-node IDs must be bounded
 strings.
+`world_changes` is the same Memory-read row as `world_read`. Its progress labels
+match `world_read`, so `toolProgress.world_changes` in both Chat locales must
+repeat those English strings.
 The runtime profile advertises a native finance tool only when its vendor's exact
 capability is enabled; `defillama_read` requires `defillama.tvl`.
 Each execution checks the Chat's live database binding without loading its

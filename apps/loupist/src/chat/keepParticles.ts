@@ -8,8 +8,17 @@ const TRAILING = /^(?:\p{Script=Hangul}|\p{Pe}|\p{Pf}|[.,;:!?…、。，．：�
 /** An opening bracket or quote right before a link: it never ends a line apart from it. */
 const LEADING = /(?:\p{Ps}|\p{Pi})+$/u;
 
+const linkHref = (node: Element) => String(node.properties?.href ?? "");
+
 const isEvidenceLink = (node: ElementContent): node is Element =>
-  node.type === "element" && node.tagName === "a" && String(node.properties?.href ?? "").startsWith("#evidence-");
+  node.type === "element" && node.tagName === "a" && linkHref(node).startsWith("#evidence-");
+
+/** A lens: link is inline prose too: the period after it stays on its line. */
+const keepsTrailingPunctuation = (node: ElementContent): node is Element => {
+  if (node.type !== "element" || node.tagName !== "a") return false;
+  const href = linkHref(node);
+  return href.startsWith("#evidence-") || href.startsWith("lens:");
+};
 
 /** A numbered citation ("[3]"), as opposed to a number chip whose text is the figure. */
 const isCitation = (node: Element) =>
@@ -55,7 +64,7 @@ function keep(parent: Root | Element) {
   for (let index = 0; index < children.length; index += 1) {
     const child = children[index]!;
     if (child.type !== "element") continue;
-    if (!isEvidenceLink(child)) {
+    if (!keepsTrailingPunctuation(child)) {
       keep(child);
       continue;
     }

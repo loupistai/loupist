@@ -2,8 +2,12 @@
 // LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract
 
 import type { BriefingContext } from "../briefings";
-import type { DiscardedMemoryItem, MemorySaveSkipReason } from "../domain/chat";
+import type { ChatCostEstimate, DiscardedMemoryItem, MemorySaveSkipReason } from "../domain/chat";
+import type { MessageUndo } from "../knowledge/lens";
 import type { ResolvedModelSelection } from "../providers/selection";
+import type { Hold } from "../scheduled_tasks/allowance";
+
+export type AllLearningConnections = "all_enabled";
 
 /**
  * Which built-in briefing a task is. Missing on a briefing written before
@@ -11,19 +15,62 @@ import type { ResolvedModelSelection } from "../providers/selection";
  */
 export type BriefingEdition = "morning" | "evening";
 
+export type BudgetOutcome = "none" | "soft" | "refused" | "cancelled";
+
 export type DeliveryTarget = "bot" | "none" | "briefing";
+
+/** Whether the event's day is announced or only expected. */
+export type EventPrecision = "exact" | "estimated";
 
 export type FailureStreak = { id: string, count: number };
 
+export type LearningBudget = { soft: number, hard: number };
+
+export type LearningConnections = AllLearningConnections | Array<string>;
+
+export type LearningDepth = "light" | "standard" | "deep";
+
+export type LearningKeeps = { sources: boolean, lens: boolean, asset_reads: boolean };
+
+/** A bundled learning preset, by the name of its file in `agent/learning-presets/`. */
+export type LearningPresetId =
+  | "asset-daily"
+  | "theme"
+  | "company-filings"
+  | "macro-series"
+  | "question"
+  | "market";
+
+export type LearningProgram = {
+  depth: LearningDepth,
+  scope: LearningScope,
+  keeps: LearningKeeps,
+  /**
+   * The learning preset the program was created from, for display. After
+   * creation the program is ordinary data. Absent on older programs.
+   */
+  preset?: string,
+};
+
+export type LearningScope = { connections: LearningConnections, web: boolean };
+
 export type NotifyPolicy = "now" | "digest" | "off";
+
+/**
+ * What `scheduled_task_from_preset` opens: a watch preset or a learning
+ * preset. `asset-daily` reads as the watch id it has always been.
+ */
+export type PresetId = WatchPreset | LearningPresetId;
 
 export type ProposalTarget = { id: string, revision: number };
 
 export type QuestionReceipt = { task_id: string, title: string, question: string };
 
-export type ReportPolicy = "when_met" | "every_run";
+export type ReportPolicy = "when_met" | "every_run" | "when_new" | "on_condition";
 
 export type Run = {
+  usage?: RunUsage,
+  budget?: RunBudget,
   failure_streak?: FailureStreak,
   first_run?: boolean,
   memory_save_skip?: MemorySaveSkipReason,
@@ -48,11 +95,31 @@ export type Run = {
   status: RunStatus,
   error: string | null,
   trigger?: RunTrigger,
+  /** Sections this run's message restored and kept, when that undo is already stored. */
+  undo?: MessageUndo,
+};
+
+export type RunBudget = {
+  requests: number,
+  soft: number,
+  hard: number,
+  left_at_start: number,
+  outcome: BudgetOutcome,
 };
 
 export type RunStatus = "running" | "succeeded" | "failed" | "interrupted";
 
 export type RunTrigger = { version: number, reading: string, as_of: string };
+
+export type RunUsage = {
+  requests: number | null,
+  inputTokens: number | null,
+  cachedInputTokens: number | null,
+  outputTokens: number | null,
+  durationMs: number,
+  worldRequests?: number,
+  costEstimate?: ChatCostEstimate,
+};
 
 export type Schedule =
   | { "kind": "once", at_ms: number }
@@ -75,6 +142,9 @@ export type ScheduleReceipt = TaskReceipt | QuestionReceipt;
 export type SkippedTool = { name: string, reason: string };
 
 export type Task = {
+  program?: LearningProgram,
+  budget?: LearningBudget,
+  hold?: Hold,
   kind: TaskKind,
   id: string,
   loupist_id: string,
@@ -115,9 +185,18 @@ export type Task = {
   subjects?: Array<TaskSubject>,
   preset?: WatchPreset,
   terms?: string,
+  /** The dated event a results follow-up is about. Absent on older tasks. */
+  event?: TaskEvent,
 };
 
 export type TaskDelivery = { to: DeliveryTarget, notify?: NotifyPolicy };
+
+/** A dated event, such as a results release, that a task follows up. */
+export type TaskEvent = {
+  /** The event's day, `YYYY-MM-DD`. */
+  date: string,
+  precision: EventPrecision,
+};
 
 /**
  * A kind another Loupist version wrote and this one does not know reads as
@@ -126,11 +205,14 @@ export type TaskDelivery = { to: DeliveryTarget, notify?: NotifyPolicy };
  * unchanged. Such a task is listed but never run, and its definition and
  * status are not changed here (`TaskKind::is_known`); it can still be deleted.
  */
-export type TaskKind = "custom" | "briefing" | string;
+export type TaskKind = "custom" | "briefing" | "learning" | string;
 
 /** Read-only list projection; the latest occurrence is not stored in Task JSON. */
 export type TaskListItem = {
   latest_run: Run | null,
+  program?: LearningProgram,
+  budget?: LearningBudget,
+  hold?: Hold,
   kind: TaskKind,
   id: string,
   loupist_id: string,
@@ -171,10 +253,14 @@ export type TaskListItem = {
   subjects?: Array<TaskSubject>,
   preset?: WatchPreset,
   terms?: string,
+  /** The dated event a results follow-up is about. Absent on older tasks. */
+  event?: TaskEvent,
 };
 
 /** A saved action snapshot, displayed even if the rest of the Chat stops. */
 export type TaskReceipt = {
+  program?: LearningProgram,
+  budget?: LearningBudget,
   task_id: string,
   title: string,
   revision: number,
@@ -193,11 +279,17 @@ export type TaskReceipt = {
   subjects?: Array<TaskSubject>,
   preset?: WatchPreset,
   terms?: string,
+  /** The dated event a results follow-up is about. Absent on older tasks. */
+  event?: TaskEvent,
 };
 
 export type TaskStatus = "active" | "paused" | "completed";
 
-export type TaskSubject = { asset: string } | { name: string };
+export type TaskSubject =
+  | { asset: string }
+  | { world: string }
+  | { lens: string }
+  | { name: string };
 
 export type TaskTarget =
   | { "kind": "new_chat" }
@@ -211,6 +303,12 @@ export type TaskTarget =
 export type TaskTrigger = {
   script: TriggerScriptRef,
   summary: string,
+  /**
+   * One line the card shows for "When it is met". Missing on a trigger saved
+   * before this field; the view then uses the preset's locale line, or one
+   * generic line when the task has no preset.
+   */
+  when_met_summary?: string,
   tools: Array<TriggerToolGrant>,
   args: Record<string, unknown>,
   active_hours?: TriggerActiveHours,
@@ -235,6 +333,8 @@ export type TaskWatch = {
   subjects?: Array<TaskSubject>,
   preset?: WatchPreset,
   terms?: string,
+  /** The dated event a results follow-up is about. Absent on older tasks. */
+  event?: TaskEvent,
 };
 
 export type TriggerActiveHours = {
@@ -254,6 +354,8 @@ export type TriggerApproval = {
 
 export type TriggerConfiguration = {
   summary?: string,
+  /** What the user is told when the check is met. A preset stores a locale key. */
+  when_met_summary?: string,
   args: Record<string, unknown>,
   tools: Array<TriggerToolGrant>,
   reads_per_check: number,
@@ -348,4 +450,6 @@ export type WatchPreset =
   | "thesis-lines"
   | "results-follow-up"
   | "price-move"
-  | "week-in-review";
+  | "week-in-review"
+  | "fact-changes"
+  | "asset-daily";

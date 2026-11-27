@@ -71,11 +71,7 @@ pub(super) fn worker_claim(claim: &GraphClaim) -> KnowledgeResult<Value> {
             "node_id": endpoint.node_id,
             "role": endpoint.role,
         })).collect::<Vec<_>>(),
-        "evidence": claim.evidence.iter().map(|evidence| json!({
-            "attribution": evidence.attribution,
-            "role": evidence.role.as_str(),
-            "span_id": evidence.span_id,
-        })).collect::<Vec<_>>(),
+        "evidence": claim.evidence.iter().map(worker_evidence).collect::<Vec<_>>(),
         "expired_at": wire_time(claim.expired_at.as_ref())?,
         "invalid_at": wire_time(claim.invalid_at.as_ref())?,
         "proposition": claim.proposition,
@@ -89,6 +85,25 @@ pub(super) fn worker_claim(claim: &GraphClaim) -> KnowledgeResult<Value> {
         "status": claim.status.as_str(),
         "valid_at": wire_time(claim.valid_at.as_ref())?,
     }))
+}
+
+fn worker_evidence(evidence: &super::model::EvidenceBinding) -> Value {
+    let mut entry = json!({
+        "attribution": evidence.attribution,
+        "role": evidence.role.as_str(),
+        "span_id": evidence.span_id,
+    });
+    if let Some(figure) = evidence.figure_check {
+        entry["figure_check"] = json!(figure.as_str());
+    }
+    if let Some(passage) = evidence.passage {
+        entry["passage"] = json!({
+            "chunk_index": passage.chunk_index,
+            "char_start": passage.char_start,
+            "char_end": passage.char_end,
+        });
+    }
+    entry
 }
 
 fn wire_time(time: Option<&super::model::TimePoint>) -> KnowledgeResult<Value> {

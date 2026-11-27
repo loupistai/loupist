@@ -196,13 +196,15 @@ fn cited(mut claim: GraphClaim, span: &str) -> GraphClaim {
         span_id: span.into(),
         role: BindingRole::Supports,
         attribution: "Fictional filing".into(),
+        figure_check: None,
+        passage: None,
     }];
     claim
 }
 
 fn claim_ready(store: &KnowledgeStore, loupist: &str, focus: &str, now: i64) -> Attempt {
     match store
-        .transact(|write| claim(write.tx, loupist, focus, now))
+        .transact(|write| claim(write.tx, loupist, focus, now, None))
         .unwrap()
     {
         Claimed::Ready(attempt) => *attempt,
@@ -578,7 +580,7 @@ fn a_full_extension_never_claims_a_paid_review() {
     assert!(!store.read(|read| due(read.tx, LOUPIST, AT + 100)).unwrap());
     assert!(matches!(
         store
-            .transact(|write| claim(write.tx, LOUPIST, "focus", AT + 100))
+            .transact(|write| claim(write.tx, LOUPIST, "focus", AT + 100, None))
             .unwrap(),
         Claimed::Wait
     ));
@@ -661,4 +663,212 @@ fn a_full_type_list_still_applies_an_independent_supported_relation() {
             "relations": [{"name": "COVERS_NODE", "claims": 7, "sources": 3}],
         })
     );
+}
+
+fn with_background<T>(
+    store: &KnowledgeStore,
+    limit: u32,
+    body: impl FnOnce(
+        &KnowledgeWrite<'_>,
+        &crate::scheduled_tasks::allowance::AllowanceState,
+    ) -> KnowledgeResult<T>,
+) -> T {
+    let admission =
+        crate::scheduled_tasks::allowance::Admission::prepare(&store.connection, Some(LOUPIST))
+            .unwrap();
+    let limits = crate::scheduled_tasks::allowance::Limits {
+        background: limit,
+        world_chat: 32,
+    };
+    store
+        .transact(|write| {
+            let state = admission
+                .state(Some(write.tx), limits, AT + 100)
+                .map_err(|_| KnowledgeError::Invalid("could not read the daily allowance"))?;
+            body(write, &state)
+        })
+        .unwrap()
+}
+
+fn reserved_review_calls(store: &KnowledgeStore) -> i64 {
+    store
+        .read(|read| {
+            Ok(read.tx.query_row(
+                "SELECT coalesce(sum(json_extract(payload_json, '$.extraction.maxLlmCalls')), 0)
+                 FROM knowledge_graph_outbox
+                 WHERE status = 'running'
+                   AND json_extract(payload_json, '$.episodeKind') = 'allowance_reservation'",
+                [],
+                |row| row.get(0),
+            )?)
+        })
+        .unwrap()
+}
+
+#[test]
+fn a_schema_review_waits_when_the_background_allowance_is_spent_and_reserves_its_call() {
+    let (_dir, store) = setup(LOUPIST);
+    due_review(&store);
+    let waited = with_background(&store, 0, |write, state| {
+        claim(
+            write.tx,
+            LOUPIST,
+            "Battery suppliers",
+            AT + 100,
+            Some(state),
+        )
+    });
+    assert!(matches!(waited, Claimed::Wait));
+    let reviewed: i64 = store
+        .read(|read| {
+            Ok(read.tx.query_row(
+                "SELECT COUNT(*) FROM knowledge_schema_reviews WHERE loupist_id = ?1",
+                [LOUPIST],
+                |row| row.get(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(reviewed, 0);
+    assert_eq!(reserved_review_calls(&store), 0);
+
+    let ready = with_background(&store, 2, |write, state| {
+        claim(
+            write.tx,
+            LOUPIST,
+            "Battery suppliers",
+            AT + 100,
+            Some(state),
+        )
+    });
+    let Claimed::Ready(attempt) = ready else {
+        panic!("one remaining call admits the review");
+    };
+    assert_eq!(reserved_review_calls(&store), 1);
+    let blocked = with_background(&store, 2, |_write, state| {
+        let allowed = crate::scheduled_tasks::allowance::admit_world_attempt(
+            state,
+            crate::scheduled_tasks::allowance::WorldOrigin::Background,
+            1,
+            Some("fixture"),
+        );
+        assert!(allowed.is_err());
+        Ok(allowed.is_err())
+    });
+    assert!(blocked);
+    finish_reply(
+        &store,
+        &attempt,
+        InferenceReply {
+            disposition: InferenceDisposition::NotSent,
+            body: serde_json::json!({}),
+        },
+        AT + 101,
+    );
+    assert_eq!(reserved_review_calls(&store), 0);
+}
+
+#[test]
+fn a_sent_schema_review_is_counted_before_its_reservation_drops() {
+    let (_dir, store) = setup(LOUPIST);
+    due_review(&store);
+    let ready = with_background(&store, 2, |write, state| {
+        claim(
+            write.tx,
+            LOUPIST,
+            "Battery suppliers",
+            AT + 100,
+            Some(state),
+        )
+    });
+    let Claimed::Ready(attempt) = ready else {
+        panic!("the review is admitted");
+    };
+    let mut log = crate::runs::log::RunLog::new("schema", LOUPIST, &attempt.review_id, AT + 100);
+    log.model = Some("fixture/local".into());
+    let sent = reply(serde_json::json!({ "types": [], "relations": [] }));
+    super::super::graph_service::record_sent_review(store.connection.as_ref(), &mut log, &sent)
+        .unwrap();
+    finish_reply(&store, &attempt, sent, AT + 101);
+    assert_eq!(reserved_review_calls(&store), 0);
+    with_background(&store, 2, |_write, state| {
+        let allowed = crate::scheduled_tasks::allowance::admit_world_attempt(
+            state,
+            crate::scheduled_tasks::allowance::WorldOrigin::Background,
+            1,
+            Some("fixture"),
+        );
+        assert!(allowed.is_err(), "the recorded call is still spent");
+        Ok(())
+    });
+}
+
+#[test]
+fn a_review_keeps_its_reservation_when_usage_cannot_be_recorded() {
+    let (_dir, store) = setup(LOUPIST);
+    due_review(&store);
+    let ready = with_background(&store, 2, |write, state| {
+        claim(
+            write.tx,
+            LOUPIST,
+            "Battery suppliers",
+            AT + 100,
+            Some(state),
+        )
+    });
+    let Claimed::Ready(attempt) = ready else {
+        panic!("the review is admitted");
+    };
+    let mut log = crate::runs::log::RunLog::new("schema", LOUPIST, &attempt.review_id, AT + 100);
+    let sent = reply(serde_json::json!({ "types": [], "relations": [] }));
+    assert!(super::super::graph_service::record_sent_review(
+        store.connection.as_ref(),
+        &mut log,
+        &sent
+    )
+    .is_err());
+    assert_eq!(reserved_review_calls(&store), 1);
+}
+
+#[test]
+fn startup_counts_a_review_reservation_before_releasing_it() {
+    let (_dir, store) = setup(LOUPIST);
+    due_review(&store);
+    let ready = with_background(&store, 2, |write, state| {
+        claim(
+            write.tx,
+            LOUPIST,
+            "Battery suppliers",
+            AT + 100,
+            Some(state),
+        )
+    });
+    assert!(matches!(ready, Claimed::Ready(_)));
+    assert_eq!(reserved_review_calls(&store), 1);
+    store
+        .transact(|write| super::super::graph_jobs::recover_interrupted(write.tx))
+        .unwrap();
+    assert_eq!(reserved_review_calls(&store), 0);
+    let now = crate::local_time::now().timestamp_millis();
+    let admission = crate::scheduled_tasks::allowance::Admission::prepare(
+        store.connection.as_ref(),
+        Some(LOUPIST),
+    )
+    .unwrap();
+    let state = admission
+        .state(
+            None,
+            crate::scheduled_tasks::allowance::Limits {
+                background: 2,
+                world_chat: 32,
+            },
+            now,
+        )
+        .unwrap();
+    assert!(crate::scheduled_tasks::allowance::admit_world_attempt(
+        &state,
+        crate::scheduled_tasks::allowance::WorldOrigin::Background,
+        1,
+        Some("fixture"),
+    )
+    .is_err());
 }

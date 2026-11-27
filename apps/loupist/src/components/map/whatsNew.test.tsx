@@ -332,6 +332,32 @@ it("calls a name new only when World first saw it after the range's start", () =
   expect(firstSeenAfter(5, undefined)).toBe(true);
 });
 
+it("lists an ended fact, a disagreement and a superseded Lens section with their Source", async () => {
+  const source = { recordId: "source-record", revisionId: "source-rev", sourceId: "filing", title: "Q3 filing" };
+  const publication = { revisionId: "world-rev", source };
+  const events = [
+    event("claim_ended" as GrowthEvent["kind"], "old-claim", NOW, { summary: "Margin was 14%", publication }),
+    event("claim_conflict" as GrowthEvent["kind"], "split-claim", NOW - HOUR, { summary: "Capacity rose 18%", publication }),
+    event("lens_superseded" as GrowthEvent["kind"], null, NOW - 2 * HOUR, { recordId: "lens:m", summary: "Leadership", beforeSummary: "Test capacity costs", publication }),
+  ];
+  const rows = whatsNewRows(events, map, "en");
+  expect(rows.map(row => [row.kind, row.label, row.page, row.section, row.source?.title])).toEqual([
+    ["ended", "Margin was 14%", undefined, undefined, "Q3 filing"],
+    ["disagree", "Capacity rose 18%", undefined, undefined, "Q3 filing"],
+    ["superseded", "Leadership", "Test capacity costs", "Leadership", "Q3 filing"],
+  ]);
+  const ended = [0, 1, 2, 3].map(index => event("claim_ended" as GrowthEvent["kind"], `ended-${index}`, NOW - index, { summary: `Ended fact ${index}`, publication }));
+  const entries = whatsNewEntries(whatsNewRows(ended, map, "en"), "en");
+  expect(entries).toHaveLength(1);
+  expect(entries[0]).toMatchObject({ kind: "source", source });
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  vi.spyOn(bridge, "knowledgeGrowthEvents").mockResolvedValue({ events, nextCursor: null });
+  render(<MapWhatsNew bridge={bridge} loupistId="loupist" map={map} lastSeenAtMs={NOW - 1} nowMs={NOW} onOpenRow={vi.fn()} onReplay={vi.fn()} onClose={vi.fn()} />);
+  expect(await screen.findByText("Ended: Margin was 14%")).toBeVisible();
+  expect(screen.getByText("Sources disagree: Capacity rose 18%")).toBeVisible();
+  expect(screen.getByText("Lens section superseded: Test capacity costs · Leadership")).toBeVisible();
+});
+
 it("counts a name a bounded overview left out, and opens it by id; an absent name in a complete overview has left World", () => {
   const { map, events, since } = weekFixture();
   const far = event("entity_added", "far-away", since + HOUR, { summary: "Far Away Motors" });

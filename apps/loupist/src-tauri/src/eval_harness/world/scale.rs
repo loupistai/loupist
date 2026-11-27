@@ -195,6 +195,7 @@ fn scenario(case: &ScaleCase) -> Scenario {
         workspace_files: BTreeMap::new(),
         seed_sources: vec![],
         seed_lenses: vec![],
+        pre_file: None,
         research_focus: String::new(),
         seed: String::new(),
         template: String::new(),
@@ -305,6 +306,8 @@ fn canonical_import(
                 span_id: span_id.clone(),
                 role: BindingRole::ExtractedFrom,
                 attribution: source.origin.clone(),
+                figure_check: None,
+                passage: None,
             }],
             status: ClaimStatus::Active,
             recorded_at_ms: Some(at_ms),
@@ -373,7 +376,7 @@ fn browse_page(
             binding_roles: vec![],
             statuses: vec![],
             publication_times: vec![],
-            published_by: None,
+            as_of: None,
             cursor: None,
             node_limit: Some(page_size * 2),
             edge_limit: Some(page_size),
@@ -459,7 +462,7 @@ pub async fn run(options: Options) -> Result<()> {
                 })?;
             let workspace = temporary.path().join("workspace");
             fs::create_dir(&workspace)?;
-            let mut state = AppState::for_eval(temporary.path().join("app"));
+            let mut state = crate::eval_harness::trial::trial_state(temporary.path().join("app"));
             fs::write(
                 state.artifacts.app_data_dir.join("config.toml"),
                 "[pi.retry]\nenabled = false\nmax_retries = 0\n",

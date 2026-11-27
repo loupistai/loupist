@@ -1,5 +1,6 @@
 """Read the data sealed for this worker start. Requests are served after exit."""
 import collections.abc
+from datetime import date, timedelta
 import json
 import random
 import sys
@@ -65,11 +66,77 @@ def followed():
 def price(asset_id, days=0):
     return call("price", asset_id=asset_id, days=days)
 
+def observation_day(value):
+    text = str(value)[:10]
+    if len(text) == 8 and text.isdigit():
+        text = f"{text[:4]}-{text[4:6]}-{text[6:8]}"
+    try:
+        return date.fromisoformat(text).isoformat()
+    except ValueError:
+        return ""
+
+
+def bar_dates(asset, tool=None, market=None):
+    exchange = (asset.get("reference") or {}).get("exchange")
+    market = market or ("KRX" if tool == "krx_daily_quote" else exchange) or ""
+    dates = _ledger.get("bar_dates", {})
+    return dates.get(market.strip().upper()) or dates[""]
+
+
+def fresh_pair(before, last, asset, market=None):
+    latest, previous, prior = bar_dates(asset, market=market)
+    return (before, last) in ((prior, previous), (previous, latest)) and before != last
+
+
+def fresh_bar(day, asset, tool=None):
+    latest, previous, _ = bar_dates(asset, tool)
+    return day in (latest, previous)
+
+
+def accept_bar(asset_id, day):
+    saved = _module.state.get(asset_id)
+    seen = saved if isinstance(saved, dict) else {"met": saved}
+    latest = seen.get("latest") or seen.get("met")
+    if latest and day < latest:
+        return None
+    seen["latest"] = day
+    _module.state[asset_id] = seen
+    return seen
+
+
+def fresh_item(day):
+    today = date.fromisoformat(_ledger["now"][:10])
+    return (today - timedelta(days=_ledger.get("check_stale_days") or 5)).isoformat() <= day <= today.isoformat()
+
+
 def sources(query, limit=10):
     return call("world_search", scope="source", query=query).get("hits", [])[:limit]
 
 def source(id):
     return call("world_read", scope="source", recordId=id)
+
+# Follows `next` for up to `pages` pages. Each page is one read against the call's read limit.
+def changes(**arguments):
+    pages = arguments.pop("pages", 4)
+    try:
+        pages = int(pages)
+    except (TypeError, ValueError):
+        pages = 4
+    collected = []
+    last = None
+    for _ in range(max(pages, 0)):
+        last = call("world_changes", **arguments)
+        collected.extend(last.get("changes") or [])
+        if not last.get("capped"):
+            break
+        nxt = last.get("next")
+        if not nxt:
+            break
+        arguments["since"] = nxt
+    if last is None:
+        return {"changes": collected}
+    last["changes"] = collected
+    return last
 
 def _write_json(name, payload):
     raw = json.dumps(payload, allow_nan=False).encode("utf-8")
@@ -78,6 +145,8 @@ def _write_json(name, payload):
     with open("/scratch/" + name, "w", encoding="utf-8") as file:
         file.write(raw.decode("utf-8"))
 
+# as_of is the date of the newest observation the verdict rests on. The host refuses a
+# future date and one older than the check's age limit.
 def result(met, reading, as_of, evidence=None):
     if not isinstance(met, bool):
         raise TypeError("met must be true or false")
@@ -115,7 +184,8 @@ class _Inputs(collections.abc.Mapping):
 
 _state = _ledger.get("state")
 _module = types.ModuleType("loupist")
-for _member in (Pending, Refused, Unavailable, call, dataset, followed, price, sources, source, gather, result):
+for _member in (Pending, Refused, Unavailable, call, dataset, followed, price, sources, source, gather, result,
+                observation_day, fresh_pair, fresh_bar, accept_bar, fresh_item):
     setattr(_module, _member.__name__, _member)
 _module.inputs = _Inputs()
 _module.args = _ledger["args"]
@@ -130,8 +200,19 @@ try:
 except Pending:
     pass
 except Unavailable as error:
+    import traceback
+
     _failure("unavailable", getattr(error, "code", "no_data"), str(error).splitlines()[0] if str(error) else "no_data", getattr(error, "retry_after", None))
-    raise
+    frames = traceback.StackSummary.extract(
+        (frame, line)
+        for frame, line in traceback.walk_tb(error.__traceback__)
+        if frame.f_globals is not globals()
+    )
+    if frames:
+        print("Traceback (most recent call last):", file=sys.stderr)
+        traceback.print_list(frames)
+    sys.stderr.writelines(traceback.format_exception_only(type(error), error))
+    sys.exit(1)
 except Refused as error:
     _failure("refused", getattr(error, "code", "refused"), str(error).splitlines()[0] if str(error) else "refused")
     raise

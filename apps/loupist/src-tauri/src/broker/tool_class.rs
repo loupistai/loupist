@@ -232,7 +232,9 @@ impl ToolMethod {
             Self::ScheduleList         => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPython,      NoPack),
             Self::ScheduleRead         => row(Local,    Open,         Own,        NoWrite,      Refused,      NoPython,      NoPack),
             Self::ScheduleCreate       => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::LearningProgramSave  => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPython,      NoPack),
             Self::TriggerSave          => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPython,      NoPack),
+            Self::LearningHandoff      => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPython,      NoPack),
             Self::ScheduleHandoff      => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPython,      NoPack),
             Self::ScheduleQuiet        => row(Local,    Open,         Own,        NoWrite,      Allowed,      NoPython,      NoPack),
             Self::ScheduleBriefing     => row(Outbound, Paused,       Own,        NoWrite,      Refused,      NoPython,      NoPack),
@@ -275,6 +277,7 @@ impl ToolMethod {
             Self::SourceSave           => row(Local,    Open,         Own,        Retained,     Allowed,      NoPython,      NoPack),
             Self::WorldSearch          => row(Local,    Open,         Own,        NoWrite,      Allowed,      MemoryRead,    Delimited),
             Self::WorldRead            => row(Local,    Open,         Own,        NoWrite,      Allowed,      MemoryRead,    Delimited),
+            Self::WorldChanges         => row(Local,    Open,         Own,        NoWrite,      Allowed,      MemoryRead,    Delimited),
             Self::NoteSave             => row(Local,    Open,         Own,        Text,         Allowed,      NoPython,      NoPack),
             Self::JournalSave          => row(Local,    Open,         Own,        Text,         Refused,      NoPython,      NoPack),
             Self::JournalReview        => row(Local,    Open,         Own,        Text,         Refused,      NoPython,      NoPack),
@@ -327,6 +330,7 @@ impl ToolMethod {
             //                                   runtime             origin            author     retention
             Self::WorldSearch          => native(KNOWLEDGE,          SavedContext,     Tool,      Turn),
             Self::WorldRead            => native(KNOWLEDGE,          SavedContext,     Tool,      Turn),
+            Self::WorldChanges         => native(KNOWLEDGE,          SavedContext,     Tool,      Turn),
             Self::LensSearch           => native(KNOWLEDGE,          SavedContext,     Tool,      Turn),
             Self::LensRead             => native(KNOWLEDGE,          SavedContext,     Tool,      Turn),
             Self::ConversationMemory   => native(KNOWLEDGE,          SavedContext,     Tool,      Turn),
@@ -366,7 +370,9 @@ impl ToolMethod {
             | Self::ScheduleList
             | Self::ScheduleRead
             | Self::ScheduleCreate
+            | Self::LearningProgramSave
             | Self::TriggerSave
+            | Self::LearningHandoff
             | Self::ScheduleHandoff
             | Self::ScheduleQuiet
             | Self::PriceReadSave

@@ -7,6 +7,7 @@ import type { ScheduleReceipt } from "../../types";
 import { BotScheduleTasks, useBotScheduleTasks } from "./BotScheduleTasks";
 import { BotNeedsYou } from "./BotNeedsYou";
 import { ChatExecutionProvider } from "./ChatExecutionContext";
+import { OpenProvider } from "../navigation/Open";
 import { MessageSchedules } from "./MessageSchedules";
 
 const loupistId = MOCK_LOUPISTS[0]!.id;
@@ -32,7 +33,7 @@ it("keeps a routine set up from a sentence paused until the user turns it on", a
   render(view());
   const card = await screen.findByRole("article", { name: "Scheduled task: Compare inventory days" });
   expect(await within(card).findByText("Waiting for your OK")).toBeVisible();
-  expect(within(card).getByText("Nothing runs until you turn it on.")).toBeVisible();
+  expect(within(card).getByText("Scheduled runs may incur AI charges.")).toBeVisible();
   await expect(bridge.scheduledTaskRunNow({ loupist_id: loupistId, task_id: task.id })).rejects.toThrow("waiting for approval");
   await user.click(within(card).getByRole("button", { name: "Turn on" }));
   expect(await within(card).findByText("Active")).toBeVisible();
@@ -71,6 +72,24 @@ it("shows and confirms the same proposal revision in Needs you", async () => {
   expect(screen.queryByText(/Compare inventory days/)).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Turn on" }));
   expect(confirm).toHaveBeenCalledExactlyOnceWith({ loupist_id: loupistId, task_id: next.id, expected_revision: next.revision });
+});
+
+it.each(["Turn on", "Not now"] as const)("removes a proposal from the tray and the sidebar together after %s", async (action) => {
+  const user = userEvent.setup();
+  const { bridge, task } = await proposed();
+  const item = { kind: "proposal" as const, recordId: task.id, loupistId, loupistName: "Research", title: task.title, atMs: 0 };
+  const { SidebarProvider } = await import("../ui/sidebar");
+  const { NeedsAttention } = await import("../app/NeedsAttention");
+  render(<SidebarProvider>
+    <NeedsAttention items={[item]} onOpen={vi.fn()} />
+    <BotNeedsYou items={[item]} bridge={bridge} loupistId={loupistId} onOpen={vi.fn()} onAsk={vi.fn()} />
+  </SidebarProvider>);
+  expect(await screen.findAllByText("Turn on Compare inventory days?")).toHaveLength(2);
+  await waitFor(() => expect(screen.getByRole("button", { name: action })).toBeEnabled());
+  await user.click(screen.getByRole("button", { name: action }));
+  await waitFor(() => expect(screen.queryByText("Turn on Compare inventory days?")).not.toBeInTheDocument());
+  expect(screen.queryByRole("button", { name: "Turn on" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Not now" })).not.toBeInTheDocument();
 });
 
 it("discards a declined routine and shows the confirmed state after a reload", async () => {
@@ -127,4 +146,136 @@ it("labels a hand-off receipt by the conversation's surface, not its id", () => 
   rerender(view("bot"));
   expect(screen.queryByText("Active")).toBeNull();
   expect(screen.queryByText(/Handed to Bot/)).toBeNull();
+});
+
+const learningProgram = {
+  depth: "standard" as const, scope: { connections: "all_enabled" as const, web: false },
+  keeps: { sources: true, lens: true, asset_reads: false },
+};
+
+function learningTask(patch: Record<string, unknown> = {}) {
+  return {
+    id: "learn-1", loupist_id: loupistId, kind: "learning", title: "Harbor each weekday", revision: 3,
+    prompt: "One\nTwo\nThree\nFour", status: "paused", awaiting_confirmation: true,
+    schedule: weekly, target: { kind: "new_chat" }, next_run_at_ms: null, last_run_at_ms: null,
+    created_at_ms: 0, updated_at_ms: 0, last_error: null, session_thread_id: null,
+    model_profile_id: "model", thinking_level: "medium", run_options: {}, use_memory: true, update_memory: true,
+    program: learningProgram, budget: { soft: 8, hard: 12 }, report: "when_new", delivery: { to: "briefing" },
+    subjects: [{ name: "Semiconductors" }],
+    ...patch,
+  };
+}
+
+function learningReceipt(task: ReturnType<typeof learningTask>): ScheduleReceipt {
+  return {
+    task_id: task.id, title: String(task.title), revision: Number(task.revision), action: "created", status: "paused",
+    schedule: weekly, target: { kind: "new_chat" }, next_run_at_ms: null, use_memory: true, update_memory: true,
+    awaiting_confirmation: true, program: learningProgram, budget: task.budget, subjects: task.subjects,
+    report: "when_new", delivery: { to: "briefing" },
+  } as ScheduleReceipt;
+}
+
+it.each([
+  ["with a budget", { budget: { soft: 8, hard: 12 } }, "about 12 requests"],
+  ["without a budget", { budget: undefined }, "Each run is a model run on your AI account."],
+] as const)("proposes a learning program %s", async (_label, patch, cost) => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const saved = learningTask(patch);
+  bridge.installScheduledTask(saved as never);
+  const confirm = vi.spyOn(bridge, "scheduledTaskConfirm");
+  render(<ChatExecutionProvider value={{ bridge, loupistId, threadId: "chat", surface: "session", theme: "light", active: true }}>
+    <MessageSchedules receipts={[learningReceipt(saved)]} />
+  </ChatExecutionProvider>);
+  const card = await screen.findByRole("article", { name: "Scheduled task: Harbor each weekday" });
+  expect(within(card).getByText("Learning program")).toBeVisible();
+  expect(await within(card).findByText(/One/)).toBeVisible();
+  expect(within(card).getByRole("button", { name: "Show all" })).toBeVisible();
+  expect(within(card).getByText("First run starts when you turn it on")).toBeVisible();
+  expect(within(card).getByText("Semiconductors")).toBeVisible();
+  expect(within(card).getByText(cost === "about 12 requests" ? /about 12 requests/ : cost)).toBeVisible();
+  if (cost === "about 12 requests") expect(within(card).getByText(/about 12 requests/)).not.toHaveTextContent("undefined");
+  else expect(within(card).getByText(cost)).not.toHaveTextContent("about");
+  await userEvent.setup().click(within(card).getByRole("button", { name: "Turn on" }));
+  expect(confirm).toHaveBeenCalledWith({ loupist_id: loupistId, task_id: "learn-1", expected_revision: 3 });
+  expect(await within(card).findByText("On · first run started")).toBeVisible();
+});
+
+it("declines a learning program and says to turn it on in Schedule", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const saved = learningTask();
+  bridge.installScheduledTask(saved as never);
+  const decline = vi.spyOn(bridge, "scheduledProposalSetDeclined");
+  render(<ChatExecutionProvider value={{ bridge, loupistId, threadId: "chat", surface: "session", theme: "light", active: true }}>
+    <MessageSchedules receipts={[learningReceipt(saved)]} />
+  </ChatExecutionProvider>);
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Not now" }));
+  expect(decline).toHaveBeenCalledWith(expect.objectContaining({ loupist_id: loupistId, task_id: "learn-1", declined: true }));
+  expect(await screen.findByText("Paused. Turn it on in Schedule.")).toBeVisible();
+});
+
+it("says when 20 programs are already on, and when the proposal was replaced or deleted", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const saved = learningTask();
+  bridge.installScheduledTask(saved as never);
+  vi.spyOn(bridge, "scheduledTaskConfirm").mockRejectedValue(new Error("up to 20 learning programs can be active in this Loupist"));
+  const open = vi.fn(async () => undefined);
+  const capped = render(<OpenProvider open={open}><ChatExecutionProvider value={{ bridge, loupistId, threadId: "chat", surface: "session", theme: "light", active: true }}>
+    <MessageSchedules receipts={[learningReceipt(saved)]} />
+  </ChatExecutionProvider></OpenProvider>);
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Turn on" }));
+  expect(await screen.findByText("Up to 20 programs can be active.")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Open" })).toBeVisible();
+  capped.unmount();
+
+  bridge.installScheduledTask(learningTask({ revision: 4 }) as never);
+  render(<ChatExecutionProvider value={{ bridge, loupistId, threadId: "chat", surface: "session", theme: "light", active: true }}>
+    <MessageSchedules receipts={[learningReceipt(saved)]} />
+  </ChatExecutionProvider>);
+  const replaced = await screen.findByRole("article", { name: "Scheduled task: Harbor each weekday" });
+  expect(replaced).toHaveTextContent("A newer revision replaced this program.");
+  expect(replaced).toHaveClass("message-schedule");
+});
+
+it("says a check tells you when it is met, whatever its report policy, as Schedule does", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const trigger = { script: { path: "checks/fx.py", sha256: "c".repeat(64) }, summary: "EUR/BRL above 6.40", tools: [], args: {} } as never;
+  const task = await bridge.proposeScheduledTask({
+    loupist_id: loupistId, title: "EUR/BRL above 6.40", prompt: "Tell me when EUR/BRL closes above 6.40.", schedule: weekly,
+    target: { kind: "new_chat" }, model_profile_id: "model", thinking_level: "medium", run_options: {}, use_memory: true, update_memory: false, status: "active",
+  });
+  const receipt: ScheduleReceipt = { task_id: task.id, title: task.title, revision: task.revision, action: "created", status: "paused", schedule: weekly,
+    target: { kind: "new_chat" }, next_run_at_ms: null, use_memory: true, update_memory: false, awaiting_confirmation: true,
+    terms: "Closes above 6.40", report: "every_run", trigger };
+  render(<ChatExecutionProvider value={{ bridge, loupistId, threadId: "chat", surface: "session", theme: "light", active: true }}>
+    <MessageSchedules receipts={[receipt]} />
+  </ChatExecutionProvider>);
+  const card = await screen.findByRole("article", { name: "Scheduled task: EUR/BRL above 6.40" });
+  const row = (await within(card).findByText("Tells you")).parentElement!;
+  expect(within(row).getByText("When the check is met")).toBeVisible();
+});
+
+it("names a program's preset in its kicker and states the Loupist's own cap when it is reached", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const saved = learningTask({ title: "Bovespa each weekday", program: { ...learningProgram, preset: "market" } });
+  bridge.installScheduledTask(saved as never);
+  vi.spyOn(bridge, "scheduledTaskConfirm").mockRejectedValue(new Error("up to 7 learning programs can be active in this Loupist"));
+  render(<ChatExecutionProvider value={{ bridge, loupistId, threadId: "chat", surface: "session", theme: "light", active: true }}>
+    <MessageSchedules receipts={[learningReceipt(saved)]} />
+  </ChatExecutionProvider>);
+  const card = await screen.findByRole("article", { name: "Scheduled task: Bovespa each weekday" });
+  expect(within(card).getByText("Learning program · Market")).toBeVisible();
+  await userEvent.setup().click(within(card).getByRole("button", { name: "Turn on" }));
+  expect(await within(card).findByText("Up to 7 programs can be active.")).toBeVisible();
+});
+
+it("keeps the plain kicker for a preset this build does not know, never its id", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const saved = learningTask({ program: { ...learningProgram, preset: "weather-patterns" } });
+  bridge.installScheduledTask(saved as never);
+  render(<ChatExecutionProvider value={{ bridge, loupistId, threadId: "chat", surface: "session", theme: "light", active: true }}>
+    <MessageSchedules receipts={[learningReceipt(saved)]} />
+  </ChatExecutionProvider>);
+  const card = await screen.findByRole("article", { name: "Scheduled task: Harbor each weekday" });
+  expect(within(card).getByText("Learning program")).toBeVisible();
+  expect(card).not.toHaveTextContent("weather-patterns");
 });

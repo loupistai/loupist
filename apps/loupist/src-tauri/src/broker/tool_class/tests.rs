@@ -50,8 +50,10 @@ const NATIVE_FINANCE_READS: [ToolMethod; 15] = [
     M::DartDividends,
     M::DartReportItems,
 ];
-const SCHEDULE_CHANGES: [ToolMethod; 7] = [
+const SCHEDULE_CHANGES: [ToolMethod; 9] = [
     M::ScheduleCreate,
+    M::LearningProgramSave,
+    M::LearningHandoff,
     M::TriggerSave,
     M::ScheduleHandoff,
     M::ScheduleBriefing,
@@ -103,6 +105,7 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
         "source_save",
         "world_search",
         "world_read",
+        "world_changes",
         "note_save",
         "lens_search",
         "lens_read",
@@ -156,7 +159,13 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
         M::JournalReview,
         M::ThesisUpdate,
     ];
-    let pack_text = [M::LensRead, M::LensSearch, M::WorldRead, M::WorldSearch];
+    let pack_text = [
+        M::LensRead,
+        M::LensSearch,
+        M::WorldRead,
+        M::WorldChanges,
+        M::WorldSearch,
+    ];
     for method in all_methods() {
         let class = method.safety();
         let mcp = matches!(method, M::McpConnect | M::McpCall);
@@ -211,6 +220,7 @@ fn every_method_keeps_its_reviewed_turn_gates_and_run_policy() {
             | M::DatasetQuery
             | M::WorldSearch
             | M::WorldRead
+            | M::WorldChanges
             | M::LensSearch
             | M::LensRead
             | M::AssetPageRead => PythonExposure::MemoryRead,
@@ -234,6 +244,7 @@ fn every_method_keeps_its_reviewed_provenance_and_retention() {
     let producers = [
         (M::WorldSearch, "knowledge", SavedContext),
         (M::WorldRead, "knowledge", SavedContext),
+        (M::WorldChanges, "knowledge", SavedContext),
         (M::LensSearch, "knowledge", SavedContext),
         (M::LensRead, "knowledge", SavedContext),
         (M::ConversationMemory, "knowledge", SavedContext),

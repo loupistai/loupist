@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "@/test/selectOption";
 import { useState } from "react";
 import i18n from "../../i18n";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
@@ -33,7 +34,7 @@ describe("Skills management", () => {
     expect((await bridge.configRead({ scope: { kind: "global" } })).explicit?.skills?.["skill-creator"]?.enabled).toBeUndefined();
     await user.click(screen.getByRole("switch", { name: "Valuation: enabled" }));
     await screen.findByRole("switch", { name: "Valuation: disabled" });
-    await user.selectOptions(screen.getByLabelText("Available to"), "loupist-quality");
+    await chooseSelectOption(user, screen.getByLabelText("Available to"), "Quality Compounder");
     await user.click(await screen.findByRole("switch", { name: "Valuation: disabled" }));
     await screen.findByRole("switch", { name: "Valuation: enabled" });
     const local = await bridge.configRead({ scope: { kind: "project", loupistId: "loupist-quality" } });
@@ -45,7 +46,7 @@ describe("Skills management", () => {
   it("creates, reads, edits, and deletes a scoped workflow without changing Chats", async () => {
     const { bridge, user } = await setup();
     const prior = (await bridge.loupistSelect("loupist-quality")).threads;
-    await user.selectOptions(screen.getByLabelText("Available to"), "loupist-quality");
+    await chooseSelectOption(user, screen.getByLabelText("Available to"), "Quality Compounder");
     await screen.findByRole("switch", { name: "Skill Creator: disabled" });
     await user.click(screen.getByRole("button", { name: "Create skill" }));
     const create = screen.getByRole("dialog", { name: "Create a skill" });
@@ -81,6 +82,21 @@ describe("Skills management", () => {
     await user.click(within(dialog).getByRole("button", { name: "Add skill" }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("download is unavailable");
     expect(within(dialog).getByLabelText("GitHub folder URL")).toHaveValue(url);
+  });
+
+  it("uses the selected import source and closes its menu before closing the dialog", async () => {
+    const { bridge, user } = await setup();
+    const imported = vi.spyOn(bridge, "skillsImport");
+    await user.click(screen.getByRole("button", { name: "Add skill" }));
+    const dialog = screen.getByRole("dialog", { name: "Add a skill" });
+    const source = within(dialog).getByRole("combobox", { name: "Source" });
+    source.focus();
+    await user.keyboard("{ArrowDown}{Escape}");
+    expect(dialog).toBeVisible();
+    expect(source).toHaveFocus();
+    await chooseSelectOption(user, source, "ZIP package");
+    await user.click(within(dialog).getByRole("button", { name: "Choose ZIP" }));
+    expect(imported).toHaveBeenCalledWith({ scope: { kind: "global" }, kind: "zip" });
   });
 });
 

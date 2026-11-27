@@ -297,7 +297,7 @@ it("keeps the selected name, scope and What's new rows when the World advances d
   render(<Harness />);
   const user = userEvent.setup();
   await screen.findByTestId("map-canvas");
-  expect(screen.getByTestId("map-stats")).toHaveTextContent("79 in World · 75 relationships");
+  expect(screen.getByTestId("map-stats")).toHaveTextContent("79 names · 75 relationships");
   await user.click(screen.getByRole("button", { name: "What's new" }));
   const drawer = await screen.findByRole("dialog", { name: "What's new" });
   const subaruRow = await within(drawer).findByRole("button", { name: /Subaru.*Company · 2 new facts/ });

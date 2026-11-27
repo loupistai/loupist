@@ -169,7 +169,15 @@ export type ChatToolTraceEntry = {
   python?: PythonRunTrace,
 };
 
-export type DiscardedMemoryItem = { kind: DiscardedMemoryKind, title: string };
+export type DiscardedMemoryItem = {
+  kind: DiscardedMemoryKind,
+  title: string,
+  /**
+   * Why a save that kept the rest of its turn left this item out. Absent
+   * when the whole save was skipped, whose receipt gives the reason.
+   */
+  reason?: MemorySaveSkipReason,
+};
 
 export type DiscardedMemoryKind =
   | "note"
@@ -317,7 +325,16 @@ export type HomeVocabulary = {
 
 export type MapKind = { name: string, label: string, labelKo?: string };
 
-export type MemorySaveSkipReason = "user" | "deadline" | "interrupted" | "failed" | "policy_changed";
+export type MemorySaveSkipReason =
+  | "user"
+  | "deadline"
+  | "interrupted"
+  | "failed"
+  | "policy_changed"
+  | "invalid"
+  | "store_busy"
+  | "storage"
+  | "conflict";
 
 export type MemoryUpdateChange = {
   worldJobId?: string | null,

@@ -18,6 +18,7 @@ function merge(target: ObjectValue, patch: ObjectValue, source?: ConfigSource, s
 }
 
 const defaults = (userSkills: boolean): EffectiveConfig => ({
+  background_daily_requests: 400, world_chat_daily_requests: 300, learning_daily_requests: 132, learning_program_cap: 20,
   appearance: { theme: "system", language: "system", price_colors: "auto" }, models: { hidden_model_profile_ids: [] }, connectors: {},
   chat: { model_profile_id: null, thinking_level: null, run_options: {}, use_memory: true, update_memory: true },
   skills: Object.fromEntries([...DEFAULT_AGENT_SKILL_IDS, ...(userSkills ? ["skill-creator"] : [])].map(id => [id, { enabled: id !== "skill-creator" }])),

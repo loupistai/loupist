@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "@/test/selectOption";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
@@ -202,7 +203,7 @@ it("shows approvals only for the selected Loupist", async () => {
   await bridge.customToolApprove({ connection_id: record.id, loupist_id: first.id, tool_name: record.tools[0].name, definition_hash: record.tools[0].definition_hash, choice: "always" });
   render(<CustomConnections bridge={bridge} loupists={[first, second]} initialLoupistId={first.id} />);
   expect(await screen.findByText("Online server · 1 tool allowed")).toBeVisible();
-  await userEvent.setup().selectOptions(screen.getByRole("combobox", { name: "Loupist" }), second.id);
+  await chooseSelectOption(userEvent.setup(), screen.getByRole("combobox", { name: "Loupist" }), second.name);
   expect(await screen.findByText("Online server · 0 tools allowed")).toBeVisible();
   expect(screen.queryByText("Online server · 1 tool allowed")).toBeNull();
 });

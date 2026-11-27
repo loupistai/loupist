@@ -2,11 +2,11 @@ import { SavedPassage } from "./SavedPassage";
 import { readWithWorldRetry } from "../../knowledge/readWithWorldRetry";
 import { SavedSourceData } from "./SavedSourceData";
 import { revealTableCell } from "./revealTableCell";
-import { readableCitedPassages } from "./citedPassages";
+import { passageFromRange, readableCitedPassages } from "./citedPassages";
 import { QuoteAsk } from "../chat/QuoteAsk";
 import { useSettledScroll } from "./settledScroll";
 import { ConnectionOrigin } from "../connections/custom/ConnectionOrigin";
-import { formatDate, formatNumber } from "../../i18n/format";
+import { formatCalendarDate, formatNumber } from "../../i18n/format";
 import { coverageLabel, metadataLabel, dateValue, timePointValue, spanSelectorLabel } from "../../knowledge/presentation";
 import i18n, { useTranslation } from "../../i18n";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -26,10 +26,12 @@ import type { LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin, 
 import { errorMessage } from "../../lib/errors";
 import { pinForSource, type SourceOpen } from "../../knowledge/location";
 import { compactOrigin, sourceOrigin, sourceTitle } from "../../knowledge/hostSource";
-import { isMapProcessing, processingSourceCount, sourceDisplayStatus, sourceProcessingLabel, waitingLabel, type WorldProcessing } from "../../knowledge/mapProcessing";
+import { isMapProcessing, processingSourceCount, sourceDisplayStatus, sourceHold, sourceHoldLine, sourceProcessingLabel, sourceRetryOffered, stoppedSourceLine, waitingLabel, type StoppedSource, type WorldProcessing } from "../../knowledge/mapProcessing";
 import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
 import { relationName } from "../map/relations";
 import { SourceRetry } from "./SourceRetry";
+import { DroppedFigures, useDroppedFigures } from "./DroppedFigures";
+import { sourceListTable, sourcePreviewLine } from "./sourcePreview";
 
 const originLabel = (): Record<SourceClass, string> => ({
   publisher_document: i18n.t("knowledge:sourceWorkspace.publisherDocument"), dataset: i18n.t("knowledge:sourceWorkspace.dataset"), user_statement: i18n.t("knowledge:sourceWorkspace.userStatement"),
@@ -43,13 +45,14 @@ const sourceDate = (value: string | undefined) => {
   if (/^\d{4}(?:-\d{2})?$/.test(value)) return dateValue(value);
   // A publication day is a local calendar date, not a UTC instant.
   const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value);
-  // Korean reads the long form (2026년 10월 27일), not "2026. 10. 27.".
-  return Number.isNaN(date.getTime()) ? value : formatDate(date, { dateStyle: i18n.language.toLowerCase().startsWith("ko") ? "long" : "medium" });
+  return Number.isNaN(date.getTime()) ? value : formatCalendarDate(date);
 };
 const textMedia = (value: string) => value.startsWith("text/") || value === "application/json";
 
 /** A row shows its Map status only when it says more than "Source saved": a finished or unprocessed source stays quiet. */
 const quietStatus = (status?: string) => status === "completed" || sourceProcessingLabel(status) === sourceProcessingLabel();
+const stopOf = (processing: StoppedSource | null | undefined, status?: string): StoppedSource => ({ ...processing, status, failure: processing?.failure, retryable: processing?.retryable });
+const allowanceStop = (processing: StoppedSource | null | undefined, status?: string) => status === "paused_budget" && processing?.failure?.kind !== "world_full";
 
 /** Where a user-provided Source came from: the Chat it was pasted in and what the user said about it, none of it verified. */
 function ProvidedNote({ provided }: { provided: NonNullable<SourceDetail["provided"]> }) {
@@ -102,8 +105,14 @@ export function SourceWorkspace({ bridge, catalog, worldProcessing, location, so
   const focusTable = Boolean(savedTable?.focusedCell && !detail?.figureFailure);
   const mediaType = span?.mediaType;
   const focusedMark = detail?.figureFailure ? undefined : presentation?.focusedMark;
-  const passages = useMemo(() => !savedTable && presentation && mediaType && textMedia(mediaType)
-    ? readableCitedPassages(presentation.text, presentation.citedPassages, focusedMark) : [], [presentation, mediaType, focusedMark, savedTable]);
+  // A World claim opened here names the passage it was extracted from: that passage is shown and marked.
+  const claimPassage = selected?.passage;
+  const passages = useMemo(() => {
+    if (savedTable || !mediaType || !textMedia(mediaType)) return [];
+    const extracted = readableText ? passageFromRange(readableText, claimPassage, presentation?.contentOffset ?? 0) : null;
+    if (extracted) return [extracted];
+    return presentation ? readableCitedPassages(presentation.text, presentation.citedPassages, focusedMark) : [];
+  }, [presentation, readableText, mediaType, focusedMark, savedTable, claimPassage]);
   const hasCitedPassages = passages.length > 0;
   const readingCitations = hasCitedPassages && !wholeSavedText;
   const initialPassage = passages.findIndex(passage => passage.marks.some(mark => mark.focused));
@@ -224,6 +233,7 @@ export function SourceWorkspace({ bridge, catalog, worldProcessing, location, so
     }, 2500);
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [bridge, followedJobs, location.loupistId]);
+  const readerDropped = useDroppedFigures(bridge, location.loupistId, detail?.processing?.jobId, readerProcessingDone(processing ?? detail?.processing?.status));
   const retrySource = (recordId: string) => () => bridge.knowledgeGraphRetrySource({ loupistId: location.loupistId, recordId });
   const rowRetried = (job: { jobId: string; status: string }) => {
     changedRef.current();
@@ -244,10 +254,11 @@ export function SourceWorkspace({ bridge, catalog, worldProcessing, location, so
   const queuedStatus = sourceDisplayStatus("queued", readiness);
   const matching = catalog.sources.flatMap(record => record.objects.map(item => ({
     record, item, status: sourceDisplayStatus(item.processing?.status, readiness),
+    preview: sourcePreviewLine({ ...item, table: sourceListTable(item) }),
   }))).filter(({ item }) => !search || `${sourceTitle(item)} ${item.summary ?? ""} ${sourceOrigin(item) ?? ""}`.normalize("NFKC").toLowerCase().includes(search));
   const processingCount = processingSourceCount(catalog, readiness);
   const needsAttention = (status?: string) => (status !== undefined && status === queuedStatus && !isMapProcessing(status))
-    || ["paused", "paused_budget", "failed_before_mutation", "reconcile_required", "cancelled_before_start", "unsupported", "no_text"].includes(status ?? "");
+    || ["paused", "paused_budget", "failed_before_mutation", "failed_extraction", "provider_error", "reconcile_required", "reconciled_without_retry", "interrupted", "timed_out", "usage_uncertain", "cancelled_before_start", "unsupported", "no_text"].includes(status ?? "");
   const sources = matching.filter(({ status }) => filter === "all" || (filter === "processing" ? isMapProcessing(status) : needsAttention(status)));
   const readerProcessing = sourceDisplayStatus(processing, readiness);
   const processingSettings = onManageProcessing ? <Button variant="ghost" size="icon-sm" aria-label={t("sourceWorkspace.worldProcessingSettings")} title={t("sourceWorkspace.worldProcessingSettings")} onClick={onManageProcessing}><Settings2Icon /></Button> : null;
@@ -302,14 +313,15 @@ export function SourceWorkspace({ bridge, catalog, worldProcessing, location, so
       </div> : null}
       {!sources.length ? <EmptyState title={search || filter !== "all" ? t("sourceWorkspace.noMatchingSources") : t("sourceWorkspace.noSourcesYet")} description={search || filter !== "all" ? t("sourceWorkspace.tryAnotherSearchOrChooseAll") : t("sourceWorkspace.addTextAFileOrALinkToUseIn")} /> : null}
       <ul ref={listRef} aria-label={t("sourceWorkspace.sources")}>
-        {sources.map(({ record, item, status }) => <li key={`${record.recordId}:${item.id}`}>
+        {sources.map(({ record, item, status, preview }) => <li key={`${record.recordId}:${item.id}`}>
           <Button variant="ghost" className="source-library-row" data-testid="source-library-row" data-source-id={item.id} aria-current={item.id === selected?.sourceId} onClick={() => onOpen({ loupistId: location.loupistId, surface: "source", recordId: record.recordId, revisionId: record.revisionId, objectId: item.id, view: { ...location.view, readerScrollTop: 0, focusSourceId: item.id }, selection: { kind: "source", sourceId: item.id } })}>
-            <span className="memory-rail-copy"><strong>{sourceTitle(item)}</strong>{item.summary ? <span className="source-summary">{item.summary}</span> : null}
+            <span className="memory-rail-copy"><strong>{sourceTitle(item)}</strong>{preview ? <span className="source-summary">{preview}</span> : null}
               <small className="source-row-meta"><ConnectionOrigin origin={item.origin} />{item.userProvided ? <span className="source-row-provided">{t("sourceWorkspace.userProvided")}</span> : null}<span className="source-row-origin" title={sourceOrigin(item)}>{compactOrigin(sourceOrigin(item))}</span>{item.publicationTime?.value ?? item.acquiredAt?.value ? <time title={item.publicationTime?.value ?? item.acquiredAt?.value}>{sourceDate(item.publicationTime?.value ?? item.acquiredAt?.value)}</time> : null}
-              {quietStatus(status) || (status === waiting && status !== item.processing?.status) ? null : <span className="source-row-status" data-attention={needsAttention(status) || undefined}>{isMapProcessing(status) ? <Spinner /> : status === "completed" ? <CheckIcon aria-hidden="true" /> : null}{sourceProcessingLabel(status)}</span>}</small>
+              {quietStatus(status) || (status === waiting && status !== item.processing?.status) ? null : <span className="source-row-status" data-attention={needsAttention(status) || undefined}>{isMapProcessing(status) ? <Spinner /> : status === "completed" ? <CheckIcon aria-hidden="true" /> : null}{sourceHold(stopOf(item.processing, status)) ? sourceHoldLine(sourceHold(stopOf(item.processing, status))!) : stoppedSourceLine(stopOf(item.processing, status))}</span>}</small>
             </span>
           </Button>
-          {item.processing?.status === "paused_budget" ? <SourceRetry key={item.processing.jobId ?? "retry"} retry={retrySource(record.recordId)} onRetried={rowRetried} /> : null}
+          <RowDroppedFigures bridge={bridge} loupistId={location.loupistId} jobId={item.processing?.jobId} finished={status === "completed"} />
+          {sourceHold(stopOf(item.processing, status)) ? <SourceRetry key={item.processing?.jobId ?? "read"} readNow retry={retrySource(record.recordId)} onRetried={rowRetried} /> : sourceRetryOffered(stopOf(item.processing, status)) ? <SourceRetry key={item.processing?.jobId ?? "retry"} allowance={allowanceStop(item.processing, status)} retry={retrySource(record.recordId)} onRetried={rowRetried} /> : null}
         </li>)}
       </ul>
     </div> : null}
@@ -357,7 +369,7 @@ export function SourceWorkspace({ bridge, catalog, worldProcessing, location, so
         </section> : <p>{t("sourceWorkspace.onlyTheSourceDetailsWereSavedNoPassageIsAvailable")}</p>}
         {span && !textMedia(span.mediaType) ? <div className="knowledge-inspector-actions"><Button variant="outline" disabled={exporting} onClick={() => void exportFile()}>{exporting ? t("sourceWorkspace.exporting") : detail.material === "original" ? t("sourceWorkspace.exportOriginalFile") : t("sourceWorkspace.exportSavedFile")}</Button>{exported ? <span role="status">{t("sourceWorkspace.fileExported")}</span> : null}{exportError ? <p role="alert">{exportError}</p> : null}</div> : null}
         {detail.spans.length > 1 ? <div className="knowledge-inspector-actions" aria-label={t("sourceWorkspace.sourcePassages")}>{detail.spans.map((item, index) => <Button key={item.spanId} variant={item.spanId === span?.spanId ? "secondary" : "ghost"} onClick={() => onOpen({ ...location, selection: { ...selected, kind: "source", sourceId: detail.sourceId, spanId: item.spanId } })}>{t("sourceWorkspace.passage", { index: formatNumber(index + 1) })}</Button>)}</div> : null}
-        <div className="source-processing-status" data-attention={needsAttention(readerProcessing) || undefined}><div><span className="source-reader-eyebrow">{t("sourceWorkspace.worldProcessing")}</span><p role="status">{isMapProcessing(readerProcessing) ? <Spinner /> : null}{sourceProcessingLabel(readerProcessing)}</p>{detail.processing?.error ? <p className="knowledge-hint">{detail.processing.error}</p> : null}{processing === "paused_budget" ? <SourceRetry retry={retrySource(detail.recordId)} onRetried={readerRetried} /> : null}</div>{statusControl(readerProcessing)}</div>
+        <div className="source-processing-status" data-attention={needsAttention(readerProcessing) || undefined}><div><span className="source-reader-eyebrow">{t("sourceWorkspace.worldProcessing")}</span><p role="status">{isMapProcessing(readerProcessing) ? <Spinner /> : null}{sourceHold(stopOf(detail.processing, readerProcessing)) ? sourceHoldLine(sourceHold(stopOf(detail.processing, readerProcessing))!) : stoppedSourceLine(stopOf(detail.processing, readerProcessing))}</p>{detail.processing?.error ? <p className="knowledge-hint">{detail.processing.error}</p> : null}<DroppedFigures job={readerDropped} />{sourceHold(stopOf(detail.processing, readerProcessing)) ? <SourceRetry readNow retry={retrySource(detail.recordId)} onRetried={readerRetried} /> : sourceRetryOffered(stopOf(detail.processing, readerProcessing)) ? <SourceRetry allowance={allowanceStop(detail.processing, readerProcessing)} retry={retrySource(detail.recordId)} onRetried={readerRetried} /> : null}</div>{statusControl(readerProcessing)}</div>
         {detailRefreshError ? <div className="knowledge-inspector-actions"><p role="alert">{detailRefreshError}</p><Button variant="outline" disabled={detailRefreshing} onClick={() => void refreshDetail()}>{detailRefreshing ? t("sourceWorkspace.refreshingSource") : t("sourceWorkspace.refreshSourceDetails")}</Button></div> : null}
         {claimGroups.map(({ kind, label, claims }) => claims.length ? <details key={kind} className="source-related-claims" aria-label={label}>
           <summary>{label}<span>{formatNumber(claims.length)}</span></summary>
@@ -469,4 +481,11 @@ export function AddSourceDialog({ bridge, loupistId, open, onOpenChange, onSaved
       </form>
     </DialogContent>
   </Dialog>;
+}
+
+const readerProcessingDone = (status: string | undefined) => status === "completed";
+
+/** A Library row's dropped-figure line, read once its World job has finished. */
+function RowDroppedFigures({ bridge, loupistId, jobId, finished }: { bridge: LoupistBridge; loupistId: string; jobId?: string | null; finished: boolean }) {
+  return <DroppedFigures job={useDroppedFigures(bridge, loupistId, jobId, finished)} />;
 }

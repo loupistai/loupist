@@ -2,8 +2,8 @@ import { AssetBotCard } from "./AssetBotCard";
 import i18n, { useTranslation } from "@/i18n";
 import { formatDate, formatNumber, storedPriceWasRounded } from "@/i18n/format";
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
-import { ArrowLeftIcon, ArrowUpIcon, NetworkIcon, RefreshCwIcon } from "lucide-react";
-import type { ChatThread, LoupistBridge, LoupistSummary } from "../../types";
+import { ArrowLeftIcon, ArrowUpIcon, NetworkIcon, PrinterIcon, RefreshCwIcon } from "lucide-react";
+import type { ChatThread, LoupistBridge, LoupistSummary, ScheduledTaskListItem } from "../../types";
 import { assetTicker, type AssetEvidence, type AssetMapCounts, type AssetOpenRequest, type AssetPage as AssetPageData, type AssetPageTarget, type AssetPricePoint, type AssetStoredPrice } from "../../contracts/assets";
 import { AssetTile } from "../market/AssetTile";
 import { PriceText } from "../market/PriceText";
@@ -18,12 +18,17 @@ import { Spinner } from "../ui/spinner";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { connectionLabel } from "./connectionName";
 import { AssetThesis } from "./AssetThesis";
+import { ReportChanges } from "./ReportChanges";
+import { SinceThisRead } from "./SinceThisRead";
 import { citationNumbers, moveSentence, readSentence, shortDay, SourceChips } from "./assetText";
 import { providerName } from "@/lib/marketProviderName";
 import { useAssetNames } from "./assetName";
 import { listingExchange } from "./listingExchange";
 import "@/styles/asset-page.css";
 import { commandErrorCode } from "@/lib/errors";
+import { printReader } from "../print/printDocuments";
+import { learningProgramsFor } from "../briefings/assetListing";
+import { UnfollowDailyDialog } from "../briefings/FollowingPage";
 
 const t = i18n.getFixedT(null, "assets");
 const HISTORY_ROWS = 10;
@@ -79,12 +84,17 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onO
   const loupistId = loupist.id;
   const online = useOnline();
   const [page, setPage] = useState<AssetPageData | null>(null);
+  const [tasks, setTasks] = useState<ScheduledTaskListItem[] | null>(null);
+  const [confirmUnfollow, setConfirmUnfollow] = useState(false);
   /** The page could not be opened: `unknown` and `ambiguous` are a saved link's ticker the host could not place. */
   const [failure, setFailure] = useState<"load" | "unknown" | "ambiguous" | null>(null);
   const [reload, setReload] = useState(0);
   const [points, setPoints] = useState<AssetPricePoint[] | null>(null);
   const [priceSource, setPriceSource] = useState<AssetStoredPrice | null>(null);
   const [seriesFailed, setSeriesFailed] = useState(false);
+  const [showChartWait, setShowChartWait] = useState(false);
+  const [printFailed, setPrintFailed] = useState(false);
+  const pageRef = useRef<HTMLElement>(null);
   const [seriesRetry, setSeriesRetry] = useState(0);
   const historyRequest = useRef<{ loupistId: string; assetId: string; retry: number; pending: Promise<AssetPricePoint[]> } | null>(null);
   const [chartRange, setChartRange] = useState<PriceRange | null>(null);
@@ -131,6 +141,15 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onO
     return () => { live = false; };
   }, [bridge, loupistId, target.assetId, target.ticker, reload]);
 
+  useEffect(() => {
+    if (!page) return;
+    if (page.asset.followedAtMs === null) { setTasks([]); return; }
+    let live = true;
+    setTasks(null);
+    void bridge.scheduledTasksList({ loupist_id: loupistId }).then(rows => { if (live) setTasks(rows); }, () => { if (live) setTasks([]); });
+    return () => { live = false; };
+  }, [bridge, loupistId, page]);
+
   // Reread the stored page when a follow, setup or price changes.
   useEffect(() => bridge.onAssetsChanged?.(() => {
     if (confirmed.current) setReload(value => value + 1);
@@ -154,9 +173,12 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onO
       pending = bridge.assetPriceSeries(request);
       historyRequest.current = { ...request, retry: seriesRetry, pending };
     }
-    pending.then(next => { if (live) { setPoints(chartPoints(next)); setSeriesFailed(false); } })
-      .catch(() => { if (live) { setPoints(null); setSeriesFailed(true); } });
-    return () => { live = false; };
+    setShowChartWait(false);
+    const timer = window.setTimeout(() => { if (live) setShowChartWait(true); }, 300);
+    const stopWait = () => window.clearTimeout(timer);
+    pending.then(next => { stopWait(); if (live) { setPoints(chartPoints(next)); setSeriesFailed(false); } })
+      .catch(() => { stopWait(); if (live) { setPoints(null); setSeriesFailed(true); } });
+    return () => { live = false; stopWait(); };
   }, [bridge, loupistId, assetId, revision, priceDate, priceValue, seriesRetry]);
 
   useEffect(() => {
@@ -224,6 +246,21 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onO
     }
   };
 
+  const unfollow = async (pauseDaily: boolean) => {
+    if (!page) return;
+    setConfirmUnfollow(false);
+    setActionError(null);
+    try {
+      if (pauseDaily) {
+        for (const task of learningProgramsFor(page.asset.assetId, tasks ?? [])) {
+          await bridge.scheduledTaskSetStatus({ loupist_id: loupistId, task_id: task.id, expected_revision: task.revision, status: "paused" });
+        }
+      }
+      await bridge.assetUnfollow({ loupistId, assetId: page.asset.assetId });
+      changed();
+    } catch { setActionError(i18n.t("briefings:following.stop.failed", { name })); }
+  };
+
   const follow = async () => {
     if (!page) return;
     setActionError(null);
@@ -276,6 +313,8 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onO
             ? <Button type="button" variant="ghost" size="sm" className="asset-meta-action" onClick={() => void follow()}>{t("page.follow")}</Button>
             : <span>{t("page.watching")}</span>}
         </p> : null}
+        {page && page.asset.followedAtMs !== null ? <Button type="button" variant="ghost" size="sm" className="asset-meta-action" aria-label={i18n.t("briefings:following.stop.label", { name })} disabled={tasks === null}
+          onClick={() => { if (learningProgramsFor(page.asset.assetId, tasks ?? []).length) setConfirmUnfollow(true); else void unfollow(false); }}>{i18n.t("briefings:following.stop.action")}</Button> : null}
       </div>
       <div className="asset-page-actions">
         {/* A disabled button takes no pointer: its wrapper carries the reason as a tooltip. */}
@@ -287,6 +326,13 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onO
           </Button>
         </span>
         <Button type="button" className="asset-ask" onClick={focusAsk} disabled={!page}>{t("assetPage.ask.button", { loupist: loupist.name })}</Button>
+        <Button type="button" variant="ghost" data-print="omit" data-asset-print disabled={!page} onClick={() => {
+          const printed = pageRef.current;
+          if (!printed) return;
+          setPrintFailed(false);
+          void printReader(printed, `${name} · ${formatDate(Date.now())}`).catch(() => setPrintFailed(true));
+        }}><PrinterIcon aria-hidden="true" />{i18n.t("briefings:print")}</Button>
+        {printFailed ? <span className="asset-print-error" role="alert" data-print="omit">{i18n.t("briefings:printFailed")}</span> : null}
       </div>
     </div>
   </header>;
@@ -361,10 +407,13 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onO
 
   const ranges = points ? offeredRanges(points) : [];
   const range = chartRange && ranges.includes(chartRange) ? chartRange : ranges.at(-1) === "1Y" ? "3M" : ranges.at(-1);
+  const historyPending = points === null && !seriesFailed;
   const chart = points && range && ranges.length
     ? <div className="asset-card asset-chart-card"><PriceChart points={rangePoints(points, range)} currency={currency} range={range} ranges={ranges} onRange={setChartRange} name={name} /></div>
     // A price exists but the chart could not be read: say so and offer a retry, never an empty frame.
     : seriesFailed && price ? <div className="asset-page-error" role="alert"><p>{t("assetPage.chart.failed")}</p><Button type="button" variant="outline" size="sm" onClick={() => setSeriesRetry(value => value + 1)}>{t("error.retry")}</Button></div>
+      : historyPending && (page.priceSetupRunning || showChartWait) ? <div className="asset-card asset-chart-skeleton" role="status"><p>{t("assetPage.chart.loading")}</p></div>
+      : points && points.length === 0 ? <p className="asset-chart-empty">{t("assetPage.chart.empty")}</p>
       : null;
 
   // The ask box: a question about this asset goes into Bot's message box; nothing is sent from here.
@@ -392,7 +441,8 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onO
     </div>
   </section> : null;
 
-  return <section className="asset-page" aria-label={t("page.label", { name })}>
+  return <section ref={pageRef} className="asset-page" aria-label={t("page.label", { name })}>
+    <UnfollowDailyDialog name={name} open={confirmUnfollow} onCancel={() => setConfirmUnfollow(false)} onConfirm={pause => void unfollow(pause)} />
     <Dialog open={priceSource !== null} onOpenChange={open => { if (!open) setPriceSource(null); }}>
       {priceSource ? <DialogContent>
         <DialogHeader>
@@ -451,7 +501,9 @@ export function AssetPage({ bridge, loupist, target, threads, onBack, onAsk, onO
         <AssetThesis bridge={bridge} loupistId={loupistId} loupistName={loupist.name} page={page} name={name} threads={threads} numbers={numbers}
           onChanged={changed} onUndo={moveId => void undo(moveId)} onOpenEvidence={openEvidence} onOpenChat={onOpenChat}
           onWorkItOut={() => onAsk(thesisPrompt)} />
-        {page.asset.followedAtMs !== null && <AssetBotCard key={page.asset.assetId} bridge={bridge} loupistId={loupistId} assetId={page.asset.assetId} hasLines={page.lines.length > 0} />}
+        <SinceThisRead bridge={bridge} loupistId={loupistId} page={page} name={name} onOpenMap={() => onOpenMap(page.entityId ?? undefined)} onOpenSource={onOpenSource} />
+        <ReportChanges bridge={bridge} loupistId={loupistId} assetId={page.asset.assetId} onOpenSource={onOpenSource} />
+        <AssetBotCard key={page.asset.assetId} bridge={bridge} loupistId={loupistId} assetId={page.asset.assetId} hasLines={page.lines.length > 0} name={name} followed={page.asset.followedAtMs !== null} />
         {mapRow}
       </aside>
     </div>

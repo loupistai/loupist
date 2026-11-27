@@ -67,7 +67,7 @@ export function templateDraft(id: TemplateId, tone: LoupistTone = "balanced"): L
  * The name step for a Loupist that existed before onboarding (a development seed, or a
  * folder registered before the notice was accepted). Its stored name is kept unless the
  * host only copied the folder's name, which the interface never shows as a name; then
- * its template (or My portfolio) suggests one.
+ * its template (or Watchlist research) suggests one.
  */
 export function existingDraft(loupist: LoupistSummary): LoupistDraft {
   const template = loupistTemplates.find(item => item.id === loupist.template)?.id ?? "portfolio";

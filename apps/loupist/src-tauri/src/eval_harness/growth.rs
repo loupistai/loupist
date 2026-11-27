@@ -102,6 +102,7 @@ fn snapshot(state: &AppState, loupist: &str) -> Result<Value> {
         KnowledgeMapQuery {
             loupist_id: loupist.into(),
             max_nodes: Some(1000),
+            as_of: None,
         },
     )?;
     let mut nodes = BTreeMap::<String, usize>::new();

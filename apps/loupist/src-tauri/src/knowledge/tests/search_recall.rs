@@ -244,6 +244,8 @@ fn library(corpus: &Corpus) -> Library {
                     span_id: source.span_id.clone().unwrap(),
                     role: BindingRole::ExtractedFrom,
                     attribution: title.clone(),
+                    figure_check: None,
+                    passage: None,
                 }],
                 status: ClaimStatus::Active,
                 recorded_at_ms: Some(AT),

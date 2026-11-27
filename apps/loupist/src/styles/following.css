@@ -1,6 +1,16 @@
 /* Following: the search field, its results and the followed list. */
 /* Following: one search field and one list in one column; the field stays pinned under the shell header. */
 .following-page { container: following-pane / inline-size; min-height: 100%; }
+.following-view { box-sizing: border-box; width: 100%; max-width: calc(var(--gg-size-chat-column) + 2 * var(--gg-space-7)); margin-inline: auto; padding: var(--gg-space-4) var(--gg-space-7) 0; }
+.following-ahead { display: grid; gap: var(--gg-space-4); }
+.following-ahead-day { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-medium); line-height: var(--gg-leading-meta); }
+.following-ahead ul { margin: 0; padding: 0; list-style: none; }
+.following-ahead-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gg-space-1) var(--gg-space-3); padding: var(--gg-space-2) 0; border-bottom: 1px solid var(--gg-color-border-subtle); }
+.following-ahead-kind { color: var(--gg-color-text-primary); font-size: var(--gg-text-body); }
+.following-ahead-asset { padding: 0; border: 0; background: none; color: var(--gg-color-text-primary); font: inherit; text-align: start; cursor: pointer; }
+.following-ahead-detail, .following-ahead-untied, .following-ahead-from { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.following-ahead-empty { margin: 0; padding: var(--gg-space-5) var(--gg-space-3); color: var(--gg-color-text-secondary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+.following-pause-daily { display: flex; align-items: flex-start; gap: var(--gg-space-2); }
 .following-search, .following-body {
   box-sizing: border-box; width: 100%; max-width: calc(var(--gg-size-chat-column) + 2 * var(--gg-space-7));
   margin-inline: auto; padding-inline: var(--gg-space-7);
@@ -26,11 +36,27 @@
 }
 button.following-open { cursor: pointer; }
 /* A followed row opens its asset page: under the pointer it lights up as a result row does, so it reads as something to open. */
-.following-row:has(> button.following-open:hover) { background: var(--gg-color-bg-hover); }
+.following-row:has(button.following-open:hover) { background: var(--gg-color-bg-hover); }
 .following-names { display: grid; flex: 1 1 0; min-width: 0; }
 .following-name { overflow: hidden; color: var(--gg-color-text-primary); font-size: var(--gg-text-body); font-weight: var(--gg-weight-medium); line-height: var(--gg-leading-body); text-overflow: ellipsis; white-space: nowrap; }
 .following-identity { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); font-variant-numeric: tabular-nums; }
-.following-stop { flex: none; color: var(--gg-color-text-tertiary); }
+.following-lead { display: grid; flex: 1 1 12rem; min-width: 0; justify-items: start; }
+.following-open { width: 100%; }
+.following-badges { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1); min-width: 0; }
+.following-badge { padding: 0 6px; border: 1px solid var(--gg-color-border-subtle); border-radius: var(--gg-radius-full); color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); line-height: 1.6; }
+.following-badge[data-failing] { color: var(--gg-color-warning); border-color: var(--gg-color-warning); }
+.following-thesis { display: inline-flex; align-items: center; gap: var(--gg-space-1); }
+.following-move-dot { width: 6px; height: 6px; border-radius: var(--gg-radius-full); background: var(--gg-color-accent); }
+.following-quote { display: grid; margin: 0 0 0 auto; text-align: end; justify-items: end; }
+.following-quote-meta { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.following-change { white-space: nowrap; }
+.following-change[data-direction="up"] { color: var(--gg-color-price-up); }
+.following-change[data-direction="down"] { color: var(--gg-color-price-down); }
+.following-stop, .following-row-retry { flex: none; color: var(--gg-color-text-tertiary); }
+@container following-pane (max-width: 560px) {
+  .following-lead, .following-badges { flex-basis: 100%; }
+  .following-quote { margin-inline-start: 0; text-align: start; justify-items: start; }
+}
 .following-row:is(:hover, :focus-within) .following-stop { color: var(--gg-color-text-primary); }
 .following-row[data-removing] .following-stop { cursor: progress; }
 .following-row-error { flex: 1 1 100%; margin: 0; color: var(--gg-color-negative); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }

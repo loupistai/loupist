@@ -93,8 +93,8 @@ const fitZoomCap = (count: number) => count <= 12 ? 3 : count <= 60 ? 2.6 : MAX_
 const MIN_DOT_FIT_COUNT = 150;
 const minFitZoom = (shown: readonly PositionedNode[]) => shown.length > MIN_DOT_FIT_COUNT ? .3 : Math.max(.3, 3 / Math.min(...shown.map(nodeRadius)));
 /** Below this canvas size the legend floats over the map instead of shrinking the fit. */
-/** Labelled before the rest: the best-connected names. */
-const TOP_HUBS = 10;
+/** Labelled at any zoom on the first view: the best-connected names. Metrics are excluded where the set is built. */
+const TOP_HUBS = 20;
 /** Room kept between a fitted drawing's outermost dots and the free area's edge: 24 px, less in a short strip such as the onboarding mini map. */
 const fitPadding = (width: number, height: number) => Math.min(24, Math.max(12, Math.min(width, height) * .1));
 const MIN_SELECTION_STRIP = 120;

@@ -1,6 +1,7 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ScheduleTaskControls } from "./ScheduleTaskControls";
+import { commandError } from "@/bridge/mock/commandError";
 import type { LoupistBridge, ScheduledTask } from "@/types";
 import i18n from "@/i18n";
 
@@ -62,7 +63,7 @@ it("explains what happens to run history and Bot summaries in Korean", async () 
 it("resumes a paused task, keeps the briefing undeletable, and shows a failure with retry", async () => {
   const { calls, user } = setup(task({ kind: "briefing", status: "paused" }), { scheduledTaskSetStatus: vi.fn().mockRejectedValueOnce(new Error("")) as never });
   expect(screen.queryByRole("button", { name: /More actions/ })).toBeNull();
-  expect(screen.getByText("To change the briefing’s days and time, tell Bot.")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Change in Bot" })).toBeVisible();
   // Paused: Resume is the one filled button.
   expect(screen.getByRole("button", { name: "Resume" })).toHaveAttribute("data-variant", "default");
   await user.click(screen.getByRole("button", { name: "Resume" }));
@@ -70,9 +71,55 @@ it("resumes a paused task, keeps the briefing undeletable, and shows a failure w
   expect(calls.scheduledTaskRunNow).not.toHaveBeenCalled();
 });
 
+it("asks before running a held task and deletes a learning program", async () => {
+  const allowance = setup(task({ kind: "learning", hold: { reason: "allowance", local_day: "2026-11-25", provider: null } }));
+  expect(screen.getByRole("button", { name: "Ask Bot to change" })).toBeVisible();
+  expect(screen.queryByRole("combobox", { name: "Posts to" })).toBeNull();
+  await allowance.user.click(screen.getByRole("button", { name: "Run now" }));
+  const dialog = await screen.findByRole("dialog", { name: "Run now" });
+  expect(dialog).toHaveAccessibleDescription("This runs beyond today's allowance.");
+  expect(allowance.calls.scheduledTaskRunNow).not.toHaveBeenCalled();
+  await allowance.user.click(within(dialog).getByRole("button", { name: "Run now" }));
+  expect(allowance.calls.scheduledTaskRunNow).toHaveBeenCalledWith({ loupist_id: "loupist", task_id: "task-1", confirm: true });
+  await allowance.user.click(screen.getByRole("button", { name: "More actions for Chip news" }));
+  await allowance.user.click(await screen.findByRole("menuitem", { name: "Delete…" }));
+  expect(await screen.findByRole("dialog", { name: "Delete “Chip news”?" })).toBeVisible();
+});
+
+it("opens the one-run confirmation when the host refuses with ask_first and the task has no hold", async () => {
+  const hold = { reason: "allowance" as const, local_day: "2026-11-25", provider: null };
+  const runNow = vi.fn(async (request: { confirm?: boolean }) => {
+    if (!request.confirm) throw commandError("conflict", "Run now needs confirmation because background work is held.", { action: "ask_first", hold });
+    return {};
+  });
+  const { user, onChanged } = setup(task({ kind: "learning" }), { scheduledTaskRunNow: runNow as never });
+  await user.click(screen.getByRole("button", { name: "Run now" }));
+  const dialog = await screen.findByRole("dialog", { name: "Run now" });
+  expect(dialog).toHaveAccessibleDescription("This runs beyond today's allowance.");
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(runNow).toHaveBeenCalledTimes(1);
+  expect(runNow).toHaveBeenLastCalledWith({ loupist_id: "loupist", task_id: "task-1" });
+  await user.click(within(dialog).getByRole("button", { name: "Run now" }));
+  expect(runNow).toHaveBeenLastCalledWith({ loupist_id: "loupist", task_id: "task-1", confirm: true });
+  expect(onChanged).toHaveBeenCalledOnce();
+});
+
+it("shows a Run now failure that is not a typed refusal", async () => {
+  const { user } = setup(task(), { scheduledTaskRunNow: vi.fn().mockRejectedValue(new Error("offline")) as never });
+  await user.click(screen.getByRole("button", { name: "Run now" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("offline");
+  expect(screen.queryByRole("dialog", { name: "Run now" })).toBeNull();
+});
+
+it("asks before running a learning program held by the plan limit", async () => {
+  const plan = setup(task({ kind: "learning", hold: { reason: "plan_limit", local_day: "2026-11-25", provider: "openai" } }));
+  await plan.user.click(screen.getByRole("button", { name: "Run now" }));
+  expect(await screen.findByRole("dialog", { name: "Run now" })).toHaveAccessibleDescription("Your AI plan's limit was reached. Runs resume tomorrow.");
+  expect(plan.calls.scheduledTaskRunNow).not.toHaveBeenCalled();
+});
+
 it("hands time and prompt changes to Home as a draft", async () => {
   const { onAskHome, user } = setup(task());
-  expect(screen.getByText(/To change a task's time or prompt, tell Bot/)).toBeVisible();
-  await user.click(screen.getByRole("button", { name: "Ask in Bot" }));
+  await user.click(screen.getByRole("button", { name: "Change in Bot" }));
   expect(onAskHome).toHaveBeenCalledWith("Change my scheduled task “Chip news”: ");
 });

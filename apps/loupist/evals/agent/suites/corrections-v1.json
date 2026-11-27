@@ -1,0 +1,653 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "corrections",
+  "version": 1,
+  "optional_keys": ["seed.corrections"],
+  "description": "Four fictional units in which the agent meets a correction the user made in the app: a claim marked wrong, a Lens section resting on it, an alias the user gave an entity, and an ending the user marked as not having happened. `seed.corrections` applies each through the bridge commands after World is staged; no tool can make one.",
+  "budget": {
+    "maxInputTokensPerTurn": 500000,
+    "maxTurns": 14
+  },
+  "scenarios": [
+    {
+      "id": "UC-001",
+      "title": "A figure the user marked wrong is reported as disputed, not as fact",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "correction",
+        "scripted-world"
+      ],
+      "connections": [],
+      "clock": "2026-11-16T10:00:00+05:30",
+      "seed": {
+        "sources": [
+          {
+            "id": "saraswati-q2",
+            "title": "Saraswati Looms Q2 FY2026-27 results",
+            "text": "Saraswati Looms Limited, unaudited results for Q2 FY2026-27 (announced 9 November 2026). Revenue from operations was ₹642.80 crore, against ₹588.15 crore in Q2 FY2025-26. Profit after tax was ₹41.25 crore. Employee benefit expense was ₹9,875.40 lakh. The board declared an interim dividend of ₹2.50 per equity share.\n",
+            "origin": "https://fictional.example/global/saraswati-q2",
+            "company": "Saraswati Looms Limited",
+            "form": "quarterly results",
+            "publication_time": "2026-11-09",
+            "language": "en"
+          }
+        ],
+        "corrections": [
+          {
+            "claim": {
+              "source": "saraswati-q2",
+              "fact": "sl-revenue-q2"
+            },
+            "action": "dispute"
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "saraswati-q2",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Saraswati Looms Limited",
+                  "type": "Organization",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "sl-revenue-q2",
+                  "subject": "Saraswati Looms Limited",
+                  "object": "Saraswati Looms Limited",
+                  "relation": "REPORTS",
+                  "text": "Saraswati Looms Limited reported revenue from operations of ₹642.80 crore for Q2 FY2026-27.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "sl-profit-q2",
+                  "subject": "Saraswati Looms Limited",
+                  "object": "Saraswati Looms Limited",
+                  "relation": "REPORTS",
+                  "text": "Saraswati Looms Limited reported profit after tax of ₹41.25 crore for Q2 FY2026-27.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "sl-interim-dividend",
+                  "subject": "Saraswati Looms Limited",
+                  "object": "Saraswati Looms Limited",
+                  "relation": "REPORTS",
+                  "text": "The board of Saraswati Looms Limited declared an interim dividend of ₹2.50 per equity share.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "What was Saraswati Looms' revenue from operations in Q2 FY2026-27?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "642.80",
+                      "642.8"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "says-the-user-disputed-it",
+                    "criterion": "The answer tells the user that they marked the ₹642.80 crore figure as wrong, and does not present that figure as established.",
+                    "metric": "boundary"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "UC-002",
+      "title": "A page section that rests on a claim the user marked wrong is treated as contested",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "correction",
+        "scripted-world"
+      ],
+      "connections": [],
+      "clock": "2026-11-16T10:00:00+05:30",
+      "seed": {
+        "sources": [
+          {
+            "id": "saraswati-q2",
+            "title": "Saraswati Looms Q2 FY2026-27 results",
+            "text": "Saraswati Looms Limited, unaudited results for Q2 FY2026-27 (announced 9 November 2026). Revenue from operations was ₹642.80 crore, against ₹588.15 crore in Q2 FY2025-26. Profit after tax was ₹41.25 crore. Employee benefit expense was ₹9,875.40 lakh. The board declared an interim dividend of ₹2.50 per equity share.\n",
+            "origin": "https://fictional.example/global/saraswati-q2",
+            "company": "Saraswati Looms Limited",
+            "form": "quarterly results",
+            "publication_time": "2026-11-09",
+            "language": "en"
+          }
+        ],
+        "lens_pages": [
+          {
+            "title": "Saraswati Looms",
+            "summary": "Research notes on Saraswati Looms Limited.",
+            "kind": "subject",
+            "sections": [
+              {
+                "key": "latest-quarter",
+                "heading": "Latest quarter",
+                "markdown": "Revenue from operations was ₹642.80 crore in Q2 FY2026-27.",
+                "refs": [
+                  {
+                    "source": "saraswati-q2",
+                    "fact": "sl-revenue-q2"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "corrections": [
+          {
+            "claim": {
+              "source": "saraswati-q2",
+              "fact": "sl-revenue-q2"
+            },
+            "action": "dispute"
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "saraswati-q2",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Saraswati Looms Limited",
+                  "type": "Organization",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "sl-revenue-q2",
+                  "subject": "Saraswati Looms Limited",
+                  "object": "Saraswati Looms Limited",
+                  "relation": "REPORTS",
+                  "text": "Saraswati Looms Limited reported revenue from operations of ₹642.80 crore for Q2 FY2026-27.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "sl-profit-q2",
+                  "subject": "Saraswati Looms Limited",
+                  "object": "Saraswati Looms Limited",
+                  "relation": "REPORTS",
+                  "text": "Saraswati Looms Limited reported profit after tax of ₹41.25 crore for Q2 FY2026-27.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "sl-interim-dividend",
+                  "subject": "Saraswati Looms Limited",
+                  "object": "Saraswati Looms Limited",
+                  "relation": "REPORTS",
+                  "text": "The board of Saraswati Looms Limited declared an interim dividend of ₹2.50 per equity share.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Read my Saraswati Looms page and tell me what it says about the latest quarter. Can I rely on it?",
+              "expect": {
+                "memory": [
+                  {
+                    "assert": "lens_read",
+                    "title_matches": "Saraswati Looms",
+                    "metric": "retrieval"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "section-reported-as-contested",
+                    "criterion": "The answer says the page's revenue figure cannot be relied on as it stands because the user marked the claim it rests on as wrong.",
+                    "metric": "boundary"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "UC-003",
+      "title": "A name the user gave an entity resolves to it though no Source uses it",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "correction",
+        "scripted-world"
+      ],
+      "connections": [],
+      "clock": "2026-10-29T09:00:00+01:00",
+      "seed": {
+        "sources": [
+          {
+            "id": "lindenhof-h1",
+            "title": "Lindenhof Maschinenbau AG Halbjahresfinanzbericht 2026",
+            "text": "Lindenhof Maschinenbau AG, Halbjahresfinanzbericht 2026 (veröffentlicht am 6. August 2026). Die Umsatzerlöse beliefen sich im ersten Halbjahr 2026 auf 1.482,6 Mio. EUR (Vorjahr: 1.397,4 Mio. EUR). Das EBIT sank auf 118,3 Mio. EUR (Vorjahr: 131,9 Mio. EUR). Der Auftragsbestand lag zum 30. Juni 2026 bei 2,1 Mrd. EUR. Die Prognose für das Geschäftsjahr 2026 bleibt unverändert: Der Vorstand erwartet Umsatzerlöse von 3,0 bis 3,2 Mrd. EUR.\n",
+            "origin": "https://fictional.example/global/lindenhof-h1",
+            "company": "Lindenhof Maschinenbau",
+            "form": "Halbjahresfinanzbericht",
+            "publication_time": "2026-08-06",
+            "language": "de"
+          },
+          {
+            "id": "lindenhof-prognose",
+            "title": "Lindenhof Maschinenbau AG senkt Umsatzprognose 2026",
+            "text": "Lindenhof Maschinenbau AG senkt die Umsatzprognose für das Geschäftsjahr 2026 auf 2,8 bis 2,9 Mrd. EUR. Die bisherige Prognose von 3,0 bis 3,2 Mrd. EUR wird damit ersetzt.\n",
+            "origin": "https://fictional.example/global/lindenhof-prognose",
+            "company": "Lindenhof Maschinenbau",
+            "form": "Ad-hoc-Mitteilung",
+            "publication_time": "2026-10-28",
+            "language": "de"
+          }
+        ],
+        "corrections": [
+          {
+            "entity": "Lindenhof Maschinenbau",
+            "action": "add_alias",
+            "alias": "LiMa"
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "lindenhof-h1",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Lindenhof Maschinenbau",
+                  "type": "Organization",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "lh-revenue-h1",
+                  "subject": "Lindenhof Maschinenbau",
+                  "object": "Lindenhof Maschinenbau",
+                  "relation": "REPORTS",
+                  "text": "Die Umsatzerlöse der Lindenhof Maschinenbau AG beliefen sich im ersten Halbjahr 2026 auf 1.482,6 Mio. EUR.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "lh-ebit-h1",
+                  "subject": "Lindenhof Maschinenbau",
+                  "object": "Lindenhof Maschinenbau",
+                  "relation": "REPORTS",
+                  "text": "Das EBIT der Lindenhof Maschinenbau AG sank im ersten Halbjahr 2026 auf 118,3 Mio. EUR.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "lh-guidance-initial",
+                  "subject": "Lindenhof Maschinenbau",
+                  "object": "Lindenhof Maschinenbau",
+                  "relation": "REPORTS",
+                  "text": "Die Prognose der Lindenhof Maschinenbau AG für das Geschäftsjahr 2026 lautet auf Umsatzerlöse von 3,0 bis 3,2 Mrd. EUR.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          },
+          {
+            "source": "lindenhof-prognose",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Lindenhof Maschinenbau",
+                  "type": "Organization",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "lh-guidance-lowered",
+                  "subject": "Lindenhof Maschinenbau",
+                  "object": "Lindenhof Maschinenbau",
+                  "relation": "REPORTS",
+                  "text": "Die Lindenhof Maschinenbau AG senkte die Umsatzprognose für das Geschäftsjahr 2026 auf 2,8 bis 2,9 Mrd. EUR und ersetzte damit die bisherige Prognose.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {
+                "lh-guidance-lowered": {
+                  "contradicts": [
+                    "lh-guidance-initial"
+                  ],
+                  "same_assertion": [
+                    "lh-guidance-initial"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "What is LiMa's latest revenue guidance for 2026?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "Lindenhof"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "2.8",
+                      "2,8"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "2.9",
+                      "2,9"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "UC-004",
+      "title": "An ending the user marked as not having happened is no longer reported as an ending",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "correction",
+        "scripted-world"
+      ],
+      "connections": [],
+      "clock": "2026-10-27T09:00:00Z",
+      "seed": {
+        "sources": [
+          {
+            "id": "alderquay-q2",
+            "title": "Alderquay Bearings Q2 2026 report",
+            "text": "Officers: Lila Trent is chief financial officer. Supply: Seabright Metals has supplied bearing steel under a contract effective June 1, 2026. Service: Our bearing housings carry a 24-month warranty. Risk factors: Port delays may interrupt inbound shipments.\n",
+            "origin": "https://fictional.example/change-feed/alderquay-q2",
+            "company": "Alderquay Bearings",
+            "form": "quarterly report",
+            "publication_time": "2026-08-06",
+            "language": "en"
+          },
+          {
+            "id": "alderquay-q3",
+            "title": "Alderquay Bearings Q3 2026 report",
+            "text": "Officers: Micah Reed is chief financial officer, succeeding Lila Trent. Supply: On September 23, 2026, the bearing-steel supply agreement with Seabright Metals ended. Risk factors: The heat-treatment ramp could raise quality rejects until operators complete qualification.\n",
+            "origin": "https://fictional.example/change-feed/alderquay-q3",
+            "company": "Alderquay Bearings",
+            "form": "quarterly report",
+            "publication_time": "2026-10-22",
+            "language": "en"
+          }
+        ],
+        "corrections": [
+          {
+            "claim": {
+              "source": "alderquay-q2",
+              "fact": "q2-cfo"
+            },
+            "action": "keep_current"
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "alderquay-q2",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Lila Trent",
+                  "type": "Person",
+                  "codes": []
+                },
+                {
+                  "name": "Seabright Metals",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Port delays",
+                  "type": "Event",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "q2-cfo",
+                  "subject": "Lila Trent",
+                  "object": "Alderquay Bearings",
+                  "relation": "LEADS",
+                  "text": "Lila Trent is chief financial officer of Alderquay Bearings.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-supply",
+                  "subject": "Seabright Metals",
+                  "object": "Alderquay Bearings",
+                  "relation": "SUPPLIES",
+                  "text": "Seabright Metals has supplied bearing steel to Alderquay Bearings under a contract effective June 1, 2026.",
+                  "valid_at": "2026-06-01",
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-warranty",
+                  "subject": "Alderquay Bearings",
+                  "object": "Alderquay Bearings",
+                  "relation": "REPORTS",
+                  "text": "Alderquay Bearings' bearing housings carry a 24-month warranty.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-risk-port",
+                  "subject": "Port delays",
+                  "object": "Alderquay Bearings",
+                  "relation": "AFFECTS",
+                  "text": "Port delays may interrupt Alderquay Bearings' inbound shipments.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          },
+          {
+            "source": "alderquay-q3",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Micah Reed",
+                  "type": "Person",
+                  "codes": []
+                },
+                {
+                  "name": "Lila Trent",
+                  "type": "Person",
+                  "codes": []
+                },
+                {
+                  "name": "Seabright Metals",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Heat-treatment ramp",
+                  "type": "Event",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "q3-cfo",
+                  "subject": "Micah Reed",
+                  "object": "Alderquay Bearings",
+                  "relation": "LEADS",
+                  "text": "Micah Reed is chief financial officer of Alderquay Bearings, succeeding Lila Trent.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "q3-supply-end",
+                  "subject": "Seabright Metals",
+                  "object": "Alderquay Bearings",
+                  "relation": "SUPPLIES",
+                  "text": "The bearing-steel supply agreement between Seabright Metals and Alderquay Bearings ended on September 23, 2026.",
+                  "valid_at": null,
+                  "invalid_at": "2026-09-23"
+                },
+                {
+                  "id": "q3-risk-ramp",
+                  "subject": "Heat-treatment ramp",
+                  "object": "Alderquay Bearings",
+                  "relation": "AFFECTS",
+                  "text": "The heat-treatment ramp could raise quality rejects at Alderquay Bearings until operators complete qualification.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {
+                "q3-cfo": {
+                  "contradicts": [
+                    "q2-cfo"
+                  ],
+                  "same_assertion": [
+                    "q2-cfo"
+                  ]
+                },
+                "q3-supply-end": {
+                  "contradicts": [
+                    "q2-supply"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Who is Alderquay Bearings' chief financial officer?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "Lila Trent"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "Micah Reed"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "records-disagree-no-ending",
+                    "criterion": "The answer says the records disagree about who the chief financial officer is, naming Lila Trent and Micah Reed, and does not say that Lila Trent's tenure ended.",
+                    "metric": "boundary"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

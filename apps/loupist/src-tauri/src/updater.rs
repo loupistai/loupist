@@ -1036,7 +1036,7 @@ mod tests {
     fn words() -> serde_json::Value {
         serde_json::json!({
             "title": "Loupist 업데이트 설치",
-            "message": "루피스트를 업데이트하시겠습니까?",
+            "message": "Loupist를 업데이트하시겠습니까?",
             "install": "설치 후 다시 시작",
             "cancel": "취소"
         })
@@ -1070,7 +1070,7 @@ mod tests {
         assert_eq!(dialog.cancel, "취소");
         assert!(dialog
             .message
-            .starts_with("루피스트를 업데이트하시겠습니까?"));
+            .starts_with("Loupist를 업데이트하시겠습니까?"));
         assert!(dialog.message.ends_with("0.1.0-rc.2 → 0.1.0-rc.3"));
 
         // Unusable words fall back to English; equal buttons cannot be told apart.

@@ -5,6 +5,12 @@ import type { BotMemoryKind } from "../chat/bot_memory";
 
 export type BotMemoryForgetRequest = { loupistId: string, id: string };
 
+/** Remaining entries, plus Lens principles that fold to the forgotten text. */
+export type BotMemoryForgetResponse = {
+  entries: Array<BotMemoryListEntry>,
+  principles: Array<BotMemoryPrinciple>,
+};
+
 export type BotMemoryListEntry = {
   id: string,
   kind: BotMemoryKind,
@@ -14,5 +20,11 @@ export type BotMemoryListEntry = {
 };
 
 export type BotMemoryListRequest = { loupistId: string };
+
+/**
+ * A Lens principle whose statement folds to a forgotten entry. Forget does
+ * not delete it.
+ */
+export type BotMemoryPrinciple = { recordId: string, title: string };
 
 export type BotMemoryUpdateRequest = { loupistId: string, id: string, text: string };

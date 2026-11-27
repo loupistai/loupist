@@ -151,6 +151,8 @@ pub enum UsageSurface {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RunLog {
+    #[serde(skip)]
+    pub world_origin: Option<crate::scheduled_tasks::allowance::WorldOrigin>,
     pub kind: String,
     pub loupist_id: Option<String>,
     pub run_id: String,
@@ -223,13 +225,52 @@ pub(crate) struct RunLog {
     #[serde(skip)]
     observed_calls: BTreeSet<String>,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Usage {
     pub input: u64,
     pub cached_input: u64,
     pub output: u64,
 }
+
+/// Pi reports uncached input and output. Cache counters can be unreported.
+pub(crate) struct PiTokenCounts {
+    pub input: Option<u64>,
+    pub output: Option<u64>,
+    pub cache_read: Option<u64>,
+    pub cache_write: Option<u64>,
+    valid_cache: bool,
+}
+
+impl PiTokenCounts {
+    pub fn read(usage: &serde_json::Value, output_key: &str) -> Self {
+        let cache_read = &usage["cacheRead"];
+        let cache_write = &usage["cacheWrite"];
+        Self {
+            input: usage["input"].as_u64(),
+            output: usage[output_key].as_u64(),
+            cache_read: cache_read.as_u64(),
+            cache_write: cache_write.as_u64(),
+            valid_cache: [cache_read, cache_write]
+                .into_iter()
+                .all(|field| field.is_null() || field.is_u64()),
+        }
+    }
+
+    pub fn total_input(&self) -> Option<u64> {
+        self.input_with_cache_writes()?
+            .checked_add(self.cache_read.unwrap_or_default())
+    }
+
+    fn input_with_cache_writes(&self) -> Option<u64> {
+        if !self.valid_cache {
+            return None;
+        }
+        self.input?
+            .checked_add(self.cache_write.unwrap_or_default())
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct InferenceUsage {
     started: u64,
@@ -237,9 +278,7 @@ pub(crate) struct InferenceUsage {
     unknown: bool,
     requests: u64,
     cost: PiCost,
-    input: u64,
-    cached_input: u64,
-    output: u64,
+    totals: Usage,
 }
 impl InferenceUsage {
     pub fn begin(&mut self) {
@@ -252,19 +291,30 @@ impl InferenceUsage {
         }
         self.requests = self.requests.saturating_add(1);
         self.cost.observe(&usage["cost"]);
-        match (
-            usage["input"].as_u64(),
-            usage["cacheRead"].as_u64(),
-            usage["cacheWrite"].as_u64(),
-            usage["output_tokens"].as_u64(),
-        ) {
-            (Some(input), Some(cached), Some(write), Some(output)) => {
-                self.input = self.input.saturating_add(input).saturating_add(write);
-                self.cached_input = self.cached_input.saturating_add(cached);
-                self.output = self.output.saturating_add(output);
-            }
-            _ => self.unknown = true,
+        let tokens = PiTokenCounts::read(usage, "output_tokens");
+        if let Some(totals) = self
+            .add_tokens(&tokens)
+            .filter(|_| usage["certainty"] != "uncertain")
+        {
+            self.totals = totals;
+        } else {
+            self.unknown = true;
         }
+    }
+
+    fn add_tokens(&self, tokens: &PiTokenCounts) -> Option<Usage> {
+        let cached = tokens.cache_read.unwrap_or_default();
+        let input = self
+            .totals
+            .input
+            .checked_add(tokens.input_with_cache_writes()?)?;
+        let cached_input = self.totals.cached_input.checked_add(cached)?;
+        input.checked_add(cached_input)?;
+        Some(Usage {
+            input,
+            cached_input,
+            output: self.totals.output.checked_add(tokens.output?)?,
+        })
     }
     pub fn apply(&self, log: &mut RunLog) {
         log.usage = self.snapshot();
@@ -273,11 +323,7 @@ impl InferenceUsage {
     }
 
     fn snapshot(&self) -> Option<Usage> {
-        (!self.unknown && self.started == self.finished).then_some(Usage {
-            input: self.input,
-            cached_input: self.cached_input,
-            output: self.output,
-        })
+        (!self.unknown && self.started == self.finished).then(|| self.totals.clone())
     }
 }
 
@@ -321,6 +367,7 @@ impl RunLog {
     pub fn new(kind: &str, loupist: &str, run: &str, started: i64) -> Self {
         Self {
             kind: kind.into(),
+            world_origin: None,
             loupist_id: Some(loupist.into()),
             run_id: run.into(),
             chat_id: None,
@@ -358,6 +405,26 @@ impl RunLog {
             observed_calls: BTreeSet::new(),
         }
     }
+    /// Closes a Chat turn's record the way every turn ends: completed with
+    /// the model that answered, failed with its typed kind (a plan limit or
+    /// out of credit there holds background work on the provider today), or
+    /// cancelled. The record is then written with [`Self::record`].
+    pub(crate) fn end_turn(&mut self, end: TurnEnd<'_>) {
+        match end {
+            TurnEnd::Completed {
+                model,
+                memory_save_skip,
+            } => {
+                if let Some(model) = model {
+                    self.model(model);
+                }
+                self.memory_save_skip = memory_save_skip;
+                self.finish("ok", None);
+            }
+            TurnEnd::Failed(kind) => self.finish("failed", Some(&enum_name(&kind))),
+            TurnEnd::Cancelled => self.finish("cancelled", None),
+        }
+    }
     pub fn finish(&mut self, status: &str, failure: Option<&str>) {
         self.duration_ms = crate::commands::now_ms()
             .saturating_sub(self.started_at_ms)
@@ -388,10 +455,13 @@ impl RunLog {
         }
     }
     fn performance(&mut self, performance: &ChatPerformance) {
-        self.usage = Some(Usage {
-            input: performance
-                .input_tokens
-                .saturating_add(performance.cache_write_tokens),
+        let input = performance
+            .input_tokens
+            .checked_add(performance.cache_write_tokens)
+            .filter(|input| input.checked_add(performance.cache_read_tokens).is_some());
+        self.tokens_partial = input.is_none();
+        self.usage = input.map(|input| Usage {
+            input,
             cached_input: performance.cache_read_tokens,
             output: performance.output_tokens,
         });
@@ -507,12 +577,22 @@ impl RunLog {
         if result.is_err() {
             eprintln!("Run diagnostics could not be written");
         }
-        if let Some(row) = self.model_usage_row() {
-            let id = format!("{}:{}:{}", self.kind, self.run_id, self.started_at_ms);
-            if store.put_model_usage(&id, &row).is_err() {
-                eprintln!("Model usage could not be recorded");
-            }
+        if self.record_usage(store).is_err() {
+            // The allowance counts an ended background run whose row is
+            // missing at its frozen budget, so this loss never frees requests.
+            eprintln!("Model usage could not be recorded");
         }
+    }
+
+    /// Persist this run's model-usage row. `Ok(false)` means there is nothing
+    /// to persist. An error means the row was not stored.
+    pub fn record_usage(&self, store: &SqliteStore) -> crate::store::StoreResult<bool> {
+        let Some(row) = self.model_usage_row() else {
+            return Ok(false);
+        };
+        let id = format!("{}:{}:{}", self.kind, self.run_id, self.started_at_ms);
+        store.put_model_usage(&id, &row)?;
+        Ok(true)
     }
 
     fn model_usage_row(&self) -> Option<ModelUsageRow> {
@@ -542,6 +622,7 @@ impl RunLog {
             data: ModelUsageData {
                 kind,
                 surface,
+                world_origin: self.world_origin,
                 provider: provider.into(),
                 credential_kind: self.credential_kind,
                 model: model.into(),
@@ -567,6 +648,16 @@ impl RunLog {
         })
     }
 }
+/// How a Chat turn ended, for [`RunLog::end_turn`].
+pub(crate) enum TurnEnd<'a> {
+    Completed {
+        model: Option<&'a crate::providers::catalog::ExecutionModelLock>,
+        memory_save_skip: Option<crate::domain::MemorySaveSkipReason>,
+    },
+    Failed(crate::domain::ChatFailureKind),
+    Cancelled,
+}
+
 pub(crate) fn enum_name(value: &impl Serialize) -> String {
     serde_json::to_value(value)
         .ok()
@@ -1055,6 +1146,19 @@ mod tests {
     }
 
     #[test]
+    fn inference_usage_marks_aggregate_overflow_unknown() {
+        let mut usage = InferenceUsage::default();
+        for counts in [
+            serde_json::json!({"input":u64::MAX,"output_tokens":1}),
+            serde_json::json!({"input":0,"cacheRead":1,"output_tokens":1}),
+        ] {
+            usage.begin();
+            usage.observe(&counts, false);
+        }
+        assert!(usage.snapshot().is_none());
+    }
+
+    #[test]
     fn measured_inference_writes_requests_and_cost_even_when_tokens_are_unknown() {
         let mut log = RunLog::new("world", "loupist", "run", 1);
         let mut usage = InferenceUsage::default();
@@ -1113,6 +1217,11 @@ mod tests {
             ..Default::default()
         });
         log.message(&message);
+        let mut overflow = log.clone();
+        message.performance.as_mut().unwrap().input_tokens = u64::MAX;
+        overflow.message(&message);
+        assert!(overflow.tokens_partial);
+        assert!(overflow.usage.is_none());
         let record = serde_json::to_value(log).unwrap();
         assert_eq!(record["requests"], 2);
         assert_eq!(

@@ -17,16 +17,23 @@ use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot, Semaphore};
 
 use super::super::error::{KnowledgeError, KnowledgeResult};
+use super::super::figure_check::{self, FigureVerdict};
 use super::super::graph_inference::{self, InferenceDisposition, InferenceReply};
 use super::super::graph_jobs::{
-    self, GraphJobView, GraphProcessingSettings, JobDocument, StoredSourceBinding, Unpublished,
+    self, DroppedFigure, GraphJobView, GraphProcessingSettings, JobDocument, ReconciliationCause,
+    StoredSourceBinding, Unpublished,
 };
-use super::super::model::{GraphNode, TimePoint, TimePrecision};
+use super::super::model::{
+    AssertionLink, AssertionSources, AssertionWitness, GraphNode, PassageRange, StatedEnd,
+    TimePoint, TimePrecision, WorldTemporal, CONFLICTS_WITH_CLAIM, END_BASIS, SUPERSEDED_BY_CLAIM,
+    SUPERSEDED_BY_SPAN,
+};
+use super::super::world_episodes::{EndBasis, ReferenceBasis};
 use super::super::KnowledgeStore;
 use super::bridge::{Answered, Bridge, BridgeConfig, StageRecord, Stop};
 use super::hints::{extraction_hints, FollowedInstrument};
 use super::ontology::{extraction_instructions, merged_schema, Hints, Schema};
-use super::pipeline::{self, Edge, Episode, Graph, Node, PreviousEpisode};
+use super::pipeline::{self, Edge, Episode, FigureDrops, Graph, Node, PreviousEpisode};
 use super::projection::{self, Binding, Context};
 use super::search::MemoryClaimText;
 use super::{index, load_body, text};
@@ -94,7 +101,7 @@ where
     F: FnMut(Value) -> Fut,
     Fut: std::future::Future<Output = InferenceReply>,
 {
-    drive_job_with_slots(
+    drive_job_with_account(
         store,
         settings,
         job_id,
@@ -104,11 +111,13 @@ where
         assets,
         None,
         None,
+        |_| {},
         on_inference,
     )
     .await
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn drive_job_with_slots<F, Fut>(
     store: &KnowledgeStore,
@@ -125,6 +134,43 @@ pub(crate) async fn drive_job_with_slots<F, Fut>(
 where
     F: FnMut(Value) -> Fut,
     Fut: std::future::Future<Output = InferenceReply>,
+{
+    drive_job_with_account(
+        store,
+        settings,
+        job_id,
+        auth_mode,
+        now_ms,
+        followed,
+        assets,
+        call_slots,
+        resolution,
+        |_| {},
+        on_inference,
+    )
+    .await
+}
+
+/// `on_account` runs before the outbox budget drops and after a refund, so the
+/// daily allowance's ledger includes a call before the reservation shrinks.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn drive_job_with_account<F, Fut, A>(
+    store: &KnowledgeStore,
+    settings: &mut GraphProcessingSettings,
+    job_id: &str,
+    auth_mode: &str,
+    now_ms: i64,
+    followed: &[FollowedInstrument],
+    assets: &Path,
+    call_slots: Option<Arc<Semaphore>>,
+    resolution: Option<ResolutionSlot>,
+    on_account: A,
+    on_inference: F,
+) -> KnowledgeResult<GraphJobView>
+where
+    F: FnMut(Value) -> Fut,
+    Fut: std::future::Future<Output = InferenceReply>,
+    A: FnMut(i32),
 {
     let opened_at = SystemTime::now();
     let owned_id = job_id.to_owned();
@@ -147,6 +193,7 @@ where
         call_slots,
         resolution,
         on_inference,
+        on_account,
         opened_at,
     )
     .await;
@@ -172,7 +219,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn drive_claimed<F, Fut>(
+async fn drive_claimed<F, Fut, A>(
     store: &KnowledgeStore,
     settings: &mut GraphProcessingSettings,
     job: &GraphJobView,
@@ -183,11 +230,13 @@ async fn drive_claimed<F, Fut>(
     call_slots: Option<Arc<Semaphore>>,
     resolution: Option<ResolutionSlot>,
     mut on_inference: F,
+    mut on_account: A,
     opened_at: SystemTime,
 ) -> KnowledgeResult<GraphJobView>
 where
     F: FnMut(Value) -> Fut,
     Fut: std::future::Future<Output = InferenceReply>,
+    A: FnMut(i32),
 {
     let job_id = job.job_id.as_str();
     let attempt_id = job.document.attempt_id.clone().unwrap_or_default();
@@ -225,6 +274,22 @@ where
             now_ms,
         );
     }
+    let revision = job.world_revision_id.clone();
+    let full = match blocking(store, settings, move |store, _| {
+        store.read(|read| {
+            let body = super::load_body(read.tx, &revision)?;
+            Ok(world_is_full(body.nodes.len(), body.claims.len()))
+        })
+    })
+    .await
+    {
+        Ok(full) => full,
+        Err(_) => return finish(store, settings, job, &attempt_id, false, now_ms),
+    };
+    if full {
+        return store
+            .transact(|write| graph_jobs::pause_world_full(write.tx, job_id, &attempt_id, now_ms));
+    }
     let owned_job = job.clone();
     let owned_followed = followed.to_vec();
     let owned_assets = assets.to_path_buf();
@@ -256,8 +321,10 @@ where
     let task = tokio::task::spawn_blocking(move || run_pipeline(prepared, config, requests));
     tokio::pin!(task);
     let mut uncertain = false;
+    let mut timed_out = false;
     let mut blocked = false;
     let mut settings_changed = false;
+    let mut output_failure: Option<String> = None;
     // Calls the pipeline sends together are in flight together; each one's
     // reply goes back on its own channel, so the pipeline reads them in order.
     let mut in_flight = FuturesUnordered::new();
@@ -269,13 +336,24 @@ where
                 let model = request["kind"] == "llm";
                 let owned_id = job_id.to_owned();
                 let attempt = attempt_id.clone();
-                if blocked || blocking(store, settings, move |store, _| {
+                if blocked {
+                    let _ = reply.send(Answered { reply: not_sent(), elapsed: Duration::ZERO });
+                    continue;
+                }
+                if model {
+                    // The ledger counts this call before the outbox budget drops.
+                    on_account(1);
+                }
+                if blocking(store, settings, move |store, _| {
                     if model {
                         store.transact(|write| graph_jobs::reserve_model_call(write.tx, &owned_id, &attempt))
                     } else {
                         store.graph_note_inference(&owned_id, &attempt)
                     }
                 }).await.is_err() {
+                    if model {
+                        on_account(-1);
+                    }
                     blocked = true;
                     let _ = reply.send(Answered { reply: not_sent(), elapsed: Duration::ZERO });
                     continue;
@@ -291,9 +369,16 @@ where
             Some((response, reply, received, model)) = in_flight.next(), if !in_flight.is_empty() => {
                 if model && response.disposition == InferenceDisposition::NotSent {
                     store.transact(|write| graph_jobs::refund_model_call(write.tx, job_id, &attempt_id))?;
+                    // The call is back in the reservation before it leaves the ledger.
+                    on_account(-1);
                 }
                 if response.disposition == InferenceDisposition::Uncertain {
-                    uncertain = true;
+                    if let Some(kind) = graph_inference::model_output_failure(&response) {
+                        output_failure = Some(kind.to_string());
+                    } else {
+                        uncertain = true;
+                        timed_out |= response.body["status"] == "timed_out";
+                    }
                 }
                 settings_changed |= graph_inference::refused_for_settings(&response);
                 let _ = reply.send(Answered { reply: response, elapsed: received.elapsed() });
@@ -311,6 +396,11 @@ where
         *slot.lock().unwrap_or_else(|error| error.into_inner()) = Some(extracted.resolution);
     }
     let uncertain = uncertain || ran.uncertain;
+    if let Some(kind) = output_failure.clone() {
+        return store.transact(|write| {
+            graph_jobs::fail_model_output(write.tx, job_id, &attempt_id, &kind, now_ms)
+        });
+    }
     if blocked {
         return finish(store, settings, job, &attempt_id, true, now_ms);
     }
@@ -335,6 +425,7 @@ where
                 paid: ran.paid,
                 suspended: suspended(wall_started, started),
                 settings_changed,
+                cause: timed_out.then_some(ReconciliationCause::TimedOut),
             };
             return store.graph_finish_unpublished(settings, job_id, &attempt_id, end, now_ms);
         }
@@ -347,6 +438,17 @@ where
         .filter_map(|item| item["span_id"].as_str().map(str::to_string))
         .collect();
     let empty_extraction = opened.source_binding.is_some() && extracted.claims.is_empty();
+    let _ = store.transact(|write| {
+        graph_jobs::note_dropped(
+            write.tx,
+            job_id,
+            &attempt_id,
+            extracted.dropped_attributes,
+            extracted.dropped_edges,
+            extracted.figure_mismatch,
+            extracted.dropped_figures.clone(),
+        )
+    });
     let validated = graph_jobs::binding_matches(&opened, &spans) || empty_extraction;
     if !validated || (empty_extraction && !artifact_has_bound_episode(&opened, &extracted.artifact))
     {
@@ -367,7 +469,7 @@ where
     let committed = blocking(store, settings, move |store, settings| {
         let followed = store.followed_items(&owned_job.loupist_id);
         store.transact(|write| {
-            let finished = graph_jobs::publish_and_complete(
+            let finished = graph_jobs::publish_host_extraction(
                 write,
                 settings,
                 &owned_job.job_id,
@@ -413,7 +515,7 @@ async fn call_after_permit(
         .await
         .unwrap_or_else(|_| InferenceReply {
             disposition: InferenceDisposition::Uncertain,
-            body: json!({"status": "uncertain"}),
+            body: json!({"status": "timed_out"}),
         })
 }
 
@@ -427,6 +529,15 @@ fn suspended(wall_started: SystemTime, started: Instant) -> bool {
         .duration_since(wall_started)
         .unwrap_or_default();
     wall.saturating_sub(started.elapsed()) > SUSPEND_GAP
+}
+
+/// The head already holds at least 95% of the node or claim limit.
+pub(crate) fn world_is_full(nodes: usize, claims: usize) -> bool {
+    fn reached(count: usize, limit: usize) -> bool {
+        count.saturating_mul(100) >= limit.saturating_mul(95)
+    }
+    reached(nodes, crate::knowledge::model::MAX_WORLD_NODES)
+        || reached(claims, crate::knowledge::model::MAX_WORLD_CLAIMS)
 }
 
 /// End an attempt that did not publish. With no paid attempt it can run again;
@@ -596,6 +707,8 @@ struct Prepared {
     scope: Value,
     document: JobDocument,
     binding: StoredSourceBinding,
+    /// The whole Source when this job is one of several chunks.
+    source_text: Option<String>,
 }
 
 struct Extracted {
@@ -604,6 +717,10 @@ struct Extracted {
     digest: String,
     vectors: HashMap<String, Vec<f32>>,
     resolution: pipeline::ResolutionTally,
+    dropped_attributes: u32,
+    dropped_edges: u32,
+    figure_mismatch: u32,
+    dropped_figures: Vec<DroppedFigure>,
 }
 
 /// Where a job's entity-resolution counts go for its run log.
@@ -631,7 +748,42 @@ fn prepare(
         .ok_or(KnowledgeError::Invalid(
             "graph episode has no source binding",
         ))?;
-    let body = store.read(|read| load_body(read.tx, &job.world_revision_id))?;
+    let (body, span_sources, source_text) = store.read(|read| {
+        let source_text = if document.chunk_count.is_some_and(|count| count > 1) {
+            let material = super::super::source::load_revision_span(
+                read.tx,
+                read.blobs,
+                &job.loupist_id,
+                &binding.source_record_id,
+                &binding.source_revision_id,
+                &binding.span_id,
+            )?;
+            String::from_utf8(material.bytes).ok()
+        } else {
+            None
+        };
+        let body = load_body(read.tx, &job.world_revision_id)?;
+        let mut span_sources = HashMap::new();
+        for claim in &body.claims {
+            if body.temporal.assertions.contains_key(&claim.id) {
+                continue;
+            }
+            for span in claim
+                .evidence
+                .iter()
+                .map(|binding| binding.span_id.as_str())
+                .chain(claim.qualifier(SUPERSEDED_BY_SPAN))
+            {
+                if !span_sources.contains_key(span) {
+                    span_sources.insert(
+                        span.to_owned(),
+                        stored_witness(read.tx, &job.loupist_id, span)?,
+                    );
+                }
+            }
+        }
+        Ok((body, span_sources, source_text))
+    })?;
     // Earlier snapshots counted single-name facts in the stored vocabulary.
     let observed = super::super::world::relation_vocabulary(&body.claims)
         .iter()
@@ -663,7 +815,10 @@ fn prepare(
         };
         Ok((vectors, previous))
     })?;
-    let mut graph = Graph::default();
+    let mut graph = Graph {
+        links: body.temporal.links.clone(),
+        ..Graph::default()
+    };
     for node in &body.nodes {
         graph
             .nodes
@@ -704,6 +859,59 @@ fn prepare(
                 episodes.push(evidence.span_id.clone());
             }
         }
+        let assertions = body
+            .temporal
+            .assertions
+            .get(&claim.id)
+            .cloned()
+            .unwrap_or_else(|| {
+                let mut assertions = AssertionSources::default();
+                for span in &episodes {
+                    if let Some(Some((source, witness))) = span_sources.get(span) {
+                        assertions.source_ids.insert(source.clone());
+                        if assertions.witness.as_ref().is_none_or(|old| {
+                            super::super::model::witness_order(witness, old).is_lt()
+                        }) {
+                            assertions.witness = Some(witness.clone());
+                        }
+                    }
+                }
+                if let Some(time) = &claim.invalid_at {
+                    if claim.qualifier(SUPERSEDED_BY_CLAIM).is_none() {
+                        let witness = claim
+                            .qualifier(SUPERSEDED_BY_SPAN)
+                            .and_then(|span| {
+                                span_sources
+                                    .get(span)
+                                    .and_then(Option::as_ref)
+                                    .map(|(_, witness)| witness.clone())
+                            })
+                            .or_else(|| assertions.witness.clone());
+                        if let Some(witness) = witness {
+                            assertions.stated = Some(StatedEnd {
+                                time: time.clone(),
+                                witness,
+                            });
+                        }
+                    }
+                }
+                assertions
+            });
+        let ending = claim
+            .invalid_at
+            .as_ref()
+            .zip(claim.qualifier(SUPERSEDED_BY_SPAN))
+            .map(|(time, span)| pipeline::Ending {
+                time: time.clone(),
+                by: claim.qualifier(SUPERSEDED_BY_CLAIM).map(str::to_owned),
+                span: span.to_owned(),
+                basis: if claim.qualifier(END_BASIS) == Some("reference") {
+                    EndBasis::Reference
+                } else {
+                    EndBasis::Stated
+                },
+                ender_open: false,
+            });
         graph.edges.push(Edge {
             uuid: claim.id.clone(),
             source: claim.endpoints[0].node_id.clone(),
@@ -715,6 +923,14 @@ fn prepare(
             invalid_at: stored_time(claim.invalid_at.as_ref()),
             expired_at: stored_time(claim.expired_at.as_ref()),
             fact_embedding: vectors.claims.get(&claim.id).cloned(),
+            assertions,
+            ending,
+            conflicts: claim
+                .qualifiers
+                .iter()
+                .filter(|qualifier| qualifier.key == CONFLICTS_WITH_CLAIM)
+                .map(|qualifier| qualifier.value.clone())
+                .collect(),
         });
     }
     let mut prior_nodes = HashMap::new();
@@ -739,6 +955,16 @@ fn prepare(
             key: document.episode_key.clone(),
             content: document.body.clone(),
             valid_at,
+            source: Some(pipeline::EpisodeSource {
+                source_id: binding.source_record_id.clone(),
+                witness: AssertionWitness {
+                    span: binding.span_id.clone(),
+                    publication: (document.reference_basis() == ReferenceBasis::Published)
+                        .then(|| stored_time(document.publication_time.as_ref()))
+                        .flatten(),
+                },
+                basis: document.reference_basis(),
+            }),
         },
         previous,
         graph,
@@ -752,6 +978,7 @@ fn prepare(
         }),
         document,
         binding,
+        source_text,
     })
 }
 
@@ -784,13 +1011,13 @@ fn previous_episode(
 }
 
 /// A stored node as Graphiti read it back from the index.
-fn stored_node(node: &GraphNode, schema: &Schema, vector: Option<&Vec<f32>>) -> Node {
+pub(crate) fn stored_node(node: &GraphNode, schema: &Schema, vector: Option<&Vec<f32>>) -> Node {
     let labels = if node.kind == "Entity" || !LABEL(&node.kind) {
         vec!["Entity".to_string()]
     } else {
         vec!["Entity".to_string(), node.kind.clone()]
     };
-    let attributes = schema
+    let mut attributes: Vec<(String, Value)> = schema
         .entity_type(&node.kind)
         .map(|entity| {
             entity
@@ -803,6 +1030,50 @@ fn stored_node(node: &GraphNode, schema: &Schema, vector: Option<&Vec<f32>>) -> 
                 .collect()
         })
         .unwrap_or_default();
+    for key in [
+        "ticker",
+        "tickers",
+        "symbol",
+        "symbols",
+        "ticker_symbol",
+        "exchange",
+        "exchanges",
+        "market",
+        "isin",
+        "figi",
+        "lei",
+        "cik",
+        "corp_code",
+        "dart_corp_code",
+        "identifier",
+        "identifiers",
+    ] {
+        if attributes.iter().any(|(name, _)| name == key) {
+            continue;
+        }
+        if let Some(value) = node.properties.get(key) {
+            if matches!(value, Value::String(_) | Value::Number(_) | Value::Array(_)) {
+                attributes.push((key.to_string(), value.clone()));
+            }
+        }
+    }
+    let mut spellings = Vec::new();
+    let mut keep_spelling = |spelling: &str| {
+        let spelling = spelling.trim();
+        if spelling.is_empty()
+            || spelling == node.name
+            || spellings.iter().any(|kept: &String| kept == spelling)
+        {
+            return;
+        }
+        spellings.push(spelling.to_string());
+    };
+    for alias in &node.aliases {
+        keep_spelling(alias);
+    }
+    if let Some(original) = node.properties.get("original_name").and_then(Value::as_str) {
+        keep_spelling(original);
+    }
     Node {
         uuid: node.id.clone(),
         name: node.name.clone(),
@@ -810,19 +1081,41 @@ fn stored_node(node: &GraphNode, schema: &Schema, vector: Option<&Vec<f32>>) -> 
         summary: node.description.clone(),
         attributes,
         name_embedding: vector.cloned(),
-        spellings: Vec::new(),
+        spellings,
     }
 }
 
-/// The index's datetime for a stored time: instants and dates only.
+fn stored_witness(
+    tx: &rusqlite::Transaction<'_>,
+    owner: &str,
+    span: &str,
+) -> KnowledgeResult<Option<(String, AssertionWitness)>> {
+    let visible = match super::super::source::require_any_visible_span(tx, owner, span) {
+        Ok(visible) => visible,
+        Err(KnowledgeError::Unauthorized(_) | KnowledgeError::NotFound) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let publication: Option<String> = tx.query_row(
+        "SELECT publication_time_json FROM knowledge_source_captures WHERE record_id = ?1 AND capture_id = ?2",
+        rusqlite::params![visible.record_id, visible.capture_id],
+        |row| row.get(0),
+    )?;
+    let publication = publication
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()?;
+    Ok(Some((
+        visible.record_id,
+        AssertionWitness {
+            span: span.to_owned(),
+            publication: stored_time(publication.as_ref()),
+        },
+    )))
+}
+
 fn stored_time(time: Option<&TimePoint>) -> Option<pipeline::Time> {
-    let time = time?;
-    let value = time.value.as_deref()?;
-    match time.precision {
-        TimePrecision::Instant => text::from_isoformat(value),
-        TimePrecision::Date => text::from_isoformat(&format!("{value}T00:00:00+00:00")),
-        _ => None,
-    }
+    time.filter(|time| time.precision != TimePrecision::Unknown)
+        .cloned()
 }
 
 fn wire_time(time: Option<&TimePoint>) -> KnowledgeResult<Option<Value>> {
@@ -887,6 +1180,11 @@ fn extract(prepared: &Prepared, bridge: &mut Bridge<'_>) -> Result<Extracted, St
             .map(|edge| (edge.uuid.as_str(), edge.name.as_str(), edge.fact.as_str())),
     )
     .map_err(|_| Stop::Rejected("claim text index is unavailable"))?;
+    // The whole Source is scanned once for this chunk's figures, however many facts it has.
+    let source = prepared
+        .source_text
+        .as_deref()
+        .map(crate::knowledge::numbers::FigurePassage::new);
     let output = pipeline::add_episode(
         pipeline::Input {
             episode: prepared.episode.clone(),
@@ -895,6 +1193,9 @@ fn extract(prepared: &Prepared, bridge: &mut Bridge<'_>) -> Result<Extracted, St
             instructions: prepared.instructions.clone(),
             graph: prepared.graph.clone(),
             text: &text,
+            source: source
+                .as_ref()
+                .map(|source| source as &dyn figure_check::Passage),
         },
         bridge,
     )?;
@@ -904,7 +1205,7 @@ fn extract(prepared: &Prepared, bridge: &mut Bridge<'_>) -> Result<Extracted, St
         .unwrap_or_else(|| json!({"precision": "unknown", "value": null, "approximate": false}));
     let effective = wire_time(document.effective_time.as_ref())
         .map_err(|_| Stop::Rejected("effective time is invalid"))?;
-    let recorded_at_ms = chrono::Utc::now().timestamp_millis();
+    let recorded_at_ms = recorded_now_ms();
     let binding = &prepared.binding;
     let projected = projection::project_extraction(
         &Context {
@@ -918,7 +1219,6 @@ fn extract(prepared: &Prepared, bridge: &mut Bridge<'_>) -> Result<Extracted, St
                 binding_role: &binding.binding_role,
                 attribution: &binding.attribution,
             },
-            publication_time: &publication,
             effective_time: effective.as_ref(),
             recorded_at_ms,
             prior_nodes: &prepared.prior_nodes,
@@ -927,6 +1227,23 @@ fn extract(prepared: &Prepared, bridge: &mut Bridge<'_>) -> Result<Extracted, St
         },
         &output.nodes,
         &output.edges,
+    );
+    let mut projected = projected;
+    let mut figures = output.figures.clone();
+    let chunk = crate::knowledge::numbers::FigurePassage::new(&prepared.episode.content);
+    let mut passages: Vec<&dyn figure_check::Passage> = vec![&chunk];
+    passages.extend(
+        source
+            .as_ref()
+            .map(|source| source as &dyn figure_check::Passage),
+    );
+    check_support(
+        &mut projected.claims,
+        &prepared.prior_claims,
+        &binding.span_id,
+        &passages,
+        chunk_passage(document),
+        &mut figures,
     );
     // _merge_graph: stored rows, then this episode's projection by id.
     let mut nodes: HashMap<String, Value> = prepared.prior_nodes.clone();
@@ -970,11 +1287,34 @@ fn extract(prepared: &Prepared, bridge: &mut Bridge<'_>) -> Result<Extracted, St
         "effective_time": effective,
         "source_binding": wire_binding(binding),
         "created_at": text::isoformat(
-            &chrono::DateTime::from_timestamp_millis(recorded_at_ms)
+            &text::instant(chrono::DateTime::from_timestamp_millis(recorded_at_ms)
                 .unwrap_or_default()
-                .fixed_offset()
+                .fixed_offset())
         ),
     });
+    let to_claim = |id: &str| projection::claim_id(&prepared.prior_claims, id);
+    let mut temporal = WorldTemporal::default();
+    for link in output.links {
+        let mut ids = [to_claim(&link.left), to_claim(&link.right)];
+        ids.sort();
+        let [left, right] = ids;
+        temporal.links.push(AssertionLink {
+            left,
+            right,
+            same_assertion: link.same_assertion,
+            selected_by: link.selected_by,
+            same_assertion_by: link.same_assertion_by,
+            reaffirmed_by: link.reaffirmed_by,
+        });
+    }
+    temporal
+        .links
+        .sort_unstable_by(|a, b| (&a.left, &a.right).cmp(&(&b.left, &b.right)));
+    for edge in prepared.graph.edges.iter().chain(&output.edges) {
+        temporal
+            .assertions
+            .insert(to_claim(&edge.uuid), edge.assertions.clone());
+    }
     let snapshot = json!({
         "annotations": prepared.annotations,
         "claims": claim_rows,
@@ -983,6 +1323,7 @@ fn extract(prepared: &Prepared, bridge: &mut Bridge<'_>) -> Result<Extracted, St
         "format_version": 1,
         "nodes": node_rows,
         "scope": prepared.scope,
+        "temporal": temporal,
     });
     let artifact = super::super::canonical::canonical_string(&snapshot);
     let digest = sha256(artifact.as_bytes());
@@ -1003,7 +1344,95 @@ fn extract(prepared: &Prepared, bridge: &mut Bridge<'_>) -> Result<Extracted, St
         digest,
         vectors,
         resolution: output.resolution,
+        dropped_attributes: output.dropped.attributes,
+        dropped_edges: output.dropped.edges,
+        figure_mismatch: figures.count,
+        dropped_figures: figures
+            .examples
+            .into_iter()
+            .map(|example| DroppedFigure {
+                proposition: example.proposition,
+                stated: example.stated,
+                passage: chunk_passage(document),
+            })
+            .collect(),
     })
+}
+
+/// The chunk of its Source a job extracts from, when the job records it.
+fn chunk_passage(document: &JobDocument) -> Option<PassageRange> {
+    Some(PassageRange {
+        chunk_index: document.chunk_index?,
+        char_start: document.char_start?,
+        char_end: document.char_end?,
+    })
+}
+
+/// Checks the figures of each claim this chunk newly supports against the
+/// chunk, then the whole Source, and stores the verdict and the chunk's range
+/// on that support. Support whose figure differs is left out, as extraction
+/// leaves out such a fact; a claim it would have been the only support of keeps it.
+fn check_support(
+    claims: &mut [Value],
+    prior: &HashMap<String, Value>,
+    span: &str,
+    passages: &[&dyn figure_check::Passage],
+    passage: Option<PassageRange>,
+    drops: &mut FigureDrops,
+) {
+    let known = |claim: &Value, item: &Value| {
+        claim["adapter_id"]
+            .as_str()
+            .and_then(|id| prior.get(id))
+            .and_then(|prior| prior["evidence"].as_array())
+            .is_some_and(|evidence| {
+                evidence
+                    .iter()
+                    .any(|old| old["span_id"] == item["span_id"] && old["role"] == item["role"])
+            })
+    };
+    for claim in claims {
+        let Some(evidence) = claim["evidence"].as_array() else {
+            continue;
+        };
+        let added: Vec<usize> = evidence
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| item["span_id"] == span && !known(claim, item))
+            .map(|(index, _)| index)
+            .collect();
+        if added.is_empty() {
+            continue;
+        }
+        let proposition = claim["proposition"].as_str().unwrap_or_default().to_owned();
+        let check = figure_check::check_in(&proposition, passages);
+        let evidence = claim["evidence"]
+            .as_array_mut()
+            .expect("evidence was an array");
+        if check.verdict == FigureVerdict::Differs {
+            if evidence.len() > added.len() {
+                for index in added.into_iter().rev() {
+                    evidence.remove(index);
+                }
+                drops.note(&proposition, &check);
+            }
+            continue;
+        }
+        let stored = check.verdict.stored();
+        for index in added {
+            let item = &mut evidence[index];
+            if let Some(stored) = stored {
+                item["figure_check"] = json!(stored.as_str());
+            }
+            if let Some(range) = passage {
+                item["passage"] = json!({
+                    "chunk_index": range.chunk_index,
+                    "char_start": range.char_start,
+                    "char_end": range.char_end,
+                });
+            }
+        }
+    }
 }
 
 fn wire_binding(binding: &StoredSourceBinding) -> Value {
@@ -1090,6 +1519,16 @@ fn write_stage_log(
     }
 }
 
+/// When an extraction is recorded: now, or an evaluation's installed clock,
+/// so a fixture can record a publication on the day it states.
+fn recorded_now_ms() -> i64 {
+    #[cfg(feature = "eval-harness")]
+    if let Some(now) = crate::eval_harness::clock::local_now() {
+        return now.timestamp_millis();
+    }
+    chrono::Utc::now().timestamp_millis()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1123,6 +1562,7 @@ mod tests {
         )
         .await;
         assert_eq!(reply.disposition, InferenceDisposition::Uncertain);
+        assert_eq!(reply.body["status"], "timed_out");
         let slots = Arc::new(Semaphore::new(0));
         slots.close();
         let reply = call_after_permit(Some(slots), true, Duration::from_secs(1), async {
@@ -1130,5 +1570,136 @@ mod tests {
         })
         .await;
         assert_eq!(reply.disposition, InferenceDisposition::NotSent);
+    }
+
+    const SOURCE: &str = "한빛소재의 2025년 매출액은 1,234억 원이고 영업이익은 98억 원이다.";
+
+    fn edge(fact: &str) -> Edge {
+        Edge {
+            uuid: fact.into(),
+            source: "hanbit".into(),
+            target: "hanbit".into(),
+            name: "REPORTS".into(),
+            fact: fact.into(),
+            episodes: vec!["ep_current".into()],
+            valid_at: None,
+            invalid_at: None,
+            expired_at: None,
+            fact_embedding: None,
+            assertions: AssertionSources::default(),
+            ending: None,
+            conflicts: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn extraction_leaves_out_nine_differing_facts_and_keeps_eight_examples() {
+        let mut facts: Vec<String> = [-3, -2, -1, 1, 2, 3, 4, 5, 6]
+            .iter()
+            .map(|power: &i32| {
+                format!(
+                    "Revenue was KRW {} won.",
+                    1_234u64 * 10u64.pow((8 + power) as u32)
+                )
+            })
+            .collect();
+        facts.push("Revenue was KRW 123.4 billion.".into());
+        facts.push("The operating margin was 7.9%.".into());
+        let edges: Vec<Edge> = facts.iter().map(|fact| edge(fact)).collect();
+        let mut extracted: Vec<usize> = (0..edges.len()).collect();
+        let drops = pipeline::drop_mismatched_figures(
+            &edges,
+            &mut extracted,
+            &[&crate::knowledge::numbers::FigurePassage::new(SOURCE)
+                as &dyn figure_check::Passage],
+        );
+        assert_eq!(extracted, vec![9, 10]);
+        assert_eq!(drops.count, 9);
+        assert_eq!(drops.examples.len(), pipeline::FIGURE_EXAMPLES);
+        assert_eq!(drops.examples[0].proposition, facts[0]);
+        assert_eq!(drops.examples[0].stated, "123400000 won");
+    }
+
+    fn claim(id: &str, proposition: &str, spans: &[&str]) -> Value {
+        json!({
+            "adapter_id": id,
+            "proposition": proposition,
+            "evidence": spans.iter().map(|span| json!({
+                "span_id": span, "role": "supports", "attribution": "publisher"
+            })).collect::<Vec<_>>(),
+        })
+    }
+
+    #[test]
+    fn new_support_stores_its_verdict_and_chunk_and_differing_support_is_not_added() {
+        let prior = HashMap::from([
+            (
+                "clm_kept".to_string(),
+                claim("clm_kept", "Revenue was KRW 12.34 billion.", &["spn_old"]),
+            ),
+            (
+                "clm_margin".to_string(),
+                claim("clm_margin", "The margin was 7.9%.", &["spn_old"]),
+            ),
+        ]);
+        let mut claims = vec![
+            // Resolution matched this chunk's fact with a claim whose figure differs.
+            claim(
+                "clm_kept",
+                "Revenue was KRW 12.34 billion.",
+                &["spn_old", "spn_new"],
+            ),
+            claim(
+                "clm_margin",
+                "The margin was 7.9%.",
+                &["spn_old", "spn_new"],
+            ),
+            claim("clm_new", "Revenue was KRW 123.4 billion.", &["spn_new"]),
+            claim(
+                "clm_plain",
+                "Hanbit Materials supplies Northwind Rail.",
+                &["spn_new"],
+            ),
+        ];
+        let range = PassageRange {
+            chunk_index: 1,
+            char_start: 120,
+            char_end: 160,
+        };
+        let mut drops = FigureDrops::default();
+        check_support(
+            &mut claims,
+            &prior,
+            "spn_new",
+            &[&crate::knowledge::numbers::FigurePassage::new(SOURCE)
+                as &dyn figure_check::Passage],
+            Some(range),
+            &mut drops,
+        );
+        assert_eq!(drops.count, 1);
+        assert_eq!(claims[0]["evidence"], prior["clm_kept"]["evidence"]);
+        let passage = json!({"chunk_index": 1, "char_start": 120, "char_end": 160});
+        assert_eq!(claims[1]["evidence"][0].get("figure_check"), None);
+        assert_eq!(claims[1]["evidence"][1]["figure_check"], "not_found");
+        assert_eq!(claims[2]["evidence"][0]["figure_check"], "matched");
+        assert_eq!(claims[2]["evidence"][0]["passage"], passage);
+        // No figure: nothing checked, the range is still known.
+        assert_eq!(claims[3]["evidence"][0].get("figure_check"), None);
+        assert_eq!(claims[3]["evidence"][0]["passage"], passage);
+        // The stored claim keeps both fields through a later job's round trip.
+        let stored = super::super::super::worker::adapt_worker_claim(&json!({
+            "adapter_id": "clm_new", "proposition": "Revenue was KRW 123.4 billion.",
+            "attribution": "publisher", "relation": "REPORTS",
+            "endpoints": [{"node_id": "nod_a", "role": "source"}, {"node_id": "nod_a", "role": "target"}],
+            "evidence": claims[2]["evidence"], "status": "active", "qualifiers": [],
+        }))
+        .unwrap();
+        assert_eq!(
+            stored.evidence[0].figure_check,
+            Some(super::super::super::EvidenceFigure::Matched)
+        );
+        assert_eq!(stored.evidence[0].passage, Some(range));
+        let again = super::super::super::graph_projection::worker_claim(&stored).unwrap();
+        assert_eq!(again["evidence"], claims[2]["evidence"]);
     }
 }

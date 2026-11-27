@@ -109,7 +109,10 @@ pub(crate) fn prepare_offer(
     loupist_id: &str,
     input: OfferInput,
 ) -> Result<HomeOffer, CommandError> {
-    if input.preset == WatchPreset::PriceMove {
+    if matches!(
+        input.preset,
+        WatchPreset::PriceMove | WatchPreset::AssetDaily
+    ) {
         return Err(CommandError::invalid("Choose an offer preset"));
     }
     let reason = one_line(&input.reason, 200)?;
@@ -354,12 +357,7 @@ pub(crate) fn accept(
             "This follow-up has no valid run time",
         ));
     }
-    let crate::commands::scheduled_tasks::PreparedPreset {
-        id: task_id,
-        draft,
-        definition,
-        ..
-    } = crate::commands::scheduled_tasks::preset_definition(
+    let mut prepared = crate::commands::scheduled_tasks::preset_definition(
         crate::commands::scheduled_tasks::FromPresetRequest {
             loupist_id: loupist_id.to_owned(),
             preset: offer.preset,
@@ -374,6 +372,13 @@ pub(crate) fn accept(
         state,
         run_at_ms,
     )?;
+    crate::commands::scheduled_tasks::attach_preset_check(state, loupist_id, &mut prepared)?;
+    let crate::commands::scheduled_tasks::PreparedPreset {
+        id: task_id,
+        draft,
+        definition,
+        ..
+    } = prepared;
     service::validate_draft(state, &draft)?;
     let mut created = None;
     let id = mutate_home(

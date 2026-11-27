@@ -1,5 +1,4 @@
-import i18n from "@/i18n";
-import { formatDate } from "@/i18n/format";
+import { calendarDateStyle, formatDate } from "@/i18n/format";
 
 /** The earliest as-of date (finance-point-in-time.md §3.1). */
 export const EARLIEST_AS_OF = "1990-01-01";
@@ -36,7 +35,7 @@ export function asOfProblem(value: string, now = new Date()): "invalid" | "futur
  * medium form is numeric ("2026. 3. 3.") and reads poorly before 기준.
  */
 export const formatAsOf = (value: string, style: "medium" | "long" = "medium") =>
-  isCalendarDay(value) ? formatDate(Date.parse(`${value}T00:00:00Z`), { timeZone: "UTC", dateStyle: /^ko(?:-|$)/iu.test(i18n.language) ? "long" : style }) : value;
+  isCalendarDay(value) ? formatDate(Date.parse(`${value}T00:00:00Z`), { timeZone: "UTC", dateStyle: calendarDateStyle(style) }) : value;
 
 /** The panel's quick picks, from today on this device. */
 export function quickAsOf(kind: "month" | "yearStart" | "year", now = new Date()) {

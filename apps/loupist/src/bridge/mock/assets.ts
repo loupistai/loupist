@@ -313,6 +313,7 @@ export class MockAssets implements AssetBridge {
       history: fixture?.history ?? [],
       map: fixture?.entityId ? fixture.map ?? null : null,
       revision: fixture?.revision ?? 1,
+      sinceRead: { counts: {}, changes: [], lens: [], pending: 0, failed: 0, capped: false, next: "" },
     });
   }
 

@@ -56,7 +56,8 @@
   .memory-search { min-width: 0; width: 100%; }
 }
 
-.workspace-knowledge-reader { height: 100%; min-width: 0; min-height: 0; overflow: hidden; container: world-workspace / inline-size; }
+.workspace-knowledge-reader { display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; overflow: hidden; container: world-workspace / inline-size; }
+.workspace-page-reader { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; }
 .workspace-knowledge-reader .source-reader-only { height: 100%; }
 .knowledge-note-dialog { max-height: min(85vh, 900px); overflow-y: auto; }
 .workspace-tabpanel > .knowledge-research-reader { height: 100%; overflow-y: auto; padding: var(--gg-space-5); }
@@ -210,3 +211,9 @@ li > .source-retry { margin-top: 0; padding: 0 var(--gg-space-3) var(--gg-space-
 
 .knowledge-research-reader .knowledge-journal .research-document-head h2 { margin: 0; font-size: var(--gg-text-title); line-height: var(--gg-leading-title); }
 .knowledge-research-reader .knowledge-journal section > h3 { margin: 0 0 var(--gg-space-2); padding: 0; border: 0; font-size: var(--gg-text-body); line-height: var(--gg-leading-body); }
+
+/* Facts a World job left out because a figure did not match its passage (plan 4.1). */
+.source-dropped-figures { margin: var(--gg-space-1) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }
+.source-dropped-figures ul { display: grid; gap: var(--gg-space-2); margin: var(--gg-space-2) 0 0; padding: 0; list-style: none; }
+.source-dropped-figures li { display: grid; gap: 2px; }
+.source-dropped-figures li span { color: var(--gg-color-text-primary); overflow-wrap: anywhere; }

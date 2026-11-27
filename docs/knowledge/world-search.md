@@ -170,8 +170,9 @@ model puts near the query is not buried under a same-language Source that shares
 one query word. The score says where a hit ranks, not how much of the request it
 matched. The Lens pointer therefore takes a page that matches two of the request's
 words, or every term group of a request that is one concept (`cash flow`), and not
-a page that matches one word of several. The World-scope merge puts World's
-fused rows first and keeps the other hits in knowledge-search order.
+a page that matches one word of several. Explicit World scope adds graph retrieval
+to the default `world_search` results, including saved Sources. The merge puts
+World's fused rows first and keeps the other hits in knowledge-search order.
 
 Cross-language recall is measured by the [search recall test](../dev/tests.md#search-recall)
 (recall@5 in knowledge search; November 2026):
@@ -192,6 +193,14 @@ vectors for Korean text are noise, so fusion lowered its recall. In the World in
 blink-multilingual-64M finds all 13 Korean queries' English claims in the top five,
 against 3. The multilingual model pays for itself only with fusion, so the two were
 adopted together (the last row).
+
+## Change feed
+
+`world_changes` is a Rust read over episodes, claim-status growth and Lens section state. `since` is a calendar date, `previous_run`, or the opaque `next` from an earlier page. The recorded axis orders live episodes by `created_at_ms` and leaves out backfill shells, whose `created_at_ms` is not when something was learned. A page queries that time window, not the whole history. The published axis orders by publication time and includes those shells. A page cursor freezes `window.until` at the World head revision of the first page, so a publication that lands while the caller is paging is neither skipped nor repeated; the last page's `next` resumes after that head. The cursor carries its axis and is refused on the other one. Under a replay date a resume cursor continues after that day, not after today's World head. A caller that names `about` replaces the scope stored on a cursor, so a check stops reading an asset it no longer follows. Under a turn cutoff, every claim passes through the projection in `commands/knowledge/as_of.rs` before it is kept, and a World job queued after that day does not count as pending or failed. An ending whose end that projection clears, or whose witness it drops, is not a row. `previous_run` reads `previous_run_started_at_ms` from the turn capture. A scheduled run, a learning program and a trigger explanation fill that start and the result's `first_run` from the scheduled-run context (`scheduled_run_context`): the start of the previous succeeded run, or the task's creation time when no earlier run has succeeded, and the first-run flag stored on the run. The first learning run reports `first_run` true, and a later learning run keeps reporting it until one run has succeeded. A failed or stopped run leaves the start where it was. A page cursor keeps `first_run`; a resume cursor clears it. The start is absent on an interactive turn, a hand-off and the bridge command, which refuses `since: previous_run` with `since_previous_run_unavailable`. A check script refuses it as well and keeps its own cursor. The bridge command `knowledge_world_changes` reads the same feed. In `between` mode an `{asset}` picks the newest Source whose declared company matches the asset (its symbol, its codes, or its linked World name) and the latest earlier Source with that company and form. Under a replay date a Source or episode published later is left out, and each list stops at 50 rows with `capped` set. `pair` is null when no such pair exists. `to.pending` is true while World is still reading the newer Source. Chunks of one Source share a span id, so those counts keep each chunk's index: a paused follower does not replace the chunk that failed. `knowledge_world_claim_history` reads one claim's episode lineage, and `asset_page_get` carries `sinceRead` for changes since the latest move. A World query edge sets `ended` from whether the claim is still current.
+
+A recorded cursor also freezes the reconciliation time of effective endings.
+Resuming can deliver an ending and any superseded Lens sections after that
+window, even when the World revision has stayed the same.
 
 ## Code
 

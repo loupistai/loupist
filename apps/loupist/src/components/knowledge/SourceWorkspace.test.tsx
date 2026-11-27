@@ -109,6 +109,16 @@ it("lists and searches all Loupist sources without choosing a destination", asyn
   expect(props.onOpen).toHaveBeenCalledWith(expect.objectContaining({ recordId: "another-source-record", selection: { kind: "source", sourceId: "another-source" } }));
 });
 
+it("previews a structured Source as one line instead of its column names", async () => {
+  const props = await fixture();
+  const source = props.catalog.sources[0]!;
+  const catalog = { ...props.catalog, sources: [{ ...source, recordId: "table-source", title: "Population", objects: [{ id: "table", title: "World Bank population", summary: "Economy · Period · Population, total", originLabel: "Income statement", table: { statement: "Income statement", rows: 12, period: "2023 Q4–2026 Q3" } }] }] };
+  render(<SourceWorkspace {...props} catalog={catalog as typeof props.catalog} location={{ loupistId: props.location.loupistId, surface: "source" }} />);
+  const row = await screen.findByRole("button", { name: /World Bank population/ });
+  expect(row).toHaveTextContent("Income statement · 12 rows · 2023 Q4–2026 Q3");
+  expect(row).not.toHaveTextContent("Population, total");
+});
+
 it("does not display a source result after changing Loupist", async () => {
   const props = await fixture();
   const original = await props.bridge.knowledgeSourceRead({ loupistId: props.location.loupistId, recordId: props.location.recordId!, revisionId: props.location.revisionId!, sourceId: props.catalog.sources[0].objects[0].id, purpose: "renderer_inspection" });
@@ -433,18 +443,43 @@ it("shows the What you follow Source in the interface language whatever title it
   }
 });
 
+it("names every stopped Source and offers Try again only when that stop can run again", async () => {
+  const props = await fixture();
+  const cases = [
+    { title: "World full", status: "paused_budget", failure: { kind: "world_full" as const, atMs: 1 }, retryable: true, line: "World is full. This Source is kept but not read into World.", retry: false },
+    { title: "Bad reply", status: "failed_extraction", failure: { kind: "invalid_json" as const, atMs: 1 }, retryable: true, line: "The model's reply could not be used.", retry: true },
+    { title: "Provider", status: "provider_error", failure: undefined, retryable: true, line: "The AI provider returned an error.", retry: true },
+    { title: "Not again", status: "failed_extraction", failure: { kind: "schema_mismatch" as const, atMs: 1 }, retryable: undefined, line: "The model's reply could not be used.", retry: false },
+    { title: "Held filing", status: "queued", failure: undefined, retryable: undefined, hold: { cause: "allowance" as const }, line: "Waiting for tomorrow's allowance.", retry: false, readNow: true },
+  ];
+  const catalog = { ...props.catalog, sources: cases.map((item, index) => ({ ...props.catalog.sources[0]!, recordId: `stop-${index}`, objects: [{ id: `stop-${index}`, title: item.title, processing: { jobId: `job-${index}`, status: item.status, error: null, failure: item.failure, retryable: item.retryable, ...("hold" in item && item.hold ? { hold: item.hold } : {}) } }] })) };
+  render(<SourceWorkspace {...props} catalog={catalog} location={{ loupistId: props.location.loupistId, surface: "source" }} />);
+  for (const item of cases) {
+    const row = (await screen.findByRole("button", { name: new RegExp(item.title) })).closest("li")!;
+    expect(row).toHaveTextContent(item.line);
+    expect(within(row).queryByRole("button", { name: "Try again" }) !== null).toBe(item.retry);
+    expect(within(row).queryByRole("button", { name: "Read now" }) !== null).toBe(item.readNow === true);
+  }
+  expect(screen.getByRole("button", { name: /World full/ }).closest("li")).not.toHaveTextContent("one more allowance");
+});
+
 describe("Try again for a Source whose World building paused at its allowance", () => {
-  const stoppedCatalog = (props: Awaited<ReturnType<typeof fixture>>, statuses: string[]) => ({ ...props.catalog, sources: statuses.map((status, index) => ({ ...props.catalog.sources[0], recordId: `source-${index}`, objects: [{ id: `source-${index}`, title: `Report ${index}`, processing: { jobId: `job-${index}`, status, error: null } }] })) });
+  const stoppedCatalog = (props: Awaited<ReturnType<typeof fixture>>, statuses: string[]) => ({ ...props.catalog, sources: statuses.map((status, index) => ({ ...props.catalog.sources[0], recordId: `source-${index}`, objects: [{ id: `source-${index}`, title: `Report ${index}`, processing: { jobId: `job-${index}`, status, error: null, ...(status === "paused_budget" ? { retryable: true } : {}) } }] })) });
   const graphJob = (status: string) => ({ jobId: "job-1", loupistId: "loupist-quality", worldRecordId: "world-protocols", worldRevisionId: "rev-owned-1", status, payloadDigest: "digest", createdAtMs: 0, hostMayRedrive: false });
 
   it("offers the action only on a row that stopped by itself and explains the allowance it uses", async () => {
     const props = await fixture();
-    render(<SourceWorkspace {...props} catalog={stoppedCatalog(props, ["paused", "paused_budget", "failed_before_mutation", "queued"])} location={{ loupistId: props.location.loupistId, surface: "source" }} />);
+    render(<SourceWorkspace {...props} catalog={stoppedCatalog(props, ["paused", "paused_budget", "failed_before_mutation", "queued", "completed", "interrupted", "timed_out", "usage_uncertain", "reconciled_without_retry"])} location={{ loupistId: props.location.loupistId, surface: "source" }} />);
     await screen.findByRole("button", { name: /Report 0/ });
     expect(screen.getAllByRole("button", { name: "Try again" })).toHaveLength(1);
     const item = screen.getByRole("button", { name: /Report 1/ }).closest("li")!;
     expect(within(item).getByRole("button", { name: "Try again" })).toBeVisible();
     expect(item).toHaveTextContent("Uses one more allowance of model requests per source, as set in World building.");
+    expect(screen.getByRole("button", { name: "Report 4" })).not.toHaveTextContent(/World building|World updated/);
+    expect(screen.getByRole("button", { name: /Report 5/ })).toHaveTextContent("World building was interrupted");
+    expect(screen.getByRole("button", { name: /Report 6/ })).toHaveTextContent("World building timed out");
+    expect(screen.getByRole("button", { name: /Report 7/ })).toHaveTextContent("model usage could not be confirmed");
+    expect(screen.getByRole("button", { name: /Report 8/ })).toHaveTextContent("World building did not finish");
   });
 
   it("disables while the host decides, shows its refusal inline, and lets the user try again", async () => {
@@ -484,7 +519,7 @@ describe("Try again for a Source whose World building paused at its allowance", 
     const props = await fixture();
     const originalRead = props.bridge.knowledgeSourceRead.bind(props.bridge);
     vi.spyOn(props.bridge, "knowledgeSourceRead")
-      .mockImplementationOnce(async (request) => ({ ...await originalRead(request), processing: { jobId: "job-1", status: "paused_budget", error: null } }))
+      .mockImplementationOnce(async (request) => ({ ...await originalRead(request), processing: { jobId: "job-1", status: "paused_budget", error: null, retryable: true } }))
       .mockImplementation(async (request) => ({ ...await originalRead(request), processing: { jobId: "job-1", status: "queued", error: null } }));
     const retry = vi.spyOn(props.bridge, "knowledgeGraphRetrySource").mockResolvedValue(graphJob("queued"));
     const onManageProcessing = vi.fn();
@@ -689,4 +724,54 @@ it("opens the first cited passage quietly when the host cannot focus a requested
   expect(screen.getByRole("button", { name: "Previous cited passage" })).toBeDisabled();
   expect(screen.queryByRole("alert")).toBeNull();
   expect(read).toHaveBeenCalledWith(expect.objectContaining({ figure }));
+});
+
+describe("figures World left out and the passage a claim came from (plan 4.1)", () => {
+  const dropped = (jobId: string) => ({
+    jobId, loupistId: "loupist-quality", worldRecordId: "world", worldRevisionId: "rev", status: "completed", payloadDigest: "d", createdAtMs: 1, hostMayRedrive: false,
+    dropped: { figureMismatch: 9 },
+    droppedFigures: [{ proposition: "Lucro líquido de R$ 1,2 bilhão em 2025", stated: "R$ 1,2 bilhão" }, { proposition: "Umsatz von 4,5 Mrd. €", stated: "4,5 Mrd. €" }],
+  });
+
+  it("says how many facts were left out, with the examples behind a disclosure, in the reader", async () => {
+    const props = await fixture();
+    const originalRead = props.bridge.knowledgeSourceRead.bind(props.bridge);
+    vi.spyOn(props.bridge, "knowledgeSourceRead").mockImplementation(async (request) => ({ ...await originalRead(request), processing: { jobId: "job-figures", status: "completed", error: null } }));
+    const job = vi.spyOn(props.bridge, "knowledgeGraphJob").mockResolvedValue(dropped("job-figures"));
+    render(<SourceWorkspace {...props} readerOnly />);
+    const line = await screen.findByText("9 facts were left out: their figures did not match the passage");
+    expect(job).toHaveBeenCalledWith({ loupistId: "loupist-quality", jobId: "job-figures" });
+    await userEvent.setup().click(line);
+    expect(screen.getByText("Lucro líquido de R$ 1,2 bilhão em 2025")).toBeVisible();
+    expect(screen.getByText("Stated: 4,5 Mrd. €")).toBeVisible();
+  });
+
+  it("scrolls to and marks the passage when its range is known, and opens the Source as before when it does not fit", async () => {
+    const props = await fixture();
+    const originalRead = props.bridge.knowledgeSourceRead.bind(props.bridge);
+    const text = "Résumé. 売上高は前年比12%増。 Net revenue rose to 4.2 billion. Outlook unchanged.";
+    vi.spyOn(props.bridge, "knowledgeSourceRead").mockImplementation(async (request) => ({
+      ...await originalRead(request), selectedSpanId: "text-span",
+      spans: [{ spanId: "text-span", mediaType: "text/plain", selector: "", contextNote: "", text }],
+    }));
+    const start = [...text].indexOf("N");
+    const passage = { chunkIndex: 0, charStart: start, charEnd: start + [..."Net revenue rose to 4.2 billion."].length };
+    const at = (selection: object) => ({ ...props.location, selection: { ...props.location.selection, ...selection } as KnowledgeLocation["selection"] });
+    const view = render(<SourceWorkspace {...props} location={at({ passage })} readerOnly />);
+    const marked = await waitFor(() => { const mark = document.querySelector("[data-cited-passage] mark"); if (!mark) throw new Error("no mark"); return mark; });
+    expect(marked).toHaveTextContent("Net revenue rose to 4.2 billion.");
+    view.unmount();
+    render(<SourceWorkspace {...props} location={at({ passage: { chunkIndex: 0, charStart: 10, charEnd: 10_000 } })} readerOnly />);
+    expect(await screen.findByText(text)).toBeVisible();
+    expect(document.querySelector("[data-cited-passage]")).toBeNull();
+  });
+
+  it("says the same on a Library row once its World job has finished", async () => {
+    const props = await fixture();
+    const catalog = { ...props.catalog, sources: props.catalog.sources.map((record, index) => index ? record : { ...record, objects: record.objects.map((item, row) => row ? item : { ...item, processing: { jobId: "job-row", status: "completed", error: null } }) }) };
+    vi.spyOn(props.bridge, "knowledgeGraphJob").mockImplementation(async ({ jobId }) => ({ ...dropped(jobId), dropped: { figureMismatch: 1 }, droppedFigures: [] }));
+    render(<SourceWorkspace {...props} catalog={catalog} location={{ loupistId: props.location.loupistId, surface: "source" }} />);
+    const row = (await screen.findByText("1 fact was left out: its figures did not match the passage")).closest("li")!;
+    expect(within(row).getByTestId("source-library-row")).toBeVisible();
+  });
 });

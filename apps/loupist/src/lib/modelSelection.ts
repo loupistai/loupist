@@ -64,6 +64,11 @@ export const visibleCatalogModels = (catalog: ModelCatalog | null) => {
   return catalog.models.filter((model) => !hidden.has(model.id));
 };
 
+/** Any AI account can run a model: one connected provider or one model with a credential. */
+type Credentialed = { readonly credential_source: string };
+export const hasAiAccount = (catalog: { readonly providers: readonly Credentialed[]; readonly models: readonly Credentialed[] } | null | undefined) =>
+  Boolean(catalog?.providers.some((provider) => provider.credential_source !== "missing") || catalog?.models.some((model) => model.credential_source !== "missing"));
+
 /** A model Chat can answer with now: in the catalog, shown in Chat and on a connected account. */
 export const usableCatalogModel = (catalog: ModelCatalog | null, modelProfileId: string) =>
   visibleCatalogModels(catalog).find((model) => model.id === modelProfileId && model.credential_source !== "missing");

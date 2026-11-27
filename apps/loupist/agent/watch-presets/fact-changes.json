@@ -1,0 +1,9 @@
+{
+  "title": "Fact changes",
+  "terms": "A fact about {assets} ended or is contradicted, or a Lens section went out of date",
+  "prompt": "This run started because the user's fact check was met; they are not present. The trigger block lists what\nchanged in this Loupist's Memory about {assets}: a fact that ended, a fact Sources contradict, or a Lens\nsection that went out of date.\n\nRead each change again with world_changes for the same assets and open the Source behind it. Report what was\nstated before, what is stated now, and where and when each was published. An ended fact is history: give it\nin the past with its end. Report a contradiction as the two statements and their Sources; do not settle it.\nA fact a later Source does not repeat has not ended. Say what each change means for the reasons and lines\nthe user wrote for that asset. When saving is on, revise an out-of-date Lens section from the newer evidence.\nAnswer in {language}.",
+  "when_met_summary_key": "schedule.preset.factChanges.whenMet",
+  "report": "every_run",
+  "every_minutes": 60,
+  "trigger": "world-change"
+}

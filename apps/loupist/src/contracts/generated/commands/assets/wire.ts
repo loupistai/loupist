@@ -130,6 +130,18 @@ export type SavedReadCall = {
   rolling: RollingDates | null,
 };
 
+/** Counts and at most eight rows, the same feed as `world_changes` about this asset. */
+export type SinceReadBlock = {
+  /** Counts for the whole window, not only the rows shown. */
+  counts: { [key in string]: number },
+  changes: unknown [],
+  lens: unknown [],
+  pending: number,
+  failed: number,
+  capped: boolean,
+  next: string,
+};
+
 export type StoredAssetQuote = { assetId: string, price: AssetStoredPrice };
 
 export type ThinAssetPageView = {
@@ -144,4 +156,6 @@ export type ThinAssetPageView = {
   history: Array<MoveView>,
   map: MapCounts | null,
   revision: number,
+  /** Changes about this asset since its latest move. Omitted under an as-of date. */
+  sinceRead?: SinceReadBlock,
 };

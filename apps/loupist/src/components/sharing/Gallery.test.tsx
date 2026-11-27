@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "@/test/selectOption";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
@@ -32,8 +33,8 @@ it("combines search and filters, sorts by use, and remembers the filters on this
   expect(within(card).getByText("Stocks")).toBeVisible();
   expect(within(card).getByRole("button", { name: "Preview Semiconductor supply chain" })).toBeVisible();
 
-  await user.selectOptions(screen.getByRole("combobox", { name: "What it covers" }), "etfs");
-  await user.selectOptions(screen.getByRole("combobox", { name: "Language" }), "en");
+  await chooseSelectOption(user, screen.getByRole("combobox", { name: "What it covers" }), "ETFs & funds");
+  await chooseSelectOption(user, screen.getByRole("combobox", { name: "Language" }), "English");
   expect(cardNames()).toEqual(["Semiconductor supply chain", "Dividend growers"]);
   await user.type(screen.getByRole("searchbox", { name: "Search by name, focus or author" }), "tidewater");
   expect(cardNames()).toEqual(["Dividend growers"]);
@@ -42,11 +43,11 @@ it("combines search and filters, sorts by use, and remembers the filters on this
   await user.click(screen.getByRole("button", { name: "Clear filters" }));
   expect(screen.getAllByRole("article")).toHaveLength(MOCK_GALLERY_ENTRIES.length);
 
-  await user.selectOptions(screen.getByRole("combobox", { name: "Sort" }), "recent");
+  await chooseSelectOption(user, screen.getByRole("combobox", { name: "Sort" }), "Recently updated");
   expect(cardNames()[0]).toBe("2차전지 밸류체인");
   view.unmount();
   gallery();
-  await waitFor(() => expect(screen.getByRole("combobox", { name: "Sort" })).toHaveValue("recent"));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Sort" })).toHaveTextContent("Recently updated"));
 });
 
 it("opens the review from a card by its id: Use asks to focus Add, Preview does not", async () => {

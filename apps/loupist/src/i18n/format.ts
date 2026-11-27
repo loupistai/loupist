@@ -22,8 +22,8 @@ export const formatNumber = (value: number, options: Intl.NumberFormatOptions = 
 /** Percent input is a fraction: 0.25 renders as 25%. */
 export const formatPercent = (value: number, options: Intl.NumberFormatOptions = {}) => formatNumber(value, { ...options, style: "percent" });
 export const formatDate = (value: Date | number, options: Intl.DateTimeFormatOptions = {}) => dateFormatter(options.dateStyle || options.timeStyle ? options : { year: "numeric", month: "short", day: "numeric", ...options }).format(value);
-export function formatTime(value: Date | number) {
-  const formatter = dateFormatter({ hour: "numeric", minute: "2-digit" });
+export function formatTime(value: Date | number, timeZone?: string) {
+  const formatter = dateFormatter({ hour: "numeric", minute: "2-digit", timeZone });
   if (!/^ko(?:-|$)/i.test(locale())) return formatter.format(value);
   // ICU data differences between Node and WebKit can leave Korean day periods in English.
   return formatter.formatToParts(value).map((part) => part.type === "dayPeriod" && (part.value === "AM" || part.value === "PM")
@@ -37,6 +37,15 @@ export function formatDay(day: string | undefined) {
   if (!year || !month || !date) return day;
   return formatDate(new Date(year, month - 1, date), { year: undefined, month: "short", day: "numeric" });
 }
+/**
+ * A whole calendar date in the form the locale reads it in: Korean writes it out
+ * (2026년 11월 4일, not "2026. 11. 4."), other locales use their medium form.
+ */
+export const formatCalendarDate = (value: Date | number) => formatDate(value, { dateStyle: calendarDateStyle("medium") });
+
+/** The date style for a whole calendar date: `style`, or the long form where the medium one is numeric (Korean). */
+export const calendarDateStyle = (style: "medium" | "long"): "medium" | "long" => isKorean() ? "long" : style;
+
 export const formatDateTime = (value: Date | number, options: Intl.DateTimeFormatOptions = {}) => dateFormatter(options.dateStyle || options.timeStyle ? options : { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", ...options }).format(value);
 export function formatRelative(value: number, unit: Intl.RelativeTimeFormatUnit, options: Intl.RelativeTimeFormatOptions = {}) {
   const language = locale();

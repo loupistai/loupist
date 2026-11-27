@@ -48,13 +48,17 @@ test('agent suite files exist and parse', () => {
   assert.equal(loaded.length, suiteFiles.length);
 });
 
+// A suite file is named for its version. A release suite is named for the release it gates,
+// so its file name stays while the suite's own `version` counts its revisions.
+const RELEASE_NAMED = { 'release-v018.json': 2 };
+
 test('every suite file matches the agent-suite contract', () => {
   const seenIds = new Map();
   for (const { name, filePath, json } of loaded) {
     const fileMatch = /^([a-z]+(?:-[a-z]+)*)-v(\d+)\.json$/u.exec(name);
     assert.ok(fileMatch, `${name} must be named <suite>-v<version>.json`);
     assert.equal(json.schema, 'loupist-agent-suite/1', name);
-    assert.equal(json.version, Number(fileMatch[2]), name);
+    assert.equal(json.version, RELEASE_NAMED[name] ?? Number(fileMatch[2]), name);
     assert.equal(json.suite, fileMatch[1], name);
     assert.equal(typeof json.description, 'string');
     assert.ok(json.description.length > 20, name);
@@ -910,7 +914,7 @@ test('on-demand pack checks require a matching load before first use without dem
       }
     });
   }
-  assert.equal(checked, 13);
+  assert.equal(checked, 14);
   const security = loaded.find(file => file.name === 'security-v1.json').json;
   assert(!traceAsserts(security, 'capability_loaded').some(({ item }) => ['charts', 'schedules'].includes(item.id)), 'refused task data must not require a pack load');
 });
@@ -1353,7 +1357,8 @@ test('scheduled delivery grade binds the saved request, terminal session reply a
     const admitted = kind === 'briefing' ? prompt + '\n' + JSON.stringify({ appLanguage: scenario.language }) : prompt;
     const identity = { task_id: 'task-1', run_id: 'once-1' };
     const trace = observedTurn(suite, scenario, session, 0, {
-      answer,
+      answer: answer + '\n\nFull explanation in the originating session.',
+      delivered_summary: answer,
       resolved_appearance: scenario.language,
       saved_task: { id: identity.task_id, prompt, kind },
       admission: { ...identity, surface: 'scheduled', prompt: admitted, thread_id: 'research-1' },
@@ -1378,9 +1383,9 @@ test('scheduled delivery grade binds the saved request, terminal session reply a
       input => { input.deliveries[0].thread_id = 'research-1'; },
       input => { input.runs[0].status = 'running'; },
       input => { input.terminal_event.message_id = 'unattributed'; },
-      input => { input.answer = input.session_answer.content; },
+      input => { input.delivered_summary = input.session_answer.content; },
       input => { input.session_answer.host_composed = true; },
-      input => { input.runs[0].summary = ''; input.deliveries[0].content = input.answer = 'The task finished.'; },
+      input => { input.runs[0].summary = ''; input.deliveries[0].content = input.delivered_summary = 'The task finished.'; },
       input => { input.saved_task.prompt = input.saved_task.prompt.split(' Write the update')[0] + ' Edited.'; },
       input => { input.admission.prompt = kind === 'briefing' ? admitted.replace(scenario.language, 'fr') : admitted + ' Edited.'; },
     ]) {
@@ -1389,4 +1394,312 @@ test('scheduled delivery grade binds the saved request, terminal session reply a
       assert.equal(deliveryPasses(changed), false, scenario.id);
     }
   }
+});
+
+const suiteNamed = (name) => loaded.find((file) => file.name === name).json;
+const scenarioOf = (name, id) => suiteNamed(name).scenarios.find((scenario) => scenario.id === id);
+const turnsOf = (scenario) => scenario.sessions.flatMap((session) => session.turns.map((turn) => ({ session, turn })));
+const checksOf = (scenario) => turnsOf(scenario).flatMap(({ turn }) => expectations(turn).map(({ item }) => item));
+
+/** A fixture unit with its Source ids and publications expanded from the shared library. */
+function expandUnit(unit, sources, scripts) {
+  const seed = structuredClone(unit.seed);
+  if (seed.sources) seed.sources = seed.sources.map((id) => ({ id, ...sources[id] }));
+  const world = unit.world && { ...unit.world, publications: unit.world.publications.map((publication) => ({ ...publication, script: scripts[publication.source] })) };
+  return { seed, world };
+}
+
+test('each scenario of a suite with a setup fixture carries the fixture unit\'s seeds inline', async () => {
+  const fixture = async (name) => JSON.parse(await readFile(join(here, 'fixtures', name), 'utf8'));
+  let units = 0;
+  for (const name of ['release-v018.json', 'change-feed-v1.json']) {
+    const suite = suiteNamed(name);
+    assert.equal(suite.setup_fixture, `../fixtures/${name}`);
+    const own = await fixture(name);
+    const shared = own.source_fixture ? await fixture(own.source_fixture) : { sources: {}, scripts: {} };
+    const [sources, scripts] = [{ ...shared.sources, ...own.sources }, { ...shared.scripts, ...own.scripts }];
+    assert.deepEqual([own.schema, own.suite], ['loupist-agent-fixture/1', suite.suite]);
+    assert.deepEqual(Object.keys(own.sources).sort(), Object.keys(own.scripts).sort(), `${name} scripts every shared Source`);
+    // Every scenario with staged state has a unit, and every unit a scenario.
+    const staged = suite.scenarios.filter((scenario) => scenario.world || ['asset_links', 'lens_pages', 'programs', 'checks'].some((key) => scenario.seed?.[key]));
+    assert.deepEqual(staged.map((scenario) => scenario.id).sort(), Object.keys(own.units).sort(), name);
+    for (const scenario of staged) {
+      const expanded = expandUnit(own.units[scenario.id], sources, scripts);
+      assert.deepEqual(scenario.seed, expanded.seed, `${scenario.id} seed`);
+      assert.deepEqual(scenario.world, expanded.world, `${scenario.id} world`);
+      units += 1;
+    }
+    // The prose notes a person had to act on are gone.
+    assert.doesNotMatch(JSON.stringify(own), /"preparation"/u);
+  }
+  assert.equal(units, 7);
+});
+
+test('a seeded Source or a scripted fact means the same thing in every suite that uses its id', () => {
+  const sources = new Map();
+  const scripts = new Map();
+  for (const { name, json } of loaded) for (const scenario of json.scenarios) {
+    for (const source of scenario.seed?.sources ?? []) {
+      if (source.id === undefined) continue;
+      if (!sources.has(source.id)) sources.set(source.id, source);
+      assert.deepEqual(source, sources.get(source.id), `${name} ${scenario.id} ${source.id}`);
+    }
+    for (const publication of scenario.world?.publications ?? []) {
+      if (!scripts.has(publication.source)) scripts.set(publication.source, publication.script);
+      assert.deepEqual(publication.script, scripts.get(publication.source), `${name} ${scenario.id} ${publication.source}`);
+    }
+  }
+  assert.ok(sources.size >= 12 && scripts.size >= 10);
+});
+
+test('the suite contract accepts the runner\'s seed keys and rejects a key the runner does not read', () => {
+  const base = scenarioOf('learning-programs-v1.json', 'LP-002');
+  const accepts = (scenario) => assertScenarioContract(scenario, { suite: 'learning-programs', filePath: join(here, 'suites/learning-programs-v1.json') });
+  const changed = (change) => { const copy = structuredClone(base); change(copy); return copy; };
+  assert.doesNotThrow(() => accepts(base));
+  const publication = (scenario, index = 1) => scenario.world.publications[index];
+  for (const [why, change, message] of [
+    ['an unknown scenario key', (s) => { s.preparation = 'stage it by hand'; }, /scenario has unknown key preparation/u],
+    ['an unknown seed key', (s) => { s.seed.holdings = []; }, /seed has unknown key holdings/u],
+    ['an unknown Source key', (s) => { s.seed.sources[0].document_type = 'quarterly report'; }, /seeded Source has unknown key document_type/u],
+    ['an unknown turn key', (s) => { s.sessions[0].turns[0].approval = 'accept'; }, /turn has unknown key approval/u],
+    ['an approvals value', (s) => { s.sessions[0].turns[0].approvals = 'yes'; }, /approvals must be accept or decline/u],
+    ['an unknown world key', (s) => { s.world.model = 'luna'; }, /world has unknown key model/u],
+    ['a world mode', (s) => { s.world.mode = 'replay'; }, /world mode must be scripted or live/u],
+    ['an unknown publication key', (s) => { publication(s).when = 'later'; }, /publication has unknown key when/u],
+    ['an unseeded Source', (s) => { publication(s).source = 'alderquay-q4'; }, /names a Source the scenario does not seed/u],
+    ['a published Source without a date', (s) => { delete s.seed.sources[1].publication_time; }, /needs a publication_time/u],
+    ['a scripted World without a script', (s) => { delete publication(s).script; }, /scripts every publication/u],
+    ['an unknown script key', (s) => { publication(s).script.claims = []; }, /script has unknown key claims/u],
+    ['an unknown fact key', (s) => { publication(s).script.facts[0].confidence = 1; }, /script fact has unknown key confidence/u],
+    ['a fact about an unknown entity', (s) => { publication(s).script.facts[0].subject = 'Someone Else'; }, /names an entity no script has introduced/u],
+    ['a fact id used twice', (s) => { publication(s).script.facts[0].id = 'q2-cfo'; }, /must be a lowercase id, distinct in the scenario/u],
+    ['a fact date', (s) => { publication(s).script.facts[1].invalid_at = 'September 23'; }, /invalid_at must be a date/u],
+    ['an unknown resolution kind', (s) => { publication(s).script.resolutions['q3-cfo'].supersedes = ['q2-cfo']; }, /resolution of q3-cfo has unknown key supersedes/u],
+    ['a resolution of another publication\'s fact', (s) => { publication(s).script.resolutions['q2-cfo'] = { contradicts: ['q2-supply'] }; }, /script resolutions has unknown key q2-cfo/u],
+    ['a resolution naming a later fact', (s) => { publication(s).script.resolutions['q3-cfo'].contradicts = ['east-quay-line']; }, /must name facts recorded earlier/u],
+    ['a publication after a missing turn', (s) => { publication(s).after = { session: 'bot', turn: 4 }; }, /after a turn the scenario does not have/u],
+    ['a publication recorded before the turn it follows', (s) => { publication(s).after = { session: 'bot', turn: 0 }; }, /recorded later than that turn's clock/u],
+    ['a Lens page ref to another Source\'s fact', (s) => { s.seed.lens_pages[0].sections[0].refs[0].fact = 'q3-cfo'; }, /names a fact its Source does not script/u],
+    ['an unknown program key', (s) => { s.seed.programs[0].budget = { soft: 3 }; }, /seeded program has unknown key budget/u],
+    ['a program without a brief', (s) => { delete s.seed.programs[0].prompt; }, /needs a lowercase id and title, prompt/u],
+    ['an occurrence of an unseeded program', (s) => { s.sessions[0].turns[0].scheduled.program = 'other-program'; }, /names a program the scenario does not seed/u],
+    ['an occurrence without a clock', (s) => { delete s.sessions[0].turns[0].scheduled.clock; }, /scheduled learning requires a clock/u],
+    ['an unknown occurrence key', (s) => { s.sessions[0].turns[0].scheduled.run_existing = true; }, /scheduled learning has an unknown key/u],
+    ['an occurrence outside the Bot', (s) => { s.sessions[0].id = 'research'; }, /isolated bot\/probe\/remember turn/u],
+    ['a learning allowance', (s) => { s.seed.learning_allowance = -1; }, /learning_allowance must be a non-negative integer/u],
+  ]) {
+    assert.throws(() => accepts(changed(change)), message, why);
+    // The loader of every command applies the same rule before a paid run.
+    assert.throws(() => validateSuite({ schema: 'loupist-agent-suite/1', suite: 'learning-programs', scenarios: [changed(change)] }), message, why);
+  }
+  // A malformed session is reported by the loader's own message, not by a crash in the seed check.
+  assert.throws(() => validateSuite({ schema: 'loupist-agent-suite/1', suite: 'learning-programs', scenarios: [changed((s) => { delete s.sessions[0].turns; })] }), /has an invalid session/u);
+  // A recorded_time moves a publication after the turn it follows: the pending-Source control.
+  assert.doesNotThrow(() => accepts(changed((s) => { Object.assign(publication(s), { after: { session: 'bot', turn: 0 }, recorded_time: '2026-10-26T12:00:00Z' }); })));
+  const check = scenarioOf('refusals-v1.json', 'P-006');
+  const seeded = structuredClone(check);
+  seeded.seed.checks = [{ id: 'guidance-check', prompt: 'Say whether guidance was lowered.', terms: 'A fact about Alderquay Bearings changed', template: 'world-change', template_params: { contains: ['guidance'] } }];
+  seeded.sessions[0].turns = [{ user: 'The saved check is evaluated on November 25, 2026.', scheduled: { kind: 'check', task: 'guidance-check', clock: '2026-11-25T10:00:00Z', dry_run: true },
+    expect: { trace: [{ assert: 'check_dry_run', met_on: ['2026-11-24'], tools: ['world_changes'], no_tools: ['web_fetch'], metric: 'task_success' }] } }];
+  const refusals = { suite: 'refusals', filePath: join(here, 'suites/refusals-v1.json') };
+  assert.doesNotThrow(() => assertScenarioContract(seeded, refusals));
+  seeded.seed.checks[0].script = 'check.py';
+  assert.throws(() => assertScenarioContract(seeded, refusals), /seeded check has unknown key script/u);
+});
+
+test('the release suite keeps its ten ids and states every staged unit as runner input', () => {
+  const release = suiteNamed('release-v018.json');
+  assert.equal(release.version, 2);
+  assert.deepEqual(release.scenarios.map((scenario) => scenario.id), Array.from({ length: 10 }, (_, index) => `R018-${String(index + 1).padStart(2, '0')}`));
+  const by = (id) => release.scenarios.find((scenario) => scenario.id === id);
+  // The preference needs its card accepted, and a fresh research session shows it arrived.
+  assert.equal(by('R018-05').sessions[0].turns[0].approvals, 'accept');
+  assert.deepEqual(by('R018-05').sessions.map((session) => session.id), ['bot', 'research']);
+  assert.deepEqual(by('R018-05').sessions[1].turns[0].expect.answer.map((item) => [item.assert, item.metric]), [['answer_matching', 'carry_forward']]);
+  // The progress notes are read by a deterministic check and by the judge. None is required:
+  // a model that streams no text before its tool calls shows none, and the prompt asks for none.
+  const notes = by('R018-04').sessions[0].turns[0].expect;
+  assert.deepEqual(notes.trace, [{ assert: 'progress_language', language: 'ko', min: 0, metric: 'answer_language' }]);
+  assert.deepEqual(notes.rubric.map((item) => item.id), ['progress-notes-language']);
+  assert.deepEqual(['R018-07', 'R018-08', 'R018-09', 'R018-10'].map((id) => by(id).world.mode), Array(4).fill('scripted'));
+  assert.deepEqual(by('R018-08').seed.asset_links, [{ asset: 'Alderquay Bearings', company: 'Alderquay Bearings' }]);
+  for (const id of ['R018-09', 'R018-10']) {
+    assert.deepEqual(by(id).sessions[0].turns[0].scheduled.kind, 'learning');
+    assert.ok(Date.parse(by(id).seed.programs[0].previous_run.clock) < Date.parse(by(id).sessions[0].turns[0].scheduled.clock));
+  }
+  // The quiet control is decided without a judge.
+  assert.equal(by('R018-10').sessions[0].turns[0].expect.rubric, undefined);
+  assert.ok(release.budget.maxTurns >= 3 * release.scenarios.reduce((total, scenario) => total + turnsOf(scenario).length, 0));
+});
+
+test('the global suite has six user languages, each in a research session and with Bot, on six market profiles', () => {
+  const suite = suiteNamed('global-v1.json');
+  assert.equal(suite.scenarios.length, 12);
+  const tagged = (scenario, prefix) => scenario.tags.filter((tag) => tag.startsWith(prefix)).map((tag) => tag.slice(prefix.length));
+  const cells = suite.scenarios.map((scenario) => `${tagged(scenario, 'user-')[0]}/${scenario.tags.includes('bot') ? 'bot' : 'research-session'}`);
+  assert.deepEqual(cells.sort(), ['de', 'en-in', 'ja', 'ko', 'pt', 'zh'].flatMap((language) => [`${language}/bot`, `${language}/research-session`]).sort());
+  assert.equal(new Set(suite.scenarios.flatMap((scenario) => tagged(scenario, 'profile-'))).size, 6);
+  for (const scenario of suite.scenarios) {
+    const [user] = tagged(scenario, 'user-');
+    // The interface has English and Korean; every other user language runs under the English interface.
+    assert.equal(scenario.language, user === 'ko' ? 'ko' : 'en', scenario.id);
+    assert.equal(scenario.sessions[0].id === 'bot', scenario.tags.includes('bot'), scenario.id);
+    assert.equal(typeof scenario.clock, 'string', scenario.id);
+    // The answer is checked against the user's language, whatever the interface language.
+    const languages = checksOf(scenario).filter((item) => item.assert === 'answer_language').map((item) => item.language);
+    assert.deepEqual(languages, [user === 'en-in' ? 'en' : user], scenario.id);
+    for (const item of checksOf(scenario).filter((check) => check.assert === 'progress_language')) assert.equal(item.language, languages[0], scenario.id);
+  }
+  const checks = suite.scenarios.filter((scenario) => scenario.tags.includes('check'));
+  assert.deepEqual(checks.map((scenario) => scenario.id), ['G-002', 'G-004']);
+  for (const scenario of checks) {
+    assert.deepEqual(checksOf(scenario).filter((item) => item.assert === 'check_dry_run').length, 1, scenario.id);
+    assert.equal(scenario.seed.asset_links.length, 1, scenario.id);
+    // The request is in the user's language and the day the check must have been met is the day the change was published.
+    assert.equal(checksOf(scenario).find((item) => item.assert === 'check_dry_run').met_on[0], scenario.seed.sources.at(-1).publication_time, scenario.id);
+  }
+  assert.match(checks[1].sessions[0].turns[0].user, /Prognose senkt/u);
+  assert.deepEqual(suite.scenarios.filter((scenario) => scenario.tags.includes('correction')).map((scenario) => scenario.id), ['G-009']);
+  assert.match(scenarioOf('global-v1.json', 'G-009').sessions[0].turns[0].user, /This is wrong because[\s\S]*crore/u);
+  assert.match(scenarioOf('global-v1.json', 'G-010').sessions[0].turns[0].user, /in crore only, not in lakh/u);
+});
+
+test('the refusal probes each lead into one host rule and never expect a refusal itself', () => {
+  const suite = suiteNamed('refusals-v1.json');
+  const rules = suite.scenarios.map((scenario) => scenario.tags.filter((tag) => !['refusal-probe', 'scripted-world', 'needs-replay', 'web-research'].includes(tag)));
+  assert.deepEqual(rules, [['attachment-path'], ['cached-result-reference'], ['asset-without-page'], ['fact-without-ref'], ['principle-after-third-party-text'], ['check-with-previous-run']]);
+  for (const scenario of suite.scenarios) {
+    assert.ok(scenario.tags.includes('refusal-probe'), scenario.id);
+    // A probe passes on the task done another way or an honest account; the refusals met are counted from the trace.
+    assert.equal(checksOf(scenario).some((item) => ['max_tool_errors', 'tool_not_called'].includes(item.assert)), false, scenario.id);
+    assert.ok(checksOf(scenario).some((item) => item.assert !== 'no_repeated_failed_call'), scenario.id);
+  }
+});
+
+test('the learning suite runs six occurrences through the scheduler with its two controls decided without a judge', () => {
+  const suite = suiteNamed('learning-programs-v1.json');
+  assert.equal(suite.scenarios.length, 6);
+  for (const scenario of suite.scenarios) {
+    const [{ session, turn }, ...rest] = turnsOf(scenario);
+    assert.deepEqual([rest.length, session.id, turn.scheduled.kind, scenario.world.mode], [0, 'bot', 'learning', 'scripted'], scenario.id);
+    assert.equal(scenario.seed.programs.some((item) => item.id === turn.scheduled.program), true, scenario.id);
+    assert.equal(checksOf(scenario).filter((item) => item.assert === 'scheduled_run' && item.status === 'succeeded').length, 1, scenario.id);
+  }
+  const run = (id) => checksOf(scenarioOf('learning-programs-v1.json', id)).find((item) => item.assert === 'scheduled_run');
+  const judged = (id) => checksOf(scenarioOf('learning-programs-v1.json', id)).filter((item) => item.criterion !== undefined).length;
+  assert.deepEqual([run('LP-003').quiet, judged('LP-003'), run('LP-004').quiet, judged('LP-004')], [true, 0, false, 0]);
+  // The first run has no earlier occurrence; the pending Source is published after the run starts.
+  assert.equal(scenarioOf('learning-programs-v1.json', 'LP-001').seed.programs[0].previous_run, undefined);
+  const pending = scenarioOf('learning-programs-v1.json', 'LP-004').world.publications[1];
+  assert.deepEqual([pending.after, pending.recorded_time], [{ session: 'bot', turn: 0 }, '2026-10-26T12:00:00Z']);
+  assert.deepEqual([run('LP-005').after_soft_note, scenarioOf('learning-programs-v1.json', 'LP-005').seed.learning_allowance], [true, 13]);
+  // The Japanese program runs under the English interface and reports in Japanese.
+  const japanese = scenarioOf('learning-programs-v1.json', 'LP-006');
+  assert.equal(japanese.language, 'en');
+  assert.match(japanese.seed.programs[0].prompt, /灯台電子/u);
+  assert.deepEqual(checksOf(japanese).filter((item) => item.assert === 'answer_language').map((item) => item.language), ['ja']);
+  // The two release units are these fixtures under their release ids.
+  for (const [release, learning] of [['R018-09', 'LP-002'], ['R018-10', 'LP-003']]) {
+    const [left, right] = [scenarioOf('release-v018.json', release), scenarioOf('learning-programs-v1.json', learning)];
+    assert.deepEqual([left.seed, left.world, left.sessions], [right.seed, right.world, right.sessions]);
+  }
+});
+
+test('a schedule expected active has its card accepted, and one unit keeps the proposal unanswered', () => {
+  const suite = suiteNamed('scheduling-v1.json');
+  let accepted = 0;
+  for (const scenario of suite.scenarios) for (const { session, turn } of turnsOf(scenario)) {
+    const state = (turn.expect.trace ?? []).find((item) => item.assert === 'scheduled_tasks');
+    const active = (state?.tasks ?? []).some((task) => task.status === 'active');
+    // The host keeps a created or changed task paused until its card is accepted, and the runner declines by default.
+    if (active && !turn.scheduled) {
+      assert.equal(turn.approvals, 'accept', `${scenario.id} ${session.id}: an active task needs its card accepted`);
+      accepted += 1;
+    } else assert.equal(turn.approvals, undefined, `${scenario.id} ${session.id}`);
+  }
+  assert.equal(accepted, 10);
+  const proposal = scenarioOf('scheduling-v1.json', 'S-010');
+  const [{ session, turn }] = turnsOf(proposal);
+  const state = turn.expect.trace.find((item) => item.assert === 'scheduled_tasks');
+  assert.deepEqual([state.tasks[0].status, state.tasks[0].awaiting_confirmation, turn.approvals], ['paused', true, undefined]);
+  assert.deepEqual(turn.expect.rubric.map((item) => item.id), ['says-it-waits-for-the-user']);
+  const saved = (fields) => ({ task_id: 'task-0', title: 'Harbor summary', prompt: 'Summarize harbor.md', target: { kind: 'new_chat' },
+    schedule: { kind: 'weekly', days: [1, 2, 3, 4, 5], hour: 7, minute: 30, timezone: 'Asia/Seoul' }, ...fields });
+  const stateOf = (task) => grade(suite, [observedTurn(suite, proposal, session, 0, { scheduled_tasks: [task] })]).results.find((row) => row.assert === 'scheduled_tasks').pass;
+  assert.equal(stateOf(saved({ status: 'paused', awaiting_confirmation: true })), true);
+  assert.equal(stateOf(saved({ status: 'active', awaiting_confirmation: false })), false, 'a task that runs without the user is not the proposal');
+  assert.equal(stateOf(saved({ status: 'paused', awaiting_confirmation: false })), false);
+});
+
+test('P-R07 teaches a research rule under a private label, not a way of reporting', () => {
+  const unit = scenarioOf('principles-v1.json', 'P-R07');
+  const [teach, probe] = unit.sessions.map((session) => session.turns[0]);
+  // A way of reporting is a Bot preference; a principle commit is expected only for a research rule.
+  assert.match(teach.user, /research rule[\s\S]*violet lantern[\s\S]*do not trust reported profit when operating cash flow is less than half/u);
+  assert.doesNotMatch(teach.user, /\b(?:label|describe|format|style)\b/iu);
+  assert.deepEqual(teach.expect.memory.map((item) => [item.assert, item.kind, item.count]), [['committed', 'principle', 1], ['committed', 'principle', 1]]);
+  // The rule applies to the probe's figures, so a memory-off Chat that used it would show the label.
+  assert.match(probe.user, /profit of 17 million credits and operating cash flow of 6 million/u);
+  assert.ok(probe.expect.answer.find((item) => item.assert === 'not_contains').values.includes('violet lantern'));
+});
+
+test('the deep research unit needs the plan file before the first web read and citations that resolve', () => {
+  const suite = suiteNamed('deep-research-v1.json');
+  assert.equal(suite.scenarios.length, 1);
+  const [scenario] = suite.scenarios;
+  const [{ session, turn }] = turnsOf(scenario);
+  // No turn key selects a Skill yet, so the user asks for it by name and says not to ask.
+  assert.match(turn.user, /^Do deep research on this, and start without asking me anything/u);
+  assert.match(suite.description, /turn key for selected Skills replaces that wording/u);
+  assert.deepEqual(turn.expect.trace.map((item) => item.assert), ['skill_read', 'file_written_before', 'tool_called', 'tool_called', 'no_repeated_failed_call']);
+  assert.deepEqual(turn.expect.rubric.map((item) => item.id), ['conclusion-first', 'weighs-the-counterevidence']);
+  const plan = (tool_calls) => grade(suite, [observedTurn(suite, scenario, session, 0, { tool_calls })]).results.find((row) => row.assert === 'file_written_before').pass;
+  const write = (path, outcome = 'ok') => ({ name: 'write', outcome, args: { path, content: '# Plan' } });
+  const fetch = { name: 'web_fetch', outcome: 'ok', args: { url: 'https://fictional.example/deep-research/harrowfen-q2-2026-results' } };
+  assert.equal(plan([write('outputs/harrowfen-repeat-orders/plan.md'), fetch, write('outputs/harrowfen-repeat-orders/report.md')]), true);
+  assert.equal(plan([write('/tmp/eval/workspace/outputs/harrowfen/plan.md'), { name: 'web_search', outcome: 'ok', args: {} }]), true);
+  assert.equal(plan([fetch, write('outputs/harrowfen-repeat-orders/plan.md')]), false, 'the plan came after the first web read');
+  assert.equal(plan([{ name: 'web_search', outcome: 'error', error_code: 'empty_result', args: {} }, write('outputs/harrowfen/plan.md')]), false, 'a failed search is still a web read first');
+  assert.equal(plan([write('outputs/harrowfen-repeat-orders/report.md'), fetch]), false, 'another file is not the plan');
+  assert.equal(plan([write('plan.md'), fetch]), false, 'the plan belongs under outputs/<slug>/');
+  assert.equal(plan([write('outputs/harrowfen/plan.md', 'error'), fetch]), false);
+  assert.equal(plan([{ name: 'write', outcome: 'ok', args: { _truncated: true } }, fetch]), null, 'a write whose path is not in the trace could be the plan');
+  assert.throws(() => assertScenarioContract({ ...scenario, id: 'DR-X', sessions: [{ ...session, turns: [{ ...turn, expect: { trace: [{ assert: 'file_written_before', path_matching: 'plan', before: ['fetch_the_web'], metric: 'task_success' }] } }] }] },
+    { suite: 'deep-research', filePath: join(here, 'suites/deep-research-v1.json') }), /unknown tool fetch_the_web/u);
+});
+
+test('the correction units seed the user\'s own marks, and a mark on something the scenario does not stage is rejected', () => {
+  const suite = suiteNamed('corrections-v1.json');
+  assert.deepEqual(suite.scenarios.map((scenario) => scenario.seed.corrections), [
+    [{ claim: { source: 'saraswati-q2', fact: 'sl-revenue-q2' }, action: 'dispute' }],
+    [{ claim: { source: 'saraswati-q2', fact: 'sl-revenue-q2' }, action: 'dispute' }],
+    [{ entity: 'Lindenhof Maschinenbau', action: 'add_alias', alias: 'LiMa' }],
+    [{ claim: { source: 'alderquay-q2', fact: 'q2-cfo' }, action: 'keep_current' }],
+  ]);
+  for (const scenario of suite.scenarios) {
+    assert.deepEqual([scenario.world.mode, scenario.sessions.length, scenario.sessions[0].memory], ['scripted', 1, 'read_only'], scenario.id);
+    // The user's own question never repeats the mark: the agent has to meet it in what it reads.
+    assert.doesNotMatch(turnsOf(scenario)[0].turn.user, /wrong|dispute|contested|alias/iu, scenario.id);
+  }
+  // The alias is in no Source, so only the user's mark can resolve it.
+  const alias = scenarioOf('corrections-v1.json', 'UC-003');
+  assert.equal(alias.seed.sources.some((source) => source.text.includes('LiMa') || source.title.includes('LiMa')), false);
+  assert.match(turnsOf(alias)[0].turn.user, /LiMa/u);
+  // "This did not end" is offered on an ending with no stated date: the scripted replacement names none.
+  const kept = scenarioOf('corrections-v1.json', 'UC-004');
+  const replaced = kept.world.publications[1].script;
+  assert.deepEqual(replaced.resolutions['q3-cfo'], { contradicts: ['q2-cfo'], same_assertion: ['q2-cfo'] });
+  assert.equal(replaced.facts.find((fact) => fact.id === 'q3-cfo').valid_at, null);
+
+  const accepts = (scenario) => assertScenarioContract(scenario, { suite: 'corrections', filePath: join(here, 'suites/corrections-v1.json') });
+  const changed = (id, change) => { const copy = structuredClone(scenarioOf('corrections-v1.json', id)); change(copy.seed.corrections[0]); return copy; };
+  for (const [why, id, change, message] of [
+    ['a fact of another Source', 'UC-001', (item) => { item.claim.source = 'saraswati-q3'; }, /names a fact its Source does not script/u],
+    ['an unknown action on a claim', 'UC-001', (item) => { item.action = 'delete'; }, /must be dispute or keep_current/u],
+    ['an unknown key', 'UC-001', (item) => { item.note = 'typo'; }, /claim correction has unknown key note/u],
+    ['an entity no script names', 'UC-003', (item) => { item.entity = 'Lindenhof'; }, /names an entity no script has introduced/u],
+    ['a merge', 'UC-003', (item) => { item.action = 'merge'; }, /must be add_alias with an alias/u],
+    ['an empty alias', 'UC-003', (item) => { item.alias = ' '; }, /must be add_alias with an alias/u],
+  ]) assert.throws(() => accepts(changed(id, change)), message, why);
 });

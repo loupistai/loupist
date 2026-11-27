@@ -3,7 +3,7 @@ use super::{SqliteStore, StoreResult};
 use crate::{domain::ChatFailureKind, providers::status::CredentialKind, runs::log::UsageSurface};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use std::{collections::BTreeMap, sync::Mutex};
 
 const DAY_MS: i64 = 86_400_000;
 pub(crate) const USAGE_RETENTION_MS: i64 = 400 * DAY_MS;
@@ -40,6 +40,14 @@ pub(crate) enum WorldFailure {
     LearningReview,
 }
 
+/// A plan-limit or out-of-credit failure whose ledger row was not stored.
+#[derive(Clone, Debug)]
+pub(crate) struct LostHold {
+    pub provider: String,
+    pub at_ms: i64,
+    pub failure: ChatFailureKind,
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum ModelUsageFailure {
@@ -52,6 +60,8 @@ pub(crate) enum ModelUsageFailure {
 pub(crate) struct ModelUsageData {
     pub kind: ModelUsageKind,
     pub surface: UsageSurface,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub world_origin: Option<crate::scheduled_tasks::allowance::WorldOrigin>,
     pub provider: String,
     pub credential_kind: Option<CredentialKind>,
     pub model: String,
@@ -96,6 +106,46 @@ pub(crate) struct ModelUsageRow {
     pub loupist_id: Option<String>,
     pub task_id: Option<String>,
     pub data: ModelUsageData,
+}
+
+pub(crate) fn write_model_usage(
+    connection: &Connection,
+    id: &str,
+    row: &ModelUsageRow,
+) -> StoreResult<()> {
+    initialize(connection)?;
+    // A run may finish after its registration was removed.
+    connection.execute(
+        "INSERT OR REPLACE INTO model_usage (id, finished_at_ms, loupist_id, task_id, data_json)
+         VALUES (?1, ?2, (SELECT id FROM loupist_profiles WHERE id = ?3), ?4,
+            CASE WHEN ?6 THEN json_remove(?5, '$.chatId') ELSE ?5 END)",
+        params![
+            id,
+            row.finished_at_ms,
+            row.loupist_id,
+            row.task_id,
+            serde_json::to_string(&row.data)?,
+            row.data.surface == UsageSurface::Bot,
+        ],
+    )?;
+    Ok(())
+}
+
+pub(crate) fn model_usage_has_run(connection: &Connection, run_id: &str) -> StoreResult<bool> {
+    let table: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'model_usage')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !table {
+        return Ok(false);
+    }
+    Ok(connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM model_usage
+         WHERE json_valid(data_json) AND json_extract(data_json, '$.run_id') = ?1)",
+        [run_id],
+        |row| row.get(0),
+    )?)
 }
 
 fn initialize(connection: &Connection) -> StoreResult<()> {
@@ -146,25 +196,55 @@ fn prune_due(connection: &Connection, now: i64, last_prune: &mut Option<i64>) ->
 }
 
 impl SqliteStore {
+    pub(crate) fn initialize_model_usage(&self) -> StoreResult<()> {
+        let connection = self.lock()?;
+        initialize(&connection)
+    }
+
     pub(crate) fn put_model_usage(&self, id: &str, row: &ModelUsageRow) -> StoreResult<()> {
         let connection = self.lock()?;
-        initialize(&connection)?;
-        // A run may finish after its registration was removed.
-        connection.execute(
-            "INSERT OR REPLACE INTO model_usage (id, finished_at_ms, loupist_id, task_id, data_json)
-             VALUES (?1, ?2, (SELECT id FROM loupist_profiles WHERE id = ?3), ?4,
-                CASE WHEN ?6 THEN json_remove(?5, '$.chatId') ELSE ?5 END)",
-            params![
-                id,
-                row.finished_at_ms,
-                row.loupist_id,
-                row.task_id,
-                serde_json::to_string(&row.data)?,
-                row.data.surface == UsageSurface::Bot,
-            ],
-        )?;
+        if let Err(error) = write_model_usage(&connection, id, row) {
+            self.remember_lost_hold(row);
+            return Err(error);
+        }
         let mut last_prune = LAST_PRUNE.lock().unwrap_or_else(|error| error.into_inner());
         prune_due(&connection, crate::commands::now_ms(), &mut last_prune)
+    }
+
+    /// A refused row that failed on a plan limit or out of credit still holds
+    /// its provider: in memory, until the app restarts.
+    fn remember_lost_hold(&self, row: &ModelUsageRow) {
+        let Some(ModelUsageFailure::Chat(
+            failure @ (ChatFailureKind::PlanLimit | ChatFailureKind::OutOfCredit),
+        )) = row.data.failure_kind
+        else {
+            return;
+        };
+        self.lost_holds
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .push(LostHold {
+                provider: row.data.provider.clone(),
+                at_ms: row.finished_at_ms,
+                failure,
+            });
+    }
+
+    /// Provider holds whose ledger rows were refused since this store opened.
+    pub(crate) fn lost_holds(&self) -> Vec<LostHold> {
+        self.lost_holds
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+    }
+
+    /// What a restart forgets, for a test that restarts on the same store.
+    #[cfg(test)]
+    pub(crate) fn forget_lost_holds_on_restart(&self) {
+        self.lost_holds
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clear();
     }
 
     pub(crate) fn model_usage_in_range(
@@ -174,29 +254,156 @@ impl SqliteStore {
     ) -> StoreResult<Vec<ModelUsageRow>> {
         let connection = self.lock()?;
         initialize(&connection)?;
-        let mut statement = connection.prepare(
-            "SELECT finished_at_ms, loupist_id, task_id, data_json FROM model_usage
-             WHERE finished_at_ms >= ?1 AND finished_at_ms < ?2 ORDER BY finished_at_ms, id",
-        )?;
-        let rows = statement.query_map(params![from_ms, to_ms], |row| {
-            Ok((
-                row.get(0)?,
-                row.get(1)?,
-                row.get(2)?,
-                row.get::<_, String>(3)?,
-            ))
-        })?;
-        rows.map(|result| {
-            let (finished_at_ms, loupist_id, task_id, json) = result?;
-            Ok(ModelUsageRow {
-                finished_at_ms,
-                loupist_id,
-                task_id,
-                data: serde_json::from_str(&json)?,
-            })
-        })
-        .collect()
+        model_usage_in_range(&connection, from_ms, to_ms)
     }
+
+    pub(crate) fn populate_scheduled_usage(
+        &self,
+        loupist_id: &str,
+        runs: &mut [crate::scheduled_tasks::types::Run],
+    ) -> StoreResult<()> {
+        if runs.is_empty() {
+            return Ok(());
+        }
+        let messages = serde_json::to_string(
+            &runs
+                .iter()
+                .filter_map(|run| run.message_id.as_deref())
+                .collect::<Vec<_>>(),
+        )?;
+        let jobs = {
+            let folder = self.lock_loupist(loupist_id)?;
+            let mut statement = folder.prepare(
+                "SELECT job_id, json_extract(payload_json, '$.originMessageId')
+                 FROM knowledge_graph_outbox
+                 WHERE loupist_id = ?1 AND json_valid(payload_json)
+                   AND json_extract(payload_json, '$.originMessageId') IN (SELECT value FROM json_each(?2))",
+            )?;
+            let jobs = statement.query_map(params![loupist_id, messages], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            jobs.collect::<Result<BTreeMap<_, _>, _>>()?
+        };
+        let ids = serde_json::to_string(
+            &runs
+                .iter()
+                .map(|run| &run.run_id)
+                .chain(jobs.keys())
+                .collect::<Vec<_>>(),
+        )?;
+        let connection = self.lock()?;
+        initialize(&connection)?;
+        let mut statement = connection.prepare(
+            "SELECT data_json FROM model_usage WHERE loupist_id = ?1
+             AND json_extract(data_json, '$.runId') IN (SELECT value FROM json_each(?2))
+             ORDER BY finished_at_ms, id",
+        )?;
+        let mut chats = BTreeMap::new();
+        let mut world = BTreeMap::<_, u64>::new();
+        for row in statement.query_map(params![loupist_id, ids], |row| row.get::<_, String>(0))? {
+            let data: ModelUsageData = serde_json::from_str(&row?)?;
+            match data.kind {
+                ModelUsageKind::Chat => {
+                    chats.insert(data.run_id.clone(), data);
+                }
+                ModelUsageKind::World => {
+                    if let (Some(message), Some(calls)) =
+                        (jobs.get(&data.run_id), data.measures.requests)
+                    {
+                        let total = world.entry(message).or_default();
+                        *total = total.saturating_add(calls);
+                    }
+                }
+                _ => {}
+            }
+        }
+        for run in runs {
+            if let Some(data) = chats.remove(&run.run_id) {
+                run.usage = Some(data.run_usage());
+            }
+            if let Some(usage) = &mut run.usage {
+                usage.world_requests = run
+                    .message_id
+                    .as_ref()
+                    .and_then(|id| world.get(id).copied());
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn scheduled_run_ledger_usage(
+        &self,
+        loupist_id: &str,
+        run_id: &str,
+    ) -> StoreResult<Option<crate::scheduled_tasks::types::RunUsage>> {
+        use rusqlite::OptionalExtension;
+        let connection = self.lock()?;
+        initialize(&connection)?;
+        let data: Option<String> = connection.query_row(
+            "SELECT data_json FROM model_usage WHERE loupist_id=?1 AND task_id IS NOT NULL
+             AND json_extract(data_json,'$.runId')=?2 ORDER BY finished_at_ms DESC, id DESC LIMIT 1",
+            params![loupist_id, run_id],
+            |row| row.get(0),
+        ).optional()?;
+        data.map(|json| serde_json::from_str::<ModelUsageData>(&json).map(|data| data.run_usage()))
+            .transpose()
+            .map_err(Into::into)
+    }
+}
+
+impl ModelUsageData {
+    fn run_usage(&self) -> crate::scheduled_tasks::types::RunUsage {
+        crate::scheduled_tasks::types::RunUsage {
+            requests: self.measures.requests,
+            input_tokens: self.measures.input,
+            cached_input_tokens: self.measures.cached_input,
+            output_tokens: self.measures.output,
+            duration_ms: self.duration_ms,
+            world_requests: None,
+            cost_estimate: self
+                .measures
+                .cost_microusd
+                .filter(|_| {
+                    matches!(
+                        self.credential_kind,
+                        Some(CredentialKind::ApiKey | CredentialKind::Environment)
+                    )
+                })
+                .map(|microusd| crate::domain::ChatCostEstimate {
+                    microusd,
+                    from_provider: self.measures.cost_from_provider == Some(true),
+                }),
+        }
+    }
+}
+
+pub(crate) fn model_usage_in_range(
+    connection: &Connection,
+    from_ms: i64,
+    to_ms: i64,
+) -> StoreResult<Vec<ModelUsageRow>> {
+    let mut statement = connection.prepare(
+        "SELECT finished_at_ms, loupist_id, task_id, data_json FROM model_usage
+             WHERE finished_at_ms >= ?1 AND finished_at_ms < ?2 ORDER BY finished_at_ms, id",
+    )?;
+    let rows = statement.query_map(params![from_ms, to_ms], |row| {
+        Ok((
+            row.get(0)?,
+            row.get(1)?,
+            row.get(2)?,
+            row.get::<_, String>(3)?,
+        ))
+    })?;
+    rows.map(|result| {
+        let (finished_at_ms, loupist_id, task_id, json) = result?;
+        Ok(ModelUsageRow {
+            finished_at_ms,
+            loupist_id,
+            task_id,
+            data: serde_json::from_str(&json)?,
+        })
+    })
+    .collect()
 }
 
 #[cfg(test)]
@@ -207,6 +414,7 @@ pub(crate) fn fixture_row(at: i64) -> ModelUsageRow {
         task_id: None,
         data: ModelUsageData {
             kind: ModelUsageKind::Chat,
+            world_origin: None,
             surface: UsageSurface::Research,
             provider: "openrouter".into(),
             credential_kind: None,

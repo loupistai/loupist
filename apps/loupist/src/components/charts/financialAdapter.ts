@@ -151,6 +151,66 @@ export const drawingOverlays = (drawing: ChartDrawing): OverlayCreate[] => {
   ];
 };
 
+/** The chart's own price text: the same fraction digits the price axis prints, in the interface locale. */
+export function formatChartPrice(value: number, precision: number): string {
+  if (!Number.isFinite(value)) return String(value);
+  const digits = Number.isInteger(precision) && precision >= 0 && precision <= 12 ? precision : 2;
+  return formatNumber(value, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+/** Air beyond half a center-aligned axis label so the rightmost date is not clipped. */
+const AXIS_LABEL_AIR_PX = 4;
+/** Widest bar the chart will draw; a shorter range stays readable instead of stretching. */
+const BAR_SPACE_MAX = 36;
+/** Narrowest bar. A year of daily bars in a docked panel is thinner than the library's default of 10. */
+const BAR_SPACE_MIN = 0.05;
+
+/**
+ * Bar width and right inset that show every bar of the selected range, with the last bar
+ * far enough from the right edge that a center-aligned axis label fits.
+ * `toIndex` is the last selected bar; `dataCount` is the whole series.
+ */
+export function fittedRange(plotWidth: number, barCount: number, dataCount: number, toIndex: number, labelWidth: number): { barSpace: number; offsetRight: number } | null {
+  if (!(plotWidth > 0) || barCount <= 0 || dataCount <= 0) return null;
+  const gutter = Math.max(0, labelWidth) / 2 + AXIS_LABEL_AIR_PX;
+  const usable = Math.max(1, plotWidth - Math.min(gutter * 2, plotWidth - 1));
+  const barSpace = Math.min(BAR_SPACE_MAX, Math.max(BAR_SPACE_MIN, usable / barCount));
+  const offsetRight = gutter + (toIndex + 0.5 - dataCount) * barSpace;
+  return { barSpace, offsetRight };
+}
+
+export type PlotTick = { coord: number; value: number | string; text: string };
+
+/**
+ * Center-aligned axis labels, shifted in from either edge so none is clipped,
+ * and the rightmost label kept even when that crowds the one before it.
+ */
+export function ticksThatFit(ticks: readonly PlotTick[], width: number, textWidth: (text: string) => number): PlotTick[] {
+  if (!(width > 0)) return [...ticks];
+  const place = (tick: PlotTick): PlotTick | null => {
+    const half = Math.max(0, textWidth(tick.text) / 2);
+    if (half * 2 > width) return null;
+    const coord = Math.min(width - half, Math.max(half, tick.coord));
+    return coord === tick.coord ? tick : { ...tick, coord };
+  };
+  const overlaps = (left: PlotTick, right: PlotTick) =>
+    right.coord - textWidth(right.text) / 2 < left.coord + textWidth(left.text) / 2 + AXIS_LABEL_AIR_PX;
+  const fitted: PlotTick[] = [];
+  for (const tick of ticks) {
+    const next = place(tick);
+    if (!next) continue;
+    const previous = fitted.at(-1);
+    if (previous && overlaps(previous, next)) continue;
+    fitted.push(next);
+  }
+  const last = ticks.at(-1);
+  const placed = last ? place(last) : null;
+  if (!placed) return fitted;
+  while (fitted.length > 0 && overlaps(fitted.at(-1)!, placed) && fitted.at(-1) !== placed) fitted.pop();
+  if (fitted.at(-1) !== placed) fitted.push(placed);
+  return fitted;
+}
+
 /** Half the library's last-price tag (12 px text, 4 px padding) plus half an axis label, with a little air. */
 const LAST_PRICE_CLEARANCE_PX = 18;
 

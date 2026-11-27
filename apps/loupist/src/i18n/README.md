@@ -27,7 +27,7 @@ never 해요체: a casual-polite ending lowers trust in financial research.
   marks, emoji or softeners ("살짝", "잠깐만요"), and no bureaucratese
   (…하시기 바랍니다, stacked honorifics). Keep it short, exact and calm, about as
   long as the English, with product terms (봇, 리서치 세션, 관심 자산, 월드, 렌즈, 예약,
-  자료함, 루피스트) unchanged.
+  자료함) unchanged. The product name is Loupist in Korean copy too.
 - Text the user sends to their Loupist (a suggested prompt, an inserted draft) is
   the user's own plain request: "…해 줘".
 
@@ -42,7 +42,8 @@ before it: Hangul by its final consonant (ㄹ takes 로), digits by their Korean
 reading, Latin names by a loanword rule; an unknown sound keeps the pair. Reword
 instead when a string reads better without a particle. `scripts/check-ui-copy.mjs`
 rejects a single bare particle after a value (`{{name}}을`) and a wrong one after
-the app's name (루피스트가, 루피스트를).
+the app's name written in Hangul (루피스트가, 루피스트를). The name in the catalogs is Loupist,
+which takes the vowel particles (Loupist가, Loupist를).
 
 World relation names are stored as English SCREAMING_SNAKE (`FILES_WITH`).
 `knowledge.relations` labels the reviewed types; `knowledge.customRelations` is the

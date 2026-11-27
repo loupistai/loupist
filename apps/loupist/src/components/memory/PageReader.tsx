@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { MessageSquareIcon, TriangleAlertIcon } from "lucide-react";
 import i18n, { useTranslation } from "@/i18n";
 import { formatDate, formatNumber } from "@/i18n/format";
@@ -12,11 +12,16 @@ import { Spinner } from "../ui/spinner";
 import { SafeMessageResponse } from "../chat/SafeMessageResponse";
 import { OpenProvider, useOpenLayer, type OpenLayer } from "../navigation/Open";
 import { displaySectionHeading, historySectionHeading } from "../../knowledge/hostDefaults";
+import { dateValue } from "../../knowledge/presentation";
+import { sectionRoleLabel, sectionState, supersededChipLabel } from "./sectionState";
+import { historyEpisode } from "../map/claimHistory";
 import { sharingReleaseVisible } from "../../sharing/releaseVisibility";
 import { SharedOrigin } from "../sharing/SharedOrigin";
 import { SHARED_SECTION_ITEM } from "../sharing/SharedPacks";
 import { ShareSheet } from "../sharing/ShareSheet";
 import { pinForLens } from "../../knowledge/location";
+import { LearnedMark } from "../knowledge/LearnedMark";
+import { LearnRequest } from "../briefings/LearnRequest";
 import "@/styles/page-reader.css";
 
 const WORLD_LINK = /\]\(world:([^)\s]+)\)/gu;
@@ -54,6 +59,25 @@ export type PageReaderProps = {
 function PageLinks({ onLens, children }: { onLens: (recordId: string) => void; children: React.ReactNode }) {
   const open = useOpenLayer(useCallback<OpenLayer>((to) => to.kind === "lens" ? () => onLens(to.recordId) : undefined, [onLens]));
   return <OpenProvider open={open}>{children}</OpenProvider>;
+}
+
+function SupersededChip({ bridge, loupistId, claimId, fetch, onOpen }: {
+  bridge: LoupistBridge; loupistId: string; claimId?: string; fetch: boolean; onOpen: (claimId: string) => void;
+}) {
+  const { t } = useTranslation("knowledge");
+  const [label, setLabel] = useState(() => t("pageReader.superseded"));
+  useEffect(() => {
+    if (!fetch || !claimId) return;
+    let live = true;
+    setLabel(t("pageReader.superseded"));
+    void bridge.knowledgeWorldClaimHistory({ loupistId, claimId }).then(history => {
+      if (!live) return;
+      const episode = historyEpisode(history.ended);
+      setLabel(supersededChipLabel({ end: episode?.date, source: episode?.title }));
+    }).catch(() => { if (live) setLabel(t("pageReader.superseded")); });
+    return () => { live = false; };
+  }, [bridge, loupistId, claimId, fetch, t]);
+  return <button type="button" className="page-contested" data-chip="superseded" disabled={!claimId} onClick={() => claimId && onOpen(claimId)}>{label}</button>;
 }
 
 export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, usage, children, chatTitle, onOpenPage, onOpen, onAsk, onChanged, onLoaded, takeFocus = true }: PageReaderProps) {
@@ -162,12 +186,17 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, usag
   const anchors = page.anchors.filter((anchor, index, all) => all.findIndex(other => other.nodeId === anchor.nodeId && other.name === anchor.name) === index);
   const idea = body.kind === "idea" ? body.idea : null;
 
+  const changedSections = sections.filter(section => sectionState(section) !== "current");
+  const scrollToChanged = (event: MouseEvent<HTMLButtonElement>) => {
+    event.currentTarget.closest("article")?.querySelector<HTMLElement>('[data-section-state="contested"], [data-section-state="superseded"]')?.scrollIntoView({ block: "start" });
+  };
   return <article className="page-reader" aria-label={t("pageReader.label")} data-page-kind={page.kind}>
     {toolbar ? <div className="page-reader-toolbar">{toolbar}</div> : null}
     <header className="page-reader-head">
       <p className="page-reader-meta"><span>{t(`pageReader.kind.${page.kind}`)}</span>{usage ? <span>{usage}</span> : null}{page.updatedAtMs ? <span>{t("pageReader.updated", { date: formatDate(page.updatedAtMs, { year: undefined, month: "short", day: "numeric" }) })}</span> : null}
         {idea ? <span className="page-idea-status" data-status={idea.status}>{t(`pageReader.ideaStatus.${idea.status}`)}</span> : null}</p>
       <h2 ref={heading} tabIndex={-1}>{page.title}</h2>
+      {changedSections.length ? <p className="page-changed"><Button variant="link" onClick={scrollToChanged}>{t("pageReader.changedSections", { count: changedSections.length, formattedCount: formatNumber(changedSections.length) })}</Button></p> : null}
       <SharedOrigin bridge={bridge} loupistId={loupistId} subjectId={page.recordId} onAbout={showSharing ? () => onOpen({ loupistId, surface: "lens", recordId: SHARED_SECTION_ITEM }) : undefined} />
       {body.kind !== "principle" && body.summary ? <p className="page-reader-summary">{body.summary}</p> : null}
     </header>
@@ -178,18 +207,26 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, usag
       {body.why ? <section className="page-section"><h3>{t("pageReader.why")}</h3><p>{body.why}</p></section> : null}
       {body.example ? <section className="page-section"><h3>{t("pageReader.example")}</h3><p>{body.example}</p></section> : null}
     </div> : <div className="page-sections">
-      {sections.map((section, index) => <section key={section.key} className="page-section" data-section-key={section.key} data-contested={section.contested || undefined} aria-label={section.heading.trim() || undefined}>
+      {sections.map((section, index) => {
+        const state = sectionState(section);
+        const role = sectionRoleLabel(section.role);
+        const supersededIndex = state === "superseded" ? sections.slice(0, index).filter(item => sectionState(item) === "superseded").length : 0;
+        return <section key={section.key} className="page-section" data-section-key={section.key} data-section-state={state} data-contested={section.contested || undefined} aria-label={section.heading.trim() || undefined}>
+        {role ? <p className="page-section-role">{role}</p> : null}
         {section.heading.trim() && <h3>{section.heading}</h3>}
+        {section.asOf ? <p className="page-as-of">{t("pageReader.asOf", { date: dateValue(section.asOf) })}</p> : null}
         <PageLinks onLens={openLens}><SafeMessageResponse text={rewritten.texts[index] ?? section.markdown} isAnimating={false} /></PageLinks>
         {section.chip === "view" && section.basis.uncertainty ? <p className="page-uncertainty">{t("pageReader.uncertainty", { text: section.basis.uncertainty })}</p> : null}
         <div className="page-section-tools">
           <SectionSources refs={section.basis.refs.filter(ref => ref.kind === "span")} catalog={catalog} loupistId={loupistId} onOpen={onOpen} />
           {section.chip === "view" ? <span className="page-chip" data-chip="view">{t("pageReader.chip.view")}</span> : null}
+          <LearnedMark learned={section.learned} />
           {section.basis.refs.filter(ref => ref.kind !== "span").map((ref, index) => chip(ref, index, section))}
           {section.contested ? <button type="button" className="page-contested" disabled={!section.contestedClaimIds[0]} onClick={() => section.contestedClaimIds[0] && openClaim(section.contestedClaimIds[0])}><TriangleAlertIcon aria-hidden="true" />{t("pageReader.contested")}</button> : null}
+          {state === "superseded" ? <SupersededChip bridge={bridge} loupistId={loupistId} claimId={section.claimIds?.[0]} fetch={supersededIndex < 16} onOpen={openClaim} /> : null}
           {page.archived ? null : <Button variant="ghost" size="sm" className="page-forget" disabled={busy} aria-label={section.heading.trim() ? t("pageReader.forgetSection", { heading: section.heading }) : t("pageReader.forget")} onClick={() => forget(section)}>{t("pageReader.forget")}</Button>}
         </div>
-      </section>)}
+      </section>; })}
       {!sections.length ? <p className="knowledge-hint">{t(page.kind === "perspective" ? "pageReader.emptyPerspective" : "pageReader.emptyPage")}</p> : null}
     </div>}
     {anchors.length ? <section className="page-linked" aria-label={t("pageReader.onTheMap")}><h3>{t("pageReader.onTheMap")}</h3>
@@ -206,6 +243,7 @@ export function PageReader({ bridge, loupistId, recordId, catalog, toolbar, usag
     </section> : null}
     <div className="page-reader-actions">
       {onAsk ? <Button variant="outline" size="sm" onClick={() => onAsk(pinForLens(loupistId, page))}><MessageSquareIcon />{t("lensWorkspace.discussInChat")}</Button> : null}
+      {page.kind === "subject" && !page.archived ? <LearnRequest kind="lens" subject={page.title} /> : null}
       {showSharing && SHARABLE.has(page.kind) && page.kind !== "perspective" ? <Button variant="outline" size="sm" data-share-item onClick={() => setShareOpen(true)}>{i18n.t("sharing:share")}</Button> : null}
     </div>
     {children}

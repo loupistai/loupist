@@ -90,9 +90,9 @@ function answerChart(openX) {
   </div>`;
 }
 
-test("chart toolbar measures native range selects and its More button", () => {
+test("chart toolbar measures range dropdowns and its More button", () => {
   const layout = measure(measureChatLayout, `<article class="chat-artifact-block">
-    <div class="chart-local-toolbar"><span>NVDA</span><select><option>Start</option></select><select><option>End</option></select><button class="chart-more-trigger">…</button></div>
+    <div class="chart-local-toolbar"><span>NVDA</span><button role="combobox">Start</button><button role="combobox">End</button><button class="chart-more-trigger">…</button></div>
   </article>`);
   assert.equal(layout.cards[0].toolbars[0].controls.length, 3);
   const fitted = measure(measureChatLayout, answerChart(600), { height: 560, clampDocument: true });

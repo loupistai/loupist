@@ -69,6 +69,24 @@ pub(super) struct PiCacheSeal {
     pub sent_envelope_digest: String,
 }
 
+/// Copy the scheduled run's change-feed bounds onto the turn. An id that is
+/// not a scheduled run, and a store read that fails, leave both fields unset.
+pub(super) fn bind_scheduled_run_context(
+    capture: &mut ToolCapture,
+    state: &AppState,
+    loupist_id: &str,
+    run_id: &str,
+) {
+    let Some(context) = crate::scheduled_tasks::scheduled_run_context(state, loupist_id, run_id)
+        .ok()
+        .flatten()
+    else {
+        return;
+    };
+    capture.previous_run_started_at_ms = Some(context.previous_run_started_at_ms);
+    capture.first_run = context.first_run;
+}
+
 /// `Break` means the reply already ended (failed, or stopped first) and was
 /// recorded; the user turn stays durable either way.
 pub(super) async fn launch_chat_turn(
@@ -142,6 +160,10 @@ pub(super) async fn launch_chat_turn(
     agent_harness::interface::resolve_language(&mut envelope.appearance.language);
     let capture = {
         let mut capture = ToolCapture::for_chat(assistant_message_id.clone());
+        let budget = crate::runs::budget::for_chat(&profile.id, &chat.id);
+        let learning = budget.as_ref().and_then(|budget| budget.learning());
+        // A store miss leaves the bounds unset so this run still starts.
+        bind_scheduled_run_context(&mut capture, state, &profile.id, &run_id);
         capture.unattended_run_id = (!surface.interactive()).then(|| run_id.clone());
         capture.surface = Some(surface.clone());
         capture.host_handoff = host_handoff;
@@ -154,6 +176,7 @@ pub(super) async fn launch_chat_turn(
         // arrives delimited and raises the tier, as `chat_history` returns it.
         capture.admit_untrusted_context(
             untrusted_context
+                || learning.is_some_and(|learning| learning.untrusted)
                 || retained_handoff_text
                 || envelope.trigger.is_some()
                 || chat
@@ -384,7 +407,7 @@ pub(super) async fn launch_chat_turn(
             if let Some(capture) = &on_event.eval_pi_event {
                 // Pi failed before the prompt was sent, so no model call ran.
                 capture(
-                    &serde_json::json!({"type":"eval_error","phase":"launch","code":_error.code,"message":crate::pi::e2e_failure_category(&_error.message)}),
+                    &serde_json::json!({"type":"eval_error","phase":"launch","code":_error.code,"message":crate::pi::e2e_failure_category(&_error.message),"reason":_error.message}),
                 );
             }
             #[cfg(feature = "e2e")]
@@ -569,6 +592,27 @@ pub(super) async fn launch_chat_turn(
     }))
 }
 
+/// Preference entries from the home Thread for a research session. A missing
+/// home Thread delivers none. Entries a pending home save will forget are left
+/// out, as they are for an unattended run.
+fn standing_preferences_for_research(
+    state: &AppState,
+    profile_id: &str,
+    cutoff: Option<crate::commands::knowledge::as_of::Cutoff>,
+) -> Result<Option<crate::chat::bot_memory::StandingPreferences>, CommandError> {
+    let home_id = crate::chat::home::home_thread_id(profile_id);
+    let Some(home) = state.store.get_chat(&home_id).map_err(map_store)? else {
+        return Ok(None);
+    };
+    if home.loupist_id != profile_id {
+        return Ok(None);
+    }
+    let (_, leaving) = super::saves::pending_bot_memory(state, profile_id, &home.id)?;
+    Ok(crate::chat::bot_memory::standing_preferences(
+        true, true, &home, cutoff, &leaving,
+    ))
+}
+
 /// Renders the per-turn context envelope sent with the prompt: live time, the
 /// Memory index and charter, selected references, working notes, the Journal,
 /// the selected artifact, principles and the Loupist's voice. The charter
@@ -682,6 +726,16 @@ pub(super) async fn build_turn_envelope(
         Some(run) => agent_harness::attach_previous_run(&turn_envelope, run),
         None => turn_envelope,
     };
+    let turn_envelope = capture
+        .bound_chat_id
+        .as_deref()
+        .and_then(|id| crate::runs::budget::for_chat(&profile.id, id))
+        .and_then(|budget| {
+            budget.learning().map(|learning| {
+                agent_harness::attach_learning_context(&turn_envelope, &learning.body)
+            })
+        })
+        .unwrap_or(turn_envelope);
     let turn_envelope = match &trigger {
         Some(trigger) => agent_harness::attach_trigger(&turn_envelope, trigger),
         None => turn_envelope,
@@ -703,6 +757,18 @@ pub(super) async fn build_turn_envelope(
             crate::chat::bot_memory::attach(&turn_envelope, memory.block)
         }
         None => turn_envelope,
+    };
+    // Setup fills this for an unattended run. A research session is interactive,
+    // so setup leaves it empty; the same block is loaded here. The Bot keeps
+    // `bot_memory` and does not also receive this one.
+    let standing_preferences = match standing_preferences {
+        Some(standing) => Some(standing),
+        None if crate::chat::bot_memory::receives_standing_preferences(surface, use_memory)
+            && surface.interactive() =>
+        {
+            standing_preferences_for_research(state, &profile.id, capture.cutoff())?
+        }
+        None => None,
     };
     let turn_envelope = match standing_preferences {
         Some(standing) => {
@@ -801,4 +867,161 @@ pub(super) async fn build_turn_envelope(
         followed.as_ref(),
     );
     Ok(turn_envelope)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        chat::{
+            bot_memory::{self, BotMemoryAction, BotMemoryKind, BotMemoryNote, StagedBotMemory},
+            surface::ChatSurface,
+        },
+        commands::{
+            knowledge::as_of::LeftOut,
+            tests::{initialized_workspace, profile, seed_profile},
+            tool_executor::ToolCapture,
+        },
+        custom_connections::taint::{WebFetchTarget, WEB_FETCH_PRIVATE_REFUSAL},
+        domain::ChatRole,
+        test_fixtures::chat_message,
+    };
+    use serde_json::Value;
+
+    const PREFERENCE: &str = "Answer in two lines please";
+
+    fn remember(id: &str, kind: BotMemoryKind, text: &str) -> StagedBotMemory {
+        StagedBotMemory {
+            entry_id: id.into(),
+            action: BotMemoryAction::Remember(BotMemoryNote {
+                kind,
+                text: text.into(),
+                basis: vec!["u1".into()],
+            }),
+        }
+    }
+
+    fn inputs() -> super::super::setup::TurnEnvelopeInputs {
+        super::super::setup::TurnEnvelopeInputs {
+            appearance: crate::scoped_config::ResolvedAppearanceConfig {
+                theme: "light".into(),
+                language: "en".into(),
+                price_colors: "auto".into(),
+                display_currency: None,
+            },
+            mentioned_connections: Vec::new(),
+            selected_artifact: None,
+            host_memory: None,
+            followed: None,
+            selected_references: None,
+            working_context: None,
+            bot_memory: None,
+            standing_preferences: None,
+            left_out: LeftOut::default(),
+            previous_run: None,
+            trigger: None,
+            current_message: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_research_turn_receives_standing_preferences_until_forget_and_keeps_them_out_of_urls()
+    {
+        let temporary = tempfile::tempdir().unwrap();
+        let workspace = temporary.path().join("workspace");
+        initialized_workspace(&workspace, "standing-research");
+        let state = AppState::for_test(temporary.path().join("app"));
+        let loupist = profile("loupist-a", &workspace, 1);
+        seed_profile(state.store.as_ref(), &loupist);
+        let expected = crate::chat::home::ensure_home_thread(&state, &loupist.id).unwrap();
+        let mut home = expected.clone();
+        home.messages.push(chat_message(
+            "u1",
+            ChatRole::User,
+            "Answer in two lines please, and I decided to wait.",
+        ));
+        home.messages
+            .push(chat_message("r1", ChatRole::Assistant, "I'll keep that."));
+        bot_memory::settle_reply(
+            &mut home,
+            "r1",
+            2,
+            &[
+                remember("bm-pref", BotMemoryKind::Preference, PREFERENCE),
+                remember("bm-dec", BotMemoryKind::Decision, "Wait on the basket"),
+            ],
+            &[],
+            Some("u1"),
+        )
+        .unwrap();
+        home.updated_at_ms = expected.updated_at_ms.max(expected.created_at_ms) + 1;
+        state.store.replace_chat(&expected, &home).unwrap();
+
+        let capture = ToolCapture::default();
+        let envelope = build_turn_envelope(
+            inputs(),
+            &state,
+            &loupist,
+            true,
+            &ChatSurface::Session,
+            &capture,
+        )
+        .await
+        .unwrap();
+        let value: Value = serde_json::from_str(&envelope).unwrap();
+        let entries = value["standing_preferences"]["entries"].as_array().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["kind"], "preference");
+        assert_eq!(entries[0]["text"], PREFERENCE);
+        assert_eq!(
+            value["standing_preferences"]["rule"],
+            bot_memory::STANDING_PREFERENCES_RULE
+        );
+        assert!(!envelope.contains("Wait on the basket"));
+
+        capture.turn_taint.mark_untrusted_text();
+        let url = format!(
+            "https://efts.sec.gov/LATEST/search-index?q={}",
+            PREFERENCE.replace(' ', "%20")
+        );
+        assert_eq!(
+            capture.turn_taint.web_fetch_target(&url),
+            WebFetchTarget::Refused(WEB_FETCH_PRIVATE_REFUSAL)
+        );
+
+        let bot = build_turn_envelope(
+            inputs(),
+            &state,
+            &loupist,
+            true,
+            &ChatSurface::Bot,
+            &ToolCapture::default(),
+        )
+        .await
+        .unwrap();
+        let bot_value: Value = serde_json::from_str(&bot).unwrap();
+        assert!(bot_value.get("standing_preferences").is_none());
+
+        crate::commands::bot_memory::forget(
+            &state,
+            crate::commands::bot_memory::BotMemoryForgetRequest {
+                loupist_id: loupist.id.clone(),
+                id: "bm-pref".into(),
+            },
+        )
+        .unwrap();
+        let again = build_turn_envelope(
+            inputs(),
+            &state,
+            &loupist,
+            true,
+            &ChatSurface::Session,
+            &ToolCapture::default(),
+        )
+        .await
+        .unwrap();
+        let again_value: Value = serde_json::from_str(&again).unwrap();
+        assert!(again_value.get("standing_preferences").is_none());
+        assert!(!again.contains(PREFERENCE));
+    }
 }

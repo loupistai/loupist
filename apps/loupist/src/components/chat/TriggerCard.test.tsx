@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { TaskTrigger, TriggerScores } from "../../contracts/generated";
 import type { ChatMessage, LoupistBridge } from "../../types";
@@ -52,7 +52,12 @@ it("shows the dry run, both versions' scores, and the code", async () => {
   expect(screen.getByText(/approved version was met 2 times/)).toBeVisible();
   expect(screen.getByRole("button", { name: "Update to v4" })).toBeVisible();
   await user.click(screen.getByRole("button", { name: "View code" }));
-  expect(await screen.findByText(/import loupist/)).toBeVisible();
+  const code = await screen.findByText(/import loupist/);
+  const controls = screen.getByRole("button", { name: "Update to v4" });
+  expect(code).toBeVisible();
+  expect(code.closest("dl")).toBeNull();
+  expect(controls.closest("dl")).toBeNull();
+  expect(code.closest(".trigger-review")).toContainElement(controls);
 });
 
 it("labels checks with a missing replay baseline and hides empty scores", () => {
@@ -124,9 +129,60 @@ it("requires a successful dry run for the pending arguments and providers before
   expect(screen.getByText("Check for an eight percent move")).toBeVisible();
   expect(screen.queryByText("Prices outside a 5 percent band")).not.toBeInTheDocument();
   expect(screen.getByText("band_percent")).toBeVisible();
-  expect(screen.getByText("8", { selector: "code" })).toBeVisible();
+  expect(screen.getByText("band_percent").closest("div")).toHaveTextContent("8");
+  expect(screen.queryByText("8", { selector: "code" })).toBeNull();
   expect(screen.getByText("price (provider-b)")).toBeVisible();
   expect(screen.getByRole("button", { name: "Update to v4" })).toBeEnabled();
+});
+
+it("shows the when-met line, hides instructions, names assets, and lists met days", async () => {
+  const user = userEvent.setup();
+  render(<TriggerCard trigger={trigger({
+    when_met_summary: "Tell me the move.",
+    args: { asset_ids: ["asset-1", "gone"], band_percent: 5 },
+    proposal_test: {
+      ...trigger().proposal_test!,
+      days: [
+        { date: "2026-11-12", outcome: "met", reading: "Northwind +6.2%" },
+        { date: "2026-11-13", outcome: "not_met", reading: "inside the band" },
+      ],
+    },
+  })} bridge={bridge({ assetsList: async () => [{ assetId: "asset-1", name: "Northwind" }] as never })}
+    loupistId="desk" taskId="task" schedule={schedule} revision={7} prompt="Report the move in full." />);
+  expect(screen.getByText("Tell me the move.")).toBeVisible();
+  expect(screen.queryByText("Report the move in full.")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Show instructions" }));
+  expect(screen.getByText("Report the move in full.")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Hide instructions" })).toBeVisible();
+  expect(await screen.findByText("Northwind, Removed asset")).toBeVisible();
+  const days = screen.getByRole("list", { name: "Days the check would have been met" });
+  expect(within(days).getByText("Northwind +6.2%")).toBeVisible();
+  expect(within(days).getByText("2026-11-12")).toBeVisible();
+  expect(within(days).queryByText("inside the band")).toBeNull();
+});
+
+it("uses a preset line or one generic line when the trigger was saved without one", () => {
+  const card = (patch: Partial<TaskTrigger>, preset?: "price-move") => <TriggerCard
+    trigger={trigger(patch)} bridge={bridge()} loupistId="desk" taskId="task" schedule={schedule} revision={7} preset={preset} />;
+  const { rerender } = render(card({}, "price-move"));
+  expect(screen.getByText("You are told the move, both prices and their dates, and what is reported about why.")).toBeVisible();
+  rerender(card({ when_met_summary: "schedule.preset.priceMove.whenMet" }));
+  expect(screen.getByText("You are told the move, both prices and their dates, and what is reported about why.")).toBeVisible();
+  rerender(card({}));
+  expect(screen.getByText("You are told when the check is met.")).toBeVisible();
+});
+
+it("toggles view code to hide code", async () => {
+  const user = userEvent.setup();
+  const get = vi.fn(async (request: { version?: number | null }) => ({ code: "import loupist\n", summary: "Prices", version: request.version ?? 3, sha256: "ab".repeat(32), task: {} as never }));
+  render(<TriggerCard trigger={trigger()} bridge={bridge({ scheduledTriggerGet: get as LoupistBridge["scheduledTriggerGet"] })} loupistId="desk" taskId="task" schedule={schedule} revision={7} />);
+  await user.click(screen.getByRole("button", { name: "View code" }));
+  expect(await screen.findByText(/import loupist/)).toBeVisible();
+  expect(screen.getByRole("button", { name: "Hide code" })).toHaveAttribute("aria-expanded", "true");
+  await user.click(screen.getByRole("button", { name: "Hide code" }));
+  expect(screen.queryByText(/import loupist/)).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "View code" })).toBeVisible();
+  expect(get).toHaveBeenCalledOnce();
 });
 
 it("requests a test only for the displayed pending revision and hash", async () => {

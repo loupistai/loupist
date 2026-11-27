@@ -116,11 +116,113 @@ fn with_left_out_bot_memory(
     let bot = crate::domain::DiscardedMemoryItem {
         kind: crate::domain::DiscardedMemoryKind::BotMemory,
         title: "Bot".into(),
+        reason: None,
     };
     if items.len() < crate::domain::MAX_DISCARDED_MEMORY_ITEMS && !items.contains(&bot) {
         items.push(bot);
     }
     Some(items)
+}
+
+/// Pauses before a Memory commit is tried again after the store was busy or
+/// failed: at most three attempts, about 34 seconds in all with the save
+/// budget of each.
+const COMMIT_RETRY_PAUSES: [Duration; 2] = [Duration::from_secs(1), Duration::from_secs(3)];
+
+/// Commit stages a failed attempt left out because one of their items was
+/// refused, so the rest of the turn saves. Each stage is left out at most once.
+#[derive(Default)]
+struct LeftOut(Vec<CommitStage>);
+
+impl LeftOut {
+    /// Leaves a stage out of the next attempt; false when it cannot be, or
+    /// already was. The receipt, setup and a hand-off are never left out.
+    fn leave_out(&mut self, stage: CommitStage) -> bool {
+        let separable = matches!(
+            stage,
+            CommitStage::Research
+                | CommitStage::Principles
+                | CommitStage::Lens
+                | CommitStage::Deliveries
+                | CommitStage::Citations
+                | CommitStage::Assets
+                | CommitStage::Vocabulary
+                | CommitStage::BotMemory
+        );
+        if !separable || self.has(stage) {
+            return false;
+        }
+        self.0.push(stage);
+        true
+    }
+
+    fn has(&self, stage: CommitStage) -> bool {
+        self.0.contains(&stage)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// What a left-out stage would have written: nothing.
+    fn keep<'a, T>(&self, stage: CommitStage, staged: &'a [T]) -> &'a [T] {
+        if self.has(stage) {
+            &[]
+        } else {
+            staged
+        }
+    }
+
+    /// The receipt's list of what was not kept, with each staged item of a
+    /// left-out stage named and its cause.
+    fn listed(
+        &self,
+        items: Option<Vec<crate::domain::DiscardedMemoryItem>>,
+        staged: Option<&[crate::domain::DiscardedMemoryItem]>,
+    ) -> Option<Vec<crate::domain::DiscardedMemoryItem>> {
+        let left = staged
+            .unwrap_or_default()
+            .iter()
+            .filter(|item| stage_of(item.kind).is_some_and(|stage| self.has(stage)))
+            .collect::<Vec<_>>();
+        if left.is_empty() {
+            return items;
+        }
+        let mut items = items.unwrap_or_default();
+        for item in left {
+            if items.len() == crate::domain::MAX_DISCARDED_MEMORY_ITEMS {
+                break;
+            }
+            if !items
+                .iter()
+                .any(|kept| kept.kind == item.kind && kept.title == item.title)
+            {
+                items.push(crate::domain::DiscardedMemoryItem {
+                    reason: Some(MemorySaveSkipReason::Invalid),
+                    ..item.clone()
+                });
+            }
+        }
+        Some(items)
+    }
+}
+
+/// The commit stage that writes a staged item of this kind.
+fn stage_of(kind: crate::domain::DiscardedMemoryKind) -> Option<CommitStage> {
+    use crate::domain::DiscardedMemoryKind as Kind;
+    Some(match kind {
+        Kind::Note | Kind::JournalEntry | Kind::Source => CommitStage::Research,
+        Kind::Principle => CommitStage::Principles,
+        Kind::LensSection | Kind::LensPage | Kind::Method => CommitStage::Lens,
+        Kind::Thesis | Kind::PriceRead => CommitStage::Assets,
+        Kind::WorldVocabulary => CommitStage::Vocabulary,
+        Kind::BotMemory => CommitStage::BotMemory,
+        Kind::Watchlist | Kind::ResearchFocus | Kind::ResearchHandoff => return None,
+    })
 }
 
 /// Ends a released reply's stream with its stored answer, title and
@@ -262,6 +364,7 @@ pub(super) struct CompletedTurn<'a> {
 }
 
 fn record_commit_failure(sink: &ChatEventSink, stage: CommitStage, code: &str) {
+    sink.note_save_failure(stage, save_failure_cause(code));
     if let Some((_, record)) = sink
         .run_log
         .lock()
@@ -274,6 +377,47 @@ fn record_commit_failure(sink: &ChatEventSink, stage: CommitStage, code: &str) {
             .memory_commit_failure
             .get_or_insert_with(|| MemoryCommitFailure::from_code(stage, code));
     }
+}
+
+/// What the skipped receipt tells the user about a failed commit step's code.
+fn save_failure_cause(code: &str) -> MemorySaveSkipReason {
+    match code {
+        "store_busy" | "world_busy" => MemorySaveSkipReason::StoreBusy,
+        "conflict" | "revision_conflict" | "cursor_stale" | "conflicting_dependency_revision" => {
+            MemorySaveSkipReason::Conflict
+        }
+        "internal"
+        | "sqlite"
+        | "json"
+        | "io"
+        | "private_storage"
+        | "lock_poisoned"
+        | "schema_mismatch"
+        | "loupist_storage_unavailable" => MemorySaveSkipReason::Storage,
+        // The turn's own state was unavailable to the commit: no cause to name.
+        "finalization_dependency_unavailable" => MemorySaveSkipReason::Failed,
+        _ => MemorySaveSkipReason::Invalid,
+    }
+}
+
+/// The run log's class for a failed Chat transaction, read before `map_store`
+/// turns every kind but a conflict into `internal`. A conflict is retried or
+/// recorded once the retries end.
+fn chat_commit_failure_code(error: &crate::store::StoreError) -> Option<&'static str> {
+    use crate::store::StoreError;
+    Some(match error {
+        StoreError::Conflict(_) => return None,
+        StoreError::Invalid(_) => "invalid",
+        StoreError::ChatSaveDeadline => "store_busy",
+        StoreError::Sqlite(error) if crate::commands::knowledge::sqlite_is_busy(error) => {
+            "store_busy"
+        }
+        StoreError::Sqlite(_) => "sqlite",
+        StoreError::Json(_) => "json",
+        StoreError::PrivateStorage(_) => "private_storage",
+        StoreError::LockPoisoned => "lock_poisoned",
+        _ => "internal",
+    })
 }
 
 /// `Break` means a failed reply was already persisted and emitted, so the
@@ -341,8 +485,19 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
             .iter()
             .filter_map(|read| read.lens_receipt("exact_read")),
     );
+    let cited = crate::commands::knowledge::principles::answer_lens_links(&content)
+        .collect::<std::collections::BTreeSet<_>>();
+    // Delivery rows keep every principle the envelope carried. Activity keeps
+    // a principle only when this answer cites it or the turn read it.
     let lens_receipts = lens_deliveries
         .iter()
+        .filter(|receipt| {
+            crate::commands::knowledge::principles::shows_in_activity(
+                receipt,
+                &cited,
+                &citation_reads,
+            )
+        })
         .map(|receipt| (receipt.record_id.clone(), receipt.clone()))
         .collect::<std::collections::BTreeMap<_, _>>()
         .into_values()
@@ -687,7 +842,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                 &completed_message,
                 execution_model,
                 title.as_deref(),
-                MemorySaveSkipReason::Failed,
+                on_event.save_failure(),
                 &[],
             );
             return ControlFlow::Break(());
@@ -826,7 +981,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                     &completed_message,
                     execution_model,
                     title.as_deref(),
-                    MemorySaveSkipReason::Failed,
+                    on_event.save_failure(),
                     &[],
                 );
                 return ControlFlow::Break(());
@@ -838,7 +993,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
         let mut memory_reset = false;
         let mut watchlist_changes = Vec::new();
         let started_at_ms = progress.started_at_ms();
-        let finalized: Result<_, CommandError> = crate::store::bounded_chat_save(|| {
+        let prepared = crate::store::bounded_chat_save(|| {
             if saved_setup.is_some() {
                 let connection = app_state
                     .store
@@ -891,154 +1046,179 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                 )
             });
             app_state.ensure_loupist_available(task_loupist_id)?;
-            // The save writes its own reply by ID. A newer turn of a released
-            // conversation can win the row meanwhile; read it again and retry.
-            super::saves::retry_chat_cas(|| {
-                let mut bot_memory_left_out = 0;
-                let expected = app_state
-                    .store
-                    .get_chat_in_loupist(task_loupist_id, thread_id)
-                    .map_err(map_store)?
-                    .ok_or_else(|| CommandError::not_found("chat thread"))?;
-                let mut chat = expected.clone();
-                if let Some(saved) = chat
-                    .messages
-                    .iter_mut()
-                    .find(|message| message.id == message_id)
-                {
-                    let feedback = saved.feedback.take();
-                    *saved = completed_message.clone();
-                    saved.feedback = feedback;
-                } else if previous_updated_at.is_some() {
-                    return Err(CommandError::conflict("finalized Chat turn is missing"));
-                } else {
-                    chat.messages.push(completed_message.clone());
-                }
-                // A Bot turn that began before an earlier reply's save changed Bot
-                // memory carries the older entries in its envelope.
-                let bot_memory_moved = capture
-                    .bot_memory_basis
-                    .as_ref()
-                    .is_some_and(|basis| basis.changes != expected.bot_memory.changes);
-                if let Some((staged, reviewed)) = &bot_memory {
-                    let user_message = capture.principle_user_message_id.as_deref();
-                    // Checked against memory an earlier save has changed since, a
-                    // change can meet an entry that save resolved or forgot, or a
-                    // full memory. Only that change is left out; the rest saves.
-                    let settled = if bot_memory_moved {
-                        crate::chat::bot_memory::settle_reply_after(
-                            &mut chat,
-                            &message_id,
-                            created_at_ms,
-                            staged,
-                            reviewed,
-                            user_message,
-                        )
-                    } else {
-                        crate::chat::bot_memory::settle_reply(
-                            &mut chat,
-                            &message_id,
-                            created_at_ms,
-                            staged,
-                            reviewed,
-                            user_message,
-                        )
-                        .map(|()| 0)
-                    };
-                    bot_memory_left_out = settled.map_err(|error| {
-                        record_commit_failure(on_event, CommitStage::BotMemory, "invalid");
-                        on_event.set_failure_kind(ChatFailureKind::MemoryCommitFailed);
-                        CommandError::internal(error)
-                    })?;
-                }
-                let title_applied = title
-                    .as_ref()
-                    .is_some_and(|title| chat.apply_reply_title(title));
-                // A host receipt is absent from Pi's JSONL. Corrected or forgotten
-                // Bot notes can still occur in its old envelopes and summaries.
-                let bot_context_changed = bot_memory.as_ref().is_some_and(|(staged, _)| {
-                    staged
+            Ok::<_, CommandError>((price_reads, discarded_prices, skipped_journal))
+        });
+        // Each attempt is one transaction. One that fails on a refused item
+        // leaves that item's stage out and saves the rest; a busy or failing
+        // store is tried again after a pause. A landed commit never reruns.
+        // What a left-out stage did not keep. A setup preset is listed as World
+        // vocabulary but lands with setup, which is never left out.
+        let staged_preset = saved_setup
+            .as_ref()
+            .and_then(|setup| setup.preset)
+            .map(|preset| preset.as_str());
+        let staged_items = capture
+            .discarded_memory_items(&citation_reads)
+            .map(|items| {
+                items
+                    .into_iter()
+                    .filter(|item| {
+                        item.kind != crate::domain::DiscardedMemoryKind::WorldVocabulary
+                            || Some(item.title.as_str()) != staged_preset
+                    })
+                    .collect::<Vec<_>>()
+            });
+        let base_message = completed_message.clone();
+        let base_content = content.clone();
+        let base_failure_kind = on_event.failure_kind();
+        let mut left_out = LeftOut::default();
+        let mut pauses = COMMIT_RETRY_PAUSES.iter();
+        let mut retried = 0usize;
+        let mut committed = false;
+        let finalized: Result<_, CommandError> = match prepared {
+            Err(error) => Err(error),
+            Ok((price_reads, discarded_prices, skipped_journal)) => loop {
+                completed_message = base_message.clone();
+                content = base_content.clone();
+                on_event.set_failure_kind(base_failure_kind);
+                on_event.begin_commit_attempt();
+                completion_performance = None;
+                let attempt = crate::store::bounded_chat_save(|| {
+                    // The save writes its own reply by ID. A newer turn of a released
+                    // conversation can win the row meanwhile; read it again and retry.
+                    super::saves::retry_chat_cas(|| {
+                        let mut bot_memory_left_out = 0;
+                        let expected = app_state
+                            .store
+                            .get_chat_in_loupist(task_loupist_id, thread_id)
+                            .map_err(map_store)?
+                            .ok_or_else(|| CommandError::not_found("chat thread"))?;
+                        let mut chat = expected.clone();
+                        if let Some(saved) = chat
+                            .messages
+                            .iter_mut()
+                            .find(|message| message.id == message_id)
+                        {
+                            let feedback = saved.feedback.take();
+                            *saved = completed_message.clone();
+                            saved.feedback = feedback;
+                        } else if previous_updated_at.is_some() {
+                            return Err(CommandError::conflict("finalized Chat turn is missing"));
+                        } else {
+                            chat.messages.push(completed_message.clone());
+                        }
+                        // A Bot turn that began before an earlier reply's save changed Bot
+                        // memory carries the older entries in its envelope.
+                        let bot_memory_moved = capture
+                            .bot_memory_basis
+                            .as_ref()
+                            .is_some_and(|basis| basis.changes != expected.bot_memory.changes);
+                        if let Some((staged, reviewed)) = bot_memory
+                            .as_ref()
+                            .filter(|_| !left_out.has(CommitStage::BotMemory))
+                        {
+                            let user_message = capture.principle_user_message_id.as_deref();
+                            // Checked against memory an earlier save has changed since, a
+                            // change can meet an entry that save resolved or forgot, or a
+                            // full memory. Only that change is left out; the rest saves.
+                            let settled = if bot_memory_moved {
+                                crate::chat::bot_memory::settle_reply_after(
+                                    &mut chat,
+                                    &message_id,
+                                    created_at_ms,
+                                    staged,
+                                    reviewed,
+                                    user_message,
+                                )
+                            } else {
+                                crate::chat::bot_memory::settle_reply(
+                                    &mut chat,
+                                    &message_id,
+                                    created_at_ms,
+                                    staged,
+                                    reviewed,
+                                    user_message,
+                                )
+                                .map(|()| 0)
+                            };
+                            bot_memory_left_out = settled.map_err(|error| {
+                                record_commit_failure(on_event, CommitStage::BotMemory, "invalid");
+                                on_event.set_failure_kind(ChatFailureKind::MemoryCommitFailed);
+                                CommandError::internal(error)
+                            })?;
+                        }
+                        let title_applied = title
+                            .as_ref()
+                            .is_some_and(|title| chat.apply_reply_title(title));
+                        // A host receipt is absent from Pi's JSONL. Corrected or forgotten
+                        // Bot notes can still occur in its old envelopes and summaries.
+                        let bot_context_changed = bot_memory.as_ref().is_some_and(|(staged, _)| {
+                            staged
                         .iter()
                         .any(crate::chat::bot_memory::StagedBotMemory::invalidates_session_context)
-                });
-                // This turn's Pi cursor describes the transcript up to its reply.
-                // Once a newer turn or post follows, that newer state owns the cache.
-                let latest = chat
-                    .messages
-                    .last()
-                    .is_some_and(|message| message.id == message_id);
-                chat.pi_session_cache = if host_composed || bot_context_changed || bot_memory_moved
-                {
-                    None
-                } else if latest {
-                    sealed_cache.clone()
-                } else {
-                    expected.pi_session_cache.clone()
-                };
-                chat.updated_at_ms = created_at_ms.max(chat.updated_at_ms + 1).max(
-                    artifact_commits
-                        .iter()
-                        .map(|commit| commit.artifact.updated_at_ms)
-                        .max()
-                        .unwrap_or_default(),
-                );
-                let blobs = crate::commands::knowledge::knowledge_blobs_for_loupist(
-                    app_state,
-                    task_loupist_id,
-                )?;
-                let persist = |transaction: &rusqlite::Transaction<'_>| {
-                    if crate::knowledge::memory_reset::reset_since(
-                        transaction,
-                        task_loupist_id,
-                        started_at_ms,
-                    )? {
-                        memory_reset = true;
-                        return Err(crate::store::StoreError::Conflict(
-                            "Memory was reset during the turn",
-                        ));
-                    }
-                    let skipped_journal = *skipped_journal
-                        .as_ref()
-                        .map_err(|error| crate::store::StoreError::Invalid(error.to_string()))?;
-                    let research = saved_research.as_ref().filter(|research| {
-                        !skipped_journal
-                            || research.journal.is_some()
-                            || research.working_note.is_some()
-                    });
-                    let saved = crate::commands::knowledge::persist_saved_turn_sources(
-                        transaction,
-                        &blobs,
-                        task_loupist_id,
-                        thread_id,
-                        &message_id,
-                        created_at_ms,
-                        task_pins,
-                        task_update_memory,
-                        &saved_sources,
-                        &saved_reads,
-                        research,
-                    )
-                    .map_err(|error| {
-                        record_commit_failure(on_event, CommitStage::Research, error.code.as_str());
-                        on_event.set_failure_kind(classify_turn_failure(
-                            &error,
-                            ChatFailureKind::MemoryCommitFailed,
-                        ));
-                        crate::store::StoreError::Invalid(error.to_string())
-                    })?;
-                    let mut changes = saved.changes;
-                    if task_update_memory {
-                        changes.extend(
-                            crate::commands::knowledge::principles::persist_principles(
+                        });
+                        // This turn's Pi cursor describes the transcript up to its reply.
+                        // Once a newer turn or post follows, that newer state owns the cache.
+                        let latest = chat
+                            .messages
+                            .last()
+                            .is_some_and(|message| message.id == message_id);
+                        chat.pi_session_cache =
+                            if host_composed || bot_context_changed || bot_memory_moved {
+                                None
+                            } else if latest {
+                                sealed_cache.clone()
+                            } else {
+                                expected.pi_session_cache.clone()
+                            };
+                        chat.updated_at_ms = created_at_ms.max(chat.updated_at_ms + 1).max(
+                            artifact_commits
+                                .iter()
+                                .map(|commit| commit.artifact.updated_at_ms)
+                                .max()
+                                .unwrap_or_default(),
+                        );
+                        let blobs = crate::commands::knowledge::knowledge_blobs_for_loupist(
+                            app_state,
+                            task_loupist_id,
+                        )?;
+                        let persist = |transaction: &rusqlite::Transaction<'_>| {
+                            if crate::knowledge::memory_reset::reset_since(
                                 transaction,
                                 task_loupist_id,
-                                &saved_principles,
+                                started_at_ms,
+                            )? {
+                                memory_reset = true;
+                                return Err(crate::store::StoreError::Conflict(
+                                    "Memory was reset during the turn",
+                                ));
+                            }
+                            let skipped_journal = *skipped_journal.as_ref().map_err(|error| {
+                                crate::store::StoreError::Invalid(error.to_string())
+                            })?;
+                            let research = saved_research.as_ref().filter(|research| {
+                                !left_out.has(CommitStage::Research)
+                                    && (!skipped_journal
+                                        || research.journal.is_some()
+                                        || research.working_note.is_some())
+                            });
+                            let saved = crate::commands::knowledge::persist_saved_turn_sources(
+                                transaction,
+                                &blobs,
+                                task_loupist_id,
+                                thread_id,
+                                &message_id,
                                 created_at_ms,
+                                task_pins,
+                                task_update_memory,
+                                left_out.keep(CommitStage::Research, &saved_sources),
+                                &saved_reads,
+                                research,
                             )
                             .map_err(|error| {
                                 record_commit_failure(
                                     on_event,
-                                    CommitStage::Principles,
+                                    CommitStage::Research,
                                     error.code.as_str(),
                                 );
                                 on_event.set_failure_kind(classify_turn_failure(
@@ -1046,241 +1226,332 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                                     ChatFailureKind::MemoryCommitFailed,
                                 ));
                                 crate::store::StoreError::Invalid(error.to_string())
-                            })?,
-                        );
-                        changes.extend(
-                            crate::commands::tool_executor::commit_filings(
+                            })?;
+                            let mut changes = saved.changes;
+                            if task_update_memory {
+                                changes.extend(
+                                    crate::commands::knowledge::principles::persist_principles(
+                                        transaction,
+                                        task_loupist_id,
+                                        left_out.keep(CommitStage::Principles, &saved_principles),
+                                        created_at_ms,
+                                    )
+                                    .map_err(|error| {
+                                        record_commit_failure(
+                                            on_event,
+                                            CommitStage::Principles,
+                                            error.code.as_str(),
+                                        );
+                                        on_event.set_failure_kind(classify_turn_failure(
+                                            &error,
+                                            ChatFailureKind::MemoryCommitFailed,
+                                        ));
+                                        crate::store::StoreError::Invalid(error.to_string())
+                                    })?,
+                                );
+                                changes.extend(
+                                    crate::commands::tool_executor::commit_filings(
+                                        transaction,
+                                        &blobs,
+                                        task_loupist_id,
+                                        &crate::knowledge::lens_page::FilingOrigin::Turn {
+                                            chat_id: thread_id.to_owned(),
+                                            message_id: message_id.clone(),
+                                            user_message_id: capture
+                                                .principle_user_message_id
+                                                .clone(),
+                                            unattended,
+                                        },
+                                        created_at_ms,
+                                        left_out.keep(CommitStage::Lens, &saved_filings),
+                                        &saved.retained,
+                                    )
+                                    .map_err(|error| {
+                                        record_commit_failure(
+                                            on_event,
+                                            CommitStage::Lens,
+                                            error.code(),
+                                        );
+                                        on_event
+                                            .set_failure_kind(ChatFailureKind::MemoryCommitFailed);
+                                        crate::store::StoreError::Invalid(error.to_string())
+                                    })?,
+                                );
+                            }
+                            crate::commands::knowledge::memory_usage::persist_deliveries(
                                 transaction,
                                 &blobs,
                                 task_loupist_id,
-                                &crate::knowledge::lens_page::FilingOrigin::Turn {
-                                    chat_id: thread_id.to_owned(),
-                                    message_id: message_id.clone(),
-                                    user_message_id: capture.principle_user_message_id.clone(),
-                                    unattended,
-                                },
-                                created_at_ms,
-                                &saved_filings,
-                                &saved.retained,
-                            )
-                            .map_err(|error| {
-                                record_commit_failure(on_event, CommitStage::Lens, error.code());
-                                on_event.set_failure_kind(ChatFailureKind::MemoryCommitFailed);
-                                crate::store::StoreError::Invalid(error.to_string())
-                            })?,
-                        );
-                    }
-                    crate::commands::knowledge::memory_usage::persist_deliveries(
-                        transaction,
-                        &blobs,
-                        task_loupist_id,
-                        thread_id,
-                        &message_id,
-                        &lens_deliveries,
-                        created_at_ms,
-                    )
-                    .map_err(|e| {
-                        record_commit_failure(on_event, CommitStage::Deliveries, e.code());
-                        crate::store::StoreError::Invalid(e.to_string())
-                    })?;
-                    if !direct_completion {
-                        let skipped_applications =
-                            crate::commands::knowledge::principles::persist_citations(
-                                transaction,
-                                &blobs,
-                                task_loupist_id,
+                                thread_id,
                                 &message_id,
-                                &content,
-                                crate::commands::knowledge::principles::CitationInputs {
-                                    reads: &citation_reads,
-                                    lens_deliveries: &lens_deliveries,
-                                },
+                                left_out.keep(CommitStage::Deliveries, &lens_deliveries),
                                 created_at_ms,
                             )
                             .map_err(|e| {
-                                record_commit_failure(on_event, CommitStage::Citations, e.code());
+                                record_commit_failure(on_event, CommitStage::Deliveries, e.code());
                                 crate::store::StoreError::Invalid(e.to_string())
                             })?;
-                        if skipped_applications != 0 {
-                            if let Some((_, record)) = on_event
-                                .run_log
-                                .lock()
-                                .unwrap_or_else(|error| error.into_inner())
-                                .as_mut()
-                            {
-                                record.notes.push(format!(
+                            if !direct_completion && !left_out.has(CommitStage::Citations) {
+                                let skipped_applications =
+                                    crate::commands::knowledge::principles::persist_citations(
+                                        transaction,
+                                        &blobs,
+                                        task_loupist_id,
+                                        &message_id,
+                                        &content,
+                                        crate::commands::knowledge::principles::CitationInputs {
+                                            reads: &citation_reads,
+                                            lens_deliveries: &lens_deliveries,
+                                        },
+                                        created_at_ms,
+                                    )
+                                    .map_err(|e| {
+                                        record_commit_failure(
+                                            on_event,
+                                            CommitStage::Citations,
+                                            e.code(),
+                                        );
+                                        crate::store::StoreError::Invalid(e.to_string())
+                                    })?;
+                                if skipped_applications != 0 {
+                                    if let Some((_, record)) = on_event
+                                        .run_log
+                                        .lock()
+                                        .unwrap_or_else(|error| error.into_inner())
+                                        .as_mut()
+                                    {
+                                        record.notes.push(format!(
                                     "Skipped {skipped_applications} Lens application receipts after a revision or pause changed."
                                 ));
+                                    }
+                                }
                             }
+                            turn_assets = crate::commands::assets::commit_turn(
+                                transaction,
+                                task_loupist_id,
+                                thread_id,
+                                &message_id,
+                                created_at_ms,
+                                left_out.keep(CommitStage::Assets, &saved_theses),
+                            )
+                            .map_err(|e| {
+                                record_commit_failure(on_event, CommitStage::Assets, e.code());
+                                crate::store::StoreError::Invalid(e.to_string())
+                            })?;
+                            changes.extend(
+                                crate::commands::tool_executor::commit_price_reads(
+                                    transaction,
+                                    task_loupist_id,
+                                    created_at_ms,
+                                    price_reads
+                                        .iter()
+                                        .filter(|_| !left_out.has(CommitStage::Assets))
+                                        .map(|(asset, read)| (asset, *read)),
+                                )
+                                .map_err(|error| {
+                                    record_commit_failure(
+                                        on_event,
+                                        CommitStage::Assets,
+                                        error.code(),
+                                    );
+                                    crate::store::StoreError::Invalid(error.to_string())
+                                })?,
+                            );
+                            let mut skipped_kinds =
+                                crate::commands::tool_executor::commit_vocabulary(
+                                    transaction,
+                                    task_loupist_id,
+                                    thread_id,
+                                    created_at_ms,
+                                    left_out.keep(CommitStage::Vocabulary, &saved_vocabulary),
+                                )
+                                .map_err(|e| {
+                                    record_commit_failure(
+                                        on_event,
+                                        CommitStage::Vocabulary,
+                                        e.code(),
+                                    );
+                                    crate::store::StoreError::Invalid(e.to_string())
+                                })?;
+                            if skipped_journal {
+                                skipped_kinds.push(crate::domain::MapKind {
+                                    name: crate::domain::SKIPPED_JOURNAL_SAVE.into(),
+                                    label: "Journal".into(),
+                                    label_ko: Some("저널".into()),
+                                });
+                            }
+                            let mut setup = watchlist_changes
+                                .iter()
+                                .map(|(change, _)| change.clone())
+                                .collect::<Vec<_>>();
+                            if let Some(staged) = &saved_setup {
+                                let (changed, skipped) =
+                                    crate::commands::tool_executor::commit_setup(
+                                        transaction,
+                                        task_loupist_id,
+                                        thread_id,
+                                        created_at_ms,
+                                        staged,
+                                    )
+                                    .map_err(|e| {
+                                        let code =
+                                            if matches!(e, crate::store::StoreError::Conflict(_)) {
+                                                "conflict"
+                                            } else {
+                                                "internal"
+                                            };
+                                        record_commit_failure(on_event, CommitStage::Setup, code);
+                                        e
+                                    })?;
+                                setup.extend(changed);
+                                skipped_kinds.extend(skipped);
+                            }
+                            let research_session_id = if let Some(staged) = &staged_handoff {
+                                let source_id = capture
+                                    .principle_user_message_id
+                                    .as_deref()
+                                    .ok_or_else(|| {
+                                        crate::store::StoreError::Invalid(
+                                            "The original Bot request is unavailable".into(),
+                                        )
+                                    })?;
+                                let handoff = crate::chat::handoff::commit_bot(
+                                    transaction,
+                                    task_loupist_id,
+                                    staged,
+                                    (thread_id, source_id),
+                                    &capture.turn_taint,
+                                    created_at_ms,
+                                )
+                                .map_err(|e| {
+                                    let code = if matches!(e, crate::store::StoreError::Conflict(_))
+                                    {
+                                        "conflict"
+                                    } else {
+                                        "internal"
+                                    };
+                                    record_commit_failure(on_event, CommitStage::Handoff, code);
+                                    e
+                                })?;
+                                Some(handoff.chat_id)
+                            } else {
+                                None
+                            };
+                            if host_composed && changes.is_empty() && setup.is_empty() {
+                                on_event.set_failure_kind(ChatFailureKind::EmptyReply);
+                                return Err(crate::store::StoreError::Invalid(
+                                    "No committed receipts for an empty answer".into(),
+                                ));
+                            }
+                            // Include staged Memory writes in total time, then
+                            // freeze one receipt for persistence, live delivery,
+                            // and recovery. Final report serialization/CAS and
+                            // transaction COMMIT occur after this boundary.
+                            let performance = ChatPerformanceDto {
+                                setup_ms,
+                                first_text_ms,
+                                answer_text_ms,
+                                generation_ms: generation_ms.unwrap_or_else(|| {
+                                    elapsed_millis(chat_started_at).saturating_sub(setup_ms)
+                                }),
+                                total_ms: elapsed_millis(chat_started_at),
+                                session_cache: if resumed {
+                                    ChatSessionCacheStatusDto::Warm
+                                } else {
+                                    ChatSessionCacheStatusDto::Cold
+                                },
+                                input_tokens: token_usage.input,
+                                output_tokens: token_usage.output,
+                                cache_read_tokens: token_usage.cache_read,
+                                cache_write_tokens: token_usage.cache_write,
+                                model_requests: token_usage.model_requests(),
+                                cost_estimate: token_usage.cost_estimate(),
+                            };
+                            completion_performance = Some(performance.clone());
+                            completed_message =
+                                crate::commands::knowledge::write_chat_learning_report(
+                                    transaction,
+                                    &chat,
+                                    &message_id,
+                                    task_update_memory,
+                                    changes,
+                                    skipped_kinds,
+                                    left_out.listed(
+                                        with_left_out_bot_memory(
+                                            discarded_prices.clone(),
+                                            bot_memory_left_out,
+                                        ),
+                                        staged_items.as_deref(),
+                                    ),
+                                    setup,
+                                    Some(performance),
+                                    turn_assets.trace_notes(elapsed_millis(chat_started_at)),
+                                    quiet_request.map(|run_id| {
+                                        (
+                                            run_id,
+                                            previous_updated_at.unwrap_or(expected.updated_at_ms),
+                                        )
+                                    }),
+                                    research_session_id,
+                                )?;
+                            content = completed_message.content.clone();
+                            Ok(())
+                        };
+                        let outcome =
+                            if artifact_commits.is_empty() || previous_updated_at.is_some() {
+                                app_state.store.replace_chat_with(&expected, &chat, persist)
+                            } else {
+                                app_state.store.save_chat_with_artifacts_and(
+                                    &expected,
+                                    &chat,
+                                    &artifact_commits,
+                                    persist,
+                                )
+                            };
+                        outcome.map_err(|error| {
+                            if let Some(code) = chat_commit_failure_code(&error) {
+                                record_commit_failure(on_event, CommitStage::Chat, code);
+                            }
+                            map_store(error)
+                        })?;
+                        committed = true;
+                        let performance =
+                            completed_message.performance.clone().ok_or_else(|| {
+                                CommandError::internal("completed Chat performance is missing")
+                            })?;
+                        Ok((title_applied, completed_message.clone(), performance))
+                    })
+                });
+                let Err(error) = &attempt else {
+                    if retried > 0 || !left_out.is_empty() {
+                        on_event.note_saved_after_retries(retried, left_out.len());
+                    }
+                    break attempt;
+                };
+                let (stage, cause) = on_event
+                    .commit_failure()
+                    .unwrap_or((CommitStage::Chat, save_failure_cause(error.code.as_str())));
+                // An attempt that froze its receipt failed at the final write or
+                // COMMIT, whose outcome the recovery below reads from the store.
+                // Running the writes again could keep the turn twice.
+                if committed || memory_reset || completion_performance.is_some() {
+                    break attempt;
+                }
+                match cause {
+                    MemorySaveSkipReason::Invalid if left_out.leave_out(stage) => {}
+                    MemorySaveSkipReason::StoreBusy | MemorySaveSkipReason::Storage => {
+                        match pauses.next() {
+                            Some(pause) => {
+                                retried += 1;
+                                tokio::time::sleep(*pause).await;
+                            }
+                            None => break attempt,
                         }
                     }
-                    turn_assets = crate::commands::assets::commit_turn(
-                        transaction,
-                        task_loupist_id,
-                        thread_id,
-                        &message_id,
-                        created_at_ms,
-                        &saved_theses,
-                    )
-                    .map_err(|e| {
-                        record_commit_failure(on_event, CommitStage::Assets, e.code());
-                        crate::store::StoreError::Invalid(e.to_string())
-                    })?;
-                    changes.extend(
-                        crate::commands::tool_executor::commit_price_reads(
-                            transaction,
-                            task_loupist_id,
-                            created_at_ms,
-                            price_reads.iter().map(|(asset, read)| (asset, *read)),
-                        )
-                        .map_err(|error| {
-                            record_commit_failure(on_event, CommitStage::Assets, error.code());
-                            crate::store::StoreError::Invalid(error.to_string())
-                        })?,
-                    );
-                    let mut skipped_kinds = crate::commands::tool_executor::commit_vocabulary(
-                        transaction,
-                        task_loupist_id,
-                        thread_id,
-                        created_at_ms,
-                        &saved_vocabulary,
-                    )
-                    .map_err(|e| {
-                        record_commit_failure(on_event, CommitStage::Vocabulary, e.code());
-                        crate::store::StoreError::Invalid(e.to_string())
-                    })?;
-                    if skipped_journal {
-                        skipped_kinds.push(crate::domain::MapKind {
-                            name: crate::domain::SKIPPED_JOURNAL_SAVE.into(),
-                            label: "Journal".into(),
-                            label_ko: Some("저널".into()),
-                        });
-                    }
-                    let mut setup = watchlist_changes
-                        .iter()
-                        .map(|(change, _)| change.clone())
-                        .collect::<Vec<_>>();
-                    if let Some(staged) = &saved_setup {
-                        let (changed, skipped) = crate::commands::tool_executor::commit_setup(
-                            transaction,
-                            task_loupist_id,
-                            thread_id,
-                            created_at_ms,
-                            staged,
-                        )
-                        .map_err(|e| {
-                            let code = if matches!(e, crate::store::StoreError::Conflict(_)) {
-                                "conflict"
-                            } else {
-                                "internal"
-                            };
-                            record_commit_failure(on_event, CommitStage::Setup, code);
-                            e
-                        })?;
-                        setup.extend(changed);
-                        skipped_kinds.extend(skipped);
-                    }
-                    let research_session_id = if let Some(staged) = &staged_handoff {
-                        let source_id =
-                            capture
-                                .principle_user_message_id
-                                .as_deref()
-                                .ok_or_else(|| {
-                                    crate::store::StoreError::Invalid(
-                                        "The original Bot request is unavailable".into(),
-                                    )
-                                })?;
-                        let handoff = crate::chat::handoff::commit_bot(
-                            transaction,
-                            task_loupist_id,
-                            staged,
-                            (thread_id, source_id),
-                            &capture.turn_taint,
-                            created_at_ms,
-                        )
-                        .map_err(|e| {
-                            let code = if matches!(e, crate::store::StoreError::Conflict(_)) {
-                                "conflict"
-                            } else {
-                                "internal"
-                            };
-                            record_commit_failure(on_event, CommitStage::Handoff, code);
-                            e
-                        })?;
-                        Some(handoff.chat_id)
-                    } else {
-                        None
-                    };
-                    if host_composed && changes.is_empty() && setup.is_empty() {
-                        on_event.set_failure_kind(ChatFailureKind::EmptyReply);
-                        return Err(crate::store::StoreError::Invalid(
-                            "No committed receipts for an empty answer".into(),
-                        ));
-                    }
-                    // Include staged Memory writes in total time, then
-                    // freeze one receipt for persistence, live delivery,
-                    // and recovery. Final report serialization/CAS and
-                    // transaction COMMIT occur after this boundary.
-                    let performance = ChatPerformanceDto {
-                        setup_ms,
-                        first_text_ms,
-                        answer_text_ms,
-                        generation_ms: generation_ms.unwrap_or_else(|| {
-                            elapsed_millis(chat_started_at).saturating_sub(setup_ms)
-                        }),
-                        total_ms: elapsed_millis(chat_started_at),
-                        session_cache: if resumed {
-                            ChatSessionCacheStatusDto::Warm
-                        } else {
-                            ChatSessionCacheStatusDto::Cold
-                        },
-                        input_tokens: token_usage.input,
-                        output_tokens: token_usage.output,
-                        cache_read_tokens: token_usage.cache_read,
-                        cache_write_tokens: token_usage.cache_write,
-                        model_requests: token_usage.model_requests(),
-                        cost_estimate: token_usage.cost_estimate(),
-                    };
-                    completion_performance = Some(performance.clone());
-                    completed_message = crate::commands::knowledge::write_chat_learning_report(
-                        transaction,
-                        &chat,
-                        &message_id,
-                        task_update_memory,
-                        changes,
-                        skipped_kinds,
-                        with_left_out_bot_memory(discarded_prices.clone(), bot_memory_left_out),
-                        setup,
-                        Some(performance),
-                        turn_assets.trace_notes(elapsed_millis(chat_started_at)),
-                        quiet_request.map(|run_id| {
-                            (
-                                run_id,
-                                previous_updated_at.unwrap_or(expected.updated_at_ms),
-                            )
-                        }),
-                        research_session_id,
-                    )?;
-                    content = completed_message.content.clone();
-                    Ok(())
-                };
-                if artifact_commits.is_empty() || previous_updated_at.is_some() {
-                    app_state
-                        .store
-                        .replace_chat_with(&expected, &chat, persist)
-                        .map_err(map_store)?;
-                } else {
-                    app_state
-                        .store
-                        .save_chat_with_artifacts_and(&expected, &chat, &artifact_commits, persist)
-                        .map_err(map_store)?;
+                    _ => break attempt,
                 }
-                let performance = completed_message.performance.clone().ok_or_else(|| {
-                    CommandError::internal("completed Chat performance is missing")
-                })?;
-                Ok((title_applied, completed_message.clone(), performance))
-            })
-        });
+            },
+        };
         if !direct_completion {
             coordinator.finish_chat_save(task_run_id);
         }
@@ -1361,7 +1632,7 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
                         let reason = if memory_reset {
                             MemorySaveSkipReason::PolicyChanged
                         } else {
-                            MemorySaveSkipReason::Failed
+                            on_event.save_failure()
                         };
                         finish_skipped_save(
                             reply,
@@ -1387,4 +1658,34 @@ pub(super) async fn commit_completed_turn(turn: CompletedTurn<'_>) -> ControlFlo
         }
     }
     ControlFlow::Continue(())
+}
+
+#[cfg(test)]
+mod commit_failure_tests {
+    use super::*;
+    use crate::{runs::log::CommitReason, store::StoreError};
+
+    #[test]
+    fn a_refused_receipt_is_logged_as_invalid_input_and_a_store_wait_not_as_storage() {
+        let reason = |error| {
+            chat_commit_failure_code(&error)
+                .map(|code| MemoryCommitFailure::from_code(CommitStage::Chat, code).reason)
+        };
+        assert_eq!(
+            reason(StoreError::Invalid(
+                "memory update has too many changes".into()
+            )),
+            Some(CommitReason::InvalidInput)
+        );
+        assert_eq!(
+            reason(StoreError::ChatSaveDeadline),
+            Some(CommitReason::Other)
+        );
+        assert_eq!(
+            reason(StoreError::LockPoisoned),
+            Some(CommitReason::Storage)
+        );
+        // A lost compare-and-swap is retried; the final one is logged after.
+        assert_eq!(reason(StoreError::Conflict("Chat compare-and-swap")), None);
+    }
 }

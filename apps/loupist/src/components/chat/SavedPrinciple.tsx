@@ -1,6 +1,6 @@
 import { useTranslation } from "@/i18n";
 
-/** Bordered principle quote shared by answer feedback and the Memory row. */
+/** Bordered principle quote in the Memory row. */
 export function SavedPrinciple({ statement, undone = false, pending = false, showLabel = true, onUndo, onView, className }: {
   statement: string;
   undone?: boolean;

@@ -476,11 +476,32 @@ function registerLoupistExtension(originalPi) {
   const mcpCards = new Map();
   const mcpNotices = new Map();
   const ensureWorkspaceResourcesUnchanged = registerWorkspaceResources(originalPi, hostContext.workspace, hostContext.explicitSkillNames);
+  const budget = hostContext.runtime.budget;
+  let modelRounds = 0;
+  let budgetNoteDelivered = false;
+  originalPi.on("session_compact", ({ compactionEntry, reason }) => {
+    const usage = compactionEntry?.usage;
+    if (reason !== "manual" && usage && typeof usage === "object" && !Array.isArray(usage)) {
+      modelRounds++;
+    }
+  });
+  originalPi.on("tool_result", ({ content }) => {
+    if (!budget || budgetNoteDelivered || modelRounds === 0 || modelRounds < budget.soft ||
+        !Array.isArray(content)) return;
+    budgetNoteDelivered = true;
+    return {
+      content: [...content, {
+        type: "text",
+        text: "Host note: this run is close to its request limit, after which the host refuses further data reads. Stop reading and finish with the evidence in hand: make the saves it supports, then write the result. What is not saved before the answer is not kept.",
+      }],
+    };
+  });
 
   // Pi reports grouped missing properties at the first child's path. Include
   // the registered schema on rejected calls so a repair can recover the object
   // structure. message_end also sees validation failures, unlike tool_result.
   originalPi.on("message_end", ({ message }) => {
+    if (message.role === "assistant") modelRounds++;
     if (message.role !== "toolResult" || message.isError !== true ||
         !activeTools.has(message.toolName) || !Array.isArray(message.content)) return;
     const prefix = `Validation failed for tool "${message.toolName}":\n`;
@@ -694,7 +715,7 @@ function registerLoupistExtension(originalPi) {
   registerWorkspaceTools(pi, hostContext.workspace.root,
     (name, request, signal, id) => requestBroker("native.authorize", { name, ...request }, signal, id),
     (parts, signal, id) => requestBroker("native.delivered_text", { parts }, signal, id));
-  async function loadCapabilityComponent(component, signal, activateToolNames = []) {
+  async function loadCapabilityComponent(component, signal, activateToolNames = [], toolCallId) {
     if ((component.kind === "mcp" && component.loaded === true) ||
         (component.kind !== "mcp" && component.tool_names.every((name) => activeTools.has(name)))) {
       return { id: component.id, loaded: true, already_loaded: true,
@@ -707,6 +728,7 @@ function registerLoupistExtension(originalPi) {
           ? { server_id: component.server_id, activate_tool_names: activateToolNames }
           : { server_id: component.server_id },
         signal,
+        toolCallId,
       );
       if (connected.server_id !== component.server_id) {
         throw new Error("MCP runtime identity mismatch");
@@ -814,11 +836,14 @@ function registerLoupistExtension(originalPi) {
         id: { type: "string", minLength: 1, maxLength: 193 },
       },
     },
-    async execute(_toolCallId, input, signal) {
+    async execute(toolCallId, input, signal) {
       const component = resolveCapability(input?.id, hostContext.components,
         hostContext.unavailableConnections,
         (originalPi.getCommands?.() ?? []).filter((command) => command.source === "skill").map((command) => command.name));
-      const loaded = await loadCapabilityComponent(component, signal);
+      if (component.kind === "tool" && budget && modelRounds >= budget.hard) {
+        throw new Error("This run reached its request limit, so no further tools load. Make the saves the evidence in hand supports and write the result.");
+      }
+      const loaded = await loadCapabilityComponent(component, signal, [], toolCallId);
       // Pi sends active definitions on the next provider request. Repeating the
       // same schemas in the transcript charges every following tool round for
       // a second copy; retain the complete cards only in local UI details.

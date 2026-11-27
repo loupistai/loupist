@@ -12,18 +12,21 @@
 //! per round, compares only nodes that share a code value, and reads growth
 //! events only when two nodes share a code. Each round that merges removes at
 //! least one node, and a round without a merge ends the pass, so a second pass
-//! over its result changes nothing. Nothing else in the World changes: claims
-//! keep their ids, text, status and evidence and only move to the surviving
-//! node, and growth events stay as they were.
+//! over its result changes nothing. Claims keep their ids, text, status and
+//! evidence and only move to the surviving node. Connections, journal entity
+//! ids and Lens `world:` links move with them. Growth events and the op log
+//! stay as they were.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use rusqlite::{params, Transaction};
+use serde_json::Value;
 
-use super::{kinds_join, Codes};
+use super::{kinds_join, partition, Codes};
+use crate::knowledge::canonical::{canonical_string, from_json, revision_digest};
 use crate::knowledge::error::KnowledgeResult;
 use crate::knowledge::lens::fold_lens_title;
-use crate::knowledge::model::{GraphClaim, GraphNode};
+use crate::knowledge::model::{mint_id, EvidenceRevision, GraphClaim, GraphNode, RecordKind};
 
 const ALIAS_CAP: usize = 16;
 const PROPERTY_CAP: usize = 32;
@@ -39,13 +42,25 @@ pub(crate) struct Repaired {
 }
 
 fn codes(node: &GraphNode) -> Codes {
-    Codes::of_node(
+    codes_with_spellings(node, &node.aliases, None)
+}
+
+/// `skip` is an alias under test: it must not count as agreement with itself.
+fn codes_with_spellings(node: &GraphNode, aliases: &[String], skip: Option<&str>) -> Codes {
+    let mut codes = Codes::of_node(
         &node.name,
         &node.kind,
         node.properties
             .iter()
             .map(|(key, value)| (key.as_str(), value)),
-    )
+    );
+    codes.add_spellings(
+        aliases
+            .iter()
+            .filter(|alias| skip != Some(alias.as_str()))
+            .map(String::as_str),
+    );
+    codes
 }
 
 fn clip(text: &str, limit: usize) -> String {
@@ -56,8 +71,9 @@ fn clip(text: &str, limit: usize) -> String {
     text[..end].to_string()
 }
 
-/// Repairs `nodes` and `claims` before they are sealed, and points the Lens
-/// anchors and asset pages that named a merged node at the node it joined.
+/// Repairs `nodes` and `claims` before they are sealed, and points Lens
+/// anchors, asset pages, connections, journal entities and `world:` links
+/// that named a merged node at the node it joined.
 pub(crate) fn repair_world(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -82,7 +98,266 @@ pub(crate) fn repair_world(
             params![loupist_id, merged, survivor],
         )?;
     }
+    retarget_references(tx, loupist_id, &merged)?;
     Ok(repaired)
+}
+
+/// Connections, journal entity ids and Lens `world:` links name the survivor.
+/// Growth events and the op log stay as written.
+fn retarget_references(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    merged: &BTreeMap<String, String>,
+) -> KnowledgeResult<()> {
+    if merged.is_empty() {
+        return Ok(());
+    }
+    retarget_connections(tx, loupist_id, merged)?;
+    retarget_journal_entities(tx, loupist_id, merged)?;
+    retarget_world_links(tx, loupist_id, merged)?;
+    Ok(())
+}
+
+fn map_id<'a>(id: &'a str, merged: &'a BTreeMap<String, String>) -> &'a str {
+    merged.get(id).map(String::as_str).unwrap_or(id)
+}
+
+fn retarget_json(value: &mut Value, merged: &BTreeMap<String, String>) -> bool {
+    match value {
+        Value::String(text) => {
+            if let Some(next) = merged.get(text.as_str()) {
+                *text = next.clone();
+                return true;
+            }
+            let mut changed = false;
+            for (old, new) in merged {
+                let from = format!("world:{old}");
+                if text.contains(&from) {
+                    *text = text.replace(&from, &format!("world:{new}"));
+                    changed = true;
+                }
+            }
+            changed
+        }
+        Value::Array(items) => {
+            let mut changed = false;
+            for item in items {
+                changed |= retarget_json(item, merged);
+            }
+            changed
+        }
+        Value::Object(map) => {
+            let mut changed = false;
+            for item in map.values_mut() {
+                changed |= retarget_json(item, merged);
+            }
+            changed
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) => false,
+    }
+}
+
+fn retarget_connections(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    merged: &BTreeMap<String, String>,
+) -> KnowledgeResult<()> {
+    let mut statement = tx.prepare(
+        "SELECT connection_id, seed_node_id, far_node_id, path_json
+         FROM knowledge_connections WHERE loupist_id = ?1 ORDER BY connection_id",
+    )?;
+    let rows = statement
+        .query_map([loupist_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(statement);
+    struct Rewritten {
+        connection_id: String,
+        seed: String,
+        far: String,
+        path_json: String,
+    }
+    let mut rewritten = Vec::new();
+    let mut drop_ids = Vec::new();
+    for (connection_id, seed, far, path_json) in rows {
+        let seed = map_id(&seed, merged).to_string();
+        let far = map_id(&far, merged).to_string();
+        let path_json = match serde_json::from_str::<Value>(&path_json) {
+            Ok(mut path) => {
+                retarget_json(&mut path, merged);
+                serde_json::to_string(&path)?
+            }
+            Err(_) => path_json,
+        };
+        if seed == far {
+            drop_ids.push(connection_id);
+            continue;
+        }
+        rewritten.push(Rewritten {
+            connection_id,
+            seed,
+            far,
+            path_json,
+        });
+    }
+    rewritten.sort_by(|left, right| {
+        (&left.seed, &left.far, &left.connection_id).cmp(&(
+            &right.seed,
+            &right.far,
+            &right.connection_id,
+        ))
+    });
+    let mut seen = BTreeSet::new();
+    let mut keep = Vec::new();
+    for row in rewritten {
+        if seen.insert((row.seed.clone(), row.far.clone())) {
+            keep.push(row);
+        } else {
+            drop_ids.push(row.connection_id);
+        }
+    }
+    for connection_id in &drop_ids {
+        tx.execute(
+            "DELETE FROM knowledge_connections WHERE loupist_id = ?1 AND connection_id = ?2",
+            params![loupist_id, connection_id],
+        )?;
+    }
+    for row in keep {
+        tx.execute(
+            "UPDATE knowledge_connections
+             SET seed_node_id = ?3, far_node_id = ?4, path_json = ?5
+             WHERE loupist_id = ?1 AND connection_id = ?2",
+            params![
+                loupist_id,
+                row.connection_id,
+                row.seed,
+                row.far,
+                row.path_json
+            ],
+        )?;
+    }
+    Ok(())
+}
+
+fn retarget_journal_entities(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    merged: &BTreeMap<String, String>,
+) -> KnowledgeResult<()> {
+    let mut statement =
+        tx.prepare("SELECT journal_id, body_json FROM knowledge_journals WHERE loupist_id = ?1")?;
+    let rows = statement
+        .query_map([loupist_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(statement);
+    for (journal_id, body) in rows {
+        let Ok(mut value) = serde_json::from_str::<Value>(&body) else {
+            continue;
+        };
+        if !retarget_json(&mut value, merged) {
+            continue;
+        }
+        if let Some(entities) = value.get_mut("entities").and_then(Value::as_array_mut) {
+            let mut seen = BTreeSet::new();
+            entities.retain(|entity| entity.as_str().is_none_or(|id| seen.insert(id.to_string())));
+        }
+        tx.execute(
+            "UPDATE knowledge_journals SET body_json = ?1 WHERE journal_id = ?2",
+            params![serde_json::to_string(&value)?, journal_id],
+        )?;
+    }
+    Ok(())
+}
+
+fn retarget_world_links(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    merged: &BTreeMap<String, String>,
+) -> KnowledgeResult<()> {
+    let mut statement = tx.prepare(
+        "SELECT r.revision_id, r.record_id, m.title, r.payload_json, r.dependency_json, r.created_at_ms
+         FROM knowledge_record_revisions r
+         JOIN knowledge_records m ON m.record_id = r.record_id
+         WHERE m.owner_loupist_id = ?1 AND m.kind = 'lens'",
+    )?;
+    let rows = statement
+        .query_map([loupist_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, i64>(5)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(statement);
+    for (revision_id, record_id, title, payload_json, dependency_json, created_at_ms) in rows {
+        let Ok(mut payload) = serde_json::from_str::<Value>(&payload_json) else {
+            continue;
+        };
+        if !retarget_json(&mut payload, merged) {
+            continue;
+        }
+        let dependencies: Vec<EvidenceRevision> = from_json(&dependency_json)?;
+        let digest = revision_digest(RecordKind::Lens, &payload, &dependencies)?;
+        let payload_json = canonical_string(&payload);
+        let next_id = mint_id("rev");
+        // Revisions are immutable. The erasure flag is what lets publication
+        // replace a head, and the new row carries the moved `world:` link.
+        // Search documents go with the deleted revision, then the page is
+        // indexed again the way Lens publication indexes a new head.
+        tx.execute("UPDATE knowledge_erasure SET armed = 1 WHERE id = 1", [])?;
+        tx.execute(
+            "DELETE FROM knowledge_record_heads WHERE record_id = ?1",
+            [&record_id],
+        )?;
+        tx.execute(
+            "DELETE FROM knowledge_search_documents WHERE record_id = ?1",
+            [&record_id],
+        )?;
+        tx.execute(
+            "DELETE FROM knowledge_record_revisions WHERE revision_id = ?1",
+            [&revision_id],
+        )?;
+        tx.execute("UPDATE knowledge_erasure SET armed = 0 WHERE id = 1", [])?;
+        tx.execute(
+            "INSERT INTO knowledge_record_revisions (
+                revision_id, record_id, revision_digest, payload_json, dependency_json, created_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                next_id,
+                record_id,
+                digest,
+                payload_json,
+                dependency_json,
+                created_at_ms
+            ],
+        )?;
+        tx.execute(
+            "INSERT INTO knowledge_record_heads (record_id, revision_id) VALUES (?1, ?2)",
+            params![record_id, next_id],
+        )?;
+        crate::knowledge::search_index::index_payload(
+            tx,
+            None,
+            &record_id,
+            &next_id,
+            RecordKind::Lens,
+            &title,
+            &payload,
+        )?;
+    }
+    Ok(())
 }
 
 /// When World first saw each node: its first `entity_added`.
@@ -118,27 +393,31 @@ pub(crate) fn repair(
             seen = Some(first_seen()?);
         }
         let seen = seen.as_ref().expect("first seen");
-        let mut ordered: Vec<usize> = peered.into_iter().collect();
-        ordered.sort_by_key(|index| {
-            (
-                seen.get(&nodes[*index].id).copied().unwrap_or(i64::MAX),
-                nodes[*index].id.clone(),
-            )
-        });
-        let mut groups: Vec<Vec<usize>> = Vec::new();
-        for index in ordered {
-            let fits = |group: &Vec<usize>| {
-                group.iter().any(|member| all[index].joins(&all[*member]))
-                    && group.iter().all(|member| {
-                        kinds_join(&nodes[index].kind, &nodes[*member].kind)
-                            && !all[index].differs_from(&all[*member])
-                    })
-            };
-            match groups.iter().position(fits) {
-                Some(group) => groups[group].push(index),
-                None => groups.push(vec![index]),
-            }
-        }
+        let peered: Vec<usize> = peered.into_iter().collect();
+        // One grouping whatever the order: which nodes become one is a set
+        // decision; first-seen order only picks each group's survivor.
+        let groups: Vec<Vec<usize>> = partition(
+            peered.len(),
+            |left, right| all[peered[left]].joins(&all[peered[right]]),
+            |left, right| {
+                let (left, right) = (peered[left], peered[right]);
+                !kinds_join(&nodes[left].kind, &nodes[right].kind)
+                    || all[left].differs_from(&all[right])
+                    || all[left].keeps_apart(&all[right])
+            },
+        )
+        .into_iter()
+        .map(|group| {
+            let mut group: Vec<usize> = group.into_iter().map(|item| peered[item]).collect();
+            group.sort_by_key(|index| {
+                (
+                    seen.get(&nodes[*index].id).copied().unwrap_or(i64::MAX),
+                    nodes[*index].id.clone(),
+                )
+            });
+            group
+        })
+        .collect();
         let mut removed = BTreeSet::new();
         for group in groups.iter().filter(|group| group.len() > 1) {
             let survivor = group[0];
@@ -202,11 +481,17 @@ fn drop_differing_aliases(nodes: &mut [GraphNode]) -> usize {
         if own.is_empty() {
             continue;
         }
-        let before = node.aliases.len();
         let kind = node.kind.clone();
-        node.aliases
-            .retain(|alias| !Codes::of_name(alias, &kind).refuses(&own));
-        dropped += before - node.aliases.len();
+        let aliases = node.aliases.clone();
+        let mut kept = Vec::new();
+        for alias in &aliases {
+            let own = codes_with_spellings(node, &aliases, Some(alias));
+            if !Codes::of_name(alias, &kind).refuses(&own) {
+                kept.push(alias.clone());
+            }
+        }
+        dropped += aliases.len() - kept.len();
+        node.aliases = kept;
     }
     dropped
 }

@@ -86,17 +86,27 @@ mod runtime {
             .await
             .unwrap();
         let home = crate::chat::home::ensure_home_thread(&state, &loupist.id).unwrap();
-        let mut record = run_turn(
-            &state,
-            &home,
-            session,
-            turn,
-            "fixture",
-            "medium",
-            if stall { 3_000 } else { 60_000 },
-        )
-        .await
-        .unwrap();
+        // A stalled run times out once its Pi has the prompt, however long a
+        // loaded machine takes to start it.
+        let prompts = root.path().join("scheduled-prompts.jsonl");
+        let deadline: Deadline = if stall {
+            Box::pin(async move {
+                while fs::read_to_string(&prompts)
+                    .unwrap_or_default()
+                    .lines()
+                    .count()
+                    == 0
+                {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+        } else {
+            after_ms(60_000)
+        };
+        let mut record =
+            run_turn_until(&state, &home, session, turn, "fixture", "medium", deadline)
+                .await
+                .unwrap();
         state.shutdown().await.unwrap();
         let received: Vec<String> = fs::read_to_string(root.path().join("scheduled-prompts.jsonl"))
             .unwrap()
@@ -120,7 +130,8 @@ mod runtime {
             assert_eq!(record["interface_label_calls"], 0);
             assert_eq!(record["runs"][0]["status"], "succeeded", "{record}");
             assert_eq!(record["deliveries"].as_array().unwrap().len(), 1);
-            assert_eq!(record["answer"], first);
+            assert_eq!(record["answer"], full);
+            assert_eq!(record["delivered_summary"], first);
             assert_eq!(record["session_answer"]["content"], full);
             assert_eq!(record["deliveries"][0]["content"], first);
             assert_eq!(
@@ -243,10 +254,17 @@ mod runtime {
                     script.to_string(),
                 )
                 .unwrap();
-                let record =
-                    scheduled::run(&state, &home, turn, &existing, "fixture", "medium", 60_000)
-                        .await
-                        .unwrap();
+                let record = scheduled::run(
+                    &state,
+                    &home,
+                    turn,
+                    &existing,
+                    "fixture",
+                    "medium",
+                    after_ms(60_000),
+                )
+                .await
+                .unwrap();
                 assert_eq!(record["status"], "completed", "{record}");
                 assert_eq!(record["runs"][0]["quiet"], quiet, "{record}");
                 assert_eq!(

@@ -22,3 +22,5 @@ export type Origin = "user" | "loupist" | "learning" | "shared";
 
 /** A section's stable identity inside its page: a slug `[a-z0-9-]{1,48}`. */
 export type SectionKey = string;
+
+export type SectionRole = "fact" | "view" | "check" | "open_question" | "refutation";

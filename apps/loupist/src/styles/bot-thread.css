@@ -93,8 +93,8 @@
 .bot-trace-check > svg { color: var(--gg-color-warning); }
 /* Copy and feedback are quiet: they show with the pointer or keyboard focus on the message. */
 @media (hover: hover) {
-  [data-surface="bot"] .message.assistant[data-bot-message] .message-action-bar > :is(.message-actions, .answer-feedback) { opacity: 0; transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
-  [data-surface="bot"] .message.assistant[data-bot-message]:is(:hover, :focus-within) .message-action-bar > :is(.message-actions, .answer-feedback) { opacity: 1; }
+  [data-surface="bot"] .message.assistant[data-bot-message] .message-action-bar > .message-actions { opacity: 0; transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
+  [data-surface="bot"] .message.assistant[data-bot-message]:is(:hover, :focus-within) .message-action-bar > .message-actions { opacity: 1; }
   /* What the answer saved stays one pointer away; the activity sheet lists it too. */
   [data-surface="bot"] .message.assistant[data-bot-message] .memory-row:not([data-expanded="true"]) .chat-receipt:not([data-save-skipped]) { opacity: 0; transition: opacity var(--gg-motion-fast) var(--gg-ease-out); }
   [data-surface="bot"] .message.assistant[data-bot-message]:is(:hover, :focus-within) .memory-row .chat-receipt { opacity: 1; }
@@ -132,8 +132,6 @@
 .bot-greeting-top > span { display: grid; min-width: 0; }
 .bot-greeting-top strong { color: var(--gg-color-text-primary); font-size: var(--gg-text-heading); font-weight: var(--gg-weight-bold); line-height: var(--gg-leading-heading); }
 .bot-greeting-top small { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-control); }
-.bot-greeting-bubbles { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
-.bot-greeting-bubbles > .bot-bubble + .bot-bubble { border-top-left-radius: var(--gg-radius-bubble); }
 .bot-greeting-group { display: grid; gap: var(--gg-space-2); margin-top: 6px; }
 .bot-greeting-label { margin: 0 0 0 2px; color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); font-weight: var(--gg-weight-semibold); }
 .bot-asks, .bot-tiles { display: grid; gap: var(--gg-space-2); margin: 0; padding: 0; list-style: none; }
@@ -210,10 +208,23 @@
 
 .bot-needs-you li {
   display: flex;
+  flex-wrap: nowrap;
   justify-content: space-between;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--gg-space-2);
   padding-block: 0.25rem;
+}
+
+.bot-needs-you li > span {
+  min-width: 0;
+}
+
+.bot-needs-you-actions {
+  display: inline-flex;
+  flex: none;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--gg-space-2);
 }
 
 .bot-away-block {

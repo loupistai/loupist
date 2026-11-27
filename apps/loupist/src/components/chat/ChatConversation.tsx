@@ -4,7 +4,6 @@ import { lastSeenAt, useCurrentVisit } from "../../app/loupistVisit";
 import type { ChatVersionSummary } from "../../contracts/chat";
 import i18n, { useTranslation } from "@/i18n";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type SaveAnswerFeedback } from "./AnswerFeedback";
 import {
   Conversation,
   ConversationContent,
@@ -39,8 +38,6 @@ const t = i18n.getFixedT(null, "chat");
 type Props = {
   /** Adds a phrase selected in an answer to the composer as a quote chip. */
   onQuote?: (messageId: string, text: string) => void;
-  onSaveFeedback?: SaveAnswerFeedback;
-  onTeachFeedback?: (text: string) => void;
   active?: boolean;
   messages: ChatMessage[];
   messageKeys: string[];
@@ -137,8 +134,6 @@ export function ChatConversation({
   retryAttempt,
   onProviderAction,
   bridge,
-  onSaveFeedback,
-  onTeachFeedback,
   run,
   home = false,
   offerQuestions = true,
@@ -374,9 +369,6 @@ export function ChatConversation({
               loupistAvatar={message.role === "bot_handoff" ? loupistAvatar : undefined}
               researchSession={home && message.role === "assistant" && message.research_session_id
                 ? researchSessions?.find(thread => thread.id === message.research_session_id && thread.loupist_id === loupistId && !thread.home) : undefined}
-              feedbackHeld={message.role === "assistant" && Boolean(run?.running)}
-              onSaveFeedback={onSaveFeedback}
-              onTeachFeedback={onTeachFeedback}
               loupistId={loupistId}
               chatId={chatId}
               loupistName={loupistName}

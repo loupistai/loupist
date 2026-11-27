@@ -30,7 +30,6 @@ const SCREEN_ONLY = [
   ".chat-progress",
   ".message-actions",
   ".message-details-trigger",
-  ".answer-feedback",
   ".chat-artifact-block-actions",
   ".next-step-chips",
 ].join(", ");
@@ -71,4 +70,33 @@ export function printableCopy(source: HTMLElement) {
 /** Prints what a reader shows now, under `title`. */
 export function printReader(source: HTMLElement, title: string) {
   return printView(title, printableCopy(source));
+}
+
+/** A numbered Source on paper: its title, and its URL when it has one. */
+export type PrintedSource = { title: string; url?: string };
+
+/**
+ * One answer on paper (the answer's menu, plan 4.7): the answer as drawn now,
+ * charts as rendered, with its Sources as a numbered list of URLs in the order
+ * the answer numbers them, then the AI notice.
+ */
+export function printAnswer(source: HTMLElement, sources: readonly PrintedSource[], title: string) {
+  const copy = printableCopy(source);
+  // The on-screen Sources fold names sites; paper lists each full URL instead.
+  copy.querySelectorAll(".message-sources").forEach((node) => node.remove());
+  if (sources.length) {
+    const list = document.createElement("ol");
+    list.className = "print-sources";
+    for (const { title: name, url } of sources) {
+      const item = document.createElement("li");
+      item.textContent = url ? `${name} — ${url}` : name;
+      list.append(item);
+    }
+    copy.append(list);
+  }
+  const notice = document.createElement("p");
+  notice.className = "print-notice";
+  notice.textContent = i18n.t("chat:chatExport.notice");
+  copy.append(notice);
+  return printView(title, copy);
 }

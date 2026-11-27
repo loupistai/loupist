@@ -146,12 +146,16 @@ function WhatsNewGroup({ group, title, expanded, onToggle, onOpenSource, onOpenR
 
 function WhatsNewRowButton({ row, onOpen, origin }: { row: WhatsNewRow; onOpen: (row: WhatsNewRow) => void; origin?: string }) {
   const { t, i18n } = useTranslation("knowledge");
-  const glyph = row.kind === "name" || row.kind === "fact" ? <i className={`map-swatch is-${row.category ?? "other"}`} aria-hidden="true" />
+  const glyph = row.kind === "name" || row.kind === "fact" || row.kind === "ended" ? <i className={`map-swatch is-${row.category ?? "other"}`} aria-hidden="true" />
     : row.kind === "relationship" ? <i className="map-swatch is-claim-line" aria-hidden="true" />
-      : row.kind === "conflict" ? <TriangleAlertIcon className="map-whats-new-warning" aria-hidden="true" />
+      : row.kind === "conflict" || row.kind === "disagree" ? <TriangleAlertIcon className="map-whats-new-warning" aria-hidden="true" />
+        : row.kind === "superseded" ? <i className="map-swatch is-subject" aria-hidden="true" />
         : <i className={`map-swatch is-${row.kind}`} aria-hidden="true" />;
   const linkText = row.link ? whatsNewLinkText(row.link, t) : row.label;
-  const text = row.kind === "conflict" ? t("map.newConflict", { summary: linkText })
+  const text = row.kind === "ended" ? t("map.endedFact", { proposition: row.label })
+    : row.kind === "disagree" ? t("map.sourcesDisagree", { summary: row.label })
+    : row.kind === "superseded" ? t("map.lensSuperseded", { page: row.page || row.label, section: row.section || row.label })
+    : row.kind === "conflict" ? t("map.newConflict", { summary: linkText })
     : row.kind === "relationship" ? linkText
     : row.kind === "fact" && row.link ? t("map.newFacts", { count: row.count, formattedCount: formatNumber(row.count), name: row.link.a })
     : row.kind === "method" ? t("map.newMethod", { title: row.label })

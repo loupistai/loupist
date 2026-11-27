@@ -213,6 +213,8 @@ fn background_runs(
              WHERE loupist_id=?1 AND status='succeeded'
                AND finished_at_ms>?2 AND finished_at_ms<=?3
                AND coalesce(json_extract(data_json,'$.kind'),'')<>'briefing'
+               AND NOT (json_extract(data_json,'$.kind')='learning'
+                        AND json_extract(task_snapshot_json,'$.delivery.to') IS 'none')
                AND (
                  coalesce(json_extract(data_json,'$.quiet'),0)
                  OR coalesce(json_extract(task_snapshot_json,'$.delivery.to'),'bot')='briefing'

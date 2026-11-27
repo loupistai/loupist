@@ -5,7 +5,7 @@
 //! after a second such attempt, or a mutation, the job becomes
 //! `reconcile_required` and is not dispatched again.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
@@ -15,12 +15,18 @@ use super::blob::BlobStore;
 use super::canonical::digest_json;
 use super::error::{KnowledgeError, KnowledgeResult};
 use super::model::{
-    mint_id, validate_knowledge_id, validate_loupist_id, validate_text, validate_time, TimePoint,
+    mint_id, validate_knowledge_id, validate_loupist_id, validate_text, validate_time,
+    PassageRange, TimePoint,
 };
 use super::source::load_revision_span;
+use super::world_episodes::ReferenceBasis;
 use crate::util::sha256;
 
+mod chunking;
+use chunking::{chunk_episode, CHUNKER_PARAGRAPHS, CURRENT_CHUNKER};
 mod worker_output;
+use worker_output::project_artifact;
+#[cfg(test)]
 use worker_output::project_worker_artifact;
 
 pub const JOB_QUEUED: &str = "queued";
@@ -60,6 +66,8 @@ pub fn attempt_budget_ms(timeout_ms: u64) -> u64 {
     )
 }
 pub const JOB_FAILED_BEFORE: &str = "failed_before_mutation";
+/// The model reply could not be read. The World is unchanged and is not quarantined.
+pub const JOB_FAILED_EXTRACTION: &str = "failed_extraction";
 pub const JOB_RECONCILE: &str = "reconcile_required";
 pub const JOB_RECONCILED: &str = "reconciled_without_retry";
 pub const JOB_PAUSED: &str = "paused_budget";
@@ -70,6 +78,11 @@ pub const JOB_PRICE_DATA: &str = "price_data";
 const EPISODE_SPAN: &str = "source_span";
 const EPISODE_SEALED: &str = "sealed_snapshot";
 const EPISODE_RECOVERY: &str = "world_recovery";
+/// A running row that holds one background call for a schema or method review.
+/// It is not a World job: selection, recovery and the job list skip it.
+pub(crate) const EPISODE_ALLOWANCE: &str = "allowance_reservation";
+const ALLOWANCE_WORLD: &str = "rec_allowance_reservation";
+const ALLOWANCE_REVISION: &str = "rev_allowance_reservation";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -101,6 +114,38 @@ pub struct StoredSourceBinding {
     pub source_revision_id: String,
 }
 
+/// Where a World job sits in the daily allowance. Frozen when the job is queued.
+/// A saved row without it is background.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum JobOrigin {
+    #[default]
+    Background,
+    Chat,
+}
+
+/// Why a queued job is waiting on the daily allowance. Computed for the view;
+/// the queue row stays `queued`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct JobHold {
+    pub cause: JobHoldCause,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub provider: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum JobHoldCause {
+    Allowance,
+    PlanLimit,
+    OutOfCredit,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -122,11 +167,41 @@ pub struct JobDocument {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub origin_message_id: Option<String>,
+    /// Chat when this Source was saved in an interactive turn or by a direct
+    /// user action. A user attempt is stored as chat so the allowance
+    /// reservation, which reads this field, counts it with chat.
+    #[serde(default)]
+    pub origin: JobOrigin,
+    /// Try again, Continue, or Read now. Counted as chat and never refused.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub user_attempt: bool,
     pub artifact_utf8: Option<String>,
     pub logical_digest: Option<String>,
     pub publication_time: Option<TimePoint>,
     pub effective_time: Option<TimePoint>,
     pub reference_time: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional, type = r#""published" | "received""#))]
+    pub reference_basis: Option<ReferenceBasis>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub chunk_index: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub chunk_count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub char_start: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub char_end: Option<u32>,
+    /// Version of the cut that made this chunk. Every chunk of a Source is cut
+    /// by one version, and a Source with jobs keeps it. Absent means 1.
+    #[serde(
+        default = "paragraph_chunker",
+        skip_serializing_if = "is_paragraph_chunker"
+    )]
+    pub chunker: u32,
     /// Provenance shown to extraction.
     pub source_label: String,
     pub extraction: ExtractionBudget,
@@ -134,6 +209,9 @@ pub struct JobDocument {
     pub mutation_sent: bool,
     pub inference_attempted: bool,
     pub usage_uncertain: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(skip))]
+    reconciliation_cause: Option<ReconciliationCause>,
     pub lease_expires_at_ms: Option<i64>,
     pub sealed_revision_id: Option<String>,
     #[serde(default)]
@@ -150,10 +228,154 @@ pub struct JobDocument {
     /// run again up to [`UNSENT_RETRIES`] times.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub unsent_attempts: u8,
+    /// Why this job stopped, when the host recorded one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure: Option<JobFailure>,
+    /// Attribute and relation-resolution rows dropped from a batch, and facts
+    /// left out because a figure differs from the passage.
+    #[serde(default, skip_serializing_if = "ExtractionDrops::is_empty")]
+    pub dropped: ExtractionDrops,
+    /// The first [`MAX_DROPPED_FIGURES`] facts counted in `dropped.figureMismatch`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<Vec<DroppedFigure>>", optional))]
+    pub dropped_figures: Vec<DroppedFigure>,
+}
+
+/// Examples a job keeps of the facts it left out for a figure mismatch.
+pub const MAX_DROPPED_FIGURES: usize = 8;
+
+/// A fact left out because a figure it states differs from the passage.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct DroppedFigure {
+    /// The proposition, at most 240 characters.
+    pub proposition: String,
+    /// The figure as the proposition states it.
+    pub stated: String,
+    /// The chunk it was extracted from. Absent: unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub passage: Option<PassageRange>,
+}
+
+impl JobDocument {
+    pub(super) fn reference_basis(&self) -> ReferenceBasis {
+        self.reference_basis.unwrap_or_else(|| {
+            if self
+                .publication_time
+                .as_ref()
+                .and_then(publication_reference)
+                .is_some()
+            {
+                ReferenceBasis::Published
+            } else {
+                ReferenceBasis::Received
+            }
+        })
+    }
+}
+
+/// Rows a batch kept going without.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct ExtractionDrops {
+    #[serde(default)]
+    pub attributes: u32,
+    #[serde(default)]
+    pub edges: u32,
+    /// Facts not published because a figure differs from the passage.
+    #[serde(default)]
+    pub figure_mismatch: u32,
+}
+
+impl ExtractionDrops {
+    fn is_empty(&self) -> bool {
+        self.attributes == 0 && self.edges == 0 && self.figure_mismatch == 0
+    }
+}
+
+/// A recorded stop. `kind` uses the recovery vocabulary and the model-output
+/// and capacity stops.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct JobFailure {
+    pub kind: JobFailureKind,
+    pub at_ms: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum JobFailureKind {
+    Interrupted,
+    TimedOut,
+    UsageUncertain,
+    InvalidJson,
+    SchemaMismatch,
+    IncompleteResponse,
+    OutputSize,
+    ContentType,
+    WorldFull,
+}
+
+impl From<ReconciliationCause> for JobFailureKind {
+    fn from(cause: ReconciliationCause) -> Self {
+        match cause {
+            ReconciliationCause::Interrupted => Self::Interrupted,
+            ReconciliationCause::TimedOut => Self::TimedOut,
+            ReconciliationCause::UsageUncertain => Self::UsageUncertain,
+        }
+    }
+}
+
+impl JobFailureKind {
+    pub(super) fn model_output(kind: &str) -> Option<Self> {
+        Some(match kind {
+            "invalid_json" => Self::InvalidJson,
+            "schema_mismatch" => Self::SchemaMismatch,
+            "incomplete_response" => Self::IncompleteResponse,
+            "output_size" => Self::OutputSize,
+            "content_type" => Self::ContentType,
+            _ => return None,
+        })
+    }
 }
 
 fn is_zero(value: &u8) -> bool {
     *value == 0
+}
+
+fn paragraph_chunker() -> u32 {
+    CHUNKER_PARAGRAPHS
+}
+
+fn is_paragraph_chunker(value: &u32) -> bool {
+    *value == CHUNKER_PARAGRAPHS
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum ReconciliationCause {
+    Interrupted,
+    TimedOut,
+    UsageUncertain,
+}
+
+impl ReconciliationCause {
+    fn status(self) -> &'static str {
+        match self {
+            Self::Interrupted => "interrupted",
+            Self::TimedOut => "timed_out",
+            Self::UsageUncertain => "usage_uncertain",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -172,6 +394,35 @@ pub struct GraphJobView {
     #[cfg_attr(test, ts(skip))]
     pub document: JobDocument,
     pub host_may_redrive: bool,
+    /// Why the job stopped, when one was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub failure: Option<JobFailure>,
+    /// Try again can run this stopped span again. Absent when it cannot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub retryable: Option<bool>,
+    /// Waiting on the daily allowance. Absent when the job can start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub hold: Option<JobHold>,
+    /// Facts this job left out. Absent when it left none out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub dropped: Option<JobDropped>,
+    /// The first eight facts counted in `dropped.figureMismatch`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<Vec<DroppedFigure>>", optional))]
+    pub dropped_figures: Vec<DroppedFigure>,
+}
+
+/// Facts a job left out of World.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct JobDropped {
+    /// Facts not published because a figure differs from the passage.
+    pub figure_mismatch: u32,
 }
 
 pub(crate) enum GraphJobClaim {
@@ -870,11 +1121,198 @@ fn source_chat_origin(
     Ok((Some(chat_id), message_id))
 }
 
+/// The origin the save stored for the capture's turn: chat for an
+/// interactive turn, background for a scheduled or unattended one. A capture
+/// without a stored origin is chat only when the user saved or retained it
+/// directly.
+fn frozen_origin(
+    tx: &Transaction<'_>,
+    record_id: &str,
+    revision_id: &str,
+    capture_id: &str,
+) -> KnowledgeResult<JobOrigin> {
+    let stored: Option<String> = tx
+        .query_row(
+            "SELECT allowance_origin FROM knowledge_capture_lineage
+             WHERE record_id = ?1 AND capture_id = ?2",
+            params![record_id, capture_id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten();
+    match stored.as_deref() {
+        Some("chat") => Ok(JobOrigin::Chat),
+        Some(_) => Ok(JobOrigin::Background),
+        None if capture_authored_by_user(tx, revision_id, capture_id)? => Ok(JobOrigin::Chat),
+        None => Ok(JobOrigin::Background),
+    }
+}
+
+fn capture_authored_by_user(
+    tx: &Transaction<'_>,
+    revision_id: &str,
+    capture_id: &str,
+) -> KnowledgeResult<bool> {
+    let stored = super::revision::load_revision(tx, revision_id)?;
+    let payload: super::SourceRecordPayload = serde_json::from_str(&stored.payload_json)?;
+    Ok(payload.source.captures.iter().any(|capture| {
+        capture.capture_id == capture_id && capture.authorship == super::Authorship::User
+    }))
+}
+
+/// The allowance bucket a running job reserves. A user attempt counts as chat.
+pub(super) fn allowance_origin(
+    document: &JobDocument,
+) -> crate::scheduled_tasks::allowance::WorldOrigin {
+    use crate::scheduled_tasks::allowance::WorldOrigin;
+    if document.user_attempt || document.origin == JobOrigin::Chat {
+        WorldOrigin::Chat
+    } else {
+        WorldOrigin::Background
+    }
+}
+
+const CLASS_USER: u8 = 0;
+const CLASS_CHAT: u8 = 1;
+const CLASS_BACKGROUND: u8 = 2;
+
+fn claim_class(document: &JobDocument) -> u8 {
+    if document.user_attempt {
+        CLASS_USER
+    } else if document.origin == JobOrigin::Chat {
+        CLASS_CHAT
+    } else {
+        CLASS_BACKGROUND
+    }
+}
+
+/// Calls this claim would spend, including a predecessor's unused calls that
+/// move onto a follower when it starts. Nothing is written.
+pub(super) fn dispatch_calls(tx: &Transaction<'_>, job: &GraphJobView) -> KnowledgeResult<u32> {
+    if job.document.extraction.max_llm_calls != 0 || job.document.episode_kind != EPISODE_SPAN {
+        return Ok(job.document.extraction.max_llm_calls);
+    }
+    let Some(previous_key) = &job.document.previous_episode_key else {
+        return Ok(0);
+    };
+    let previous = tx
+        .query_row(
+            "SELECT job_id, loupist_id, world_record_id, world_revision_id, status, payload_json,
+                payload_digest, created_at_ms
+         FROM knowledge_graph_outbox WHERE loupist_id = ?1
+           AND json_valid(payload_json) AND json_extract(payload_json, '$.episodeKey') = ?2",
+            params![job.loupist_id, previous_key],
+            row_to_job,
+        )
+        .optional()?;
+    let Some(previous) = previous else {
+        return Ok(0);
+    };
+    if !funds_follower(&previous.status) {
+        return Ok(0);
+    }
+    let remaining = previous.document.extraction.max_llm_calls;
+    let document = &job.document;
+    if remaining >= 2
+        && !document.mutation_sent
+        && !document.inference_attempted
+        && !document.usage_uncertain
+        && document.attempt_id.is_none()
+        && document.lease_expires_at_ms.is_none()
+        && document.interrupted_attempts == 0
+        && document.host_interruptions == 0
+        && document.unsent_attempts == 0
+    {
+        Ok(remaining)
+    } else {
+        Ok(0)
+    }
+}
+
+pub(super) fn allowance_limits(
+    store: &crate::store::SqliteStore,
+) -> crate::scheduled_tasks::allowance::Limits {
+    store
+        .database_path()
+        .and_then(|path| path.parent())
+        .and_then(|dir| crate::scheduled_tasks::allowance::Limits::load(dir).ok())
+        .unwrap_or_default()
+}
+
+/// A source span the daily allowance will not start. User attempts are never refused.
+pub(super) fn allowance_refuses(
+    state: &crate::scheduled_tasks::allowance::AllowanceState,
+    job: &GraphJobView,
+    calls: u32,
+    provider: Option<&str>,
+) -> bool {
+    job.document.episode_kind == EPISODE_SPAN
+        && calls >= 2
+        && !job.document.user_attempt
+        && crate::scheduled_tasks::allowance::admit_world_attempt(
+            state,
+            allowance_origin(&job.document),
+            calls,
+            provider,
+        )
+        .is_err()
+}
+
+/// User attempts, then chat, then background; oldest first inside a class.
+/// After three chat-origin claims in a row, one runnable background job goes next.
+/// A user attempt still goes before that background job.
+pub(super) fn pick_claim(jobs: &[GraphJobView], chat_claims_in_a_row: u8) -> Option<&GraphJobView> {
+    let mut ready: Vec<&GraphJobView> = jobs.iter().collect();
+    ready.sort_by(|left, right| {
+        claim_class(&left.document)
+            .cmp(&claim_class(&right.document))
+            .then(left.created_at_ms.cmp(&right.created_at_ms))
+            .then(left.job_id.cmp(&right.job_id))
+    });
+    if chat_claims_in_a_row >= 3 {
+        if let Some(user) = ready.iter().copied().find(|job| job.document.user_attempt) {
+            return Some(user);
+        }
+        if let Some(background) = ready
+            .iter()
+            .copied()
+            .find(|job| claim_class(&job.document) == CLASS_BACKGROUND)
+        {
+            return Some(background);
+        }
+    }
+    ready.into_iter().next()
+}
+
+/// Chat-origin claims, including a user attempt, advance the streak. A background
+/// claim clears it. A rebuild does not change it.
+pub(super) fn note_claim_streak(streak: u8, document: &JobDocument) -> u8 {
+    if document.episode_kind != EPISODE_SPAN {
+        return streak;
+    }
+    if claim_class(document) == CLASS_BACKGROUND {
+        0
+    } else {
+        streak.saturating_add(1)
+    }
+}
+
 pub fn accept_episode(
     tx: &Transaction<'_>,
     blobs: &BlobStore,
     settings: &GraphProcessingSettings,
     request: AddToWorld,
+) -> KnowledgeResult<GraphJobView> {
+    accept_cut(tx, blobs, settings, request, CURRENT_CHUNKER)
+}
+
+/// [`accept_episode`], cutting a Source span with no job by `new_chunker`.
+fn accept_cut(
+    tx: &Transaction<'_>,
+    blobs: &BlobStore,
+    settings: &GraphProcessingSettings,
+    request: AddToWorld,
+    new_chunker: u32,
 ) -> KnowledgeResult<GraphJobView> {
     validate_loupist_id(&request.loupist_id)?;
     validate_knowledge_id(&request.world_record_id, "rec")?;
@@ -901,6 +1339,7 @@ pub fn accept_episode(
         &request.world_record_id,
         &request.world_revision_id,
     )?;
+    let chunker = span_chunker(tx, &request)?.unwrap_or(new_chunker);
     let material = load_revision_span(
         tx,
         blobs,
@@ -952,13 +1391,21 @@ pub fn accept_episode(
         &request.source_record_id,
         &binding.capture_id,
     )?;
-    let chunks = chunk_episode(&body);
+    let origin = frozen_origin(
+        tx,
+        &request.source_record_id,
+        &request.source_revision_id,
+        &binding.capture_id,
+    )?;
+    let chunks = chunk_episode(&body, chunker)?;
     let mut created = None;
     let mut previous_episode_key = None;
+    let (reference_time, reference_basis) =
+        reference_time_for(material.publication_time.as_ref(), material.received_at_ms);
     for (index, chunk) in chunks.iter().enumerate() {
         let mut chunk_binding = binding.clone();
         if chunks.len() > 1 {
-            chunk_binding.payload_digest = sha256(chunk.as_bytes());
+            chunk_binding.payload_digest = sha256(chunk.body.as_bytes());
         }
         let mut identity = json!({
             "loupistId": request.loupist_id,
@@ -1010,30 +1457,39 @@ pub fn accept_episode(
             episode_key: episode_key.clone(),
             previous_episode_key: previous_episode_key.clone(),
             name: episode_name.clone(),
-            body: chunk.clone(),
+            body: chunk.body.clone(),
             source_binding: Some(chunk_binding),
             origin_chat_id: origin_chat_id.clone(),
             origin_message_id: origin_message_id.clone(),
+            origin,
+            user_attempt: false,
             artifact_utf8: None,
             logical_digest: None,
             publication_time: material.publication_time.clone(),
             effective_time: None,
-            reference_time: reference_time_for(
-                material.publication_time.as_ref(),
-                material.received_at_ms,
-            ),
+            reference_time: reference_time.clone(),
+            reference_basis: Some(reference_basis),
+            chunk_index: Some(index as u32),
+            chunk_count: Some(chunks.len() as u32),
+            char_start: Some(chunk.chars.start),
+            char_end: Some(chunk.chars.end),
+            chunker,
             source_label: source_label.clone(),
             extraction: chunk_extraction,
             dedup_key: dedup_key.clone(),
             mutation_sent: false,
             inference_attempted: false,
             usage_uncertain: false,
+            reconciliation_cause: None,
             lease_expires_at_ms: None,
             sealed_revision_id: Some(request.world_revision_id.clone()),
             attempt_id: None,
             interrupted_attempts: 0,
             host_interruptions: 0,
             unsent_attempts: 0,
+            failure: None,
+            dropped: ExtractionDrops::default(),
+            dropped_figures: Vec::new(),
         };
         let job = insert_job(
             tx,
@@ -1111,11 +1567,19 @@ pub fn accept_sealed_world(
         source_binding: None,
         origin_chat_id: None,
         origin_message_id: None,
+        origin: JobOrigin::Background,
+        user_attempt: false,
         artifact_utf8: None,
         logical_digest: Some(logical_digest.clone()),
         publication_time: None,
         effective_time: None,
         reference_time: reference_time(request.at_ms),
+        reference_basis: None,
+        chunk_index: None,
+        chunk_count: None,
+        char_start: None,
+        char_end: None,
+        chunker: CHUNKER_PARAGRAPHS,
         source_label: default_source_label(),
         extraction: ExtractionBudget {
             model_profile: "none".to_string(),
@@ -1130,12 +1594,16 @@ pub fn accept_sealed_world(
         mutation_sent: false,
         inference_attempted: false,
         usage_uncertain: false,
+        reconciliation_cause: None,
         lease_expires_at_ms: None,
         sealed_revision_id: Some(request.world_revision_id.clone()),
         attempt_id: None,
         interrupted_attempts: 0,
         host_interruptions: 0,
         unsent_attempts: 0,
+        failure: None,
+        dropped: ExtractionDrops::default(),
+        dropped_figures: Vec::new(),
     };
     insert_job(
         tx,
@@ -1219,7 +1687,7 @@ pub(crate) fn recover_world_unattended(
     let last_rebuild: Option<String> = tx
         .query_row(
             "SELECT status FROM knowledge_graph_outbox
-             WHERE loupist_id = ?1 AND json_extract(payload_json, '$.episodeKind') = ?2
+             WHERE loupist_id = ?1 AND json_valid(payload_json) AND json_extract(payload_json, '$.episodeKind') = ?2
              ORDER BY created_at_ms DESC, job_id DESC LIMIT 1",
             params![loupist_id, EPISODE_RECOVERY],
             |row| row.get(0),
@@ -1312,11 +1780,19 @@ fn insert_world_load(
         source_binding: None,
         origin_chat_id: None,
         origin_message_id: None,
+        origin: JobOrigin::Background,
+        user_attempt: false,
         artifact_utf8: None,
         logical_digest: Some(logical_digest),
         publication_time: None,
         effective_time: None,
         reference_time: reference_time(at_ms),
+        reference_basis: None,
+        chunk_index: None,
+        chunk_count: None,
+        char_start: None,
+        char_end: None,
+        chunker: CHUNKER_PARAGRAPHS,
         source_label: default_source_label(),
         extraction: ExtractionBudget {
             model_profile: "none".into(),
@@ -1331,12 +1807,16 @@ fn insert_world_load(
         mutation_sent: false,
         inference_attempted: false,
         usage_uncertain: false,
+        reconciliation_cause: None,
         lease_expires_at_ms: None,
         sealed_revision_id: Some(revision.to_owned()),
         attempt_id: None,
         interrupted_attempts: 0,
         host_interruptions: 0,
         unsent_attempts: 0,
+        failure: None,
+        dropped: ExtractionDrops::default(),
+        dropped_figures: Vec::new(),
     };
     insert_job(
         tx,
@@ -1359,7 +1839,7 @@ pub fn recovery_status(
     let recovering: bool = tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM knowledge_graph_outbox
          WHERE loupist_id = ?1 AND status IN ('queued', 'running')
-           AND json_extract(payload_json, '$.episodeKind') = 'world_recovery')",
+           AND json_valid(payload_json) AND json_extract(payload_json, '$.episodeKind') = 'world_recovery')",
         [loupist_id],
         |row| row.get(0),
     )?;
@@ -1413,19 +1893,20 @@ pub fn get_job(
     Ok(job)
 }
 
-/// Display the same user-pause distinction in Chat and the Source reader.
+/// Display pause and retired-attempt details without changing queue states.
 pub(super) fn processing_status(
     tx: &Transaction<'_>,
-    loupist_id: &str,
-    status: &str,
+    job: &GraphJobView,
 ) -> KnowledgeResult<String> {
-    Ok(
-        if status == JOB_PAUSED && load_settings(tx, loupist_id)?.paused {
-            "paused".into()
-        } else {
-            status.into()
-        },
-    )
+    let status = match job.status.as_str() {
+        JOB_PAUSED if load_settings(tx, &job.loupist_id)?.paused => "paused",
+        JOB_RECONCILED => job
+            .document
+            .reconciliation_cause
+            .map_or(JOB_RECONCILED, ReconciliationCause::status),
+        status => status,
+    };
+    Ok(status.into())
 }
 
 pub fn get_processing_job(
@@ -1434,13 +1915,14 @@ pub fn get_processing_job(
     job_id: &str,
 ) -> KnowledgeResult<GraphJobView> {
     let mut job = get_job(tx, loupist_id, job_id)?;
-    job.status = processing_status(tx, loupist_id, &job.status)?;
+    job.status = processing_status(tx, &job)?;
     Ok(job)
 }
 
 /// The next runnable job of each Loupist. Sources a Chat in `hot_chats` saved
 /// come before an older backlog; otherwise jobs run in the order they were
 /// queued. Either way a chunk still waits for the chunk before it.
+#[cfg(test)]
 pub(super) fn queued_loupist_heads(
     tx: &Transaction<'_>,
     hot_chats: &[String],
@@ -1452,11 +1934,12 @@ pub(super) fn queued_loupist_heads(
     let mut statement = tx.prepare(
         "WITH completed AS MATERIALIZED (
            SELECT loupist_id, json_extract(payload_json, '$.episodeKey') AS episode_key
-           FROM knowledge_graph_outbox WHERE status = 'completed'
+           FROM knowledge_graph_outbox WHERE status = 'completed' AND json_valid(payload_json)
          ), pending AS MATERIALIZED (
            SELECT loupist_id, json_extract(payload_json, '$.episodeKey') AS episode_key
            FROM knowledge_graph_outbox
-           WHERE status IN ('queued', 'running', 'paused_budget', 'reconcile_required')
+           WHERE status IN ('queued', 'running', 'paused_budget', 'reconcile_required',
+                            'failed_extraction', 'failed_before_mutation') AND json_valid(payload_json)
          )
          SELECT job_id, loupist_id, world_record_id, world_revision_id, status, payload_json,
                 payload_digest, created_at_ms
@@ -1469,13 +1952,14 @@ pub(super) fn queued_loupist_heads(
                         created_at_ms, job_id
              ) AS position
              FROM knowledge_graph_outbox candidate
-             WHERE status = 'queued'
+             WHERE status = 'queued' AND json_valid(payload_json)
                AND (json_extract(payload_json, '$.episodeKind') = 'world_recovery'
                  OR NOT EXISTS (
                    SELECT 1 FROM knowledge_graph_outbox blocked
                    WHERE blocked.world_record_id = candidate.world_record_id
                      AND (blocked.status = 'reconcile_required'
                        OR (blocked.status IN ('queued', 'running')
+                         AND json_valid(blocked.payload_json)
                          AND json_extract(blocked.payload_json, '$.episodeKind') = 'world_recovery'))
                  ))
                AND (json_extract(payload_json, '$.previousEpisodeKey') IS NULL
@@ -1496,6 +1980,101 @@ pub(super) fn queued_loupist_heads(
         .query_map([serde_json::to_string(hot_chats)?], row_to_job)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
+}
+
+/// Every queued job that can start now: its predecessor is settled or gone,
+/// and recovery is not blocking its World. A job the allowance cannot admit
+/// is left in this list so the caller can skip it without blocking the rest.
+pub(super) fn queued_runnable(tx: &Transaction<'_>) -> KnowledgeResult<Vec<GraphJobView>> {
+    let mut statement = tx.prepare(
+        "WITH completed AS MATERIALIZED (
+           SELECT loupist_id, json_extract(payload_json, '$.episodeKey') AS episode_key
+           FROM knowledge_graph_outbox WHERE status = 'completed' AND json_valid(payload_json)
+         ), pending AS MATERIALIZED (
+           SELECT loupist_id, json_extract(payload_json, '$.episodeKey') AS episode_key
+           FROM knowledge_graph_outbox
+           WHERE status IN ('queued', 'running', 'paused_budget', 'reconcile_required',
+                            'failed_extraction', 'failed_before_mutation') AND json_valid(payload_json)
+         )
+         SELECT job_id, loupist_id, world_record_id, world_revision_id, status, payload_json,
+                payload_digest, created_at_ms
+         FROM knowledge_graph_outbox candidate
+         WHERE status = 'queued' AND json_valid(payload_json)
+           AND (json_extract(payload_json, '$.episodeKind') = 'world_recovery'
+             OR NOT EXISTS (
+               SELECT 1 FROM knowledge_graph_outbox blocked
+               WHERE blocked.world_record_id = candidate.world_record_id
+                 AND (blocked.status = 'reconcile_required'
+                   OR (blocked.status IN ('queued', 'running')
+                     AND json_valid(blocked.payload_json)
+                     AND json_extract(blocked.payload_json, '$.episodeKind') = 'world_recovery'))
+             ))
+           AND (json_extract(payload_json, '$.previousEpisodeKey') IS NULL
+             OR EXISTS (
+               SELECT 1 FROM completed previous
+               WHERE previous.loupist_id = candidate.loupist_id
+                 AND previous.episode_key = json_extract(candidate.payload_json, '$.previousEpisodeKey')
+             )
+             OR NOT EXISTS (
+               SELECT 1 FROM pending previous
+               WHERE previous.loupist_id = candidate.loupist_id
+                 AND previous.episode_key = json_extract(candidate.payload_json, '$.previousEpisodeKey')
+             ))
+         ORDER BY created_at_ms, job_id",
+    )?;
+    let rows = statement.query([])?;
+    readable_jobs(rows, false)
+}
+
+/// Holds for queued jobs this Loupist cannot start, from the same admission
+/// the claim uses. Call this without a folder lock held: it takes the claim
+/// lock first, then the folder.
+pub(crate) fn queued_holds(
+    store: &crate::store::SqliteStore,
+    loupist_id: &str,
+    now_ms: i64,
+) -> KnowledgeResult<BTreeMap<String, JobHold>> {
+    let limits = allowance_limits(store);
+    let admission = crate::scheduled_tasks::allowance::Admission::prepare(store, Some(loupist_id))
+        .map_err(|_| KnowledgeError::Invalid("could not read the daily allowance"))?;
+    let mut connection = store
+        .lock_loupist(loupist_id)
+        .map_err(|_| KnowledgeError::LockPoisoned)?;
+    let state = admission
+        .state(Some(&connection), limits, now_ms)
+        .map_err(|_| KnowledgeError::Invalid("could not read the daily allowance"))?;
+    let tx = connection.transaction()?;
+    let provider = load_settings(&tx, loupist_id)?
+        .helper_provider
+        .filter(|provider| !provider.is_empty());
+    let mut holds = BTreeMap::new();
+    for job in list_jobs_with_status(&tx, loupist_id, JOB_QUEUED)? {
+        let calls = dispatch_calls(&tx, &job)?;
+        if !allowance_refuses(&state, &job, calls, provider.as_deref()) {
+            continue;
+        }
+        let reason = crate::scheduled_tasks::allowance::admit_world_attempt(
+            &state,
+            allowance_origin(&job.document),
+            calls,
+            provider.as_deref(),
+        )
+        .expect_err("refused attempt");
+        holds.insert(job.job_id, job_hold(reason));
+    }
+    Ok(holds)
+}
+
+fn job_hold(hold: crate::scheduled_tasks::allowance::Hold) -> JobHold {
+    use crate::scheduled_tasks::allowance::HoldReason;
+    JobHold {
+        cause: match hold.reason {
+            HoldReason::Allowance => JobHoldCause::Allowance,
+            HoldReason::PlanLimit => JobHoldCause::PlanLimit,
+            HoldReason::OutOfCredit => JobHoldCause::OutOfCredit,
+        },
+        provider: hold.provider,
+    }
 }
 
 /// World jobs still to run in this database: queued or running.
@@ -1546,7 +2125,7 @@ pub(super) fn source_status_job(
                WHERE loupist_id = ?1
                  AND json_extract(payload_json, '$.sourceBinding.sourceRecordId') = ?2
              ), parked(episode_key) AS (
-               SELECT episode_key FROM source_jobs WHERE status IN ('paused_budget', 'reconcile_required')
+               SELECT episode_key FROM source_jobs WHERE status IN ('paused_budget', 'reconcile_required', 'failed_extraction', 'failed_before_mutation')
                UNION
                SELECT follower.episode_key FROM source_jobs follower JOIN parked
                  ON follower.previous_key = parked.episode_key
@@ -1590,7 +2169,7 @@ pub(super) fn processed_sources(
     let mut statement = tx.prepare(&format!(
         "SELECT source,
                 SUM(status IN ('{queued}', '{running}')) AS pending,
-                SUM(status NOT IN ('{queued}', '{running}') AND revision = head) AS done
+                COUNT(*) FILTER (WHERE status NOT IN ('{queued}', '{running}') AND revision = head) AS done
          FROM (SELECT o.status,
                       json_extract(o.payload_json, '$.sourceBinding.sourceRecordId') AS source,
                       json_extract(o.payload_json, '$.sourceBinding.sourceRevisionId') AS revision,
@@ -1598,7 +2177,7 @@ pub(super) fn processed_sources(
                FROM knowledge_graph_outbox o
                JOIN knowledge_record_heads h
                  ON h.record_id = json_extract(o.payload_json, '$.sourceBinding.sourceRecordId')
-               WHERE o.loupist_id = ?1
+               WHERE o.loupist_id = ?1 AND json_valid(o.payload_json)
                  AND json_extract(o.payload_json, '$.sourceBinding.sourceRecordId')
                      IN (SELECT value FROM json_each(?2)))
          GROUP BY source",
@@ -1630,11 +2209,12 @@ pub fn list_jobs(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<Vec<
     let mut statement = tx.prepare(
         "SELECT job_id, loupist_id, world_record_id, world_revision_id, status, payload_json,
                 payload_digest, created_at_ms
-         FROM knowledge_graph_outbox WHERE loupist_id = ?1 ORDER BY created_at_ms, job_id",
+         FROM knowledge_graph_outbox WHERE loupist_id = ?1 AND json_valid(payload_json)
+           AND json_extract(payload_json, '$.episodeKind') != ?2
+         ORDER BY created_at_ms, job_id",
     )?;
-    let rows = statement.query_map(params![loupist_id], row_to_job)?;
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(KnowledgeError::from)
+    let rows = statement.query(params![loupist_id, EPISODE_ALLOWANCE])?;
+    readable_jobs(rows, false)
 }
 
 pub fn pause_processing(
@@ -1675,6 +2255,10 @@ pub fn resume_processing(
                 || document.usage_uncertain
                 || document.attempt_id.is_some()
                 || document.lease_expires_at_ms.is_some()
+                || document
+                    .failure
+                    .as_ref()
+                    .is_some_and(|failure| failure.kind == JobFailureKind::WorldFull)
                 || (document.episode_kind == EPISODE_SPAN
                     && document.previous_episode_key.is_none()
                     && (document.extraction.max_llm_calls < 2
@@ -1715,6 +2299,10 @@ pub fn resume_processing(
             || document.usage_uncertain
             || document.attempt_id.is_some()
             || document.lease_expires_at_ms.is_some()
+            || document
+                .failure
+                .as_ref()
+                .is_some_and(|failure| failure.kind == JobFailureKind::WorldFull)
             || settings
                 .inactive_loupists
                 .iter()
@@ -1741,6 +2329,64 @@ pub fn retry_source_processing(
     loupist_id: &str,
     record_id: &str,
 ) -> KnowledgeResult<GraphJobView> {
+    retry_source_with_allowance(tx, settings, loupist_id, record_id, None)
+}
+
+/// The single-Source retry the bridge runs. The admission lock is dropped as
+/// soon as the folder transaction commits, before the hold lookup takes it
+/// again. Holding it across that lookup blocks every later admission, so Read
+/// now never returns or wakes the worker.
+pub fn retry_admitted_source(
+    store: &crate::store::SqliteStore,
+    loupist_id: &str,
+    record_id: &str,
+    now_ms: i64,
+) -> KnowledgeResult<GraphJobView> {
+    let limits = allowance_limits(store);
+    let job = {
+        let admission =
+            crate::scheduled_tasks::allowance::Admission::prepare(store, Some(loupist_id))
+                .map_err(|_| KnowledgeError::Invalid("could not read the daily allowance"))?;
+        let mut connection = store
+            .lock_loupist(loupist_id)
+            .map_err(|_| KnowledgeError::LockPoisoned)?;
+        let tx = connection.transaction()?;
+        let state = admission
+            .state(Some(&tx), limits, now_ms)
+            .map_err(|_| KnowledgeError::Invalid("could not read the daily allowance"))?;
+        let settings = load_settings(&tx, loupist_id)?;
+        let job = retry_source_with_allowance(&tx, &settings, loupist_id, record_id, Some(&state))?;
+        tx.commit()?;
+        drop(admission);
+        job
+    };
+    let holds = queued_holds(store, loupist_id, now_ms);
+    Ok(committed_retry(job, holds))
+}
+
+/// The retry is already saved. A hold lookup that fails leaves the hold unset
+/// and still returns the job, so the caller can wake the worker.
+fn committed_retry(
+    mut job: GraphJobView,
+    holds: KnowledgeResult<BTreeMap<String, JobHold>>,
+) -> GraphJobView {
+    if let Ok(holds) = holds {
+        job.hold = holds.get(&job.job_id).cloned();
+    }
+    job
+}
+
+/// [`retry_source_processing`], and Read now for a job the daily allowance is
+/// holding. That job is still queued: promote it to a user attempt in place
+/// and keep the Source calls it has left. An admitted queued job is unchanged
+/// and still refused as active.
+pub fn retry_source_with_allowance(
+    tx: &Transaction<'_>,
+    settings: &GraphProcessingSettings,
+    loupist_id: &str,
+    record_id: &str,
+    allowance: Option<&crate::scheduled_tasks::allowance::AllowanceState>,
+) -> KnowledgeResult<GraphJobView> {
     validate_loupist_id(loupist_id)?;
     let source = super::authority::require_record(tx, loupist_id, record_id)?;
     if source.kind != super::RecordKind::Source {
@@ -1760,6 +2406,30 @@ pub fn retry_source_processing(
             "Source is price data, which World building does not read",
         ));
     }
+    if let Some(allowance) = allowance {
+        let provider = settings
+            .helper_provider
+            .as_deref()
+            .filter(|provider| !provider.is_empty());
+        let mut held = None;
+        for job in &jobs {
+            if job.status != JOB_QUEUED {
+                continue;
+            }
+            let calls = dispatch_calls(tx, job)?;
+            if allowance_refuses(allowance, job, calls, provider) {
+                held = Some(job);
+                break;
+            }
+        }
+        if let Some(job) = held {
+            let mut document = job.document.clone();
+            document.user_attempt = true;
+            document.origin = JobOrigin::Chat;
+            write_status(tx, &job.job_id, JOB_QUEUED, JOB_QUEUED, &document)?;
+            return load_job(tx, &job.job_id);
+        }
+    }
     // Never refill while this Source is active or needs reconciliation.
     if jobs.iter().any(|job| {
         matches!(job.status.as_str(), JOB_RUNNING | JOB_RECONCILE)
@@ -1777,8 +2447,7 @@ pub fn retry_source_processing(
     let mut head = jobs
         .iter()
         .find(|job| {
-            job.status == JOB_PAUSED
-                && job.document.episode_kind == EPISODE_SPAN
+            job_retryable(job)
                 && job
                     .document
                     .previous_episode_key
@@ -1814,7 +2483,18 @@ pub fn retry_source_processing(
             "enable World building with a sufficient allowance before retrying",
         ));
     }
-    if head.document.extraction.max_llm_calls >= 2
+    let world_full = head
+        .document
+        .failure
+        .as_ref()
+        .is_some_and(|failure| failure.kind == JobFailureKind::WorldFull);
+    let stopped = matches!(
+        head.status.as_str(),
+        JOB_FAILED_EXTRACTION | JOB_FAILED_BEFORE
+    );
+    if !stopped
+        && !world_full
+        && head.document.extraction.max_llm_calls >= 2
         && head.document.extraction.max_embedding_calls > 0
     {
         return Err(KnowledgeError::Invalid("Source allowance has not run out"));
@@ -1831,8 +2511,10 @@ pub fn retry_source_processing(
     }
     // A dispatched/uncertain follower is never silently reset with the head.
     if tail.iter().any(|job| {
-        !matches!(job.status.as_str(), JOB_PAUSED | JOB_QUEUED)
-            || job.document.mutation_sent
+        !matches!(
+            job.status.as_str(),
+            JOB_PAUSED | JOB_QUEUED | JOB_FAILED_EXTRACTION | JOB_FAILED_BEFORE
+        ) || job.document.mutation_sent
             || job.document.usage_uncertain
             || job.document.attempt_id.is_some()
             || job.document.lease_expires_at_ms.is_some()
@@ -1852,6 +2534,12 @@ pub fn retry_source_processing(
         document.interrupted_attempts = 0;
         document.host_interruptions = 0;
         document.unsent_attempts = 0;
+        document.user_attempt = true;
+        document.origin = JobOrigin::Chat;
+        document.failure = None;
+        document.reconciliation_cause = None;
+        document.dropped = ExtractionDrops::default();
+        document.dropped_figures.clear();
         write_status(tx, &job.job_id, &job.status, JOB_QUEUED, &document)?;
     }
     head = load_job(tx, &head.job_id)?;
@@ -1916,8 +2604,19 @@ pub fn retry_sources_processing(
 /// them, so a Source's attempt runs again within its host allowance
 /// ([`host_interrupted`]), then once more (`retry_once`); any other dispatched
 /// or uncertain call is never replayed.
+#[cfg(test)]
 pub(crate) fn recover_interrupted(tx: &Transaction<'_>) -> KnowledgeResult<u32> {
-    recover_interrupted_in(tx, "main")
+    recover_interrupted_in(tx, "main", None)
+}
+
+/// Startup recovery. A review reservation left by a crash is counted on the
+/// ledger before it is released. The catalog store records that row when this
+/// database is a Loupist folder.
+pub(crate) fn recover_with_usage(
+    store: &crate::store::SqliteStore,
+    tx: &Transaction<'_>,
+) -> KnowledgeResult<u32> {
+    recover_interrupted_in(tx, "main", Some(store))
 }
 
 pub(crate) fn pause_copied_processing(
@@ -1928,13 +2627,35 @@ pub(crate) fn pause_copied_processing(
     let mut settings = load_settings_in(tx, loupist, schema)?;
     settings.paused = true;
     store_settings_in(tx, loupist, &settings, schema)?;
-    recover_interrupted_in(tx, schema)?;
+    recover_interrupted_in(tx, schema, None)?;
     Ok(())
 }
 
-fn recover_interrupted_in(tx: &Transaction<'_>, schema: &str) -> KnowledgeResult<u32> {
+fn recover_interrupted_in(
+    tx: &Transaction<'_>,
+    schema: &str,
+    store: Option<&crate::store::SqliteStore>,
+) -> KnowledgeResult<u32> {
+    // A damaged outbox can lack the expression indexes that normally reject
+    // malformed JSON on write. Report these rows once during startup, including
+    // completed rows that learning and the scheduler must still scan.
+    let mut malformed = tx.prepare(&format!(
+        "SELECT job_id FROM {schema}.knowledge_graph_outbox WHERE NOT json_valid(payload_json)"
+    ))?;
+    let mut rows = malformed.query([])?;
+    while let Some(row) = rows.next()? {
+        log_skipped_job(row, "invalid_json")?;
+    }
     let mut changed = 0;
-    for job in list_running(tx, schema)? {
+    for job in list_running(tx, schema, true)? {
+        if job.document.episode_kind == EPISODE_ALLOWANCE {
+            if account_allowance_reservation(store, tx, &job).is_ok()
+                && release_allowance_job(tx, &job, schema)?
+            {
+                changed += 1;
+            }
+            continue;
+        }
         let mut settings = load_settings_in(tx, &job.loupist_id, schema)?;
         let mut document = job.document.clone();
         let retried = host_interrupted(&mut document) || retry_once(&mut document);
@@ -1942,6 +2663,7 @@ fn recover_interrupted_in(tx: &Transaction<'_>, schema: &str) -> KnowledgeResult
             && (document.mutation_sent || document.inference_attempted || document.usage_uncertain);
         let next = if uncertain {
             quarantine(&mut settings, &document.generation_id);
+            document.reconciliation_cause = Some(ReconciliationCause::Interrupted);
             JOB_RECONCILE
         } else {
             requeued(&settings, &document)
@@ -1965,7 +2687,10 @@ pub(super) fn recover_expired(
     live_loupists: &std::collections::HashSet<String>,
 ) -> KnowledgeResult<Vec<String>> {
     let mut reclaimed = Vec::new();
-    for job in list_running(tx, "main")? {
+    for job in list_running(tx, "main", false)? {
+        if job.document.episode_kind == EPISODE_ALLOWANCE {
+            continue;
+        }
         if live_loupists.contains(&job.loupist_id)
             || job
                 .document
@@ -1988,6 +2713,7 @@ pub(super) fn recover_expired(
             Unpublished {
                 paid: job.document.inference_attempted,
                 uncertain: job.document.usage_uncertain,
+                cause: Some(ReconciliationCause::Interrupted),
                 ..Unpublished::default()
             },
             now_ms,
@@ -2005,6 +2731,7 @@ pub(super) fn claim_running(
     settings: &GraphProcessingSettings,
     job_id: &str,
     now_ms: i64,
+    allowance: Option<&crate::scheduled_tasks::allowance::AllowanceState>,
 ) -> KnowledgeResult<GraphJobClaim> {
     let mut job = load_job(tx, job_id)?;
     if job.status != JOB_QUEUED {
@@ -2016,12 +2743,13 @@ pub(super) fn claim_running(
     if world_processing_busy(tx, &job.world_record_id, &job.job_id)? {
         return Ok(GraphJobClaim::Existing(job));
     }
+    let mut carried_from: Option<GraphJobView> = None;
     if let Some(previous_key) = &job.document.previous_episode_key {
         let previous = tx.query_row(
             "SELECT job_id, loupist_id, world_record_id, world_revision_id, status, payload_json,
                     payload_digest, created_at_ms
              FROM knowledge_graph_outbox WHERE loupist_id = ?1
-               AND json_extract(payload_json, '$.episodeKey') = ?2",
+               AND json_valid(payload_json) AND json_extract(payload_json, '$.episodeKey') = ?2",
             params![job.loupist_id, previous_key], row_to_job,
         ).optional()?;
         if let Some(mut previous) = previous {
@@ -2029,10 +2757,15 @@ pub(super) fn claim_running(
                 return Ok(GraphJobClaim::Existing(job));
             }
             let remaining = previous.document.extraction.max_llm_calls;
+            // A retryable stop keeps its calls. Cancelled, completed and
+            // reconciled predecessors have finished, so the tail may use
+            // what they did not spend.
             // Old queued documents keep their positive per-chunk allowances.
             // New followers start at zero; an old zero-funded tail can only
             // follow a shard with fewer than two calls, which cannot run.
-            if job.document.extraction.max_llm_calls == 0
+            // The move is written only once this claim is allowed to start.
+            if funds_follower(&previous.status)
+                && job.document.extraction.max_llm_calls == 0
                 && remaining >= 2
                 && !job.document.mutation_sent
                 && !job.document.inference_attempted
@@ -2049,14 +2782,7 @@ pub(super) fn claim_running(
                     .max_llm_calls
                     .saturating_add(remaining);
                 previous.document.extraction.max_llm_calls = 0;
-                write_status(
-                    tx,
-                    &previous.job_id,
-                    &previous.status,
-                    &previous.status,
-                    &previous.document,
-                )?;
-                write_status(tx, job_id, JOB_QUEUED, JOB_QUEUED, &job.document)?;
+                carried_from = Some(previous);
             }
         }
     }
@@ -2077,6 +2803,39 @@ pub(super) fn claim_running(
             source_job_settled(tx, &job, now_ms)?;
         }
         return load_job(tx, job_id).map(GraphJobClaim::Existing);
+    }
+    // The daily allowance never changes max_llm_calls. A job it cannot admit
+    // stays queued: nothing is written to hold it. A user attempt is counted
+    // and still starts. Rebuilds call no model, so a refusal does not stop them.
+    if let Some(allowance) = allowance {
+        let provider = settings
+            .helper_provider
+            .as_deref()
+            .filter(|provider| !provider.is_empty());
+        let calls = job.document.extraction.max_llm_calls;
+        let admitted = crate::scheduled_tasks::allowance::admit_world_attempt(
+            allowance,
+            allowance_origin(&job.document),
+            calls,
+            provider,
+        );
+        if admitted.is_err()
+            && job.document.episode_kind == EPISODE_SPAN
+            && calls >= 2
+            && !job.document.user_attempt
+        {
+            return Ok(GraphJobClaim::Existing(load_job(tx, job_id)?));
+        }
+    }
+    if let Some(previous) = &carried_from {
+        write_status(
+            tx,
+            &previous.job_id,
+            &previous.status,
+            &previous.status,
+            &previous.document,
+        )?;
+        write_status(tx, job_id, JOB_QUEUED, JOB_QUEUED, &job.document)?;
     }
     if job.document.episode_kind == EPISODE_SPAN
         && (settings
@@ -2134,6 +2893,7 @@ pub(super) fn claim_running(
         clear_lease(&mut document);
         if write_status(tx, job_id, JOB_QUEUED, JOB_FAILED_BEFORE, &document)? {
             source_job_settled(tx, &job, now_ms)?;
+            pause_waiting_followers(tx, &job)?;
         }
         return load_job(tx, job_id).map(GraphJobClaim::Existing);
     }
@@ -2219,7 +2979,7 @@ fn source_job_settled(tx: &Transaction<'_>, job: &GraphJobView, at_ms: i64) -> K
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn finish_job(
+pub(super) fn finish_job(
     tx: &Transaction<'_>,
     settings: &mut GraphProcessingSettings,
     job_id: &str,
@@ -2227,6 +2987,7 @@ pub fn finish_job(
     outcome: &str,
     usage_uncertain: bool,
     validated: bool,
+    cause: Option<ReconciliationCause>,
     now_ms: i64,
 ) -> KnowledgeResult<GraphJobView> {
     let job = active_attempt(tx, job_id, attempt_id)?;
@@ -2258,6 +3019,16 @@ pub fn finish_job(
         } else {
             JOB_FAILED_BEFORE
         };
+    if next == JOB_RECONCILE {
+        document.reconciliation_cause =
+            cause.or(usage_uncertain.then_some(ReconciliationCause::UsageUncertain));
+        if let Some(cause) = document.reconciliation_cause {
+            document.failure = Some(JobFailure {
+                kind: cause.into(),
+                at_ms: now_ms,
+            });
+        }
+    }
     if !write_status(tx, job_id, JOB_RUNNING, next, &document)? {
         return Err(KnowledgeError::Invalid(
             "graph job attempt is no longer active",
@@ -2265,6 +3036,9 @@ pub fn finish_job(
     }
     if final_status(next) {
         source_job_settled(tx, &job, now_ms)?;
+    }
+    if matches!(next, JOB_FAILED_BEFORE | JOB_FAILED_EXTRACTION) {
+        pause_waiting_followers(tx, &job)?;
     }
     load_job(tx, job_id)
 }
@@ -2282,6 +3056,7 @@ pub struct Unpublished {
     /// with (model, thinking level, run options, request allowance or timeout),
     /// so the host refused its next call or it ended while they differed.
     pub settings_changed: bool,
+    pub(super) cause: Option<ReconciliationCause>,
 }
 
 /// End an attempt that published nothing. One the World settings changed under
@@ -2348,6 +3123,7 @@ pub fn finish_unpublished(
             }
             if final_status(next) {
                 source_job_settled(tx, &job, now_ms)?;
+                pause_waiting_followers(tx, &job)?;
             }
             return load_job(tx, job_id);
         }
@@ -2360,8 +3136,47 @@ pub fn finish_unpublished(
         JOB_FAILED_BEFORE,
         end.uncertain,
         false,
+        if end.suspended {
+            Some(ReconciliationCause::Interrupted)
+        } else {
+            end.cause
+        },
         now_ms,
     )
+}
+
+/// A predecessor that will not run again may hand its unused calls to the next chunk.
+/// A retryable failure is not one of these: Try again still has to read that chunk.
+fn funds_follower(status: &str) -> bool {
+    matches!(status, JOB_COMPLETED | JOB_RECONCILED | JOB_CANCELLED)
+}
+
+/// A retryable stop parks every queued follower that has not started.
+fn pause_waiting_followers(tx: &Transaction<'_>, job: &GraphJobView) -> KnowledgeResult<()> {
+    tx.execute(
+        "WITH RECURSIVE tail(episode_key) AS (
+           SELECT ?1 UNION
+           SELECT json_extract(payload_json, '$.episodeKey')
+           FROM knowledge_graph_outbox JOIN tail
+             ON json_extract(payload_json, '$.previousEpisodeKey') = tail.episode_key
+           WHERE loupist_id = ?2
+         )
+         UPDATE knowledge_graph_outbox SET status = ?3
+         WHERE loupist_id = ?2 AND status = ?4
+           AND json_extract(payload_json, '$.episodeKey') IN (SELECT episode_key FROM tail)
+           AND json_extract(payload_json, '$.mutationSent') = 0
+           AND json_extract(payload_json, '$.inferenceAttempted') = 0
+           AND json_extract(payload_json, '$.usageUncertain') = 0
+           AND json_extract(payload_json, '$.attemptId') IS NULL
+           AND json_extract(payload_json, '$.leaseExpiresAtMs') IS NULL",
+        params![
+            job.document.episode_key,
+            job.loupist_id,
+            JOB_PAUSED,
+            JOB_QUEUED
+        ],
+    )?;
+    Ok(())
 }
 
 /// Followers without their own allowance cannot run after an exhausted chunk.
@@ -2410,6 +3225,83 @@ pub(super) fn pause_exhausted_attempt(
     pause_unfunded_followers(tx, &job)?;
     source_job_settled(tx, &job, now_ms)?;
     load_job(tx, job_id)
+}
+
+/// The model reply could not be read. Stop without a retry and without
+/// quarantining the World.
+pub(super) fn fail_model_output(
+    tx: &Transaction<'_>,
+    job_id: &str,
+    attempt_id: &str,
+    kind: &str,
+    now_ms: i64,
+) -> KnowledgeResult<GraphJobView> {
+    let kind = JobFailureKind::model_output(kind)
+        .ok_or(KnowledgeError::Invalid("model output failure is unknown"))?;
+    let job = active_attempt(tx, job_id, attempt_id)?;
+    let mut document = job.document.clone();
+    document.failure = Some(JobFailure {
+        kind,
+        at_ms: now_ms,
+    });
+    document.reconciliation_cause = None;
+    document.usage_uncertain = false;
+    clear_lease(&mut document);
+    if !write_status(tx, job_id, JOB_RUNNING, JOB_FAILED_EXTRACTION, &document)? {
+        return Err(KnowledgeError::Invalid(
+            "graph job attempt is no longer active",
+        ));
+    }
+    source_job_settled(tx, &job, now_ms)?;
+    pause_waiting_followers(tx, &job)?;
+    load_job(tx, job_id)
+}
+
+/// The sealed World is already near its node or claim limit. Pause before any
+/// paid call. Resume does not clear this; only Try again looks again.
+pub(super) fn pause_world_full(
+    tx: &Transaction<'_>,
+    job_id: &str,
+    attempt_id: &str,
+    now_ms: i64,
+) -> KnowledgeResult<GraphJobView> {
+    let job = active_attempt(tx, job_id, attempt_id)?;
+    let mut document = job.document.clone();
+    document.failure = Some(JobFailure {
+        kind: JobFailureKind::WorldFull,
+        at_ms: now_ms,
+    });
+    clear_lease(&mut document);
+    write_status(tx, job_id, JOB_RUNNING, JOB_PAUSED, &document)?;
+    pause_unfunded_followers(tx, &job)?;
+    source_job_settled(tx, &job, now_ms)?;
+    load_job(tx, job_id)
+}
+
+/// Record how many batch rows this attempt dropped.
+pub(super) fn note_dropped(
+    tx: &Transaction<'_>,
+    job_id: &str,
+    attempt_id: &str,
+    attributes: u32,
+    edges: u32,
+    figure_mismatch: u32,
+    figures: Vec<DroppedFigure>,
+) -> KnowledgeResult<()> {
+    let job = active_attempt(tx, job_id, attempt_id)?;
+    let mut document = job.document;
+    document.dropped.attributes = document.dropped.attributes.saturating_add(attributes);
+    document.dropped.edges = document.dropped.edges.saturating_add(edges);
+    document.dropped.figure_mismatch = document
+        .dropped
+        .figure_mismatch
+        .saturating_add(figure_mismatch);
+    let room = MAX_DROPPED_FIGURES.saturating_sub(document.dropped_figures.len());
+    document
+        .dropped_figures
+        .extend(figures.into_iter().take(room));
+    write_status(tx, job_id, JOB_RUNNING, JOB_RUNNING, &document)?;
+    Ok(())
 }
 
 pub(super) fn ready_to_run(settings: &GraphProcessingSettings, job: &GraphJobView) -> bool {
@@ -2765,47 +3657,26 @@ fn clear_lease(document: &mut JobDocument) {
 
 pub(super) const EPISODE_CHUNK_CHARS: usize = 7_000;
 
-/// Split a long source at paragraph boundaries so one Graphiti episode stays
-/// inside the extraction budget. A short source stays one episode, which keeps
-/// its existing dedup key.
-fn chunk_episode(body: &str) -> Vec<String> {
-    if body.chars().count() <= EPISODE_CHUNK_CHARS {
-        return vec![body.to_string()];
-    }
-    let mut chunks = Vec::new();
-    let mut current = String::new();
-    let mut current_chars = 0;
-    for paragraph in body.split_inclusive("\n\n") {
-        let paragraph_chars = paragraph.chars().count();
-        if paragraph_chars > EPISODE_CHUNK_CHARS {
-            if !current.is_empty() {
-                chunks.push(std::mem::take(&mut current));
-            }
-            let mut piece = String::new();
-            let mut piece_chars = 0;
-            for ch in paragraph.chars() {
-                piece.push(ch);
-                piece_chars += 1;
-                if piece_chars >= EPISODE_CHUNK_CHARS {
-                    chunks.push(std::mem::take(&mut piece));
-                    piece_chars = 0;
-                }
-            }
-            current = piece;
-            current_chars = piece_chars;
-            continue;
-        }
-        if !current.is_empty() && current_chars + paragraph_chars > EPISODE_CHUNK_CHARS {
-            chunks.push(std::mem::take(&mut current));
-            current_chars = 0;
-        }
-        current.push_str(paragraph);
-        current_chars += paragraph_chars;
-    }
-    if !current.is_empty() {
-        chunks.push(current);
-    }
-    chunks
+/// The chunker that cut this Source span's existing jobs, so a half-read
+/// Source is cut the same way again and its chunks deduplicate.
+fn span_chunker(tx: &Transaction<'_>, request: &AddToWorld) -> KnowledgeResult<Option<u32>> {
+    Ok(tx
+        .query_row(
+            "SELECT COALESCE(json_extract(payload_json, '$.chunker'), ?4)
+             FROM knowledge_graph_outbox
+             WHERE loupist_id = ?1
+               AND json_extract(payload_json, '$.sourceBinding.sourceRevisionId') = ?2
+               AND json_extract(payload_json, '$.sourceBinding.spanId') = ?3
+             ORDER BY created_at_ms, job_id LIMIT 1",
+            params![
+                request.loupist_id,
+                request.source_revision_id,
+                request.span_id,
+                CHUNKER_PARAGRAPHS,
+            ],
+            |row| row.get(0),
+        )
+        .optional()?)
 }
 
 fn default_source_label() -> String {
@@ -2826,10 +3697,11 @@ fn reference_time(at_ms: i64) -> String {
 /// Graphiti interprets relative dates from `reference_time`. Prefer the source
 /// publication instant. A year or month starts on its first day; the original
 /// precision stays on `publication_time`.
-pub(super) fn reference_time_for(publication: Option<&TimePoint>, at_ms: i64) -> String {
-    publication
-        .and_then(publication_reference)
-        .unwrap_or_else(|| reference_time(at_ms))
+fn reference_time_for(publication: Option<&TimePoint>, at_ms: i64) -> (String, ReferenceBasis) {
+    match publication.and_then(publication_reference) {
+        Some(reference) => (reference, ReferenceBasis::Published),
+        None => (reference_time(at_ms), ReferenceBasis::Received),
+    }
 }
 
 fn publication_reference(time: &TimePoint) -> Option<String> {
@@ -2953,6 +3825,187 @@ fn world_processing_busy(
     )?)
 }
 
+/// Hold `calls` of the background allowance until [`release_background_call`].
+/// The row is running, so the next admission in this process sees it. A crash
+/// drops it in [`recover_interrupted`]; an expired-lease pass leaves it alone
+/// while the review is still in flight.
+pub(super) fn reserve_background_call(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    review_id: &str,
+    calls: u32,
+    at_ms: i64,
+) -> KnowledgeResult<()> {
+    if calls == 0 {
+        return Ok(());
+    }
+    let document = JobDocument {
+        version: 1,
+        episode_kind: EPISODE_ALLOWANCE.into(),
+        generation_id: mint_id("gen"),
+        episode_key: review_id.into(),
+        previous_episode_key: None,
+        name: String::new(),
+        body: String::new(),
+        source_binding: None,
+        origin_chat_id: None,
+        origin_message_id: None,
+        origin: JobOrigin::Background,
+        user_attempt: false,
+        artifact_utf8: None,
+        logical_digest: None,
+        publication_time: None,
+        effective_time: None,
+        reference_time: String::new(),
+        reference_basis: None,
+        chunk_index: None,
+        chunk_count: None,
+        char_start: None,
+        char_end: None,
+        chunker: CHUNKER_PARAGRAPHS,
+        source_label: String::new(),
+        extraction: ExtractionBudget {
+            model_profile: String::new(),
+            thinking_level: String::new(),
+            run_options: BTreeMap::new(),
+            embedding_profile: String::new(),
+            max_llm_calls: calls,
+            max_embedding_calls: 0,
+            timeout_ms: 0,
+        },
+        dedup_key: review_id.into(),
+        mutation_sent: false,
+        inference_attempted: false,
+        usage_uncertain: false,
+        reconciliation_cause: None,
+        lease_expires_at_ms: None,
+        sealed_revision_id: None,
+        attempt_id: None,
+        interrupted_attempts: 0,
+        host_interruptions: 0,
+        unsent_attempts: 0,
+        failure: None,
+        dropped: ExtractionDrops::default(),
+        dropped_figures: Vec::new(),
+    };
+    let job = insert_job(
+        tx,
+        loupist_id,
+        ALLOWANCE_WORLD,
+        ALLOWANCE_REVISION,
+        review_id,
+        at_ms,
+        &document,
+    )?;
+    if !write_status(tx, &job.job_id, JOB_QUEUED, JOB_RUNNING, &document)? {
+        return Err(KnowledgeError::Invalid(
+            "could not reserve the review allowance",
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn release_background_call(
+    tx: &Transaction<'_>,
+    review_id: &str,
+) -> KnowledgeResult<()> {
+    let job_id: Option<String> = tx
+        .query_row(
+            "SELECT job_id FROM knowledge_graph_outbox
+             WHERE status = ?1 AND json_valid(payload_json)
+               AND json_extract(payload_json, '$.episodeKind') = ?2
+               AND json_extract(payload_json, '$.episodeKey') = ?3",
+            params![JOB_RUNNING, EPISODE_ALLOWANCE, review_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(job_id) = job_id else {
+        return Ok(());
+    };
+    let job = load_job(tx, &job_id)?;
+    release_allowance_job(tx, &job, "main")?;
+    Ok(())
+}
+
+/// Count a review reservation that never reached the ledger, then the caller
+/// may release it. A write that fails leaves the reservation in place.
+fn account_allowance_reservation(
+    store: Option<&crate::store::SqliteStore>,
+    tx: &Transaction<'_>,
+    job: &GraphJobView,
+) -> KnowledgeResult<()> {
+    let review_id = job.document.episode_key.as_str();
+    let on_catalog = store.is_some_and(|store| store.is_folder_catalog());
+    let counted = if on_catalog {
+        let connection = store
+            .expect("catalog")
+            .lock()
+            .map_err(|_| KnowledgeError::LockPoisoned)?;
+        crate::store::model_usage::model_usage_has_run(&connection, review_id)
+    } else {
+        crate::store::model_usage::model_usage_has_run(tx, review_id)
+    }
+    .map_err(|_| KnowledgeError::Invalid("could not read review usage"))?;
+    if counted {
+        return Ok(());
+    }
+    let now = crate::local_time::now().timestamp_millis();
+    let calls = u64::from(job.document.extraction.max_llm_calls.max(1));
+    let row = crate::store::model_usage::ModelUsageRow {
+        finished_at_ms: now,
+        loupist_id: Some(job.loupist_id.clone()),
+        task_id: None,
+        data: crate::store::model_usage::ModelUsageData {
+            kind: crate::store::model_usage::ModelUsageKind::World,
+            surface: crate::runs::log::UsageSurface::World,
+            world_origin: Some(crate::scheduled_tasks::allowance::WorldOrigin::Background),
+            provider: "unknown".into(),
+            credential_kind: None,
+            model: "unknown".into(),
+            effort: None,
+            chat_id: None,
+            run_id: review_id.to_owned(),
+            started_at_ms: now,
+            duration_ms: 0,
+            status: crate::store::model_usage::ModelUsageStatus::Ok,
+            failure_kind: None,
+            measures: crate::store::model_usage::ModelUsageMeasures {
+                requests: Some(calls),
+                ..Default::default()
+            },
+            accounts: Vec::new(),
+        },
+    };
+    let id = format!("review-reservation:{review_id}");
+    if on_catalog {
+        store
+            .expect("catalog")
+            .put_model_usage(&id, &row)
+            .map_err(|_| KnowledgeError::Invalid("could not record the review"))?;
+    } else {
+        crate::store::model_usage::write_model_usage(tx, &id, &row)
+            .map_err(|_| KnowledgeError::Invalid("could not record the review"))?;
+    }
+    Ok(())
+}
+
+fn release_allowance_job(
+    tx: &Transaction<'_>,
+    job: &GraphJobView,
+    schema: &str,
+) -> KnowledgeResult<bool> {
+    let mut document = job.document.clone();
+    document.extraction.max_llm_calls = 0;
+    write_status_in(
+        tx,
+        &job.job_id,
+        JOB_RUNNING,
+        JOB_CANCELLED,
+        &document,
+        schema,
+    )
+}
+
 fn insert_job(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -3027,15 +4080,54 @@ fn list_jobs_with_status(
         .map_err(KnowledgeError::from)
 }
 
-fn list_running(tx: &Transaction<'_>, schema: &str) -> KnowledgeResult<Vec<GraphJobView>> {
+fn log_skipped_job(row: &rusqlite::Row<'_>, kind: &str) -> rusqlite::Result<()> {
+    // Keep payloads and arbitrary text from damaged rows out of the log.
+    let id = row
+        .get_ref(0)?
+        .as_str()
+        .ok()
+        .filter(|id| super::model::validate_external_id(id, "invalid job id").is_ok())
+        .unwrap_or("<invalid id>");
+    eprintln!("Loupist skipped World job {id} during recovery (kind={kind})");
+    Ok(())
+}
+
+fn list_running(
+    tx: &Transaction<'_>,
+    schema: &str,
+    report_unreadable: bool,
+) -> KnowledgeResult<Vec<GraphJobView>> {
     let mut statement = tx.prepare(&format!(
         "SELECT job_id, loupist_id, world_record_id, world_revision_id, status, payload_json,
                 payload_digest, created_at_ms
-         FROM {schema}.knowledge_graph_outbox WHERE status = ?1 ORDER BY created_at_ms, job_id"
+         FROM {schema}.knowledge_graph_outbox WHERE status = ?1 AND json_valid(payload_json)
+         ORDER BY created_at_ms, job_id"
     ))?;
-    let rows = statement.query_map([JOB_RUNNING], row_to_job)?;
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(KnowledgeError::from)
+    let rows = statement.query([JOB_RUNNING])?;
+    readable_jobs(rows, report_unreadable)
+}
+
+fn readable_jobs(
+    mut rows: rusqlite::Rows<'_>,
+    report_unreadable: bool,
+) -> KnowledgeResult<Vec<GraphJobView>> {
+    let mut jobs = Vec::new();
+    while let Some(row) = rows.next()? {
+        match row_to_job(row) {
+            Ok(job) if validate_loupist_id(&job.loupist_id).is_ok() => jobs.push(job),
+            Ok(_)
+            | Err(
+                rusqlite::Error::FromSqlConversionFailure(..)
+                | rusqlite::Error::InvalidColumnType(..),
+            ) => {
+                if report_unreadable {
+                    log_skipped_job(row, "invalid_running_job")?;
+                }
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(jobs)
 }
 
 fn load_job(tx: &Transaction<'_>, job_id: &str) -> KnowledgeResult<GraphJobView> {
@@ -3065,9 +4157,48 @@ fn row_to_job(row: &rusqlite::Row<'_>) -> rusqlite::Result<GraphJobView> {
         created_at_ms: row.get(7)?,
         host_may_redrive: false,
         document,
+        failure: None,
+        retryable: None,
+        hold: None,
+        dropped: None,
+        dropped_figures: Vec::new(),
     };
+    job.failure = job.document.failure.clone();
+    let figure_mismatch = job.document.dropped.figure_mismatch;
+    job.dropped = (figure_mismatch > 0).then_some(JobDropped { figure_mismatch });
+    job.dropped_figures = job.document.dropped_figures.clone();
     job.host_may_redrive = host_may_redrive(&job);
+    job.retryable = job_retryable(&job).then_some(true);
     Ok(job)
+}
+
+/// A stopped Source span Try again can fund again. A retired recovery settles
+/// the chunk before this one; it is not itself run again.
+pub(crate) fn job_retryable(job: &GraphJobView) -> bool {
+    if job.document.episode_kind != EPISODE_SPAN
+        || job.document.mutation_sent
+        || job.document.usage_uncertain
+        || job.document.attempt_id.is_some()
+        || job.document.lease_expires_at_ms.is_some()
+    {
+        return false;
+    }
+    match job.status.as_str() {
+        JOB_PAUSED => {
+            job.document.extraction.max_llm_calls < 2
+                || job.document.extraction.max_embedding_calls == 0
+                || job
+                    .document
+                    .failure
+                    .as_ref()
+                    .is_some_and(|failure| failure.kind == JobFailureKind::WorldFull)
+        }
+        // A paid call already went out under this status: it is not the
+        // unsent failure Try again funds.
+        JOB_FAILED_BEFORE => !job.document.inference_attempted,
+        JOB_FAILED_EXTRACTION => true,
+        _ => false,
+    }
 }
 
 /// A representation World building can read as text.
@@ -3156,6 +4287,8 @@ fn mark_price_span(
         &material.provider_identity,
         material.publication_time.as_ref(),
     );
+    let (reference_time, reference_basis) =
+        reference_time_for(material.publication_time.as_ref(), material.received_at_ms);
     let document = JobDocument {
         version: 1,
         episode_kind: EPISODE_SPAN.into(),
@@ -3175,16 +4308,26 @@ fn mark_price_span(
             source_record_id: source_record_id.into(),
             source_revision_id: source_revision_id.into(),
         }),
+        origin: frozen_origin(
+            tx,
+            source_record_id,
+            source_revision_id,
+            &material.capture_id,
+        )?,
         origin_chat_id,
         origin_message_id,
+        user_attempt: false,
         artifact_utf8: None,
         logical_digest: None,
         publication_time: material.publication_time.clone(),
         effective_time: None,
-        reference_time: reference_time_for(
-            material.publication_time.as_ref(),
-            material.received_at_ms,
-        ),
+        reference_time,
+        reference_basis: Some(reference_basis),
+        chunk_index: None,
+        chunk_count: None,
+        char_start: None,
+        char_end: None,
+        chunker: CHUNKER_PARAGRAPHS,
         source_label,
         extraction: ExtractionBudget {
             model_profile: "none".into(),
@@ -3199,12 +4342,16 @@ fn mark_price_span(
         mutation_sent: false,
         inference_attempted: false,
         usage_uncertain: false,
+        reconciliation_cause: None,
         lease_expires_at_ms: None,
         sealed_revision_id: Some(world.revision_id.clone()),
         attempt_id: None,
         interrupted_attempts: 0,
         host_interruptions: 0,
         unsent_attempts: 0,
+        failure: None,
+        dropped: ExtractionDrops::default(),
+        dropped_figures: Vec::new(),
     };
     let job = insert_job(
         tx,
@@ -3246,7 +4393,7 @@ pub(crate) fn retire_price_jobs(
                 json_extract(payload_json, '$.sourceBinding.spanId')
          FROM knowledge_graph_outbox
          WHERE loupist_id = ?1 AND status IN ({PRICE_RETIRABLE_STATUSES})
-           AND json_extract(payload_json, '$.episodeKind') = '{EPISODE_SPAN}'
+           AND json_valid(payload_json) AND json_extract(payload_json, '$.episodeKind') = '{EPISODE_SPAN}'
            AND json_extract(payload_json, '$.sourceBinding.spanId') IS NOT NULL"
     ))?;
     let spans = statement
@@ -3288,7 +4435,105 @@ pub fn host_may_redrive(job: &GraphJobView) -> bool {
         && !job.document.usage_uncertain
 }
 
+fn world_episode(
+    write: &super::KnowledgeWrite<'_>,
+    job: &GraphJobView,
+    at_ms: i64,
+) -> KnowledgeResult<super::world_episodes::WorldEpisode> {
+    use super::world_episodes::{EpisodeModel, WorldEpisode};
+    let document = &job.document;
+    let binding = document
+        .source_binding
+        .as_ref()
+        .ok_or(KnowledgeError::Invalid(
+            "graph episode has no source binding",
+        ))?;
+    let (index, count, start, end) = match (
+        document.chunk_index,
+        document.chunk_count,
+        document.char_start,
+        document.char_end,
+    ) {
+        (Some(index), Some(count), Some(start), Some(end)) => (index, count, start, end),
+        _ => legacy_chunk_range(write, job, binding)?,
+    };
+    Ok(WorldEpisode {
+        episode_id: String::new(),
+        loupist_id: job.loupist_id.clone(),
+        world_record_id: job.world_record_id.clone(),
+        job_id: job.job_id.clone(),
+        sealed_revision_id: String::new(),
+        previous_revision_id: Some(job.world_revision_id.clone()),
+        source_record_id: binding.source_record_id.clone(),
+        source_revision_id: binding.source_revision_id.clone(),
+        span_id: binding.span_id.clone(),
+        chunk_index: Some(index),
+        chunk_count: Some(count),
+        char_start: Some(start),
+        char_end: Some(end),
+        reference_time: Some(document.reference_time.clone()),
+        reference_basis: Some(document.reference_basis()),
+        publication_time: document.publication_time.clone(),
+        model: Some(EpisodeModel {
+            model_profile: document.extraction.model_profile.clone(),
+            thinking_level: document.extraction.thinking_level.clone(),
+        }),
+        changes: Default::default(),
+        backfilled: false,
+        created_at_ms: at_ms,
+    })
+}
+
+fn legacy_chunk_range(
+    write: &super::KnowledgeWrite<'_>,
+    job: &GraphJobView,
+    binding: &StoredSourceBinding,
+) -> KnowledgeResult<(u32, u32, u32, u32)> {
+    let material = load_revision_span(
+        write.tx,
+        write.blobs,
+        &job.loupist_id,
+        &binding.source_record_id,
+        &binding.source_revision_id,
+        &binding.span_id,
+    )?;
+    let body = std::str::from_utf8(&material.bytes)
+        .map_err(|_| KnowledgeError::Invalid("graph episode body must be UTF-8"))?;
+    let chunks = chunk_episode(body, job.document.chunker)?;
+    let mut index = 0usize;
+    let mut previous = job.document.previous_episode_key.clone();
+    while let Some(key) = previous {
+        index += 1;
+        if index >= chunks.len() {
+            return Err(KnowledgeError::Invalid(
+                "graph episode chunk chain is invalid",
+            ));
+        }
+        previous = write.tx.query_row(
+            "SELECT json_extract(payload_json, '$.previousEpisodeKey')
+             FROM knowledge_graph_outbox
+             WHERE loupist_id = ?1 AND world_record_id = ?2
+               AND json_extract(payload_json, '$.episodeKey') = ?3",
+            params![job.loupist_id, job.world_record_id, key],
+            |row| row.get(0),
+        )?;
+    }
+    let chunk = &chunks[index];
+    if chunk.body != job.document.body {
+        return Err(KnowledgeError::Invalid(
+            "graph episode chunk differs from the Source span",
+        ));
+    }
+    Ok((
+        index as u32,
+        chunks.len() as u32,
+        chunk.chars.start,
+        chunk.chars.end,
+    ))
+}
+
 // Publication binds attempt identity, exact artifact bytes and completion in one transaction.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub fn publish_and_complete(
     write: &super::KnowledgeWrite<'_>,
@@ -3300,6 +4545,59 @@ pub fn publish_and_complete(
     at_ms: i64,
     usage_uncertain: bool,
     followed: &[crate::store::user_context::MapContextItem],
+) -> KnowledgeResult<GraphJobView> {
+    publish_extraction(
+        write,
+        settings,
+        job_id,
+        attempt_id,
+        artifact_utf8,
+        logical_digest,
+        at_ms,
+        usage_uncertain,
+        followed,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn publish_host_extraction(
+    write: &super::KnowledgeWrite<'_>,
+    settings: &mut GraphProcessingSettings,
+    job_id: &str,
+    attempt_id: &str,
+    artifact_utf8: &str,
+    logical_digest: &str,
+    at_ms: i64,
+    usage_uncertain: bool,
+    followed: &[crate::store::user_context::MapContextItem],
+) -> KnowledgeResult<GraphJobView> {
+    publish_extraction(
+        write,
+        settings,
+        job_id,
+        attempt_id,
+        artifact_utf8,
+        logical_digest,
+        at_ms,
+        usage_uncertain,
+        followed,
+        true,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn publish_extraction(
+    write: &super::KnowledgeWrite<'_>,
+    settings: &mut GraphProcessingSettings,
+    job_id: &str,
+    attempt_id: &str,
+    artifact_utf8: &str,
+    logical_digest: &str,
+    at_ms: i64,
+    usage_uncertain: bool,
+    followed: &[crate::store::user_context::MapContextItem],
+    host: bool,
 ) -> KnowledgeResult<GraphJobView> {
     use super::model::{SealWorld, WorldSnapshotBody};
     if sha256(artifact_utf8.as_bytes()) != logical_digest {
@@ -3341,13 +4639,38 @@ pub fn publish_and_complete(
     }
     let current = super::revision::load_revision(write.tx, &job.world_revision_id)?;
     let previous: WorldSnapshotBody = serde_json::from_str(&current.payload_json)?;
-    let (mut nodes, mut claims, mut annotations) =
-        project_worker_artifact(artifact_utf8, &previous.nodes)?;
+    let ((mut nodes, mut claims, mut annotations), temporal) =
+        project_artifact(artifact_utf8, &previous.nodes, host)?;
+    if !host {
+        let by_id: std::collections::HashMap<_, _> = previous
+            .claims
+            .iter()
+            .map(|claim| (&claim.id, claim))
+            .collect();
+        for claim in &mut claims {
+            if let Some(prior) = by_id.get(&claim.id) {
+                claim.qualifiers.extend(
+                    prior
+                        .qualifiers
+                        .iter()
+                        .filter(|item| super::model::is_temporal_qualifier(&item.key))
+                        .cloned(),
+                );
+            }
+        }
+    }
     // Resolution from before identifying codes were held left wrong aliases
     // and duplicate nodes; each publication repairs what it finds.
     super::entity_codes::repair::repair_world(write.tx, &job.loupist_id, &mut nodes, &mut claims)?;
     carry_forward_annotations(&previous, &mut annotations);
     let mut spans = evidence_spans(&claims, &annotations);
+    spans.extend(
+        temporal
+            .iter()
+            .flat_map(|temporal| temporal.witness_spans().map(str::to_owned)),
+    );
+    spans.sort_unstable();
+    spans.dedup();
     if let Some(binding) = &job.document.source_binding {
         spans.push(binding.span_id.clone());
     }
@@ -3360,6 +4683,7 @@ pub fn publish_and_complete(
         &previous_dependencies,
         &spans,
     )?;
+    let episode = world_episode(write, &job, at_ms)?;
     let sealed = super::world::seal_world_from_source(
         write.tx,
         SealWorld {
@@ -3376,6 +4700,8 @@ pub fn publish_and_complete(
         job.document.origin_message_id.as_deref(),
         source,
         followed,
+        episode,
+        temporal,
     )?;
     let mut document = job.document.clone();
     finish_artifact(&mut document, logical_digest);
@@ -3522,6 +4848,7 @@ fn settle_without_head(
     document.artifact_utf8 = Some(artifact_utf8.to_string());
     document.logical_digest = Some(logical_digest.to_string());
     document.usage_uncertain = document.usage_uncertain || usage_uncertain;
+    document.reconciliation_cause = usage_uncertain.then_some(ReconciliationCause::UsageUncertain);
     clear_lease(&mut document);
     quarantine(settings, &document.generation_id);
     if !write_status(tx, &job.job_id, JOB_RUNNING, JOB_RECONCILE, &document)? {
@@ -3555,9 +4882,12 @@ fn evidence_spans(
 ) -> Vec<String> {
     let mut spans = Vec::new();
     for claim in claims {
-        for evidence in &claim.evidence {
-            spans.push(evidence.span_id.clone());
-        }
+        spans.extend(claim.evidence.iter().map(|item| item.span_id.clone()));
+        spans.extend(
+            claim
+                .qualifier(super::model::SUPERSEDED_BY_SPAN)
+                .map(str::to_owned),
+        );
     }
     for annotation in annotations {
         spans.extend(annotation.source_span_ids.clone());

@@ -394,7 +394,7 @@ describe("endings", () => {
     expect(prose(view(message({ status: "error", content: "Response could not be completed.", placeholder: true, failure_kind: "other" })))).toEqual([]);
     const partial = view(message({ status: "error", content: "The observed revenue increased.", failure_kind: "other" }));
     expect(prose(partial)).toMatchObject([{ text: "The observed revenue increased.", tone: "answer", streaming: false }]);
-    expect(partial.footer).toMatchObject({ copyText: "The observed revenue increased.", feedback: false, runState: { kind: "failed", kept: true } });
+    expect(partial.footer).toMatchObject({ copyText: "The observed revenue increased.", runState: { kind: "failed", kept: true } });
     expect(view(message({ status: "error", content: "x", placeholder: true, failure_kind: "other" })).footer).toMatchObject({ runState: { kept: false } });
   });
 });

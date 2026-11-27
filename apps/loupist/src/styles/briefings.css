@@ -51,6 +51,20 @@
 /* Schedule (W15.23): the manager of scheduled work. Results are read in the Thread. */
 .schedule-list { overflow: auto; border-right: 1px solid var(--gg-color-border-subtle); padding-bottom: var(--gg-space-5); }
 .schedule-section-label { margin: var(--gg-space-5) var(--gg-space-4) var(--gg-space-2); color: var(--gg-color-text-tertiary); font-size: var(--gg-text-caption); line-height: var(--gg-leading-caption); font-weight: var(--gg-weight-medium); letter-spacing: .06em; text-transform: uppercase; }
+.schedule-section-count { margin-inline-start: var(--gg-space-1); font-variant-numeric: tabular-nums; }
+.schedule-allowance[data-tone="warning"] { color: var(--gg-color-warning); }
+.schedule-subject-chips { display: flex; flex-wrap: wrap; gap: var(--gg-space-1); margin: 0; padding: 0 var(--gg-space-4) var(--gg-space-2); list-style: none; }
+.schedule-subject-chip, button.schedule-subject-chip { border: 1px solid var(--gg-color-border-subtle); border-radius: 999px; padding: 0 var(--gg-space-2); min-height: 22px; background: transparent; color: inherit; font: inherit; font-size: var(--gg-text-meta); }
+button.schedule-subject-chip { cursor: pointer; }
+.schedule-learning-program .schedule-subject-chips, .schedule-learning-program .schedule-section-label { margin-left: 0; margin-right: 0; padding-inline: 0; }
+.schedule-learn-brief { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+.schedule-learn-brief[data-lines="3"] { -webkit-line-clamp: 3; }
+.schedule-learn-brief[data-expanded="true"] { display: block; -webkit-line-clamp: unset; overflow: visible; }
+.schedule-learning-fields { display: grid; gap: var(--gg-space-2); margin: var(--gg-space-3) 0; }
+.schedule-learning-fields div { display: grid; gap: 2px; }
+.schedule-learning-fields dt { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
+.schedule-learning-fields dd { margin: 0; }
+.schedule-learned { margin: 0; padding: 0; list-style: none; }
 .schedule-view:lang(ko) .schedule-section-label { letter-spacing: 0; text-transform: none; }
 .schedule-running, .schedule-tasks, .schedule-history { list-style: none; margin: 0; padding: 0; }
 .schedule-running li { display: flex; align-items: center; gap: var(--gg-space-2); min-height: var(--gg-size-control-md); padding: 0 var(--gg-space-4); }
@@ -66,6 +80,8 @@
 .schedule-task[data-status="active"] .schedule-task-status { color: var(--gg-color-text-primary); }
 .schedule-task[data-status="awaiting"] .schedule-task-status { color: var(--gg-color-warning); }
 .schedule-history { padding-bottom: var(--gg-space-2); }
+.schedule-evaluation { padding-block: var(--gg-space-2); }
+.schedule-evaluation time { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .schedule-history > .briefings-meta { padding: 0 var(--gg-space-4) var(--gg-space-2); }
 .schedule-history .briefings-item { padding-left: var(--gg-space-5); }
 .schedule-history .briefings-item[aria-current="true"] { background: var(--gg-color-bg-selected); }
@@ -199,3 +215,8 @@
 .schedule-delivery dd {
   margin: 0;
 }
+
+/* The Learn entry points (World inspector, Lens subject page): the reason under a disabled button. */
+.learn-request { display: grid; gap: var(--gg-space-1); }
+.map-inspector footer .learn-request { margin-top: var(--gg-space-2); }
+.learn-request-reason { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); line-height: var(--gg-leading-meta); }

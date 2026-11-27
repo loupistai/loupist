@@ -1,7 +1,7 @@
 //! Local usage summaries. The ledger supplies measures and the catalog supplies names.
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, NaiveDate, Offset};
+use chrono::NaiveDate;
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -11,6 +11,9 @@ use crate::{
     domain::ChatCostEstimate,
     providers::status::{live_credential_kind, CredentialKind},
     runs::log::UsageSurface,
+    scheduled_tasks::allowance::{
+        local_date_in_zone as local_date, Admission, AllowanceState, Limits,
+    },
     store::{
         model_usage::{ModelUsageMeasures, ModelUsageRow, USAGE_RETENTION_MS},
         SqliteStore,
@@ -38,6 +41,7 @@ pub struct UsageSummary {
     pub surfaces: Vec<UsageBySurface>,
     pub loupists: Vec<UsageByLoupist>,
     pub programs: Vec<UsageProgram>,
+    pub allowance: AllowanceState,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -110,6 +114,7 @@ pub struct UsageChecks {
     pub evaluations: u32,
     pub reads: u32,
     pub met: u32,
+    pub last_check_at_ms: Option<i64>,
 }
 
 impl UsageSummaryRequest {
@@ -130,13 +135,6 @@ impl UsageSummaryRequest {
         let last = local_date(self.to_ms - 1, zone).ok_or_else(invalid_range)?;
         Ok((zone, first, last))
     }
-}
-
-fn local_date(at_ms: i64, zone: Tz) -> Option<NaiveDate> {
-    let time = DateTime::from_timestamp_millis(at_ms)?.with_timezone(&zone);
-    time.naive_utc()
-        .checked_add_offset(time.offset().fix())
-        .map(|time| time.date())
 }
 
 impl UsageTotals {
@@ -186,12 +184,25 @@ impl UsageDay {
     }
 }
 
+#[cfg(test)]
 pub(super) fn summarize(
     request: UsageSummaryRequest,
     store: &SqliteStore,
     lookup_credential: impl Fn(&str) -> CredentialKind,
 ) -> Result<UsageSummary, CommandError> {
+    summarize_with_limits(request, store, Limits::default(), lookup_credential)
+}
+
+fn summarize_with_limits(
+    request: UsageSummaryRequest,
+    store: &SqliteStore,
+    limits: Limits,
+    lookup_credential: impl Fn(&str) -> CredentialKind,
+) -> Result<UsageSummary, CommandError> {
     let (zone, first, last) = request.dates()?;
+    let allowance = Admission::prepare(store, None)
+        .and_then(|snapshot| snapshot.state(None, limits, crate::commands::now_ms()))
+        .map_err(super::map_store)?;
     let names: BTreeMap<_, _> = store
         .list_loupists()
         .map_err(super::map_store)?
@@ -219,7 +230,27 @@ pub(super) fn summarize(
     let mut accounts = BTreeMap::<_, UsageAccount>::new();
     let mut surfaces = BTreeMap::<_, UsageTotals>::new();
     let mut loupists = BTreeMap::<_, UsageTotals>::new();
-    let mut programs = BTreeMap::<_, UsageTotals>::new();
+    let (from_day, to_day) = (first.to_string(), last.to_string());
+    let mut programs = BTreeMap::new();
+    for loupist_id in names.keys() {
+        // A workspace can be unavailable while its model ledger is still readable.
+        for task in store.scheduled_tasks_list(loupist_id).unwrap_or_default() {
+            let checks = task.trigger.as_ref().map(|trigger| {
+                let (evaluations, reads, met) =
+                    crate::scheduled_tasks::trigger::window_totals(trigger, &from_day, &to_day);
+                UsageChecks {
+                    evaluations,
+                    reads,
+                    met,
+                    last_check_at_ms: trigger.last.as_ref().map(|check| check.at_ms),
+                }
+            });
+            programs.insert(
+                (loupist_id.clone(), task.id),
+                (Some(task.title), checks, UsageTotals::default()),
+            );
+        }
+    }
     for ModelUsageRow {
         finished_at_ms,
         loupist_id,
@@ -286,16 +317,15 @@ pub(super) fn summarize(
             .or_default()
             .add(&data.measures, cost);
         if let (Some(loupist_id), Some(task_id)) = (loupist_id, task_id) {
-            programs
-                .entry((loupist_id, task_id))
-                .or_default()
-                .add(&data.measures, cost);
+            let (_, _, program_usage) = programs.entry((loupist_id, task_id)).or_default();
+            program_usage.add(&data.measures, cost);
         }
     }
     Ok(UsageSummary {
         from_ms: request.from_ms,
         to_ms: request.to_ms,
         totals,
+        allowance,
         accounts: accounts.into_values().collect(),
         days: days.into_values().collect(),
         surfaces: surfaces
@@ -312,36 +342,16 @@ pub(super) fn summarize(
             .collect(),
         programs: programs
             .into_iter()
-            .map(|((loupist_id, task_id), totals)| {
-                let task = store
-                    .scheduled_task_get(&loupist_id, &task_id)
-                    .ok()
-                    .flatten();
-                let checks = task.as_ref().and_then(|task| {
-                    let trigger = task.trigger.as_ref()?;
-                    let from = chrono::DateTime::from_timestamp_millis(request.from_ms)
-                        .map(|time| time.date_naive().to_string())
-                        .unwrap_or_default();
-                    let to = chrono::DateTime::from_timestamp_millis(request.to_ms)
-                        .map(|time| time.date_naive().to_string())
-                        .unwrap_or_default();
-                    let (evaluations, reads, met) =
-                        crate::scheduled_tasks::trigger::window_totals(trigger, &from, &to);
-                    Some(UsageChecks {
-                        evaluations,
-                        reads,
-                        met,
-                    })
-                });
-                UsageProgram {
-                    title: task.map(|task| task.title),
+            .map(
+                |((loupist_id, task_id), (title, checks, totals))| UsageProgram {
+                    title,
                     loupist_id,
                     task_id,
                     runs: totals.runs,
                     totals,
                     checks,
-                }
-            })
+                },
+            )
             .collect(),
     })
 }
@@ -351,7 +361,8 @@ pub fn usage_summary(
     request: UsageSummaryRequest,
     state: State<'_, AppState>,
 ) -> Result<UsageSummary, CommandError> {
-    summarize(request, &state.store, |provider| {
+    let limits = Limits::load(&state.artifacts.app_data_dir)?;
+    summarize_with_limits(request, &state.store, limits, |provider| {
         live_credential_kind(&state, provider)
     })
 }
@@ -360,7 +371,83 @@ pub fn usage_summary(
 mod tests {
     use super::*;
     use crate::store::model_usage::fixture_row;
-    use chrono::{Datelike, Utc, Weekday};
+    use chrono::{DateTime, Datelike, Utc, Weekday};
+
+    #[test]
+    fn allowance_view_reports_when_another_loupists_learning_run_occupies_the_slot() {
+        use crate::scheduled_tasks::types::*;
+
+        let root = tempfile::tempdir().unwrap();
+        let store = SqliteStore::open_catalog(root.path().join("catalog.sqlite3")).unwrap();
+        let owner = "running-owner";
+        for id in [owner, "other-owner"] {
+            crate::test_fixtures::create_folder_loupist(&store, id, &root.path().join(id));
+        }
+        let now = crate::commands::now_ms();
+        let task = store
+            .scheduled_task_create_definition(
+                owner,
+                "learning-task",
+                TaskDraft {
+                    title: "Daily research".into(),
+                    prompt: "Read the latest evidence.".into(),
+                    schedule: Schedule::Interval { every_minutes: 60 },
+                    target: TaskTarget::NewChat,
+                    model_profile_id: "fixture".into(),
+                    thinking_level: "medium".into(),
+                    run_options: Default::default(),
+                    use_memory: true,
+                    update_memory: true,
+                    status: TaskStatus::Active,
+                },
+                TaskKind::Learning,
+                TaskDefinition {
+                    program: Some(LearningProgram {
+                        depth: LearningDepth::Standard,
+                        scope: LearningScope {
+                            connections: LearningConnections::Selected(vec![]),
+                            web: false,
+                        },
+                        keeps: LearningKeeps {
+                            sources: true,
+                            lens: false,
+                            asset_reads: false,
+                        },
+                        preset: None,
+                    }),
+                    ..Default::default()
+                },
+                now,
+            )
+            .unwrap();
+        let learning_running = || {
+            let summary = summarize(
+                UsageSummaryRequest {
+                    from_ms: now - 60_000,
+                    to_ms: now + 1,
+                    time_zone: "UTC".into(),
+                },
+                &store,
+                |_| CredentialKind::Plan,
+            )
+            .unwrap();
+            serde_json::to_value(summary.allowance).unwrap()["learningRunning"].clone()
+        };
+        assert_eq!(learning_running(), false);
+        let (claim, ()) = store
+            .scheduled_task_claim_with(owner, &task.id, now, true, |_| Ok(()))
+            .unwrap()
+            .unwrap();
+        assert!(store
+            .scheduled_tasks_activity("other-owner")
+            .unwrap()
+            .is_empty());
+        assert_eq!(learning_running(), true);
+        store
+            .scheduled_task_finish(owner, &claim.run.run_id, RunStatus::Succeeded, None, now)
+            .unwrap();
+        assert_eq!(learning_running(), false);
+    }
 
     #[test]
     fn usage_groups_local_dates_across_dst_and_uses_only_key_costs() {
@@ -509,6 +596,115 @@ mod tests {
         assert!(after.programs.is_empty());
         assert_eq!(after.loupists[0].loupist_id, None);
         assert_eq!(after.totals.requests, 1);
+    }
+
+    #[test]
+    fn programs_include_check_only_tasks_and_count_the_same_local_days_as_model_usage() {
+        use crate::scheduled_tasks::types::{
+            Schedule, TaskDraft, TaskStatus, TaskTarget, TriggerDayCount,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(dir.path().join("app"));
+        let store = &state.store;
+        crate::test_fixtures::create_folder_loupist(store, "usage", &dir.path().join("workspace"));
+        let tick = |text: &str| {
+            DateTime::parse_from_rfc3339(text)
+                .unwrap()
+                .timestamp_millis()
+        };
+        // Next year keeps the model fixture within the catalog retention window.
+        let year = chrono::Datelike::year(&chrono::Utc::now()) + 1;
+        let start = tick(&format!("{year}-01-02T00:00:00+09:00"));
+        let end = tick(&format!("{year}-01-02T08:00:00+09:00"));
+        let mut task = store
+            .scheduled_task_create(
+                "usage",
+                TaskDraft {
+                    title: "Check prices".into(),
+                    prompt: "Explain the move.".into(),
+                    schedule: Schedule::Interval { every_minutes: 60 },
+                    target: TaskTarget::NewChat,
+                    model_profile_id: String::new(),
+                    thinking_level: String::new(),
+                    run_options: BTreeMap::new(),
+                    use_memory: false,
+                    update_memory: false,
+                    status: TaskStatus::Paused,
+                },
+                start,
+            )
+            .unwrap();
+        let mut check = crate::commands::scheduled_tasks::preset_trigger(
+            &state,
+            "usage",
+            "price-band",
+            &Default::default(),
+            "Check prices",
+        )
+        .unwrap();
+        let mut output = crate::scheduled_tasks::trigger::errored("Unavailable", vec![], 0);
+        output.outcome = crate::scheduled_tasks::types::TriggerOutcome::NoData;
+        crate::scheduled_tasks::trigger::apply_output(&mut check, end - 1, end - 1, output, 0);
+        // The clock in apply_output is device-local. Force the KST persisted
+        // bucket for this fixture even when the test machine is in another zone.
+        check.counters.today = TriggerDayCount {
+            day: format!("{year}-01-02"),
+            evaluations: 40,
+            reads: 80,
+            met: 0,
+        };
+        check.counters.recent = vec![TriggerDayCount {
+            day: format!("{year}-01-01"),
+            evaluations: 11,
+            reads: 22,
+            met: 1,
+        }];
+        task.trigger = Some(check);
+        let id = task.id.clone();
+        let revision = task.revision;
+        store.scheduled_task_write(task, revision, end).unwrap();
+        let summary = |from_ms, to_ms, time_zone: &str| {
+            summarize(
+                UsageSummaryRequest {
+                    from_ms,
+                    to_ms,
+                    time_zone: time_zone.into(),
+                },
+                store,
+                |_| CredentialKind::None,
+            )
+            .unwrap()
+        };
+
+        for (from, to, zone, expected) in [
+            (start, end, "Asia/Seoul", (40, 80, 0)),
+            (start - 86_400_000, start, "Asia/Seoul", (11, 22, 1)),
+            (start - 86_400_000, end, "Asia/Seoul", (51, 102, 1)),
+            (start, end, "UTC", (11, 22, 1)),
+        ] {
+            let usage = summary(from, to, zone);
+            let [program] = usage.programs.as_slice() else {
+                panic!("expected the check-only program")
+            };
+            let checks = program.checks.as_ref().unwrap();
+            assert_eq!(program.task_id, id);
+            assert_eq!(program.totals.requests, 0);
+            assert_eq!((checks.evaluations, checks.reads, checks.met), expected);
+            assert_eq!(checks.last_check_at_ms, Some(end - 1));
+        }
+        let mut row = fixture_row(start);
+        row.loupist_id = Some("usage".into());
+        row.task_id = Some(id);
+        row.data.measures.requests = Some(3);
+        store.put_model_usage("model-run", &row).unwrap();
+        let usage = summary(start, end, "Asia/Seoul");
+        assert_eq!(usage.programs[0].checks.as_ref().unwrap().evaluations, 40);
+        assert_eq!(usage.programs[0].totals.requests, 3);
+        assert_eq!(usage.days[0].date, format!("{year}-01-02"));
+        assert_eq!(
+            usage.days[0].you + usage.days[0].background + usage.days[0].world,
+            3
+        );
     }
 
     #[test]

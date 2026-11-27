@@ -37,7 +37,7 @@ pub struct BotMemoryUpdateRequest {
     pub text: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct BotMemoryListEntry {
@@ -46,6 +46,25 @@ pub struct BotMemoryListEntry {
     pub text: String,
     pub since_ms: i64,
     pub updated_ms: i64,
+}
+
+/// A Lens principle whose statement folds to a forgotten entry. Forget does
+/// not delete it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct BotMemoryPrinciple {
+    pub record_id: String,
+    pub title: String,
+}
+
+/// Remaining entries, plus Lens principles that fold to the forgotten text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct BotMemoryForgetResponse {
+    pub entries: Vec<BotMemoryListEntry>,
+    pub principles: Vec<BotMemoryPrinciple>,
 }
 
 #[tauri::command(async, rename_all = "snake_case")]
@@ -60,7 +79,7 @@ pub fn bot_memory_list(
 pub fn bot_memory_forget(
     request: BotMemoryForgetRequest,
     state: State<'_, AppState>,
-) -> Result<Vec<BotMemoryListEntry>, CommandError> {
+) -> Result<BotMemoryForgetResponse, CommandError> {
     forget(&state, request)
 }
 
@@ -82,13 +101,46 @@ pub(crate) fn list(
 pub(crate) fn forget(
     state: &AppState,
     request: BotMemoryForgetRequest,
-) -> Result<Vec<BotMemoryListEntry>, CommandError> {
-    commit(state, &request.loupist_id, |_| {
+) -> Result<BotMemoryForgetResponse, CommandError> {
+    let home = home(state, &request.loupist_id)?;
+    let forgotten = bot_memory::shown_entries(&home)
+        .into_iter()
+        .find(|entry| entry.id == request.id)
+        .map(|entry| entry.text);
+    let entries = commit(state, &request.loupist_id, |_| {
         Ok(vec![StagedBotMemory {
             entry_id: request.id.clone(),
             action: BotMemoryAction::Forget,
         }])
+    })?;
+    Ok(BotMemoryForgetResponse {
+        entries,
+        principles: forgotten
+            .map(|text| principle_twins(state, &request.loupist_id, &text))
+            .unwrap_or_default(),
     })
+}
+
+fn principle_twins(state: &AppState, loupist_id: &str, text: &str) -> Vec<BotMemoryPrinciple> {
+    let Ok(principles) = crate::commands::knowledge::principles::list(
+        state,
+        crate::commands::knowledge::principles::PrincipleListRequest {
+            loupist_id: loupist_id.to_owned(),
+            include_archived: Some(false),
+        },
+    ) else {
+        return Vec::new();
+    };
+    principles
+        .into_iter()
+        .filter(|principle| {
+            crate::knowledge::principles::same_folded_text(&principle.statement, text)
+        })
+        .map(|principle| BotMemoryPrinciple {
+            record_id: principle.record_id,
+            title: crate::knowledge::principles::principle_title(&principle.statement),
+        })
+        .collect()
 }
 
 pub(crate) fn update(
@@ -278,16 +330,91 @@ mod tests {
             .unwrap();
         assert_eq!(saved.bot_memory, tool.bot_memory);
         assert!(saved.pi_session_cache.is_none());
+        assert!(listed.principles.is_empty());
         assert_eq!(
             listed
+                .entries
                 .iter()
                 .map(|entry| entry.text.as_str())
                 .collect::<Vec<_>>(),
             ["Wait on the basket"]
         );
         assert!(listed
+            .entries
             .iter()
             .all(|entry| entry.kind == BotMemoryKind::Decision));
+    }
+
+    #[test]
+    fn forget_lists_a_lens_principle_with_the_same_folded_text_and_leaves_it() {
+        let (_temporary, state) = state();
+        populated(&state);
+        let mut connection = state.store.lock_loupist("loupist-a").unwrap();
+        let tx = connection.transaction().unwrap();
+        let saved = crate::knowledge::principles::principle_save(
+            &tx,
+            "loupist-a",
+            None,
+            None,
+            crate::knowledge::PrincipleInput {
+                statement: "  answer   in TWO lines  ".into(),
+                why: None,
+                example: None,
+                origin: "settings".into(),
+                origin_chat_id: None,
+                origin_message_id: None,
+            },
+            3,
+        )
+        .unwrap();
+        let other = crate::knowledge::principles::principle_save(
+            &tx,
+            "loupist-a",
+            None,
+            None,
+            crate::knowledge::PrincipleInput {
+                statement: "Wait on the basket".into(),
+                why: None,
+                example: None,
+                origin: "settings".into(),
+                origin_chat_id: None,
+                origin_message_id: None,
+            },
+            4,
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        drop(connection);
+
+        let listed = forget(
+            &state,
+            BotMemoryForgetRequest {
+                loupist_id: "loupist-a".into(),
+                id: "bm-pref".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            listed.principles,
+            vec![BotMemoryPrinciple {
+                record_id: saved.record_id.clone(),
+                title: crate::knowledge::principles::principle_title("answer in TWO lines"),
+            }]
+        );
+        let still = crate::commands::knowledge::principles::list(
+            &state,
+            crate::commands::knowledge::principles::PrincipleListRequest {
+                loupist_id: "loupist-a".into(),
+                include_archived: Some(false),
+            },
+        )
+        .unwrap();
+        assert!(still
+            .iter()
+            .any(|principle| principle.record_id == saved.record_id));
+        assert!(still
+            .iter()
+            .any(|principle| principle.record_id == other.record_id));
     }
 
     #[test]

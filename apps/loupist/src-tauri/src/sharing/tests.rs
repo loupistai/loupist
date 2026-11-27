@@ -205,6 +205,8 @@ fn claim(
                 span_id: (*span).clone(),
                 role: BindingRole::Supports,
                 attribution: "Fixture filing".into(),
+                figure_check: None,
+                passage: None,
             })
             .collect(),
         status: ClaimStatus::Active,

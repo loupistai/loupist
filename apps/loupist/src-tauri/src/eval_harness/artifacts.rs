@@ -184,6 +184,7 @@ const FILES: &[(&str, &[u8])] = &[
     asset!("skills/comparison/references/peer-analysis.md"),
     asset!("skills/data-analysis/SKILL.md"),
     asset!("skills/data-analysis/references/validation.md"),
+    asset!("skills/deep-research/SKILL.md"),
     asset!("skills/dividend-income/SKILL.md"),
     asset!("skills/dividend-income/references/dividend-checks.md"),
     asset!("skills/word-documents/SKILL.md"),
@@ -191,12 +192,14 @@ const FILES: &[(&str, &[u8])] = &[
     asset!("skills/events-stats/references/inference.md"),
     asset!("skills/filings/SKILL.md"),
     asset!("skills/filings/references/earnings-review.md"),
+    asset!("skills/filings/references/filing-changes.md"),
     asset!("skills/filings/references/korea-statements.md"),
     asset!("skills/fund-compare/SKILL.md"),
     asset!("skills/fund-compare/references/fund-checks.md"),
     asset!("skills/goal-math/SKILL.md"),
     asset!("skills/goal-math/references/goal-assumptions.md"),
     asset!("skills/journal/SKILL.md"),
+    asset!("skills/learning/SKILL.md"),
     asset!("skills/lens/SKILL.md"),
     asset!("skills/licenses/Apache-2.0-financial-services.txt"),
     asset!("skills/licenses/Apache-2.0-knowledge-work-plugins.txt"),
@@ -253,11 +256,7 @@ impl FrozenArtifacts {
         }
         let directory = tempfile::Builder::new()
             .prefix("loupist-eval-agent-")
-            .tempdir_in(if cfg!(unix) {
-                PathBuf::from("/tmp")
-            } else {
-                std::env::temp_dir()
-            })?;
+            .tempdir_in(super::eval_temp_root())?;
         let mut digest_input = serde_json::to_vec(&context_policy)?;
         let mut registration = BTreeMap::new();
         for (name, bundled) in FILES {

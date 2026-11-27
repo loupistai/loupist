@@ -12,6 +12,15 @@ impl AppToolExecutor {
             ToolMethod::ScriptSave => {
                 let draft: ScriptDraft =
                     serde_json::from_value(params).map_err(|_| BrokerError::Malformed)?;
+                // The store's own rule for a name, code, summary and arguments
+                // is the repair; any other store failure keeps its private text.
+                crate::store::scripts::validate_draft(&draft).map_err(|error| match error {
+                    crate::store::StoreError::Invalid(rule) => BrokerError::InvalidArguments {
+                        field: String::new(),
+                        expected: rule,
+                    },
+                    error => store_error(error),
+                })?;
                 let origin = if let Some(run_id) = self.capture.scheduled_run_id() {
                     let run = self
                         .state

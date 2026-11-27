@@ -24,7 +24,7 @@ describe("Loupist · Connections", () => {
     expect(screen.queryByRole("button", { name: "Connections" })).toBeNull();
   });
 
-  it("enables global data for a new Loupist and groups optional Korea services", async () => {
+  it("enables global data for a new Loupist and files Korea services with filings and market data", async () => {
     const bridge = new MockLoupistBridge({ delay_ms: 0 });
     const loupist = await bridge.loupistCreate({ name: "Global research" });
     const bindings = await bridge.loupistCapabilityList(loupist.id);
@@ -34,8 +34,9 @@ describe("Loupist · Connections", () => {
     await openApp(bridge);
     const user = userEvent.setup();
     await user.click(await mainTab(/Connections/));
-    const korea = within((await screen.findByRole("heading", { name: /^Korea/, level: 3 })).closest("section")!);
-    for (const name of ["Korea Investment Open Trading API", "KRX Open API", "OpenDART"]) expect(korea.getByRole("heading", { name, level: 4 })).toBeVisible();
+    const filings = within((await screen.findByRole("heading", { name: "Filings and market data", level: 3 })).closest("section")!);
+    for (const name of ["Korea Investment Open Trading API", "KRX Open API", "OpenDART"]) expect(filings.getByRole("heading", { name, level: 4 })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: /^Korea/, level: 3 })).toBeNull();
     expect(within(card("Market data platform")).getByText("Ready")).toBeVisible();
   });
 

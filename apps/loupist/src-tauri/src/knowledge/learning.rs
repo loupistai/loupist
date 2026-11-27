@@ -14,8 +14,11 @@ pub const PROMPT: &str = include_str!("../../../agent/prompts/method-learning.md
 const SIX_HOURS: i64 = 6 * 60 * 60 * 1000;
 const DAY: i64 = 24 * 60 * 60 * 1000;
 const MAX_INPUT: usize = 12_000;
-/// Methods fill the input up to this size; the rest is left for evidence.
+/// The newest methods keep their sections while the methods stay within this
+/// size; every older one is listed by title and summary.
 const METHODS_UNTIL: usize = 8_000;
+/// How much of a listed method's summary the input shows.
+const LISTED_SUMMARY: usize = 100;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(optional_fields = nullable))]
@@ -42,6 +45,175 @@ pub struct Review {
 pub struct LearningSettings {
     pub learn_methods: bool,
 }
+/// Where method learning stands for a Loupist, and why it waits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct LearningState {
+    pub state: LearningPhase,
+    /// Set exactly when `state` is `waiting`.
+    pub reason: Option<WaitReason>,
+    /// How many distinct cases the research no review has consumed holds.
+    /// Pages about one subject, by node, key or component, are one case.
+    pub cases: u32,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum LearningPhase {
+    /// Nothing will run until `reason` changes.
+    Waiting,
+    /// The research passes the gate, but a review settled before inference
+    /// already read it: the next filing starts one.
+    Idle,
+    /// A review runs once the worker claims it.
+    Queued,
+    Running,
+}
+/// Why method learning waits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WaitReason {
+    /// Learning, World processing or Memory saving is off, or the Loupist is paused.
+    Off,
+    /// No two independent Chats filed research about two different cases.
+    NoSecondCase,
+    /// `n` pages wait for the World to confirm their subject.
+    SubjectsPending { n: u32 },
+    /// Pages wait for the World to read `n` Sources they cite.
+    SourcesUnread { n: u32 },
+    /// A review may start at `untilMs`.
+    RateLimited {
+        #[serde(rename = "untilMs")]
+        until_ms: i64,
+    },
+    /// The call budget or the daily background allowance is spent.
+    Allowance,
+}
+/// [`state`] with the daily allowance read the way the learning worker reads
+/// it. Call this without a folder lock held.
+pub(crate) fn read_state(
+    store: &crate::store::SqliteStore,
+    loupist: &str,
+    now: i64,
+) -> KnowledgeResult<LearningState> {
+    super::model::validate_loupist_id(loupist)?;
+    let limits = super::graph_jobs::allowance_limits(store);
+    let admission = crate::scheduled_tasks::allowance::Admission::prepare(store, Some(loupist))
+        .map_err(|_| KnowledgeError::Invalid("could not read the daily allowance"))?;
+    let mut connection = store
+        .lock_loupist(loupist)
+        .map_err(|_| KnowledgeError::LockPoisoned)?;
+    let allowance = admission
+        .state(Some(&connection), limits, now)
+        .map_err(|_| KnowledgeError::Invalid("could not read the daily allowance"))?;
+    let tx = connection.transaction()?;
+    state(&tx, loupist, now, Some(&allowance))
+}
+
+/// Where learning stands at `now`, decided by the checks the queue and the
+/// claim make, in their order: the switches, the active review's rate limit,
+/// call budget and allowance, then the gate on the research no review has
+/// consumed and what its held pages wait for.
+pub(crate) fn state(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    now: i64,
+    allowance: Option<&crate::scheduled_tasks::allowance::AllowanceState>,
+) -> KnowledgeResult<LearningState> {
+    super::model::validate_loupist_id(loupist)?;
+    let current = load_settings(tx, loupist)?;
+    let (consumed, _) = watermarks(tx, loupist, "")?;
+    let found = keyed_evidence(tx, loupist, &consumed, log_head(tx, loupist)?)?;
+    let cases = distinct_cases(&found.observations);
+    let waiting = |reason| LearningState {
+        state: LearningPhase::Waiting,
+        reason: Some(reason),
+        cases,
+    };
+    let at = |state| LearningState {
+        state,
+        reason: None,
+        cases,
+    };
+    if !enabled(tx, loupist, &current)? {
+        return Ok(waiting(WaitReason::Off));
+    }
+    match active(tx, loupist)? {
+        Some((status, _, _)) if status == "running" => return Ok(at(LearningPhase::Running)),
+        Some((status, _, _)) if status == "pending" => {
+            let until = rate_limit_until(tx, loupist)?;
+            return Ok(if until > now {
+                waiting(WaitReason::RateLimited { until_ms: until })
+            } else {
+                at(LearningPhase::Queued)
+            });
+        }
+        Some((_, budget, id)) => {
+            if let Some(reason) = claim_wait(tx, loupist, &id, budget, &current, now)? {
+                return Ok(waiting(reason));
+            }
+            let provider = current
+                .helper_provider
+                .as_deref()
+                .filter(|provider| !provider.is_empty());
+            let spent = allowance.is_some_and(|allowance| {
+                crate::scheduled_tasks::allowance::admit_world_attempt(
+                    allowance,
+                    crate::scheduled_tasks::allowance::WorldOrigin::Background,
+                    budget.max(1),
+                    provider,
+                )
+                .is_err()
+            });
+            return Ok(if spent {
+                waiting(WaitReason::Allowance)
+            } else {
+                at(LearningPhase::Queued)
+            });
+        }
+        None => {}
+    }
+    if core(&found.observations).is_some() {
+        return Ok(at(LearningPhase::Idle));
+    }
+    let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+    Ok(waiting(if !found.waiting.sources.is_empty() {
+        WaitReason::SourcesUnread {
+            n: count(found.waiting.sources.len()),
+        }
+    } else if !found.waiting.subjects.is_empty() {
+        WaitReason::SubjectsPending {
+            n: count(found.waiting.subjects.len()),
+        }
+    } else {
+        WaitReason::NoSecondCase
+    }))
+}
+
+/// How many cases `all` holds: observations sharing a case token are one.
+fn distinct_cases(all: &[Observation]) -> u32 {
+    let mut parent: Vec<usize> = (0..all.len()).collect();
+    fn root(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    for j in 0..all.len() {
+        for i in 0..j {
+            if !all[i].cases.is_disjoint(&all[j].cases) {
+                let (a, b) = (root(&mut parent, i), root(&mut parent, j));
+                parent[a] = b;
+            }
+        }
+    }
+    let roots: BTreeSet<usize> = (0..all.len()).map(|i| root(&mut parent, i)).collect();
+    u32::try_from(roots.len()).unwrap_or(u32::MAX)
+}
+
 pub fn settings(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<LearningSettings> {
     super::model::validate_loupist_id(loupist)?;
     let enabled: Option<bool> = tx
@@ -154,11 +326,7 @@ fn queue(
     if !enabled(tx, loupist, &s)? {
         return Ok(None);
     }
-    let active: Option<String> = tx.query_row(
-        "SELECT status FROM knowledge_learning_reviews WHERE loupist_id=?1 AND status IN ('pending','queued','running')",
-        [loupist], |r| r.get(0),
-    ).optional()?;
-    if active.is_some() {
+    if active(tx, loupist)?.is_some() {
         return admit_pending(tx, loupist, now);
     }
     let (consumed, seen) = watermarks(tx, loupist, "")?;
@@ -176,6 +344,18 @@ fn queue(
     let queued = json!({"confirmed_subjects": confirmed_subjects(tx, loupist)?});
     tx.execute("INSERT INTO knowledge_learning_reviews(review_id,loupist_id,world_job_id,status,created_at_ms,through_event,settings_json,call_budget,input_json) VALUES (?1,?2,'','pending',?3,?4,?5,?6,?7)",params![id,loupist,now,end,serde_json::to_string(&s)?,s.max_llm_calls.min(1),queued.to_string()])?;
     admit_pending(tx, loupist, now)
+}
+
+/// The review that is pending, queued or running, with its status, frozen
+/// call budget and id. A Loupist has at most one.
+fn active(tx: &Transaction<'_>, loupist: &str) -> KnowledgeResult<Option<(String, u32, String)>> {
+    Ok(tx
+        .query_row(
+            "SELECT status,call_budget,review_id FROM knowledge_learning_reviews WHERE loupist_id=?1 AND status IN ('pending','queued','running')",
+            [loupist],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?)
 }
 
 /// Lens-log rows an inference attempt already showed: every row through
@@ -294,10 +474,15 @@ pub(super) fn next_wake_at(tx: &Transaction<'_>, now: i64) -> KnowledgeResult<Op
 struct Method {
     record_id: String,
     title: String,
-    applicability: String,
+    /// When to use it, on a method shown with its sections.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    applicability: Option<String>,
     /// The text a refine replaces, in full. Only a method shown with it may be refined.
     #[serde(skip_serializing_if = "Option::is_none")]
     current: Option<MethodText>,
+    /// The start of its summary, on a method listed without its sections.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    summary: Option<String>,
     #[serde(skip)]
     digests: BTreeMap<String, String>,
     /// Sections the user wrote by hand or taught in a Chat; a refine never replaces them.
@@ -311,6 +496,72 @@ const METHOD_SECTIONS: [(&str, &str); 4] = [
     ("checks", "Checks"),
     ("limits", "Limits"),
 ];
+impl Method {
+    /// A method page as the input shows it in full.
+    fn of(record_id: String, title: String, page: &super::lens_page::Page) -> Self {
+        let applicability = page
+            .sections
+            .iter()
+            .find(|section| section.key.as_str() == "use-when")
+            .map(|section| section.markdown.as_str())
+            .unwrap_or(&page.summary);
+        let sections = page
+            .sections
+            .iter()
+            .filter(|section| {
+                METHOD_SECTIONS
+                    .iter()
+                    .any(|(key, _)| *key == section.key.as_str())
+            })
+            .map(|section| (section.key.as_str().to_owned(), section.markdown.clone()))
+            .collect();
+        Method {
+            record_id,
+            title,
+            applicability: Some(applicability.chars().take(300).collect()),
+            current: Some(MethodText {
+                summary: page.summary.clone(),
+                sections,
+            }),
+            summary: None,
+            digests: page
+                .sections
+                .iter()
+                .map(|section| {
+                    (
+                        section.key.as_str().to_owned(),
+                        super::lens_page::section_digest(section),
+                    )
+                })
+                .collect(),
+            user_written: page
+                .sections
+                .iter()
+                .filter(|section| {
+                    section.origin == super::lens_page::Origin::User
+                        || section
+                            .basis
+                            .refs
+                            .iter()
+                            .any(|r| matches!(r, BasisRef::UserSaid { .. }))
+                })
+                .map(|section| section.key.as_str().to_owned())
+                .collect(),
+        }
+    }
+
+    /// Shown by title and the start of its summary only.
+    fn listed(mut self) -> Self {
+        let summary = self
+            .current
+            .take()
+            .map(|text| text.summary)
+            .unwrap_or_default();
+        self.summary = Some(summary.chars().take(LISTED_SUMMARY).collect());
+        self.applicability = None;
+        self
+    }
+}
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct MethodText {
@@ -353,15 +604,15 @@ struct Observation {
     #[serde(skip)]
     cases: BTreeSet<Case>,
 }
-/// One token of who a page is about. A node is a World company the page is
-/// about, or, on a pending page, may be about: every company the World claims
-/// on the Sources it cites, and every node spelling the name it was filed
-/// under. A key is a spelling of a node's World names, or of
-/// the name a pending page was filed under, so two nodes spelling one company
-/// ("Acme", "Acme Inc.") still share a token, and a component joins the nodes
-/// whose keys meet through other nodes, so `삼성전자` and `Samsung
-/// Electronics` share one when a third node spells both; two companies
-/// sharing a key only defer learning.
+/// One token of who a page is about. A node is a World node of any kind the
+/// page is about, or, on a pending page, may be about: every company the World
+/// claims on the Sources it cites, and every node spelling the name it was
+/// filed under. A key is a spelling of a node's World names, of the name a
+/// pending page was filed under, or of the title of a page with no node, so
+/// two nodes spelling one subject ("Acme", "Acme Inc.") still share a token,
+/// and a component joins the nodes whose keys meet through other nodes, so
+/// `삼성전자` and `Samsung Electronics` share one when a third node spells
+/// both; two subjects sharing a key only defer learning.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Case {
     Node(String),
@@ -376,9 +627,9 @@ impl Case {
         }
     }
 }
-/// Who a page is about, from its subject anchors.
+/// Who a page is about, from its subject anchors or, with no node, its title.
 enum About {
-    /// No subject anchor, or one that can never resolve: never evidence.
+    /// Neither a subject node nor a grounded title: never evidence.
     Unknown,
     /// Subjects the World has not confirmed yet, by the names they were filed
     /// under, beside any it has. Evidence once the World is through with the
@@ -388,29 +639,66 @@ enum About {
         names: Vec<String>,
         confirmed: BTreeSet<Case>,
     },
+    /// The World nodes the page is about, of any kind, or its title's keys.
     Confirmed(BTreeSet<Case>),
 }
 impl About {
-    fn of(anchors: Vec<(Option<String>, String)>) -> Self {
+    /// The one reading of what a page's cases are. A page whose subject
+    /// anchors name World nodes is a case by those nodes, whatever their kind:
+    /// a company, a macro series, a theme or a market. A page with no node,
+    /// and no name for the World to confirm, is a case by its title's name
+    /// keys when two of its grounded sections cite different Sources
+    /// ([`titled`]); with less, it could be about anything, including the
+    /// other case. `grounded` is read only for such a page.
+    fn of(
+        anchors: Vec<(Option<String>, String)>,
+        title: &str,
+        grounded: impl FnOnce() -> KnowledgeResult<Vec<BTreeSet<String>>>,
+    ) -> KnowledgeResult<Self> {
         let mut confirmed = BTreeSet::new();
         let mut names = Vec::new();
+        let mut unresolvable = false;
         for (node_id, name_fold) in anchors {
             match node_id {
                 Some(node_id) => {
                     confirmed.insert(Case::Node(node_id));
                 }
-                None if name_fold.is_empty() => return About::Unknown,
+                None if name_fold.is_empty() => unresolvable = true,
                 None => names.push(name_fold),
             }
         }
-        if !names.is_empty() {
+        Ok(if !confirmed.is_empty() {
+            if unresolvable {
+                About::Unknown
+            } else if names.is_empty() {
+                About::Confirmed(confirmed)
+            } else {
+                About::Pending { names, confirmed }
+            }
+        } else if !names.is_empty() && !unresolvable {
             About::Pending { names, confirmed }
-        } else if confirmed.is_empty() {
-            About::Unknown
         } else {
-            About::Confirmed(confirmed)
-        }
+            titled(title, &grounded()?).map_or(About::Unknown, About::Confirmed)
+        })
     }
+}
+/// The cases of a page with no node: its title's name keys, when two of its
+/// sections, each citing a preserved original (`grounded`, one Source set per
+/// section), cite different Sources. A title that is only notation names
+/// nothing.
+fn titled(title: &str, grounded: &[BTreeSet<String>]) -> Option<BTreeSet<Case>> {
+    let cited: Vec<&BTreeSet<String>> = grounded.iter().filter(|s| !s.is_empty()).collect();
+    let sources: BTreeSet<&String> = cited.iter().copied().flatten().collect();
+    if cited.len() < 2 || sources.len() < 2 {
+        return None;
+    }
+    super::identity::primary_key(title)?;
+    Some(
+        super::identity::entity_name_keys(title)
+            .into_iter()
+            .map(Case::Key)
+            .collect(),
+    )
 }
 /// What a window of the Lens log holds for a review.
 struct Evidence {
@@ -422,6 +710,22 @@ struct Evidence {
     /// not confirmed, citing a Source it is not through with, which becomes
     /// evidence once it is.
     held: BTreeSet<i64>,
+    /// What the held rows wait for.
+    waiting: Waiting,
+}
+/// What held research waits for, as the learning state reports it.
+#[derive(Default)]
+struct Waiting {
+    /// Sources a held page cites that the World is not through with.
+    sources: BTreeSet<String>,
+    /// Held pages whose subject only the World can confirm: a name that is
+    /// only notation, or no World to read it against.
+    subjects: BTreeSet<String>,
+}
+/// Why [`pending_cases`] holds a page.
+enum Held {
+    SourcesUnread(BTreeSet<String>),
+    SubjectPending,
 }
 /// An observation on a page with a subject the World has not confirmed.
 struct PendingObservation {
@@ -587,7 +891,7 @@ fn evidence(
             .as_ref()
             .and_then(LensBody::page)
             .and_then(|p| p.section(&key))
-            .filter(|section| matches!(section.state, super::lens_page::SectionState::Current))
+            .filter(|section| eligible(section))
             .map(super::lens_page::section_digest);
         if after_digest.is_none() || current != after_digest {
             continue;
@@ -627,11 +931,40 @@ fn evidence(
             let anchors = subjects
                 .query_map([&page_id], |r| Ok((r.get(0)?, r.get(1)?)))?
                 .collect::<Result<Vec<_>, _>>()?;
-            cases.insert(page_id.clone(), About::of(anchors));
+            let grounded = || {
+                let sections = bodies[&page_id]
+                    .as_ref()
+                    .and_then(LensBody::page)
+                    .map(|p| p.sections.as_slice())
+                    .unwrap_or_default();
+                let mut out = Vec::new();
+                for section in sections.iter().filter(|s| eligible(s)) {
+                    let mut cited = BTreeSet::new();
+                    for r in &section.basis.refs {
+                        let BasisRef::Span {
+                            record_id, span_id, ..
+                        } = r
+                        else {
+                            continue;
+                        };
+                        if !hidden(record_id)
+                            && original
+                                .query_row(params![record_id, span_id], |_| Ok(()))
+                                .optional()?
+                                .is_some()
+                        {
+                            cited.insert(record_id.clone());
+                        }
+                    }
+                    out.push(cited);
+                }
+                Ok(out)
+            };
+            cases.insert(page_id.clone(), About::of(anchors, &page, grounded)?);
         }
-        // A page with no subject could be about any company, including the
-        // one the other case is about, so it is not evidence. One the World
-        // has not confirmed is read against the Sources it cites.
+        // A page that is about neither a node nor a grounded title could be
+        // about anything, including the other case, so it is not evidence.
+        // One the World has not confirmed is read against the Sources it cites.
         let (about, names) = match &cases[&page_id] {
             About::Unknown => continue,
             About::Pending { names, confirmed } => (confirmed.clone(), Some(names.clone())),
@@ -674,15 +1007,23 @@ fn evidence(
         observations: out,
         pending,
         held: BTreeSet::new(),
+        waiting: Waiting::default(),
     })
 }
-/// The Source records a page's current sections cite.
+/// Whether a section may be learning evidence: contested research is not.
+fn eligible(section: &super::lens_page::PageSection) -> bool {
+    !matches!(
+        section.state,
+        super::lens_page::SectionState::Contested { .. }
+    )
+}
+/// Source records cited by sections eligible as learning evidence.
 fn cited_sources(body: Option<&LensBody>) -> BTreeSet<String> {
     body.and_then(LensBody::page)
         .map(|page| page.sections.as_slice())
         .unwrap_or_default()
         .iter()
-        .filter(|section| matches!(section.state, super::lens_page::SectionState::Current))
+        .filter(|section| eligible(section))
         .flat_map(|section| &section.basis.refs)
         .filter_map(|r| match r {
             BasisRef::Span { record_id, .. } => Some(record_id.clone()),
@@ -722,15 +1063,17 @@ fn pending_cases(
     pending: &PendingObservation,
     processed: &BTreeSet<String>,
     company: impl Fn(&str) -> bool,
-) -> Option<BTreeSet<Case>> {
+) -> Result<BTreeSet<Case>, Held> {
     if !pending.cited.is_subset(processed) {
-        return None;
+        return Err(Held::SourcesUnread(
+            pending.cited.difference(processed).cloned().collect(),
+        ));
     }
     let mut cases = pending.observation.cases.clone();
     let mut subject_keys = BTreeSet::new();
     for name in &pending.names {
         // A name that is only notation names no company.
-        super::identity::primary_key(name)?;
+        super::identity::primary_key(name).ok_or(Held::SubjectPending)?;
         for key in super::identity::entity_name_keys(name) {
             cases.extend(world.nodes_keyed(&key).into_iter().map(Case::Node));
             cases.insert(Case::Key(key.clone()));
@@ -743,7 +1086,7 @@ fn pending_cases(
             .into_iter()
             .map(Case::Node),
     );
-    Some(cases)
+    Ok(cases)
 }
 /// [`evidence`] with its pending pages read against the Sources they cite or
 /// held ([`pending_cases`]), and every case carrying the company keys of its
@@ -767,6 +1110,10 @@ fn keyed_evidence(
         return Ok(found);
     }
     let pending = std::mem::take(&mut found.pending);
+    let unread: Vec<(i64, String)> = pending
+        .iter()
+        .map(|p| (p.observation.row, p.observation.page_id.clone()))
+        .collect();
     let sources: BTreeSet<String> = pending.iter().flat_map(|p| p.cited.clone()).collect();
     let processed = super::graph_jobs::processed_sources(tx, loupist, &sources)?;
     let extension = load_settings(tx, loupist)?.extension;
@@ -774,12 +1121,18 @@ fn keyed_evidence(
     let read = super::lens::world_identity(tx, loupist, |world| {
         for mut p in pending {
             match pending_cases(world, &p, &processed, company) {
-                Some(cases) => {
+                Ok(cases) => {
                     p.observation.cases = cases;
                     found.observations.push(p.observation);
                 }
-                None => {
+                Err(held) => {
                     found.held.insert(p.observation.row);
+                    match held {
+                        Held::SourcesUnread(sources) => found.waiting.sources.extend(sources),
+                        Held::SubjectPending => {
+                            found.waiting.subjects.insert(p.observation.page_id);
+                        }
+                    }
                 }
             }
         }
@@ -802,8 +1155,15 @@ fn keyed_evidence(
             })
             .collect::<BTreeMap<String, BTreeSet<Case>>>()
     })?;
-    // Without a World, no company is confirmed and nothing is evidence.
-    let tokens = read.unwrap_or_default();
+    // Without a World, no node is confirmed and no node page is evidence; a
+    // pending page waits for one.
+    let tokens = read.unwrap_or_else(|| {
+        for (row, page) in unread {
+            found.held.insert(row);
+            found.waiting.subjects.insert(page);
+        }
+        BTreeMap::new()
+    });
     found.observations.sort_by_key(|o| std::cmp::Reverse(o.row));
     found.observations.retain(|o| {
         o.cases
@@ -839,6 +1199,9 @@ impl Input {
     }
     fn fits(&self, limit: usize) -> KnowledgeResult<bool> {
         Ok(self.text()?.chars().count() <= limit)
+    }
+    fn methods_fit(&self) -> KnowledgeResult<bool> {
+        Ok(serde_json::to_string(&self.methods)?.chars().count() <= METHODS_UNTIL)
     }
 }
 /// The input for evidence after `consumed` through `end`, and what showing it
@@ -883,7 +1246,11 @@ fn build_input(
     if !input.fits(MAX_INPUT)? {
         return Err(KnowledgeError::Invalid("evidence_exceeds_input_limit"));
     }
-    let mut q=tx.prepare("SELECT m.record_id,m.title,h.revision_id,r.payload_json FROM knowledge_lens_metadata m JOIN knowledge_record_heads h ON h.record_id=m.record_id JOIN knowledge_record_revisions r ON r.revision_id=h.revision_id WHERE m.loupist_id=?1 AND m.archived_at_ms IS NULL AND m.kind='method' ORDER BY m.updated_at_ms DESC,m.record_id LIMIT 40")?;
+    // Every method is shown: all by title and summary, then the newest with
+    // their sections while the methods stay within METHODS_UNTIL. A listing
+    // that cannot fit the input defers without inference, as principles do.
+    let mut q=tx.prepare("SELECT m.record_id,m.title,h.revision_id,r.payload_json FROM knowledge_lens_metadata m JOIN knowledge_record_heads h ON h.record_id=m.record_id JOIN knowledge_record_revisions r ON r.revision_id=h.revision_id WHERE m.loupist_id=?1 AND m.archived_at_ms IS NULL AND m.kind='method' ORDER BY m.updated_at_ms DESC,m.record_id")?;
+    let mut full = Vec::new();
     for row in q.query_map([loupist], |r| {
         Ok((
             r.get::<_, String>(0)?,
@@ -897,60 +1264,17 @@ fn build_input(
             continue;
         }
         let page: super::lens_page::Page = serde_json::from_str(&payload)?;
-        let applicability = page
-            .sections
-            .iter()
-            .find(|section| section.key.as_str() == "use-when")
-            .map(|section| section.markdown.as_str())
-            .unwrap_or(&page.summary);
-        let sections = page
-            .sections
-            .iter()
-            .filter(|section| {
-                METHOD_SECTIONS
-                    .iter()
-                    .any(|(key, _)| *key == section.key.as_str())
-            })
-            .map(|section| (section.key.as_str().to_owned(), section.markdown.clone()))
-            .collect();
-        input.methods.push(Method {
-            record_id,
-            title,
-            applicability: applicability.chars().take(300).collect(),
-            current: Some(MethodText {
-                summary: page.summary.clone(),
-                sections,
-            }),
-            digests: page
-                .sections
-                .iter()
-                .map(|section| {
-                    (
-                        section.key.as_str().to_owned(),
-                        super::lens_page::section_digest(section),
-                    )
-                })
-                .collect(),
-            user_written: page
-                .sections
-                .iter()
-                .filter(|section| {
-                    section.origin == super::lens_page::Origin::User
-                        || section
-                            .basis
-                            .refs
-                            .iter()
-                            .any(|r| matches!(r, BasisRef::UserSaid { .. }))
-                })
-                .map(|section| section.key.as_str().to_owned())
-                .collect(),
-        });
-        // A method whose text does not fit is listed without it, and cannot be refined.
-        if !input.fits(METHODS_UNTIL)? {
-            input.methods.last_mut().expect("just pushed").current = None;
-        }
-        if !input.fits(METHODS_UNTIL)? {
-            input.methods.pop();
+        full.push(Method::of(record_id, title, &page));
+    }
+    input.methods = full.iter().cloned().map(Method::listed).collect();
+    if !input.fits(MAX_INPUT)? {
+        return Err(KnowledgeError::Invalid("methods_exceed_input_limit"));
+    }
+    for (i, method) in full.into_iter().enumerate() {
+        input.methods[i] = method;
+        if !input.methods_fit()? || !input.fits(MAX_INPUT)? {
+            // A method listed without its text cannot be refined.
+            input.methods[i] = input.methods[i].clone().listed();
             break;
         }
     }
@@ -1091,6 +1415,7 @@ pub(super) fn claim(
     name: &str,
     focus: &str,
     now: i64,
+    allowance: Option<&crate::scheduled_tasks::allowance::AllowanceState>,
 ) -> KnowledgeResult<Option<Attempt>> {
     let current = load_settings(tx, loupist)?;
     if !enabled(tx, loupist, &current)? {
@@ -1101,8 +1426,7 @@ pub(super) fn claim(
     let Some((id, end, frozen, budget)) = row else {
         return Ok(None);
     };
-    // Frozen zero budgets wait just like World chunks; settings alone do not authorize a paid retry.
-    if budget == 0 || current.max_llm_calls == 0 {
+    if claim_wait(tx, loupist, &id, budget, &current, now)?.is_some() {
         return Ok(None);
     }
     let mut s = super::graph_jobs::parse_settings(&frozen)?;
@@ -1113,10 +1437,6 @@ pub(super) fn claim(
     s.run_options = current.run_options.clone();
     s.timeout_ms = current.timeout_ms;
     s.max_llm_calls = current.max_llm_calls;
-    let previous:Option<i64>=tx.query_row("SELECT MAX(started_at_ms) FROM knowledge_learning_reviews WHERE loupist_id=?1 AND review_id<>?2",params![loupist,id],|r|r.get(0))?;
-    if previous.is_some_and(|t| now - t < SIX_HOURS) {
-        return Ok(None);
-    }
     let (before, _) = watermarks(tx, loupist, &id)?;
     let (input, after) = match build_input(tx, loupist, &before, end, name, focus) {
         Ok(built) => built,
@@ -1128,7 +1448,26 @@ pub(super) fn claim(
     };
     // Reaching inference consumes only what the input shows.
     let stored = json!({"input": &input, "shown": &after.shown, "held": &after.held, "confirmed_subjects": confirmed_subjects(tx, loupist)?});
+    if let Some(allowance) = allowance {
+        let provider = s
+            .helper_provider
+            .as_deref()
+            .filter(|provider| !provider.is_empty());
+        if crate::scheduled_tasks::allowance::admit_world_attempt(
+            allowance,
+            crate::scheduled_tasks::allowance::WorldOrigin::Background,
+            budget.max(1),
+            provider,
+        )
+        .is_err()
+        {
+            return Ok(None);
+        }
+    }
     tx.execute("UPDATE knowledge_learning_reviews SET status='running',started_at_ms=?2,through_event=?3,input_json=?4,settings_json=?5 WHERE review_id=?1 AND status='queued'",params![id,now,after.through,stored.to_string(),serde_json::to_string(&s)?])?;
+    if allowance.is_some() {
+        super::graph_jobs::reserve_background_call(tx, loupist, &id, budget.max(1), now)?;
+    }
     Ok(Some(Attempt {
         review_id: id,
         loupist_id: loupist.into(),
@@ -1137,6 +1476,32 @@ pub(super) fn claim(
         before,
         through: end,
     }))
+}
+/// Why the queued review `id` cannot be claimed at `now`, before its input
+/// is built: a frozen or selected zero call budget waits, like World chunks,
+/// since settings alone do not authorize a paid retry; and a review waits six
+/// hours after the last one started.
+fn claim_wait(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    id: &str,
+    budget: u32,
+    current: &GraphProcessingSettings,
+    now: i64,
+) -> KnowledgeResult<Option<WaitReason>> {
+    if budget == 0 || current.max_llm_calls == 0 {
+        return Ok(Some(WaitReason::Allowance));
+    }
+    let previous: Option<i64> = tx.query_row(
+        "SELECT MAX(started_at_ms) FROM knowledge_learning_reviews WHERE loupist_id=?1 AND review_id<>?2",
+        params![loupist, id],
+        |r| r.get(0),
+    )?;
+    Ok(previous
+        .filter(|t| now - t < SIX_HOURS)
+        .map(|t| WaitReason::RateLimited {
+            until_ms: t.saturating_add(SIX_HOURS),
+        }))
 }
 #[allow(clippy::too_many_arguments)]
 fn settle(
@@ -1252,6 +1617,7 @@ pub(super) fn finish(
             "learning attempt is no longer active",
         ));
     }
+    super::graph_jobs::release_background_call(tx, &a.review_id)?;
     tx.execute(
         "UPDATE knowledge_learning_reviews SET usage_json=?2,output_json=?3 WHERE review_id=?1",
         params![

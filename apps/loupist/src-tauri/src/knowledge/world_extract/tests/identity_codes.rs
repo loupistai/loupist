@@ -148,6 +148,7 @@ fn codes_overrule_a_reply_that_resolves_every_row_one_row_late() {
         Graph {
             nodes: stored(),
             edges: Vec::new(),
+            links: Vec::new(),
         },
         &text,
     );
@@ -229,6 +230,7 @@ fn a_name_without_a_code_is_still_the_models_decision() {
         Graph {
             nodes: stored(),
             edges: Vec::new(),
+            links: Vec::new(),
         },
         &text,
     );
@@ -298,6 +300,7 @@ fn codes_that_only_look_alike_leave_the_decision_to_the_model() {
         Graph {
             nodes: stored.clone(),
             edges: Vec::new(),
+            links: Vec::new(),
         },
         &text,
     );
@@ -326,6 +329,61 @@ fn codes_that_only_look_alike_leave_the_decision_to_the_model() {
             proposed: 1,
             refused: 0,
             by_code: 1,
+        }
+    );
+}
+
+#[test]
+fn a_model_merge_across_a_market_split_is_refused() {
+    let berkshire = |uuid: &str, ticker: &str| Node {
+        uuid: uuid.into(),
+        name: "Berkshire Hathaway".into(),
+        labels: vec!["Entity".into(), "Organization".into()],
+        summary: String::new(),
+        attributes: vec![
+            ("ticker".into(), json!(ticker)),
+            ("exchange".into(), json!("NYSE")),
+            ("cik".into(), json!("0001067983")),
+        ],
+        name_embedding: None,
+        spellings: Vec::new(),
+    };
+    let case = case("resolve_nodes");
+    let (schema, instructions) = schema_and_instructions(&case);
+    let (episode, previous) = episode(&case);
+    let stored = berkshire("stored-b", "BRK.B");
+    let reply = json!({"entity_resolutions": [
+        {"id": 0, "name": "Berkshire Hathaway", "duplicate_candidate_id": 0},
+    ]});
+    let mut host = Host::new(&json!({"responses": [reply]}));
+    let mut infer = |request| host.reply(request);
+    let mut bridge = Bridge::new(config(&case), &mut infer);
+    let text = empty_text();
+    let mut harness = Harness::new(
+        &mut bridge,
+        &schema,
+        episode,
+        previous,
+        instructions,
+        Graph {
+            nodes: vec![stored.clone()],
+            edges: Vec::new(),
+            links: Vec::new(),
+        },
+        &text,
+    );
+    let extracted = vec![harness.add_node(berkshire("new-a", "BRK.A"))];
+    let (resolved, _) = harness
+        .resolve_with_candidates(&extracted, vec![vec![stored]])
+        .unwrap();
+    assert_eq!(harness.node(resolved[0]).uuid, "new-a");
+    assert!(harness.node(resolved[0]).spellings.is_empty());
+    assert_eq!(
+        harness.tally(),
+        ResolutionTally {
+            proposed: 1,
+            refused: 1,
+            by_code: 0,
         }
     );
 }

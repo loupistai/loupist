@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import { runProviderInference, validateInferenceRequest } from "./provider-inference.mjs";
 
@@ -67,6 +68,17 @@ test("isolated inference forwards only finite nonnegative cost and billing prove
     assert.equal(result.disposition, "completed");
     assert.deepEqual(result.usage.cost,
       Number.isFinite(total) && total >= 0 ? { total, totalFromProvider: true } : undefined);
+  }
+});
+
+test("isolated inference preserves the distinction between unreported and invalid cache counts", async () => {
+  for (const field of ["cacheRead", "cacheWrite"]) {
+    for (const count of [null, undefined, -1, Number.MAX_SAFE_INTEGER + 1]) {
+      const f = fixture({ message: { usage: { input: 500, output: 120, [field]: count } } });
+      const result = await runProviderInference(f.ctx, request(), f.options);
+      assert.equal(result.disposition, "completed");
+      assert.deepEqual(result.usage, count == null ? { input: 500, output: 120 } : { output: 120 });
+    }
   }
 });
 
@@ -171,6 +183,82 @@ test("inference diagnostics retain only HTTP status and cancellation state", asy
   assert.equal(result.disposition, "uncertain");
   assert.equal(cancellations[0].failure_kind, "cancelled");
   assert.equal(cancellations[0].cancelled, true); assert.equal(cancellations[0].dispatched, true);
+});
+
+test("a failed inference keeps reported usage and names every failure kind", async () => {
+  const reported = { input: 11, output: 7, cacheRead: 3, cacheWrite: 1, totalTokens: 22, cost: { total: 0.000002, totalFromProvider: true } };
+  const kept = { input: 11, output: 7, cacheRead: 3, cacheWrite: 1, totalTokens: 22, cost: { total: 0.000002, totalFromProvider: true } };
+  const afterMessage = [
+    ["invalid_json", { output: "not json" }],
+    ["schema_mismatch", { output: '{"claims":[4]}' }],
+    ["incomplete_response", { stopReason: "length" }],
+    ["content_type", { message: { content: [{ type: "toolCall", name: "private" }] } }],
+    ["output_size", { output: "x".repeat(256 * 1024 + 1) }],
+    ["identity_mismatch", { message: { model: "other-model" } }],
+  ];
+  for (const [failure_kind, args] of afterMessage) {
+    for (const usage of [reported, null]) {
+      const f = fixture({ ...args, message: { ...(args.message ?? {}), usage } });
+      const result = await runProviderInference(f.ctx, request(), f.options);
+      assert.equal(result.disposition, "uncertain", failure_kind);
+      assert.equal(result.failure_kind, failure_kind);
+      assert.equal(result.body.failure_kind, failure_kind);
+      assert.equal(result.body.status, "uncertain");
+      assert.deepEqual(result.usage, usage ? kept : null, failure_kind);
+      assert.equal(JSON.stringify(result).includes("private"), false);
+    }
+  }
+  const beforeMessage = [
+    ["retry_refused", (f) => fixture({ ...f, repeat: true })],
+    ["provider_failure", (f) => ({ ...f, options: { ...f.options, fetch: async () => { throw new Error("Authorization: Bearer private"); } } })],
+    ["cancelled", (f) => {
+      const controller = new AbortController();
+      return { ...f, options: { ...f.options, signal: controller.signal, fetch: async (_url, { signal }) => { controller.abort(); signal.throwIfAborted(); } } };
+    }],
+    ["dispatch_marker_failed", (f) => ({ ...f, options: { ...f.options, onDispatch: () => { throw new Error("private marker"); } } })],
+    ["payload_invalid", (f) => ({
+      ...f,
+      ctx: {
+        modelRegistry: {
+          ...f.ctx.modelRegistry,
+          streamSimple(selected, _context, options) {
+            return { result: async () => { options.onPayload(null); return { provider: selected.provider, model: selected.id, stopReason: "stop", content: [{ type: "text", text: "{}" }] }; } };
+          },
+        },
+      },
+    })],
+  ];
+  for (const [failure_kind, prepare] of beforeMessage) {
+    const f = prepare(fixture());
+    const result = await runProviderInference(f.ctx, request(), f.options);
+    const dispatched = failure_kind === "retry_refused" || failure_kind === "provider_failure" || failure_kind === "cancelled";
+    assert.equal(result.disposition, dispatched ? "uncertain" : "not_sent", failure_kind);
+    assert.equal(result.failure_kind, failure_kind);
+    assert.equal(result.body.failure_kind, failure_kind);
+    assert.equal(result.usage, null, failure_kind);
+    assert.equal(JSON.stringify(result).includes("private"), false);
+  }
+});
+
+test("one Markdown fence is removed only when the API is not given a JSON schema", async () => {
+  const fenced = "```json\n{\"claims\":[\"The fictional firm builds chips.\"]}\n```";
+  const schemaApi = fixture({ output: fenced });
+  const refused = await runProviderInference(schemaApi.ctx, request(), schemaApi.options);
+  assert.equal(refused.disposition, "uncertain");
+  assert.equal(refused.failure_kind, "invalid_json");
+  const plain = getBuiltinModels("anthropic").find((entry) => entry.api === "anthropic-messages");
+  assert.ok(plain);
+  const level = getSupportedThinkingLevels(plain)[0];
+  const open = fixture({ output: fenced });
+  open.ctx.modelRegistry.getAvailable = () => [plain];
+  const asked = request();
+  asked.provider = plain.provider;
+  asked.model = plain.id;
+  asked.thinkingLevel = level;
+  asked.runOptions = {};
+  const result = await runProviderInference(open.ctx, asked, open.options);
+  assert.equal(result.disposition, "completed");
+  assert.deepEqual(result.body, { claims: ["The fictional firm builds chips."] });
 });
 
 test("separate Pi runtimes share one locked OAuth refresh and preserve other credentials", async () => {

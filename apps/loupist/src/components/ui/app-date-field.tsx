@@ -1,6 +1,6 @@
-import { useState, type KeyboardEvent } from "react";
+import { useState } from "react";
 import { useTranslation } from "@/i18n";
-import { NativeSelect } from "./native-select";
+import { SelectField, SelectItem } from "./select";
 
 const ISO_DAY = /^(\d{4})-(\d{2})-(\d{2})$/u;
 const languageOf = (language: string) => language === "en-XA" ? "en" : language || "en";
@@ -36,11 +36,10 @@ type Props = {
   onChange: (value: string) => void;
   /** Whether some but not all of the three parts are chosen: `value` is then empty, but the field is not. */
   onIncomplete?: (incomplete: boolean) => void;
-  onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
 };
 
 /** Year, month and day in the app language. A native date input follows the operating system. */
-export function AppDateField({ id, value, min, max, required, disabled, className, autoFocus, grouped = true, onChange, onIncomplete, onKeyDown, ...props }: Props) {
+export function AppDateField({ id, value, min, max, required, disabled, className, autoFocus, grouped = true, onChange, onIncomplete, ...props }: Props) {
   const { t, i18n } = useTranslation("common");
   const language = languageOf(i18n.language);
   const parsed = parts(value);
@@ -94,18 +93,18 @@ export function AppDateField({ id, value, min, max, required, disabled, classNam
     onChange(iso(nextYear, nextMonthClamped, nextDayClamped));
   };
   const described = props["aria-invalid"] || props["aria-describedby"] ? { "aria-invalid": props["aria-invalid"] || undefined, "aria-describedby": props["aria-describedby"] } : {};
-  return <div className={className ? `app-date-field ${className}` : "app-date-field"} role={grouped ? "group" : undefined} aria-label={grouped ? props["aria-label"] : undefined} aria-invalid={grouped ? props["aria-invalid"] || undefined : undefined} aria-describedby={grouped ? props["aria-describedby"] : undefined} onKeyDown={onKeyDown}>
-    <NativeSelect id={id} aria-label={t("date.year")} disabled={disabled} required={required} autoFocus={autoFocus} value={year} {...described} onChange={(event) => commit(event.target.value === "" ? "" : Number(event.target.value), month, day)}>
-      <option value="">{t("date.year")}</option>
-      {years.map((item) => <option key={item} value={item}>{item}</option>)}
-    </NativeSelect>
-    <NativeSelect aria-label={t("date.month")} disabled={disabled} required={required} value={month} {...described} onChange={(event) => commit(year, event.target.value === "" ? "" : Number(event.target.value), day)}>
-      <option value="">{t("date.month")}</option>
-      {months.map((item) => <option key={item} value={item}>{monthName(item)}</option>)}
-    </NativeSelect>
-    <NativeSelect aria-label={t("date.day")} disabled={disabled} required={required} value={day} {...described} onChange={(event) => commit(year, month, event.target.value === "" ? "" : Number(event.target.value))}>
-      <option value="">{t("date.day")}</option>
-      {days.map((item) => <option key={item} value={item}>{item}</option>)}
-    </NativeSelect>
+  return <div className={className ? `app-date-field ${className}` : "app-date-field"} role={grouped ? "group" : undefined} aria-label={grouped ? props["aria-label"] : undefined} aria-invalid={grouped ? props["aria-invalid"] || undefined : undefined} aria-describedby={grouped ? props["aria-describedby"] : undefined}>
+    <SelectField id={id} aria-label={t("date.year")} disabled={disabled} required={required} autoFocus={autoFocus} value={String(year)} placeholder={t("date.year")} {...described} onValueChange={value => commit(value === "" ? "" : Number(value), month, day)}>
+      <SelectItem value="">{t("date.year")}</SelectItem>
+      {years.map((item) => <SelectItem key={item} value={String(item)}>{item}</SelectItem>)}
+    </SelectField>
+    <SelectField aria-label={t("date.month")} disabled={disabled} required={required} value={String(month)} placeholder={t("date.month")} {...described} onValueChange={value => commit(year, value === "" ? "" : Number(value), day)}>
+      <SelectItem value="">{t("date.month")}</SelectItem>
+      {months.map((item) => <SelectItem key={item} value={String(item)}>{monthName(item)}</SelectItem>)}
+    </SelectField>
+    <SelectField aria-label={t("date.day")} disabled={disabled} required={required} value={String(day)} placeholder={t("date.day")} {...described} onValueChange={value => commit(year, month, value === "" ? "" : Number(value))}>
+      <SelectItem value="">{t("date.day")}</SelectItem>
+      {days.map((item) => <SelectItem key={item} value={String(item)}>{item}</SelectItem>)}
+    </SelectField>
   </div>;
 }

@@ -34,7 +34,13 @@ a scenario together with each new or redesigned screen. A scenario marked `media
 emulated, as the print dialog draws it. Final proof of native behavior still uses the tools in
 [Which tool](../../apps/loupist/e2e/README.md#which-tool).
 
-A green Chrome capture is not proof of WKWebView layout. Chrome draws some rules that macOS WKWebView collapses. The known case is a `fieldset` whose computed `display` is `grid` or `flex`: its `legend` shrinks to about one character and the heading runs down the form one glyph per line. Keep the fieldset `display: block`, set the legend to `width: 100%`, and put grid or flex on an element inside it. This applies to every form, including onboarding model setup, journal checks, schedule time, and profile fields, not only the tone control. `assertFormLegendsFit` in `apps/loupist/e2e/native-forms.mjs` measures that the heading uses the field width. Run that measurement in the macOS WebView. Do not accept a preview screenshot as a substitute.
+WKWebView can shrink a `fieldset` legend to one character when the fieldset
+uses `display: grid` or `flex`. Keep the fieldset `display: block`, set the
+legend to `width: 100%`, and put grid or flex on an element inside it. This
+applies to Notifications defaults, onboarding model setup, Journal checks,
+schedule time and profile fields. Native smoke calls `assertFormLegendsFit`
+in `apps/loupist/e2e/native-forms.mjs` on Notifications defaults in English
+and Korean. The geometry check runs in the macOS WebView.
 
 ### Performance budgets
 
@@ -87,8 +93,9 @@ marks are not icons and are the only exceptions: the Loupist's face
 and as a message avatar) and an asset's monogram tile (`components/market/AssetTile.tsx`).
 The face's ten colours are `--gg-color-face-01` to `-10`, one per stored portrait id. `EmptyState`
 accepts title, description and action; it has no icon prop.
-Use shared `PageHeader`, `Button`, `Input`, `Textarea`, `NativeSelect`, dialog,
-disclosure and empty-state components. `page.css` owns shared page layout;
+Use shared `PageHeader`, `Button`, `Input`, `Textarea`, `SelectField`, dialog,
+disclosure and empty-state components. Use app-rendered value menus for dropdown fields and
+the interface locale for editable dates and times. `page.css` owns shared page layout;
 `surfaces.css` owns dialog sizing/body/footer. Feature CSS owns content layout.
 Use `SegmentedControl` for one-of-many choices and list filters: these are radio
 groups, with arrow-key selection. Reserve `Tabs` for views with real `TabsContent`
@@ -141,8 +148,13 @@ the final reply. Keep provider recovery, source inspection and return paths reac
 `useLanguage` and cached `Intl` helpers in `format.ts`. Appearance is localized and
 persists global `appearance.language` as `system`, `en` or `ko`; system follows
 `navigator.languages` with an English fallback. The development/preview-only
-`en-XA` pseudo-locale is not persisted. English and Korean catalogs share keys and placeholders; the pseudo-locale
-exercises text expansion in previews.
+`en-XA` pseudo-locale is not persisted. English and Korean catalogs share keys and placeholders; the pseudo-locale,
+generated from English (accented, bracketed, about 40% longer), exercises text expansion in previews.
+`src/i18n/pseudoLocale.test.tsx` renders every route and Settings section in it and fails on a key no
+catalog has, on interface text outside the brackets that the bridge did not send (formatted dates, zone
+and currency names, key names and the copy allowlist aside), and on product code outside `src/i18n` that
+branches on Korean. Text keyed by language goes through `localizedValue` (`src/i18n/localized.ts`); a
+locale's own rules (number words, date forms, particles) live in `src/i18n`.
 
 Appearance also holds the optional global `appearance.display_currency`. Its select
 lists As listed, then the euro and the 29 ECB reference currencies in the table's

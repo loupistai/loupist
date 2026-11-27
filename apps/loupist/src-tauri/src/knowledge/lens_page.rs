@@ -213,19 +213,21 @@ impl Basis {
     }
 }
 
-/// Subject and idea sections need a basis; synthesis must say how sure it is.
-pub fn basis_allowed(kind: LensKind, basis: &Basis) -> bool {
-    let needs_ref = matches!(kind, LensKind::Subject | LensKind::Idea);
-    if needs_ref && basis.refs.is_empty() {
-        return false;
+fn basis_allowed(kind: LensKind, role: Option<SectionRole>, basis: &Basis, grounded: bool) -> bool {
+    let uncertain = basis
+        .uncertainty
+        .as_deref()
+        .is_some_and(|text| !text.trim().is_empty());
+    if !basis.refs.is_empty() {
+        return !(basis.is_synthesis() || role == Some(SectionRole::View)) || uncertain;
     }
-    if !basis.refs.is_empty() && basis.is_synthesis() {
-        return basis
-            .uncertainty
-            .as_deref()
-            .is_some_and(|text| !text.trim().is_empty());
-    }
-    true
+    !matches!(kind, LensKind::Subject | LensKind::Idea)
+        || (grounded
+            && uncertain
+            && matches!(
+                role,
+                Some(SectionRole::Check | SectionRole::OpenQuestion | SectionRole::Refutation)
+            ))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -250,6 +252,39 @@ pub enum SectionState {
         since_ms: i64,
         claim_ids: Vec<String>,
     },
+    Superseded {
+        since_ms: i64,
+        claim_ids: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum SectionRole {
+    Fact,
+    View,
+    Check,
+    OpenQuestion,
+    Refutation,
+}
+
+impl SectionRole {
+    pub(crate) fn from_key(key: &SectionKey) -> Option<Self> {
+        match key.as_str() {
+            "checks" => Some(Self::Check),
+            "would-break" => Some(Self::Refutation),
+            "open-questions" => Some(Self::OpenQuestion),
+            "evidence-for" | "evidence-against" => Some(Self::Fact),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SectionFiling {
+    pub role: Option<SectionRole>,
+    pub as_of: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -260,6 +295,10 @@ pub struct PageSection {
     pub markdown: String,
     #[serde(default)]
     pub basis: Basis,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<SectionRole>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub as_of: Option<String>,
     pub origin: Origin,
     #[serde(default = "current_state")]
     pub state: SectionState,
@@ -282,6 +321,12 @@ pub struct Page {
 impl Page {
     pub fn section(&self, key: &SectionKey) -> Option<&PageSection> {
         self.sections.iter().find(|section| &section.key == key)
+    }
+
+    pub(super) fn has_grounded_section(&self) -> bool {
+        self.sections
+            .iter()
+            .any(|section| section.basis.refs.iter().any(BasisRef::is_evidence))
     }
 }
 
@@ -369,7 +414,7 @@ impl LensBody {
         }
     }
 
-    fn page_mut(&mut self) -> Option<&mut Page> {
+    pub(super) fn page_mut(&mut self) -> Option<&mut Page> {
         match self {
             Self::Principle(_) => None,
             Self::Perspective(page) | Self::Method(page) | Self::Subject(page) => Some(page),
@@ -400,7 +445,7 @@ impl LensBody {
                 continue;
             }
             let (since_ms, mut ids) = match &section.state {
-                SectionState::Current => (at_ms, Vec::new()),
+                SectionState::Current | SectionState::Superseded { .. } => (at_ms, Vec::new()),
                 SectionState::Contested {
                     since_ms,
                     claim_ids,
@@ -819,15 +864,26 @@ pub struct ApplyContext {
 }
 
 /// Folds ops into a body. Never fails on one bad op; every op gets an outcome.
+#[cfg(test)]
 pub fn apply(
     body: &LensBody,
     ops: &[LensOp],
     ctx: &ApplyContext,
 ) -> KnowledgeResult<(LensBody, Vec<OpOutcome>)> {
+    let grounded = body.page().is_some_and(Page::has_grounded_section);
+    apply_with_sections(body, ops.iter().map(|op| (op, None)), ctx, grounded)
+}
+
+pub(super) fn apply_with_sections<'a>(
+    body: &LensBody,
+    ops: impl IntoIterator<Item = (&'a LensOp, Option<&'a SectionFiling>)>,
+    ctx: &ApplyContext,
+    grounded: bool,
+) -> KnowledgeResult<(LensBody, Vec<OpOutcome>)> {
     let kind = body.kind();
     let mut next = body.clone();
-    let mut outcomes = Vec::with_capacity(ops.len());
-    for op in ops {
+    let mut outcomes = Vec::new();
+    for (op, filing) in ops {
         op.validate()?;
         let outcome = match op {
             LensOp::Put {
@@ -841,9 +897,10 @@ pub fn apply(
                     outcomes.push(OpOutcome::RefusedKind);
                     continue;
                 };
+                let role = filing.map_or_else(|| SectionRole::from_key(key), |filing| filing.role);
                 if ctx.origin != Origin::User && ctx.forgotten.contains(key) {
                     OpOutcome::RefusedForgotten { key: key.clone() }
-                } else if !basis_allowed(kind, basis) {
+                } else if !basis_allowed(kind, role, basis, grounded) {
                     OpOutcome::RefusedBasis { key: key.clone() }
                 } else {
                     let incoming = PageSection {
@@ -851,6 +908,8 @@ pub fn apply(
                         heading: heading.clone(),
                         markdown: markdown.clone(),
                         basis: basis.clone(),
+                        role,
+                        as_of: filing.and_then(|filing| filing.as_of.clone()),
                         origin: ctx.origin,
                         state: written_state(basis, &ctx.fallen_claims, ctx.at_ms),
                         updated_at_ms: ctx.at_ms,
@@ -951,12 +1010,18 @@ fn written_state(basis: &Basis, fallen: &BTreeSet<String>, at_ms: i64) -> Sectio
 /// sha256 over key, heading, markdown and basis. Origin, state and time are
 /// not identity: two actors editing the same text agree on the digest.
 pub fn section_digest(section: &PageSection) -> String {
-    let value = serde_json::json!({
+    let mut value = serde_json::json!({
         "key": section.key,
         "heading": section.heading,
         "markdown": section.markdown,
         "basis": section.basis,
     });
+    if let Some(role) = section.role {
+        value["role"] = serde_json::json!(role);
+    }
+    if let Some(as_of) = &section.as_of {
+        value["asOf"] = serde_json::json!(as_of);
+    }
     sha256(canonical_string(&value).as_bytes())
 }
 
@@ -1254,6 +1319,44 @@ impl FiledPage {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn older_page_defaults_and_superseded_section_round_trip() {
+        let mut payload = serde_json::json!({
+            "summary": "Operating risks",
+            "sections": [{
+                "key": "checks",
+                "heading": "Checks",
+                "markdown": "Watch for an updated filing.",
+                "origin": "loupist",
+                "updatedAtMs": 50,
+            }]
+        });
+        let old = LensBody::from_payload(LensKind::Subject, payload.clone()).unwrap();
+        let section = &old.page().unwrap().sections[0];
+        assert_eq!(section.state, SectionState::Current);
+        assert_eq!(section.role, None);
+        assert_eq!(section.as_of, None);
+
+        payload["sections"][0]["role"] = serde_json::json!("check");
+        payload["sections"][0]["asOf"] = serde_json::json!("2026-04-01");
+        payload["sections"][0]["state"] = serde_json::json!({
+            "kind": "superseded", "sinceMs": 60, "claimIds": ["prior"]
+        });
+        let updated = LensBody::from_payload(LensKind::Subject, payload.clone()).unwrap();
+        let encoded = updated.to_payload().unwrap();
+        assert_eq!(
+            encoded["sections"][0]["role"],
+            payload["sections"][0]["role"]
+        );
+        assert_eq!(
+            encoded["sections"][0]["asOf"],
+            payload["sections"][0]["asOf"]
+        );
+        assert_eq!(
+            encoded["sections"][0]["state"],
+            payload["sections"][0]["state"]
+        );
+    }
     use super::*;
 
     fn key(value: &str) -> SectionKey {
@@ -1451,9 +1554,24 @@ mod tests {
                 OpOutcome::Added { key: key("views") },
             ]
         );
-        assert!(basis_allowed(LensKind::Method, &Basis::default()));
-        assert!(basis_allowed(LensKind::Perspective, &Basis::default()));
-        assert!(!basis_allowed(LensKind::Idea, &Basis::default()));
+        assert!(basis_allowed(
+            LensKind::Method,
+            None,
+            &Basis::default(),
+            false
+        ));
+        assert!(basis_allowed(
+            LensKind::Perspective,
+            None,
+            &Basis::default(),
+            false
+        ));
+        assert!(!basis_allowed(
+            LensKind::Idea,
+            None,
+            &Basis::default(),
+            false
+        ));
         assert_eq!(claim().chip(), BasisChip::Source);
         assert_eq!(Basis::default().chip(), BasisChip::None);
     }

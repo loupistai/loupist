@@ -741,6 +741,7 @@ mod tests {
                         }),
                     },
                     &chat.messages[0].id,
+                    crate::knowledge::JobOrigin::Chat,
                     None,
                 )
             })

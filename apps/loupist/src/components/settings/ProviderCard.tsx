@@ -1,5 +1,5 @@
 import { ChevronDownIcon, ExternalLinkIcon, LoaderCircleIcon, MoreHorizontalIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -8,10 +8,11 @@ import { Switch } from "@/components/ui/switch";
 import { formatDate, formatDateTime, formatNumber } from "../../i18n/format";
 import { useTranslation } from "../../i18n";
 import { providerShortName } from "../../chat/providerNames";
-import type { UsageTotals } from "../../contracts/generated";
+import type { OpenRouterQuota, UsageTotals } from "../../contracts/generated";
 import type { ConfiguredModel, ModelProviderOption, ProviderStatusView } from "../../types";
 import type { ConnectSheetTarget } from "./ConnectSheet";
 import { ProviderStateLabel } from "./ProviderWays";
+import { creditLine } from "./allowanceCopy";
 
 /** "Last reached its limit" stays this long after the notice clears: a dated note, not a meter. */
 export const LAST_LIMIT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -52,6 +53,8 @@ type ProviderCardProps = {
   visibilityBusyId: string | null;
   now?: number;
   weeklyUsage?: Pick<UsageTotals, "requests" | "inputTokens" | "cachedInputTokens" | "outputTokens">;
+  /** OpenRouter credit. Other providers leave this unset; a failed read is null. */
+  readQuota?: (provider: string) => Promise<OpenRouterQuota | null>;
   onOpenUsageSettings?: () => void;
   onReload: () => void;
   onConnect: (target: ConnectSheetTarget) => void;
@@ -62,8 +65,20 @@ type ProviderCardProps = {
 };
 
 /** One provider (spec providers §2.3): state, credential, billing, one notice, then its models. */
-export function ProviderCard({ searchControls = false, option, models, hiddenModels, chatModel, loading, removing, loadError, locked, reloadDisabled, visibilityBusyId, now = Date.now(), weeklyUsage, onOpenUsageSettings, onReload, onConnect, onOpenUsage, onRemove, onSetVisibility, onSetAllVisible }: ProviderCardProps) {
+function useProviderCredit(providerId: string, readQuota: ProviderCardProps["readQuota"]) {
+  const [credit, setCredit] = useState<OpenRouterQuota | null>(null);
+  useEffect(() => {
+    if (providerId !== "openrouter" || !readQuota) { setCredit(null); return; }
+    let live = true;
+    void readQuota(providerId).then(value => { if (live) setCredit(value); }, () => { if (live) setCredit(null); });
+    return () => { live = false; };
+  }, [providerId, readQuota]);
+  return credit;
+}
+
+export function ProviderCard({ searchControls = false, option, models, hiddenModels, chatModel, loading, removing, loadError, locked, reloadDisabled, visibilityBusyId, now = Date.now(), weeklyUsage, readQuota, onOpenUsageSettings, onReload, onConnect, onOpenUsage, onRemove, onSetVisibility, onSetAllVisible }: ProviderCardProps) {
   const { t } = useTranslation("settings");
+  const credit = useProviderCredit(option.id, readQuota);
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery] = useState("");
   const status = option.status;
@@ -78,11 +93,13 @@ export function ProviderCard({ searchControls = false, option, models, hiddenMod
   const usageLine = weeklyLine ? <p className="provider-card-meta">
     {onOpenUsageSettings ? <button type="button" className="connect-link" onClick={onOpenUsageSettings}>{weeklyLine}</button> : weeklyLine}
   </p> : null;
+  const creditText = credit ? <p className="provider-card-meta" data-credit>{creditLine(credit)}</p> : null;
 
   if (status.state === "disconnected") {
     return <li><article className="provider-card" data-provider-card={option.id} data-state="disconnected" aria-label={title}>
       <header className="provider-card-heading"><h3>{title}</h3><ProviderStateLabel status={status} /></header>
       {usageLine}
+      {creditText}
       {status.used_by.schedules > 0 ? <p className="provider-card-meta">{t("providers.usedBy", { count: status.used_by.schedules, formattedCount: formatNumber(status.used_by.schedules) })}</p> : null}
       <div className="provider-card-footer"><span className="provider-card-actions">
         <Button type="button" size="sm" disabled={locked} onClick={() => onConnect(reconnectTarget(option))}>{t("providers.connect")}</Button>
@@ -111,6 +128,7 @@ export function ProviderCard({ searchControls = false, option, models, hiddenMod
         <header className="provider-card-heading"><h3>{title}</h3><ProviderStateLabel status={status} /></header>
         <p className="provider-card-meta">{credential}</p>
         {usageLine}
+        {creditText}
         {reconnect ? <p className="provider-card-body">{t("providers.reconnectBody")}</p> : null}
         {plan && option.billing_note === "chatgpt_plan" ? <p className="provider-card-body" data-plan-line="chatgpt">
           {t("providers.usingPlan")}

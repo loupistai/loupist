@@ -3,7 +3,8 @@ import { fromMarkdown } from 'mdast-util-from-markdown';
 
 export const TRACE_SCHEMA = 'loupist-agent-trace/1';
 export const SUITE_SCHEMA = 'loupist-agent-suite/1';
-export const TRACE_ASSERTS = new Set(['tool_called', 'tool_not_called', 'tool_called_before', 'max_tool_calls', 'max_tool_errors', 'no_repeated_failed_call', 'capability_loaded', 'scheduled_tasks', 'tool_args_not_matching', 'calculate_inputs_cited', 'as_of_left_out', 'as_of_refused', 'grid_cells_linked', 'scheduled_delivery', 'scheduled_quiet', 'followed_names', 'replayed_price', 'skill_read']);
+export const TRACE_ASSERTS = new Set(['tool_called', 'tool_not_called', 'tool_called_before', 'max_tool_calls', 'max_tool_errors', 'no_repeated_failed_call', 'capability_loaded', 'scheduled_tasks', 'tool_args_not_matching', 'calculate_inputs_cited', 'as_of_left_out', 'as_of_refused', 'grid_cells_linked', 'scheduled_delivery', 'scheduled_quiet', 'followed_names', 'replayed_price', 'skill_read',
+  'scheduled_run', 'check_dry_run', 'progress_language', 'file_written_before']);
 export const LENS_ASSERTS = new Set(['lens_pages', 'lens_unchanged', 'lens_read', 'lens_not_read']);
 export const MEMORY_ASSERTS = new Set(['committed', 'not_committed', ...LENS_ASSERTS]);
 const LENS_KINDS = new Set(['principle', 'perspective', 'method', 'subject', 'idea']);
@@ -53,12 +54,30 @@ export function visibleLabelsAssertion(assertion, scenario) {
   return keys;
 }
 
+const SCHEDULED_KEYS = {
+  briefing: ['kind'], custom: ['kind', 'run_existing', 'clock'],
+  learning: ['kind', 'program', 'clock'], check: ['kind', 'task', 'clock', 'dry_run'],
+};
+
 export function scheduledFixture(scenario, session, turn) {
   if (!('scheduled' in turn)) return;
   const fixture = turn.scheduled;
-  if (!isRecord(fixture) || !['briefing', 'custom'].includes(fixture.kind)) throw new Error('scheduled requires kind briefing or custom');
-  if (fixture.run_existing === true) {
-    if (fixture.kind !== 'custom' || !Object.keys(fixture).every(key => ['kind', 'run_existing', 'clock'].includes(key))
+  if (!isRecord(fixture) || !Object.hasOwn(SCHEDULED_KEYS, fixture.kind)) throw new Error('scheduled requires kind briefing, custom, learning or check');
+  if (!Object.keys(fixture).every(key => SCHEDULED_KEYS[fixture.kind].includes(key))) throw new Error(`scheduled ${fixture.kind} has an unknown key`);
+  const seeded = fixture.kind === 'learning' || fixture.kind === 'check';
+  if (seeded) {
+    // The occurrence of a seeded program or check: its own prompt runs, at the stated clock.
+    const [key, seeds] = fixture.kind === 'learning' ? ['program', scenario.seed?.programs] : ['task', scenario.seed?.checks];
+    if (typeof fixture.clock !== 'string' || !Number.isFinite(Date.parse(fixture.clock))) throw new Error(`scheduled ${fixture.kind} requires a clock`);
+    // Without a name, the occurrence is the one a previous turn saved and accepted.
+    if (fixture[key] === undefined) {
+      if (session.turns.indexOf(turn) < 1 || session.turns.slice(0, session.turns.indexOf(turn)).every(earlier => earlier.approvals !== 'accept')) {
+        throw new Error(`scheduled ${fixture.kind} without a ${key} needs an earlier turn that accepts its card`);
+      }
+    } else if (!(seeds ?? []).some(seed => seed?.id === fixture[key])) throw new Error(`scheduled ${fixture.kind} names a ${key} the scenario does not seed`);
+    if (fixture.dry_run !== undefined && typeof fixture.dry_run !== 'boolean') throw new Error('scheduled check dry_run must be a boolean');
+  } else if (fixture.run_existing === true) {
+    if (fixture.kind !== 'custom'
       || typeof fixture.clock !== 'string' || !Number.isFinite(Date.parse(fixture.clock))
       || session.turns.indexOf(turn) < 1 || session.turns[0].scheduled) {
       throw new Error('run_existing requires a previous creation turn and a clock for the custom run');
@@ -77,6 +96,179 @@ export function scheduledFixture(scenario, session, turn) {
     || Object.keys(scenario.workspace_files ?? {}).length || populatedSeed)) throw new Error('scheduled briefing requires an empty library and no connections');
   if (turn.scheduled.kind === 'custom' && turn.user.trim() !== turn.user) {
     throw new Error('the saved custom request must have no surrounding whitespace');
+  }
+}
+
+const SCENARIO_KEYS = ['id', 'title', 'split', 'tags', 'connections', 'sessions', 'seed', 'replay', 'replay_needs', 'language', 'clock', 'workspace_files', 'hidden', 'world'];
+const SEED_KEYS = ['instructions', 'lens', 'sources', 'principles', 'watchlist', 'journal', 'shared_packs', 'asset_links', 'lens_pages', 'programs', 'checks', 'learning_allowance', 'corrections'];
+const SOURCE_KEYS = ['id', 'title', 'text', 'origin', 'company', 'form', 'publication_time', 'language'];
+const SESSION_KEYS = ['id', 'role', 'memory', 'turns'];
+const TURN_KEYS = ['user', 'expect', 'scheduled', 'as_of', 'attachments', 'discriminator', 'briefing', 'replay_price', 'approvals'];
+// A program and a check are seeded with the arguments of the tool that saves them.
+const PROGRAM_KEYS = ['id', 'title', 'prompt', 'schedule', 'subjects', 'depth', 'scope', 'keeps', 'report', 'delivery', 'preset', 'previous_run'];
+const CHECK_KEYS = ['id', 'title', 'prompt', 'terms', 'when_met_summary', 'template', 'template_params'];
+const FACT_KEYS = ['id', 'subject', 'object', 'relation', 'text', 'valid_at', 'invalid_at'];
+const RESOLUTION_KEYS = ['duplicates', 'contradicts', 'same_assertion'];
+const FIXTURE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+
+/** A calendar value at year, month or day precision, or an RFC 3339 instant. */
+function fixtureTime(value) {
+  return typeof value === 'string' && (/^\d{4}(?:-\d{2})?$/u.test(value) && Number.isFinite(Date.parse(value))
+    || validDate(value) || (/^\d{4}-\d{2}-\d{2}T/u.test(value) && Number.isFinite(Date.parse(value))));
+}
+
+/**
+ * The scenario input the runner reads: its keys, the seeds, scripted World and approvals.
+ * A key the runner does not read is an error here, not a silently ignored fixture.
+ */
+export function runnerInputContract(scenario) {
+  const where = `Scenario ${scenario.id}`;
+  const text = (value) => typeof value === 'string' && value.trim().length > 0;
+  const only = (value, keys, label) => {
+    if (!isRecord(value)) throw new Error(`${where} ${label} must be an object`);
+    const unknown = Object.keys(value).filter(key => !keys.includes(key));
+    if (unknown.length) throw new Error(`${where} ${label} has unknown key ${unknown.join(', ')}`);
+  };
+  const list = (value, label) => {
+    if (value !== undefined && !Array.isArray(value)) throw new Error(`${where} ${label} must be a list`);
+    return value ?? [];
+  };
+  const unique = (values, label) => {
+    if (new Set(values).size !== values.length) throw new Error(`${where} ${label} must be distinct`);
+  };
+  only(scenario, SCENARIO_KEYS, 'scenario');
+  const seed = scenario.seed ?? {};
+  only(seed, SEED_KEYS, 'seed');
+
+  const sources = new Map();
+  for (const source of list(seed.sources, 'seed.sources')) {
+    only(source, SOURCE_KEYS, 'seeded Source');
+    if (![source.title, source.text, source.origin].every(text)) throw new Error(`${where} seeded Source needs title, text and origin`);
+    for (const key of ['company', 'form']) if (source[key] !== undefined && !text(source[key])) throw new Error(`${where} seeded Source ${key} must be text`);
+    if (source.publication_time !== undefined && !fixtureTime(source.publication_time)) throw new Error(`${where} seeded Source publication_time must be YYYY-MM-DD or RFC 3339`);
+    if (source.language !== undefined) {
+      try { new Intl.Locale(source.language); } catch { throw new Error(`${where} seeded Source language must be BCP 47`); }
+    }
+    if (source.id === undefined) continue;
+    if (!FIXTURE_ID.test(source.id) || sources.has(source.id)) throw new Error(`${where} seeded Source id ${source.id} must be a distinct lowercase id`);
+    sources.set(source.id, source);
+  }
+
+  // The shape of sessions and turns is the caller's check; this reads only what is well formed.
+  const sessions = Array.isArray(scenario.sessions) ? scenario.sessions.filter(session => isRecord(session) && Array.isArray(session.turns)) : [];
+  const turnClocks = new Map(sessions.flatMap(session => session.turns.map((turn, index) =>
+    [`${session.id}\u0000${index}`, turn?.scheduled?.clock ?? scenario.clock ?? null])));
+  const entities = new Set();
+  const facts = new Map();
+  if (scenario.world !== undefined) {
+    only(scenario.world, ['mode', 'publications'], 'world');
+    const { mode, publications } = scenario.world;
+    if (!['scripted', 'live'].includes(mode)) throw new Error(`${where} world mode must be scripted or live`);
+    if (!Array.isArray(publications) || !publications.length) throw new Error(`${where} world needs publications`);
+    unique(publications.map(item => item?.source), 'published Sources');
+    // Publications run in recorded order, so a resolution may name only a fact recorded earlier.
+    const recorded = (publication) => Date.parse(publication.recorded_time ?? sources.get(publication.source).publication_time);
+    for (const publication of publications) {
+      only(publication, ['source', 'after', 'script', 'recorded_time'], 'publication');
+      const source = sources.get(publication.source);
+      if (!source) throw new Error(`${where} publication names a Source the scenario does not seed by id`);
+      if (!source.publication_time) throw new Error(`${where} published Source ${publication.source} needs a publication_time`);
+      if (publication.recorded_time !== undefined && !fixtureTime(publication.recorded_time)) throw new Error(`${where} publication recorded_time must be YYYY-MM-DD or RFC 3339`);
+      if (publication.after !== 'seed') {
+        only(publication.after, ['session', 'turn'], 'publication after');
+        const clock = turnClocks.get(`${publication.after.session}\u0000${publication.after.turn}`);
+        if (clock === undefined) throw new Error(`${where} publication is placed after a turn the scenario does not have`);
+        if (clock === null || !(recorded(publication) > Date.parse(clock))) throw new Error(`${where} a publication after a turn must be recorded later than that turn's clock`);
+      }
+      if ((mode === 'scripted') !== (publication.script !== undefined)) throw new Error(`${where} a scripted World scripts every publication and a live one scripts none`);
+    }
+    for (const publication of [...publications].sort((left, right) => recorded(left) - recorded(right))) {
+      if (!publication.script) continue;
+      const { script } = publication;
+      only(script, ['entities', 'facts', 'resolutions'], 'script');
+      for (const entity of list(script.entities, 'script entities')) {
+        only(entity, ['name', 'type', 'codes'], 'script entity');
+        if (!text(entity.name) || !text(entity.type) || list(entity.codes, 'entity codes').some(code => !text(code))) throw new Error(`${where} script entity needs a name, a type and text codes`);
+        entities.add(entity.name);
+      }
+      const own = new Set();
+      for (const fact of list(script.facts, 'script facts')) {
+        only(fact, FACT_KEYS, 'script fact');
+        if (!text(fact.id) || !FIXTURE_ID.test(fact.id) || facts.has(fact.id)) throw new Error(`${where} script fact id ${fact.id} must be a lowercase id, distinct in the scenario`);
+        if (!entities.has(fact.subject) || !entities.has(fact.object)) throw new Error(`${where} script fact ${fact.id} names an entity no script has introduced`);
+        if (!text(fact.relation) || !text(fact.text)) throw new Error(`${where} script fact ${fact.id} needs a relation and a text`);
+        for (const key of ['valid_at', 'invalid_at']) {
+          if (fact[key] !== undefined && fact[key] !== null && !fixtureTime(fact[key])) throw new Error(`${where} script fact ${fact.id} ${key} must be a date, a month, a year or an instant`);
+        }
+        own.add(fact.id);
+      }
+      const earlier = new Set(facts.keys());
+      for (const id of own) facts.set(id, publication.source);
+      if (script.resolutions !== undefined) {
+        only(script.resolutions, [...own], 'script resolutions');
+        for (const [id, resolution] of Object.entries(script.resolutions)) {
+          only(resolution, RESOLUTION_KEYS, `resolution of ${id}`);
+          for (const [kind, ids] of Object.entries(resolution)) {
+            if (!Array.isArray(ids) || !ids.length || ids.some(other => !earlier.has(other))) throw new Error(`${where} resolution ${id}.${kind} must name facts recorded earlier`);
+          }
+        }
+      }
+    }
+  }
+
+  const followed = new Set(list(seed.watchlist, 'seed.watchlist').map(asset => asset?.name));
+  for (const link of list(seed.asset_links, 'seed.asset_links')) {
+    only(link, ['asset', 'company'], 'asset link');
+    if (!followed.has(link.asset)) throw new Error(`${where} asset link names an asset the scenario does not follow`);
+    if (!entities.has(link.company)) throw new Error(`${where} asset link names a company no script has introduced`);
+  }
+  for (const page of list(seed.lens_pages, 'seed.lens_pages')) {
+    only(page, ['title', 'summary', 'kind', 'sections'], 'Lens page');
+    if (!text(page.title) || !text(page.kind) || !Array.isArray(page.sections) || !page.sections.length) throw new Error(`${where} Lens page needs a title, a kind and sections`);
+    for (const section of page.sections) {
+      only(section, ['key', 'heading', 'markdown', 'refs'], 'Lens page section');
+      if (![section.key, section.heading, section.markdown].every(text)) throw new Error(`${where} Lens page section needs key, heading and markdown`);
+      for (const ref of list(section.refs, 'section refs')) {
+        only(ref, ['source', 'fact'], 'section ref');
+        if (facts.get(ref.fact) !== ref.source) throw new Error(`${where} section ref names a fact its Source does not script`);
+      }
+    }
+  }
+  for (const [key, keys, required] of [['programs', PROGRAM_KEYS, ['title', 'prompt']], ['checks', CHECK_KEYS, ['prompt', 'terms', 'template']]]) {
+    const seeds = list(seed[key], `seed.${key}`);
+    unique(seeds.map(item => item?.id), `seed.${key} ids`);
+    for (const item of seeds) {
+      only(item, keys, `seeded ${key.slice(0, -1)}`);
+      if (!text(item.id) || !FIXTURE_ID.test(item.id) || !required.every(field => text(item[field]))) throw new Error(`${where} seeded ${key.slice(0, -1)} needs a lowercase id and ${required.join(', ')}`);
+      if (item.previous_run !== undefined) {
+        only(item.previous_run, ['clock'], 'previous_run');
+        if (!fixtureTime(item.previous_run.clock)) throw new Error(`${where} previous_run needs a clock`);
+      }
+    }
+  }
+  // The user's own corrections, applied through the bridge commands once World is staged.
+  for (const correction of list(seed.corrections, 'seed.corrections')) {
+    if (isRecord(correction) && Object.hasOwn(correction, 'claim')) {
+      only(correction, ['claim', 'action'], 'claim correction');
+      only(correction.claim, ['source', 'fact'], 'corrected claim');
+      if (facts.get(correction.claim.fact) !== correction.claim.source) throw new Error(`${where} correction names a fact its Source does not script`);
+      if (!['dispute', 'keep_current'].includes(correction.action)) throw new Error(`${where} claim correction action must be dispute or keep_current`);
+    } else {
+      only(correction, ['entity', 'action', 'alias'], 'entity correction');
+      if (!entities.has(correction.entity)) throw new Error(`${where} correction names an entity no script has introduced`);
+      if (correction.action !== 'add_alias' || !text(correction.alias)) throw new Error(`${where} entity correction must be add_alias with an alias`);
+    }
+  }
+  // Requests left for learning today when the first occurrence starts.
+  if (seed.learning_allowance !== undefined && (!Number.isSafeInteger(seed.learning_allowance) || seed.learning_allowance < 0)) {
+    throw new Error(`${where} learning_allowance must be a non-negative integer`);
+  }
+  for (const session of sessions) {
+    only(session, SESSION_KEYS, `session ${session.id}`);
+    for (const turn of session.turns.filter(isRecord)) {
+      only(turn, TURN_KEYS, `session ${session.id} turn`);
+      if (turn.approvals !== undefined && !['accept', 'decline'].includes(turn.approvals)) throw new Error(`${where} approvals must be accept or decline`);
+    }
   }
 }
 
@@ -153,6 +345,14 @@ export function toolCalledAssertion(assertion) {
   }
   if (assertion.successful !== undefined && typeof assertion.successful !== 'boolean') throw new Error('tool_called successful must be a boolean');
   return { tool: assertion.tool, args: args ?? null, successful: assertion.successful === true };
+}
+
+/** `file_written_before` names a file by a path pattern and the tools its first successful write must precede. */
+export function fileWrittenBeforeAssertion(assertion) {
+  const { path_matching: pattern, before } = assertion;
+  if (typeof pattern !== 'string' || !pattern || pattern.length > 200) throw new Error('file_written_before requires a path_matching pattern of at most 200 characters');
+  if (!Array.isArray(before) || !before.length || before.some(tool => typeof tool !== 'string' || !tool)) throw new Error('file_written_before requires the tools the write must precede');
+  return { path: new RegExp(pattern, 'u'), before };
 }
 
 /** A successful native read of the named Skill's entrypoint. */
@@ -508,6 +708,7 @@ export function validateSuite(suite) {
   for (const scenario of suite.scenarios) {
     if (typeof scenario.id !== 'string' || !scenario.id || ids.has(scenario.id) || !Array.isArray(scenario.sessions) || !scenario.sessions.length) throw new Error('Invalid or duplicate scenario');
     ids.add(scenario.id);
+    runnerInputContract(scenario);
     const sessions = new Set();
     for (const session of scenario.sessions) {
       if (typeof session.id !== 'string' || !session.id || sessions.has(session.id) || !Array.isArray(session.turns) || !session.turns.length) throw new Error(`Scenario ${scenario.id} has an invalid session`);
@@ -544,7 +745,10 @@ export function validateSuite(suite) {
             throw new Error('replayed_price requires the replay target, expected value and date');
           }
           if (assertion.assert === 'scheduled_quiet' && turn.scheduled?.kind !== 'custom') throw new Error('scheduled_quiet requires a custom run');
-          if (assertion.assert === 'scheduled_delivery' && !turn.scheduled) throw new Error('scheduled_delivery requires a scheduled turn');
+          if (assertion.assert === 'scheduled_delivery' && !['briefing', 'custom'].includes(turn.scheduled?.kind)) throw new Error('scheduled_delivery requires a briefing or custom run');
+          if (assertion.assert === 'scheduled_run' && !['learning', 'check'].includes(turn.scheduled?.kind)) throw new Error('scheduled_run requires a learning or check occurrence');
+          if (assertion.assert === 'progress_language') answerLanguageAssertion(assertion);
+          if (assertion.assert === 'file_written_before') fileWrittenBeforeAssertion(assertion);
           if (assertion.assert === 'skill_read') skillReadAssertion(assertion);
           if (assertion.assert === 'tool_called_before') toolOrderAssertion(assertion);
         }

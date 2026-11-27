@@ -1,0 +1,664 @@
+{
+  "schema": "loupist-world-oracle/1",
+  "suite": "world-temporal-v4",
+  "version": 4,
+  "description": "Offline checks for validity, ordering, conflicts, date precision and persisted Lens state. T-RESTATED is recorded, not gated. Keep this oracle out of model inputs.",
+  "trials": 1,
+  "acceptance": "Every trial of each scenario complete. Every expected ending and Lens state passes, all three duplicate-publication arms agree, no unexpected ending appears and no control gains a date finer than its Source supports. restated_after_end and T-RESTATED are reported and gate nothing.",
+  "scenarios": [
+    {
+      "id": "T-CEO-DATE",
+      "steps": [
+        "s1",
+        "s2"
+      ],
+      "check": "supersede",
+      "old": {
+        "source_title": "Corvane Logistics names Lena Ortiz chief executive",
+        "between": [
+          "^lena ortiz$",
+          "^corvane logistics$"
+        ]
+      },
+      "new": {
+        "source_title": "Corvane Logistics names Marcus Hale chief executive",
+        "between": [
+          "^marcus hale$",
+          "^corvane logistics$"
+        ]
+      },
+      "end": {
+        "value": "2026-06-15",
+        "precision": "date",
+        "basis": "stated",
+        "approximate": false
+      },
+      "old_start": {
+        "value": "2026-01-05",
+        "precision": "date",
+        "approximate": false
+      },
+      "new_start": {
+        "value": "2026-06-15",
+        "precision": "date",
+        "approximate": false
+      },
+      "lens": {
+        "title": "Corvane Logistics names Lena Ortiz chief executive | research",
+        "section_key": "current-view"
+      },
+      "witness_source": "Corvane Logistics names Marcus Hale chief executive",
+      "required_sources": [
+        "Corvane Logistics names Lena Ortiz chief executive",
+        "Corvane Logistics names Marcus Hale chief executive"
+      ]
+    },
+    {
+      "id": "T-GUIDE",
+      "steps": [
+        "s1",
+        "s2"
+      ],
+      "check": "supersede",
+      "old": {
+        "source_title": "Nacreline Systems issues annual production outlook",
+        "proposition": "\\b14[ ,]?200\\b"
+      },
+      "new": {
+        "source_title": "Nacreline Systems raises annual production outlook",
+        "proposition": "\\b16[ ,]?800\\b"
+      },
+      "end": {
+        "value": "2026-07-17",
+        "precision": "date",
+        "basis": "reference",
+        "approximate": true
+      },
+      "old_start": null,
+      "new_start": null,
+      "lens": {
+        "title": "Nacreline Systems issues annual production outlook | research",
+        "section_key": "current-view"
+      },
+      "witness_source": "Nacreline Systems raises annual production outlook",
+      "required_sources": [
+        "Nacreline Systems issues annual production outlook",
+        "Nacreline Systems raises annual production outlook"
+      ]
+    },
+    {
+      "id": "T-RESTATE",
+      "steps": [
+        "s1",
+        "s2"
+      ],
+      "check": "supersede",
+      "old": {
+        "source_title": "Clovewick Works Q2 output report",
+        "proposition": "\\b2[ ,]?640\\b"
+      },
+      "new": {
+        "source_title": "Clovewick Works corrects Q2 output",
+        "proposition": "\\b2[ ,]?460\\b"
+      },
+      "end": {
+        "value": "2026-08-03",
+        "precision": "date",
+        "basis": "reference",
+        "approximate": true
+      },
+      "old_start": null,
+      "new_start": null,
+      "lens": {
+        "title": "Clovewick Works Q2 output report | research",
+        "section_key": "current-view"
+      },
+      "witness_source": "Clovewick Works corrects Q2 output",
+      "required_sources": [
+        "Clovewick Works Q2 output report",
+        "Clovewick Works corrects Q2 output"
+      ]
+    },
+    {
+      "id": "T-DUP",
+      "steps": [
+        "s1",
+        "s2",
+        "s3"
+      ],
+      "required_sources": [
+        "Marlwyn Instruments January officers report",
+        "Marlwyn Instruments March officers report",
+        "Marlwyn Instruments February officers report"
+      ],
+      "check": "supersede",
+      "old": {
+        "source_title": "Marlwyn Instruments January officers report",
+        "between": [
+          "^priya desai$",
+          "^marlwyn instruments$"
+        ]
+      },
+      "new": {
+        "source_title": "Marlwyn Instruments February officers report",
+        "between": [
+          "^owen bell$",
+          "^marlwyn instruments$"
+        ]
+      },
+      "end": {
+        "value": "2026-02-13",
+        "precision": "date",
+        "basis": "reference",
+        "approximate": true
+      },
+      "old_start": null,
+      "new_start": null,
+      "witness_source": "Marlwyn Instruments February officers report",
+      "support": {
+        "source_title": "Marlwyn Instruments March officers report",
+        "earliest_publication": "2026-01-16"
+      },
+      "lens": {
+        "title": "Repeated CFO assertion in jan then mar then feb order | research",
+        "section_key": "current-view"
+      }
+    },
+    {
+      "id": "T-DUP-MARCH-FIRST",
+      "steps": [
+        "s1",
+        "s2",
+        "s3"
+      ],
+      "required_sources": [
+        "Marlwyn Instruments March officers report",
+        "Marlwyn Instruments January officers report",
+        "Marlwyn Instruments February officers report"
+      ],
+      "check": "supersede",
+      "old": {
+        "source_title": "Marlwyn Instruments January officers report",
+        "between": [
+          "^priya desai$",
+          "^marlwyn instruments$"
+        ]
+      },
+      "new": {
+        "source_title": "Marlwyn Instruments February officers report",
+        "between": [
+          "^owen bell$",
+          "^marlwyn instruments$"
+        ]
+      },
+      "end": {
+        "value": "2026-02-13",
+        "precision": "date",
+        "basis": "reference",
+        "approximate": true
+      },
+      "old_start": null,
+      "new_start": null,
+      "witness_source": "Marlwyn Instruments February officers report",
+      "support": {
+        "source_title": "Marlwyn Instruments March officers report",
+        "earliest_publication": "2026-01-16"
+      },
+      "lens": {
+        "title": "Repeated CFO assertion in mar then jan then feb order | research",
+        "section_key": "current-view"
+      }
+    },
+    {
+      "id": "T-DUP-BACKFILL-JANUARY",
+      "steps": [
+        "s1",
+        "s2",
+        "s3"
+      ],
+      "required_sources": [
+        "Marlwyn Instruments March officers report",
+        "Marlwyn Instruments February officers report",
+        "Marlwyn Instruments January officers report"
+      ],
+      "check": "supersede",
+      "old": {
+        "source_title": "Marlwyn Instruments January officers report",
+        "between": [
+          "^priya desai$",
+          "^marlwyn instruments$"
+        ]
+      },
+      "new": {
+        "source_title": "Marlwyn Instruments February officers report",
+        "between": [
+          "^owen bell$",
+          "^marlwyn instruments$"
+        ]
+      },
+      "end": {
+        "value": "2026-02-13",
+        "precision": "date",
+        "basis": "reference",
+        "approximate": true
+      },
+      "old_start": null,
+      "new_start": null,
+      "witness_source": "Marlwyn Instruments February officers report",
+      "support": {
+        "source_title": "Marlwyn Instruments March officers report",
+        "earliest_publication": "2026-01-16"
+      },
+      "lens": {
+        "title": "Repeated CFO assertion in mar then feb then jan order | research",
+        "section_key": "current-view"
+      }
+    },
+    {
+      "id": "T-PERIOD",
+      "steps": [
+        "s1",
+        "s2"
+      ],
+      "check": "control",
+      "old": {
+        "source_title": "Junewick Fibers Q2 results",
+        "proposition": "\\b(?:12\\s*(?:million|m\\b)|12[ ,]?000[ ,]?000)"
+      },
+      "new": {
+        "source_title": "Junewick Fibers Q3 results",
+        "proposition": "\\b(?:15\\s*(?:million|m\\b)|15[ ,]?000[ ,]?000)"
+      },
+      "additional_pairs": [
+        {
+          "old": {
+            "source_title": "Junewick Fibers Q2 results",
+            "proposition": "\\b39[ ,]?600\\b"
+          },
+          "new": {
+            "source_title": "Junewick Fibers Q3 results",
+            "proposition": "\\b41[ ,]?300\\b"
+          }
+        }
+      ],
+      "required_sources": [
+        "Junewick Fibers Q2 results",
+        "Junewick Fibers Q3 results"
+      ]
+    },
+    {
+      "id": "T-DISPUTE",
+      "check": "control",
+      "old": {
+        "source_title": "Orion Ferry Works signs Pell Shipyards contract",
+        "between": [
+          "^orion ferry works$",
+          "^pell shipyards$"
+        ]
+      },
+      "steps": [
+        "s1",
+        "s2"
+      ],
+      "required_sources": [
+        "Orion Ferry Works signs Pell Shipyards contract",
+        "Short-seller report on Pell Shipyards suppliers"
+      ]
+    },
+    {
+      "id": "T-SAMEDAY",
+      "steps": [
+        "s1",
+        "s2"
+      ],
+      "check": "control",
+      "old": {
+        "source_title": "Channel Desk profile of Eversilt Ceramics",
+        "proposition": "kestle bay"
+      },
+      "new": {
+        "source_title": "Trade Bulletin profile of Eversilt Ceramics",
+        "proposition": "amber quay"
+      },
+      "conflict": true,
+      "additional_pairs": [
+        {
+          "old": {
+            "source_title": "Channel Desk profile of Eversilt Ceramics",
+            "between": [
+              "^tessa bell$",
+              "^eversilt ceramics$"
+            ]
+          },
+          "new": {
+            "source_title": "Trade Bulletin profile of Eversilt Ceramics",
+            "between": [
+              "^ian crowe$",
+              "^eversilt ceramics$"
+            ]
+          },
+          "end": {
+            "value": "2026-07-06",
+            "precision": "date",
+            "basis": "stated",
+            "approximate": false
+          },
+          "old_start": {
+            "value": "2026-02-02",
+            "precision": "date",
+            "approximate": false
+          },
+          "new_start": {
+            "value": "2026-07-06",
+            "precision": "date",
+            "approximate": false
+          },
+          "witness_source": "Trade Bulletin profile of Eversilt Ceramics"
+        }
+      ],
+      "lens": {
+        "title": "Two publishers disagree on the same day | research",
+        "section_key": "current-view"
+      },
+      "required_sources": [
+        "Channel Desk profile of Eversilt Ceramics",
+        "Trade Bulletin profile of Eversilt Ceramics"
+      ]
+    },
+    {
+      "id": "T-RECEIVED",
+      "steps": [
+        "s1",
+        "s2"
+      ],
+      "check": "control",
+      "old": {
+        "source_title": "Fenward Lighting officers directory",
+        "between": [
+          "^fenward lighting$",
+          "^iris chen$"
+        ]
+      },
+      "new": {
+        "source_title": "Undated Fenward Lighting note",
+        "between": [
+          "^fenward lighting$",
+          "^noah aziz$"
+        ]
+      },
+      "required_sources": [
+        "Fenward Lighting officers directory",
+        "Undated Fenward Lighting note"
+      ]
+    },
+    {
+      "id": "T-FUTURE-END",
+      "steps": [
+        "s1",
+        "s2"
+      ],
+      "required_sources": [
+        "Bramblewick Gears finance appointment",
+        "Bramblewick Gears finance departure notice"
+      ],
+      "check": "end",
+      "old": {
+        "source_title": "Bramblewick Gears finance appointment",
+        "between": [
+          "^mae salter$",
+          "^bramblewick gears$"
+        ]
+      },
+      "end": {
+        "value": "2026-06-15",
+        "precision": "date",
+        "basis": "stated",
+        "approximate": false
+      },
+      "old_start": {
+        "value": "2026-01-02",
+        "precision": "date",
+        "approximate": false
+      },
+      "new_start": null,
+      "witness_source": "Bramblewick Gears finance departure notice",
+      "as_of": [
+        {
+          "date": "2026-04-01",
+          "ended": false
+        },
+        {
+          "date": "2026-06-16",
+          "ended": true
+        }
+      ],
+      "lens": {
+        "title": "Bramblewick Gears departure notice | research",
+        "section_key": "current-view"
+      }
+    },
+    {
+      "id": "T-LATE-NOTICE",
+      "steps": [
+        "s1",
+        "s2"
+      ],
+      "required_sources": [
+        "Larchstone Welders finance appointment",
+        "Larchstone Welders finance departure notice"
+      ],
+      "check": "end",
+      "old": {
+        "source_title": "Larchstone Welders finance appointment",
+        "between": [
+          "^kai venn$",
+          "^larchstone welders$"
+        ]
+      },
+      "end": {
+        "value": "2026-03-15",
+        "precision": "date",
+        "basis": "stated",
+        "approximate": false
+      },
+      "old_start": {
+        "value": "2026-01-02",
+        "precision": "date",
+        "approximate": false
+      },
+      "new_start": null,
+      "witness_source": "Larchstone Welders finance departure notice",
+      "as_of": [
+        {
+          "date": "2026-04-01",
+          "ended": false,
+          "witness_known": false
+        },
+        {
+          "date": "2026-05-13",
+          "ended": true
+        }
+      ],
+      "lens": {
+        "title": "Larchstone Welders departure notice | research",
+        "section_key": "current-view"
+      }
+    },
+    {
+      "id": "T-JP-FY",
+      "steps": [
+        "s1",
+        "s2"
+      ],
+      "check": "supersede",
+      "old": {
+        "source_title": "朝凪精機 2027年3月期 連結業績予想",
+        "proposition": "4[,，]?200\\s*億|420(?:\\.0+)?\\s*billion|420[,，]?000\\s*(?:million|百万)"
+      },
+      "new": {
+        "source_title": "朝凪精機 2027年3月期 連結業績予想の修正",
+        "proposition": "3[,，]?900\\s*億|390(?:\\.0+)?\\s*billion|390[,，]?000\\s*(?:million|百万)"
+      },
+      "end": {
+        "value": "2026-11-10",
+        "precision": "date",
+        "basis": "reference",
+        "approximate": true
+      },
+      "old_start": null,
+      "new_start": null,
+      "witness_source": "朝凪精機 2027年3月期 連結業績予想の修正",
+      "required_sources": [
+        "朝凪精機 2027年3月期 連結業績予想",
+        "朝凪精機 2027年3月期 連結業績予想の修正"
+      ]
+    },
+    {
+      "id": "T-DE-CFO",
+      "steps": [
+        "s1",
+        "s2"
+      ],
+      "check": "supersede",
+      "old": {
+        "source_title": "Rheinfels Antriebstechnik Halbjahresfinanzbericht 2025",
+        "between": [
+          "^jonas brandt$",
+          "^rheinfels antriebstechnik(?: ag)?$"
+        ]
+      },
+      "new": {
+        "source_title": "Rheinfels Antriebstechnik Halbjahresfinanzbericht 2026",
+        "between": [
+          "^miriam stolz$",
+          "^rheinfels antriebstechnik(?: ag)?$"
+        ]
+      },
+      "end": {
+        "value": "2026-08-13",
+        "precision": "date",
+        "basis": "reference",
+        "approximate": true
+      },
+      "old_start": null,
+      "new_start": null,
+      "witness_source": "Rheinfels Antriebstechnik Halbjahresfinanzbericht 2026",
+      "required_sources": [
+        "Rheinfels Antriebstechnik Halbjahresfinanzbericht 2025",
+        "Rheinfels Antriebstechnik Halbjahresfinanzbericht 2026"
+      ]
+    },
+    {
+      "id": "T-IN-RESTATE",
+      "steps": [
+        "s1",
+        "s2"
+      ],
+      "check": "supersede",
+      "old": {
+        "source_title": "Vindhya Agro Foods Q1 FY2026-27 results",
+        "proposition": "\\b1[ ,]?284\\.5|12\\.845\\s*billion|12[ ,]?845\\s*million"
+      },
+      "new": {
+        "source_title": "Vindhya Agro Foods restates Q1 FY2026-27 revenue",
+        "proposition": "\\b1[ ,]?248\\.5|12\\.485\\s*billion|12[ ,]?485\\s*million"
+      },
+      "end": {
+        "value": "2026-09-02",
+        "precision": "date",
+        "basis": "reference",
+        "approximate": true
+      },
+      "old_start": null,
+      "new_start": null,
+      "witness_source": "Vindhya Agro Foods restates Q1 FY2026-27 revenue",
+      "required_sources": [
+        "Vindhya Agro Foods Q1 FY2026-27 results",
+        "Vindhya Agro Foods restates Q1 FY2026-27 revenue"
+      ]
+    },
+    {
+      "id": "T-ZH-PERIOD",
+      "steps": [
+        "s1",
+        "s2"
+      ],
+      "check": "control",
+      "old": {
+        "source_title": "岚川新材料2026年第一季度报告",
+        "proposition": "18\\.6\\s*亿|1\\.86\\s*billion|1[ ,]?860\\s*million"
+      },
+      "new": {
+        "source_title": "岚川新材料2026年半年度报告",
+        "proposition": "21\\.3\\s*亿|2\\.13\\s*billion|2[ ,]?130\\s*million"
+      },
+      "required_sources": [
+        "岚川新材料2026年第一季度报告",
+        "岚川新材料2026年半年度报告"
+      ]
+    },
+    {
+      "id": "T-AMBIGUOUS-DATE",
+      "steps": [
+        "s1",
+        "s2"
+      ],
+      "check": "control",
+      "old": {
+        "source_title": "Northgate Register entry for Hollowmere Tools",
+        "between": [
+          "^dara whitlock$",
+          "^hollowmere tools(?: plc)?$"
+        ]
+      },
+      "new": {
+        "source_title": "Calder Gazette entry for Hollowmere Tools",
+        "between": [
+          "^owen tarrant$",
+          "^hollowmere tools(?: plc)?$"
+        ]
+      },
+      "max_date_precision": "month",
+      "required_sources": [
+        "Northgate Register entry for Hollowmere Tools",
+        "Calder Gazette entry for Hollowmere Tools"
+      ]
+    },
+    {
+      "id": "T-RESTATED",
+      "steps": [
+        "s1",
+        "s2",
+        "s3"
+      ],
+      "check": "record",
+      "old": {
+        "source_title": "Tavish Row Brewing March officers list",
+        "between": [
+          "^ines calloway$",
+          "^tavish row brewing$"
+        ]
+      },
+      "new": {
+        "source_title": "Tavish Row Brewing May officers list",
+        "between": [
+          "^rufus dane$",
+          "^tavish row brewing$"
+        ]
+      },
+      "restatement": {
+        "source_title": "Tavish Row Brewing July officers list"
+      },
+      "required_sources": [
+        "Tavish Row Brewing March officers list",
+        "Tavish Row Brewing May officers list",
+        "Tavish Row Brewing July officers list"
+      ]
+    }
+  ],
+  "order_arms": [
+    "T-DUP",
+    "T-DUP-MARCH-FIRST",
+    "T-DUP-BACKFILL-JANUARY"
+  ]
+}

@@ -1,5 +1,6 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { chooseSelectOption } from "@/test/selectOption";
 import i18n from "@/i18n";
 import { formatDay, formatTime } from "@/i18n/format";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
@@ -9,6 +10,9 @@ import type { ChatThread, LoupistSummary } from "../../types";
 import type { AssetPageTarget } from "../../contracts/assets";
 import { failedFixture, hanulFixture, nameOnlyFixture, needsConnectionFixture, noCurrencyFixture, noThesisFixture, nvidiaFixture, type AssetFixture } from "../../preview/assets";
 import { AssetPage } from "./AssetPage";
+
+const printReader = vi.hoisted(() => vi.fn(async (_source: HTMLElement, _title: string) => undefined));
+vi.mock("../print/printDocuments", () => ({ printReader }));
 import { InspectorThesis } from "./InspectorThesis";
 
 /** Installs the fixture for the first Loupist and opens its page by id (or by `target`). */
@@ -302,6 +306,15 @@ it("recovers a failed saved read with one replay and skips price setup", async (
   expect(bridge.assets.setups).toHaveLength(0);
 });
 
+it("shows Track daily for an unfollowed asset and says to follow it first", async () => {
+  const asset = hanulFixture();
+  asset.asset.followed = false;
+  await fixture(asset);
+  const page = await opened("Hanul Precision");
+  expect(await within(page).findByText("Follow Hanul Precision to track it daily.")).toBeVisible();
+  expect(within(page).getByRole("switch", { name: "Track daily" })).toBeDisabled();
+});
+
 it("asks the user to follow an unfollowed asset when checking its price", async () => {
   const asset = hanulFixture();
   asset.asset.followed = false;
@@ -405,10 +418,70 @@ it("puts a question into Bot's composer naming the listing, or the name alone wi
   expect(within(named).getByRole("textbox", { name: `Ask about ${longName}` })).toHaveAttribute("placeholder", "Ask a question about it");
 });
 
+it("pauses Track daily when stopping following, with the option checked", async () => {
+  const asset = nvidiaFixture();
+  const { bridge, loupist, user } = await fixture(asset, { configure: bridge => {
+    vi.spyOn(bridge, "scheduledTasksList").mockResolvedValue([{
+      kind: "learning", id: "daily", loupist_id: "loupist-quality", revision: 4, title: "Track daily", prompt: "",
+      schedule: { kind: "daily", hour: 7, minute: 0, timezone: "UTC" }, target: { kind: "new_chat" }, session_thread_id: null,
+      model_profile_id: "", thinking_level: "", run_options: {}, use_memory: true, update_memory: false,
+      status: "active", next_run_at_ms: null, last_run_at_ms: null, created_at_ms: 0, updated_at_ms: 0, last_error: null,
+      awaiting_confirmation: false, latest_run: null, subjects: [{ asset: asset.asset.assetId }],
+    }]);
+  } });
+  const status = vi.spyOn(bridge, "scheduledTaskSetStatus").mockResolvedValue({} as never);
+  const unfollow = vi.spyOn(bridge, "assetUnfollow");
+  const page = await opened("NVIDIA CORP");
+  await user.click(await within(page).findByRole("button", { name: "Stop following NVIDIA CORP" }));
+  const dialog = await screen.findByRole("dialog", { name: "Stop following NVIDIA CORP?" });
+  expect(within(dialog).getByRole("checkbox", { name: "Also pause Track daily for NVIDIA CORP?" })).toBeChecked();
+  await user.click(within(dialog).getByRole("button", { name: "Stop following" }));
+  await waitFor(() => expect(status).toHaveBeenCalledWith({ loupist_id: loupist.id, task_id: "daily", expected_revision: 4, status: "paused" }));
+  expect(unfollow).toHaveBeenCalledWith({ loupistId: loupist.id, assetId: asset.asset.assetId });
+});
+
+it("shows a loading state for price history while that read is still open", async () => {
+  let release: (points: []) => void = () => {};
+  const gate = new Promise<[]>(resolve => { release = resolve; });
+  await fixture(nvidiaFixture(), { configure: bridge => { vi.spyOn(bridge, "assetPriceSeries").mockReturnValue(gate); } });
+  const page = await opened("NVIDIA CORP");
+  expect(page.querySelector(".price-chart")).toBeNull();
+  expect(await within(page).findByText("Getting price history…")).toBeVisible();
+  expect(page.querySelector(".asset-chart-skeleton")).toBeVisible();
+  act(() => release([]));
+  await waitFor(() => expect(page.querySelector(".asset-chart-skeleton")).toBeNull());
+  expect(page).toHaveTextContent("No price history saved yet. Check now reads it.");
+});
+
+it("prints the drawn page and shows the briefing's error line when printing fails", async () => {
+  const { user } = await fixture(nvidiaFixture());
+  const page = await opened("NVIDIA CORP");
+  await user.click(within(page).getByRole("button", { name: "Print or save as PDF…" }));
+  expect(printReader).toHaveBeenCalledWith(page, expect.stringMatching(/^NVIDIA CORP · /));
+  printReader.mockRejectedValueOnce(new Error("blocked"));
+  await user.click(within(page).getByRole("button", { name: "Print or save as PDF…" }));
+  expect(await within(page).findByRole("alert")).toHaveTextContent("Couldn’t open printing. Try again.");
+});
+
 it("withholds the verdict until a thesis has a recorded review", async () => {
   const asset = nameOnlyFixture();
   await fixture(asset);
   const page = await opened(asset.asset.name);
   expect(within(page).getByText("Not reviewed yet")).toBeVisible();
   expect(within(page).queryByText("Holding up")).toBeNull();
+});
+
+it("saves the direction picked for a thesis line", async () => {
+  const asset = hanulFixture();
+  const { bridge, user } = await fixture(asset);
+  const create = vi.spyOn(bridge, "journalCreate");
+  const page = await opened(asset.asset.name);
+  await user.click(within(page).getByRole("button", { name: "Add a line" }));
+  const form = within(page).getByRole("form", { name: "Add a line" });
+  await user.type(within(form).getByRole("textbox", { name: "What to watch" }), "Margin falls");
+  await user.type(within(form).getByRole("textbox", { name: "Metric" }), "Margin");
+  await user.type(within(form).getByRole("spinbutton", { name: "Threshold" }), "50");
+  await chooseSelectOption(user, within(form).getByRole("combobox", { name: "Direction" }), "Below");
+  await user.click(within(form).getByRole("button", { name: "Save entry" }));
+  await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ check: expect.objectContaining({ direction: "below", threshold: 50 }) })));
 });

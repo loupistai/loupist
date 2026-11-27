@@ -1,0 +1,450 @@
+[
+  {
+    "id": "F-US-01",
+    "profile": "us",
+    "passage": "Halvorsen Devices, Inc. quarterly report. Net revenue for the fiscal quarter ended October 31, 2026 was $1,482.6 million, compared with $1,397.4 million a year earlier.",
+    "proposition": "Halvorsen Devices reported net revenue of $1,482.6 million for the fiscal quarter ended October 31, 2026.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-US-02",
+    "profile": "us",
+    "passage": "Halvorsen Devices, Inc. quarterly report. Net revenue for the fiscal quarter ended October 31, 2026 was $1,482.6 million, compared with $1,397.4 million a year earlier.",
+    "proposition": "Net revenue was $1.4826 billion in the fiscal quarter ended October 31, 2026.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-US-03",
+    "profile": "us",
+    "passage": "Halvorsen Devices, Inc. quarterly report. Net revenue for the fiscal quarter ended October 31, 2026 was $1,482.6 million, compared with $1,397.4 million a year earlier.",
+    "proposition": "Net revenue was about $1.48 billion in the quarter.",
+    "expect": "rounded"
+  },
+  {
+    "id": "F-US-04",
+    "profile": "us",
+    "passage": "Halvorsen Devices, Inc. quarterly report. Net revenue for the fiscal quarter ended October 31, 2026 was $1,482.6 million, compared with $1,397.4 million a year earlier.",
+    "proposition": "Net revenue was $148.26 million in the quarter.",
+    "expect": "differs"
+  },
+  {
+    "id": "F-US-05",
+    "profile": "us",
+    "passage": "Operating income declined 12.4% from the prior-year quarter, mainly on higher freight costs.",
+    "proposition": "Operating income increased 12.4% from the prior-year quarter.",
+    "expect": "differs"
+  },
+  {
+    "id": "F-US-06",
+    "profile": "us",
+    "passage": "Halvorsen Devices, Inc. quarterly report. Net revenue for the fiscal quarter ended October 31, 2026 was $1,482.6 million, compared with $1,397.4 million a year earlier.",
+    "proposition": "Net revenue grew 6.1% year over year.",
+    "expect": "not_found"
+  },
+  {
+    "id": "F-US-07",
+    "profile": "us",
+    "passage": "Condensed consolidated statements of operations (in millions of U.S. dollars)\nQuarter ended October 31 | 2026 | 2025\nNet loss | (45.2) | (18.7)",
+    "proposition": "Halvorsen Devices reported a net loss of $45.2 million for the quarter.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-US-08",
+    "profile": "us",
+    "passage": "Gross margin decreased 2.3 percentage points to 41.5% in the quarter.",
+    "proposition": "Gross margin decreased 2.3% to 41.5% in the quarter.",
+    "expect": "not_found"
+  },
+  {
+    "id": "F-KR-01",
+    "profile": "korea",
+    "passage": "가람정밀(990431)의 2026년 3분기 연결 매출액은 1,234억 원, 영업이익은 87억 원이다.",
+    "proposition": "가람정밀(990431)의 2026년 3분기 연결 매출액은 1,234억 원이다.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-KR-02",
+    "profile": "korea",
+    "passage": "가람정밀(990431)의 2026년 3분기 연결 매출액은 1,234억 원, 영업이익은 87억 원이다.",
+    "proposition": "Garam Precision's consolidated revenue for the third quarter of 2026 was KRW 123.4 billion.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-KR-03",
+    "profile": "korea",
+    "passage": "가람정밀(990431)의 2026년 3분기 연결 매출액은 1,234억 원, 영업이익은 87억 원이다.",
+    "proposition": "Garam Precision's consolidated revenue for the third quarter of 2026 was KRW 12.34 billion.",
+    "expect": "differs"
+  },
+  {
+    "id": "F-KR-04",
+    "profile": "korea",
+    "passage": "2026년 9월 말 기준 가람정밀의 수주잔고는 1조 2,345억 원이다.",
+    "proposition": "The order backlog was about KRW 1.23 trillion at the end of September 2026.",
+    "expect": "rounded"
+  },
+  {
+    "id": "F-KR-05",
+    "profile": "korea",
+    "passage": "2026년 9월 말 기준 가람정밀의 수주잔고는 1조 2,345억 원이다.",
+    "proposition": "The order backlog was KRW 1,234.5 billion at the end of September 2026.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-KR-06",
+    "profile": "korea",
+    "passage": "가람정밀의 3분기 영업이익은 전년 동기 대비 9.4% 감소했다.",
+    "proposition": "가람정밀의 3분기 영업이익은 전년 동기 대비 9.4% 증가했다.",
+    "expect": "differs"
+  },
+  {
+    "id": "F-KR-07",
+    "profile": "korea",
+    "passage": "가람정밀(990431)의 2026년 3분기 연결 매출액은 1,234억 원, 영업이익은 87억 원이다.",
+    "proposition": "가람정밀의 2026년 3분기 영업이익률은 7.1%이다.",
+    "expect": "not_found"
+  },
+  {
+    "id": "F-KR-08",
+    "profile": "korea",
+    "passage": "현금ㆍ현물배당결정 가람정밀 2026년 결산 현금배당 결정. 1주당 배당금(원) 보통주식 300, 배당기준일 2026-12-31.",
+    "proposition": "가람정밀은 보통주 1주당 300원을 배당한다. 배당기준일은 2026년 12월 31일이다.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-JP-01",
+    "profile": "japan",
+    "passage": "灯台電子株式会社(証券コード 1188)の2027年3月期第2四半期の連結営業利益は、前年同期比12.4%増の86億5,000万円だった。",
+    "proposition": "灯台電子の2027年3月期第2四半期の連結営業利益は86億5,000万円である。",
+    "expect": "matched"
+  },
+  {
+    "id": "F-JP-02",
+    "profile": "japan",
+    "passage": "灯台電子株式会社(証券コード 1188)の2027年3月期第2四半期の連結営業利益は、前年同期比12.4%増の86億5,000万円だった。",
+    "proposition": "Todai Denshi's consolidated operating profit for the second quarter of the fiscal year ending March 2027 was JPY 8.65 billion.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-JP-03",
+    "profile": "japan",
+    "passage": "灯台電子の2027年3月期第2四半期の連結売上高は4,218億円、営業利益は337億円だった。",
+    "proposition": "Consolidated revenue for the second quarter was approximately JPY 422 billion.",
+    "expect": "rounded"
+  },
+  {
+    "id": "F-JP-04",
+    "profile": "japan",
+    "passage": "灯台電子の2027年3月期第2四半期の連結売上高は4,218億円、営業利益は337億円だった。",
+    "proposition": "Consolidated revenue for the second quarter was JPY 42.18 billion.",
+    "expect": "differs"
+  },
+  {
+    "id": "F-JP-05",
+    "profile": "japan",
+    "passage": "灯台電子は2027年3月期の連結売上高を1兆2,000億円と予想している。",
+    "proposition": "Todai Denshi forecasts consolidated revenue of JPY 1.2 trillion for the fiscal year ending March 2027.",
+    "expect": "unchecked"
+  },
+  {
+    "id": "F-JP-06",
+    "profile": "japan",
+    "passage": "灯台電子の2027年3月期第2四半期の連結売上高は4,218億円、営業利益は337億円だった。",
+    "proposition": "灯台電子の第2四半期の営業利益率は8.0%である。",
+    "expect": "not_found"
+  },
+  {
+    "id": "F-JP-07",
+    "profile": "japan",
+    "passage": "灯台電子株式会社(証券コード 1188)の2027年3月期第2四半期の連結営業利益は、前年同期比12.4%増の86億5,000万円だった。",
+    "proposition": "灯台電子の連結営業利益は前年同期比12.4%減だった。",
+    "expect": "differs"
+  },
+  {
+    "id": "F-JP-08",
+    "profile": "japan",
+    "passage": "灯台電子は2027年3月期の年間配当予想を1株当たり48円(中間24円、期末24円)とする。",
+    "proposition": "灯台電子(1188)は2027年3月期の年間配当を1株当たり48円と予想している。",
+    "expect": "matched"
+  },
+  {
+    "id": "F-DE-01",
+    "profile": "germany",
+    "passage": "Die Umsatzerlöse der Lindenhof Maschinenbau AG beliefen sich im ersten Halbjahr 2026 auf 1.482,6 Mio. EUR (Vorjahr: 1.397,4 Mio. EUR).",
+    "proposition": "Die Umsatzerlöse beliefen sich im ersten Halbjahr 2026 auf 1.482,6 Mio. EUR.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-DE-02",
+    "profile": "germany",
+    "passage": "Die Umsatzerlöse der Lindenhof Maschinenbau AG beliefen sich im ersten Halbjahr 2026 auf 1.482,6 Mio. EUR (Vorjahr: 1.397,4 Mio. EUR).",
+    "proposition": "Lindenhof Maschinenbau's revenue was EUR 1,482.6 million in the first half of 2026.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-DE-03",
+    "profile": "germany",
+    "passage": "Der Auftragsbestand der Lindenhof Maschinenbau AG lag zum 30. Juni 2026 bei 2,1 Mrd. EUR.",
+    "proposition": "The order backlog stood at EUR 2,100 million on 30 June 2026.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-DE-04",
+    "profile": "germany",
+    "passage": "Die Umsatzerlöse der Lindenhof Maschinenbau AG beliefen sich im ersten Halbjahr 2026 auf 1.482,6 Mio. EUR (Vorjahr: 1.397,4 Mio. EUR).",
+    "proposition": "Lindenhof Maschinenbau's revenue was about EUR 1.5 billion in the first half of 2026.",
+    "expect": "rounded"
+  },
+  {
+    "id": "F-DE-05",
+    "profile": "germany",
+    "passage": "Die Umsatzerlöse der Lindenhof Maschinenbau AG beliefen sich im ersten Halbjahr 2026 auf 1.482,6 Mio. EUR (Vorjahr: 1.397,4 Mio. EUR).",
+    "proposition": "Lindenhof Maschinenbau's revenue was EUR 1.4826 million in the first half of 2026.",
+    "expect": "differs"
+  },
+  {
+    "id": "F-DE-06",
+    "profile": "germany",
+    "passage": "Das EBIT sank um 10,3 % auf 118,3 Mio. EUR.",
+    "proposition": "Das EBIT stieg um 10,3 % auf 118,3 Mio. EUR.",
+    "expect": "differs"
+  },
+  {
+    "id": "F-DE-07",
+    "profile": "germany",
+    "passage": "Die Umsatzerlöse der Lindenhof Maschinenbau AG beliefen sich im ersten Halbjahr 2026 auf 1.482,6 Mio. EUR (Vorjahr: 1.397,4 Mio. EUR).",
+    "proposition": "Die Umsatzerlöse stiegen im ersten Halbjahr 2026 um 6,1 %.",
+    "expect": "not_found"
+  },
+  {
+    "id": "F-DE-08",
+    "profile": "germany",
+    "passage": "Der Personalaufwand der Lindenhof Maschinenbau AG betrug im ersten Halbjahr 2026 TEUR 84.312.",
+    "proposition": "Personnel expenses were EUR 84.3 million in the first half of 2026.",
+    "expect": "unchecked"
+  },
+  {
+    "id": "F-UK-01",
+    "profile": "united_kingdom",
+    "passage": "Marlow & Finch plc reported revenue of £318.4m for the six months ended 30 September 2026 (H1 2025/26: £301.7m).",
+    "proposition": "Marlow & Finch's revenue was £318.4m for the six months ended 30 September 2026.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-UK-02",
+    "profile": "united_kingdom",
+    "passage": "Marlow & Finch shares closed at 1,234p on 30/09/2026.",
+    "proposition": "The Marlow & Finch share price at the period end was £12.34.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-UK-03",
+    "profile": "united_kingdom",
+    "passage": "Marlow & Finch plc key figures\nShare price at period end (GBX) | 1,234",
+    "proposition": "Marlow & Finch shares closed the period at 1,234p.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-UK-04",
+    "profile": "united_kingdom",
+    "passage": "Marlow & Finch shares closed at 1,234p on 30/09/2026.",
+    "proposition": "The Marlow & Finch share price at the period end was £1,234.",
+    "expect": "differs"
+  },
+  {
+    "id": "F-UK-05",
+    "profile": "united_kingdom",
+    "passage": "Marlow & Finch plc reported revenue of £318.4m for the six months ended 30 September 2026 (H1 2025/26: £301.7m).",
+    "proposition": "Marlow & Finch's revenue was roughly £318 million for the six months ended 30 September 2026.",
+    "expect": "rounded"
+  },
+  {
+    "id": "F-UK-06",
+    "profile": "united_kingdom",
+    "passage": "The board declared an interim dividend of 4.6p per share (H1 2025/26: 4.2p).",
+    "proposition": "The interim dividend was raised by 9.5%.",
+    "expect": "not_found"
+  },
+  {
+    "id": "F-UK-07",
+    "profile": "united_kingdom",
+    "passage": "Adjusted operating profit fell by 10.6% to £27.9m.",
+    "proposition": "Adjusted operating profit rose by 10.6% to £27.9m.",
+    "expect": "differs"
+  },
+  {
+    "id": "F-UK-08",
+    "profile": "united_kingdom",
+    "passage": "The interim dividend of 4.6p per share will be paid on 08/01/2027 to shareholders on the register on 04/12/2026.",
+    "proposition": "An interim dividend of 4.6p per share will be paid on 8 January 2027.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-IN-01",
+    "profile": "india",
+    "passage": "Saraswati Looms Limited reported revenue from operations of ₹642.80 crore for Q2 FY2026-27, against ₹588.15 crore in Q2 FY2025-26. Profit after tax was ₹41.25 crore.",
+    "proposition": "Revenue from operations was ₹642.80 crore in Q2 FY2026-27.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-IN-02",
+    "profile": "india",
+    "passage": "The board of Saraswati Looms Limited approved capital expenditure of ₹2.5 crore for the Surat unit.",
+    "proposition": "The board approved capital expenditure of INR 25 million for the Surat unit.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-IN-03",
+    "profile": "india",
+    "passage": "Saraswati Looms Limited paid ₹45 lakh in listing fees during FY2026-27.",
+    "proposition": "Listing fees were INR 4.5 million in FY2026-27.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-IN-04",
+    "profile": "india",
+    "passage": "Saraswati Looms Limited paid ₹45 lakh in listing fees during FY2026-27.",
+    "proposition": "Listing fees were INR 45 million in FY2026-27.",
+    "expect": "differs"
+  },
+  {
+    "id": "F-IN-05",
+    "profile": "india",
+    "passage": "Saraswati Looms Limited reported revenue from operations of ₹642.80 crore for Q2 FY2026-27, against ₹588.15 crore in Q2 FY2025-26. Profit after tax was ₹41.25 crore.",
+    "proposition": "Revenue from operations was about INR 6.4 billion in Q2 FY2026-27.",
+    "expect": "rounded"
+  },
+  {
+    "id": "F-IN-06",
+    "profile": "india",
+    "passage": "Saraswati Looms Limited reported revenue from operations of ₹642.80 crore for Q2 FY2026-27, against ₹588.15 crore in Q2 FY2025-26. Profit after tax was ₹41.25 crore.",
+    "proposition": "The net profit margin was 6.4% in Q2 FY2026-27.",
+    "expect": "not_found"
+  },
+  {
+    "id": "F-IN-07",
+    "profile": "india",
+    "passage": "The board of Saraswati Looms Limited appointed Anita Rao as chief financial officer with effect from 1 October 2026.",
+    "proposition": "Anita Rao was appointed chief financial officer of Saraswati Looms Limited with effect from 1 October 2026.",
+    "expect": "unchecked"
+  },
+  {
+    "id": "F-IN-08",
+    "profile": "india",
+    "passage": "Profit after tax declined 12.0% to ₹41.25 crore in Q2 FY2026-27.",
+    "proposition": "Profit after tax increased 12.0% to ₹41.25 crore in Q2 FY2026-27.",
+    "expect": "differs"
+  },
+  {
+    "id": "F-BR-01",
+    "profile": "brazil",
+    "passage": "A receita líquida da Serra Azul Papel e Celulose S.A. no terceiro trimestre de 2026 foi de R$ 1,84 bilhão, ante R$ 1,71 bilhão no mesmo período de 2025.",
+    "proposition": "A receita líquida no terceiro trimestre de 2026 foi de R$ 1,84 bilhão.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-BR-02",
+    "profile": "brazil",
+    "passage": "A receita líquida da Serra Azul Papel e Celulose S.A. no terceiro trimestre de 2026 foi de R$ 1,84 bilhão, ante R$ 1,71 bilhão no mesmo período de 2025.",
+    "proposition": "Serra Azul's net revenue was BRL 1,840 million in the third quarter of 2026.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-BR-03",
+    "profile": "brazil",
+    "passage": "O EBITDA ajustado da Serra Azul somou R$ 612,4 milhões no terceiro trimestre de 2026 e o investimento totalizou R$ 1.250,0 milhões nos nove primeiros meses do ano.",
+    "proposition": "Serra Azul's capital expenditure totalled BRL 1.25 billion in the first nine months of 2026.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-BR-04",
+    "profile": "brazil",
+    "passage": "O EBITDA ajustado da Serra Azul somou R$ 612,4 milhões no terceiro trimestre de 2026 e o investimento totalizou R$ 1.250,0 milhões nos nove primeiros meses do ano.",
+    "proposition": "Serra Azul's adjusted EBITDA was BRL 6,124 million in the third quarter of 2026.",
+    "expect": "differs"
+  },
+  {
+    "id": "F-BR-05",
+    "profile": "brazil",
+    "passage": "O EBITDA ajustado da Serra Azul somou R$ 612,4 milhões no terceiro trimestre de 2026 e o investimento totalizou R$ 1.250,0 milhões nos nove primeiros meses do ano.",
+    "proposition": "Serra Azul's adjusted EBITDA was about BRL 0.61 billion in the third quarter of 2026.",
+    "expect": "rounded"
+  },
+  {
+    "id": "F-BR-06",
+    "profile": "brazil",
+    "passage": "A receita líquida da Serra Azul Papel e Celulose S.A. no terceiro trimestre de 2026 foi de R$ 1,84 bilhão, ante R$ 1,71 bilhão no mesmo período de 2025.",
+    "proposition": "A receita líquida cresceu 7,6% em relação ao mesmo período de 2025.",
+    "expect": "not_found"
+  },
+  {
+    "id": "F-BR-07",
+    "profile": "brazil",
+    "passage": "Serra Azul Papel e Celulose S.A. Variação do lucro líquido no terceiro trimestre de 2026: -18,3%.",
+    "proposition": "Serra Azul's net income changed by +18.3% in the third quarter of 2026.",
+    "expect": "differs"
+  },
+  {
+    "id": "F-BR-08",
+    "profile": "brazil",
+    "passage": "A companhia assinou contrato de fornecimento de celulose com a Porto Claro Embalagens, com vigência a partir de 1º de janeiro de 2027.",
+    "proposition": "A Serra Azul Papel e Celulose assinou contrato de fornecimento de celulose com a Porto Claro Embalagens, com vigência a partir de 1º de janeiro de 2027.",
+    "expect": "unchecked"
+  },
+  {
+    "id": "F-HK-01",
+    "profile": "hong_kong_china",
+    "passage": "岚川新材料(990618)2026年第三季度实现营业收入21.3亿元,归属于上市公司股东的净利润为1.86亿元。",
+    "proposition": "岚川新材料2026年第三季度营业收入为21.3亿元。",
+    "expect": "matched"
+  },
+  {
+    "id": "F-HK-02",
+    "profile": "hong_kong_china",
+    "passage": "岚川新材料(990618)2026年第三季度实现营业收入21.3亿元,归属于上市公司股东的净利润为1.86亿元。",
+    "proposition": "Lanchuan New Materials reported revenue of CNY 2.13 billion for the third quarter of 2026.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-HK-03",
+    "profile": "hong_kong_china",
+    "passage": "港湾恒信控股有限公司(股份代号:4477)宣布派发中期股息每股0.35港元,股息总额约为8,750万港元。",
+    "proposition": "Harbour Hengxin Holdings' interim dividend totals about HKD 87.5 million.",
+    "expect": "matched"
+  },
+  {
+    "id": "F-HK-04",
+    "profile": "hong_kong_china",
+    "passage": "岚川新材料(990618)2026年第三季度实现营业收入21.3亿元,归属于上市公司股东的净利润为1.86亿元。",
+    "proposition": "Net profit attributable to shareholders of Lanchuan New Materials was CNY 18.6 million in the third quarter of 2026.",
+    "expect": "differs"
+  },
+  {
+    "id": "F-HK-05",
+    "profile": "hong_kong_china",
+    "passage": "岚川新材料(990618)2026年第三季度实现营业收入21.3亿元,归属于上市公司股东的净利润为1.86亿元。",
+    "proposition": "Net profit attributable to shareholders of Lanchuan New Materials was about CNY 0.19 billion in the third quarter of 2026.",
+    "expect": "rounded"
+  },
+  {
+    "id": "F-HK-06",
+    "profile": "hong_kong_china",
+    "passage": "岚川新材料2026年第三季度营业收入同比下降8.5%。",
+    "proposition": "岚川新材料2026年第三季度营业收入同比增长8.5%。",
+    "expect": "differs"
+  },
+  {
+    "id": "F-HK-07",
+    "profile": "hong_kong_china",
+    "passage": "岚川新材料(990618)2026年第三季度实现营业收入21.3亿元,归属于上市公司股东的净利润为1.86亿元。",
+    "proposition": "岚川新材料2026年第三季度净利率为8.7%。",
+    "expect": "not_found"
+  },
+  {
+    "id": "F-HK-08",
+    "profile": "hong_kong_china",
+    "passage": "港湾恒信控股有限公司(股份代号:4477)宣布派发中期股息每股0.35港元,股息总额约为8,750万港元。",
+    "proposition": "港湾恒信控股(4477)宣布派发中期股息每股0.35港元。",
+    "expect": "matched"
+  }
+]

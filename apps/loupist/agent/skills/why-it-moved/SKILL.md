@@ -17,9 +17,10 @@ answer it as one and leave this procedure; the worked-out reason goes to
    or a sector fund). When no connected source has them, say the comparison was
    not checked.
 3. Look for reasons dated in the window or just before it: the company's
-   filings first (OpenDART, SEC), then timestamped news from official or keyed
-   providers, then `web_search` and `web_fetch`. For a Korean stock, add Korea
-   Investment investor flows for those days when connected.
+   filings first, from its market's filing register where a connection reads
+   it, then timestamped news from official or keyed providers, then
+   `web_search` and `web_fetch`. Add investor flows for those days when a
+   connected source reports them.
 4. Cite dated sources for reported reasons, label your own inference as
    inference and say what remains unexplained.
 

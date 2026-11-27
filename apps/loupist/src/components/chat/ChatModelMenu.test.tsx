@@ -21,7 +21,11 @@ it("keeps reasoning under Advanced, recovers an empty thinking selection, and re
     context_window: 272_000, max_tokens: 128_000, thinking_levels: ["off", "medium", "high", "max"], thinking_level_map: { max: "max" }, run_controls: [], credential_source: "saved" as const };
   const provider = { ...chatgpt(), id: "openai-codex" };
   render(<TooltipProvider><ChatModelMenu models={[model]} providers={[provider]} selection={{ model_profile_id: model.id, thinking_level: "", run_options: {} }} onSelectionChange={onSelectionChange} /></TooltipProvider>);
+  await user.hover(screen.getByRole("button", { name: /Model settings for this message/ }));
+  expect(await screen.findByRole("tooltip")).toBeVisible();
   await user.click(screen.getByRole("button", { name: /Model settings for this message/ }));
+  expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  expect(screen.getByRole("dialog")).toHaveClass("composer-model-menu-panel");
   // One model fits at a glance, so the picker has no search field.
   expect(screen.queryByRole("searchbox")).toBeNull();
   expect(screen.queryByRole("menuitemradio", { name: "Max" })).not.toBeInTheDocument();

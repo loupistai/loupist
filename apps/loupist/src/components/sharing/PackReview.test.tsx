@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "@/test/selectOption";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import i18n from "../../i18n";
@@ -38,9 +39,10 @@ it("lists each warning in text, shows the flagged lines, and adds a new Loupist 
   const name = within(page).getByRole("textbox", { name: "Name" });
   await user.clear(name);
   await user.type(name, "Chip supply chain");
+  await chooseSelectOption(user, within(page).getByRole("combobox", { name: "Tone" }), "Direct");
   await user.click(within(page).getByRole("button", { name: "Add" }));
   await waitFor(() => expect(onAdded).toHaveBeenCalled());
-  expect(add).toHaveBeenCalledWith({ stagingId: "staging-preview", mode: { new: { name: "Chip supply chain", tone: "balanced" } }, sections: { perspective: true, methods: true, principles: false, map: true } }, expect.any(Function));
+  expect(add).toHaveBeenCalledWith({ stagingId: "staging-preview", mode: { new: { name: "Chip supply chain", tone: "direct" } }, sections: { perspective: true, methods: true, principles: false, map: true } }, expect.any(Function));
 });
 
 it("lists flagged map records and the pack's own words, not only counts", async () => {
@@ -85,6 +87,7 @@ it("adding to an existing Loupist leaves its profile and perspective alone", asy
   await user.click(within(page).getByRole("radio", { name: `Add to ${loupists[0].name}` }));
   expect(within(page).getByRole("textbox", { name: "Name" })).toBeDisabled();
   expect(within(page).getByRole("combobox", { name: "Tone" })).toBeDisabled();
+  await chooseSelectOption(user, within(page).getByRole("combobox", { name: "Add as" }), `Add to ${loupists[1].name}`);
   const perspective = within(page).getByRole("switch", { name: "Perspective" });
   expect(perspective).toBeDisabled();
   expect(perspective).toHaveAttribute("aria-checked", "false");
@@ -92,7 +95,7 @@ it("adding to an existing Loupist leaves its profile and perspective alone", asy
   expect(within(page).getAllByText("Your principles and perspective stay as they are.")).toHaveLength(1);
   expect(within(within(page).getByRole("region", { name: "Perspective" })).getByText("Your principles and perspective stay as they are.")).toBeVisible();
   await user.click(within(page).getByRole("button", { name: "Add" }));
-  await waitFor(() => expect(add).toHaveBeenCalledWith(expect.objectContaining({ mode: { merge: { loupistId: loupists[0].id } }, sections: expect.objectContaining({ perspective: false }) }), expect.any(Function)));
+  await waitFor(() => expect(add).toHaveBeenCalledWith(expect.objectContaining({ mode: { merge: { loupistId: loupists[1].id } }, sections: expect.objectContaining({ perspective: false }) }), expect.any(Function)));
 });
 
 it("shows a rejected pack as one card that adds nothing", async () => {

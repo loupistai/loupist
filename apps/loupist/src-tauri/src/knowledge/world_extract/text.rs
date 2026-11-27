@@ -5,6 +5,8 @@
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use unicode_normalization::UnicodeNormalization;
 
+use crate::knowledge::{TimePoint, TimePrecision};
+
 /// blake2b's salt is at most 16 bytes; a fixed one makes one spelling one vector.
 const FALLBACK_SALT: &[u8] = b"loupist.fb1";
 
@@ -116,7 +118,39 @@ pub(crate) fn prefix_chars(text: &str, limit: usize) -> String {
 // --- Datetimes --------------------------------------------------------------
 
 /// Python 3.12 `datetime.fromisoformat` for the forms models and the host send.
-pub(crate) fn from_isoformat(text: &str) -> Option<DateTime<FixedOffset>> {
+pub(crate) fn from_isoformat(text: &str) -> Option<TimePoint> {
+    let value = text.trim();
+    let precision = match value.as_bytes() {
+        [a, b, c, d] if [a, b, c, d].iter().all(|digit| digit.is_ascii_digit()) => {
+            NaiveDate::parse_from_str(&format!("{value}-01-01"), "%Y-%m-%d").ok()?;
+            TimePrecision::Year
+        }
+        [_, _, _, _, b'-', _, _] => {
+            NaiveDate::parse_from_str(&format!("{value}-01"), "%Y-%m-%d").ok()?;
+            TimePrecision::Month
+        }
+        [_, _, _, _, b'-', _, _, b'-', _, _] => {
+            NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()?;
+            TimePrecision::Date
+        }
+        _ => return parse_datetime(value).map(instant),
+    };
+    Some(TimePoint {
+        precision,
+        value: Some(value.to_owned()),
+        approximate: false,
+    })
+}
+
+pub(crate) fn instant(value: DateTime<FixedOffset>) -> TimePoint {
+    TimePoint {
+        precision: TimePrecision::Instant,
+        value: Some(python_datetime(&value, 'T')),
+        approximate: false,
+    }
+}
+
+fn parse_datetime(text: &str) -> Option<DateTime<FixedOffset>> {
     let text = text.trim();
     if let Ok(parsed) = DateTime::parse_from_rfc3339(text) {
         return Some(parsed);
@@ -195,19 +229,28 @@ fn parse_time(text: &str) -> Option<NaiveTime> {
     None
 }
 
-/// Graphiti's `ensure_utc`.
-pub(crate) fn to_utc(value: &DateTime<FixedOffset>) -> DateTime<FixedOffset> {
-    value.with_timezone(&Utc).fixed_offset()
+/// Graphiti's `ensure_utc` leaves calendar-precision values intact.
+pub(crate) fn to_utc(value: TimePoint) -> TimePoint {
+    if let (TimePrecision::Instant, Some(datetime)) = (
+        value.precision,
+        value.value.as_deref().and_then(parse_datetime),
+    ) {
+        instant(datetime.with_timezone(&Utc).fixed_offset())
+    } else {
+        value
+    }
 }
 
-/// Python `datetime.isoformat()` for an aware value.
-pub(crate) fn isoformat(value: &DateTime<FixedOffset>) -> String {
-    python_datetime(value, 'T')
+pub(crate) fn isoformat(value: &TimePoint) -> &str {
+    value.value.as_deref().unwrap_or_default()
 }
 
-/// Python `str(datetime)` for an aware value.
-pub(crate) fn python_str(value: &DateTime<FixedOffset>) -> String {
-    python_datetime(value, ' ')
+pub(crate) fn python_str(value: &TimePoint) -> String {
+    if value.precision == TimePrecision::Instant {
+        isoformat(value).replacen('T', " ", 1)
+    } else {
+        isoformat(value).to_owned()
+    }
 }
 
 fn python_datetime(value: &DateTime<FixedOffset>, separator: char) -> String {
@@ -428,16 +471,36 @@ mod tests {
     }
 
     #[test]
+    fn extraction_times_retain_the_sources_precision() {
+        for (raw, precision) in [
+            ("2026", TimePrecision::Year),
+            ("2026-02", TimePrecision::Month),
+            ("2026-02-28", TimePrecision::Date),
+            ("2026-02-28T01:30:00+09:00", TimePrecision::Instant),
+        ] {
+            let point = from_isoformat(raw).unwrap();
+            assert_eq!(point.precision, precision);
+            assert_eq!(point.value.as_deref(), Some(raw));
+            assert_eq!(
+                super::super::projection::graph_time(Some(&point))["precision"],
+                precision.as_str()
+            );
+        }
+        assert!(from_isoformat("2026-13").is_none());
+        assert!(from_isoformat("2026-02-29").is_none());
+    }
+
+    #[test]
     fn python_datetime_text_forms() {
         let value = from_isoformat("2026-03-01T09:30:00.120000+09:00").unwrap();
         assert_eq!(isoformat(&value), "2026-03-01T09:30:00.120000+09:00");
         assert_eq!(
-            python_str(&to_utc(&value)),
+            python_str(&to_utc(value)),
             "2026-03-01 00:30:00.120000+00:00"
         );
         assert_eq!(
             isoformat(&from_isoformat("2026-03-01").unwrap()),
-            "2026-03-01T00:00:00+00:00"
+            "2026-03-01"
         );
         assert_eq!(
             isoformat(&from_isoformat("2026-03-01T00:00:00Z").unwrap()),

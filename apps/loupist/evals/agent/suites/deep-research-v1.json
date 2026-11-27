@@ -1,0 +1,116 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "deep-research",
+  "version": 1,
+  "description": "One fictional replay unit for the deep-research Skill: a plan file before the first web read, citations that resolve, and an answer that leads with its conclusion. The user asks for deep research by name and says to start without a question, because a scenario cannot yet select a Skill or answer its plan question; a turn key for selected Skills replaces that wording when the deep research mode lands. Allow a long turn: run it with --turn-timeout-ms 1800000.",
+  "budget": {
+    "maxInputTokensPerTurn": 2000000,
+    "maxTurns": 3
+  },
+  "scenarios": [
+    {
+      "id": "DR-001",
+      "title": "Deep research on a company's claim, from four replayed pages that partly cut against it",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "deep-research",
+        "needs-replay",
+        "web-research"
+      ],
+      "connections": [
+        "web-research"
+      ],
+      "clock": "2026-11-16T10:00:00Z",
+      "replay": "replay/web-harrowfen-deep-research.json",
+      "replay_needs": "web_fetch answers four pages: Harrowfen's fleet bulletin of 7 August 2026 (fleet 240 to 310, the repeat-order claim, no figures), its second-quarter results (rental revenue 14.2 million pounds up 22%, orders from earlier renters 4.1 against 3.9 million, utilization 61% against 74%), a trade article of 15 September 2026 (day rates down 8%, two competitors added 400 units) and an association survey of 2 October 2026 (31% reorder within 90 days, unchanged). Searches return nothing and every other fetch is unmatched.",
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Do deep research on this, and start without asking me anything: should I believe Harrowfen Pumps' claim that its rental fleet is building a base of repeat orders? Begin from these pages and look for whatever cuts against the claim: https://fictional.example/deep-research/harrowfen-rental-fleet-bulletin https://fictional.example/deep-research/harrowfen-q2-2026-results https://fictional.example/deep-research/pump-journal-rental-rates https://fictional.example/deep-research/fluid-equipment-association-survey",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "skill_read",
+                    "id": "deep-research",
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "file_written_before",
+                    "path_matching": "(?:^|/)outputs/[^/]+/plan\\.md$",
+                    "before": [
+                      "web_fetch",
+                      "web_search"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "web_fetch",
+                    "args": {
+                      "url": "https://fictional.example/deep-research/harrowfen-q2-2026-results"
+                    },
+                    "successful": true,
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "web_fetch",
+                    "args": {
+                      "url": "https://fictional.example/deep-research/fluid-equipment-association-survey"
+                    },
+                    "successful": true,
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "cites_result",
+                    "tool": "web_fetch",
+                    "near": [
+                      "31%"
+                    ],
+                    "metric": "connection_honesty"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "4.1 million",
+                      "£4.1",
+                      "4.1m"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_false_save_claim",
+                    "metric": "boundary"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "conclusion-first",
+                    "criterion": "The answer's first paragraph states its conclusion on whether the evidence supports Harrowfen Pumps' claim of a growing base of repeat orders, before any account of the steps taken.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "weighs-the-counterevidence",
+                    "criterion": "The answer sets the fleet and rental revenue growth against the evidence that repeat business did not grow with them: orders from earlier renters barely moved, the industry reorder rate was unchanged, and utilization and day rates fell.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

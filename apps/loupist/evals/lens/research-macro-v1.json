@@ -1,0 +1,49 @@
+{
+  "schema": "loupist-lens-research/1",
+  "loupist": {
+    "name": "Inflation watch",
+    "focus": "Fictional countries' consumer price series: headline and underlying inflation, wages and central bank forecasts",
+    "instructions": "Use only the attached fictional releases and do not fetch external data. Provide information, not investment advice."
+  },
+  "training": [
+    {
+      "id": "veldmark-cpi",
+      "user": "Veldmark's September price bulletin is attached. Headline inflation dropped a lot in one month. How much of that is last year's energy spike falling out of the comparison rather than prices actually cooling, and what should I check before I believe the central bank's path back to target?",
+      "attachments": [
+        {
+          "filename": "veldmark-cpi-2026-09.md",
+          "media_type": "text/markdown",
+          "text": "# Veldmark Statistics Bureau: consumer prices, September 2026\n\nVeldmark is a fictional country and this bulletin was created for a Loupist evaluation. This release is not a market observation, a price or a recommendation.\n\n## Headline\n\nThe consumer price index rose 3.1% from a year earlier, down from 4.4% in August. Prices rose 0.2% from the previous month.\n\n## Energy\n\nEnergy prices fell 9.0% from a year earlier. In September 2025 household gas tariffs had risen 22% in a single month; that month has now dropped out of the twelve-month comparison. Energy prices were unchanged from the previous month. Energy has a weight of 11% in the index.\n\n## Core\n\nThe index excluding energy and unprocessed food rose 4.0% from a year earlier, unchanged from August. Over the last three months it rose at an annualized rate of 4.3%. Services prices rose 5.2% from a year earlier and rents 5.6%.\n\n## Wages and administered prices\n\nNegotiated wages rose 5.1% from a year earlier in the third quarter. Water and public transport fares, which are set once a year, rise by 6% on 1 January 2027.\n\n## Central bank\n\nThe Bank of Veldmark's September forecast shows inflation at its 2% target in the fourth quarter of 2027. It describes the decline in the headline rate as evidence that disinflation is on track.\n"
+        }
+      ]
+    },
+    {
+      "id": "tarsis-cpi",
+      "user": "Here is the Tarsis consumer price release for the third quarter. The monetary authority says inflation is back in its band and has already cut. Is the fall in inflation as good as it looks, and what would tell us whether it lasts through 2027?",
+      "attachments": [
+        {
+          "filename": "tarsis-cpi-2026-q3.md",
+          "media_type": "text/markdown",
+          "text": "# Tarsis Office of National Accounts: consumer price release, third quarter 2026\n\nTarsis is a fictional country and this release was created for a Loupist evaluation. This release is not a market observation, a price or a recommendation.\n\n## Headline\n\nConsumer prices rose 2.6% from a year earlier in the third quarter, against 5.0% in the second quarter. Prices fell 0.1% from the previous quarter.\n\n## Food\n\nFood prices fell 6.5% from a year earlier. The 2025 drought had lifted grain and vegetable prices by 19% in the third quarter of 2025, and the 2026 harvest was normal. Food has a weight of 24% in the index.\n\n## Underlying measures\n\nPrices excluding food and fuel rose 3.8% from a year earlier, against 3.9% in the second quarter. The trimmed mean rose 3.9%. Quarter on quarter, prices excluding food and fuel rose 1.0%, the same as in each of the two previous quarters.\n\n## Labour costs\n\nUnit labour costs rose 5.5% from a year earlier. The minimum wage rises 7% on 1 March 2027.\n\n## Monetary authority\n\nThe Tarsis Monetary Authority lowered its policy rate in October, saying that inflation had returned to its 2% to 3% band two quarters earlier than it had forecast.\n"
+        }
+      ]
+    }
+  ],
+  "probes": {
+    "applicable": {
+      "id": "corran-cpi",
+      "user": "Corran's October inflation release is attached. The headline rate fell from 3.6% to 1.9% and the ministry says the job is done. How much of the drop is the fuel duty cut, and what would show whether inflation is really back at target?",
+      "attachments": [
+        {
+          "filename": "corran-cpi-2026-10.md",
+          "media_type": "text/markdown",
+          "text": "# Corran Statistics Agency: consumer prices, October 2026\n\nCorran is a fictional island state and this release was created for a Loupist evaluation. This release is not a market observation, a price or a recommendation.\n\n## Headline\n\nThe consumer price index rose 1.9% from a year earlier, down from 3.6% in September.\n\n## Fuel duty\n\nThe government cut fuel duty by a third on 1 October 2026 for twelve months. Transport fuel prices fell 14% in the month and 17% from a year earlier. Transport fuel has a weight of 8% in the index.\n\n## Underlying measures\n\nPrices excluding energy and food rose 3.4% from a year earlier, against 3.3% in September. Services prices rose 4.6%. Month on month, prices excluding energy and food rose 0.3%.\n\n## Wages\n\nAverage earnings rose 4.8% from a year earlier.\n\n## Finance ministry\n\nThe ministry said inflation was now below the central bank's 2% target and that the fight against inflation had been won.\n"
+        }
+      ]
+    },
+    "unrelated": {
+      "id": "duration-question",
+      "user": "A ten-year bond has a modified duration of 8.2. Roughly how much does its price change if its yield rises by half a percentage point, and why is that only an approximation?"
+    }
+  }
+}

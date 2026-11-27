@@ -144,12 +144,82 @@ pub enum ProviderInferenceDisposition {
     Uncertain,
 }
 
+/// Why an isolated inference reply did not complete. The same names the
+/// provider helper reports.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InferenceFailureKind {
+    PayloadInvalid,
+    RetryRefused,
+    DispatchMarkerFailed,
+    IdentityMismatch,
+    IncompleteResponse,
+    ContentType,
+    OutputSize,
+    InvalidJson,
+    SchemaMismatch,
+    Cancelled,
+    ProviderFailure,
+}
+
+impl InferenceFailureKind {
+    /// A reply the model produced that extraction cannot read.
+    pub fn model_output(self) -> bool {
+        matches!(
+            self,
+            Self::InvalidJson
+                | Self::SchemaMismatch
+                | Self::IncompleteResponse
+                | Self::OutputSize
+                | Self::ContentType
+        )
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::PayloadInvalid => "payload_invalid",
+            Self::RetryRefused => "retry_refused",
+            Self::DispatchMarkerFailed => "dispatch_marker_failed",
+            Self::IdentityMismatch => "identity_mismatch",
+            Self::IncompleteResponse => "incomplete_response",
+            Self::ContentType => "content_type",
+            Self::OutputSize => "output_size",
+            Self::InvalidJson => "invalid_json",
+            Self::SchemaMismatch => "schema_mismatch",
+            Self::Cancelled => "cancelled",
+            Self::ProviderFailure => "provider_failure",
+        }
+    }
+}
+
+/// A provider account stop the daily allowance records. It is not part of the
+/// isolated reply's failure_kind: the host classifies `provider_error`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AccountHold {
+    PlanLimit,
+    OutOfCredit,
+}
+
+impl AccountHold {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::PlanLimit => "plan_limit",
+            Self::OutOfCredit => "out_of_credit",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderInferenceReply {
     pub disposition: ProviderInferenceDisposition,
     pub body: Value,
     pub usage: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_kind: Option<InferenceFailureKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_hold: Option<AccountHold>,
 }
 
 impl ProviderInferenceReply {
@@ -158,6 +228,8 @@ impl ProviderInferenceReply {
             disposition,
             body: json!({"status": disposition, "message": message}),
             usage: None,
+            failure_kind: None,
+            account_hold: None,
         }
     }
     fn not_sent(message: &'static str) -> Self {
@@ -514,9 +586,14 @@ impl ProviderInferenceService {
                 self.record_diagnostic(observation, "helper", diagnostic.clone());
             }
         }
-        let (reply, provider_failure) = match reply {
+        let (mut reply, provider_failure) = match reply {
             Ok((reply, _, failure)) => (reply, failure),
             Err(()) => (ProviderInferenceReply::uncertain(), None),
+        };
+        reply.account_hold = match provider_failure {
+            Some(ProviderFailure::PlanLimit) => Some(AccountHold::PlanLimit),
+            Some(ProviderFailure::OutOfCredit) => Some(AccountHold::OutOfCredit),
+            _ => None,
         };
         if let Some(probe) = &probe {
             probe.record_reply(&self.store, reply.disposition, crate::commands::now_ms());
@@ -723,6 +800,8 @@ struct FileReply {
     /// reaches the reply body, a log or the graph worker.
     #[serde(default)]
     provider_error: Option<String>,
+    #[serde(default)]
+    failure_kind: Option<crate::providers::inference::InferenceFailureKind>,
     #[cfg(feature = "eval-harness")]
     #[serde(default)]
     diagnostic: Option<Value>,
@@ -732,6 +811,23 @@ type ReadReply = (
     Option<Value>,
     Option<ProviderFailure>,
 );
+
+fn valid_reply_usage(usage: &Value) -> bool {
+    usage.as_object().is_some_and(|fields| {
+        fields.iter().all(|(key, value)| match key.as_str() {
+            "input" | "output" | "totalTokens" => value.is_u64(),
+            "cacheRead" | "cacheWrite" => value.is_null() || value.is_u64(),
+            "cost" => value.as_object().is_some_and(|cost| {
+                cost.len() == 2
+                    && value["total"]
+                        .as_f64()
+                        .is_some_and(|total| total.is_finite() && total >= 0.0)
+                    && value["totalFromProvider"].is_boolean()
+            }),
+            _ => false,
+        })
+    })
+}
 
 fn read_reply(path: &Path) -> Result<ReadReply, ()> {
     crate::fs::artifact_trust::ensure_private_regular_file(path).map_err(|_| ())?;
@@ -755,15 +851,10 @@ fn read_reply(path: &Path) -> Result<ReadReply, ()> {
     if result.protocol != PROTOCOL
         || result.result_type != "inference"
         || !result.body.is_object()
-        || result.usage.as_ref().is_some_and(|usage| {
-            !usage.is_object()
-                || usage.as_object().unwrap().iter().any(|(key, value)| {
-                    !matches!(
-                        key.as_str(),
-                        "input" | "output" | "cacheRead" | "cacheWrite" | "totalTokens"
-                    ) || value.as_u64().is_none()
-                })
-        })
+        || result
+            .usage
+            .as_ref()
+            .is_some_and(|usage| !valid_reply_usage(usage))
     {
         return Err(());
     }
@@ -776,6 +867,8 @@ fn read_reply(path: &Path) -> Result<ReadReply, ()> {
             disposition: result.disposition,
             body: result.body,
             usage: result.usage,
+            failure_kind: result.failure_kind,
+            account_hold: None,
         },
         diagnostic,
         result
@@ -937,6 +1030,8 @@ mod tests {
             disposition: ProviderInferenceDisposition::Completed,
             body: json!({}),
             usage: None,
+            failure_kind: None,
+            account_hold: None,
         };
         service.record_outcome("openai", &completed, None);
         assert_eq!(
@@ -950,13 +1045,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("reply");
         crate::fs::artifact_trust::ensure_private_regular_file(&path).unwrap();
-        let ordinary = json!({"protocol":PROTOCOL,"type":"inference","disposition":"completed","body":{"entities":[]},"usage":{"input":3,"output":1}});
+        let ordinary = json!({"protocol":PROTOCOL,"type":"inference","disposition":"completed","body":{"entities":[]},"usage":{"input":500,"output":120,"cost":{"total":0,"totalFromProvider":false}}});
         let mut unknown_field = ordinary.clone();
         unknown_field["unexpected"] = json!("private value");
+        let mut unbounded_cost = ordinary.clone();
+        unbounded_cost["usage"]["cost"]["extra"] = json!("private value");
         for value in [
             json!({"protocol":PROTOCOL,"type":"inference","disposition":"completed","body":{},"usage":{"headers":"secret"}}),
             json!({"protocol":"wrong","type":"inference","disposition":"completed","body":{},"usage":null}),
             unknown_field,
+            unbounded_cost,
         ] {
             std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
             assert!(read_reply(&path).is_err());
@@ -966,6 +1064,10 @@ mod tests {
         std::fs::write(&path, serde_json::to_vec(&ordinary).unwrap()).unwrap();
         let (reply, _, failure) = read_reply(&path).unwrap();
         assert_eq!(failure, None);
+        let mut null_cache = ordinary.clone();
+        null_cache["usage"]["cacheRead"] = Value::Null;
+        std::fs::write(&path, serde_json::to_vec(&null_cache).unwrap()).unwrap();
+        assert!(read_reply(&path).is_ok());
         let mut limited = json!({"protocol":PROTOCOL,"type":"inference","disposition":"uncertain","body":{"status":"uncertain","message":"host copy"},"usage":null});
         limited["provider_error"] =
             json!("429 {\"error\":{\"code\":\"subscription_sharing_usage_limit_exceeded\"}}");

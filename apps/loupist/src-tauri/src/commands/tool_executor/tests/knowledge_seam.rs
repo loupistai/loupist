@@ -96,6 +96,16 @@ pub(super) fn seal_world(
     source: &RetainedFixture,
     propositions: &[&str],
 ) -> crate::knowledge::RecordRevision {
+    seal_checked_world(state, source, propositions, None)
+}
+
+/// [`seal_world`] with each support's stored figure check.
+pub(super) fn seal_checked_world(
+    state: &AppState,
+    source: &RetainedFixture,
+    propositions: &[&str],
+    figure_check: Option<crate::knowledge::EvidenceFigure>,
+) -> crate::knowledge::RecordRevision {
     use crate::knowledge::{
         BindingRole, ClaimEndpoint, ClaimStatus, DependencyRole, EvidenceBinding, EvidenceRevision,
         GraphClaim, GraphNode, SealWorld,
@@ -132,6 +142,12 @@ pub(super) fn seal_world(
                 span_id: source.span_id.clone(),
                 role: BindingRole::ExtractedFrom,
                 attribution: "example-publisher".into(),
+                figure_check,
+                passage: figure_check.map(|_| crate::knowledge::PassageRange {
+                    chunk_index: 0,
+                    char_start: 0,
+                    char_end: 40,
+                }),
             }],
             status: ClaimStatus::Active,
             recorded_at_ms: Some(1_700_000_000_000),
@@ -361,6 +377,70 @@ async fn world_search_fuses_indexed_hits_and_keeps_lexical_results_when_assets_f
     assert!(!failed.to_string().contains("resources/embed_assets"));
     // Broken assets are not a model still loading.
     assert!(!failed.to_string().contains("still loading"));
+}
+
+#[tokio::test]
+async fn world_scope_finds_a_saved_source_before_world_reads_it() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let source = retain_publisher_source(&state, b"Mirae Tile opened a second factory.");
+    let executor = executor_for(&state, Arc::new(ToolCapture::default()));
+    let policy = policy(true, false);
+    let local = executor
+        .world_search(&policy, json!({"query": "Mirae Tile"}))
+        .await
+        .unwrap();
+    let world = executor
+        .world_search(&policy, json!({"query": "Mirae Tile", "scope": "world"}))
+        .await
+        .unwrap();
+    let local_hit = &local["hits"][0];
+    assert_eq!(local_hit["scope"], "source");
+    assert_eq!(local_hit["readArgs"]["spanId"], source.span_id);
+    assert_eq!(world["hits"], local["hits"]);
+}
+
+#[tokio::test]
+async fn world_scope_keeps_a_saved_source_published_by_the_cutoff() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let earlier = retain_source_fixture(
+        &state,
+        b"Mirae Tile opened a second factory.",
+        Authorship::Publisher,
+        "example-publisher",
+        Some("2026-07-14"),
+        day_ms("2026-07-19"),
+    );
+    let later = retain_source_fixture(
+        &state,
+        b"Mirae Tile opened a third factory.",
+        Authorship::Publisher,
+        "example-publisher",
+        Some("2026-07-16"),
+        day_ms("2026-07-19"),
+    );
+    let executor = executor_for(&state, Arc::new(ToolCapture::default()));
+    let mut policy = policy(true, false);
+    let local = executor
+        .world_search(&policy, json!({"query": "Mirae Tile"}))
+        .await
+        .unwrap();
+    assert!(local["hits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|hit| hit["recordId"] == later.record_id));
+
+    policy.as_of = Some("2026-07-14".into());
+    let world = executor
+        .world_search(&policy, json!({"query": "Mirae Tile", "scope": "world"}))
+        .await
+        .unwrap();
+    let hits = world["hits"].as_array().unwrap();
+    assert_eq!(hits.len(), 1, "{world}");
+    assert_eq!(hits[0]["recordId"], earlier.record_id);
+    assert_eq!(hits[0]["readArgs"]["spanId"], earlier.span_id);
 }
 
 /// Until the embedding model has loaded, world_search answers at once from
@@ -1242,5 +1322,79 @@ async fn c011_lens_credits_only_a_single_retained_capture() {
             assert_eq!(origin["saved_at"], "2023-11-14T22:13:20.000Z");
         }
         broker.shutdown().await.unwrap();
+    }
+}
+
+/// A World relationship whose figure was not found in its passage says so
+/// once, as `figure: "not_found"`, on the search hit and in the exact read;
+/// any other verdict stays with the host, and each support keeps its passage.
+#[tokio::test]
+async fn world_hits_name_a_figure_not_found_and_no_other_verdict() {
+    use crate::knowledge::EvidenceFigure;
+    for (verdict, shown) in [
+        (EvidenceFigure::NotFound, Some("not_found")),
+        (EvidenceFigure::Matched, None),
+        (EvidenceFigure::Rounded, None),
+    ] {
+        let temporary = tempfile::tempdir().unwrap();
+        let state = seeded_state(&temporary);
+        let source = retain_publisher_source(
+            &state,
+            "Exemplo S.A. reportou margem operacional de 12% no semestre.".as_bytes(),
+        );
+        let world = seal_checked_world(
+            &state,
+            &source,
+            &["Exemplo S.A. described an operating margin of 15% for the half year"],
+            Some(verdict),
+        );
+        let capture = Arc::new(ToolCapture::default());
+        let executor = executor_for(&state, capture.clone());
+        let found = executor
+            .world_search(
+                &policy(true, false),
+                json!({"query":"described","scope":"world"}),
+            )
+            .await
+            .unwrap();
+        let edge = found["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find_map(|hit| hit.pointer("/view/view/edges/0"))
+            .unwrap_or_else(|| panic!("no indexed hit: {found}"));
+        assert_eq!(edge.get("figure").and_then(Value::as_str), shown, "{edge}");
+        assert!(edge["evidence"][0].get("figure_check").is_none(), "{edge}");
+        assert_eq!(edge["evidence"][0]["passage"]["chunk_index"], 0, "{edge}");
+
+        let read = executor
+            .world_read(
+                &policy(true, false),
+                json!({"scope":"world","recordId":world.record_id,"revisionId":world.revision_id}),
+                "read",
+            )
+            .await
+            .unwrap();
+        let text = read["text"].as_str().unwrap();
+        let view: Value = serde_json::from_str(text).unwrap();
+        let edge = &view["edges"][0];
+        assert_eq!(edge.get("figure").and_then(Value::as_str), shown, "{edge}");
+        assert!(!text.contains("figureCheck"), "{text}");
+        assert_eq!(
+            edge["claim"]["evidence"][0]["passage"]["chunkIndex"], 0,
+            "{edge}"
+        );
+        capture.commit_delivery("read").await;
+        let staged = capture.staged_reads.lock().await;
+        let AckedPayload::World {
+            view_json,
+            view_digest,
+            ..
+        } = &staged[0].payload
+        else {
+            panic!("expected a World read");
+        };
+        assert_eq!(view_json, text, "the receipt holds what the model read");
+        assert_eq!(view_digest, &crate::util::sha256(text.as_bytes()));
     }
 }

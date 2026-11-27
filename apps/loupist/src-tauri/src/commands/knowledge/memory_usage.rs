@@ -1,7 +1,8 @@
 //! How often each principle or method shaped a turn, for "What {Loupist} knows".
-//! A use is a completed turn that received the item in its bounded context or
-//! an acknowledged exact read, or applied it to a World entity. Repeated delivery
-//! in one turn counts once; this measures delivery, not influence or correctness.
+//! A use is a completed turn that read the page, cited it with a `lens:` link,
+//! or received a non-principle page in its bounded context. A principle only
+//! carried in the envelope is recorded and does not count. Repeated use in one
+//! turn counts once; this measures that use, not influence or correctness.
 
 use super::*;
 use std::collections::BTreeMap;
@@ -46,27 +47,47 @@ pub(crate) fn usage(state: &AppState, loupist_id: &str) -> Result<Vec<MemoryUsag
     admit(state, loupist_id)?;
     let rows = with_loupist_knowledge(state, loupist_id, |tx, _| {
         let mut statement = tx.prepare(
-            "SELECT u.record_id, t.chat_session_id, MAX(u.at_ms) FROM (
-                SELECT record_id, turn_id, issued_at_ms AS at_ms FROM knowledge_lens_deliveries WHERE loupist_id=?1
+            "SELECT u.record_id, u.turn_id, t.chat_session_id, u.at_ms, u.body FROM (
+                SELECT record_id, turn_id, issued_at_ms AS at_ms, document_json AS body
+                FROM knowledge_lens_deliveries WHERE loupist_id=?1
                 UNION ALL
-                SELECT record_id, turn_id, created_at_ms AS at_ms FROM knowledge_lens_anchors WHERE loupist_id=?1 AND role='applied' AND turn_id IS NOT NULL
+                SELECT record_id, turn_id, created_at_ms AS at_ms, NULL
+                FROM knowledge_lens_anchors WHERE loupist_id=?1 AND role='applied' AND turn_id IS NOT NULL
             ) u JOIN knowledge_turns t ON t.turn_id=u.turn_id AND t.loupist_id=?1
-            JOIN knowledge_records r ON r.record_id=u.record_id AND r.owner_loupist_id=?1 AND r.kind='lens'
-            GROUP BY u.record_id, u.turn_id",
+            JOIN knowledge_records r ON r.record_id=u.record_id AND r.owner_loupist_id=?1 AND r.kind='lens'",
         )?;
         let rows = statement
             .query_map(rusqlite::params![loupist_id], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, Option<String>>(4)?,
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     })?;
+    let mut turns: BTreeMap<(String, String), (String, i64)> = BTreeMap::new();
+    for (record_id, turn_id, chat_id, at_ms, body) in rows {
+        if let Some(body) = body {
+            if let Ok(receipt) = serde_json::from_str::<crate::domain::LensReceipt>(&body) {
+                if !crate::knowledge::principles::delivery_counts_as_answer(
+                    &receipt.kind,
+                    &receipt.delivery,
+                ) {
+                    continue;
+                }
+            }
+        }
+        turns
+            .entry((record_id, turn_id))
+            .and_modify(|slot| slot.1 = slot.1.max(at_ms))
+            .or_insert((chat_id, at_ms));
+    }
     let mut by_record: BTreeMap<String, (u64, i64, BTreeMap<String, i64>)> = BTreeMap::new();
-    for (record_id, chat_id, at_ms) in rows {
+    for ((record_id, _), (chat_id, at_ms)) in turns {
         let entry = by_record
             .entry(record_id)
             .or_insert((0, 0, BTreeMap::new()));

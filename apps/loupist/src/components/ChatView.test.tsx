@@ -14,7 +14,7 @@ import { renderWithOpen, destinations } from "../test/open";
 import { evidenceFixture } from "../test/evidenceFixtures";
 
 const actions = vi.hoisted(() => ({
-  saveFeedback: vi.fn(), submit: vi.fn(), steer: vi.fn(), commitSteers: vi.fn(), abort: vi.fn(),
+  submit: vi.fn(), steer: vi.fn(), commitSteers: vi.fn(), abort: vi.fn(),
 }));
 
 vi.mock("../chat/useLoupistChat", () => ({
@@ -26,7 +26,7 @@ vi.mock("../chat/useLoupistChat", () => ({
   }),
 }));
 
-beforeEach(() => { actions.submit.mockReset(); actions.saveFeedback.mockReset(); });
+beforeEach(() => { actions.submit.mockReset(); });
 
 function viewProps(messages: ChatMessage[], extra: Partial<ComponentProps<typeof ChatView>> = {}): ComponentProps<typeof ChatView> {
   const thread: ChatThread = { id: "chat", loupist_id: "loupist-quality", title: "Research", updated_at: "2026-10-03T00:00:00Z", use_memory: false, update_memory: false, messages };
@@ -40,6 +40,12 @@ function viewProps(messages: ChatMessage[], extra: Partial<ComponentProps<typeof
   };
 }
 const composer = () => screen.getByRole("textbox", { name: "Message Loupist" }) as HTMLTextAreaElement;
+
+it("does not draw a running session when the one just opened is not in the list yet", () => {
+  const props = viewProps([{ id: "running-request", role: "user", status: "streaming", content: "Still working on the first session", created_at: "2026-10-03T00:00:00Z" }]);
+  render(<TooltipProvider><ChatView {...props} activeThreadId="chat-next" /></TooltipProvider>);
+  expect(screen.queryByText("Still working on the first session")).not.toBeInTheDocument();
+});
 
 it("releases loaded images when leaving a conversation", async () => {
   const props = viewProps([{ id: "image-question", role: "user", status: "complete", content: "Review this", created_at: "2026-10-03T00:00:00Z", attachments: [
@@ -137,47 +143,25 @@ it("does not rerender an unchanged earlier answer while typing or streaming anot
   }
 });
 
-describe("teaching from feedback", () => {
-  const corrected = (): ChatMessage => ({ id: "answer-feedback", role: "assistant", status: "complete", content: "Profit rose 12%.", created_at: "2026-10-18T00:00:00Z", feedback: { rating: "down", correction: "Use consolidated profit.", updatedAt: 1 } });
-  const feedbackProps = async (extra: Partial<ComponentProps<typeof ChatView>> = {}) => {
-    const props = viewProps([corrected()], { initialPrompt: "Existing draft", ...extra });
-    return { ...props, modelCatalog: await props.bridge.modelCatalogGet(), modelSelection: { model_profile_id: "model-test", thinking_level: "low", run_options: {} } };
-  };
-
-  it("prefills an editable teaching turn once, preserving the draft, and never submits it", async () => {
-    const user = userEvent.setup();
-    render(<TooltipProvider><ChatView {...await feedbackProps()} /></TooltipProvider>);
-    await user.click(await screen.findByRole("button", { name: "Teach the Loupist" }));
-    expect(composer().value).toContain("Existing draft");
-    expect(composer().value).toContain("> Profit rose 12%.");
-    expect(composer().value).toContain("> Use consolidated profit.");
-    await user.type(composer(), " Additional guidance");
-    await user.click(screen.getByRole("button", { name: "Teach the Loupist" }));
-    expect(composer().value.split("> Use consolidated profit.").length - 1).toBe(1);
-    expect(composer().value).toContain("Additional guidance");
-    expect(actions.submit).not.toHaveBeenCalled();
-    expect(actions.saveFeedback).not.toHaveBeenCalled();
-  });
-
-  it("can teach again after sending, and in another Chat with its own draft", async () => {
-    const user = userEvent.setup();
-    actions.submit.mockResolvedValue({ accepted: true });
-    const props = await feedbackProps();
-    const other: ChatThread = { ...props.threads[0]!, id: "other-feedback-chat" };
-    props.threads = [...props.threads, other];
-    const view = render(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
-    const teach = await screen.findByRole("button", { name: "Teach the Loupist" });
-    await user.click(teach);
-    await user.click(screen.getByRole("button", { name: "Send" }));
-    await waitFor(() => expect(actions.submit).toHaveBeenCalledOnce());
-    expect(composer()).toHaveValue("");
-    await user.click(teach);
-    expect(composer().value).toContain("> Use consolidated profit.");
-    view.rerender(<TooltipProvider><ChatView {...props} activeThreadId={other.id} chat={{ id: other.id } as Chat<LoupistUIMessage>} initialPrompt="Other draft" /></TooltipProvider>);
-    await user.click(screen.getByRole("button", { name: "Teach the Loupist" }));
-    expect(composer().value.startsWith("Other draft\n\n")).toBe(true);
-    expect(actions.submit).toHaveBeenCalledOnce();
-  });
+it.each([false, true])("loads a legacy-rated answer and takes corrections through the composer (Bot: %s)", async home => {
+  const props = viewProps([{
+    id: "legacy-answer", role: "assistant", status: "complete", content: "Profit rose 12%.", created_at: "2026-10-18T00:00:00Z",
+    feedback: { rating: "down", correction: "Original saved correction.", updatedAt: 1 },
+  }]);
+  props.threads[0]!.home = home;
+  actions.submit.mockResolvedValue({ accepted: true });
+  render(<TooltipProvider><ChatView {...props} modelCatalog={await props.bridge.modelCatalogGet()}
+    modelSelection={{ model_profile_id: "model-test", thinking_level: "low", run_options: {} }} /></TooltipProvider>);
+  expect(await screen.findByText("Profit rose 12%.")).toBeVisible();
+  expect(screen.queryByText("Original saved correction.")).toBeNull();
+  for (const name of ["Helpful", "Not helpful", "Suggest a correction", "Teach the Loupist"]) {
+    expect(screen.queryByRole("button", { name })).toBeNull();
+  }
+  const user = userEvent.setup();
+  await user.type(composer(), "Use consolidated profit.");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(actions.submit).toHaveBeenCalledOnce());
+  expect(actions.submit.mock.calls[0].slice(0, 2)).toEqual(["chat", "Use consolidated profit."]);
 });
 
 describe("a link's Look into it in Bot", () => {
@@ -371,7 +355,7 @@ it("uses Schedule's localized title on Bot cards and keeps a custom task with th
   }
 });
 
-it("explains the feedback lock for each reply and keeps finished answers readable during a run", async () => {
+it("keeps finished answers readable during a run and disables editing", async () => {
   const created_at = "2026-10-03T00:00:00Z";
   const source = evidenceFixture({ id: "ev_filing", title: "Annual filing", excerpt: "The closing price was $42.10." });
   const props = viewProps([
@@ -387,14 +371,7 @@ it("explains the feedback lock for each reply and keeps finished answers readabl
   const user = userEvent.setup();
   const { open } = renderWithOpen(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
   const earlier = within((await screen.findByTestId("number-chip")).closest("article")!);
-  const live = within((await screen.findByText("Looking at last year.")).closest("article")!);
-  for (const name of ["Helpful", "Not helpful", "Suggest a correction"]) {
-    expect(earlier.getByRole("button", { name })).toBeDisabled();
-    expect(earlier.getByRole("button", { name })).toHaveAccessibleDescription("Available when the current reply finishes.");
-    expect(live.getByRole("button", { name })).toBeDisabled();
-    expect(live.getByRole("button", { name })).toHaveAccessibleDescription("Available when the reply finishes");
-  }
-  expect(actions.saveFeedback).not.toHaveBeenCalled();
+  expect(await screen.findByText("Looking at last year.")).toBeVisible();
   await user.click(earlier.getByRole("button", { name: "Copy answer" }));
   expect(await navigator.clipboard.readText()).toContain("$42.30");
   const edit = screen.getAllByRole("button", { name: "Edit message" })[0]!;
@@ -421,4 +398,35 @@ it("opens standing instructions from the header event on the home thread", async
   act(() => { window.dispatchEvent(new CustomEvent("loupist:open-standing")); });
   expect(await screen.findByRole("dialog", { name: "Standing instructions" })).toBeVisible();
   expect(await screen.findByText("Nothing kept yet. Tell the Bot in the conversation.")).toBeVisible();
+});
+
+describe("a request another surface sends to Bot (plan 4.4)", () => {
+  const botProps = async (extra: Partial<ComponentProps<typeof ChatView>> = {}) => {
+    const props = viewProps([], { initialPrompt: "Unsent draft", ...extra });
+    props.threads = [{ ...props.threads[0]!, home: true }];
+    return { ...props, modelCatalog: await props.bridge.modelCatalogGet(), modelSelection: { model_profile_id: "model-test", thinking_level: "low", run_options: {} }, modelIsDefault: false,
+      knowledgePins: [{ kind: "world_node" as const, loupistId: "loupist-quality", objectId: "node-1", label: "Composer pin" }], ...extra };
+  };
+
+  it("sends the request once as written, without the composer's draft or pins, and reports it sent", async () => {
+    actions.submit.mockResolvedValue({ accepted: true });
+    const done = vi.fn();
+    const pendingSend = { id: 7, threadId: "chat", text: "Propose a learning program about Danica Rail that keeps what you know about it current." };
+    const props = await botProps({ pendingSend, onPendingSendDone: done });
+    const view = render(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
+    await waitFor(() => expect(actions.submit).toHaveBeenCalledOnce());
+    const [threadId, text, , , , , files, pins, artifact, asOf] = actions.submit.mock.calls[0]!;
+    expect([threadId, text, files, pins, artifact, asOf]).toEqual(["chat", pendingSend.text, [], [], undefined, undefined]);
+    await waitFor(() => expect(done).toHaveBeenCalledWith(7));
+    expect(composer()).toHaveValue("Unsent draft");
+    view.rerender(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
+    expect(actions.submit).toHaveBeenCalledOnce();
+  });
+
+  it("waits while another thread is open", async () => {
+    const props = await botProps({ pendingSend: { id: 8, threadId: "home-elsewhere", text: "Keep my Lens page current." } });
+    render(<TooltipProvider><ChatView {...props} /></TooltipProvider>);
+    await act(async () => { await Promise.resolve(); });
+    expect(actions.submit).not.toHaveBeenCalled();
+  });
 });

@@ -443,6 +443,9 @@ jobs:
     timeout-minutes: 60
     name: Native macOS interaction
     runs-on: macos-15
+    env:
+      # Keep the dev URL identical across sequential suites so Cargo can reuse the Tauri binary.
+      LOUPIST_E2E_DEV_PORT: "1431"
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -494,6 +497,27 @@ jobs:
             apps/loupist/e2e/artifacts/native-*.png
             apps/loupist/e2e/artifacts/native-smoke-performance.json
             apps/loupist/e2e/artifacts/persistence/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Run native smoke under the shipped content security policy
+        id: native-release-policy
+        working-directory: apps/loupist/e2e
+        timeout-minutes: 10
+        env:
+          LOUPIST_E2E_REQUIRE_STAGED_RUNTIMES: "1"
+        run: |
+          rm -f artifacts/native-*.png artifacts/native-smoke-performance.json
+          npm run test:native:release
+
+      - name: Retain native release-policy evidence
+        if: always() && steps.native-release-policy.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-macos-release-policy-evidence
+          path: |
+            apps/loupist/e2e/artifacts/native-*.png
+            apps/loupist/e2e/artifacts/native-smoke-performance.json
           retention-days: 7
           if-no-files-found: ignore
 

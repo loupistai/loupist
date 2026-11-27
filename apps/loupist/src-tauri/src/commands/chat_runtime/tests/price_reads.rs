@@ -214,6 +214,7 @@ async fn assert_follow_and_price_save(with_history: bool, wait: bool, conflict: 
             Some(vec![crate::domain::DiscardedMemoryItem {
                 kind: crate::domain::DiscardedMemoryKind::PriceRead,
                 title: "Noeul Paper".into(),
+                reason: None,
             }]),
         );
         assert_eq!(update.status, crate::domain::MemoryUpdateStatus::Applied);

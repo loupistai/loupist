@@ -28,8 +28,7 @@ it("switches the Bot greeting language without changing the Loupist name", async
   expect(greeting.querySelector(".bot-greeting-top small")?.textContent).not.toContain("My research");
   const asks = [...greeting.querySelectorAll<HTMLButtonElement>(".bot-ask")];
   expect(asks).toHaveLength(1);
-  for (const ask of asks) expect(ask.querySelector("strong")?.textContent).toMatch(/^⟦.*⟧$/);
-  for (const bubble of greeting.querySelectorAll(".bot-bubble")) expect(bubble.textContent).toMatch(/^⟦.*⟧$/);
+  for (const text of greeting.querySelectorAll(".bot-ask strong, .bot-ask small")) expect(text.textContent).toMatch(/^⟦.*⟧$/);
   fireEvent.click(asks.at(-1)!);
   expect(suggest).toHaveBeenCalledWith(expect.stringMatching(/^⟦.*⟧$/));
 });

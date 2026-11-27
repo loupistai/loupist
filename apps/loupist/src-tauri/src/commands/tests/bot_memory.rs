@@ -205,9 +205,16 @@ async fn after_third_party_text_a_reply_keeps_nothing_new_but_can_still_resolve_
                 changes(json!([change])),
             )
             .await
-            .unwrap_err()
-            .to_string();
-        assert!(error.contains("third-party text"), "{error}");
+            .unwrap_err();
+        let body = crate::broker::error_body(&error);
+        assert_eq!(body["code"], "untrusted_text_paused");
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap()
+                .contains("third-party text"),
+            "{body}"
+        );
     }
     bot.execute(
         &policy(true),

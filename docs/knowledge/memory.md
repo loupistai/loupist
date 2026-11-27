@@ -94,8 +94,8 @@ counts.
 | Memory | Under a cutoff |
 | --- | --- |
 | Sources | Known when a capture (for a span, the capture holding it) was published by then; a capture without a publication date counts only as the user's own statement received by then. Search hits need such a capture; a later Source read fails with `as_of_later` |
-| World | Only relationships published by then, keeping evidence from Sources known by then; one whose evidence was all published later is left out with the names only it connected. An invalidation or expiry dated later, or undated, is not shown, so a relationship reads as it stood then. Names keep only their name and kind. This holds for `world_read` views and `world_search` hits, hybrid World index hits included; a name hit needs one relationship published by then, and an annotation needs every Source it cites known by then (one that cites none is left out) |
-| Lens pages (perspective, methods, subjects, ideas) | A page is known when its whole current version was written by then (`as_of::lens_visible`, one rule for reads, search and context). A page written or revised later is left out of search, reads (`as_of_later`), the index and pointers; a known page's read lists only backlinks from known pages and log entries made by then |
+| World | Relationships keep evidence known by the cutoff. An ending appears when the Source that establishes it was known and its effective date has arrived. An untagged ending uses the relationship's evidence and any recorded expiry. The cutoff also applies to ending badges on edges and search hits. Replay uses only resolver pair selections and same-assertion decisions with a visible selecting passage. Lineage requires a visible center claim and a visible Source passage for each episode it shows. Names keep their name and kind. A name hit needs a visible relationship, and an annotation needs every Source it cites to be known |
+| Lens pages (perspective, methods, subjects, ideas) | A read shows a page that existed by then as it stood: each section as the Lens log had it, its Superseded or Contested state from the dated Lens events (`read_lens_page_as_of`); a page made later is refused (`as_of_later`). Search, the index and pointers still leave out a page written or revised later (`as_of::lens_visible`), so they show less than a read, and none shows later text. A known page's read lists only backlinks from known pages and log entries made by then |
 | Principles | Every active principle, as today |
 | Journal | Entries created by then; an outcome observed later is removed, so its check reads as pending. Due pointers count from the cutoff day; a later entry read fails with `as_of_later` |
 | Notes | Working and research notes recorded by then, with pointers only to later notes written by then; the current Chat's working note and relevant-note pointers follow the same rule |
@@ -108,10 +108,9 @@ What each filter removes is counted for the answer's note
 
 ### Using and correcting Memory in a Chat
 
-The receipt labels principles "Read your principle" and "Read · Principle". Lens counts the answers that read each principle. These labels reflect host-recorded Lens
-receipts on the completed message: record, revision, digest, kind, title and delivery
-route (`context` or `exact_read`). A principle read exactly remains a principle;
-answer-text `lens:` links never determine the receipt's kind or imply delivery.
+The receipt labels principles "Read your principle" and "Read · Principle" when the answer cites that principle with a `lens:` link or the turn read it with `lens_read`. A principle only carried in the turn envelope does not label the answer and does not raise the page's answer count. The delivery rows still record every principle the envelope carried, with record, revision, digest, kind, title and delivery
+route (`context` or `exact_read`): that is the audit of what the model saw. A principle read exactly remains a principle;
+a `lens:` link selects which delivered principle counts and does not by itself make the delivery an exact read.
 The segment expands the recorded entries under the answer with Not this time and
 Edit (Archive for methods). A target no longer in the catalog is struck through and
 labelled removed, with no edit or archive action. A failed catalog read does not
@@ -123,6 +122,7 @@ relevant-method pointers, and the answer shows "Set aside for this chat · Undo"
 Rust refuses `note_save`, `principle_save`, `lens_file` and Journal writes whose
 text looks like a credential; the refusal is a tool refusal with reason
 `sensitive_memory`, and the chat says once that the item was not saved.
+`principle_save`, and a `bot_memory` remember or update, are refused after the reply has read third-party text. The refusal is `untrusted_text_paused` and says why. Resolve and forget still work. Forgetting a Bot memory entry lists active Lens principles whose statement folds to the same text, by record id and title, and does not delete them.
 
 ## Code
 

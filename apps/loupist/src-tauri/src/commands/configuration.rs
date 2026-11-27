@@ -8,6 +8,8 @@ use crate::{
     scoped_config::{self, ConfigReadRequest, ConfigScope, ConfigSnapshot, ConfigUpdateRequest},
 };
 
+pub(crate) const BELOW_SOURCE_CALL_LIMIT: &str = "below_source_call_limit";
+
 fn project_directory(
     state: &AppState,
     scope: &ConfigScope,
@@ -125,11 +127,43 @@ pub async fn config_update(
     crate::app::off_main_thread(&state, move |state| update_config(request, state)).await
 }
 
-fn update_config(
+pub(super) fn update_config(
     request: ConfigUpdateRequest,
     state: &AppState,
 ) -> Result<ConfigSnapshot, CommandError> {
     let project = project_directory(state, &request.scope)?;
+    crate::scheduled_tasks::learning::check_settings(
+        request.set.learning_daily_requests,
+        request.set.learning_program_cap,
+    )?;
+    if matches!(request.scope, ConfigScope::Global) {
+        let allowances = [
+            request.set.background_daily_requests,
+            request.set.world_chat_daily_requests,
+        ];
+        if allowances.into_iter().flatten().any(|limit| limit > 0) {
+            let mut minimum = crate::knowledge::GraphProcessingSettings::default().max_llm_calls;
+            for profile in state.store.list_loupists().map_err(super::map_store)? {
+                if let Ok(connection) = state.store.lock_loupist(&profile.id) {
+                    if let Ok(settings) = crate::knowledge::load_settings(&connection, &profile.id)
+                    {
+                        minimum = minimum.max(settings.max_llm_calls);
+                    }
+                }
+            }
+            if allowances
+                .into_iter()
+                .flatten()
+                .any(|limit| (1..minimum).contains(&limit))
+            {
+                return Err(CommandError::with_detail(
+                    "invalid_configuration",
+                    format!("A daily allowance must be zero or at least {minimum}."),
+                    serde_json::json!({"reason": BELOW_SOURCE_CALL_LIMIT, "minimum": minimum}),
+                ));
+            }
+        }
+    }
     let (snapshot, display_changed) = scoped_config::update_scope_with_display_change(
         &state.artifacts.app_data_dir,
         project.as_deref(),
@@ -137,6 +171,23 @@ fn update_config(
     )?;
     if display_changed {
         state.fx_reference.invalidate_display();
+    }
+    if request.set.background_daily_requests.is_some()
+        || request.set.world_chat_daily_requests.is_some()
+        || request.set.learning_daily_requests.is_some()
+        || request.unset.iter().any(|path| {
+            path.first().is_some_and(|field| {
+                matches!(
+                    field.as_str(),
+                    "background_daily_requests"
+                        | "world_chat_daily_requests"
+                        | "learning_daily_requests"
+                )
+            })
+        })
+    {
+        state.scheduled.changed();
+        state.graph.wake();
     }
     // A Recommended World model tries the Chat default's provider first.
     crate::commands::knowledge::follow_recommended_world_models_quietly(state);

@@ -97,6 +97,7 @@ fn a_scheduled_answer_with_skipped_memory_is_still_delivered_to_bot() {
     let items = Some(vec![DiscardedMemoryItem {
         kind: DiscardedMemoryKind::Note,
         title: "Short overlap check".into(),
+        reason: None,
     }]);
     answer.memory_update = Some(MemoryUpdateResult {
         discarded_memory_items: items.clone(),

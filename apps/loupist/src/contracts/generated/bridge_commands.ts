@@ -13,7 +13,7 @@ import type { ApprovalDecideRequest } from "./commands/approvals";
 import type { AssetEntitySetRequest, AssetVerdictUndoRequest } from "./commands/assets";
 import type { AssetFollowNameRequest, AssetIdRequest, AssetLookupRequest, AssetLookupResult, AssetOpenRequest, AssetPricePoint, AssetPriceSeriesRequest, AssetRow, AssetsListRequest, StoredAssetQuote, ThinAssetPageView } from "./commands/assets/wire";
 import type { AttentionItem, NotifyRequest } from "./commands/attention";
-import type { BotMemoryForgetRequest, BotMemoryListEntry, BotMemoryListRequest, BotMemoryUpdateRequest } from "./commands/bot_memory";
+import type { BotMemoryForgetRequest, BotMemoryForgetResponse, BotMemoryListEntry, BotMemoryListRequest, BotMemoryUpdateRequest } from "./commands/bot_memory";
 import type { AskAnswerRequest, OfferRequest } from "./commands/cards";
 import type { ChatRetryReceipt, ChatRetryRequest } from "./commands/chat_runtime";
 import type { ClipboardImage } from "./commands/clipboard";
@@ -21,7 +21,7 @@ import type { PickFileRequest } from "./commands/dialog";
 import type { ExportRequest } from "./commands/export_file";
 import type { FxDisplayRequest } from "./commands/fx_display";
 import type { ResearchHandoffReceipt, ResearchHandoffRequest } from "./commands/handoff";
-import type { JournalSourceReadDto, KnowledgeCatalogDto, KnowledgeCatalogRequest, KnowledgeConnectionRequest, KnowledgeGraphJobRequest, KnowledgeGraphLoupistRequest, KnowledgeGraphPauseRequest, KnowledgeGraphRetrySourceRequest, KnowledgeGraphRetrySourcesRequest, KnowledgeGraphSettingsRequest, KnowledgeJournalReadRequest, KnowledgeJournalSourceReadRequest, KnowledgeLensPagesForNodeRequest, KnowledgeLensReadRequest, KnowledgeLensSearchRequest, KnowledgeResearchPageDto, KnowledgeResearchSearchRequest, KnowledgeSourceReadRequest, KnowledgeSourceRetainRequest, LensSearchHitDto, MemoryLearnedRequest, MemoryOpUndoRequest, MemorySectionForgetRequest, SourceDetailDto, WorldQueryDto } from "./commands/knowledge";
+import type { JournalSourceReadDto, KnowledgeCatalogDto, KnowledgeCatalogRequest, KnowledgeConnectionRequest, KnowledgeGraphJobRequest, KnowledgeGraphLoupistRequest, KnowledgeGraphPauseRequest, KnowledgeGraphRetrySourceRequest, KnowledgeGraphRetrySourcesRequest, KnowledgeGraphSettingsRequest, KnowledgeJournalReadRequest, KnowledgeJournalSourceReadRequest, KnowledgeLensPagesForNodeRequest, KnowledgeLensReadRequest, KnowledgeLensSearchRequest, KnowledgeResearchPageDto, KnowledgeResearchSearchRequest, KnowledgeSourceReadRequest, KnowledgeSourceRetainRequest, LensSearchHitDto, MemoryLearnedRequest, MemoryMessageUndoRequest, MemoryOpUndoRequest, MemorySectionForgetRequest, SourceDetailDto, WorldQueryDto } from "./commands/knowledge";
 import type { FollowedStatusRequest } from "./commands/knowledge/followed";
 import type { JournalArchiveRequest, JournalCreateRequest, JournalListRequest, JournalUpdateRequest } from "./commands/knowledge/journal";
 import type { LensArchiveRequest } from "./commands/knowledge/lens_archive";
@@ -31,11 +31,13 @@ import type { MemoryLearningSettingsRequest } from "./commands/knowledge/method_
 import type { PrincipleArchiveRequest, PrincipleCreateRequest, PrincipleListRequest, PrincipleUpdateRequest } from "./commands/knowledge/principles";
 import type { SourceSelectionPin, SourceSelectionRequest } from "./commands/knowledge/source_selection";
 import type { WorkingNoteReadRequest, WorkingNotesPage, WorkingNotesRequest } from "./commands/knowledge/working_notes";
+import type { ClaimHistory, ClaimHistoryRequest, WorldChangesRequest, WorldChangesView } from "./commands/knowledge/world_changes";
 import type { RemoveRequest, UndoRequest, WorldSchemaLoupistRequest } from "./commands/knowledge/world_schema";
 import type { LegacyHoldingsStatus } from "./commands/legacy_holdings";
 import type { WorldKeepAwakeRequest } from "./commands/power";
+import type { ProviderQuotaRequest } from "./commands/provider_quota";
 import type { QuestionAnswerRequest } from "./commands/questions";
-import type { DeliveryRequest, FromPresetRequest, ProposalDeclineRequest, ProposalVisitRequest, RevisionRequest, RunRequest, ScheduledTasksLoupistRequest, StatusRequest, TaskRequest, TriggerGetRequest, TriggerRevertRequest, TriggerReviewRequest, TriggerView } from "./commands/scheduled_tasks";
+import type { DeliveryRequest, LearningProgramUndoAllRequest, LearningProgramUpdateRequest, PresetCommand, ProposalDeclineRequest, ProposalVisitRequest, RevisionRequest, RunNowRequest, RunRequest, ScheduledTasksLoupistRequest, StatusRequest, TaskRequest, TriggerGetRequest, TriggerRevertRequest, TriggerReviewRequest, TriggerView } from "./commands/scheduled_tasks";
 import type { PythonReplay, PythonStepReplayRequest, ScriptGetRequest, ScriptSaveRequest, ScriptTestRequest, ScriptsListRequest } from "./commands/scripts";
 import type { SkillCreateRequest, SkillDeleteRequest, SkillImportRequest, SkillReadRequest, SkillSaveRequest } from "./commands/skills";
 import type { ChatArtifactListRequest, ChatArtifactReadRequest, ChatArtifactRestoreRequest, ChatArtifactViewDto, ChatAttachmentReadDto, ChatAttachmentReadRequest, ChatBranchRequest, ChatControlReceiptDto, ChatControlRequestDto, ChatCreateRequest, ChatDeleteRequest, ChatFeedbackRequest, ChatMemorySetAsideRequest, ChatRenameRequest, ChatSaveState, ChatSavesRequest, ChatSendRequest, ChatThreadDto, ChatVersionSwitchRequest, ChatWatchRequest, ChatWatchSnapshot, LoupistArtifactItemDto, LoupistArtifactListRequest, LoupistCreateRequest, LoupistDeleteRequest, LoupistImportRequest, LoupistProfileUpdateRequest, LoupistReconnectRequest, LoupistSummary, LoupistWorkspace, RunStarted } from "./commands/types";
@@ -53,13 +55,14 @@ import type { WorkspaceDirectory, WorkspaceFile } from "./fs/workspace_files";
 import type { FollowedStatus } from "./knowledge/followed";
 import type { GraphJobView, GraphProcessingView, SourcesRetried } from "./knowledge/graph_jobs";
 import type { GrowthEventsPage, GrowthEventsQuery } from "./knowledge/growth";
-import type { LearningSettings, Review, ReviewQuery } from "./knowledge/learning";
-import type { LearnedDigest, PageRead, PageSummary } from "./knowledge/lens";
+import type { LearningSettings, LearningState, Review, ReviewQuery } from "./knowledge/learning";
+import type { LearnedDigest, MessageUndo, PageRead, PageSummary } from "./knowledge/lens";
 import type { KnowledgeMap, KnowledgeMapQuery } from "./knowledge/map";
 import type { MemoryControls } from "./knowledge/memory_controls";
 import type { ResetCounts } from "./knowledge/memory_reset";
 import type { JournalRecord, RetainedSource, WorkingNote, WorldGraphQuery } from "./knowledge/model";
 import type { Principle } from "./knowledge/principles";
+import type { ProgramUndo } from "./knowledge/program_undo";
 import type { ConnectionView } from "./knowledge/world_followups";
 import type { WorldSchemaView } from "./knowledge/world_schema";
 import type { LoupistCapabilityBindingDto, LoupistCapabilityRequest, MarketplaceConnectorConfigureRequest, MarketplaceConnectorStatusDto, MarketplaceCredentialRequest, MarketplaceCredentialSaveRequest, MarketplaceCredentialStatusDto, MarketplaceSnapshotDto } from "./marketplace/catalog";
@@ -68,6 +71,7 @@ import type { ModelCatalogView } from "./providers/catalog";
 import type { ModelNoticeAckRequest, ProviderConfigureRequest, ProviderConnectionRequest, ProviderModelsRequest, ProviderPageRequest, ProviderSubmitCodeRequest } from "./providers/connection";
 import type { CustomProviderRequest } from "./providers/custom";
 import type { LocalDiscovery, ProviderCustomTestRequest, ProviderCustomTestResult, ProviderPresetRequest } from "./providers/local";
+import type { OpenRouterQuota } from "./providers/openrouter_quota";
 import type { PythonStep } from "./python_run/ledger";
 import type { WorkbookRead, WorkbookRequest } from "./python_run/workbook";
 import type { RunActivity } from "./runs/coordinator";
@@ -176,6 +180,7 @@ export type BridgeCommands = {
     response: GraphProcessingView,
   },
   knowledge_growth_events: { request: GrowthEventsQuery, response: GrowthEventsPage },
+  knowledge_learning_state: { request: KnowledgeCatalogRequest, response: LearningState },
   knowledge_journal_read: { request: KnowledgeJournalReadRequest, response: JournalRecord },
   knowledge_journal_source_read: {
     request: KnowledgeJournalSourceReadRequest,
@@ -195,7 +200,10 @@ export type BridgeCommands = {
   knowledge_source_read: { request: KnowledgeSourceReadRequest, response: SourceDetailDto },
   knowledge_source_retain: { request: KnowledgeSourceRetainRequest, response: RetainedSource },
   knowledge_world_query: { request: WorldGraphQuery, response: WorldQueryDto },
+  knowledge_world_changes: { request: WorldChangesRequest, response: WorldChangesView },
+  knowledge_world_claim_history: { request: ClaimHistoryRequest, response: ClaimHistory },
   memory_learned: { request: MemoryLearnedRequest, response: Array<LearnedDigest> },
+  memory_message_undo: { request: MemoryMessageUndoRequest, response: MessageUndo },
   memory_op_undo: { request: MemoryOpUndoRequest, response: PageRead },
   memory_section_forget: { request: MemorySectionForgetRequest, response: PageRead },
   knowledge_followed_status: { request: FollowedStatusRequest, response: FollowedStatus },
@@ -263,7 +271,7 @@ export type BridgeCommands = {
   notification_permission_settings_open: { request: never, response: null },
   notification_bot_focus_set: { request: BotFocusRequest, response: null },
   notification_templates_set: { request: TemplatesRequest, response: null },
-  scheduled_task_from_preset: { request: FromPresetRequest, response: Task },
+  scheduled_task_from_preset: { request: PresetCommand, response: Task },
   scheduled_trigger_get: { request: TriggerGetRequest, response: TriggerView },
   scheduled_trigger_approve: { request: TriggerReviewRequest, response: Task },
   scheduled_trigger_revert: { request: TriggerRevertRequest, response: Task },
@@ -271,9 +279,11 @@ export type BridgeCommands = {
   scheduled_trigger_evaluations: { request: TaskRequest, response: Array<TriggerEvaluation> },
   scheduled_task_set_delivery: { request: DeliveryRequest, response: Task },
   scheduled_task_get: { request: TaskRequest, response: Task | null },
-  scheduled_task_run_now: { request: TaskRequest, response: Run },
+  scheduled_task_run_now: { request: RunNowRequest, response: Run },
   scheduled_task_runs: { request: TaskRequest, response: Array<Run> },
   scheduled_task_set_status: { request: StatusRequest, response: Task },
+  learning_program_update: { request: LearningProgramUpdateRequest, response: Task },
+  learning_program_undo_all: { request: LearningProgramUndoAllRequest, response: ProgramUndo },
   scheduled_task_watch: { request: RunRequest, response: WatchSnapshot | null },
   scheduled_tasks_activity: { request: ScheduledTasksLoupistRequest, response: Array<Run> },
   scheduled_tasks_list: { request: ScheduledTasksLoupistRequest, response: Array<TaskListItem> },
@@ -362,11 +372,12 @@ export type BridgeCommands = {
   provider_custom_save: { request: CustomProviderRequest, response: ModelCatalogView },
   provider_disconnect: { request: ProviderConnectionRequest, response: ModelCatalogView },
   provider_models: { request: ProviderModelsRequest, response: ModelCatalogView },
+  provider_quota_read: { request: ProviderQuotaRequest, response: OpenRouterQuota | null },
   provider_open_console: { request: ProviderPageRequest, response: null },
   provider_open_usage: { request: ProviderPageRequest, response: null },
   usage_summary: { request: UsageSummaryRequest, response: UsageSummary },
   bot_memory_list: { request: BotMemoryListRequest, response: Array<BotMemoryListEntry> },
-  bot_memory_forget: { request: BotMemoryForgetRequest, response: Array<BotMemoryListEntry> },
+  bot_memory_forget: { request: BotMemoryForgetRequest, response: BotMemoryForgetResponse },
   bot_memory_update: { request: BotMemoryUpdateRequest, response: Array<BotMemoryListEntry> },
   provider_custom_test: { request: ProviderCustomTestRequest, response: ProviderCustomTestResult },
   provider_local_discover: { request: never, response: LocalDiscovery },

@@ -9,7 +9,7 @@ async function openMap(bridge = new MockLoupistBridge({ delay_ms: 0 })) {
   await openApp(bridge);
   await user.click(await mainTab(/World/));
   await screen.findByRole("combobox", { name: /Search World/ });
-  await screen.findByText("37 in World · 36 relationships");
+  await screen.findByText("37 names · 36 relationships");
   return { user, bridge };
 }
 
@@ -31,7 +31,7 @@ describe("Loupist · World", () => {
     await user.click(screen.getByRole("button", { name: "More actions" }));
     // The item keeps its name; its checked state says the list is showing.
     await user.click(screen.getByRole("menuitemcheckbox", { name: "List view", checked: true }));
-    expect(await screen.findByRole("img", { name: "37 in World · 36 relationships" })).toBeVisible();
+    expect(await screen.findByRole("img", { name: "37 names · 36 relationships" })).toBeVisible();
   });
 
   it("opens the Lens wiki independently of World and shows the saved page as sections", async () => {

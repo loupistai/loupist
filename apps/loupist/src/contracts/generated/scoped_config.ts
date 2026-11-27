@@ -28,6 +28,10 @@ export type ConfigDiagnostic = {
 };
 
 export type ConfigDocument = {
+  background_daily_requests?: number,
+  world_chat_daily_requests?: number,
+  learning_daily_requests?: number,
+  learning_program_cap?: number,
   appearance?: AppearanceConfig,
   models?: ModelsConfig,
   connectors?: { [key in string]: { [key in string]: string } },
@@ -116,6 +120,15 @@ export type ResolvedChatConfig = {
 };
 
 export type ResolvedConfig = {
+  background_daily_requests: number,
+  world_chat_daily_requests: number,
+  /**
+   * This Loupist's daily requests for automatic learning runs, inside
+   * `background_daily_requests`. 0 turns learning runs off.
+   */
+  learning_daily_requests: number,
+  /** How many learning programs this Loupist may have active. */
+  learning_program_cap: number,
   appearance: ResolvedAppearanceConfig,
   models: ResolvedModelsConfig,
   connectors: { [key in string]: { [key in string]: string } },

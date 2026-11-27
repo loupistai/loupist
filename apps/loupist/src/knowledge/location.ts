@@ -8,9 +8,20 @@ import type {
   KnowledgeLocation,
   KnowledgePin,
   KnowledgeSelection,
+  PassageRange,
   SourceDetail,
   SourceFigureRequest,
+  WorldSourceTarget,
 } from "../contracts/knowledge";
+
+/**
+ * The Source reader at a World claim's cited span; with `passage` (the chunk the claim was
+ * extracted from, when the host knows it) the reader scrolls to that passage and marks it.
+ */
+export function sourceTargetLocation(loupistId: string, target: WorldSourceTarget, passage?: PassageRange): KnowledgeLocation {
+  return { loupistId, surface: "source", recordId: target.recordId, revisionId: target.revisionId, objectId: target.sourceId,
+    selection: { kind: "source", sourceId: target.sourceId, spanId: target.spanId, worldRecordId: target.worldRecordId, worldRevisionId: target.worldRevisionId, ...(passage ? { passage } : {}) } };
+}
 
 /** A request to open a Source reader, separate from its saved location and scroll. */
 export type SourceOpen = { figure?: SourceFigureRequest };
@@ -33,6 +44,7 @@ const selectionKey = (selection: KnowledgeSelection | undefined) => {
       return JSON.stringify([
         "source", selection.sourceId, selection.spanId,
         selection.worldRecordId, selection.worldRevisionId,
+        ...(selection.passage ? [selection.passage.chunkIndex, selection.passage.charStart, selection.passage.charEnd] : []),
       ]);
     case "lens":
       return JSON.stringify(["lens", selection.recordId]);

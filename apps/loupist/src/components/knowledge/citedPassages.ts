@@ -54,3 +54,24 @@ export function readableCitedPassages(text: string, passages: readonly CitedPass
   }
   return result;
 }
+
+/**
+ * A World claim's passage (Unicode scalar values from the start of the Source's text) as a
+ * passage of `text`, wholly marked and focused, in UTF-16 units. Null when `text` does not
+ * start at the Source's start (`contentOffset` > 0) or the range does not fit inside it:
+ * the reader then opens as it always has.
+ */
+export function passageFromRange(text: string, range: { charStart: number; charEnd: number } | undefined, contentOffset = 0): ReadablePassage | null {
+  if (!range || contentOffset !== 0 || !(range.charStart >= 0) || !(range.charEnd > range.charStart)) return null;
+  let scalars = 0;
+  let units = 0;
+  let start: number | undefined;
+  for (const character of text) {
+    if (scalars === range.charStart) start = units;
+    if (scalars === range.charEnd) break;
+    scalars += 1;
+    units += character.length;
+  }
+  if (start === undefined || scalars !== range.charEnd) return null;
+  return { start, end: units, marks: [{ start: 0, end: units - start, focused: true }] };
+}

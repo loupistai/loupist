@@ -29,7 +29,13 @@ deletion. Undo on a saved version removes that version after checking its pins.
 
 The bundled `loupist` module offers `call(tool, **arguments)`,
 `dataset(dataset_id, revision, pointer=None)`, `followed()`, `price(asset_id,
-days=0)`, `sources(query, limit=10)` and `source(id)`. `gather` takes a list
+days=0)`, `sources(query, limit=10)`, `source(id)` and `changes(**arguments, pages=4)`.
+`changes` follows `next` for up to `pages` pages; each page is one read against
+the 32-read limit and is replayed like any other read. A check may call
+`world_changes` when the task uses Memory. It refuses `since: previous_run`
+and keeps the cursor in its own state. Under a replay date that read uses the
+published axis, keeps the usual cutoff, and refuses a cursor from the other
+axis; it does not answer `no_data` merely because a replay date is set. `gather` takes a list
 of `(tool, arguments)` pairs. The program can read its `args`, named `inputs`
 and the host's `now` value.
 
@@ -38,6 +44,8 @@ after that worker exits. The next start sees the same values and failures for
 all calls already served. A Python call has up to four starts and 32 distinct
 reads. Only the final start can copy workspace changes back. Refused or failed
 reads surface as `loupist.Refused` or `loupist.Unavailable` with a reason code.
+An uncaught `loupist.Unavailable` fails the run and reports the script's
+traceback frames and exception in stderr.
 The Python result can cite the reads staged within its own delivery. Those
 references become available to other tools when the parent delivery is acknowledged.
 The dataset helper gives the script the selected JSON value and gives the

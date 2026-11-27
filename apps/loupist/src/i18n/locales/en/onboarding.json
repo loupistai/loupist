@@ -67,9 +67,9 @@
     "backgroundReading": "After it saves a source, your Loupist reads it in the background to build its World and learn methods. That uses your AI account. Turn it off any time in Loupist settings.",
     "templates": {
       "portfolio": {
-        "title": "My portfolio",
-        "focus": "Companies I follow",
-        "suggestedName": "Portfolio Loupist"
+        "title": "Watchlist research",
+        "focus": "Follows filings, results and your reasons. It does not track holdings or returns.",
+        "suggestedName": "Watchlist Loupist"
       },
       "semiconductors": {
         "title": "Semiconductors",

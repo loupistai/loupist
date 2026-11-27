@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-use chrono::{Datelike, NaiveDate};
+use chrono::{DateTime, Datelike, FixedOffset, NaiveDate};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -26,7 +26,6 @@ struct Table {
 struct MarketCalendar {
     #[allow(dead_code)]
     name: String,
-    #[allow(dead_code)]
     time_zone: String,
     years: Vec<i32>,
     #[allow(dead_code)]
@@ -47,13 +46,15 @@ fn table() -> &'static Table {
     })
 }
 
-/// The calendar a market code uses (`KOSDAQ` → KRX, `NASDAQ` → US), if any.
+const KRX_MARKETS: &[&str] = &["KRX", "XKRX", "KOSPI", "KOSDAQ", "KONEX", "KS", "KQ"];
+const US_MARKETS: &[&str] = &[
+    "US", "USA", "NYSE", "NASDAQ", "AMEX", "NYSEARCA", "ARCA", "BATS", "CBOE", "NMS", "NYQ",
+    "XNAS", "XNYS",
+];
+
 fn calendar_for(market: &str) -> Option<&'static MarketCalendar> {
     let market = market.trim().to_uppercase();
-    let id = if matches!(
-        market.as_str(),
-        "KRX" | "XKRX" | "KOSPI" | "KOSDAQ" | "KONEX" | "KS" | "KQ"
-    ) {
+    let id = if KRX_MARKETS.contains(&market.as_str()) {
         "KRX"
     } else if is_us_session_market(&market) {
         "US"
@@ -75,24 +76,43 @@ pub fn is_trading_day(market: &str, day: NaiveDate) -> bool {
 }
 
 pub(crate) fn is_us_session_market(market: &str) -> bool {
-    matches!(
-        market,
-        "US" | "USA"
-            | "NYSE"
-            | "NASDAQ"
-            | "AMEX"
-            | "NYSEARCA"
-            | "ARCA"
-            | "BATS"
-            | "CBOE"
-            | "NMS"
-            | "NYQ"
-            | "XNAS"
-            | "XNYS"
-    )
+    US_MARKETS.contains(&market)
 }
 
-#[cfg(test)]
+// The prior session is usable before the current daily bar has arrived. On a
+// closed day the latest completed session is the only eligible observation.
+pub(crate) fn daily_bar_dates(
+    market: &str,
+    now: DateTime<FixedOffset>,
+    cutoff: Option<NaiveDate>,
+) -> [NaiveDate; 3] {
+    let today = calendar_for(market)
+        .and_then(|calendar| calendar.time_zone.parse::<chrono_tz::Tz>().ok())
+        .map_or(now.date_naive(), |zone| {
+            now.with_timezone(&zone).date_naive()
+        });
+    let today = cutoff.map_or(today, |cutoff| cutoff.min(today));
+    let previous = previous_trading_day(market, today);
+    if is_trading_day(market, today) {
+        [today, previous, previous_trading_day(market, previous)]
+    } else {
+        [previous, previous, previous_trading_day(market, previous)]
+    }
+}
+
+pub(crate) fn check_bar_dates(
+    now: DateTime<FixedOffset>,
+    cutoff: Option<NaiveDate>,
+) -> BTreeMap<&'static str, [NaiveDate; 3]> {
+    [("", &[""][..]), ("KRX", KRX_MARKETS), ("US", US_MARKETS)]
+        .into_iter()
+        .flat_map(|(market, aliases)| {
+            let dates = daily_bar_dates(market, now, cutoff);
+            aliases.iter().map(move |alias| (*alias, dates))
+        })
+        .collect()
+}
+
 fn previous_trading_day(market: &str, day: NaiveDate) -> NaiveDate {
     let mut day = day.pred_opt().expect("a day before");
     while !is_trading_day(market, day) {
@@ -131,6 +151,46 @@ mod tests {
                 assert!(NaiveTime::parse_from_str(time, "%H:%M").is_ok());
             }
         }
+    }
+
+    #[test]
+    fn daily_bar_windows_follow_the_exchanges_own_holidays_and_local_dates() {
+        let windows = [
+            (
+                "NASDAQ",
+                "2026-11-26T14:00:00Z",
+                ["2026-11-25", "2026-11-25", "2026-11-24"],
+            ),
+            (
+                "NASDAQ",
+                "2026-11-27T02:00:00Z",
+                ["2026-11-25", "2026-11-25", "2026-11-24"],
+            ),
+            (
+                "NASDAQ",
+                "2026-11-27T14:00:00Z",
+                ["2026-11-27", "2026-11-25", "2026-11-24"],
+            ),
+            (
+                "KOSDAQ",
+                "2026-10-08T18:00:00Z",
+                ["2026-10-08", "2026-10-08", "2026-10-07"],
+            ),
+            (
+                "KOSDAQ",
+                "2026-10-11T23:00:00Z",
+                ["2026-10-12", "2026-10-08", "2026-10-07"],
+            ),
+        ];
+        for (market, now, expected) in windows {
+            let now = DateTime::parse_from_rfc3339(now).unwrap();
+            assert_eq!(daily_bar_dates(market, now, None), expected.map(day));
+        }
+        let now = DateTime::parse_from_rfc3339("2026-11-30T08:00:00Z").unwrap();
+        assert_eq!(
+            daily_bar_dates("KRX", now, Some(day("2026-11-26"))),
+            ["2026-11-26", "2026-11-25", "2026-11-24"].map(day)
+        );
     }
 
     #[test]

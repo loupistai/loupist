@@ -1,7 +1,9 @@
+import { SelectField, SelectItem } from "../ui/select";
 import { useState } from "react";
 import { useTranslation } from "@/i18n";
 import type { LoupistBridge, ScheduledTask } from "@/types";
 import { errorMessage } from "../../lib/errors";
+import { runNowConfirmText, runNowRefusal, tellsYouKey } from "./scheduledPresentation";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { MoreHorizontalIcon } from "lucide-react";
@@ -23,6 +25,8 @@ export function ScheduleTaskControls({ bridge, task, title, running, onChanged, 
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [confirmingRun, setConfirmingRun] = useState(false);
+  const [refusalText, setRefusalText] = useState<string | null>(null);
   const identity = { loupist_id: task.loupist_id, task_id: task.id };
   const act = async (kind: Exclude<Busy, null>, work: () => Promise<unknown>, fallback: string) => {
     setBusy(kind); setError(null);
@@ -36,10 +40,23 @@ export function ScheduleTaskControls({ bridge, task, title, running, onChanged, 
   const canToggle = task.status !== "completed"
     && task.declined_in_visit === undefined
     && !(task.awaiting_confirmation && task.trigger && !task.replaces);
-  // The briefing is turned off, not deleted.
-  const canDelete = task.kind === "custom";
+  // The briefing is turned off, not deleted. A learning program is deleted like a custom task.
+  const canDelete = task.kind === "custom" || task.kind === "learning";
+  const confirmRun = refusalText ?? runNowConfirmText(task.hold?.reason);
+  const askLabel = task.kind === "learning" ? t("schedule.learning.askChange") : t("schedule.changeAsk");
   // A proposed task is not running yet: turning it on is its primary action, as Resume is.
   const paused = nextStatus === "active";
+  const closeRunConfirm = () => { if (busy === "run") return; setConfirmingRun(false); setRefusalText(null); };
+  const startRun = (confirm = false) => {
+    setBusy("run"); setError(null);
+    void bridge.scheduledTaskRunNow(confirm ? { ...identity, confirm: true } : identity).then(() => {
+      setConfirmingRun(false); setRefusalText(null); onChanged();
+    }, (cause: unknown) => {
+      const refusal = confirm ? null : runNowRefusal(cause);
+      if (refusal) { setRefusalText(refusal); setConfirmingRun(true); return; }
+      setError(errorMessage(cause, t("schedule.runNowFailed")));
+    }).finally(() => setBusy(null));
+  };
   const statusButton = (variant: "default" | "ghost") => <Button variant={variant} size="sm" disabled={busy !== null} data-schedule-status={nextStatus}
     onClick={() => void act("status", () => {
       const request = { ...identity, expected_revision: task.revision };
@@ -54,7 +71,7 @@ export function ScheduleTaskControls({ bridge, task, title, running, onChanged, 
     <div className="schedule-task-actions">
       {paused && canToggle ? statusButton("default") : null}
       <Button variant="outline" size="sm" disabled={busy !== null || running || task.awaiting_confirmation} data-schedule-run-now title={t("schedule.runNowCost")}
-        onClick={() => void act("run", () => bridge.scheduledTaskRunNow(identity), t("schedule.runNowFailed")).then(ok => { if (ok) onChanged(); })}>
+        onClick={() => { if (confirmRun) { setError(null); setConfirmingRun(true); return; } startRun(); }}>
         {busy === "run" || running ? <Spinner /> : null}{running ? t("schedule.runningNow") : t("schedule.runNow")}
       </Button>
       {!paused && canToggle ? statusButton("ghost") : null}
@@ -65,30 +82,40 @@ export function ScheduleTaskControls({ bridge, task, title, running, onChanged, 
         </DropdownMenuContent>
       </DropdownMenu> : null}
     </div>
-    <dl className="schedule-delivery">
+    {task.kind === "learning" ? null : <dl className="schedule-delivery">
       {task.terms && <div><dt>{t("schedule.checks")}</dt><dd>{task.terms}</dd></div>}
-      <div><dt>{t("schedule.tellsYou")}</dt><dd>{t(task.report === "when_met" ? "schedule.whenMet" : "schedule.everyRun")}</dd></div>
-      <div><dt>{t("schedule.postsTo")}</dt><dd><select aria-label={t("schedule.postsTo")} disabled={busy !== null}
-        value={task.delivery?.to ?? "bot"} onChange={event => {
-          const to = event.currentTarget.value as "bot" | "none";
+      <div><dt>{t("schedule.tellsYou")}</dt><dd>{t(tellsYouKey(task))}</dd></div>
+      <div><dt>{t("schedule.postsTo")}</dt><dd><SelectField compact aria-label={t("schedule.postsTo")} disabled={busy !== null}
+        value={task.delivery?.to ?? "bot"} onValueChange={value => {
+          const to = value as "bot" | "none";
           void act("delivery", () => bridge.scheduledTaskSetDelivery({ loupistId: task.loupist_id, taskId: task.id, expectedRevision: task.revision, to }), t("schedule.statusFailed")).then(ok => { if (ok) onChanged(); });
         }}>
-        <option value="bot">{t("schedule.postBot")}</option>
-        <option value="none">{t("schedule.postSchedule")}</option>
-      </select></dd></div>
-      <div><dt>{t("schedule.notifies")}</dt><dd><select aria-label={t("schedule.notifies")} disabled={busy !== null || task.delivery?.to === "none"}
-        value={task.delivery?.notify ?? ""} onChange={event => {
-          const notify = event.currentTarget.value as "now" | "digest" | "off";
+        <SelectItem value="bot">{t("schedule.postBot")}</SelectItem>
+        <SelectItem value="none">{t("schedule.postSchedule")}</SelectItem>
+      </SelectField></dd></div>
+      <div><dt>{t("schedule.notifies")}</dt><dd><SelectField compact aria-label={t("schedule.notifies")} disabled={busy !== null || task.delivery?.to === "none"}
+        value={task.delivery?.notify ?? ""} placeholder={t("schedule.notifyInherited")} onValueChange={value => {
+          const notify = value as "now" | "digest" | "off";
           void act("delivery", () => bridge.scheduledTaskSetDelivery({ loupistId: task.loupist_id, taskId: task.id, expectedRevision: task.revision, notify }), t("schedule.statusFailed")).then(ok => { if (ok) onChanged(); });
         }}>
-        <option value="" disabled>{t("schedule.notifyInherited")}</option>
-        <option value="now">{t("schedule.notifyNow")}</option>
-        <option value="digest">{t("schedule.notifyDigest")}</option>
-        <option value="off">{t("schedule.notifyOff")}</option>
-      </select></dd></div>
-    </dl>
-    {error && !confirming ? <p className="inline-error" role="alert">{error}</p> : null}
-    <p className="briefings-meta schedule-task-change">{t(task.kind === "briefing" ? "schedule.briefingChangeHint" : "schedule.changeHint")}{onAskHome ? <> <Button variant="link" className="schedule-task-ask" onClick={() => onAskHome(t("schedule.changePrompt", { title }))}>{t("schedule.changeAsk")}</Button></> : null}</p>
+        <SelectItem value="" disabled>{t("schedule.notifyInherited")}</SelectItem>
+        <SelectItem value="now">{t("schedule.notifyNow")}</SelectItem>
+        <SelectItem value="digest">{t("schedule.notifyDigest")}</SelectItem>
+        <SelectItem value="off">{t("schedule.notifyOff")}</SelectItem>
+      </SelectField></dd></div>
+    </dl>}
+    {error && !confirming && !confirmingRun ? <p className="inline-error" role="alert">{error}</p> : null}
+    {onAskHome ? <div className="schedule-task-change"><Button variant="link" className="schedule-task-ask" onClick={() => onAskHome(t("schedule.changePrompt", { title }))}>{askLabel}</Button></div> : null}
+    <Dialog open={confirmingRun} onOpenChange={value => { if (!value) closeRunConfirm(); }}>
+      <DialogContent size="sm" className="dialog-form" showCloseButton={busy !== "run"}>
+        <DialogHeader><DialogTitle>{t("schedule.runNow")}</DialogTitle>{confirmRun ? <DialogDescription>{confirmRun}</DialogDescription> : null}</DialogHeader>
+        <DialogBody>{error ? <p className="inline-error" role="alert">{error}</p> : null}</DialogBody>
+        <DialogFooter>
+          <Button variant="outline" autoFocus disabled={busy === "run"} onClick={closeRunConfirm}>{t("schedule.cancel")}</Button>
+          <Button data-schedule-run-confirm disabled={busy === "run"} onClick={() => startRun(true)}>{busy === "run" ? <Spinner /> : null}{t("schedule.runNow")}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     <Dialog open={confirming} onOpenChange={value => { if (busy !== "delete") setConfirming(value); }}>
       <DialogContent size="sm" className="dialog-form" showCloseButton={busy !== "delete"}>
         <DialogHeader><DialogTitle>{t("schedule.deleteTitle", { title })}</DialogTitle><DialogDescription>{t("schedule.deleteBody")}</DialogDescription></DialogHeader>

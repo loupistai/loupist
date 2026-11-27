@@ -68,18 +68,49 @@ evidence asks for approval before any run. New approvals survive later pauses.
 
 ## Triggers
 
-A trigger is a pinned script version the host runs on a custom task's schedule, with no model call. The definition, the script's `script_state` (the lifecycle field is `state`), counters and up to 20 evaluations live on the task. The code lives in `scripts`. The host runs only the approved hash. A pending version waits while the approved one keeps running with its own arguments and tool and provider grants. A successful dry run saves that version’s terms, arguments, observed grants and replay scores. The card shows the candidate’s terms and arguments and the tool receipt returns its own dry run. Library changes and bundled presets need Test now before approval. Test now validates the displayed task revision, script version and hash before running the check or making a provider read. Editing an unapproved check clears its dry run and requires another test. Going back restores the tested configuration for the approved version. Evaluations use a sealed Python snapshot: no workspace files, no attachments, and nothing writable except scratch. The host serves approved reads between worker starts. Run now evaluates an enabled trigger with the same verdict requirement as the due poll. A trigger preset always uses the check proposal path. Not met writes no run. The host reserves the remaining daily read allowance before each evaluation and charges the actual reads when the worker returns. Capacity adds the live dry run’s reads per check on each local calendar day and excludes the definition being replaced. Weekly checks contribute only on their run dates, and interval checks count the active window on each eligible day. Met posts a card on the home Thread and starts at most three agent runs a day for that check, and at most six triggered runs a Loupist a day. Three code errors in a row mark the trigger `failing` and stop evaluations. Learning tasks are not in this build, so a check sits on a custom task. The task's schedule is when the check runs, at least every five minutes, daily or weekly.
+A trigger is a pinned script version the host runs on the task's schedule, with no model call. It stores `when_met_summary`, one line of at most 160 characters validated like watch terms. `trigger_save` takes that line and the host keeps it on the trigger and in the reviewed configuration. A bundled preset stores a locale key instead of a sentence. A trigger saved before the field shows that preset's summary, or one generic line when it has no preset. The card and Schedule show the line; the run's instructions stay behind Show instructions. The definition, the script's `script_state` (the lifecycle field is `state`), counters and up to 20 evaluations live on the task. The code lives in `scripts`. The host runs only the approved hash. A pending version waits while the approved one keeps running with its own arguments and tool and provider grants. A successful dry run saves that version’s terms, arguments, observed grants and replay scores. The card shows the candidate’s terms and arguments and the tool receipt returns its own dry run. Library changes and bundled presets need Test now before approval. Test now validates the displayed task revision, script version and hash before running the check or making a provider read. Editing an unapproved check clears its dry run and requires another test. Going back restores the tested configuration for the approved version. Evaluations use a sealed Python snapshot: no workspace files, no attachments, and nothing writable except scratch. The host serves approved reads between worker starts. Run now evaluates an enabled trigger with the same verdict requirement as the due poll. A trigger preset always uses the check proposal path. Not met writes no run. The host reserves the remaining daily read allowance before each evaluation and charges the actual reads when the worker returns. Capacity adds the live dry run’s reads per check on each local calendar day and excludes the definition being replaced. Weekly checks contribute only on their run dates, and interval checks count the active window on each eligible day. Met posts a card on the home Thread and starts at most three agent runs a day for that check, and at most six triggered runs a Loupist a day. Three evaluation errors in a row mark the trigger `failing` and stop evaluations. A check can sit on a custom task or a learning program. The task's schedule is when the check runs, at least every five minutes, daily or weekly.
 
-Checks can use `followed` and `price` for saved data, KRX daily bars and
-OpenDART filing lists, and bundled OpenBB equity history, filing lists and
-news. Provider reads use the Loupist's current connection grants and the
-usual as-of rules. OpenBB news has no historical cutoff support. A price-move
+Each due check claims its task and reserves its read allowance before starting.
+Python-worker wait, execution and provider reads share a 90-second deadline.
+Other tasks and Run now can reach admission during that time. Only the current
+claim and task revision can save the evaluation or claim its explanation. An
+edit, pause or deletion invalidates the pending result. A deadline expiry
+records an evaluation error, keeps the conservative read charge and advances
+the schedule.
+
+Checks can use `followed` and `price` for followed assets, `world_changes` for
+facts already in Memory, KRX daily bars and OpenDART filing lists, and bundled
+OpenBB equity history, filing lists and news. `world_changes` needs the task's
+Memory setting and no provider grant. A check refuses `since: previous_run`;
+it keeps its own cursor in `state`. The agent run a met check starts can pass
+`since: previous_run`, from the same scheduled-run context as any other
+scheduled run. Under a replay date the read uses the
+published axis whatever the script passes, follows the same cutoff as every
+other read, and refuses a cursor made on the other axis. A replay starts from
+an empty cursor, not the live check's cursor. `world_changes` still returns
+rows under a replay date. Provider reads use the Loupist's current connection
+grants and the usual as-of rules. OpenBB news has no historical cutoff support. A price-move
 preset with named subjects checks only followed assets matching those names or
 the selected asset IDs. The candidate’s reviewed subjects and terms take effect
 together on approval, and reverting restores the prior subjects and terms. A
 figure in a verdict requires a successful read
 with a retained source. Rate limit retry hints in the read ledger defer
 the next check even when another read succeeds and the verdict is usable.
+
+For a live check, `price` repeats the followed asset's saved price recipe with
+the check's provider grant. It uses the saved history recipe when it uses the
+same provider route, or fetches the eligible KRX sessions as a batch.
+Quote-only reads keep the refreshed observation in the asset's price cache. A failed
+refresh leaves the price unavailable for the check. The quote carries its
+original observation date. Price and volume checks accept the market's current
+session or the preceding trading session while the current bar is pending.
+On a weekend or exchange holiday only the latest trading session is eligible.
+Price comparisons require two consecutive sessions. Mixed results record
+unavailable assets separately and a met verdict is dated from the matching
+observations. New-item checks apply the check's calendar-day age limit to
+each dated item. The host applies that same limit to an agent-written
+verdict's `as_of`, including on first observation and replay, and rejects
+future dates. Approved scripts keep their pinned source.
 
 The host refuses a check whose script was saved after outside text. It screens
 the complete run before keeping a replay ledger and screens the reading,
@@ -95,8 +126,9 @@ the model those fields.
 Proposal replay starts with empty state on the oldest of the previous 20
 weekdays. It carries state forward through successful evaluations and charges
 every data attempt, including refusals and unavailable results, against the
-80-read proposal budget. The current follow list and saved quote cannot supply
-a historical snapshot. Version comparisons start from empty state at each
+80-read proposal budget. Before a historical cutoff, replay can use currently followed assets that
+were already followed on that date and the saved observations through that
+date. It omits current quote receipts and later observations. Version comparisons start from empty state at each
 recorded reset, including approval of the same script version and revert.
 Each saved evaluation carries its boundary and position. A missing read ledger
 makes later checks in that sequence not comparable, even after the loss ages
@@ -201,6 +233,35 @@ with a 60-second maximum to recheck folders and wall-clock changes; an overdue
 occurrence blocked on admission retries after five seconds. Task lists batch
 profile and Chat ownership checks, preserving per-row corruption isolation.
 
+Background work has an app-wide local-day allowance of 400 model requests
+by default. The World share is half of that amount. Automatic reading of
+Sources saved in Chat has a separate allowance of 300 requests. Zero turns
+off automatic work in that allowance. Each running task reserves the request
+budget set when it starts, and each running World attempt reserves its
+remaining Source call budget. The shared usage ledger counts finished work.
+A background run that ended without its usage row in the ledger, after a crash
+or a refused write, counts its frozen request budget for that local day, the
+most it can have spent. A World model call whose count the ledger refuses is
+not sent and goes back to the attempt's budget. Each World call counts on the
+local day it was made, including in an attempt that runs across local
+midnight: the attempt's ledger row holds the calls of one quarter hour of UTC,
+and the calls of an earlier quarter hour move to a row of their own (every time
+zone's midnight falls on a quarter hour, so a later time-zone change still
+dates each call right). A plan-limit or out-of-credit
+failure stored on any turn on a provider, an interactive Chat turn included,
+holds background work on that provider for the rest of the local day. A run
+stores the provider it was admitted for, so a failed run's plan-limit or
+out-of-credit error holds the provider even when its usage row was lost. When
+the ledger refuses the row of any other such failure (a World attempt's final
+row), the hold is kept in memory instead and lasts for that local day or until
+the app restarts.
+Usage shows a warning at 80% and shows when the allowance has been reached.
+An elapsed slot held by the allowance or a provider limit appears on the task.
+It produces no run receipt or Bot post and leaves the failure streak intact.
+The hold clears at the start of a run or on the next local day. Run now needs
+explicit confirmation to start one occurrence while held. It keeps the task's
+per-run request and time limits. The provider still enforces its own limits.
+
 Missed recurring occurrences coalesce into one due run. Startup marks unfinished
 runs interrupted; a failure in one Loupist's recovery is skipped so other
 Loupists can still run. An undecodable running receipt is skipped individually,
@@ -233,7 +294,15 @@ the app exits before the OS displays its notification. Only a user-stopped run s
 interruptions say "couldn't finish". There is no meaningful-change filter, saved
 per-task connection allowlist, or per-task native-execution preference.
 
-Each scheduled task is `custom` or `briefing`. A Loupist has one morning briefing
+Scheduled task kinds include custom tasks, briefings and
+[learning programs](../knowledge/learning.md).
+A learning program keeps its depth, connection and web scope, and Memory
+save choices on its task. It opens a fresh Memory-enabled Chat for each run.
+Schedule shows the program's request budget and the usage recorded for each run.
+Up to 20 programs can be active in each Loupist. A budget cancellation records
+an interrupted run with a cancelled budget outcome.
+
+A Loupist has one morning briefing
 and one evening briefing, each with its own Memory-enabled Chat. The morning
 default is 08:00 and the evening default is 18:00, Monday through Friday in the
 device time zone. Morning rows written before editions stay morning. At run time Rust supplies

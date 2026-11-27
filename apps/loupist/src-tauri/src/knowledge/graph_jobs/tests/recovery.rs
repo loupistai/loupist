@@ -131,6 +131,18 @@ fn startup_recovers_future_leases_and_persists_each_loupists_pause_and_quarantin
             .unwrap();
         cases.push((job, paused, uncertain));
     }
+    // A running row with JSON in an unknown shape must stay untouched.
+    // It cannot supply a lease or establish that a paid call is safe to retry.
+    store
+        .transact(|write| {
+            write.tx.execute(
+                "INSERT INTO knowledge_graph_outbox VALUES
+             ('broken-running', 'loupist-broken', 'world', 'rev', 'running', '{}', 'digest', 1)",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
     let recover_all = || {
         store
             .transact(|write| recover_interrupted(write.tx))
@@ -138,6 +150,14 @@ fn startup_recovers_future_leases_and_persists_each_loupists_pause_and_quarantin
     };
     assert_eq!(recover_all(), 3);
     assert_eq!(recover_all(), 0);
+    assert!(store
+        .read(|write| Ok(write.tx.query_row(
+            "SELECT status = 'running' AND payload_json = '{}' FROM knowledge_graph_outbox
+         WHERE job_id = 'broken-running'",
+            [],
+            |r| r.get::<_, bool>(0),
+        )?))
+        .unwrap());
     for (job, paused, uncertain) in cases {
         let recovered = store.graph_job(&job.loupist_id, &job.job_id).unwrap();
         let expected = if uncertain {
@@ -201,6 +221,10 @@ fn empty_world_recovery_retires_uncertain_work_without_paid_replay_and_unblocks_
     let retired = store.graph_job(loupist, &first.job_id).unwrap();
     assert_eq!(retired.status, JOB_RECONCILED);
     assert_eq!(retired.document, interrupted.document);
+    let processing = store
+        .read(|read| get_processing_job(read.tx, loupist, &first.job_id))
+        .unwrap();
+    assert_eq!(processing.status, "usage_uncertain");
     let rebased = store.graph_job(loupist, &second.job_id).unwrap();
     assert_eq!(rebased.status, JOB_QUEUED);
     assert_eq!(rebased.document.generation_id, job.document.generation_id);
@@ -219,6 +243,50 @@ fn empty_world_recovery_retires_uncertain_work_without_paid_replay_and_unblocks_
         claim(&store, &settings, &second.job_id, AT + 301).status,
         JOB_RUNNING
     );
+}
+
+#[test]
+fn recovery_preserves_the_observed_cause_for_status_reads() {
+    for (index, cause, expected) in [
+        (0, Some(ReconciliationCause::TimedOut), "timed_out"),
+        (1, Some(ReconciliationCause::Interrupted), "interrupted"),
+        (2, None, JOB_RECONCILED),
+    ] {
+        let (_dir, store) = open();
+        let loupist = format!("loupist-cause-{index}");
+        let (job, _) = queued_pair(&store, &loupist);
+        let mut settings = enabled();
+        for expected in [JOB_QUEUED, JOB_RECONCILE] {
+            let running = claim(&store, &settings, &job.job_id, AT);
+            let attempt = running.document.attempt_id.as_deref().unwrap();
+            store.graph_note_inference(&job.job_id, attempt).unwrap();
+            let finished = store
+                .graph_finish_unpublished(
+                    &mut settings,
+                    &job.job_id,
+                    attempt,
+                    Unpublished {
+                        paid: true,
+                        uncertain: cause.is_some(),
+                        cause,
+                        ..Unpublished::default()
+                    },
+                    AT,
+                )
+                .unwrap();
+            assert_eq!(finished.status, expected);
+        }
+        store
+            .transact(|write| store_settings(write.tx, &loupist, &settings))
+            .unwrap();
+        let rebuild = recover(&store, &loupist, AT + 1);
+        finish_recovery(&store, &rebuild).unwrap();
+        let receipt = store
+            .read(|read| get_processing_job(read.tx, &loupist, &job.job_id))
+            .unwrap();
+        assert_eq!(receipt.status, expected);
+        assert!(!receipt.host_may_redrive);
+    }
 }
 
 #[test]

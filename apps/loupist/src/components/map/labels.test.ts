@@ -22,6 +22,11 @@ it("prioritizes the selection, its neighbours, then followed nodes", () => {
   const priority = {selectedId:"selected", hoveredId:"hovered", neighbors:new Set(["neighbor"]),hubs:new Set(["hub"])};
   expect(placeLabels(nodes,[],measure,1,priority).map(item => item.node.id)).toEqual(["selected","neighbor","watched","hovered"]);
 });
+it("keeps a followed name ahead of a better-connected hub", () => {
+  const followed = node("followed", 0, 0, { watched: true, degree: 1 });
+  const hub = node("hub", 300, 0, { degree: 80 });
+  expect(placeLabels([hub, followed], [hub, followed], measure, 1, { topHubIds: new Set(["hub"]) }, 1).map(item => item.node.id)).toEqual(["followed"]);
+});
 it("with no selection, labels followed names before a learned link, then degree", () => {
   const first = node("first", 0, 0, { watched: true, degree: 1 });
   const watched = node("watched", 220, 0, { watched: true, degree: 1 });

@@ -1,6 +1,5 @@
 import { buildFeedbackEvalCase, portableFeedbackText } from "./answerFeedbackCore";
 import { assertScenarioContract, isKoreanUserTurn } from "../../evals/agent/suite-contract.mjs";
-import { feedbackTeachingPrompt } from "./answerFeedback";
 import { fromLoupistUIMessage, toLoupistUIMessage } from "./ai-sdk";
 
 it("builds a regression scenario the shared suite contract accepts", () => {
@@ -57,11 +56,8 @@ it.each([
   expect(cleaned).toContain("End of note.");
 });
 
-it("keeps short corrections valid and makes an editable teaching quote with a bounded answer excerpt", () => {
+it("keeps short corrections valid in exported cases", () => {
   expect(buildFeedbackEvalCase("a", "Question", "No").sessions[0].turns[0].expect.rubric[0].criterion.length).toBeGreaterThanOrEqual(40);
-  expect(feedbackTeachingPrompt("Original answer", "Corrected answer")).toContain("> Original answer");
-  expect(feedbackTeachingPrompt("Original answer", "Corrected answer")).toContain("> Corrected answer");
-  expect(feedbackTeachingPrompt("x".repeat(8000), "Fix").length).toBeLessThan(1500);
 });
 
 it("retains feedback through the Chat registry serialization", () => {

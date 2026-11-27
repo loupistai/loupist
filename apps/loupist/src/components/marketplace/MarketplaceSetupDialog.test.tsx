@@ -16,7 +16,7 @@ describe("Marketplace setup feedback", () => {
 
     render(<MarketplaceSetupDialog bridge={bridge} entry={entry} connector={connector} onClose={vi.fn()} onChanged={vi.fn()} />);
     // What works without the optional key, said once.
-    expect(screen.getByText("Optional. Without a key, listing search works at OpenFIGI's lower request limit; a key raises it.")).toBeVisible();
+    expect(screen.getByText("Optional key for higher request limits.")).toBeVisible();
     expect(screen.queryByText("Not stored")).toBeNull();
     const save = screen.getByRole("button", { name: "Save API key" });
     expect(save).toBeDisabled();

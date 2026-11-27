@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import type { LoupistBridge, Principle, PrincipleCreateRequest } from "../../types";
+import type { LoupistBridge, Principle } from "../../types";
 import { useTranslation } from "../../i18n";
 import { formatNumber } from "../../i18n/format";
 import { Button } from "../ui/button";
@@ -9,15 +9,14 @@ export function principleErrorCode(error: unknown) {
   return commandErrorCode(error) ?? "";
 }
 
-export function PrincipleForm({ bridge, loupistId, principle, initialStatement = "", origin = "settings", originChatId, originMessageId, onSaved, onCancel }: {
-  bridge: LoupistBridge; loupistId: string; principle?: Principle; initialStatement?: string;
-  origin?: PrincipleCreateRequest["origin"]; originChatId?: string; originMessageId?: string;
+export function PrincipleForm({ bridge, loupistId, principle, onSaved, onCancel }: {
+  bridge: LoupistBridge; loupistId: string; principle?: Principle;
   onSaved: (principle: Principle) => void; onCancel: () => void;
 }) {
   const { t } = useTranslation("knowledge");
   const id = useId();
   const [current, setCurrent] = useState(principle);
-  const [statement, setStatement] = useState(principle?.statement ?? initialStatement);
+  const [statement, setStatement] = useState(principle?.statement ?? "");
   const [why, setWhy] = useState(principle?.why ?? "");
   const [example, setExample] = useState(principle?.example ?? "");
   const [pending, setPending] = useState(false);
@@ -45,7 +44,7 @@ export function PrincipleForm({ bridge, loupistId, principle, initialStatement =
       const fields = { statement: statement.trim(), why: why.trim(), example: example.trim() };
       const saved = current
         ? await bridge.principleUpdate({ loupistId, recordId: current.recordId, expectedRevisionId: current.revisionId, ...fields })
-        : await bridge.principleCreate({ loupistId, origin, originChatId, originMessageId, ...fields });
+        : await bridge.principleCreate({ loupistId, origin: "settings", ...fields });
       onSaved(saved);
     } catch (cause) { setFailure(principleErrorCode(cause) || "failed"); }
     finally { busy.current = false; setPending(false); }

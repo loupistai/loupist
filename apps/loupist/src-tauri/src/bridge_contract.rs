@@ -31,6 +31,7 @@ fn a_memory_skip_receipt_serializes_only_the_item_kind_and_title() {
         discarded_memory_items: Some(vec![DiscardedMemoryItem {
             kind: DiscardedMemoryKind::Note,
             title: "Short overlap check".into(),
+            reason: None,
         }]),
         commit_id: None,
         changes: vec![],
@@ -306,11 +307,13 @@ fn roots(collector: &mut Collector<'_>) {
         crate::marketplace::MarketplaceCredentialStatusDto,
         crate::marketplace::MarketplaceSnapshotDto,
         crate::providers::catalog::ModelCatalogView,
+        crate::providers::openrouter_quota::OpenRouterQuota,
         crate::providers::connection::ModelNoticeAckRequest,
         crate::providers::connection::ProviderConfigureRequest,
         crate::providers::connection::ProviderConnectionEvent,
         crate::providers::connection::ProviderConnectionRequest,
         crate::providers::connection::ProviderModelsRequest,
+        crate::providers::openrouter_quota::OpenRouterQuota,
         crate::providers::connection::ProviderPageRequest,
         crate::providers::connection::ProviderSubmitCodeRequest,
         crate::providers::custom::CustomProviderRequest,
@@ -453,6 +456,7 @@ commands! {
         knowledge_graph_settings_get: crate::commands::knowledge::KnowledgeGraphLoupistRequest => crate::knowledge::GraphProcessingView;
         knowledge_graph_settings_set: crate::commands::knowledge::KnowledgeGraphSettingsRequest => crate::knowledge::GraphProcessingView;
         knowledge_growth_events: crate::knowledge::GrowthEventsQuery => crate::knowledge::GrowthEventsPage;
+        knowledge_learning_state: crate::commands::knowledge::KnowledgeCatalogRequest => crate::knowledge::learning::LearningState;
         knowledge_journal_read: crate::commands::knowledge::KnowledgeJournalReadRequest => crate::knowledge::JournalRecord;
         knowledge_journal_source_read: crate::commands::knowledge::KnowledgeJournalSourceReadRequest => crate::commands::knowledge::JournalSourceReadDto;
         knowledge_lens_pages_for_node: crate::commands::knowledge::KnowledgeLensPagesForNodeRequest => Vec<crate::knowledge::PageSummary>;
@@ -463,7 +467,10 @@ commands! {
         knowledge_source_read: crate::commands::knowledge::KnowledgeSourceReadRequest => crate::commands::knowledge::SourceDetailDto;
         knowledge_source_retain: crate::commands::knowledge::KnowledgeSourceRetainRequest => crate::knowledge::RetainedSource;
         knowledge_world_query: crate::knowledge::WorldGraphQuery => crate::commands::knowledge::WorldQueryDto;
+        knowledge_world_changes: crate::commands::knowledge::world_changes::WorldChangesRequest => crate::commands::knowledge::world_changes::WorldChangesView;
+        knowledge_world_claim_history: crate::commands::knowledge::world_changes::ClaimHistoryRequest => crate::commands::knowledge::world_changes::ClaimHistory;
         memory_learned: crate::commands::knowledge::MemoryLearnedRequest => Vec<crate::knowledge::LearnedDigest>;
+        memory_message_undo: crate::commands::knowledge::MemoryMessageUndoRequest => crate::knowledge::MessageUndo;
         memory_op_undo: crate::commands::knowledge::MemoryOpUndoRequest => crate::knowledge::PageRead;
         memory_section_forget: crate::commands::knowledge::MemorySectionForgetRequest => crate::knowledge::PageRead;
         knowledge_followed_status: crate::commands::knowledge::followed::FollowedStatusRequest => crate::knowledge::FollowedStatus;
@@ -522,7 +529,7 @@ commands! {
         notification_permission_settings_open: () => ();
         notification_bot_focus_set: crate::briefings::desktop::BotFocusRequest => ();
         notification_templates_set: crate::briefings::desktop::TemplatesRequest => ();
-        scheduled_task_from_preset: crate::commands::scheduled_tasks::FromPresetRequest => crate::scheduled_tasks::types::Task;
+        scheduled_task_from_preset: crate::commands::scheduled_tasks::PresetCommand => crate::scheduled_tasks::types::Task;
         scheduled_trigger_get: crate::commands::scheduled_tasks::TriggerGetRequest => crate::commands::scheduled_tasks::TriggerView;
         scheduled_trigger_approve: crate::commands::scheduled_tasks::TriggerReviewRequest => crate::scheduled_tasks::types::Task;
         scheduled_trigger_revert: crate::commands::scheduled_tasks::TriggerRevertRequest => crate::scheduled_tasks::types::Task;
@@ -530,9 +537,11 @@ commands! {
         scheduled_trigger_evaluations: crate::commands::scheduled_tasks::TaskRequest => Vec<crate::scheduled_tasks::types::TriggerEvaluation>;
         scheduled_task_set_delivery: crate::commands::scheduled_tasks::DeliveryRequest => crate::scheduled_tasks::types::Task;
         scheduled_task_get: crate::commands::scheduled_tasks::TaskRequest => Option<crate::scheduled_tasks::types::Task>;
-        scheduled_task_run_now: crate::commands::scheduled_tasks::TaskRequest => crate::scheduled_tasks::types::Run;
+        scheduled_task_run_now: crate::commands::scheduled_tasks::RunNowRequest => crate::scheduled_tasks::types::Run;
         scheduled_task_runs: crate::commands::scheduled_tasks::TaskRequest => Vec<crate::scheduled_tasks::types::Run>;
         scheduled_task_set_status: crate::commands::scheduled_tasks::StatusRequest => crate::scheduled_tasks::types::Task;
+        learning_program_update: crate::commands::scheduled_tasks::LearningProgramUpdateRequest => crate::scheduled_tasks::types::Task;
+        learning_program_undo_all: crate::commands::scheduled_tasks::LearningProgramUndoAllRequest => crate::knowledge::ProgramUndo;
         scheduled_task_watch: crate::commands::scheduled_tasks::RunRequest => Option<crate::scheduled_tasks::WatchSnapshot>;
         scheduled_tasks_activity: crate::commands::scheduled_tasks::LoupistRequest => Vec<crate::scheduled_tasks::types::Run>;
         scheduled_tasks_list: crate::commands::scheduled_tasks::LoupistRequest => Vec<crate::scheduled_tasks::types::TaskListItem>;
@@ -597,11 +606,12 @@ commands! {
         provider_custom_save: crate::providers::custom::CustomProviderRequest => crate::providers::catalog::ModelCatalogView;
         provider_disconnect: crate::providers::connection::ProviderConnectionRequest => crate::providers::catalog::ModelCatalogView;
         provider_models: crate::providers::connection::ProviderModelsRequest => crate::providers::catalog::ModelCatalogView;
+        provider_quota_read: crate::commands::provider_quota::ProviderQuotaRequest => Option<crate::providers::openrouter_quota::OpenRouterQuota>;
         provider_open_console: crate::providers::connection::ProviderPageRequest => ();
         provider_open_usage: crate::providers::connection::ProviderPageRequest => ();
         usage_summary: crate::commands::usage::UsageSummaryRequest => crate::commands::usage::UsageSummary;
         bot_memory_list: crate::commands::bot_memory::BotMemoryListRequest => Vec<crate::commands::bot_memory::BotMemoryListEntry>;
-        bot_memory_forget: crate::commands::bot_memory::BotMemoryForgetRequest => Vec<crate::commands::bot_memory::BotMemoryListEntry>;
+        bot_memory_forget: crate::commands::bot_memory::BotMemoryForgetRequest => crate::commands::bot_memory::BotMemoryForgetResponse;
         bot_memory_update: crate::commands::bot_memory::BotMemoryUpdateRequest => Vec<crate::commands::bot_memory::BotMemoryListEntry>;
         provider_custom_test: crate::providers::local::ProviderCustomTestRequest => crate::providers::local::ProviderCustomTestResult;
         provider_local_discover: () => crate::providers::local::LocalDiscovery;
@@ -914,6 +924,11 @@ async fn command_signatures() {
             any::<crate::knowledge::GrowthEventsQuery>(),
             any(),
         );
+    let _: Result<crate::knowledge::learning::LearningState, CommandError> =
+        crate::commands::knowledge::knowledge_learning_state(
+            any::<crate::commands::knowledge::KnowledgeCatalogRequest>(),
+            any(),
+        );
     let _: Result<crate::knowledge::JournalRecord, CommandError> =
         crate::commands::knowledge::knowledge_journal_read(
             any::<crate::commands::knowledge::KnowledgeJournalReadRequest>(),
@@ -964,9 +979,24 @@ async fn command_signatures() {
             any::<crate::knowledge::WorldGraphQuery>(),
             any(),
         );
+    let _: Result<crate::commands::knowledge::world_changes::WorldChangesView, CommandError> =
+        crate::commands::knowledge::world_changes::knowledge_world_changes(
+            any::<crate::commands::knowledge::world_changes::WorldChangesRequest>(),
+            any(),
+        );
+    let _: Result<crate::commands::knowledge::world_changes::ClaimHistory, CommandError> =
+        crate::commands::knowledge::world_changes::knowledge_world_claim_history(
+            any::<crate::commands::knowledge::world_changes::ClaimHistoryRequest>(),
+            any(),
+        );
     let _: Result<Vec<crate::knowledge::LearnedDigest>, CommandError> =
         crate::commands::knowledge::memory_learned(
             any::<crate::commands::knowledge::MemoryLearnedRequest>(),
+            any(),
+        );
+    let _: Result<crate::knowledge::MessageUndo, CommandError> =
+        crate::commands::knowledge::memory_message_undo(
+            any::<crate::commands::knowledge::MemoryMessageUndoRequest>(),
             any(),
         );
     let _: Result<crate::knowledge::PageRead, CommandError> =
@@ -1242,7 +1272,11 @@ async fn command_signatures() {
         crate::briefings::desktop::notification_permission_settings_open();
     let _: Result<(), CommandError> = crate::briefings::desktop::notification_templates_set(any());
     let _: Result<crate::scheduled_tasks::types::Task, CommandError> =
-        crate::commands::scheduled_tasks::scheduled_task_from_preset(any(), any()).await;
+        crate::commands::scheduled_tasks::scheduled_task_from_preset(
+            any::<crate::commands::scheduled_tasks::PresetCommand>(),
+            any(),
+        )
+        .await;
     let _: Result<crate::commands::scheduled_tasks::TriggerView, CommandError> =
         crate::commands::scheduled_tasks::scheduled_trigger_get(any(), any());
     let _: Result<crate::scheduled_tasks::types::Task, CommandError> =
@@ -1262,7 +1296,7 @@ async fn command_signatures() {
         );
     let _: Result<crate::scheduled_tasks::types::Run, CommandError> =
         crate::commands::scheduled_tasks::scheduled_task_run_now(
-            any::<crate::commands::scheduled_tasks::TaskRequest>(),
+            any::<crate::commands::scheduled_tasks::RunNowRequest>(),
             any(),
         )
         .await;
@@ -1274,6 +1308,16 @@ async fn command_signatures() {
     let _: Result<crate::scheduled_tasks::types::Task, CommandError> =
         crate::commands::scheduled_tasks::scheduled_task_set_status(
             any::<crate::commands::scheduled_tasks::StatusRequest>(),
+            any(),
+        );
+    let _: Result<crate::scheduled_tasks::types::Task, CommandError> =
+        crate::commands::scheduled_tasks::learning_program_update(
+            any::<crate::commands::scheduled_tasks::LearningProgramUpdateRequest>(),
+            any(),
+        );
+    let _: Result<crate::knowledge::ProgramUndo, CommandError> =
+        crate::commands::scheduled_tasks::learning_program_undo_all(
+            any::<crate::commands::scheduled_tasks::LearningProgramUndoAllRequest>(),
             any(),
         );
     let _: Result<Option<crate::scheduled_tasks::WatchSnapshot>, CommandError> =
@@ -1562,6 +1606,12 @@ async fn command_signatures() {
             any(),
         )
         .await;
+    let _: Result<Option<crate::providers::openrouter_quota::OpenRouterQuota>, CommandError> =
+        crate::commands::provider_quota::provider_quota_read(
+            any::<crate::commands::provider_quota::ProviderQuotaRequest>(),
+            any(),
+        )
+        .await;
     let _: Result<(), CommandError> = crate::providers::connection::provider_open_console(any::<
         crate::providers::connection::ProviderPageRequest,
     >());
@@ -1578,7 +1628,7 @@ async fn command_signatures() {
             any::<crate::commands::bot_memory::BotMemoryListRequest>(),
             any(),
         );
-    let _: Result<Vec<crate::commands::bot_memory::BotMemoryListEntry>, CommandError> =
+    let _: Result<crate::commands::bot_memory::BotMemoryForgetResponse, CommandError> =
         crate::commands::bot_memory::bot_memory_forget(
             any::<crate::commands::bot_memory::BotMemoryForgetRequest>(),
             any(),

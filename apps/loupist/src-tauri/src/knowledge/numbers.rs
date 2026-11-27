@@ -19,7 +19,16 @@
 //! row or table or in words after it (`배당금총액(원)`, `(단위: 백만원)`,
 //! `184.6이고 단위는 십억 원`). A local direction cue (`跌幅4.81%`, `9% 줄었고`)
 //! gives an unsigned number the direction a signed answer must agree with.
+//!
+//! Digits group with `,`, `.` or a space and take a decimal point or comma
+//! ([`digits`]): `1.234,5 Mio. €`, `R$ 3,4 bilhões`, `12,34,567`. Scale words
+//! include lakh and crore, `Mio.`, `Mrd.`, milhões and bilhões; pence (`1,234p`,
+//! `GBX 845`) are hundredths of a pound. World figure checks
+//! (`figure_check.rs`) read a statement's figures with [`stated_figures`] and
+//! compare them with [`match_figure`], which never reports a difference from
+//! a run the reader could not read one way.
 mod currency;
+mod digits;
 mod direction;
 pub(crate) use currency::{agrees as currencies_agree, Currency};
 use direction::Direction;
@@ -69,6 +78,7 @@ const CJK_SCALES: &[(&str, f64)] = &[
     ("萬", 1e4),
     ("亿", 1e8),
     ("億", 1e8),
+    ("兆", 1e12),
 ];
 
 /// Rate units shared by answer labels, passage tokens and structured units.
@@ -169,14 +179,43 @@ pub(crate) fn unambiguous_currency_markers(text: &str) -> Vec<Currency> {
     currency::markers(text, true)
 }
 
+/// Whether `text` is a currency alone, as a code, a sign or a name.
+pub(crate) fn names_currency(text: &str) -> bool {
+    currency::exact(text).is_some()
+}
+
 fn english_scale(word: &str) -> Option<f64> {
     match word {
         "thousand" | "thousands" => Some(1e3),
+        "lakh" | "lakhs" | "lac" | "lacs" => Some(1e5),
+        "crore" | "crores" => Some(1e7),
         "million" | "millions" | "mn" | "mm" | "mil" => Some(1e6),
         "billion" | "billions" | "bn" => Some(1e9),
         "trillion" | "trillions" | "tn" => Some(1e12),
         _ => None,
     }
+}
+
+/// Scale words of languages that write decimals with a comma (`Mio.`,
+/// `Mrd.`, `milhões`), without the abbreviation's full stop.
+fn comma_scale(word: &str) -> Option<f64> {
+    match word {
+        "tsd" => Some(1e3),
+        "mio" | "millionen" | "milhão" | "milhões" => Some(1e6),
+        "mrd" | "milliarde" | "milliarden" | "bilhão" | "bilhões" => Some(1e9),
+        _ => None,
+    }
+}
+
+/// Pence as a scale of pounds: `1,234p`, `845 pence`, `GBX 845`.
+const PENCE: f64 = 0.01;
+
+/// `GBX` or `GBp` printed just before a number.
+fn pence_before(text: &str) -> bool {
+    let trimmed = text.trim_end_matches(UNIT_SPACES);
+    text.len() - trimmed.len() <= 2
+        && (trimmed.ends_with("GBX") || trimmed.ends_with("GBp"))
+        && !trimmed[..trimmed.len() - 3].ends_with(is_word_char)
 }
 
 /// Single-letter scales are read only next to a currency or a digit.
@@ -243,6 +282,9 @@ impl Unit {
         if matches!(compact.as_str(), "x" | "times" | "multiple" | "배") {
             return Ok(Self::Multiple);
         }
+        if matches!(compact.as_str(), "gbx" | "pence") {
+            return Ok(Self::Amount(PENCE));
+        }
         if let Some(scale) = cjk_amount(raw).or_else(|| {
             CJK_SCALES
                 .iter()
@@ -285,7 +327,10 @@ impl Unit {
             }
             if per {
                 continue;
-            } else if let Some(found) = english_scale(word) {
+            } else if word == "mil" {
+                // A thousand in Portuguese and Spanish, a million in English.
+                return Err(ambiguous());
+            } else if let Some(found) = english_scale(word).or_else(|| comma_scale(word)) {
                 if scale.replace(found).is_some_and(|known| known != found) {
                     return Err(ambiguous());
                 }
@@ -434,9 +479,11 @@ fn cjk_suffix(word: &str) -> Option<(f64, usize, bool)> {
                     false,
                 ));
             }
-            // A direction can touch a bare scale, as in ２億下落.
+            // A direction can touch a bare scale, as in ２億下落, and so can
+            // the smaller part of a compound written without a space (86億5,000万円).
             if rest.is_empty()
                 || rest.starts_with(|c: char| !c.is_alphanumeric())
+                || rest.starts_with(|c: char| numeric_char(c).is_ascii_digit())
                 || (rest.chars().count() == 1 && rest.chars().all(is_hangul))
                 || direction::around("", rest).is_some()
             {
@@ -454,18 +501,33 @@ const UNIT_SPACES: [char; 5] = [' ', '\u{a0}', '\u{3000}', '\u{202f}', '\u{2009}
 fn leading_scale(rest: &str, has_currency: bool) -> Option<(f64, usize)> {
     let tail = rest.trim_start_matches(UNIT_SPACES);
     let gap = rest.len() - tail.len();
-    let length = tail.bytes().take_while(u8::is_ascii_alphabetic).count();
-    let after = &tail[length..];
-    if after.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+    let ascii = tail.bytes().take_while(u8::is_ascii_alphabetic).count();
+    let after = &tail[ascii..];
+    if !after.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+        let word = tail[..ascii].to_ascii_lowercase();
+        if let Some(scale) = english_scale(&word).or_else(|| {
+            (has_currency || gap == 0)
+                .then(|| letter_scale(&word))
+                .flatten()
+        }) {
+            return Some((scale, gap + ascii));
+        }
+    }
+    // `Mio.`, `Mrd.`, `milhões`: a whole word, and an abbreviation's full stop.
+    let length: usize = tail
+        .chars()
+        .take_while(|c| c.is_alphabetic())
+        .map(char::len_utf8)
+        .sum();
+    if tail[length..].starts_with(|c: char| c.is_numeric() || c == '_') {
         return None;
     }
-    let word = tail[..length].to_ascii_lowercase();
-    let scale = english_scale(&word).or_else(|| {
-        (has_currency || gap == 0)
-            .then(|| letter_scale(&word))
-            .flatten()
-    })?;
-    Some((scale, gap + length))
+    let word = tail[..length].to_lowercase();
+    let scale = comma_scale(&word)?;
+    let stop = usize::from(
+        matches!(word.as_str(), "tsd" | "mio" | "mrd") && tail[length..].starts_with('.'),
+    );
+    Some((scale, gap + length + stop))
 }
 
 /// What a printed number states right after it: its unit, the bytes of
@@ -490,6 +552,16 @@ fn suffix_unit(rest: &str, prefixed: bool) -> (Unit, usize, Option<f64>) {
     if (gap == 0 && word == "x") || multiple || word == "times" {
         let length = if multiple { "배".len() } else { word.len() };
         return (Unit::Multiple, gap + length, None);
+    }
+    let pence = match word.as_str() {
+        "p" => gap == 0,
+        "pence" | "gbx" => gap > 0,
+        "gbp" => gap > 0 && trimmed.starts_with("GBp"),
+        _ => false,
+    };
+    if pence {
+        let length = if word == "p" { 1 } else { word.len() };
+        return (Unit::Amount(PENCE), gap + length, None);
     }
     if let Some((scale, length)) = leading_scale(rest, prefixed) {
         let after = &rest[length..];
@@ -536,6 +608,8 @@ struct Scanned {
     signed: bool,
     /// The direction the wording governing an unsigned figure states.
     direction: Option<Direction>,
+    /// Digits printed after the decimal separator of the smallest component.
+    decimals: u32,
 }
 
 /// Fold numeric glyphs only. The scanner still indexes the original UTF-8
@@ -574,12 +648,128 @@ fn is_xbrl_value(text: &str, start: usize, end: usize) -> bool {
 /// identifiers, times) or with a second `.` (`2026.03.18`) is skipped, as is a
 /// number glued to letters (`Q3`, `FY2026`, `10-K`). Korean compounds
 /// (`1조 2,345억원`) are one amount in the smallest scale.
+/// One run of digits and separators from `start`: its end, whether `-`, `/`
+/// or `:` joined it (a date, identifier or time), and its groups.
+fn digit_run(chars: &[(usize, char)], start: usize) -> (usize, bool, digits::Run) {
+    let digit = |at: usize| chars.get(at).is_some_and(|(_, c)| c.is_ascii_digit());
+    let mut end = start;
+    let mut joined = false;
+    let mut run = digits::Run {
+        groups: vec![String::new()],
+        separators: Vec::new(),
+    };
+    while end < chars.len() {
+        let c = chars[end].1;
+        if c.is_ascii_digit() {
+            run.groups.last_mut().expect("group").push(c);
+            end += 1;
+        } else if matches!(c, ',' | '.' | '\'' | '’') && digit(end + 1) {
+            run.separators.push(c);
+            run.groups.push(String::new());
+            end += 1;
+        } else if matches!(c, '-' | '/' | ':') && digit(end + 1) {
+            joined = true;
+            end += 1;
+        } else {
+            break;
+        }
+    }
+    // `1 234 567,89`, or groups split by a no-break or thin space.
+    if !joined && run.separators.is_empty() && run.groups[0].len() <= 3 {
+        let mut at = end;
+        let mut extended = digits::Run {
+            groups: run.groups.clone(),
+            separators: Vec::new(),
+        };
+        while chars
+            .get(at)
+            .is_some_and(|(_, c)| digits::GROUP_SPACES.contains(c))
+            && (1..=3).all(|offset| digit(at + offset))
+            && !digit(at + 4)
+            && !chars
+                .get(at + 4)
+                .is_some_and(|(_, c)| matches!(c, '.' | '-' | '/' | ':') && digit(at + 5))
+        {
+            extended.separators.push(chars[at].1);
+            extended
+                .groups
+                .push(chars[at + 1..at + 4].iter().map(|(_, c)| *c).collect());
+            at += 4;
+        }
+        let mut decimal = false;
+        if !extended.separators.is_empty()
+            && chars.get(at).is_some_and(|(_, c)| *c == ',')
+            && digit(at + 1)
+        {
+            let mut fraction = String::new();
+            let mut cursor = at + 1;
+            while digit(cursor) {
+                fraction.push(chars[cursor].1);
+                cursor += 1;
+            }
+            extended.separators.push(',');
+            extended.groups.push(fraction);
+            at = cursor;
+            decimal = true;
+        }
+        let plain_space = extended.separators.contains(&' ');
+        if !extended.separators.is_empty() && (decimal || !plain_space) {
+            return (at, false, extended);
+        }
+    }
+    (end, joined, run)
+}
+
+/// The convention runs whose shape settles it agree on, if they do.
+fn text_convention(chars: &[(usize, char)]) -> Option<digits::Convention> {
+    let (mut point, mut comma) = (false, false);
+    let mut index = 0;
+    while index < chars.len() {
+        if !chars[index].1.is_ascii_digit() {
+            index += 1;
+            continue;
+        }
+        let (end, joined, run) = digit_run(chars, index);
+        index = end.max(index + 1);
+        if joined {
+            continue;
+        }
+        if let digits::Reading::Number {
+            shows: Some(shows), ..
+        } = digits::read(&run, None)
+        {
+            match shows {
+                digits::Convention::Point => point = true,
+                digits::Convention::Comma => comma = true,
+            }
+        }
+    }
+    match (point, comma) {
+        (true, false) => Some(digits::Convention::Point),
+        (false, true) => Some(digits::Convention::Comma),
+        _ => None,
+    }
+}
+
 fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned> {
+    scan_numbers_noting(text, limit, checking_amount, &mut Vec::new())
+}
+
+/// As [`scan_numbers`], also noting the byte range of each run that is
+/// unrecognized or read without the text settling its convention, and of
+/// each amount whose scale word could mean two scales (`mil`).
+fn scan_numbers_noting(
+    text: &str,
+    limit: usize,
+    checking_amount: bool,
+    unsure: &mut Vec<(usize, usize)>,
+) -> Vec<Scanned> {
     let chars: Vec<(usize, char)> = text
         .char_indices()
         .map(|(at, c)| (at, numeric_char(c)))
         .collect();
     let byte = |index: usize| chars.get(index).map_or(text.len(), |(offset, _)| *offset);
+    let convention = text_convention(&chars);
     let mut scanned: Vec<Scanned> = Vec::new();
     let mut index = 0;
     while index < chars.len() && scanned.len() < limit {
@@ -592,24 +782,14 @@ fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned>
         let previous = start.checked_sub(1).map(|i| chars[i].1);
         let before = start.checked_sub(2).map(|i| chars[i].1);
         // Scan the whole run, joiners included, so a date is skipped as one token.
-        let mut end = start;
-        let mut joined = false;
-        let mut points = 0;
-        while end < chars.len() {
-            let c = chars[end].1;
-            let next_digit = chars.get(end + 1).is_some_and(|(_, n)| n.is_ascii_digit());
-            if c.is_ascii_digit() || (c == ',' && next_digit) {
-                end += 1;
-            } else if c == '.' && next_digit {
-                points += 1;
-                end += 1;
-            } else if matches!(c, '-' | '/' | ':') && next_digit {
-                joined = true;
-                end += 1;
-            } else {
-                break;
-            }
-        }
+        let (end, joined, run_groups) = digit_run(&chars, start);
+        let cue = digits::scale_cue(&text[byte(end)..])
+            .or_else(|| digits::prefix_cue(&text[..byte(start)]));
+        let settled = match (convention, cue) {
+            (Some(text), Some(cue)) if text != cue => None,
+            (text, cue) => cue.or(text),
+        };
+        let reading = digits::read(&run_groups, settled);
         let following = chars.get(end).map(|(_, c)| *c);
         let after = chars.get(end + 1).map(|(_, c)| *c);
         index = end;
@@ -627,11 +807,25 @@ fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned>
                 byte(start)
             };
         let prefix = currency::before(&text[..prefix_end]);
-        if joined || points > 1 || (glued_before && prefix.is_none()) || identifier_after {
+        let pence_prefix = prefix.is_none() && pence_before(&text[..prefix_end]);
+        if joined || (glued_before && prefix.is_none()) || identifier_after {
             continue;
         }
+        let (parsed, decimals, grouped, unsure_run) = match reading {
+            digits::Reading::Number {
+                value,
+                decimals,
+                grouped,
+                unsure,
+                ..
+            } => (value, decimals, grouped, unsure),
+            digits::Reading::Skip => continue,
+            digits::Reading::Unrecognized => {
+                unsure.push((byte(start), byte(end)));
+                continue;
+            }
+        };
         let run: String = chars[start..end].iter().map(|(_, c)| *c).collect();
-        let grouped = run.contains(',');
         // Codes, not quantities: a leading zero (`005930`), or a six-digit
         // ticker in brackets or with an exchange suffix (`(990221)`, `990221.KS`).
         let ticker = run.len() == 6
@@ -641,10 +835,10 @@ fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned>
         if code_like(&run) || ticker {
             continue;
         }
-        let digits: String = run.chars().filter(|c| *c != ',').collect();
-        let Ok(mut value) = digits.parse::<f64>() else {
-            continue;
-        };
+        let mut value = parsed;
+        if unsure_run {
+            unsure.push((byte(start), byte(end)));
+        }
         let mut span_start = byte(start);
         let mut signed = false;
         // A sign can touch a CJK label. An ASCII identifier still needs a word boundary.
@@ -688,7 +882,9 @@ fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned>
                 .rsplit(|c: char| !c.is_ascii_alphabetic())
                 .next()
                 .unwrap_or_default();
-            if let Some((code, scale)) = currency::scaled_prefix(token) {
+            if let Some((code, scale)) =
+                currency::scaled_prefix(token).or_else(|| currency::thousands_prefix(token))
+            {
                 unit = Unit::Amount(scale);
                 currency = Some(code);
             } else if checking_amount {
@@ -702,10 +898,25 @@ fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned>
         if prefix.is_some() && unit == Unit::Plain {
             unit = Unit::Amount(1.0);
         }
+        if pence_prefix && unit == Unit::Plain {
+            unit = Unit::Amount(PENCE);
+        }
+        if unit == Unit::Amount(PENCE) {
+            currency = Some("GBP");
+        }
+        // `mil` is a thousand in Portuguese and Spanish and a million in English.
+        let word_after = text[rest_start..].trim_start_matches(UNIT_SPACES);
+        if word_after
+            .get(..3)
+            .is_some_and(|word| word.eq_ignore_ascii_case("mil"))
+            && !word_after[3..].starts_with(char::is_alphabetic)
+        {
+            unsure.push((byte(start), byte(end)));
+        }
         let mut lead = start;
         if let Some((_, offset)) = prefix {
             let marker = text[offset..prefix_end].trim_end();
-            if marker.ends_with(['$', '₩', '€', '£', '¥', '￦', '￥']) {
+            if marker.ends_with(['$', '₩', '€', '£', '¥', '￦', '￥', '₹']) {
                 span_start = span_start.min(offset);
                 lead = chars[..start].partition_point(|&(at, _)| at < offset);
             }
@@ -753,7 +964,7 @@ fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned>
             }
         }
         // A trailing minus (`1,234-`, `1,234−`) after a grouped or decimal amount.
-        if !signed && (grouped || points == 1) {
+        if !signed && (grouped || decimals > 0) {
             if let Some(sign) = text[span_end..].chars().next().filter(|c| is_minus(*c)) {
                 let rest = &text[span_end + sign.len_utf8()..];
                 if rest
@@ -780,6 +991,7 @@ fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned>
             bare_scale,
             signed,
             direction: None,
+            decimals,
         });
     }
     // Join `1조 2,345억원`: a bare larger scale followed by a smaller Korean amount.
@@ -800,6 +1012,7 @@ fn scan_numbers(text: &str, limit: usize, checking_amount: bool) -> Vec<Scanned>
                     last.currency = currency::contextual(next.currency, last.currency);
                     last.end = next.end;
                     last.bare_scale = next.bare_scale;
+                    last.decimals = next.decimals;
                     continue;
                 }
             }
@@ -835,14 +1048,75 @@ pub(crate) fn preceding_price_unit(text: &str, start: usize) -> Option<&str> {
 }
 
 fn text_numbers(text: &str, out: &mut Vec<Candidate>, amount: Option<&Printed>) {
-    let joined = scan_numbers(
+    text_numbers_noting(text, out, amount, &mut Vec::new());
+}
+
+fn text_numbers_noting(
+    text: &str,
+    out: &mut Vec<Candidate>,
+    amount: Option<&Printed>,
+    unsure: &mut Vec<(usize, usize)>,
+) {
+    let scan = TextScan::new(
         text,
         MAX_CANDIDATES.saturating_sub(out.len()),
         amount.is_some(),
     );
-    let stated = stated_units(text, &joined, amount.is_some());
-    let cells = table_cells(text, &joined);
-    for ((found, cell), position) in joined.into_iter().zip(stated).zip(cells) {
+    unsure.extend_from_slice(&scan.unsure);
+    scan.candidates(out, amount);
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Bytes this thread's [`TextScan`]s have read: what a bound on rescans is measured by.
+    pub(crate) static TEXT_SCANS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// What reading a text's numbers costs, done once: the numbers, the units
+/// the text states for them and their table cells. Turning them into one
+/// figure's candidates ([`TextScan::candidates`]) is the cheap part.
+struct TextScan<'a> {
+    text: &'a str,
+    joined: Vec<Scanned>,
+    stated: Vec<CellUnit<'a>>,
+    cells: Vec<(u32, u32)>,
+    unsure: Vec<(usize, usize)>,
+}
+
+impl<'a> TextScan<'a> {
+    fn new(text: &'a str, limit: usize, checking_amount: bool) -> Self {
+        #[cfg(test)]
+        TEXT_SCANS.with(|scans| scans.set(scans.get() + text.len()));
+        let mut unsure = Vec::new();
+        let joined = scan_numbers_noting(text, limit, checking_amount, &mut unsure);
+        let stated = stated_units(text, &joined, checking_amount);
+        let cells = table_cells(text, &joined);
+        Self {
+            text,
+            joined,
+            stated,
+            cells,
+            unsure,
+        }
+    }
+
+    fn candidates(&self, out: &mut Vec<Candidate>, amount: Option<&Printed>) {
+        let text = self.text;
+        for ((found, cell), &position) in self.joined.iter().zip(&self.stated).zip(&self.cells) {
+            text_candidate(text, found, *cell, position, out, amount);
+        }
+    }
+}
+
+fn text_candidate(
+    text: &str,
+    found: &Scanned,
+    cell: CellUnit<'_>,
+    position: (u32, u32),
+    out: &mut Vec<Candidate>,
+    amount: Option<&Printed>,
+) {
+    {
         let CellUnit {
             unit: stated,
             measure,
@@ -857,6 +1131,11 @@ fn text_numbers(text: &str, out: &mut Vec<Candidate>, amount: Option<&Printed>) 
             heading.or(price_heading).and_then(stated_currency),
         );
         let stated = stated.or(price_heading.map(|_| Unit::Amount(1.0)));
+        // A row or table stated in pence (`(GBX)`) is in pounds' hundredths.
+        let currency = match (found.unit, stated) {
+            (Unit::Plain, Some(Unit::Amount(PENCE))) => Some("GBP"),
+            _ => currency,
+        };
         let place = Place::Span {
             start: found.start,
             end: found.end,
@@ -871,7 +1150,7 @@ fn text_numbers(text: &str, out: &mut Vec<Candidate>, amount: Option<&Printed>) 
             if matches!(measure, FilingMeasure::Shares | FilingMeasure::Count)
                 || (measure == FilingMeasure::PerShare && printed.unit != Unit::Amount(1.0))
             {
-                continue;
+                return;
             }
             if stated.is_some() {
                 None
@@ -881,12 +1160,12 @@ fn text_numbers(text: &str, out: &mut Vec<Candidate>, amount: Option<&Printed>) 
                 if (token.len() == 4
                     && (1900.0..=2100.0).contains(&found.value)
                     && token.bytes().all(|c| c.is_ascii_digit()))
-                    || enumerator(text, &found)
+                    || enumerator(text, found)
                     || text[found.end..]
                         .trim_start_matches([' ', '|'])
                         .starts_with('%')
                 {
-                    continue;
+                    return;
                 }
                 Some(unstated_amount_unit(printed, found.value))
             } else {
@@ -1080,14 +1359,20 @@ fn bracket_unit(content: &str) -> Option<(Option<Unit>, Reach)> {
     if let Some(scale) = dollars.and_then(english_scale) {
         return Some((Some(Unit::Amount(scale)), Reach::Filing));
     }
-    let table = table_marker(content).or_else(|| {
+    let table = table_marker(content).map(str::to_owned).or_else(|| {
         let (marker, rest) = content.split_once(char::is_whitespace)?;
-        marker
-            .eq_ignore_ascii_case("in")
-            .then_some(rest.trim_start())
+        let rest = rest.trim_start();
+        // `(in KRW millions)`, `(em R$ milhões)`.
+        if marker.eq_ignore_ascii_case("in") || marker.eq_ignore_ascii_case("em") {
+            return Some(rest.to_owned());
+        }
+        // `(₹ in crore)`: a currency, then `in` and the scale.
+        let (word, scale) = rest.split_once(char::is_whitespace)?;
+        (word.eq_ignore_ascii_case("in") && currency::exact(marker).is_some())
+            .then(|| format!("{marker} {}", scale.trim_start()))
     });
     if let Some(rest) = table {
-        return Some((placed(rest), Reach::Table));
+        return Some((placed(&rest), Reach::Table));
     }
     let letter = content.len() == 1 && content.bytes().all(|b| b.is_ascii_alphabetic());
     if content.chars().count() > 16 || content.contains(|c: char| c.is_ascii_digit()) || letter {
@@ -3146,6 +3431,204 @@ fn check_with_scale_policy(
         );
     }
     (Verdict::NotFound, None)
+}
+
+/// A material figure a statement prints (an amount, a rate), read as an
+/// answer prints a number, with its byte range in the statement.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Stated {
+    /// Signed by the statement's own sign or direction word, when it has one.
+    pub printed: Printed,
+    pub start: usize,
+    pub end: usize,
+    /// A sign, accounting brackets or a direction word came with it.
+    pub explicit: bool,
+    /// Its digits and scale word read only one way.
+    pub sure: bool,
+}
+
+/// The material figures `text` states: currency amounts, counts with a scale
+/// word, percentages, points and basis points. Bare numbers (years, ordinals,
+/// counts) and codes are not figures. `unrecognized` says whether a run of
+/// digits had no shape the scanner reads.
+pub(crate) fn stated_figures(text: &str) -> (Vec<Stated>, bool) {
+    let mut unsure = Vec::new();
+    let end = text.floor_char_boundary(text.len().min(MAX_TEXT_BYTES));
+    let text = &text[..end];
+    let scanned = scan_numbers_noting(text, MAX_CANDIDATES, false, &mut unsure);
+    let mut figures = Vec::new();
+    for found in &scanned {
+        let material = match found.unit {
+            Unit::Amount(scale) => scale != 1.0 || found.currency.is_some(),
+            Unit::Percent | Unit::Points | Unit::BasisPoints => true,
+            Unit::Plain | Unit::Raw | Unit::Multiple => false,
+        };
+        if !material {
+            continue;
+        }
+        let explicit = found.signed || found.direction.is_some();
+        let value = match found.direction {
+            Some(Direction::Fall) if !found.signed => -found.value.abs(),
+            _ => found.value,
+        };
+        let sure = !unsure
+            .iter()
+            .any(|&(start, end)| start < found.end && found.start < end);
+        figures.push(Stated {
+            printed: Printed {
+                value,
+                unit: found.unit,
+                precision: 0.5 * 10f64.powi(-(found.decimals as i32)),
+                currency: found.currency,
+                signed: explicit,
+                line: None,
+                falls: false,
+            },
+            start: found.start,
+            end: found.end,
+            explicit,
+            sure,
+        });
+    }
+    let unrecognized = unsure.iter().any(|&(start, end)| {
+        !scanned
+            .iter()
+            .any(|found| found.start < end && start < found.end)
+    });
+    (figures, unrecognized)
+}
+
+/// A passage a figure is checked against, read as the answer path reads
+/// one. Its numbers are scanned once, however many figures are checked.
+pub(crate) struct FigurePassage<'a> {
+    text: &'a str,
+    /// Scans for a stated amount and for any other figure, each made once.
+    amount: std::cell::OnceCell<TextScan<'a>>,
+    other: std::cell::OnceCell<TextScan<'a>>,
+}
+
+impl<'a> FigurePassage<'a> {
+    pub(crate) fn new(text: &'a str) -> Self {
+        let end = text.floor_char_boundary(text.len().min(MAX_TEXT_BYTES));
+        Self {
+            text: &text[..end],
+            amount: std::cell::OnceCell::new(),
+            other: std::cell::OnceCell::new(),
+        }
+    }
+
+    pub(crate) fn text(&self) -> &'a str {
+        self.text
+    }
+
+    /// The passage's candidates for one figure, and the ranges it could not
+    /// read one way. The text is scanned at most once per kind of figure.
+    pub(crate) fn candidates(
+        &self,
+        amount: Option<&Printed>,
+    ) -> (Vec<Candidate>, &[(usize, usize)]) {
+        let cell = if amount.is_some() {
+            &self.amount
+        } else {
+            &self.other
+        };
+        let scan = cell.get_or_init(|| TextScan::new(self.text, MAX_CANDIDATES, amount.is_some()));
+        let mut out = Vec::new();
+        scan.candidates(&mut out, amount);
+        (out, &scan.unsure)
+    }
+}
+
+/// How a stated figure stands against a passage's numbers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FigureMatch {
+    /// Equal, after a scale or unit conversion.
+    Matched,
+    /// Within half a unit of the stated last digit (the answer rule).
+    Rounded,
+    /// No number matches, and one of the same kind and currency equals the
+    /// figure times a power of ten from 10^-6 to 10^6 other than one, or its
+    /// negation where both carry a sign or direction word.
+    Differs,
+    NotFound,
+}
+
+/// The largest power of ten a wrong magnitude is read across.
+const MAGNITUDE_REACH: i32 = 6;
+
+/// Compares `stated` with a passage's `candidates`. Returns the verdict and
+/// the candidate it rests on. A candidate in an `unsure` range, or whose
+/// scale only its digits suggest, can match but never makes a `Differs`.
+pub(crate) fn match_figure(
+    stated: &Stated,
+    candidates: &[Candidate],
+    unsure: &[(usize, usize)],
+) -> (FigureMatch, Option<usize>) {
+    let printed = &stated.printed;
+    let mut rounded = None;
+    let mut differs = None;
+    for (index, candidate) in candidates.iter().enumerate() {
+        if !currencies_agree(printed.currency, candidate.currency) {
+            continue;
+        }
+        let explicit = candidate.value < 0.0 || candidate.direction.is_some();
+        let signed = match candidate.direction {
+            Some(Direction::Fall) if candidate.value > 0.0 => -candidate.value,
+            _ => candidate.value,
+        };
+        let both = stated.explicit && explicit;
+        let (target, value) = if both {
+            (printed.value, signed)
+        } else {
+            (printed.value.abs(), signed.abs())
+        };
+        let same_kind = match (printed.unit, candidate.unit) {
+            (Unit::Amount(_), Unit::Amount(_)) => {
+                printed.currency.is_some() == candidate.currency.is_some()
+            }
+            (stated, found) => stated == found,
+        };
+        // A currency printed with no scale word states its scale, as for
+        // `exact_scale_conversion`; only digits alone infer one.
+        let inferred = candidate.inferred_scale
+            && !(candidate.unit == Unit::Amount(1.0) && candidate.currency.is_some());
+        let sure_candidate = !inferred
+            && match candidate.place {
+                Place::Span { start, end } => {
+                    !unsure.iter().any(|&(from, to)| from < end && start < to)
+                }
+                Place::Pointer(_) => true,
+            };
+        for (reading, _) in readings(printed.unit, candidate.unit, value, false) {
+            if !reading.is_finite() {
+                continue;
+            }
+            let slack = 4.0 * f64::EPSILON * reading.abs().max(target.abs()).max(1.0);
+            if (reading - target).abs() <= printed.precision + slack {
+                if same(reading, target) && !inferred {
+                    return (FigureMatch::Matched, Some(index));
+                }
+                rounded.get_or_insert(index);
+                continue;
+            }
+            if differs.is_some() || !same_kind || !sure_candidate || !stated.sure {
+                continue;
+            }
+            let magnitude = (-MAGNITUDE_REACH..=MAGNITUDE_REACH)
+                .filter(|power| *power != 0)
+                .any(|power| same(reading, target * 10f64.powi(power)));
+            if magnitude || (both && same(reading, -target)) {
+                differs = Some(index);
+            }
+        }
+    }
+    if let Some(index) = rounded {
+        return (FigureMatch::Rounded, Some(index));
+    }
+    match differs {
+        Some(index) => (FigureMatch::Differs, Some(index)),
+        None => (FigureMatch::NotFound, None),
+    }
 }
 
 #[cfg(test)]

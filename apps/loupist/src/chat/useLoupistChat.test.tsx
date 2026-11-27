@@ -212,25 +212,6 @@ describe("Chat operation scope", () => {
   });
 });
 
-it("applies a late feedback receipt only to the original registry Chat", async () => {
-  const bridge = new MockLoupistBridge({ delay_ms: 0 });
-  const workspace = await bridge.loupistSelect("loupist-quality");
-  const chatA = { id: "chat-a", messages: [{ id: "ui-answer", role: "assistant", parts: [], metadata: { native_message_id: "native-answer" } }] } as unknown as Chat<LoupistUIMessage>;
-  const chatB = { id: "chat-b", messages: [] } as unknown as Chat<LoupistUIMessage>;
-  const feedback = { rating: "down" as const, correction: "A correction", updatedAt: 1 };
-  let resolve!: (value: typeof feedback) => void;
-  const save = vi.spyOn(bridge, "chatFeedbackSet").mockImplementation(() => new Promise((done) => { resolve = done; }));
-  vi.mocked(useChat).mockReturnValue({ messages: [], sendMessage: vi.fn(), setMessages: vi.fn(), stop: vi.fn(), status: "ready", error: undefined } as unknown as ReturnType<typeof useChat>);
-  const { result, rerender } = renderHook(({ chat, activeThread }) => useLoupistChat({ bridge, chat, loupistId: "loupist-quality", activeThread, setThreads: vi.fn() }), { initialProps: { chat: chatA, activeThread: workspace.threads[0] } });
-  let pending!: Promise<unknown>;
-  act(() => { pending = result.current.saveFeedback("native-answer", { rating: "down", correction: "A correction" }); });
-  rerender({ chat: chatB, activeThread: workspace.threads[1] });
-  await act(async () => { resolve(feedback); await pending; });
-  expect(save).toHaveBeenCalledWith(expect.objectContaining({ thread_id: workspace.threads[0].id, message_id: "native-answer" }));
-  expect(chatA.messages[0].metadata?.feedback).toEqual(feedback);
-  expect(chatB.messages).toEqual([]);
-});
-
 it("keeps the key a settled answer was drawn under when a rewritten thread replaces the live messages", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
   const workspace = await bridge.loupistSelect("loupist-quality");

@@ -451,3 +451,6 @@
 
 /* M4b: Fit is a raised 28px button at the stage's bottom-right, beside the key strip. */
 .map-fit { position:absolute; z-index:var(--gg-z-sticky); right:calc(var(--map-covered-right, 0px) + var(--gg-space-2)); bottom:calc(var(--map-covered-bottom, 0px) + var(--gg-space-2)); background:var(--gg-color-bg-raised); box-shadow:var(--gg-shadow-xs); }
+
+/* A cited passage whose figures World could not find (plan 4.1). */
+.map-figure-check { margin: var(--gg-space-1) 0 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }

@@ -1,4 +1,5 @@
-import i18n from "@/i18n";
+import i18n, { resources } from "@/i18n";
+import { primaryLanguage } from "@/i18n/localized";
 import type { SettingsSection } from "../../app/navigation";
 
 export type SettingResult = { section: SettingsSection; label: string; description: string };
@@ -61,8 +62,9 @@ export function settingTranslations(language: string) {
     }
   };
   const current = i18n.getDataByLanguage(language);
-  const other = i18n.getDataByLanguage(language.startsWith("ko") ? "en" : "ko");
-  for (const namespace of ["app", "settings", "connections", "onboarding", "common", "sharing"]) collect(current?.[namespace], other?.[namespace]);
+  // Every other bundled language, so a search in any of them finds the page shown in this one.
+  const others = Object.keys(resources).filter(other => primaryLanguage(other) !== primaryLanguage(language)).map(other => i18n.getDataByLanguage(other));
+  for (const other of others) for (const namespace of ["app", "settings", "connections", "onboarding", "common", "sharing"]) collect(current?.[namespace], other?.[namespace]);
   return (key: string): string[] => {
     const existing = aliases.get(key);
     if (existing) return existing;

@@ -318,9 +318,10 @@ Linux runs the same commands; see [Run native suites on Linux](#run-native-suite
 | `LOUPIST_E2E_DEV_PORT=<port>` | Pin the isolated Vite listener to a port other than 1420; 0 (the default) asks the OS to bind an available port and records its URL in the session receipt. |
 | `LOUPIST_E2E_REUSE_DEV_SERVER=1` | Reuse this workspace's Vite server on 1420; app data and WebDriver port stay separate. |
 | `LOUPIST_E2E_STARTUP_TIMEOUT_MS` | Startup wait for isolated suites and `up.sh`/`run-dev-app.sh`, default five minutes. A failed new `up.sh` launch stops its detached process group. |
-| `LOUPIST_E2E_PROVIDER_READY=1` | Set by the credential-free smoke and persistence suites: an `e2e` build marks ChatGPT (the `openai` provider) ready without a secret or network call. No model is listed, so nothing can be sent. |
+| `LOUPIST_E2E_PROVIDER_READY=1` | Set by the credential-free smoke and persistence suites. An `e2e` build marks ChatGPT (the `openai` provider) ready without a secret or network call. The knowledge fixture can list local scripted models. |
 | `LOUPIST_E2E_KNOWLEDGE_SEED=1` | Set by persistence for its first launch, and by the smoke on macOS Apple Silicon for its hand-off journey: on fresh app data an `e2e` build adds a sealed World, a Source, a Lens method and a saved Chat turn with its research note and Journal entry to the first Loupist. |
 | `LOUPIST_E2E_SLOW_HANDOFF=1` | Set by the smoke on macOS Apple Silicon. On a macOS Apple Silicon debug `e2e` build, runs only host-started sessions using the **Fixture research model** (`e2e-link-research`) against a scripted Pi child. No provider credentials or network are used for that turn. |
+| `LOUPIST_E2E_RELEASE_LEARNING=1` | Set during persistence seed on macOS Apple Silicon. The **Fixture learning model** (`e2e-release-learning`) scripts a Bot proposal and a scheduled run through the real broker. The restart checks the saved program, finished run and Lens Undo. |
 | `LOUPIST_E2E_PICK_FILE` | An absolute existing file that `pick_file` returns in an `e2e` build. |
 
 For a live hand-off journey, start `run-app.sh` with isolated, fresh state and

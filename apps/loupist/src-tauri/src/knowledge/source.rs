@@ -37,13 +37,13 @@ pub(super) struct VisibleSpan {
     pub record_id: String,
 }
 
-#[cfg(any(test, feature = "eval-harness", feature = "e2e"))]
+#[cfg(any(test, feature = "e2e"))]
 pub(super) fn retain_source(
     tx: &Transaction<'_>,
     blobs: &BlobStore,
     request: RetainSource,
 ) -> KnowledgeResult<RetainedSource> {
-    retain_capture(tx, blobs, request, None, None, None)
+    retain_capture(tx, blobs, request, None, None, None, None)
 }
 
 fn retain_capture(
@@ -52,6 +52,7 @@ fn retain_capture(
     request: RetainSource,
     acquisition_identity: Option<&str>,
     origin_message_id: Option<&str>,
+    admitted: Option<super::JobOrigin>,
     provided: Option<&ProvidedOrigin>,
 ) -> KnowledgeResult<RetainedSource> {
     validate_retention(&request)?;
@@ -183,17 +184,22 @@ fn retain_capture(
     if private_locator.is_some()
         || request.origin_chat_id.is_some()
         || request.request_ref.is_some()
+        || admitted.is_some()
     {
         tx.execute(
             "INSERT INTO knowledge_capture_lineage (
-                record_id, capture_id, chat_id, request_ref, private_locator
-             ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                record_id, capture_id, chat_id, request_ref, private_locator, allowance_origin
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 module.record_id,
                 capture_id,
                 request.origin_chat_id,
                 request.request_ref,
-                private_locator
+                private_locator,
+                admitted.map(|origin| match origin {
+                    super::JobOrigin::Background => "background",
+                    super::JobOrigin::Chat => "chat",
+                })
             ],
         )?;
     }
@@ -1228,7 +1234,7 @@ pub(super) fn retain_new_source(
     blobs: &BlobStore,
     request: super::model::RetainNewSource,
 ) -> KnowledgeResult<RetainedSource> {
-    retain_new_source_with_origin(tx, blobs, request, None, None)
+    retain_new_source_with_origin(tx, blobs, request, None, None, None)
 }
 
 pub(super) fn retain_new_source_with_origin(
@@ -1236,6 +1242,7 @@ pub(super) fn retain_new_source_with_origin(
     blobs: &BlobStore,
     request: super::model::RetainNewSource,
     origin_message_id: Option<&str>,
+    admitted: Option<super::JobOrigin>,
     provided: Option<&ProvidedOrigin>,
 ) -> KnowledgeResult<RetainedSource> {
     let record_id = mint_id("rec");
@@ -1326,6 +1333,7 @@ pub(super) fn retain_new_source_with_origin(
         },
         Some(&identity),
         origin_message_id,
+        admitted,
         provided,
     )
 }

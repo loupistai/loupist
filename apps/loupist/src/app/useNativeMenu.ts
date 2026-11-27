@@ -1,9 +1,16 @@
 import { useEffect, useRef } from "react";
-import type { AppMenuContext } from "../contracts/generated";
+import type { AppMenuContext, MenuLanguage } from "../contracts/generated";
+import { primaryLanguage } from "../i18n/localized";
 import type { LoupistBridge } from "../types";
 import { modalDialogOpen } from "./shortcuts";
 
 type State = Omit<AppMenuContext, "modal">;
+
+/** The languages the host words its menu in. */
+const MENU_LANGUAGES: readonly MenuLanguage[] = ["en", "ko"];
+
+/** The menu's language for the interface language: the same one when the host has it, else English. */
+export const menuLanguage = (language: string): MenuLanguage => MENU_LANGUAGES.find(menu => menu === primaryLanguage(language)) ?? "en";
 
 export function useNativeMenu(bridge: LoupistBridge, context: State, onAction: (action: string) => void) {
   const handler = useRef(onAction);

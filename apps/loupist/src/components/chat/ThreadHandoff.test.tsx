@@ -29,7 +29,7 @@ it("lists the items a finished hand-off could not keep", () => {
   const article = within(screen.getByRole("article", { name: "Research: Hynix HBM supply" }));
   expect(article.getByText("I saved the supply forecast.")).toBeVisible();
   expect(article.getByText("Not saved to Memory: saving failed.")).toBeVisible();
-  expect(article.getByText("What this answer says it saved was not kept.")).toBeVisible();
+  expect(article.getByText("Anything this answer says it saved or filed was not kept.")).toBeVisible();
   expect(article.getByRole("list", { name: "Not kept" })).toHaveTextContent("Supply forecast");
 });
 

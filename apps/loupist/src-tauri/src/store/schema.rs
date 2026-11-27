@@ -150,6 +150,7 @@ impl SqliteStore {
             database_path,
             folder_catalog: false,
             folders: Mutex::new(std::collections::HashMap::new()),
+            lost_holds: Mutex::new(Vec::new()),
         })
     }
 

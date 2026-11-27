@@ -17,6 +17,8 @@ pub const MAX_PROMPT_BYTES: usize = 128 * 1024;
 pub enum ReportPolicy {
     WhenMet,
     EveryRun,
+    WhenNew,
+    OnCondition,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -54,6 +56,8 @@ pub struct TaskDelivery {
 #[serde(untagged, deny_unknown_fields)]
 pub enum TaskSubject {
     Asset { asset: String },
+    World { world: String },
+    Lens { lens: String },
     Name { name: String },
 }
 
@@ -66,6 +70,72 @@ pub enum WatchPreset {
     ResultsFollowUp,
     PriceMove,
     WeekInReview,
+    FactChanges,
+    AssetDaily,
+}
+
+/// A bundled learning preset, by the name of its file in `agent/learning-presets/`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "kebab-case")]
+pub enum LearningPresetId {
+    AssetDaily,
+    Theme,
+    CompanyFilings,
+    MacroSeries,
+    Question,
+    Market,
+}
+
+impl LearningPresetId {
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 6] = [
+        Self::AssetDaily,
+        Self::Theme,
+        Self::CompanyFilings,
+        Self::MacroSeries,
+        Self::Question,
+        Self::Market,
+    ];
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::AssetDaily => "asset-daily",
+            Self::Theme => "theme",
+            Self::CompanyFilings => "company-filings",
+            Self::MacroSeries => "macro-series",
+            Self::Question => "question",
+            Self::Market => "market",
+        }
+    }
+}
+
+/// What `scheduled_task_from_preset` opens: a watch preset or a learning
+/// preset. `asset-daily` reads as the watch id it has always been.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(untagged)]
+pub enum PresetId {
+    Watch(WatchPreset),
+    Learning(LearningPresetId),
+}
+
+impl PresetId {
+    /// The same preset with Track daily's watch id read as the learning preset it is.
+    pub(crate) fn normalized(self) -> Self {
+        match self {
+            Self::Watch(WatchPreset::AssetDaily) => Self::Learning(LearningPresetId::AssetDaily),
+            other => other,
+        }
+    }
+}
+
+impl WatchPreset {
+    /// A preset whose run is a check. Offering or editing one must keep that
+    /// check; it is never an unconditional model task.
+    pub(crate) fn runs_on_check(self) -> bool {
+        matches!(self, Self::PriceMove | Self::FactChanges)
+    }
 }
 
 /// Which built-in briefing a task is. Missing on a briefing written before
@@ -114,17 +184,54 @@ pub struct TaskWatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub terms: Option<String>,
+    /// The dated event a results follow-up is about. Absent on older tasks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub event: Option<TaskEvent>,
+}
+
+/// A dated event, such as a results release, that a task follows up.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct TaskEvent {
+    /// The event's day, `YYYY-MM-DD`.
+    pub date: String,
+    pub precision: EventPrecision,
+}
+
+/// Whether the event's day is announced or only expected.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum EventPrecision {
+    /// The day was announced.
+    Exact,
+    /// The day is expected but not announced.
+    Estimated,
+}
+
+impl TaskEvent {
+    pub(crate) fn validate(&self) -> StoreResult<()> {
+        let canonical = chrono::NaiveDate::parse_from_str(&self.date, "%Y-%m-%d")
+            .is_ok_and(|day| day.format("%Y-%m-%d").to_string() == self.date);
+        if !canonical {
+            return Err(invalid("an event date must be a calendar day, YYYY-MM-DD"));
+        }
+        Ok(())
+    }
 }
 
 impl TaskWatch {
     pub(crate) fn validate(&self) -> StoreResult<()> {
         if let Some(terms) = &self.terms {
-            bounded_text(terms, 640, false)?;
-            if terms.chars().count() > 160 || terms.chars().any(char::is_control) {
-                return Err(invalid(
-                    "watch terms must be one line of at most 160 characters",
-                ));
-            }
+            one_line_160(
+                terms,
+                "watch terms must be one line of at most 160 characters",
+            )?;
+        }
+        if let Some(event) = &self.event {
+            event.validate()?;
         }
         if let Some(subjects) = &self.subjects {
             if subjects.len() > 8 {
@@ -133,12 +240,173 @@ impl TaskWatch {
             for subject in subjects {
                 match subject {
                     TaskSubject::Asset { asset } => identifier(asset)?,
+                    TaskSubject::World { world } => identifier(world)?,
+                    TaskSubject::Lens { lens } => identifier(lens)?,
                     TaskSubject::Name { name } => bounded_text(name, 200, false)?,
                 }
             }
         }
         Ok(())
     }
+}
+
+/// A Loupist's learning settings when its config states none.
+pub(crate) const DEFAULT_LEARNING_DAILY_REQUESTS: u32 = 132;
+pub(crate) const DEFAULT_LEARNING_PROGRAM_CAP: u32 = 20;
+pub(crate) const MAX_LEARNING_PROGRAM_CAP: u32 = 50;
+const MAX_LEARNING_BRIEF_BYTES: usize = 8 * 1024;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum LearningDepth {
+    Light,
+    Standard,
+    Deep,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum AllLearningConnections {
+    AllEnabled,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(untagged)]
+pub enum LearningConnections {
+    All(AllLearningConnections),
+    Selected(Vec<String>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct LearningScope {
+    pub connections: LearningConnections,
+    pub web: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct LearningKeeps {
+    pub sources: bool,
+    pub lens: bool,
+    pub asset_reads: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct LearningProgram {
+    pub depth: LearningDepth,
+    pub scope: LearningScope,
+    pub keeps: LearningKeeps,
+    /// The learning preset the program was created from, for display. After
+    /// creation the program is ordinary data. Absent on older programs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub preset: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct LearningBudget {
+    pub soft: u32,
+    pub hard: u32,
+}
+
+impl LearningProgram {
+    pub(crate) fn budget(&self, subjects: &[TaskSubject], first_run: bool) -> LearningBudget {
+        let assets = subjects
+            .iter()
+            .filter(|subject| matches!(subject, TaskSubject::Asset { .. }))
+            .count();
+        let (soft, hard) = match (assets, self.depth, first_run) {
+            (0, _, true) => (38, 50),
+            (0, _, false) => (12, 16),
+            (1, LearningDepth::Light, true) => (11, 15),
+            (1, LearningDepth::Light, false) => (15, 20),
+            (1, _, true) => (20, 26),
+            (1, _, false) => (21, 28),
+            (_, _, true) => (18, 24),
+            (_, _, false) => (20, 26),
+        };
+        LearningBudget { soft, hard }
+    }
+
+    /// The hard budget of the largest light update: the smallest nonzero
+    /// daily learning allowance, so every light update can finish.
+    pub(crate) fn light_update_hard_budget() -> u32 {
+        let light = |assets: usize| {
+            Self {
+                depth: LearningDepth::Light,
+                scope: LearningScope {
+                    connections: LearningConnections::Selected(Vec::new()),
+                    web: false,
+                },
+                keeps: LearningKeeps {
+                    sources: false,
+                    lens: false,
+                    asset_reads: false,
+                },
+                preset: None,
+            }
+            .budget(
+                &vec![
+                    TaskSubject::Asset {
+                        asset: String::new()
+                    };
+                    assets
+                ],
+                false,
+            )
+            .hard
+        };
+        (0..=2).map(light).max().unwrap_or_default()
+    }
+
+    fn validate(&self, watch: &TaskWatch) -> StoreResult<()> {
+        if let Some(preset) = &self.preset {
+            if preset.is_empty() || preset.len() > 64 || preset.chars().any(char::is_control) {
+                return Err(invalid("preset id is invalid"));
+            }
+        }
+        if let LearningConnections::Selected(connections) = &self.scope.connections {
+            for id in connections {
+                identifier(id)?;
+            }
+        }
+        if self.keeps.asset_reads
+            && !watch
+                .subjects
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .any(|subject| matches!(subject, TaskSubject::Asset { .. }))
+        {
+            return Err(invalid("keeping asset reads requires an asset subject"));
+        }
+        Ok(())
+    }
+}
+
+/// One line of at most 160 characters, the same rule as watch `terms`.
+pub(crate) fn one_line_160(value: &str, message: &str) -> StoreResult<()> {
+    bounded_text(value, 640, false)?;
+    if value.chars().count() > 160 || value.chars().any(char::is_control) {
+        return Err(invalid(message));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_when_met_summary(value: &str) -> StoreResult<()> {
+    one_line_160(
+        value,
+        "when_met_summary must be one line of at most 160 characters",
+    )
 }
 
 pub const MAX_ACTIVE_TRIGGERS: usize = 10;
@@ -244,6 +512,10 @@ pub struct TriggerConfiguration {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub summary: Option<String>,
+    /// What the user is told when the check is met. A preset stores a locale key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub when_met_summary: Option<String>,
     #[cfg_attr(test, ts(type = "Record<string, unknown>"))]
     pub args: serde_json::Map<String, serde_json::Value>,
     pub tools: Vec<TriggerToolGrant>,
@@ -451,6 +723,12 @@ impl Default for TriggerCounters {
 pub struct TaskTrigger {
     pub script: TriggerScriptRef,
     pub summary: String,
+    /// One line the card shows for "When it is met". Missing on a trigger saved
+    /// before this field; the view then uses the preset's locale line, or one
+    /// generic line when the task has no preset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub when_met_summary: Option<String>,
     pub tools: Vec<TriggerToolGrant>,
     #[cfg_attr(test, ts(type = "Record<string, unknown>"))]
     pub args: serde_json::Map<String, serde_json::Value>,
@@ -507,6 +785,12 @@ pub struct RunTrigger {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct TaskReceipt {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub program: Option<LearningProgram>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub budget: Option<LearningBudget>,
     #[serde(flatten)]
     pub watch: TaskWatch,
     pub task_id: String,
@@ -578,6 +862,8 @@ impl ScheduleReceipt {
     }
     pub fn from_task(task: &Task, action: ScheduleAction) -> Self {
         Self::Task(TaskReceipt {
+            program: task.program.clone(),
+            budget: task.budget,
             watch: task.watch.clone(),
             task_id: task.id.clone(),
             title: task.title.clone(),
@@ -598,6 +884,9 @@ impl ScheduleReceipt {
 impl TaskReceipt {
     pub fn validate(&self) -> StoreResult<()> {
         self.watch.validate()?;
+        if let Some(program) = &self.program {
+            program.validate(&self.watch)?;
+        }
         identifier(&self.task_id)?;
         bounded_text(&self.title, 200, false)?;
         super::schedule::validate_schedule(&self.schedule)?;
@@ -699,22 +988,24 @@ impl RunStatus {
 #[cfg_attr(
     test,
     derive(ts_rs::TS),
-    ts(type = "\"custom\" | \"briefing\" | string")
+    ts(type = "\"custom\" | \"briefing\" | \"learning\" | string")
 )]
 pub enum TaskKind {
     Custom,
     Briefing,
+    Learning,
     Unknown(String),
 }
 
 impl TaskKind {
     /// The kinds this build runs, by their stored names.
-    pub const KNOWN: [Self; 2] = [Self::Custom, Self::Briefing];
+    pub const KNOWN: [Self; 3] = [Self::Custom, Self::Briefing, Self::Learning];
 
     pub fn as_str(&self) -> &str {
         match self {
             Self::Custom => "custom",
             Self::Briefing => "briefing",
+            Self::Learning => "learning",
             Self::Unknown(name) => name,
         }
     }
@@ -804,6 +1095,15 @@ impl TaskDraft {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Task {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub program: Option<LearningProgram>,
+    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub budget: Option<LearningBudget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub hold: Option<super::allowance::Hold>,
     #[serde(flatten)]
     pub watch: TaskWatch,
     pub kind: TaskKind,
@@ -870,6 +1170,7 @@ pub(crate) struct ProposalTarget {
 
 #[derive(Clone, Default)]
 pub(crate) struct TaskDefinition {
+    pub program: Option<LearningProgram>,
     pub watch: TaskWatch,
     pub proposed_in_message_id: Option<String>,
     pub trigger: Option<TaskTrigger>,
@@ -889,7 +1190,7 @@ impl Task {
     }
 
     pub(crate) fn is_trigger_task(&self) -> bool {
-        self.trigger.is_some() || self.watch.preset == Some(WatchPreset::PriceMove)
+        self.trigger.is_some() || self.watch.preset.is_some_and(WatchPreset::runs_on_check)
     }
 
     pub(crate) fn delivery(&self) -> TaskDelivery {
@@ -950,6 +1251,23 @@ impl Task {
             }
         }
         self.draft().validate_definition()?;
+        if self.kind == TaskKind::Learning {
+            let program = self
+                .program
+                .as_ref()
+                .ok_or_else(|| invalid("learning tasks require a program"))?;
+            if self.target != TaskTarget::NewChat || !self.use_memory || !self.update_memory {
+                return Err(invalid(
+                    "learning programs require a fresh Memory-enabled Chat",
+                ));
+            }
+            if self.prompt.len() > MAX_LEARNING_BRIEF_BYTES {
+                return Err(invalid("learning briefs may be at most 8 KiB"));
+            }
+            program.validate(&self.watch)?;
+        } else if self.kind.is_known() && self.program.is_some() {
+            return Err(invalid("only learning tasks carry a learning program"));
+        }
         if self.kind == TaskKind::Briefing
             && (self.target != TaskTarget::Dedicated || !self.use_memory || !self.update_memory)
         {
@@ -1012,6 +1330,12 @@ pub struct FailureStreak {
 pub struct Run {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
+    pub usage: Option<RunUsage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub budget: Option<RunBudget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub failure_streak: Option<FailureStreak>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, ts(as = "Option<bool>", optional))]
@@ -1045,6 +1369,73 @@ pub struct Run {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub trigger: Option<RunTrigger>,
+    /// Sections this run's message restored and kept, when that undo is already stored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub undo: Option<crate::knowledge::MessageUndo>,
+    /// The provider the run was admitted for, so a plan-limit or
+    /// out-of-credit failure holds it even when the run's ledger row was
+    /// lost. Host-only; a row saved without it holds nothing by itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(skip))]
+    pub provider: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct RunUsage {
+    pub requests: Option<u64>,
+    pub input_tokens: Option<u64>,
+    pub cached_input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub duration_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub world_requests: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub cost_estimate: Option<crate::domain::ChatCostEstimate>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct RunBudget {
+    pub requests: u32,
+    #[serde(default)]
+    pub soft: u32,
+    #[serde(default)]
+    pub hard: u32,
+    pub left_at_start: u32,
+    pub outcome: BudgetOutcome,
+}
+
+impl RunBudget {
+    pub(crate) fn freeze(levels: LearningBudget, remaining: u32, requests: u32) -> Self {
+        let hard = levels.hard.min(
+            requests
+                .saturating_sub(crate::runs::budget::GRACE_ROUNDS)
+                .max(2),
+        );
+        Self {
+            requests,
+            soft: levels.soft.min(hard.saturating_sub(1)),
+            hard,
+            left_at_start: remaining,
+            outcome: BudgetOutcome::None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum BudgetOutcome {
+    #[default]
+    None,
+    Soft,
+    Refused,
+    Cancelled,
 }
 
 /// What a custom run is given about its task's earlier runs (`previous_run`):

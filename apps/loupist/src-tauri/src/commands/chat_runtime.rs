@@ -111,6 +111,16 @@ pub(crate) struct ChatEventSink {
     schedules: Arc<std::sync::Mutex<Vec<crate::scheduled_tasks::types::ScheduleReceipt>>>,
     tool_trace: Arc<crate::broker::ToolTraceCapture>,
     failure_kind: Arc<std::sync::Mutex<ChatFailureKind>>,
+    /// The stage and cause of the first failed step of the current Memory
+    /// commit attempt, for a retry and for the skipped receipt.
+    save_failure: Arc<
+        std::sync::Mutex<
+            Option<(
+                crate::runs::log::CommitStage,
+                crate::domain::MemorySaveSkipReason,
+            )>,
+        >,
+    >,
     retry_after_seconds: Arc<std::sync::Mutex<Option<u32>>>,
     run_log: ChatRunLogCapture,
     assistant_usage: Arc<std::sync::Mutex<ChatModelUsage>>,
@@ -141,6 +151,7 @@ impl ChatEventSink {
             tool_refusals: Arc::default(),
             tool_trace: Arc::default(),
             failure_kind: Arc::default(),
+            save_failure: Arc::default(),
             retry_after_seconds: Arc::default(),
             run_log: Arc::default(),
             assistant_usage: Arc::default(),
@@ -219,15 +230,16 @@ impl ChatEventSink {
                         execution_model,
                         memory_save_skip,
                         ..
-                    } => {
-                        record.model(execution_model);
-                        record.memory_save_skip = *memory_save_skip;
-                        record.finish("ok", None);
-                    }
+                    } => record.end_turn(crate::runs::log::TurnEnd::Completed {
+                        model: Some(execution_model),
+                        memory_save_skip: *memory_save_skip,
+                    }),
                     ChatStreamEvent::Error { failure_kind, .. } => {
-                        record.finish("failed", Some(&crate::runs::log::enum_name(failure_kind)))
+                        record.end_turn(crate::runs::log::TurnEnd::Failed(*failure_kind))
                     }
-                    ChatStreamEvent::Aborted { .. } => record.finish("cancelled", None),
+                    ChatStreamEvent::Aborted { .. } => {
+                        record.end_turn(crate::runs::log::TurnEnd::Cancelled)
+                    }
                     _ => {}
                 }
             }
@@ -329,6 +341,63 @@ impl ChatEventSink {
             .failure_kind
             .lock()
             .unwrap_or_else(|error| error.into_inner()) = kind;
+    }
+
+    /// Keeps the first cause: a rollback reports the same failure again.
+    fn note_save_failure(
+        &self,
+        stage: crate::runs::log::CommitStage,
+        reason: crate::domain::MemorySaveSkipReason,
+    ) {
+        self.save_failure
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get_or_insert((stage, reason));
+    }
+
+    fn commit_failure(
+        &self,
+    ) -> Option<(
+        crate::runs::log::CommitStage,
+        crate::domain::MemorySaveSkipReason,
+    )> {
+        *self
+            .save_failure
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+    }
+
+    fn save_failure(&self) -> crate::domain::MemorySaveSkipReason {
+        self.commit_failure().map_or(
+            crate::domain::MemorySaveSkipReason::Failed,
+            |(_, reason)| reason,
+        )
+    }
+
+    /// A new commit attempt reports its own first failure.
+    fn begin_commit_attempt(&self) {
+        *self
+            .save_failure
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = None;
+    }
+
+    /// A save that landed after a retry: the run log keeps the first failure
+    /// only when stages were left out, and notes how it saved.
+    fn note_saved_after_retries(&self, retried: usize, left_out: usize) {
+        if let Some((_, record)) = self
+            .run_log
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .as_mut()
+        {
+            if left_out == 0 {
+                record.memory_commit_failure = None;
+            }
+            record.notes.push(format!(
+                "Memory saved after {retried} retries with {left_out} stages left out."
+            ));
+        }
     }
 
     fn failure_kind(&self) -> ChatFailureKind {
@@ -488,25 +557,32 @@ impl AssistantTokenUsage {
 
     fn observe(&mut self, usage: &Value) {
         self.requests = self.requests.saturating_add(1);
-        self.input = self
-            .input
-            .saturating_add(usage["input"].as_u64().unwrap_or(0));
-        self.output = self
-            .output
-            .saturating_add(usage["output"].as_u64().unwrap_or(0));
-        self.cache_read = self
-            .cache_read
-            .saturating_add(usage["cacheRead"].as_u64().unwrap_or(0));
-        self.cache_write = self
-            .cache_write
-            .saturating_add(usage["cacheWrite"].as_u64().unwrap_or(0));
+        let tokens = crate::runs::log::PiTokenCounts::read(usage, "output");
+        self.tokens_partial |= tokens.total_input().is_none() || tokens.output.is_none();
+        let counts = [
+            tokens.input,
+            tokens.output,
+            tokens.cache_read,
+            tokens.cache_write,
+        ];
+        let totals = [self.input, self.output, self.cache_read, self.cache_write];
+        let sums = std::array::from_fn(|i| totals[i].checked_add(counts[i].unwrap_or_default()));
+        match sums {
+            [Some(input), Some(output), Some(cache_read), Some(cache_write)]
+                if input
+                    .checked_add(cache_read)
+                    .and_then(|sum| sum.checked_add(cache_write))
+                    .is_some() =>
+            {
+                [self.input, self.output, self.cache_read, self.cache_write] =
+                    [input, output, cache_read, cache_write];
+                self.tokens_measured |= counts.iter().any(Option::is_some);
+            }
+            _ => self.tokens_partial = true,
+        }
         if let Some(reasoning) = usage["reasoning"].as_u64() {
             self.reasoning = Some(self.reasoning.unwrap_or(0).saturating_add(reasoning));
         }
-        let measured =
-            ["input", "output", "cacheRead", "cacheWrite"].map(|key| usage[key].as_u64().is_some());
-        self.tokens_measured |= measured.contains(&true);
-        self.tokens_partial |= measured.contains(&false);
         if self.key_account() {
             self.cost.observe(&usage["cost"]);
         }
@@ -533,7 +609,7 @@ impl AssistantTokenUsage {
 
     fn token_totals(&self) -> Option<crate::runs::log::Usage> {
         self.tokens_measured.then_some(crate::runs::log::Usage {
-            input: self.input.saturating_add(self.cache_write),
+            input: self.input + self.cache_write,
             cached_input: self.cache_read,
             output: self.output,
         })
@@ -760,10 +836,10 @@ fn chat_usage_surface(
     thread_id: &str,
 ) -> (UsageSurface, Option<String>) {
     if let Some(turn) = scheduled {
-        let surface = if turn.task_kind == crate::scheduled_tasks::types::TaskKind::Briefing {
-            UsageSurface::Briefing
-        } else {
-            UsageSurface::Scheduled
+        let surface = match turn.task_kind {
+            crate::scheduled_tasks::types::TaskKind::Briefing => UsageSurface::Briefing,
+            crate::scheduled_tasks::types::TaskKind::Learning => UsageSurface::Learning,
+            _ => UsageSurface::Scheduled,
         };
         (surface, Some(turn.task_id.clone()))
     } else if handoff {

@@ -16,6 +16,11 @@ summaries when the current document changes. World diffs cap detailed events at 
 append an explicit omitted-change summary when needed. The Chat receipt reads
 `thesis_moved`; What's new does not list it.
 
+World publications also record when a Lens section becomes Superseded.
+The asset read-change calculation counts claim additions, endings, conflicts
+and anchored Lens state changes after the asset's latest thesis move. It
+retains the eight most recent rows and keeps the full counts by kind.
+
 The typed `knowledge_growth_events` bridge command returns Loupist-scoped, time-filtered
 pages with a cursor after checking that the Loupist is available, including deletion
 quarantine. This ledger stores bounded summaries, not prior document
@@ -27,6 +32,15 @@ events copy that turn's chat id and message id. A World-added Source has neither
 so its events stay unattributed. A shared pack's Add and Remove write World events
 with actor `import` and the pack's origin (`shared_pack` or `shared_pack_removed`);
 an accepted shared method or perspective carries its `shared_pack` origin.
+
+World publications record `claim_ended` when a claim gains an effective end and
+`claim_conflict` when it gains a conflict link. A linked ending claim is included in
+the growth summary. Ending a claim leaves its evidence status unchanged. A Lens
+section that still relies on that claim can produce `lens_superseded`. These events
+use the publication's existing limits and truncation counts. The host also
+reconciles previously published endings when their effective dates arrive. It
+records a `claim_ended` event at evaluation time and makes that transition and
+any Lens changes available to checks resuming the recorded change feed.
 
 ## Saving one completed turn
 
@@ -45,17 +59,78 @@ reply's transaction after the Sources, so a same-turn `saveRef` names the retain
 Source. The answer's `memory_update` reports each filed page once with its op
 outcomes, and `learned_digest` derives the hand-off and delivery cards' `learned`
 from the log.
+The receipt holds every change the turn's budgets admit: 16 Sources, a note's
+Journal pair or working note, 8 principles and 8 Lens pages. A build-time check
+keeps that bound in step with the budgets, because a refused receipt rolls back
+the whole save. Each save step has 10 seconds to reach the store, counted on every
+lock wait before and during its writes; once all of a transaction's writes have
+succeeded, it commits even past that budget.
 
 A staged Source returns `saveRef`; job lookup before commit reports
 `waiting_for_turn_commit`. Processing begins after completion. Failed/cancelled
 turns publish none of these staged changes. A completed answer whose save is
-skipped also publishes none of its staged Memory. The receipt records the
+skipped also publishes none of its staged Memory; one that kept part of its
+turn publishes only that part (below). The receipt records the
 reason and up to 32 distinct discarded item kinds and titles. It takes these
 from acknowledged writes still staged when the host checkpoints the answer.
 Titles are limited to 160 characters. The receipt keeps those titles across
 a reopen or interrupted save, including on scheduled and hand-off deliveries.
 Native file writes and `run_python`
 copy-back have already happened. There is no agent shell. The answer's Memory row reports actual retained changes.
+
+### When the commit fails
+
+Each attempt is one transaction: it lands whole or not at all, so nothing is
+committed twice. If an attempt fails because one stage refused an item
+(`invalid`), the next attempt leaves that stage out and saves the rest. A stage
+is Sources with their note or Journal entries, principles, Lens filing, Lens
+delivery and citation receipts, theses and price reads, World vocabulary, or Bot
+memory; each is left out at most once. A Lens op that cited a left-out same-turn
+Source loses that basis, as for any missing Source. The receipt, setup and a
+hand-off are never left out: their failure fails the save. If the store was busy
+past its budget (`store_busy`) or could not be written (`storage`), the whole
+commit is tried again after 1 and then 3 seconds: three attempts, about 34 seconds
+at most. An attempt that failed after its receipt was written, at the final write
+or COMMIT, is not tried again; the store is read to learn whether it landed. A
+setup preset lands with setup, so leaving World vocabulary out never lists it. The receipt tells the truth either way: a partial save lists the kept
+changes as saved and each left-out item under Not kept with its cause; a save that
+fails after its last attempt is skipped with the cause of that attempt. The run
+log keeps the first failure only when something was left out.
+
+### Pending save (planned for 0.1.9)
+
+A completed turn whose staged Memory is not kept becomes a pending save bound to
+its message, so nothing it fetched or filed is lost and no model is asked again.
+Four cases lead there: a commit that still fails after its attempts above; a save
+that waited for other conversations of the Loupist past ten minutes
+([Chat turns](../runtime/chat-turns.md#chat)); a quit while a save waits, which
+today ends it as interrupted; and a crash or kill while it waits or commits, which
+today leaves only the interrupted-save receipt. With deep research runs of up to
+30 minutes in 0.1.9, a save queued behind one must survive this way.
+
+The stored form is a `pending_saves` row per message in the Loupist's own database,
+written with the answer checkpoint before the save waits: the staged commit inputs
+(Sources with their provenance, notes, Journal entries, principles, Lens deltas,
+theses, price reads, vocabulary, Bot memory, setup and hand-off), the turn's cutoff,
+taint and Don't-save state, and the staged Sources' delivered bytes in the private
+blob store, under the same protections as retained Sources. World, search, Lens
+reads, exports and shared Loupist packs never read it. A commit that lands deletes
+the row in its own transaction.
+
+A pending save is applied on its own when the Loupist is free: after the save
+queue empties, at launch once no run of that Loupist reads or writes Memory, and
+never ahead of an older pending save of the same chat. The skipped receipt gains
+a pending flag and the notice a Save again action, which queues the same commit
+at once. Either way the commit above re-runs from the stored items under the
+stored turn's rules: it never widens what the original turn could keep, asks no
+model and charges nothing. A stale Lens edit or conflict is a per-operation
+outcome; an item refused on retry is named and left out, and the rest saves. The
+row is deleted when the save lands, when the user discards it, when its chat is
+deleted, and when Memory is reset (a retry after a reset is refused and says so).
+It expires after 7 days; one Loupist keeps at most 64 MiB of pending material,
+oldest first out, and an expired or evicted save keeps its titles under Not kept.
+Two failed turns in a chat keep two rows, applied in order. A restart keeps them,
+and folder copies and backups carry them like the rest of `.loupist/`.
 
 ## Folder portability
 

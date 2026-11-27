@@ -4,11 +4,12 @@
 //! but is never queued for extraction (`docs/knowledge/worlds.md#price-data`).
 //!
 //! The producing tool decides first: a retained dataset whose recorded producer
-//! and request name a price route below, with the recorded `trust: numeric`. The
-//! result's shape decides the rest: a table whose columns are only dates,
-//! instrument identifiers and price fields, with numbers in every price cell, is
-//! price data whatever produced it. That rule covers a table the model composed
-//! from such results and saved from the workspace. The title never counts.
+//! and request name a price route below, with the recorded `trust: numeric`, is
+//! price data. Rates, yields and other macro series are not those routes.
+//! Otherwise the result's shape decides: a table with a date or an instrument
+//! and at least two price-family columns (open, high, low, close, adjusted
+//! close, volume, vwap, and the quote fields beside them) is price data. A lone
+//! `rate`, `yield` or `exchangerate` column decides nothing. The title never counts.
 //!
 //! Company statements and fundamentals stay on the World side: their figures can
 //! be facts worth keeping.
@@ -19,9 +20,10 @@ use crate::custom_connections::taint::TRUST_NUMERIC;
 use crate::datasets::saved_rows::SavedRows;
 
 /// Bundled market-data routes whose rows are prices: price history and bars
-/// at any interval, quotes and snapshots, exchange rates, index and commodity
-/// levels, and yield and rate series. Each is on the reviewed numeric-only
-/// list (`NUMERIC_ONLY_OPENBB_TOOLS`).
+/// at any interval, quotes and snapshots, exchange rates, and index and
+/// commodity levels. Yields, policy rates and other macro series stay on the
+/// World side. Each listed route is on the reviewed numeric-only list
+/// (`NUMERIC_ONLY_OPENBB_TOOLS`).
 pub(crate) const PRICE_OPENBB_TOOLS: &[&str] = &[
     // Price history and bars.
     "crypto_price_historical",
@@ -46,29 +48,10 @@ pub(crate) const PRICE_OPENBB_TOOLS: &[&str] = &[
     "commodity_price_spot",
     "economy_share_price_index",
     "index_snapshots",
-    // Yield and rate series.
-    "economy_interest_rates",
+    // Bond and treasury prices. Yield curves, treasury rates and policy rates
+    // are macro series and are not listed here.
     "fixedincome_corporate_bond_prices",
-    "fixedincome_corporate_hqm",
-    "fixedincome_corporate_spot_rates",
-    "fixedincome_government_svensson_yield_curve",
-    "fixedincome_government_tips_yields",
     "fixedincome_government_treasury_prices",
-    "fixedincome_government_treasury_rates",
-    "fixedincome_government_yield_curve",
-    "fixedincome_mortgage_indices",
-    "fixedincome_rate_dpcredit",
-    "fixedincome_rate_ecb",
-    "fixedincome_rate_effr",
-    "fixedincome_rate_effr_forecast",
-    "fixedincome_rate_estr",
-    "fixedincome_rate_iorb",
-    "fixedincome_rate_overnight_bank_funding",
-    "fixedincome_rate_sofr",
-    "fixedincome_rate_sonia",
-    "fixedincome_spreads_tcm",
-    "fixedincome_spreads_tcm_effr",
-    "fixedincome_spreads_treasury_effr",
 ];
 
 /// Bundled KIS operations (`marketplace/kis-read-api-v1.json`) that return
@@ -205,6 +188,7 @@ const DATE_COLUMNS: &[&str] = &[
     "tradedate",
     "tradingdate",
 ];
+const KOREAN_DATE_COLUMNS: &[&str] = &["일자", "날짜", "거래일"];
 /// Columns naming which instrument a row prices.
 const IDENTIFIER_COLUMNS: &[&str] = &[
     "symbol",
@@ -214,7 +198,8 @@ const IDENTIFIER_COLUMNS: &[&str] = &[
     "basecurrency",
     "quotecurrency",
 ];
-/// Price fields: a table needs at least one.
+/// Price-family fields. A table needs at least two of these. `volume` and
+/// `vwap` count; a lone `rate`, `yield` or `exchangerate` does not.
 const PRICE_COLUMNS: &[&str] = &[
     "open",
     "high",
@@ -234,13 +219,20 @@ const PRICE_COLUMNS: &[&str] = &[
     "mid",
     "vwap",
     "settle",
-    "rate",
-    "exchangerate",
-    "yield",
+    "volume",
+];
+/// Korean OHLCV headers, counted with [`PRICE_COLUMNS`].
+const KOREAN_PRICE_COLUMNS: &[&str] = &[
+    "시가",
+    "고가",
+    "저가",
+    "종가",
+    "수정종가",
+    "조정종가",
+    "거래량",
 ];
 /// Numeric fields a bar table carries beside its prices.
 const BAR_COLUMNS: &[&str] = &[
-    "volume",
     "change",
     "changepercent",
     "percentchange",
@@ -257,7 +249,8 @@ const BAR_COLUMNS: &[&str] = &[
 enum Column {
     Date,
     Identifier,
-    Numeric,
+    Price,
+    Bar,
 }
 
 fn fold(name: &str) -> String {
@@ -267,29 +260,42 @@ fn fold(name: &str) -> String {
         .collect()
 }
 
+fn compact(name: &str) -> String {
+    name.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
 /// The role of every column, or none when one column is not a date, an
-/// identifier or a price field, or when no column is a price and nothing
-/// says which instrument or day a price belongs to.
+/// identifier or a price field, or when fewer than two columns are in the
+/// price family, or when nothing says which instrument or day a price belongs to.
 fn price_columns<'a>(names: impl IntoIterator<Item = &'a str>) -> Option<Vec<Column>> {
     let mut roles = Vec::new();
-    let mut price = false;
+    let mut prices = 0usize;
     for name in names {
+        let compact = compact(name);
         let folded = fold(name);
-        let role = if DATE_COLUMNS.contains(&folded.as_str()) {
+        let role = if DATE_COLUMNS.contains(&folded.as_str())
+            || KOREAN_DATE_COLUMNS.contains(&compact.as_str())
+        {
             Column::Date
         } else if IDENTIFIER_COLUMNS.contains(&folded.as_str()) {
             Column::Identifier
-        } else if PRICE_COLUMNS.contains(&folded.as_str()) {
-            price = true;
-            Column::Numeric
+        } else if PRICE_COLUMNS.contains(&folded.as_str())
+            || KOREAN_PRICE_COLUMNS.contains(&compact.as_str())
+        {
+            prices += 1;
+            Column::Price
         } else if BAR_COLUMNS.contains(&folded.as_str()) {
-            Column::Numeric
+            Column::Bar
         } else {
             return None;
         };
         roles.push(role);
     }
-    (price && roles.iter().any(|role| *role != Column::Numeric)).then_some(roles)
+    (prices >= 2
+        && roles
+            .iter()
+            .any(|role| matches!(role, Column::Date | Column::Identifier)))
+    .then_some(roles)
 }
 
 fn numeric_text(cell: &str) -> bool {
@@ -325,9 +331,9 @@ fn price_rows(rows: &[Value]) -> bool {
             let Some(roles) = price_columns(row.keys().map(String::as_str)) else {
                 return false;
             };
-            row.values()
-                .zip(&roles)
-                .all(|(cell, role)| *role != Column::Numeric || numeric_cell(cell))
+            row.values().zip(&roles).all(|(cell, role)| {
+                !matches!(role, Column::Price | Column::Bar) || numeric_cell(cell)
+            })
         })
 }
 
@@ -338,10 +344,9 @@ fn price_text_table(header: &[String], rows: &[Vec<String>]) -> bool {
     !rows.is_empty()
         && rows.iter().all(|row| {
             row.len() == roles.len()
-                && row
-                    .iter()
-                    .zip(&roles)
-                    .all(|(cell, role)| *role != Column::Numeric || numeric_text(cell))
+                && row.iter().zip(&roles).all(|(cell, role)| {
+                    !matches!(role, Column::Price | Column::Bar) || numeric_text(cell)
+                })
         })
 }
 
@@ -358,25 +363,67 @@ fn json_rows(value: &Value) -> Option<&[Value]> {
     (!rows.is_empty() && rows.iter().all(Value::is_object)).then_some(rows.as_slice())
 }
 
-/// A CSV or TSV file without quoted cells: a header line and rows of the same width.
-fn delimited_table(text: &str, delimiter: char) -> Option<(Vec<String>, Vec<Vec<String>>)> {
-    if text.contains('"') {
+/// One CSV or TSV row. Quotes follow the usual doubled-quote rule; a row with
+/// an unclosed quote is not a table.
+fn split_row(line: &str, delimiter: char) -> Option<Vec<String>> {
+    let mut cells = Vec::new();
+    let mut current = String::new();
+    let mut chars = line.chars().peekable();
+    let mut quoted = false;
+    let mut started = false;
+    while let Some(c) = chars.next() {
+        if quoted {
+            if c == '"' {
+                if chars.peek() == Some(&'"') {
+                    chars.next();
+                    current.push('"');
+                } else {
+                    quoted = false;
+                }
+            } else {
+                current.push(c);
+            }
+            continue;
+        }
+        if !started && c.is_whitespace() {
+            continue;
+        }
+        if !started && c == '"' {
+            quoted = true;
+            started = true;
+            continue;
+        }
+        if c == delimiter {
+            cells.push(current.trim().to_string());
+            current.clear();
+            started = false;
+            continue;
+        }
+        started = true;
+        current.push(c);
+    }
+    if quoted {
         return None;
     }
+    cells.push(current.trim().to_string());
+    Some(cells)
+}
+
+/// A CSV or TSV file: a header line and rows of the same width.
+fn delimited_table(text: &str, delimiter: char) -> Option<(Vec<String>, Vec<Vec<String>>)> {
     let mut lines = text
         .lines()
         .map(|line| line.trim_end_matches('\r'))
         .filter(|line| !line.trim().is_empty());
-    let split = |line: &str| -> Vec<String> {
-        line.split(delimiter)
-            .map(|cell| cell.trim().to_owned())
-            .collect()
-    };
-    let header = split(lines.next()?);
+    let header = split_row(lines.next()?, delimiter)?;
     if header.len() < 2 {
         return None;
     }
-    Some((header, lines.map(split).collect()))
+    let mut rows = Vec::new();
+    for line in lines {
+        rows.push(split_row(line, delimiter)?);
+    }
+    Some((header, rows))
 }
 
 /// A Markdown document that is one pipe table, optionally under headings.

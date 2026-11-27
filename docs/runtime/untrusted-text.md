@@ -11,7 +11,14 @@ numeric-only list (`NUMERIC_ONLY_OPENBB_TOOLS`; profiles, filing documents, tran
 news raise it, prices and statements do not), Rust refuses custom-connection calls
 and every schedule change, including create, update, status, Run now, delete and
 stop, for the rest of the turn with
-`untrusted_text_paused`. `run_python` stays allowed on every host, without a card or override.
+`untrusted_text_paused`. Two proposals the user turns on from a card are the
+exception (`command_or_outbound_write`): a `trigger_save` that names a bundled check
+template with its arguments, whose dry run then runs that exact template code with
+its readings wrapped (`check_paused` in `tool_executor/python_reads.rs`), and a
+`learning_program_save` that names a bundled learning preset whose slots are only its
+subject's name, with no brief of its own. A check with code the model wrote, a
+program with its own brief and the question preset, whose free-text slot goes into
+the brief of later unattended runs, stay paused. `run_python` stays allowed on every host, without a card or override.
 
 A read served to Python raises the same tier as the direct tool. A custom
 connection stays paused after third-party text even if the guest asks for it

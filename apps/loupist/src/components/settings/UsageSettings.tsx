@@ -1,11 +1,12 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { ExternalLinkIcon } from "lucide-react";
 import { useTranslation } from "../../i18n";
-import { formatDay, formatNumber, formatPercent } from "../../i18n/format";
+import { formatDay, formatNumber, formatPercent, formatTime } from "../../i18n/format";
 import { providerShortName } from "../../chat/providerNames";
-import type { UsageSummary, UsageSummaryRequest, UsageTotals } from "../../contracts/generated";
+import type { AllowanceState, OpenRouterQuota, UsageSummary, UsageSummaryRequest, UsageTotals } from "../../contracts/generated";
 import type { LoupistBridge, ModelCatalog } from "../../types";
 import { Button } from "../ui/button";
+import { allowanceNamesItself, backgroundLine, creditLine, holdLine, sourcesLine, worldShareLine } from "./allowanceCopy";
 
 type Period = 1 | 7 | 30;
 
@@ -75,17 +76,44 @@ function DailyRequests({ days }: { days: UsageSummary["days"] }) {
 }
 
 type Props = {
-  bridge: Pick<LoupistBridge, "usageSummary" | "providerOpenUsage">;
+  bridge: Pick<LoupistBridge, "usageSummary" | "providerOpenUsage"> & Partial<Pick<LoupistBridge, "providerQuotaRead">>;
   catalog: ModelCatalog | null;
   active?: boolean;
   onOpenProgram?: (loupistId: string, taskId: string) => void;
 };
 
+function AllowanceLines({ allowance, credit }: { allowance: AllowanceState; credit: OpenRouterQuota | null }) {
+  const { t } = useTranslation("settings");
+  const backgroundNamed = allowanceNamesItself(allowance.background.state);
+  const sourcesNamed = allowanceNamesItself(allowance.worldChat.state);
+  return <UsageGroup title={t("usage.allowance.title")}>
+    <ul className="usage-list">
+      <li className="usage-row" data-allowance="background" data-state={allowance.background.state}>
+        {backgroundNamed ? <span>{backgroundLine(allowance.background)}</span> : <><span>{t("usage.allowance.background")}</span><span className="usage-value">{backgroundLine(allowance.background)}</span></>}
+      </li>
+      <li className="usage-row" data-allowance="sources" data-state={allowance.worldChat.state}>
+        {sourcesNamed ? <span>{sourcesLine(allowance.worldChat)}</span> : <><span>{t("usage.allowance.sources")}</span><span className="usage-value">{sourcesLine(allowance.worldChat)}</span></>}
+      </li>
+      {allowance.background.state === "off" ? null : <li className="usage-row" data-allowance="world"><span>{worldShareLine(allowance.worldShare)}</span></li>}
+      {Object.entries(allowance.providerHolds).map(([key, hold]) => <li key={key} className="usage-row" data-allowance-hold={hold.reason}><span>{holdLine(hold)}</span></li>)}
+      {credit ? <li className="usage-row" data-allowance="credit"><span>{creditLine(credit)}</span></li> : null}
+    </ul>
+  </UsageGroup>;
+}
+
 export function UsageSettings({ bridge, catalog, active = true, onOpenProgram }: Props) {
   const { t } = useTranslation("settings");
   const [period, setPeriod] = useState<Period>(7);
   const [manageError, setManageError] = useState(false);
+  const [credit, setCredit] = useState<OpenRouterQuota | null>(null);
   const summary = useUsageSummary(bridge, period, active);
+  const readQuota = bridge.providerQuotaRead;
+  useEffect(() => {
+    if (!active || !readQuota) { setCredit(null); return; }
+    let live = true;
+    void readQuota("openrouter").then(value => { if (live) setCredit(value); }, () => { if (live) setCredit(null); });
+    return () => { live = false; };
+  }, [active, readQuota]);
 
   return <div className="usage-settings">
     <div className="usage-period" role="group" aria-label={t("usage.period")}>
@@ -97,8 +125,9 @@ export function UsageSettings({ bridge, catalog, active = true, onOpenProgram }:
     </div>
     {active && summary === undefined ? <p role="status">{t("usage.loading")}</p> : null}
     {summary === null ? <p role="alert">{t("usage.loadError")}</p> : null}
+    {summary ? <AllowanceLines allowance={summary.allowance} credit={credit} /> : null}
     {manageError ? <p role="alert">{t("usage.manageError")}</p> : null}
-    {summary && summary.totals.runs === 0 ? <p role="status">{t("usage.empty")}</p> : null}
+    {summary && summary.totals.runs === 0 && summary.programs.length === 0 ? <p role="status">{t("usage.empty")}</p> : null}
     {summary && summary.totals.runs > 0 ? <>
       <p role="status" className="usage-total">{t("usage.requests", requestCount(summary.totals))}</p>
       {summary.totals.unknownRuns > 0 ? <p className="usage-muted">
@@ -156,14 +185,19 @@ export function UsageSettings({ bridge, catalog, active = true, onOpenProgram }:
           <span>{name ?? t("usage.removedLoupist")}</span><span className="usage-value">{t("usage.requests", requestCount(totals))}</span>
         </li>)}</ul>
       </UsageGroup>
-      {summary.programs.length > 0 ? <UsageGroup title={t("usage.programs")}>
-        <ul className="usage-list">{summary.programs.map(({ loupistId, taskId, title, runs, totals, checks }) => <li key={JSON.stringify([loupistId, taskId])} className="usage-row">
-          {title && onOpenProgram ? <button type="button" className="connect-link" onClick={() => onOpenProgram(loupistId, taskId)}>{title}</button>
-            : <span>{title ?? t("usage.removedProgram")}</span>}
-          <span className="usage-value">{t("usage.runs", { count: runs, formattedCount: formatNumber(runs) })} · {t("usage.requests", requestCount(totals))}
-            {checks ? ` · ${t("usage.checks", checks)}` : ""}</span>
-        </li>)}</ul>
-      </UsageGroup> : null}
     </> : null}
+    {summary && summary.programs.length > 0 ? <UsageGroup title={t("usage.programs")}>
+      <ul className="usage-list">{summary.programs.map(({ loupistId, taskId, title, runs, totals, checks }) => <li key={JSON.stringify([loupistId, taskId])} className={checks ? undefined : "usage-row"}>
+        {title && onOpenProgram ? <button type="button" className="connect-link" onClick={() => onOpenProgram(loupistId, taskId)}>{title}</button>
+          : <span>{title ?? t("usage.removedProgram")}</span>}
+        <span className={checks ? "usage-muted usage-program-activity" : "usage-value"}>{checks ? [
+          checks.lastCheckAtMs == null ? null : t("usage.lastCheck", { time: formatTime(checks.lastCheckAtMs) }),
+          t(period === 1 ? "usage.checksToday" : "usage.checks", { count: checks.evaluations, formattedCount: formatNumber(checks.evaluations) }),
+          t("usage.dataReads", { count: checks.reads, formattedCount: formatNumber(checks.reads) }),
+          t("usage.met", { formattedCount: formatNumber(checks.met) }),
+          t("usage.modelRequests", { formattedCount: formatNumber(totals.requests) }),
+        ].filter(Boolean).join(" · ") : `${t("usage.runs", { count: runs, formattedCount: formatNumber(runs) })} · ${t("usage.requests", requestCount(totals))}`}</span>
+      </li>)}</ul>
+    </UsageGroup> : null}
   </div>;
 }

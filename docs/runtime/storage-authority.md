@@ -128,8 +128,8 @@ features or the agent.
 
 The global `catalog.sqlite3` and every folder's `loupist.sqlite3` share one schema
 (`initialize_schema` in `store/schema.rs`) and one upgrade ladder
-(`store/upgrade.rs`). The store schema is version 13 (`PRAGMA user_version`), the
-Knowledge schema version 10 (`knowledge_schema`) and the Knowledge format version 1.
+(`store/upgrade.rs`). The store schema is version 14 (`PRAGMA user_version`), the
+Knowledge schema version 12 (`knowledge_schema`) and the Knowledge format version 1.
 A fresh database is created at the current versions.
 
 The global `app_settings` entry `default_model:<loupist_id>` records the last
@@ -242,6 +242,22 @@ captures keep none.
 Knowledge 11 records the World revision and, where a Source job published it,
 the Source's identity on growth events. Existing events keep their original
 rows and have no recorded publication.
+
+Knowledge 12 adds immutable World episode records. The upgrade recovers a
+partial row for each completed Source job with a valid binding and a unique
+sealed revision. It leaves unknown chunk metadata empty and takes claim and
+entity additions only from growth events for the same owner, World and
+publication revision. A completed job or growth row the step cannot read is
+skipped and counted, and the upgrade still finishes. At startup the host logs
+the job ID and error kind for malformed outbox JSON. Learning recovery skips
+those payloads when checking which Sources the World processed. An unreadable
+running job stays stored and is skipped while other interrupted jobs recover.
+Replacing a World head keeps its episodes, and owner erasure deletes them.
+Episode readers honor Source removal in Memory reset.
+
+Knowledge 12 also adds a nullable `allowance_origin` (`chat` or `background`)
+to capture lineage: the allowance a Chat turn's Source save was admitted under.
+Existing captures keep none.
 
 After initialization and window setup, a background host task exports the catalog's
 retired rows to `<app data directory>/legacy-holdings/holdings-export.json` (or a

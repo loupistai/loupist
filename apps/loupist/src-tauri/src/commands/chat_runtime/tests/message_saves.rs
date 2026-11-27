@@ -1004,6 +1004,7 @@ fn left_out_bot_memory(receipt: &MemoryUpdateResult) -> bool {
             items.contains(&crate::domain::DiscardedMemoryItem {
                 kind: crate::domain::DiscardedMemoryKind::BotMemory,
                 title: "Bot".into(),
+                reason: None,
             })
         })
 }

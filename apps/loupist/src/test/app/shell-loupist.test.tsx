@@ -183,8 +183,8 @@ describe("Loupist · Shell and Loupist", () => {
     const createLoupist = vi.spyOn(bridge, "loupistCreate");
     await user.click(headerAction("New Loupist"));
     await user.click(await screen.findByRole("button", { name: "Create Loupist" }));
-    await waitFor(() => expect(createLoupist).toHaveBeenCalledWith({ name: "Portfolio Loupist", focus: "Companies I follow", avatar: "loupist-01", template: "portfolio", tone: "balanced" }));
-    expect(selectedLoupistButton()).toHaveTextContent("Portfolio Loupist");
+    await waitFor(() => expect(createLoupist).toHaveBeenCalledWith({ name: "Watchlist Loupist", focus: "Follows filings, results and your reasons. It does not track holdings or returns.", avatar: "loupist-01", template: "portfolio", tone: "balanced" }));
+    expect(selectedLoupistButton()).toHaveTextContent("Watchlist Loupist");
     expect(screen.getByRole("button", {name:"Bot",current:"page"})).toBeVisible();
   });
 

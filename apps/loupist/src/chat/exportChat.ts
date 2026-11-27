@@ -1,7 +1,7 @@
 import i18n from "@/i18n";
 import { chatTitle } from "../app/chatTitle";
 import { formatDate, formatDateTime } from "@/i18n/format";
-import type { ChatThread } from "../types";
+import type { ChatMessage, ChatThread } from "../types";
 import { checkFor, exportFootnote } from "./numberChecks";
 import { evidenceLinkStarts } from "./evidenceLinkOrder";
 
@@ -31,35 +31,56 @@ export function chatMarkdown(thread: ChatThread, loupistName: string, nowMs = Da
       : message.role === "bot_handoff" ? t("handoff.fromBot") : message.role === "user" ? t("chatExport.you") : loupistName;
     lines.push(`## ${who}${Number.isFinite(time) ? ` · ${formatDateTime(time)}` : ""}`, "");
     if (turn?.task_kind === "briefing") continue;
-    let content = message.content.trim();
-    // Number links keep the number and gain a footnote with its formula or source: each occurrence
-    // its own check, found by its place among the answer's links as Rust counted them.
-    const starts = evidenceLinkStarts(message.content);
-    const lead = message.content.length - message.content.trimStart().length;
-    content = content.replace(/\[([^\]\n]+)\]\(#evidence-([A-Za-z0-9_]+)\)/gu, (whole, text: string, id: string, at: number) => {
-      const index = starts.indexOf(at + lead);
-      const check = checkFor(message.number_checks, index < 0 ? undefined : index, id, text);
-      if (!check) return whole;
-      const number = footnotes.length + 1;
-      const evidence = message.evidence_refs?.find((item) => item.id === id);
-      footnotes.push(`[^${number}]: ${exportFootnote(check, evidence, message.evidence_refs ?? [])}`);
-      return `${text}[^${number}]`;
-    });
-    // Citation links point at in-app readers; in a file they become numbered footnotes.
-    for (const evidence of message.evidence_refs ?? []) {
-      const number = footnotes.length + 1;
-      const pattern = new RegExp(`\\[(\\d+)\\]\\(#evidence-${evidence.id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\)`, "gu");
-      if (!pattern.test(content)) continue;
-      content = content.replace(pattern, `[^${number}]`);
-      footnotes.push(`[^${number}]: ${evidence.title}${evidence.url ? ` — ${evidence.url}` : ""}`);
-    }
-    lines.push(content, "");
+    lines.push(footnotedContent(message, footnotes), "");
     if (message.role === "bot_handoff" && message.handoff_note?.userMessageInBot) {
       lines.push(t("handoff.youSaid"), "", ...message.handoff_note.userMessageInBot.split(/\r?\n/u).map(line => `> ${line}`), "");
     }
   }
   if (footnotes.length) lines.push("---", "", ...footnotes, "");
   if (notice) lines.push(`_${t("chatExport.notice")}_`, "");
+  return lines.join("\n");
+}
+
+/**
+ * One message's text with its figure checks and citations as numbered
+ * footnotes, appended to `footnotes` and numbered after the ones already there.
+ */
+function footnotedContent(message: ChatMessage, footnotes: string[]) {
+  let content = message.content.trim();
+  // Number links keep the number and gain a footnote with its formula or source: each occurrence
+  // its own check, found by its place among the answer's links as Rust counted them.
+  const starts = evidenceLinkStarts(message.content);
+  const lead = message.content.length - message.content.trimStart().length;
+  content = content.replace(/\[([^\]\n]+)\]\(#evidence-([A-Za-z0-9_]+)\)/gu, (whole, text: string, id: string, at: number) => {
+    const index = starts.indexOf(at + lead);
+    const check = checkFor(message.number_checks, index < 0 ? undefined : index, id, text);
+    if (!check) return whole;
+    const number = footnotes.length + 1;
+    const evidence = message.evidence_refs?.find((item) => item.id === id);
+    footnotes.push(`[^${number}]: ${exportFootnote(check, evidence, message.evidence_refs ?? [])}`);
+    return `${text}[^${number}]`;
+  });
+  // Citation links point at in-app readers; in a file they become numbered footnotes.
+  for (const evidence of message.evidence_refs ?? []) {
+    const number = footnotes.length + 1;
+    const pattern = new RegExp(`\\[(\\d+)\\]\\(#evidence-${evidence.id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\)`, "gu");
+    if (!pattern.test(content)) continue;
+    content = content.replace(pattern, `[^${number}]`);
+    footnotes.push(`[^${number}]: ${evidence.title}${evidence.url ? ` — ${evidence.url}` : ""}`);
+  }
+  return content;
+}
+
+/**
+ * One answer as Markdown (Copy as Markdown): its text with figure checks and
+ * citations as numbered footnotes carrying each Source's title and URL, and the
+ * AI notice last, as in the Chat export.
+ */
+export function answerMarkdown(message: ChatMessage) {
+  const footnotes: string[] = [];
+  const lines = [footnotedContent(message, footnotes), ""];
+  if (footnotes.length) lines.push("---", "", ...footnotes, "");
+  lines.push(`_${t("chatExport.notice")}_`, "");
   return lines.join("\n");
 }
 

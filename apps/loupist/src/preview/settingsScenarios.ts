@@ -58,6 +58,7 @@ export function settingsScenarios({ base, select, settings, until }: Helpers): P
       }), setup: prepareFixture,
     })),
     base("settings-appearance", "Theme and language preferences", () => select(".appearance-card"), root => settings(root, "appearance")),
+    base("settings-notifications-hours", "Quiet hours follow the interface language", () => select('.settings-quiet-hour [data-slot="input"]'), root => settings(root, "notifications")),
     // Display currency: each status sentence Settings writes from the host's display state.
     ...DISPLAY_STATUSES.map(([kind, status, prepare]): PreviewScenario => ({
       ...base(`settings-appearance-currency-${kind}`, `Display currency: ${kind}`, () => select(`[data-fx-status="${status}"]:not(:empty)`), async root => {
@@ -87,16 +88,19 @@ export function settingsScenarios({ base, select, settings, until }: Helpers): P
       summary.scrollIntoView?.({ block: "start" });
     }),
     ...skills.map((kind): PreviewScenario => ({
-      ...base(`settings-skills-${kind}`, `Skills: ${kind}`, () => select(kind === "list" ? ".skills-list" : kind === "detail" ? ".skill-instructions" : kind === "create" ? ".skill-instructions-editor" : kind.startsWith("add") ? '[role="dialog"] select' : kind === "empty" ? ".skills-empty" : kind === "error" ? '.skills-settings [role="alert"]' : ".skills-settings"), async root => {
+      ...base(`settings-skills-${kind}`, `Skills: ${kind}`, () => select(kind === "list" ? ".skills-list" : kind === "detail" ? ".skill-instructions" : kind === "create" ? ".skill-instructions-editor" : kind.startsWith("add") ? '[role="dialog"] [role="combobox"]' : kind === "empty" ? ".skills-empty" : kind === "error" ? '.skills-settings [role="alert"]' : ".skills-settings"), async root => {
         await settings(root, "skills");
         if (kind === "detail") (await until(() => select(".skill-summary") as HTMLButtonElement | null, "Skills did not load")).click();
         if (kind === "create") await button("settings:skillsSettings.createSkill");
         if (kind.startsWith("add")) {
           await button("settings:skillsSettings.addSkill");
           if (kind !== "add") {
-            const field = await until(() => select('[role="dialog"] select') as HTMLSelectElement | null, "Import choices did not load");
-            field.value = kind === "add-zip" ? "zip" : "folder";
-            field.dispatchEvent(new Event("change", { bubbles: true }));
+            const field = await until(() => select('[role="dialog"] [role="combobox"]') as HTMLElement | null, "Import choices did not load");
+            field.focus();
+            field.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+            const label = i18n.t(kind === "add-zip" ? "settings:skillsSettings.zipPackage" : "settings:skillsSettings.localFolder");
+            const option = await until(() => [...document.querySelectorAll<HTMLElement>('[role="listbox"] [role="option"]')].find(item => item.textContent?.trim() === label), "Import menu did not open");
+            option.click();
           }
         }
       }),

@@ -302,7 +302,8 @@ History rewrites wait for a pending save rather than skipping it, because an edi
 does not discard what the reply saved. A save counts as pending until its receipt is on
 its reply, including a skip, deadline or failure receipt. The host refuses, with the refusal a running
 reply gives, an edit fork or version switch that would set the reply aside,
-deleting its conversation, and feedback on it. Rename, setting Memory aside and
+deleting its conversation, and a write to its stored feedback through the legacy
+wire command. Rename, setting Memory aside and
 Try again on a later failed or stopped reply proceed. A saving reply is complete, so
 Try again never regenerates it. The renderer keeps those controls disabled until the
 receipt arrives. **Skip saving** resolves the save at once with the existing

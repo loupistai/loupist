@@ -4,6 +4,7 @@ import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { TooltipProvider } from "../ui/tooltip";
 import { RequestTurnProvider } from "./requestTurn";
 import { PageReader } from "./PageReader";
+import { LearnRequestProvider } from "../briefings/LearnRequest";
 
 async function open(recordId = "lens-subject-tcp", tweak?: (bridge: MockLoupistBridge) => void, pageName = "Page") {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
@@ -43,6 +44,60 @@ it("reads sections in order, with their sources and other basis, and marks a con
   await user.click(contested);
   expect(handlers.onOpen).toHaveBeenLastCalledWith(expect.objectContaining({ surface: "world", selection: { kind: "claim", id: "claim-quic-blocked" } }));
   expect(section("overview")).not.toHaveAttribute("data-contested");
+});
+
+it("marks superseded and contested sections, a role and an as-of date, and counts sections on changed facts", async () => {
+  const scroll = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, writable: true, value: scroll });
+  const { page, handlers, user } = await open(undefined, bridge => {
+    const read = bridge.knowledgeLensRead.bind(bridge);
+    vi.spyOn(bridge, "knowledgeLensRead").mockImplementation(async request => {
+      const view = await read(request);
+      if (view.body.kind === "principle") return view;
+      view.body.sections = view.body.sections.map((item, index) => {
+        if (index === 0) return { ...item, role: "check" as const, asOf: "2024-03-31", contested: false, contestedClaimIds: [], sinceMs: 60, claimIds: ["prior-claim"] };
+        if (index === 1) return { ...item, role: "open_question" as const, contested: true, sinceMs: 70, claimIds: ["also"], contestedClaimIds: ["kept-claim"] };
+        if (index === 2) return { ...item, role: "refutation" as const, asOf: "2024", contested: false, contestedClaimIds: [] };
+        return { ...item, role: "fact" as const, contested: false, contestedClaimIds: [], sinceMs: undefined, claimIds: undefined };
+      });
+      return view;
+    });
+  });
+  await user.click(within(page).getByRole("button", { name: "2 sections rest on facts that changed" }));
+  expect(scroll).toHaveBeenCalled();
+  const superseded = page.querySelector<HTMLElement>('[data-section-state="superseded"]')!;
+  expect(within(superseded).getByText("Check")).toBeVisible();
+  expect(within(superseded).getByText(/^As of /)).toBeVisible();
+  expect(within(superseded).getByRole("button", { name: "Superseded" })).toBeVisible();
+  expect(within(superseded).queryByRole("button", { name: "Sources disagree" })).toBeNull();
+  const contested = page.querySelector<HTMLElement>('[data-section-state="contested"]')!;
+  expect(within(contested).getByText("Open question")).toBeVisible();
+  expect(within(contested).getByRole("button", { name: "Sources disagree" })).toBeVisible();
+  expect(within(contested).queryByRole("button", { name: "Superseded" })).toBeNull();
+  expect(within(page).getByText("Would break it")).toBeVisible();
+  expect(page.querySelectorAll(".page-section-role")).toHaveLength(3);
+  await user.click(within(superseded).getByRole("button", { name: "Superseded" }));
+  expect(handlers.onOpen).toHaveBeenCalledWith(expect.objectContaining({ surface: "world", selection: { kind: "claim", id: "prior-claim" } }));
+});
+
+it("names the source that ended a superseded section once its history is read", async () => {
+  const { page } = await open(undefined, bridge => {
+    vi.spyOn(bridge, "knowledgeWorldClaimHistory").mockResolvedValue({
+      created: null, supported: [], endedClaims: [], endedByClaimId: null, endings: [],
+      ended: { sourceTitle: "Later note", end: { value: "2024-06-01", precision: "date" }, readArgs: { recordId: "rec" } },
+    });
+    const read = bridge.knowledgeLensRead.bind(bridge);
+    vi.spyOn(bridge, "knowledgeLensRead").mockImplementation(async request => {
+      const view = await read(request);
+      if (view.body.kind === "principle") return view;
+      view.body.sections = view.body.sections.map((item, index) => index === 0
+        ? { ...item, contested: false, contestedClaimIds: [], sinceMs: 60, claimIds: ["prior-claim"] }
+        : item);
+      return view;
+    });
+  });
+  const superseded = page.querySelector<HTMLElement>('[data-section-state="superseded"]')!;
+  expect(await within(superseded).findByRole("button", { name: /Superseded · .+ · Later note/ })).toBeVisible();
 });
 
 it("links a method's request to the dated user turn without attributing the method to the user", async () => {
@@ -143,4 +198,19 @@ it("shows English default headings in Korean and the perspective title as writte
   } finally {
     await i18n.changeLanguage("en");
   }
+});
+
+it("offers Keep this page current on a subject page only, where the app can ask Bot (plan 4.4)", async () => {
+  const ask = vi.fn();
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const loupistId = (await bridge.loupistList())[0].id;
+  const reader = (recordId: string) => <TooltipProvider><LearnRequestProvider value={{ block: null, ask }}>
+    <PageReader bridge={bridge} loupistId={loupistId} recordId={recordId} onOpen={vi.fn()} onOpenPage={vi.fn()} />
+  </LearnRequestProvider></TooltipProvider>;
+  const view = render(reader("lens-subject-tcp"));
+  await userEvent.click(await screen.findByRole("button", { name: "Keep this page current" }));
+  expect(ask).toHaveBeenCalledExactlyOnceWith("Propose a learning program that keeps my Lens page “TCP” current.");
+  view.rerender(reader("lens-idea-quic"));
+  await screen.findByRole("heading", { level: 2, name: "QUIC could displace TCP for mobile traffic" });
+  expect(screen.queryByRole("button", { name: "Keep this page current" })).toBeNull();
 });

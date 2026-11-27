@@ -596,7 +596,14 @@ fn git(args: &[&str]) -> String {
 #[ignore = "Paid live method-learning proof; requires a Pi directory, model and new output path"]
 async fn live_lens_research_v1() -> Result<()> {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let bytes = fs::read(manifest.join("../evals/lens/research-v1.json"))?;
+    // A fixture under evals/lens/ by file name, or a path; research-v1 by default.
+    let named =
+        std::env::var("LOUPIST_RESEARCH_FIXTURE").unwrap_or_else(|_| "research-v1.json".into());
+    let bytes = fs::read(if Path::new(&named).is_absolute() {
+        PathBuf::from(&named)
+    } else {
+        manifest.join("../evals/lens").join(&named)
+    })?;
     let fixture: Fixture = serde_json::from_slice(&bytes)?;
     if fixture.schema != "loupist-lens-research/1"
         || fixture.training.len() != 2

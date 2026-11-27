@@ -9,7 +9,9 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 
 use super::super::graph_inference::{InferenceDisposition, InferenceReply};
-use super::ontology::{ENGLISH_EXTRACTION_RULE, WORLD_FACT_POLICY};
+use super::ontology::ENGLISH_EXTRACTION_RULE;
+#[cfg(test)]
+use super::ontology::WORLD_FACT_POLICY;
 use super::prompts::Message;
 use super::pyjson::Py;
 use super::text::replace_unusable;
@@ -83,7 +85,11 @@ pub(crate) fn assemble(
     for message in &mut messages {
         message.content = clean_input(&message.content);
     }
-    messages.push(Message::new("system", WORLD_FACT_POLICY));
+    if let Some(first) = messages.iter_mut().find(|message| message.role == "system") {
+        first.content = format!("{}\n\n{}", super::prompts::fact_policy(), first.content);
+    } else {
+        messages.insert(0, Message::new("system", super::prompts::fact_policy()));
+    }
     messages
 }
 
@@ -248,6 +254,9 @@ impl<'a> Bridge<'a> {
             InferenceDisposition::NotSent => Err(Stop::NotSent),
             InferenceDisposition::Uncertain => {
                 self.attempted(kind);
+                if super::super::graph_inference::model_output_failure(&reply).is_some() {
+                    return Err(Stop::Invalid("model output"));
+                }
                 self.uncertain = true;
                 Err(Stop::Uncertain)
             }
@@ -516,16 +525,16 @@ mod tests {
             Some(&schema),
             true,
         );
-        assert_eq!(messages.len(), 3);
+        assert_eq!(messages.len(), 2);
+        assert!(messages[0].content.starts_with(WORLD_FACT_POLICY));
         assert!(messages[0]
             .content
-            .starts_with("sys\n\n<<graphiti.attr_extraction"));
+            .contains("sys\n\n<<graphiti.attr_extraction"));
         assert!(messages[0].content.ends_with(ENGLISH_EXTRACTION_RULE));
         assert_eq!(
             messages[1].content,
             "body\n\nRespond with a JSON object in the following format:\n\n{\"title\": \"\\uc0bc\"}"
         );
-        assert_eq!(messages[2].content, WORLD_FACT_POLICY);
     }
 
     #[test]

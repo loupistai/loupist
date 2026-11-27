@@ -1573,6 +1573,62 @@ open("/workspace/outputs/after.txt", "w").write("after")
 }
 
 #[test]
+fn unhandled_python_unavailable_shows_only_user_frames() {
+    use super::ledger::{LedgerEntry, ReadCall, Response, RunLedger};
+    let _guard = PYTHON_WORKER_TEST_LOCK.blocking_lock();
+    require_runtime();
+    let fixture = sample();
+    let ledger = RunLedger {
+        id: "unavailable-read".into(),
+        now: "2026-11-24".into(),
+        args: Default::default(),
+        state: json!({}),
+        inputs: Default::default(),
+        entries: vec![LedgerEntry {
+            call: ReadCall {
+                tool: "followed".into(),
+                arguments: Default::default(),
+            },
+            response: Response::unavailable("no_data"),
+        }],
+        final_round: true,
+        bar_dates: Default::default(),
+        check_stale_days: None,
+    };
+    let result = runtime()
+        .block_on(super::execute_round(
+            &fixture.roots,
+            shared_cache(),
+            "import loupist\ndef read_data():\n    loupist.followed()\nread_data()",
+            60,
+            SearchCancel::never(),
+            &ledger,
+            super::RoundWriteback::Disabled,
+        ))
+        .unwrap();
+    assert_eq!(result["status"], "failed", "{result}");
+    assert_eq!(result["stderr_truncated"], false);
+    let stderr = result["stderr"].as_str().unwrap();
+    let frames: Vec<_> = stderr
+        .lines()
+        .filter(|line| line.trim_start().starts_with("File "))
+        .collect();
+    assert_eq!(
+        frames,
+        [
+            "  File \"<run_python>\", line 4, in <module>",
+            "  File \"<run_python>\", line 3, in read_data",
+        ],
+        "{stderr}"
+    );
+    assert!(
+        stderr.trim_end().ends_with("Unavailable: no_data"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("exec(compile("), "{stderr}");
+}
+
+#[test]
 fn python_ledger_batches_missing_calls_and_only_the_final_round_copies_back() {
     use super::ledger::{LedgerEntry, ReadCall, Response, RunLedger};
     let _guard = PYTHON_WORKER_TEST_LOCK.blocking_lock();
@@ -1591,6 +1647,8 @@ fn python_ledger_batches_missing_calls_and_only_the_final_round_copies_back() {
         inputs: Default::default(),
         entries: Vec::new(),
         final_round: false,
+        bar_dates: Default::default(),
+        check_stale_days: None,
     };
     let code = r#"
 import loupist, random

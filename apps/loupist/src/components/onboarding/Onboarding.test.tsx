@@ -25,7 +25,7 @@ it("offers the presets after connecting and creates the Loupist from the chosen 
   const bridge = await fresh();
   const create = vi.spyOn(bridge, "loupistCreate");
   const user = await start(bridge);
-  expect(screen.getByRole("button", { name: /My portfolio/ })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: /Watchlist research/ })).toHaveAttribute("aria-pressed", "true");
   await user.click(screen.getByRole("button", { name: /Semiconductors/ }));
   await user.click(screen.getByRole("button", { name: "Continue" }));
   expect(screen.getByRole("heading", { name: "Name your Loupist" })).toBeVisible();
@@ -239,7 +239,7 @@ it("asks for a name when a Loupist already exists, instead of keeping the folder
   await user.click(screen.getByRole("button", { name: "Look around first" }));
   expect(screen.getByRole("heading", { name: "Name your Loupist" })).toBeVisible();
   const name = screen.getByRole("textbox", { name: "Name" });
-  expect(name).toHaveValue("Portfolio Loupist");
+  expect(name).toHaveValue("Watchlist Loupist");
   await user.clear(name); await user.type(name, "Rates desk");
   await user.click(within(screen.getByRole("group", { name: "Face color" })).getByRole("button", { name: "Orchid" }));
   await user.click(screen.getByRole("button", { name: "Save and continue" }));

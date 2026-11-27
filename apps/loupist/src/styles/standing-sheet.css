@@ -1,10 +1,10 @@
 /* Standing instructions: Bot memory the user can read, edit and forget, plus each task's usage. */
 .standing-scrim {
-  position: absolute; inset: 0; z-index: var(--gg-z-panel);
+  position: fixed; inset: 0; z-index: calc(var(--gg-z-dialog) + 1);
   background: var(--gg-color-bg-overlay); opacity: 0.5;
 }
 .standing-sheet {
-  position: absolute; top: 0; right: 0; bottom: 0; z-index: var(--gg-z-panel);
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: calc(var(--gg-z-dialog) + 1);
   display: flex; flex-direction: column; width: min(420px, 92%); min-width: 0;
   border-left: 1px solid var(--gg-color-border-subtle);
   border-bottom: 1px solid var(--gg-color-border-subtle);
@@ -40,6 +40,7 @@
   font: inherit; color: inherit;
 }
 .standing-usage h3 { margin: 0; font-size: var(--gg-text-control); font-weight: var(--gg-weight-strong); }
-.standing-usage-line { justify-content: space-between; }
+.standing-usage, .standing-usage ul, .standing-usage-line { align-items: flex-start; text-align: start; }
+.standing-usage-line { justify-content: flex-start; }
 .standing-usage-line span:last-child { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .standing-error { margin: 0; color: var(--gg-color-danger, var(--gg-color-text-primary)); }

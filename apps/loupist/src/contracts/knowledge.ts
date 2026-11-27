@@ -25,6 +25,8 @@ export type TimePoint = {
 export type ClaimEndpoint = Wire.ClaimEndpoint;
 
 export type EvidenceBinding = Wire.EvidenceBinding;
+export type EvidenceFigure = Wire.EvidenceFigure;
+export type PassageRange = Wire.PassageRange;
 
 export type SourceClass =
   | "publisher_document"
@@ -118,6 +120,8 @@ export type WorldGraphQuery = {
   bindingRoles: BindingRole[];
   statuses: ClaimStatus[];
   publicationTimes?: string[];
+  /** World as of a local calendar day (`YYYY-MM-DD`): the host reads the cutoff projection. Omitted for today. */
+  asOf?: string;
   cursor?: string;
   nodeLimit: number;
   edgeLimit: number;
@@ -151,12 +155,20 @@ export type GraphClaim = {
   expiredAt: TimePoint | null;
 };
 
+export type WorldChangesRequest = Wire.WorldChangesRequest;
+export type WorldChangesView = Wire.WorldChangesView;
+export type ClaimHistoryRequest = Wire.ClaimHistoryRequest;
+export type ClaimHistory = Wire.ClaimHistory;
+
 export type GraphEdge = {
   id: string;
   relation: string;
   endpoints: ClaimEndpoint[];
   status: ClaimStatus;
   claim: GraphClaim;
+  /** `true` when the claim is no longer current. Omitted while it is. */
+  ended?: boolean;
+  end?: TimePoint;
 };
 
 export type WorldSourceTarget = Wire.WorldSourceTarget;
@@ -176,7 +188,12 @@ export type WorldGraphView = {
   originLabel: string;
   sourceTargets: Record<string, WorldSourceTarget>;
   scan: Wire.QueryScan;
+  /** Present when the query named `asOf`. */
+  asOfReport?: WorldAsOfReport;
 };
+
+/** What an as-of World read left out: facts published later, and the Sources they came from. */
+export type WorldAsOfReport = Wire.WorldAsOfReport;
 
 export type SourceFigureRequest = Wire.SourceFigureRequest;
 
@@ -487,7 +504,8 @@ export type GraphCamera = {
 export type KnowledgeSelection =
   | { kind: "node"; id: string }
   | { kind: "claim"; id: string }
-  | { kind: "source"; sourceId?: string; spanId?: string; worldRecordId?: string; worldRevisionId?: string }
+  /** `passage`: the chunk a World claim was extracted from, which the reader scrolls to and marks. */
+  | { kind: "source"; sourceId?: string; spanId?: string; worldRecordId?: string; worldRevisionId?: string; passage?: PassageRange }
   | { kind: "lens"; recordId: string }
   | { kind: "research"; recordId: string; sectionId?: string }
   | { kind: "journal"; journalId: string }
@@ -586,7 +604,12 @@ export type GrowthEventsPage = {
 
 export type KnowledgeMapNodeKind = "entity" | "lens_perspective" | "lens_principle" | "lens_method" | "lens_subject" | "lens_idea" | "journal";
 export type KnowledgeMapEdgeKind = "claim" | "fact" | "lens_link" | "applies_to" | "about";
-export type KnowledgeMapQuery = { loupistId: string; maxNodes?: number };
+export type KnowledgeMapQuery = {
+  loupistId: string;
+  maxNodes?: number;
+  /** World as of a local calendar day (`YYYY-MM-DD`). Omitted for today. */
+  asOf?: string;
+};
 export type KnowledgeMapNode = {
   origin?: CustomConnectionOrigin;
   learnedAtMs?: number;
@@ -628,6 +651,8 @@ export type KnowledgeMap = {
   worldRevisionId: string | null;
   /** Latest contributing data timestamp; stable when data is unchanged. */
   generatedAtMs: number;
+  /** Present when the query named `asOf`. */
+  asOfReport?: WorldAsOfReport;
 };
 
 export type PrincipleOrigin = "settings" | "feedback" | "chat" | "shared";
@@ -651,6 +676,9 @@ export type LearningReview = {
 };
 export type LearningReviewQuery = { loupistId: string; limit?: number };
 export type MemoryLearningSettings = { learnMethods: boolean };
+/** Where method learning stands and, while it waits, why. */
+export type LearningState = Wire.LearningState;
+export type LearningWaitReason = Wire.WaitReason;
 /** Turns that read or applied a principle or method, and the chats they were in (newest first, at most five). */
 export type MemoryUsage = Wire.MemoryUsage;
 export type LearningReviewFinishedEvent = { loupistId: string; review: LearningReview };

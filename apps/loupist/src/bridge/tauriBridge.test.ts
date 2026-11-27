@@ -57,6 +57,20 @@ it("never lets the renderer choose the acknowledged notice version", async () =>
   expect(invoke).toHaveBeenLastCalledWith("notice_acknowledge", undefined);
 });
 
+it("passes Track daily as a typed scheduled preset", async () => {
+  const bridge = createLoupistBridge();
+  const request = { loupistId: "a", preset: "asset-daily", subjects: [{ asset: "ast_123" }] } as const;
+  await bridge.scheduledTaskFromPreset({ ...request, subjects: [...request.subjects] });
+  expect(invoke).toHaveBeenLastCalledWith("scheduled_task_from_preset", { request });
+});
+
+it("sends confirmation on the explicit Run now request", async () => {
+  const bridge = createLoupistBridge();
+  const request = { loupist_id: "a", task_id: "task-1", confirm: true };
+  await bridge.scheduledTaskRunNow(request);
+  expect(invoke).toHaveBeenLastCalledWith("scheduled_task_run_now", { request });
+});
+
 it("passes artifact revision selection and restore concurrency intent to Rust", async () => {
   const bridge = createLoupistBridge();
   vi.mocked(invoke).mockResolvedValue(undefined);

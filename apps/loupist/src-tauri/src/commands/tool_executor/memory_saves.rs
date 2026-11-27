@@ -392,6 +392,7 @@ impl AppToolExecutor {
             .origin()
             .filter(|origin| origin.connection_id == result.producer.runtime_id);
         let staged = StagedSource {
+            admitted: source_save_origin(self.capture.unattended_run_id.as_deref()),
             authorship: if provided.is_some() {
                 // The user handed it over; a publisher may have written it,
                 // but nothing here can vouch for that.
@@ -936,6 +937,15 @@ impl AppToolExecutor {
 /// DART filings and financials, KRX market data, World Bank series and
 /// DefiLlama values). Anything else stays the tool's. Sharing exports only
 /// publisher-authored Sources, so an unknown producer stays private.
+/// The allowance a Source save's turn was admitted under: an unattended
+/// (scheduled or handed-off) run is background, an interactive turn is chat.
+pub(crate) fn source_save_origin(unattended_run_id: Option<&str>) -> crate::knowledge::JobOrigin {
+    match unattended_run_id {
+        Some(_) => crate::knowledge::JobOrigin::Background,
+        None => crate::knowledge::JobOrigin::Chat,
+    }
+}
+
 pub(super) fn saved_authorship(
     producer: &RunResultProducer,
     custom_connection: bool,

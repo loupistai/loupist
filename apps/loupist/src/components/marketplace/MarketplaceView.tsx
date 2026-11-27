@@ -26,8 +26,8 @@ import type { LoupistSummary, LoupistBridge } from "../../types";
 import { MarketplaceCard, accessLabel } from "./MarketplaceCard";
 import { MarketplaceSetupDialog } from "./MarketplaceSetupDialog";
 import { CONFIG_CHANGED_EVENT, notifyConfigurationChanged } from "../../app/useConfiguration";
-import { connectionGroups } from "../../marketplace/groups";
-import { CONNECTION_STATES, connectionState, needsSavedKeyPermission, sortConnectionEntries } from "../../marketplace/readiness";
+import { connectionGroups, followedMarket } from "../../marketplace/groups";
+import { CONNECTION_STATES, connectionState, needsSavedKeyPermission } from "../../marketplace/readiness";
 
 type Props = {
   bridge: LoupistBridge;
@@ -163,12 +163,27 @@ export function MarketplaceView({ bridge, loupists = [], currentLoupistId, initi
         (statusFilter === "all" || (statusFilter === "ready" ? state === "ready" : CONNECTION_STATES[state].needsAttention)) &&
         (!normalizedQuery || entrySearchText(entry).includes(normalizedQuery));
     });
-    return sortConnectionEntries(matching, connectorById, (entry) => connectionText(entry.name));
+    return matching;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the interface language is the recompute trigger; `i18n` itself is not reactive.
   }, [freeFilter, query, snapshot, statusFilter, connectorById, activeLanguage.language]);
+  const [followedMarkets, setFollowedMarkets] = useState<ReadonlyMap<string, number>>(new Map());
+  useEffect(() => {
+    if (!currentLoupistId) { setFollowedMarkets(new Map()); return undefined; }
+    let live = true;
+    void bridge.assetsList({ loupistId: currentLoupistId }).then(rows => {
+      if (!live) return;
+      const counts = new Map<string, number>();
+      for (const row of rows) {
+        const market = followedMarket(row.reference?.exchange);
+        if (market) counts.set(market, (counts.get(market) ?? 0) + 1);
+      }
+      setFollowedMarkets(counts);
+    }).catch(() => { if (live) setFollowedMarkets(new Map()); });
+    return () => { live = false; };
+  }, [bridge, currentLoupistId]);
   const discoveryGroups = useMemo(
-    () => connectionGroups(snapshot?.plugins ?? [], visibleEntries),
-    [snapshot, visibleEntries],
+    () => connectionGroups(snapshot?.plugins ?? [], visibleEntries, followedMarkets),
+    [snapshot, visibleEntries, followedMarkets],
   );
   const selectedEntry = selectedEntryId
     ? (snapshot?.catalog.entries.find(

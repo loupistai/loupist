@@ -1,12 +1,15 @@
 import { skippedSavedKeyLabel, skippedSavedKeyNames } from "../briefings/scheduledPresentation";
-import { answerSourceOrigin } from "../../chat/answerSources";
+import { answerSourceOrigin, answerSourceRow } from "../../chat/answerSources";
+import { answerMarkdown } from "../../chat/exportChat";
+import { printAnswer } from "../print/printDocuments";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import { Disclosure } from "../ui/disclosure";
 import { useExtensionAvailability } from "../../app/extensionAvailability";
 import { ApprovalCards } from "./ApprovalCard";
 import { holdTurnHeight, QuestionCards } from "./QuestionCard";
 import type { ChatThread, LoupistBridge } from "../../types";
-import { formatNumber, formatTime } from "@/i18n/format";
+import { formatDate, formatNumber, formatTime } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
 import { ContextTitle, titlePlaceholder } from "../ui/context-title";
 import { waitedOnChatTitle } from "../../app/chatTitle";
@@ -14,7 +17,6 @@ import { Spinner } from "../ui/spinner";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { useConversationScroll } from "../ai-elements/conversation";
 import { AnswerActionTooltip } from "./AnswerActionTooltip";
-import { AnswerFeedback, type SaveAnswerFeedback } from "./AnswerFeedback";
 import {
   CheckIcon,
   CopyIcon,
@@ -22,6 +24,8 @@ import {
   DownloadIcon,
   FileIcon,
   FileTextIcon,
+  MoreHorizontalIcon,
+  PrinterIcon,
   SlidersHorizontalIcon,
   InfoIcon,
 } from "lucide-react";
@@ -105,15 +109,15 @@ const responseDuration = (milliseconds: number) =>
     : t("chatMessageCard.responseSeconds", { value1: formatNumber(milliseconds / 1_000, { minimumFractionDigits: milliseconds < 10_000 ? 1 : 0, maximumFractionDigits: milliseconds < 10_000 ? 1 : 0 }) });
 
 const knownTokenCount = (value: unknown): number | undefined =>
-  typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 const tokenCountLabel = (value: number | undefined) =>
   value === undefined ? t("chatMessageCard.unavailable") : t("chatMessageCard.tokenCount", { count: value, formattedCount: formatNumber(value) });
 
 function responseTokenLines(performance: ChatPerformance | undefined): string[] {
   if (!performance) return [t("chatMessageCard.tokenUsageUnavailable")];
   const input = knownTokenCount(performance.inputTokens);
-  const cacheRead = knownTokenCount(performance.cacheReadTokens);
-  const cacheWrite = knownTokenCount(performance.cacheWriteTokens);
+  const cacheRead = knownTokenCount(performance.cacheReadTokens ?? 0);
+  const cacheWrite = knownTokenCount(performance.cacheWriteTokens ?? 0);
   const totalInput = input !== undefined && cacheRead !== undefined && cacheWrite !== undefined
     ? knownTokenCount(input + cacheRead + cacheWrite) : undefined;
   const lines = [
@@ -185,9 +189,6 @@ function MessageAttachment({
 
 type Props = {
   bridge?: LoupistBridge;
-  onSaveFeedback?: SaveAnswerFeedback;
-  feedbackHeld?: boolean;
-  onTeachFeedback?: (text: string) => void;
   active?: boolean;
   /** The scheduled run header already identifies the author and time. */
   showIdentity?: boolean;
@@ -321,13 +322,11 @@ function ChatMessageCardComponent({
   retryAttempt = 1,
   onProviderAction,
   note,
-  onSaveFeedback,
-  feedbackHeld,
-  onTeachFeedback,
   entering = false,
 }: Props) {
   useTranslation("chat");
   const { state: copyState, copy } = useCopyFeedback(message.id);
+  const [printFailed, setPrintFailed] = useState(false);
   const revealedResult = useTurn()?.revealedResult ?? null;
   const go = useGo();
   // Memory declines are told once per chat by the memory row, not as connection activity.
@@ -524,10 +523,26 @@ function ChatMessageCardComponent({
         void copy(copyText);
       }}>{copyState === "copied" ? <CheckIcon /> : <CopyIcon />}</button>
     </AnswerActionTooltip>
+    {settled ? <DropdownMenu>
+      <AnswerActionTooltip label={t("chatMessageCard.answerMenu")}>
+        <DropdownMenuTrigger asChild><button type="button" data-answer-menu aria-label={t("chatMessageCard.answerMenu")}><MoreHorizontalIcon /></button></DropdownMenuTrigger>
+      </AnswerActionTooltip>
+      <DropdownMenuContent align="start">
+        <DropdownMenuItem data-answer-print onSelect={() => {
+          const printed = article.current;
+          if (!printed) return;
+          setPrintFailed(false);
+          const sources = settled.sources.map((source) => ({ title: answerSourceRow(source, loupistId).title, url: source.evidence.url }));
+          const asked = previousQuestion?.trim().replace(/\s+/gu, " ").slice(0, 80);
+          const day = Date.parse(message.created_at);
+          void printAnswer(printed, sources, [asked || loupistName, Number.isFinite(day) ? formatDate(day) : ""].filter(Boolean).join(" · ")).catch(() => setPrintFailed(true));
+        }}><PrinterIcon />{i18n.t("briefings:print")}</DropdownMenuItem>
+        <DropdownMenuItem data-answer-markdown onSelect={() => { void copy(answerMarkdown(message)); }}><FileTextIcon />{t("chatMessageCard.copyMarkdown")}</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu> : null}
     {copyState === "failed" ? <span role="alert">{t("chatMessageCard.couldNotCopySelectTheAnswerToCopyIt")}</span> : null}
+    {printFailed ? <span role="alert">{i18n.t("briefings:printFailed")}</span> : null}
   </div> : null;
-  const writingFeedback = view.footer.kind === "live" && message.status === "streaming" && Boolean(message.content.trim());
-  const feedback = (settled?.feedback || writingFeedback) && onSaveFeedback && onTeachFeedback ? <AnswerFeedback bridge={bridge} loupistId={loupistId} chatId={chatId} message={message} threadRunning={feedbackHeld} onSave={onSaveFeedback} onTeach={onTeachFeedback} /> : null;
   const modelNote = note ? <p className="message-model-note">{note}</p> : null;
   const runState = settled?.runState ? (
     // A failure is a bordered block with its actions; a stop is the user's own doing: one quiet line.
@@ -556,7 +571,7 @@ function ChatMessageCardComponent({
       <article ref={article} data-message-id={message.id} data-latest={latest || undefined} data-entering={entering || undefined} data-turn-message="" data-bot-message=""
         className={`message ${message.role} ${message.status ?? ""}`}>
         {/* The face opens what the Loupist did for this answer; it turns while the reply runs. */}
-        <button type="button" className="bot-face" aria-label={t("bot.openActivity")} title={t("bot.openActivity")} onClick={openActivity}>
+        <button type="button" className="bot-face" data-print="omit" aria-label={t("bot.openActivity")} title={t("bot.openActivity")} onClick={openActivity}>
           <LoupistAvatar loupist={surface.loupist} size={32} busy={view.footer.kind === "live"} />
         </button>
         <div className="bot-col" ref={blocks}>
@@ -573,12 +588,10 @@ function ChatMessageCardComponent({
               <AnswerTrace figures={checks.length - toCheck} sources={settled.sources.length} toCheck={toCheck}
                 onOpen={() => openActivitySheet({ messageId: message.id, tab: "sources" })} message={message} />
               {copyAction}
-              {feedback}
               {modelNote}
               {memoryRow}
             </> : null}
           </TurnFooter>
-          {writingFeedback && feedback}
           {asOfNote}
           {nextSteps}
         </div>
@@ -631,12 +644,10 @@ function ChatMessageCardComponent({
           ) : null}
           {memoryRow}
           {copyAction}
-          {feedback}
           {modelNote}
           {runState}
         </> : null}
       </TurnFooter> : null}
-      {writingFeedback && feedback}
       {asOfNote}
       {nextSteps}
       {message.role === "user" && (onEditUser || onEarlierVersion || onLaterVersion) ? <div className="message-actions message-action-bar">
@@ -693,7 +704,7 @@ function TurnCard({ block, render }: { block: ChartBlock | undefined; render: (b
 /** The outline and details triggers arrive at commit; the meta row already has their height. */
 function LateTrigger({ children }: { children: ReactNode }) {
   const arrived = useArrived();
-  return <span className="message-meta-late" data-enter={arrived || undefined}>{children}</span>;
+  return <span className="message-meta-late" data-print="omit" data-enter={arrived || undefined}>{children}</span>;
 }
 
 /** Re-renders when the host has been silent for 15 s ("Still working"), not every second. */

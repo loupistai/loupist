@@ -715,7 +715,9 @@ pub(crate) fn connection_off() -> BrokerError {
 fn is_offline(error: &BrokerError) -> bool {
     match error {
         BrokerError::Offline(_) => true,
-        BrokerError::WithNext { source, .. } => is_offline(source),
+        BrokerError::WithNext { source, .. } | BrokerError::WithReason { source, .. } => {
+            is_offline(source)
+        }
         _ => false,
     }
 }
@@ -773,9 +775,11 @@ fn clone_error(error: &BrokerError) -> BrokerError {
             source: Box::new(clone_error(source)),
             next: next.clone(),
         },
+        WithReason { source, reason } => clone_error(source).with_reason(reason.clone()),
         Authentication => Authentication,
         FrameTooLarge => FrameTooLarge,
         Execution(message) => Execution(message.clone()),
+        PythonWorkerBusy => PythonWorkerBusy,
         EmptyResult => EmptyResult,
         ResultTooLarge { bytes, limit_bytes } => ResultTooLarge {
             bytes: *bytes,
@@ -802,6 +806,10 @@ fn clone_error(error: &BrokerError) -> BrokerError {
             limit: *limit,
         },
         ArtifactLimit { limit } => ArtifactLimit { limit: *limit },
+        FigureDiffers { field, figures } => FigureDiffers {
+            field: field.clone(),
+            figures: figures.clone(),
+        },
     }
 }
 

@@ -1,7 +1,7 @@
 //! World extraction and World graph retrieval in Rust.
 //!
 //! This replaces the Python Graphiti worker and its Neo4j index with the same
-//! stages, prompts (vendored from graphiti-core 0.30.1 under Apache-2.0, see
+//! stages, prompts (adapted from graphiti-core 0.30.1 under Apache-2.0, see
 //! `prompts/NOTICE`), response schemas and model path. The derived index
 //! lives in the Loupist's database beside the canonical World it is built from.
 //!
@@ -28,7 +28,11 @@ use super::KnowledgeStore;
 
 #[cfg(test)]
 pub(crate) use job::drive_job;
-pub(crate) use job::{drive_job_with_slots, ResolutionSlot};
+#[cfg(test)]
+pub(crate) use job::drive_job_with_slots;
+pub(crate) use job::{drive_job_with_account, ResolutionSlot};
+#[cfg(feature = "eval-harness")]
+pub(crate) use prompts::eval_override::world_prompts_sha256;
 pub(crate) use text::casefold;
 
 const QUERY_LIMIT: usize = 25;

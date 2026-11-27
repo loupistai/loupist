@@ -105,7 +105,7 @@ pub(super) fn due(
     let watermark = reviewed.max(changed).unwrap_or(-1);
     let completed: i64 = connection.query_row(
         "SELECT COUNT(*) FROM knowledge_graph_outbox
-         WHERE loupist_id = ?1 AND status = 'completed'
+         WHERE loupist_id = ?1 AND status = 'completed' AND json_valid(payload_json)
            AND json_extract(payload_json, '$.episodeKind') = 'source_span'
            AND created_at_ms > ?2",
         params![loupist_id, watermark],
@@ -119,11 +119,28 @@ pub(super) fn claim(
     loupist_id: &str,
     focus: &str,
     now_ms: i64,
+    allowance: Option<&crate::scheduled_tasks::allowance::AllowanceState>,
 ) -> KnowledgeResult<Claimed> {
     if !due(tx, loupist_id, now_ms)? {
         return Ok(Claimed::Wait);
     }
     let settings = load_settings(tx, loupist_id)?;
+    if let Some(allowance) = allowance {
+        let provider = settings
+            .helper_provider
+            .as_deref()
+            .filter(|provider| !provider.is_empty());
+        if crate::scheduled_tasks::allowance::admit_world_attempt(
+            allowance,
+            crate::scheduled_tasks::allowance::WorldOrigin::Background,
+            1,
+            provider,
+        )
+        .is_err()
+        {
+            return Ok(Claimed::Wait);
+        }
+    }
     let message = review_message(
         tx,
         loupist_id,
@@ -136,8 +153,12 @@ pub(super) fn claim(
         params![loupist_id, now_ms],
     )?;
     let timeout_ms = settings.timeout_ms;
+    let review_id = super::model::mint_id("wsr");
+    if allowance.is_some() {
+        super::graph_jobs::reserve_background_call(tx, loupist_id, &review_id, 1, now_ms)?;
+    }
     Ok(Claimed::Ready(Box::new(Attempt {
-        review_id: super::model::mint_id("wsr"),
+        review_id,
         loupist_id: loupist_id.to_string(),
         settings,
         request: llm_request(
@@ -158,6 +179,7 @@ pub(super) fn finish(
 ) -> KnowledgeResult<Finish> {
     use super::graph_inference::InferenceDisposition;
     let tx = write.tx;
+    super::graph_jobs::release_background_call(tx, &attempt.review_id)?;
     let loupist_id = attempt.loupist_id.as_str();
     let ended = |status, reason| Finish {
         status,

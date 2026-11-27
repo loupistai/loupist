@@ -395,3 +395,41 @@ test('lens-pages writes the review file through the CLI without a suite', async 
   assert.equal(result.output, out);
   assert.match(await readFile(out, 'utf8'), /second#0 put facts on "Corvane Logistics": replaced[\s\S]*terminated effective 31 December 2026/u);
 });
+
+test('agree compares two judges through the CLI without a suite or a model', async (t) => {
+  const root = await directory(t);
+  const row = (index, pass, model) => ({ item_id: `item-${index}`, criterion_id: 'progress-language', scenario_id: `G-${index}`, pass, reason: 'r', model });
+  const write = async (name, rows) => {
+    const path = join(root, name);
+    await writeFile(path, `${rows.map((item) => JSON.stringify(item)).join('\n')}\n`);
+    return path;
+  };
+  const a = await write('a.jsonl', Array.from({ length: 10 }, (_, index) => row(index, true, 'claude-opus-5-5')));
+  const b = await write('b.jsonl', Array.from({ length: 10 }, (_, index) => row(index, index !== 3, 'gpt-6.2-astra')));
+  const report = await main(['agree', '--a', a, '--b', b, '--output', join(root, 'out')]);
+  assert.deepEqual(report.unreliable, []);
+  assert.deepEqual(report.disagreements.map((item) => item.item_id), ['item-3']);
+  assert.deepEqual(JSON.parse(await readFile(join(root, 'out', 'agreement.json'), 'utf8')).criteria,
+    [{ criterion_id: 'progress-language', items: 10, agreed: 9, agreement: 0.9, reliable: true, reasons: [] }]);
+  await assert.rejects(main(['agree', '--a', a]), /requires --a and --b/u);
+  await assert.rejects(main(['agree', '--a', a, '--b', b, '--suite', 'x.json']), /Unknown option --suite/u);
+});
+
+test('refusals counts without a judge and judges each pair once when a backend is named', async (t) => {
+  const root = await directory(t);
+  const catalogPath = join(root, 'catalog.json');
+  await writeFile(catalogPath, JSON.stringify({ tools: [{ name: 'ls', description: 'List a folder.', parameters: {} }] }));
+  const turn = (trial) => ({ run_id: 'run', suite: 'refusals', scenario_id: 'P-1', session_id: 'research', turn_index: 0, trial,
+    observed_model: 'gpt-6.2-sol', tool_calls: [{ name: 'ls', outcome: 'error', error_code: 'outside_workspace', error_message: 'Outside the folder.', args: {} }] });
+  const [first, second] = [join(root, 'a.jsonl'), join(root, 'b.jsonl')];
+  await writeFile(first, `${JSON.stringify(turn(0))}\n`);
+  await writeFile(second, `${JSON.stringify(turn(1))}\n`);
+  const counted = await main(['refusals', '--traces', `${first},${second}`, '--catalog', catalogPath, '--output', join(root, 'count')]);
+  assert.deepEqual([counted.first_attempt_refusals, counted.pairs.length, counted.hidden_rule_refusal], [2, 1, null]);
+  let calls = 0;
+  const backend = { model: 'claude-opus-5-5', judge: async () => { calls += 1; return { pass: false, reason: 'no path limit is stated' }; } };
+  const judged = await main(['refusals', '--traces', `${first},${second}`, '--catalog', catalogPath, '--output', join(root, 'judged')], { backend });
+  assert.deepEqual([calls, judged.hidden_rule_refusal, judged.pairs[0].stated], [1, 1, false]);
+  const rows = (await readFile(join(root, 'judged', 'refusal-judgments.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  assert.deepEqual(rows.map(({ tool, refusal_reason, pass, cache }) => [tool, refusal_reason, pass, cache]), [['ls', 'outside_workspace', false, 'miss']]);
+});

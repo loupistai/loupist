@@ -85,7 +85,7 @@ it("keeps a finished answer usable while the save waits and preserves it when th
     expect(await screen.findByRole("button", { name: "저장 건너뛰기" })).toBeEnabled();
     expect(session).toHaveAttribute("title", "메모리에 저장 중");
     await publishSaving(true);
-    await waitFor(() => expect(status).toHaveTextContent("메모리에 저장 중 · 이 루피스트의 다른 대화가 끝나기를 기다리는 중"));
+    await waitFor(() => expect(status).toHaveTextContent("메모리에 저장 중 · 이 Loupist의 다른 대화가 끝나기를 기다리는 중"));
     await publishSaving(true, "chat-blocker");
     await waitFor(() => expect(status).toHaveTextContent(`메모리에 저장 중 · ‘${title}’ 대화가 끝나기를 기다리는 중`));
   } finally {
@@ -101,8 +101,6 @@ it("keeps a finished answer usable while the save waits and preserves it when th
   const reopened = within((await screen.findByText("The final traded price was", { exact: false })).closest("article")!);
   await user.click(reopened.getByRole("button", { name: "Copy answer" }));
   expect(await navigator.clipboard.readText()).toContain("$42.10");
-  expect(reopened.getByRole("button", { name: "Helpful" })).toBeDisabled();
-  expect(reopened.getByRole("button", { name: "Helpful" })).toHaveAccessibleDescription("Available when the current reply finishes.");
   await user.click(reopened.getByText("Sources (1)"));
   expect(reopened.getByText("Annual filing")).toBeVisible();
   expect(reopened.getByRole("button", { name: "report.md" })).toBeEnabled();
@@ -121,7 +119,7 @@ it("keeps a finished answer usable while the save waits and preserves it when th
   expect(await screen.findByRole("tooltip")).toHaveTextContent("Keep the answer and skip saving it to Memory.");
   await user.click(skip);
   expect(await screen.findByText(skipWarning)).toBeVisible();
-  expect(screen.getByText("What this answer says it saved was not kept.")).toBeVisible();
+  expect(screen.getByText("Anything this answer says it saved or filed was not kept.")).toBeVisible();
   expect(screen.getByRole("list", { name: "Not kept" })).toHaveTextContent("Final trade notes");
   expect(screen.getByText("The final traded price was", { exact: false })).toBeVisible();
   expect(stop).toHaveBeenCalledExactlyOnceWith(runId);

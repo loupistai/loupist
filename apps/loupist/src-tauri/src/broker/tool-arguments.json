@@ -99,6 +99,14 @@
     }
   },
   {
+    "name": "world_changes",
+    "method": "world.changes",
+    "args": {
+      "since": "2026-01-01",
+      "axis": "recorded"
+    }
+  },
+  {
     "name": "source_save",
     "method": "source.save",
     "args": {
@@ -159,7 +167,9 @@
               "op": "put",
               "key": "facts",
               "heading": "research",
-              "markdown": "research"
+              "markdown": "research",
+              "role": "fact",
+              "asOf": "2026-04-01"
             }
           ]
         }
@@ -564,6 +574,7 @@
     "args": {
       "prompt": "Report the move.",
       "terms": "A followed price moved",
+      "when_met_summary": "Tell me which price moved",
       "template": "price-band",
       "template_params": {
         "band_percent": 5
@@ -589,7 +600,56 @@
         "at": "research"
       },
       "session_mode": "fresh",
-      "status": "active"
+      "status": "active",
+      "event_date": {
+        "date": "2027-02-11",
+        "precision": "estimated"
+      }
+    }
+  },
+  {
+    "name": "learning_program_save",
+    "method": "learning_program.save",
+    "args": {
+      "request_key": "track",
+      "title": "한국어 日本語 🙂",
+      "preset": "market",
+      "slots": {
+        "market": "Bolsa de Valores de Lisboa"
+      },
+      "schedule": {
+        "kind": "weekly",
+        "days": [1, 2, 3, 4, 5],
+        "hour": 6,
+        "minute": 30,
+        "timezone": "UTC"
+      },
+      "depth": "standard",
+      "scope": {
+        "connections": "all_enabled",
+        "web": true
+      },
+      "keeps": {
+        "sources": true,
+        "lens": true,
+        "asset_reads": false
+      },
+      "report": "when_new",
+      "delivery": {
+        "to": "bot"
+      }
+    }
+  },
+  {
+    "name": "learning_handoff",
+    "method": "learning_program.handoff",
+    "args": {
+      "request": "한국어 日本語 🙂 Keep learning about port volumes in Rotterdam and Santos.",
+      "subjects": [
+        {
+          "name": "Porto de Santos"
+        }
+      ]
     }
   },
   {

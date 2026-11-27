@@ -9,7 +9,8 @@ const catalogPath = join(here, '../../agent/tool-catalog.json');
 import { TRACE_ASSERTS, MEMORY_ASSERTS, MEMORY_KINDS, LENS_ASSERTS, lensAssertion, ANSWER_ASSERTS, answerPatterns, numberSpellings, figureSpellings, citationAssertion, sourceSpanAssertion, validDate,
   numbersLinkedAssertion, asOfLeftOutAssertion, asOfRefusedAssertion, calculateInputsAssertion, gridCellsAssertion, metricTolerance,
   toolCalledAssertion, calculationChipAssertion, skillReadAssertion, toolOrderAssertion,
-  answerLanguageAssertion, visibleLabelsAssertion, scheduledFixture } from './eval-contract.mjs';
+  answerLanguageAssertion, visibleLabelsAssertion, scheduledFixture, runnerInputContract, fileWrittenBeforeAssertion } from './eval-contract.mjs';
+import { scheduledRunAssertion, checkDryRunAssertion, progressLanguageAssertion } from './run-evidence.mjs';
 const METRICS = new Set([
   'carry_forward',
   'negative_transfer',
@@ -149,6 +150,8 @@ export function assertScenarioContract(scenario, { suite, label = suite, seenIds
     }
   }
   assert.ok(Array.isArray(scenario.sessions) && scenario.sessions.length > 0, scenario.id);
+  // Every key the runner reads, and no other: seeds, scripted World, occurrences and approvals.
+  runnerInputContract(scenario);
   const sessionIds = new Set();
   for (const session of scenario.sessions) {
     assert.equal(sessionIds.has(session.id), false, session.id);
@@ -215,7 +218,18 @@ export function assertScenarioContract(scenario, { suite, label = suite, seenIds
           } else if (item.assert === 'grid_cells_linked') {
             gridCellsAssertion(item);
           } else if (item.assert === 'scheduled_delivery') {
-            assert.ok(turn.scheduled, `${where} scheduled_delivery requires a scheduled turn`);
+            assert.ok(['briefing', 'custom'].includes(turn.scheduled?.kind), `${where} scheduled_delivery requires a briefing or custom run`);
+          } else if (item.assert === 'scheduled_run') {
+            assert.ok(['learning', 'check'].includes(turn.scheduled?.kind), `${where} scheduled_run requires a learning or check occurrence`);
+            scheduledRunAssertion(item);
+          } else if (item.assert === 'check_dry_run') {
+            const { tools, noTools } = checkDryRunAssertion(item);
+            for (const tool of [...tools, ...noTools]) assert.ok(toolNames.has(tool), `${where} unknown tool ${tool}`);
+          } else if (item.assert === 'file_written_before') {
+            for (const tool of fileWrittenBeforeAssertion(item).before) assert.ok(toolNames.has(tool), `${where} unknown tool ${tool}`);
+          } else if (item.assert === 'progress_language') {
+            answerLanguageAssertion(item);
+            progressLanguageAssertion(item);
           } else if (item.assert === 'skill_read') {
             skillReadAssertion(item);
           }

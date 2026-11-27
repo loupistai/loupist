@@ -1,4 +1,4 @@
-import type { DeliveryRequest, FromPresetRequest, ProposalDeclineRequest, ProposalVisitRequest, TriggerReviewRequest, TriggerDryRun, TriggerEvaluation, TriggerGetRequest, TriggerRevertRequest, TriggerView } from "../../contracts/generated";
+import type { DeliveryRequest, PresetCommand, ProposalDeclineRequest, ProposalVisitRequest, RunNowRequest, TriggerReviewRequest, TriggerDryRun, TriggerEvaluation, TriggerGetRequest, TriggerRevertRequest, TriggerView } from "../../contracts/generated";
 import type {
   BriefingSettings, BriefingSettingsRequest, InboxRequest, InboxPage, InboxItem,
   ChatSendRequest, ChatStreamEvent, ScheduledCadence, ScheduledRun, ScheduledTask, ScheduledTaskListItem,
@@ -6,6 +6,22 @@ import type {
 } from "../../types";
 import { clone, makeId, type MockBridgeState } from "./state";
 import { chatCreate, ensureHomeThread } from "./loupistChat";
+import { commandError } from "./commandError";
+import { recordedMessageUndo } from "./knowledge";
+import type { MockAssets } from "./assets";
+import assetDailyPreset from "../../../agent/learning-presets/asset-daily.json";
+import themePreset from "../../../agent/learning-presets/theme.json";
+import companyFilingsPreset from "../../../agent/learning-presets/company-filings.json";
+import macroSeriesPreset from "../../../agent/learning-presets/macro-series.json";
+import questionPreset from "../../../agent/learning-presets/question.json";
+import marketPreset from "../../../agent/learning-presets/market.json";
+
+/** The bundled learning presets the preview serves, as the host does. */
+const LEARNING_PRESETS = {
+  "asset-daily": assetDailyPreset, theme: themePreset, "company-filings": companyFilingsPreset,
+  "macro-series": macroSeriesPreset, question: questionPreset, market: marketPreset,
+} as const;
+type LearningPresetFile = (typeof LEARNING_PRESETS)[keyof typeof LEARNING_PRESETS];
 
 function preview(schedule: ScheduledCadence): number | null {
   const now = Date.now();
@@ -30,7 +46,7 @@ export class MockScheduledTasks {
   /** Sessions runs made, as Rust's `scheduled-chat-` prefix marks them. */
   private made = new Set<string>();
 
-  constructor(private state: MockBridgeState, private changed: (loupistId: string) => void = () => {}) {}
+  constructor(private state: MockBridgeState, private assets: MockAssets, private changed: (loupistId: string) => void = () => {}) {}
 
   async briefingSettingsGet({ loupistId, edition }: { loupistId: string; edition?: "morning" | "evening" | null }): Promise<BriefingSettings> {
     if (!this.state.loupists.some(loupist => loupist.id === loupistId)) throw new Error("Loupist not found.");
@@ -67,7 +83,10 @@ export class MockScheduledTasks {
     const start = cursor ? runs.findIndex(run => run.run_id === cursor) + 1 : 0;
     if (cursor && start === 0) throw new Error("Inbox cursor not found.");
     const page = runs.slice(start, start + limit);
-    const items: InboxItem[] = page.map(run => ({ briefingContext: run.briefing_context, error: run.error, runId: run.run_id, taskId: run.task_id, kind: run.kind, title: run.task_title, status: run.status, summary: run.summary, startedAtMs: run.started_at_ms, finishedAtMs: run.finished_at_ms ?? null, readAtMs: run.read_at_ms, threadId: run.thread_id, messageId: run.message_id, skippedTools: run.skipped_tools }));
+    const items: InboxItem[] = page.map(run => {
+      const undo = recordedMessageUndo(this.state, run.message_id);
+      return { briefingContext: run.briefing_context, error: run.error, runId: run.run_id, taskId: run.task_id, kind: run.kind, title: run.task_title, status: run.status, summary: run.summary, startedAtMs: run.started_at_ms, finishedAtMs: run.finished_at_ms ?? null, readAtMs: run.read_at_ms, threadId: run.thread_id, messageId: run.message_id, skippedTools: run.skipped_tools, ...(undo ? { undo } : {}) };
+    });
     return clone({ items, nextCursor: page.length === limit ? page.at(-1)!.run_id : null });
   }
   async inboxMarkRead({ loupistId, runIds }: { loupistId: string; runIds: string[] }) {
@@ -79,6 +98,11 @@ export class MockScheduledTasks {
     return this.state.loupists.map(loupist => ({ loupistId: loupist.id, count: [...this.runs.values()].filter(run => run.loupist_id === loupist.id && run.status !== "running" && !(run.quiet && run.status === "succeeded") && run.read_at_ms === null).length }));
   }
 
+  private withUndo(run: ScheduledRun | undefined): ScheduledRun | null {
+    if (!run) return null;
+    const undo = recordedMessageUndo(this.state, run.message_id);
+    return undo ? { ...run, undo } : run.undo ? { ...run, undo: undefined } : run;
+  }
   private task(request: ScheduledTaskIdentity) {
     const task = this.tasks.get(request.task_id);
     if (!task || task.loupist_id !== request.loupist_id) throw new Error("Scheduled task not found.");
@@ -89,7 +113,7 @@ export class MockScheduledTasks {
     for (const run of this.runs.values()) {
       if (run.loupist_id === loupist_id && (!latest.has(run.task_id) || latest.get(run.task_id)!.started_at_ms <= run.started_at_ms)) latest.set(run.task_id, run);
     }
-    return clone([...this.tasks.values()].filter((task) => task.loupist_id === loupist_id).map((task) => ({ ...task, latest_run: latest.get(task.id) ?? null })));
+    return clone([...this.tasks.values()].filter((task) => task.loupist_id === loupist_id).map((task) => ({ ...task, latest_run: this.withUndo(latest.get(task.id)) })));
   }
   private async create(request: ScheduledTaskCreateRequest) {
     const now = Date.now();
@@ -141,8 +165,11 @@ export class MockScheduledTasks {
     this.tasks.delete(task.id);
     this.changed(task.loupist_id);
   }
-  async fromPreset(request: FromPresetRequest) {
-    const subjects = request.subjects ?? [];
+  async fromPreset(request: PresetCommand) {
+    if (request.subjects && request.subject && JSON.stringify(request.subjects) !== JSON.stringify([request.subject])) {
+      throw new Error("Use either subject or subjects.");
+    }
+    const subjects = request.subjects ?? (request.subject ? [request.subject] : []);
     const existing = [...this.tasks.values()].find(task => task.loupist_id === request.loupistId &&
       task.preset === request.preset && JSON.stringify(task.subjects) === JSON.stringify(subjects));
     if (existing) return clone(existing);
@@ -152,22 +179,32 @@ export class MockScheduledTasks {
       "results-follow-up": { title: "Results follow-up", days: [], hour: 8, minute: 0 },
       "price-move": { title: "Price moves", days: [], hour: 0, minute: 0 },
       "week-in-review": { title: "Week in review", days: [5], hour: 16, minute: 0 },
+      "fact-changes": { title: "Fact changes", days: [], hour: 0, minute: 0 },
     };
-    const { title, days, hour, minute } = rows[request.preset];
-    if (request.preset === "price-move") {
+    if (request.preset in LEARNING_PRESETS) {
+      return this.learningPreset(request, LEARNING_PRESETS[request.preset as keyof typeof LEARNING_PRESETS], subjects);
+    }
+    if (request.slots && Object.keys(request.slots).length) throw commandError("preset_slot", "This preset has no slot of that name.");
+    const { title, days, hour, minute } = rows[request.preset as keyof typeof rows];
+    if (request.preset === "price-move" || request.preset === "fact-changes") {
+      const check = request.preset === "fact-changes";
       const task = await this.create({
-        loupist_id: request.loupistId, title, prompt: "Report the move.", schedule: { kind: "interval", every_minutes: 15 }, status: "paused",
+        loupist_id: request.loupistId, title, prompt: check ? "Report the fact." : "Report the move.",
+        schedule: { kind: "interval", every_minutes: check ? 60 : 15 }, status: "paused",
         target: { kind: "new_chat" }, model_profile_id: "", thinking_level: "", run_options: {}, use_memory: true, update_memory: false,
       });
       const saved = this.tasks.get(task.id)!;
+      const summary = check ? "A fact about the asset changed" : "A move of more than 5% from one close to the next";
       Object.assign(saved, {
-        preset: request.preset, subjects, report: "every_run", terms: "A move of more than 5% from one close to the next", awaiting_confirmation: true,
+        preset: request.preset, subjects, report: "every_run", terms: summary, awaiting_confirmation: true,
         trigger: {
-          script: { name: "price-band", version: 1, sha256: "ab".repeat(32) }, summary: "A move of more than 5% from one close to the next",
-          tools: [{ name: "price" }, { name: "followed" }], args: { band_percent: 5 }, state: "proposed", script_state: {},
+          script: { name: check ? "world-change" : "price-band", version: 1, sha256: "ab".repeat(32) }, summary,
+          when_met_summary: check ? "schedule.preset.factChanges.whenMet" : "schedule.preset.priceMove.whenMet",
+          tools: check ? [{ name: "world_changes" }, { name: "followed" }] : [{ name: "price" }, { name: "followed" }],
+          args: check ? {} : { band_percent: 5 }, state: "proposed", script_state: {},
           evaluations: [], counters: { today: { day: "", evaluations: 0, reads: 0, met: 0 }, recent: [], agent_runs_today: 0, error_streak: 0, no_data_streak: 0, backoff_ms: 0, reads_blocked: false },
           approved_versions: [], stale_after_days: 5, reads_per_check: 1,
-          proposal_test: { today_met: false, today_reading: "No asset beyond the band", today_outcome: "not_met", fired_on: ["2026-11-12"], replayed: 18, unreplayed: 2, days: [{ date: "2026-11-12", outcome: "met", reading: "Northwind +6.1%" }], reads: 4 },
+          proposal_test: { today_met: false, today_reading: check ? "No new fact" : "No asset beyond the band", today_outcome: "not_met", fired_on: ["2026-11-12"], replayed: 18, unreplayed: 2, days: [{ date: "2026-11-12", outcome: "met", reading: "Northwind +6.1%" }], reads: 4 },
         },
       });
       this.changed(task.loupist_id);
@@ -186,6 +223,48 @@ export class MockScheduledTasks {
       terms: title,
     });
     this.changed(task.loupist_id);
+    return clone(this.tasks.get(task.id)!);
+  }
+  private async learningPreset(request: PresetCommand, preset: LearningPresetFile, subjects: NonNullable<ScheduledTask["subjects"]>) {
+    if (request.params?.results_date != null) throw new Error("Only a results follow-up takes a results date.");
+    const slots = request.slots ?? {};
+    const declared = Object.keys(preset.slots);
+    const unknown = Object.keys(slots).find(name => !declared.includes(name));
+    if (unknown) throw commandError("preset_slot", "This preset has no slot of that name.", { preset: preset.id, slot: unknown, reason: "unknown" });
+    const missing = declared.find(name => !slots[name]?.trim());
+    if (missing) throw commandError("preset_slot", "This preset needs a value for the slot.", { preset: preset.id, slot: missing, reason: "missing" });
+    const values: Record<string, string> = Object.fromEntries(declared.map(name => [name, slots[name]!.trim()]));
+    let programSubjects = subjects;
+    if (preset.subject_kind === "asset") {
+      const [subject] = subjects;
+      if (subjects.length !== 1 || !("asset" in subject)) throw new Error("This learning preset needs one asset subject.");
+      const asset = (await this.assets.assetsList(request)).find(row => row.assetId === subject.asset && row.followedAtMs != null);
+      if (!asset) throw new Error("This learning preset needs a followed asset.");
+      Object.assign(values, { asset: asset.name, name: asset.name, reference: asset.assetId });
+    } else {
+      if (subjects.length) throw new Error("This learning preset takes its subject from its slots.");
+      const slot = "subject_slot" in preset ? preset.subject_slot : undefined;
+      programSubjects = slot ? [{ name: values[slot] }] : [];
+    }
+    const fill = (text: string) => text.replace(/\{(\w+)\}/g, (_, name: string) => values[name] ?? "");
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const existing = [...this.tasks.values()].find(task => task.loupist_id === request.loupistId && task.program?.preset === preset.id &&
+      JSON.stringify(task.subjects) === JSON.stringify(programSubjects) && task.title === fill(preset.title));
+    if (existing) return clone(existing);
+    const schedule: ScheduledCadence = preset.schedule.kind === "daily"
+      ? { kind: "daily", hour: preset.schedule.hour, minute: preset.schedule.minute, timezone }
+      : { kind: "weekly", days: [...(preset.schedule as { days: number[] }).days], hour: preset.schedule.hour, minute: preset.schedule.minute, timezone };
+    const task = await this.create({
+      loupist_id: request.loupistId, title: fill(preset.title), prompt: fill(preset.brief), schedule, status: "active",
+      target: { kind: "new_chat" }, model_profile_id: "", thinking_level: "", run_options: {}, use_memory: true, update_memory: true,
+    });
+    Object.assign(this.tasks.get(task.id)!, {
+      kind: "learning", preset: preset.id === "asset-daily" ? "asset-daily" : undefined, subjects: programSubjects,
+      report: preset.report as ScheduledTask["report"], delivery: { to: preset.delivery.to as "bot" | "briefing" | "none" },
+      program: { ...preset.program, preset: preset.id } as NonNullable<ScheduledTask["program"]>,
+      budget: { soft: 20, hard: 26 },
+    } satisfies Partial<ScheduledTask>);
+    this.changed(request.loupistId);
     return clone(this.tasks.get(task.id)!);
   }
   async triggerGet(request: TriggerGetRequest): Promise<TriggerView> {
@@ -308,7 +387,7 @@ export class MockScheduledTasks {
   }
   async taskRuns(request: ScheduledTaskIdentity) {
     this.task(request);
-    return clone([...this.runs.values()].filter((run) => run.task_id === request.task_id).sort((a, b) => b.started_at_ms - a.started_at_ms));
+    return clone([...this.runs.values()].filter((run) => run.task_id === request.task_id).sort((a, b) => b.started_at_ms - a.started_at_ms).map((run) => this.withUndo(run)!));
   }
   /** Mirrors Rust: a finished run posts one short message into the home Thread. */
   deliver(run: ScheduledRun) {
@@ -328,10 +407,16 @@ export class MockScheduledTasks {
     return (await this.list({ loupist_id })).flatMap((task) => task.latest_run ? [task.latest_run] : []);
   }
 
-  async runNow(request: ScheduledTaskIdentity, send: (request: ChatSendRequest, observer: StreamObserver<ChatStreamEvent>) => Promise<{ run_id: string }>) {
+  learningRunning() {
+    return [...this.runs.values()].some(run => run.kind === "learning" && run.status === "running");
+  }
+
+  async runNow(request: RunNowRequest, send: (request: ChatSendRequest, observer: StreamObserver<ChatStreamEvent>) => Promise<{ run_id: string }>) {
     const task = this.task(request);
     if (task.awaiting_confirmation) throw new Error("This scheduled task is waiting for approval.");
+    if (task.kind === "learning" && this.learningRunning()) throw commandError("conflict", "A learning program is already running");
     if ([...this.runs.values()].some((run) => run.task_id === task.id && run.status === "running")) throw new Error("This task is already running.");
+    if (task.hold && !request.confirm) throw commandError("conflict", "Run now needs confirmation because background work is held.", { action: "ask_first", hold: task.hold });
     const thread = task.target.kind === "new_chat" || (task.target.kind === "dedicated_chat" && !task.session_thread_id)
       ? await chatCreate(this.state, { loupist_id: task.loupist_id, title: task.title })
       : this.state.threads[task.loupist_id]?.find((item) => item.id === (task.target.kind === "existing_chat" ? task.target.thread_id : task.session_thread_id));
@@ -347,6 +432,7 @@ export class MockScheduledTasks {
     this.release(task.loupist_id, pruned.map((old) => old.thread_id));
     this.events.set(run.run_id, []);
     task.last_run_at_ms = now;
+    task.hold = undefined;
     task.updated_at_ms = now;
     try {
       await send({ run_id: run.run_id, loupist_id: task.loupist_id, thread_id: thread.id, prompt: task.prompt, use_memory: task.use_memory, update_memory: task.update_memory, model_profile_id: task.model_profile_id, thinking_level: task.thinking_level, run_options: task.run_options, attachments: [] }, (event) => {

@@ -208,8 +208,8 @@ The financial and data workflow cards adapt the reviewed revisions recorded in
 | microsoft/qlib | `54355232463878d2eebb91fe0ee5fa7fa1f5976c` | MIT |
 
 That notice identifies the adapted files, local changes, copyright notices and
-retained license texts. Document workflows and the dividend income, fund
-comparison, why-it-moved, goal math and Korean statements guides are original
+retained license texts. Document workflows and the deep research, dividend income,
+fund comparison, why-it-moved, goal math and Korean statements guides are original
 Loupist instructions. Anthropic’s restricted document Skills are not bundled.
 Skill Creator and Skill Installer adapt OpenAI’s public Apache-2.0 workflows;
 their license texts are retained in the corresponding local skill folders.

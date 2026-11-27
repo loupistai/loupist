@@ -41,6 +41,15 @@ Source synthesis runs when the Loupist opens and after a short burst of
 follows. Unfollowing leaves earlier Sources. Re-following an asset that
 appears in an earlier Source adds no duplicate Source.
 
+Following's Ahead view (`FollowingAhead`) lists, for the next 60 days and overdue
+first, each active results follow-up's run and each open dated Journal check, then
+the newest briefing's Looking ahead rows, each marked "From the briefing of {date}". A
+check both list once; an undated check from the briefing goes under No date; a check
+resolved, archived or deleted since the briefing stays out. Without a briefing the
+view is as before. A follow-up that stores its results' day (`event`) also shows
+"Results {date}" on that day, or "Results expected around {date}" when the day is only
+estimated, beside its run row.
+
 ## Following search
 
 Following is a search field and the selected Loupist's followed assets (`assets_list`), in one column under

@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 import os
 import pathlib
 import queue
@@ -83,15 +84,74 @@ def receive_requests():
     requests.put(None)
 
 
-def finish_answer():
+def finish_answer(text=answer):
     global entries
-    message = {"role": "assistant", "stopReason": "stop", "content": [{"type": "text", "text": answer}]}
+    message = {"role": "assistant", "stopReason": "stop", "content": [{"type": "text", "text": text}]}
     entries = [{"id": "assistant-answer", "type": "message", "message": message}]
     session_file.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n")
     emit({"type": "message_start", "message": {"role": "assistant"}})
-    emit({"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "delta": answer}})
+    emit({"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "delta": text}})
     emit({"type": "message_end", "message": message})
     emit({"type": "agent_settled"})
+
+
+def fixture_tool(call_id, method, params):
+    name = method.replace(".", "_")
+    message = {"role": "assistant", "stopReason": "toolUse", "content": [
+        {"type": "toolCall", "id": call_id, "name": name, "arguments": params}
+    ]}
+    # A scheduled run admits the broker request only after the host observes
+    # this call ID in the assistant round.
+    emit({"type": "message_start", "message": {"role": "assistant"}})
+    emit({"type": "message_end", "message": message})
+    emit({"type": "tool_execution_start", "toolCallId": call_id, "toolName": name, "args": params})
+    reply = broker_call(call_id, method, params)
+    emit({"type": "tool_execution_end", "toolCallId": call_id, "toolName": name,
+          "isError": not reply["ok"], "result": reply.get("result", reply.get("error"))})
+    if reply.get("error") or not isinstance(reply.get("result"), dict):
+        raise RuntimeError(f"{method} failed: {reply}")
+    return reply["result"]
+
+
+def release_learning_reply(surface, envelope):
+    if surface == "bot":
+        day = (datetime.now(timezone.utc).weekday() + 3) % 7
+        fixture_tool("release-program", "learning_program.save", {
+            "request_key": "release-learning",
+            "title": "Lamppost supply review",
+            "prompt": "Review the saved Lamppost supply agreement.",
+            "schedule": {"kind": "weekly", "days": [day], "hour": 12, "minute": 0, "timezone": "UTC"},
+            "depth": "light",
+            "scope": {"connections": [], "web": False},
+            "keeps": {"sources": False, "lens": True, "asset_reads": False},
+            "report": "every_run",
+            "delivery": {"to": "briefing"},
+        })
+        finish_answer("I proposed the Lamppost supply review.")
+    elif surface == "scheduled":
+        subjects = envelope["learning"]["program"]["subjects"]
+        if any("asset" in subject for subject in subjects):
+            finish_answer("I found no new evidence in the saved asset material.")
+            return
+        feed = fixture_tool("release-changes", "world.changes", {
+            "since": "1970-01-01", "kinds": ["ended"],
+        })
+        claim = next(row for row in feed["changes"] if row["claimId"] == "fixture-supply-ended")
+        fixture_tool("release-file", "lens.file", {
+            "rationale": "Keep the ended supply agreement with its retained evidence.",
+            "pages": [{
+                "page": {"create": {"kind": "subject", "title": "Lamppost Test Works learning notes"}},
+                "ops": [
+                    {"op": "summary", "text": "The supply agreement ended."},
+                    {"op": "put", "key": "supply-review", "heading": "Supply review",
+                     "markdown": "The harbor supply agreement has ended.",
+                     "basis": {"refs": [{"world": feed["readRef"], "claimId": claim["claimId"]}]}},
+                ],
+            }],
+        })
+        finish_answer("I filed the ended supply agreement in Lens.")
+    else:
+        raise RuntimeError("Unexpected surface for the scripted learning reply")
 
 
 threading.Thread(target=receive_requests, daemon=True).start()
@@ -141,6 +201,9 @@ while True:
         prompt = request.get("message", "")
         envelope = json.loads(prompt.split("<turn_envelope>\n", 1)[1].split("\n</turn_envelope>", 1)[0])
         surface = envelope["chat_surface"]["surface"]
+        if argument("--model") == "loupist-e2e-release-learning":
+            release_learning_reply(surface, envelope)
+            continue
         if surface != "bot" and (options.get("slow") or argument("--model") == "loupist-e2e-link-research"):
             step = 0
             next_step = time.monotonic() + 0.1

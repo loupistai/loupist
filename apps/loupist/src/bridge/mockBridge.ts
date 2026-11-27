@@ -1,4 +1,4 @@
-import type { DeliveryRequest, FromPresetRequest, ResidentRequest, TemplatesRequest, BotFocusRequest, ProposalDeclineRequest, ProposalVisitRequest } from "../contracts/generated";
+import type { DeliveryRequest, LearningProgramUndoAllRequest, LearningProgramUpdateRequest, PresetCommand, ResidentRequest, RunNowRequest, TemplatesRequest, BotFocusRequest, ProposalDeclineRequest, ProposalVisitRequest } from "../contracts/generated";
 import { MockLegacyHoldings } from "./mock/legacyHoldings";
 import type { AttentionItem, AttentionNotifyRequest } from "../contracts/attention";
 import { CURRENT_NOTICE_VERSION } from "./notice";
@@ -26,11 +26,16 @@ import * as knowledge from "./mock/knowledge";
 import { curatedSeedView, MockWorldSchema } from "./mock/worldSchema";
 import { createMockBridgeState, type MockBridgeState } from "./mock/state";
 import { MockScheduledTasks } from "./mock/scheduled";
+import * as learningPrograms from "./mock/learningPrograms";
 import { MockConfig, type MockExtensionFlags } from "./mock/config";
 import worldDefaults from "../../world-model-defaults.json";
 import { defaultRunOptions } from "../lib/modelSelection";
 import { executionModelLock, initialModelCatalog, listProviderModels, mockModelSelection, mockProviderStatus, type MockModelIdentity } from "./mock/models";
 import { commandError } from "./mock/commandError";
+
+/** The host's lowest learning allowance above 0 (a light update's hard budget) and its program cap. */
+const MOCK_LEARNING_MINIMUM = 26;
+const MOCK_LEARNING_CAP = 50;
 import { mockUsageSummary } from "./mock/usage";
 
 /** The bundled Skills' own files, loaded on demand when a detail opens. */
@@ -209,6 +214,15 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   }
   async configUpdate(request: Contract.ConfigUpdateRequest) {
     const scope = request.scope;
+    // The host's learning limits (`scheduled_tasks::learning::check_settings`).
+    const requests = request.set.learning_daily_requests;
+    if (requests !== undefined && requests > 0 && requests < MOCK_LEARNING_MINIMUM) {
+      throw commandError("invalid_configuration", `learning_daily_requests must be zero or at least ${MOCK_LEARNING_MINIMUM}, not ${requests}`, { reason: "below_learning_update", minimum: MOCK_LEARNING_MINIMUM });
+    }
+    const cap = request.set.learning_program_cap;
+    if (cap !== undefined && (cap < 1 || cap > MOCK_LEARNING_CAP)) {
+      throw commandError("invalid_configuration", `learning_program_cap must be between 1 and ${MOCK_LEARNING_CAP}, not ${cap}`, { reason: "learning_program_cap", minimum: 1, maximum: MOCK_LEARNING_CAP });
+    }
     const workspace = scope.kind === "project" ? this.state.loupists.find((loupist) => loupist.id === scope.loupistId)?.workspace_path : undefined;
     if (scope.kind === "project" && !workspace) throw new Error("Loupist not found.");
     const previousCurrency = this.configuration.read(scope, workspace).effective.appearance.display_currency;
@@ -273,7 +287,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   scheduledTaskDelete(request: Contract.ScheduledTaskIdentity & { expected_revision: number }) { return this.scheduled.delete(request); }
   scheduledTaskRuns(request: Contract.ScheduledTaskIdentity) { return this.scheduled.taskRuns(request); }
   scheduledTaskSetDelivery(request: DeliveryRequest) { return this.scheduled.setDelivery(request); }
-  async scheduledTaskFromPreset(request: FromPresetRequest) {
+  async scheduledTaskFromPreset(request: PresetCommand) {
     const task = await this.scheduled.fromPreset(request);
     if (task.status === "active" && task.schedule.kind !== "once" && task.last_run_at_ms === null && !task.trigger) {
       await this.scheduledTaskRunNow({ loupist_id: task.loupist_id, task_id: task.id });
@@ -283,7 +297,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   async notificationPermissionSettingsOpen() {}
   async notificationBotFocusSet(_request: BotFocusRequest) {}
   async notificationTemplatesSet(_request: TemplatesRequest) {}
-  scheduledTaskRunNow(request: Contract.ScheduledTaskIdentity) { return this.scheduled.runNow(request, (input, observer) => this.chatSend(input, observer)); }
+  scheduledTaskRunNow(request: RunNowRequest) { return this.scheduled.runNow(request, (input, observer) => this.chatSend(input, observer)); }
   /** Preview and test helper: a task the Loupist proposed in conversation, waiting for the user's OK. */
   proposeScheduledTask(request: Contract.ScheduledTaskCreateRequest) { return this.scheduled.propose(request); }
   /** Preview and test helper: a task Rust created by itself (the results task) and its runs. */
@@ -300,6 +314,8 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   scheduledTaskDiscard(request: Contract.ScheduledTaskIdentity) { return this.scheduled.discard(request); }
   scheduledTasksActivity(request: { loupist_id: string }) { return this.scheduled.activity(request); }
   scheduledTaskWatch(request: Contract.ScheduledRunIdentity, observer: Contract.StreamObserver<Contract.ChatStreamEvent>) { return this.scheduled.watch(request, observer); }
+  learningProgramUpdate(request: LearningProgramUpdateRequest) { return learningPrograms.learningProgramUpdate(this.scheduled, request); }
+  learningProgramUndoAll(request: LearningProgramUndoAllRequest) { return learningPrograms.learningProgramUndoAll(this.state, this.scheduled, request); }
   private readonly state: MockBridgeState;
   private readonly composerModels = new Map<string, Map<string, ComposerModelSelection>>();
   private lastComposerModel: ComposerModelSelection | null = null;
@@ -326,7 +342,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     this.configuration = new MockConfig(this.extensionFlags);
     this.noticeVersion = notice_acknowledged_version ?? CURRENT_NOTICE_VERSION;
     this.state = createMockBridgeState(delay_ms ?? 110);
-    this.scheduled = new MockScheduledTasks(this.state, loupistId => { for (const handler of this.inboxListeners) handler({ loupistId }); });
+    this.scheduled = new MockScheduledTasks(this.state, this.assets, loupistId => { for (const handler of this.inboxListeners) handler({ loupistId }); });
   }
 
   /** Adjusts pacing of future mock stream chunks; use pauseChatStreams for lifecycle control. */
@@ -367,6 +383,10 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
 
   private executionModelLock(model_profile_id: string, thinking_level: string, run_options: Record<string, string>) {
     return executionModelLock(this.modelCatalog, model_profile_id, thinking_level, run_options);
+  }
+
+  async providerQuotaRead(_provider: string) {
+    return null;
   }
 
   async providerModels(provider: string): Promise<Contract.ModelCatalog> {
@@ -477,13 +497,13 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
 
   async providerOpenUsage(_request: { provider: string }) {}
   async usageSummary(request: Parameters<Contract.LoupistBridge["usageSummary"]>[0]) {
-    return mockUsageSummary(request, (await this.loupistList())[0]);
+    return mockUsageSummary(request, (await this.loupistList())[0], this.scheduled.learningRunning());
   }
   async botMemoryList(_request: Parameters<Contract.LoupistBridge["botMemoryList"]>[0]) {
     return [];
   }
   async botMemoryForget(request: Parameters<Contract.LoupistBridge["botMemoryForget"]>[0]) {
-    return this.botMemoryList(request);
+    return { entries: await this.botMemoryList(request), principles: [] };
   }
   async botMemoryUpdate(request: Parameters<Contract.LoupistBridge["botMemoryUpdate"]>[0]) {
     return this.botMemoryList(request);
@@ -1233,6 +1253,14 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
     return knowledge.knowledgeWorldQuery(this.state, request);
   }
 
+  knowledgeWorldChanges(request: Contract.WorldChangesRequest) {
+    return knowledge.knowledgeWorldChanges(this.state, request);
+  }
+
+  knowledgeWorldClaimHistory(request: Contract.ClaimHistoryRequest) {
+    return knowledge.knowledgeWorldClaimHistory(request);
+  }
+
   knowledgeMap(request: Contract.KnowledgeMapQuery) {
     return knowledge.knowledgeMap(this.state, request);
   }
@@ -1258,6 +1286,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
 
   learningReviewList(request: import("../contracts/knowledge").LearningReviewQuery) { return knowledge.learningReviewList(this.state, request); }
   memoryLearningSettingsGet(request: { loupistId: string }) { return knowledge.memoryLearningSettingsGet(this.state, request); }
+  knowledgeLearningState(request: { loupistId: string }) { return knowledge.knowledgeLearningState(this.state, request); }
   memoryLearningSettingsSet(request: { loupistId: string; learnMethods: boolean }) { return knowledge.memoryLearningSettingsSet(this.state, request); }
   onLearningReviewFinished(_handler: (event: import("../contracts/knowledge").LearningReviewFinishedEvent) => void): () => void { return () => {}; }
   async worldSchemaGet(request: { loupistId: string }) { return this.loupistWorldSchema.get(request.loupistId); }
@@ -1290,7 +1319,7 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
   }
 
   knowledgeLensRead(request: Contract.KnowledgeLensReadRequest) {
-    return knowledge.knowledgeLensRead(this.state, request);
+    return knowledge.knowledgeLensRead(this.state, request).then(page => learningPrograms.withLearnedMarks(this.state, this.scheduled, request.loupistId, page));
   }
 
   private workingNotes = new Map<string, Contract.WorkingNote[]>();
@@ -1327,6 +1356,10 @@ export class MockLoupistBridge implements Contract.LoupistBridge {
 
   memoryOpUndo(request: { loupistId: string; opId: string }) {
     return knowledge.memoryOpUndo(this.state, request);
+  }
+
+  memoryMessageUndo(request: { loupistId: string; messageId: string }) {
+    return knowledge.memoryMessageUndo(this.state, request);
   }
 
   memoryLearned(request: { loupistId: string; messageIds: string[] }) {

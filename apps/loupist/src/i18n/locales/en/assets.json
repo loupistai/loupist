@@ -110,6 +110,8 @@
       "point": "{{date}} · {{value}} · {{change}}",
       "keys": "Arrow keys read each price.",
       "failed": "Couldn't load the price chart.",
+      "loading": "Getting price history…",
+      "empty": "No price history saved yet. Check now reads it.",
       "short": "Only {{number}} prices are stored so far."
     },
     "open": "Open",
@@ -153,5 +155,41 @@
     "noModel": "{{loupist}} needs an AI account to find a price. Connect one in Settings › AI accounts.",
     "checked": "Checked {{name}}.",
     "find": "Find a price"
+  },
+  "sinceRead": {
+    "title": "Since this read",
+    "recent": "Recent changes",
+    "sinceMove": "Since {{date}}",
+    "days": "30 days",
+    "sinceDate": "Since a date…",
+    "sinceDateLabel": "Since a date",
+    "ended": "Ended",
+    "added": "Added",
+    "disagreements": "Disagreements",
+    "sections": "Lens sections",
+    "showAll": "Show all {{formattedCount}}",
+    "empty": "Nothing changed in World since {{date}}.",
+    "pending": "World is still reading {{formattedCount}} Sources about {{name}}. More may appear.",
+    "link": "Link {{name}} to a World name to see what changed.",
+    "openWorld": "Open World",
+    "loading": "Loading changes…",
+    "error": "Could not load what changed.",
+    "retry": "Try again",
+    "published": "published {{date}}",
+    "section": "{{page}} · {{section}}"
+  },
+  "reportChanges": {
+    "title": "Changes in the latest report",
+    "pending": "World is still reading this report.",
+    "ended": "Ended by this report",
+    "added": "New in this report",
+    "disagree": "Sources disagree",
+    "notRepeated": "Not repeated in this report",
+    "both_one": "Also stated in both: {{formattedCount}}",
+    "both_other": "Also stated in both: {{formattedCount}}",
+    "showAll": "Show all",
+    "loading": "Loading the comparison…",
+    "error": "Could not compare these reports.",
+    "retry": "Try again"
   }
 }

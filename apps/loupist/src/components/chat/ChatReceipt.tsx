@@ -1,5 +1,6 @@
 import { formatNumber } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
+import { localizedValue } from "@/i18n/localized";
 import { useId, type ReactNode } from "react";
 import { FigureWarnings } from "./FigureWarnings";
 import type { ChatMessage, MapKind, MemorySaveSkipReason, MemoryUpdateResult, SetupChange } from "../../types";
@@ -18,7 +19,7 @@ type CountKey =
 
 const count = (key: CountKey, value: number): string => t(key, { count: value, formattedCount: formatNumber(value) });
 
-const kindLabel = (kind: MapKind) => (i18n.language.toLowerCase().startsWith("ko") && kind.labelKo) || kind.label;
+const kindLabel = (kind: MapKind) => localizedValue({ en: kind.label, ko: kind.labelKo }, i18n.language) ?? kind.label;
 
 function setupLabel(change: SetupChange): string {
   switch (change.change) {
@@ -60,19 +61,32 @@ type Props = {
 
 type Segment = { key: string; node: ReactNode };
 
+/** What to do after a save that failed for a known cause. A receipt from before causes were recorded says only that it failed. */
+const nextStep = {
+  invalid: "memorySaving.next.invalid",
+  store_busy: "memorySaving.next.store_busy",
+  storage: "memorySaving.next.storage",
+  conflict: "memorySaving.next.conflict",
+} as const satisfies Partial<Record<MemorySaveSkipReason, string>>;
+
 export function MemorySaveWarning({ reason, items }: { reason?: MemorySaveSkipReason; items?: MemoryUpdateResult["discardedMemoryItems"] }) {
   useTranslation("chat");
   const listLabelId = useId();
   if (!reason && !items?.length) return null;
+  // A save that kept the rest of its turn names why it left items out.
+  const partly = reason ? undefined : items?.find(item => item.reason)?.reason;
+  const cause = reason ?? partly;
+  const next = cause && cause in nextStep ? nextStep[cause as keyof typeof nextStep] : null;
   return <div className="memory-save-warning">
-    {reason ? <p>{t(`memorySaving.skipped.${reason}`)}</p> : null}
+    {reason ? <p>{t(`memorySaving.skipped.${reason}`)}</p> : partly ? <p>{t("memorySaving.partlySaved")}</p> : null}
     {items?.length ? <>
-      {reason ? <p>{t("memorySaving.claimNotKept")}</p> : null}
+      {reason ? <p>{t("memorySaving.claimNotKept")}</p> : partly ? <p>{t("memorySaving.claimPartlyNotKept")}</p> : null}
       <p id={listLabelId}>{t("memorySaving.notKept")}</p>
       <ul aria-labelledby={listLabelId}>{items.map((item, index) => <li key={`${item.kind}:${item.title}:${index}`}>
         {t(`memorySaving.discardedKind.${item.kind}`)} · {item.title}
       </li>)}</ul>
     </> : null}
+    {next ? <p data-save-next="true">{t(next)}</p> : null}
   </div>;
 }
 

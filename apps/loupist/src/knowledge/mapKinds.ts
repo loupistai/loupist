@@ -1,4 +1,5 @@
 import type { KnowledgeMapNode } from "../contracts/knowledge";
+import { localizedValue } from "../i18n/localized";
 
 export const entityCategories = ["company", "person", "product", "technology", "industry", "market", "event", "other"] as const;
 export type EntityCategory = typeof entityCategories[number];
@@ -30,8 +31,7 @@ export function nodeColorKey(node: KnowledgeMapNode) {
 }
 /** Inspector kicker: the extension label in the UI language, then the category label. */
 export function extensionKindLabel(labels: { en: string; ko?: string } | undefined, language: string, categoryLabel: string) {
-  if (language.toLowerCase().startsWith("ko") && labels?.ko) return labels.ko;
-  return labels?.en || categoryLabel;
+  return localizedValue<string>(labels, language) || categoryLabel;
 }
 export function nodeRadius(node: KnowledgeMapNode) {
   if (isMetricNode(node)) return 4;

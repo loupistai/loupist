@@ -1,7 +1,18 @@
 // Generated from Rust by ts-rs; do not edit. Regenerate with:
 // LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract
 
+import type { PassageRange } from "../knowledge/model";
 import type { UnreadyReason } from "../providers/inference";
+
+/** A fact left out because a figure it states differs from the passage. */
+export type DroppedFigure = {
+  /** The proposition, at most 240 characters. */
+  proposition: string,
+  /** The figure as the proposition states it. */
+  stated: string,
+  /** The chunk it was extracted from. Absent: unknown. */
+  passage?: PassageRange,
+};
 
 export type GraphJobView = {
   jobId: string,
@@ -12,6 +23,16 @@ export type GraphJobView = {
   payloadDigest: string,
   createdAtMs: number,
   hostMayRedrive: boolean,
+  /** Why the job stopped, when one was recorded. */
+  failure?: JobFailure,
+  /** Try again can run this stopped span again. Absent when it cannot. */
+  retryable?: boolean,
+  /** Waiting on the daily allowance. Absent when the job can start. */
+  hold?: JobHold,
+  /** Facts this job left out. Absent when it left none out. */
+  dropped?: JobDropped,
+  /** The first eight facts counted in `dropped.figureMismatch`. */
+  droppedFigures?: Array<DroppedFigure>,
 };
 
 export type GraphProcessingView = {
@@ -47,6 +68,37 @@ export type GraphReadiness = {
   modelName: string | null,
   authKind: string | null,
 };
+
+/** Facts a job left out of World. */
+export type JobDropped = {
+  /** Facts not published because a figure differs from the passage. */
+  figureMismatch: number,
+};
+
+/**
+ * A recorded stop. `kind` uses the recovery vocabulary and the model-output
+ * and capacity stops.
+ */
+export type JobFailure = { kind: JobFailureKind, atMs: number };
+
+export type JobFailureKind =
+  | "interrupted"
+  | "timed_out"
+  | "usage_uncertain"
+  | "invalid_json"
+  | "schema_mismatch"
+  | "incomplete_response"
+  | "output_size"
+  | "content_type"
+  | "world_full";
+
+/**
+ * Why a queued job is waiting on the daily allowance. Computed for the view;
+ * the queue row stays `queued`.
+ */
+export type JobHold = { cause: JobHoldCause, provider?: string };
+
+export type JobHoldCause = "allowance" | "plan_limit" | "out_of_credit";
 
 /**
  * The sentence under the World processing status, by code: the interface

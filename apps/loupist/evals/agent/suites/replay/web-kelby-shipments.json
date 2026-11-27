@@ -1,0 +1,30 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "web",
+      "request": {
+        "url": "https://fictional.example/data/kelby-motors-monthly-shipments-2026",
+        "method": "GET",
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "content_type": "text/html",
+        "text": "<html><head><title>Kelby Motors monthly shipments, 2026</title></head><body><h1>Kelby Motors monthly unit shipments, 2026</h1><p>Fictional data page, updated 5 October 2026.</p><table><tr><th>Month</th><th>Units shipped</th></tr><tr><td>January 2026</td><td>11,240</td></tr><tr><td>February 2026</td><td>10,985</td></tr><tr><td>March 2026</td><td>12,060</td></tr><tr><td>April 2026</td><td>12,310</td></tr><tr><td>May 2026</td><td>12,745</td></tr><tr><td>June 2026</td><td>12,190</td></tr><tr><td>July 2026</td><td>12,480</td></tr><tr><td>August 2026</td><td>13,150</td></tr><tr><td>September 2026</td><td>11,970</td></tr></table></body></html>"
+      }
+    }
+  ],
+  "otherwise": [
+    {
+      "provider": "web-search",
+      "url_prefix": "",
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    }
+  ]
+}

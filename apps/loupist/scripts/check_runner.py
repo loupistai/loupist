@@ -65,7 +65,11 @@ def existing(*patterns):
 
 def contract_tests(harness_only=False):
     patterns = ["agent/*.test.mjs", "evals/*.test.mjs", "evals/agent/*.test.mjs"]
-    patterns += ["evals/meta/*.test.mjs", "evals/world/*.test.mjs"]
+    patterns += [
+        "evals/meta/*.test.mjs",
+        "evals/world/*.test.mjs",
+        "evals/loop/*.test.mjs",
+    ]
     if not harness_only:
         patterns += ["e2e/*.test.mjs", "scripts/*.test.mjs", "../../scripts/*.test.mjs"]
     return [path for pattern in patterns for path in matches(pattern)]

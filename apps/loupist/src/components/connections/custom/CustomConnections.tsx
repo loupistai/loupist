@@ -5,7 +5,7 @@ import type { CustomConnection } from "../../../contracts/customConnections";
 import type { LoupistSummary, LoupistBridge } from "../../../types";
 import { Disclosure } from "../../ui/disclosure";
 import { Button } from "../../ui/button";
-import { NativeSelect } from "../../ui/native-select";
+import { SelectField, SelectItem } from "../../ui/select";
 import { AddConnectionDialog } from "./AddConnectionDialog";
 import { ConnectionDetail } from "./ConnectionDetail";
 import "../../../styles/connections.css";
@@ -53,7 +53,7 @@ export function CustomConnections({ bridge, loupists, initialLoupistId }: { brid
   // An advanced path: closed until the user has a connection of their own, then open on its rows.
   const open = openChoice ?? records.length > 0;
   return <Disclosure className="custom-connections custom-stack" data-custom-connections title={t("custom.disclosure")} open={open} onOpenChange={setOpenChoice}>
-    {loupists.length && records.length ? <label className="custom-field">{t("custom.loupist")}<NativeSelect value={loupistId} onChange={event => { setLoupistId(event.target.value); setSelected(null); setRecords([]); }}>{loupists.map(loupist => <option key={loupist.id} value={loupist.id}>{loupist.name}</option>)}</NativeSelect></label> : null}
+    {loupists.length && records.length ? <label className="custom-field">{t("custom.loupist")}<SelectField value={loupistId} onValueChange={value => { setLoupistId(value); setSelected(null); setRecords([]); }}>{loupists.map(loupist => <SelectItem key={loupist.id} value={loupist.id}>{loupist.name}</SelectItem>)}</SelectField></label> : null}
     {error ? <p role="alert">{t("custom.error")} <Button variant="link" onClick={() => void refresh()}>{t("custom.tryAgain")}</Button></p> : null}
     {!records.length ? <p className="custom-meta" data-custom-empty>{t("custom.empty")}</p> : <ul className="custom-rows">{records.map(item => { const state = rowState(item); return <li key={item.id}><button type="button" className="custom-row" data-custom-connection={item.id} onClick={() => setSelected(item.id)}><span><strong>{item.name}</strong><small>{t(item.transport.kind === "http" ? "custom.server" : "custom.localCommand")} · {t("custom.allowedCount", { count: item.tools.filter(tool => tool.approval === "always").length })}</small></span><span className="custom-row-end"><span className={`connection-status ${ROW_STATES[state].tone}`}><span aria-hidden="true" />{t(ROW_STATES[state].status)}</span><span className="custom-row-action">{t(ROW_STATES[state].action)}<ChevronRightIcon aria-hidden="true" /></span></span></button></li>; })}</ul>}
     {adding ? <AddConnectionDialog bridge={bridge} loupistId={loupistId} onChanged={() => void refresh()} onClose={() => { setAdding(false); void refresh(); }} /> : null}

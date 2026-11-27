@@ -38,9 +38,8 @@ restricts copying, derivatives, and redistribution; their prompts, scripts, and
 assets are not bundled here. The permissively licensed financial/data materials
 above are separate repositories with their own retained terms.
 
-The dividend income, fund comparison, why-it-moved and goal math workflows and
-the Korean statements reference are original Loupist instructions; they adapt
-no upstream material.
+The deep research, dividend income, fund comparison, why-it-moved and goal math
+workflows and the Korean statements reference are original Loupist instructions.
 
 
 The Skill Creator workflow adapts OpenAI's public

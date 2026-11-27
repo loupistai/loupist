@@ -19,7 +19,7 @@ it("lists what waits across Loupists, names each row, and opens the item", async
     item({ kind: "checkDue", recordId: "j3", title: "Capex flat", dueDate: "2000-01-05" }),
   ];
   render(<SidebarProvider><NeedsAttention items={items} onOpen={onOpen} /></SidebarProvider>);
-  expect(screen.getByText("Needs attention")).toBeVisible();
+  expect(screen.getByText("Needs you")).toBeVisible();
   const rows = screen.getAllByRole("button");
   expect(rows).toHaveLength(5);
   // Each row names its subject: the Loupist and the connection or scheduled result, or the check's claim.

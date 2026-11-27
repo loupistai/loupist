@@ -81,8 +81,8 @@ describe("Loupist · Updates", () => {
       expect(install).toHaveBeenCalledWith({
         offer_id: OFFER_ID,
         confirmation: {
-          title: "루피스트 업데이트 설치",
-          message: "루피스트를 업데이트하시겠습니까? 현재 버전 0.0.1, 새 버전 1.1.0. 진행 중인 작업을 확인했습니다. 서명된 업데이트를 내려받아 설치한 뒤 바로 다시 시작합니다.",
+          title: "Loupist 업데이트 설치",
+          message: "Loupist를 업데이트하시겠습니까? 현재 버전 0.0.1, 새 버전 1.1.0. 진행 중인 작업을 확인했습니다. 서명된 업데이트를 내려받아 설치한 뒤 바로 다시 시작합니다.",
           install: "설치 후 다시 시작",
           cancel: "나중에",
         },
@@ -126,7 +126,7 @@ describe("Loupist · Updates", () => {
     const { user, bridge } = await openUpdates(available);
     vi.spyOn(bridge, "updateInstall").mockResolvedValue({ outcome: "blocked", blockers: [{ id: "run-1", kind: "memory_mutation", label: "memory update for Loupist value (session-1)" }] });
     await user.click(await screen.findByRole("button", { name: "Install and restart" }));
-    expect(await screen.findByText("Finish active work before updating")).toBeVisible();
+    expect(await screen.findByText("Waiting for 1 thing to finish")).toBeVisible();
     expect(screen.getByText("Changing Memory")).toBeVisible();
     expect(screen.queryByText(/session-1/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /force/i })).not.toBeInTheDocument();

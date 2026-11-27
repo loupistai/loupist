@@ -20,6 +20,10 @@ impl AppToolExecutor {
         if !policy.propose_memory_updates {
             return Err(BrokerError::ProposalDisabled);
         }
+        super::bot_memory::refuse_later_instruction(
+            crate::broker::ToolMethod::PrincipleSave,
+            &self.capture.turn_taint,
+        )?;
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
         struct Input {

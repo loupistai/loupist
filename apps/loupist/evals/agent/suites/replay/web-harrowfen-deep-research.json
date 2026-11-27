@@ -1,0 +1,69 @@
+{
+  "schema": "loupist-connection-replay/1",
+  "requests": [
+    {
+      "provider": "web",
+      "request": {
+        "url": "https://fictional.example/deep-research/harrowfen-rental-fleet-bulletin",
+        "method": "GET",
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "content_type": "text/html",
+        "text": "<!doctype html><html><head><title>Harrowfen Pumps rental fleet bulletin</title><meta property=\"article:published_time\" content=\"2026-08-07T08:00:00Z\"></head><body><article><h1>Harrowfen Pumps rental fleet bulletin</h1><p>Fictional Harrowfen Pumps said on 7 August 2026 that its active rental fleet grew from 240 to 310 pumps during the second quarter of 2026. Management said rental customers are building a base of repeat orders and that renters buy equipment at twice the rate of other leads. The bulletin gives no reorder or conversion figures.</p></article></body></html>"
+      }
+    },
+    {
+      "provider": "web",
+      "request": {
+        "url": "https://fictional.example/deep-research/harrowfen-q2-2026-results",
+        "method": "GET",
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "content_type": "text/html",
+        "text": "<!doctype html><html><head><title>Harrowfen Pumps second-quarter 2026 results</title><meta property=\"article:published_time\" content=\"2026-08-07T08:05:00Z\"></head><body><article><h1>Harrowfen Pumps second-quarter 2026 results</h1><p>Fictional Harrowfen Pumps reported second-quarter 2026 rental revenue of 14.2 million pounds, up 22% from a year earlier, and equipment sales of 61.0 million pounds, down 3%. Orders from customers who had rented before were 4.1 million pounds, against 3.9 million pounds a year earlier. Fleet utilization was 61%, against 74% a year earlier.</p></article></body></html>"
+      }
+    },
+    {
+      "provider": "web",
+      "request": {
+        "url": "https://fictional.example/deep-research/pump-journal-rental-rates",
+        "method": "GET",
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "content_type": "text/html",
+        "text": "<!doctype html><html><head><title>Pump Journal: rental rates slide as fleets grow</title><meta property=\"article:published_time\" content=\"2026-09-15T09:00:00Z\"></head><body><article><h1>Pump Journal: rental rates slide as fleets grow</h1><p>The fictional trade paper Pump Journal reported on 15 September 2026 that average day rates for rented pumps fell 8% in the first half of 2026 from a year earlier. Dunmore Hire and Kelby Rentals added 400 units between them. The paper said several fleets were renting below the cost of ownership to keep units out of the yard.</p></article></body></html>"
+      }
+    },
+    {
+      "provider": "web",
+      "request": {
+        "url": "https://fictional.example/deep-research/fluid-equipment-association-survey",
+        "method": "GET",
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "content_type": "text/html",
+        "text": "<!doctype html><html><head><title>Fluid Equipment Association rental survey 2026</title><meta property=\"article:published_time\" content=\"2026-10-02T09:00:00Z\"></head><body><article><h1>Fluid Equipment Association rental survey 2026</h1><p>The fictional Fluid Equipment Association's 2026 survey found that 31% of first-time renters placed another rental order within 90 days, unchanged from 2025, and that 9% of renters bought equipment from the same supplier within a year, against 10% in 2025.</p></article></body></html>"
+      }
+    }
+  ],
+  "otherwise": [
+    {
+      "provider": "web-search",
+      "url_prefix": "",
+      "response": {
+        "status": 200,
+        "body": {
+          "results": []
+        }
+      }
+    }
+  ]
+}

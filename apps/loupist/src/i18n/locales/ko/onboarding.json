@@ -7,20 +7,20 @@
     "selectedWorkspaceFolder": "선택한 작업 폴더",
     "cancel": "취소",
     "reconnectWorkspaceFolder": "작업 폴더 다시 연결",
-    "locateThisLoupistSOriginalOrCopiedFolder": "이 루피스트의 원래 폴더나 복사본을 찾으면 대화와 기억을 다시 열 수 있습니다.",
+    "locateThisLoupistSOriginalOrCopiedFolder": "이 Loupist의 원래 폴더나 복사본을 찾으면 대화와 기억을 다시 열 수 있습니다.",
     "currentLocation": "현재 위치",
-    "theFolderMustContainThisLoupistSSaved": "이 루피스트의 저장된 데이터가 들어 있는 폴더여야 합니다. 빈 폴더로는 대체할 수 없습니다.",
+    "theFolderMustContainThisLoupistSSaved": "이 Loupist의 저장된 데이터가 들어 있는 폴더여야 합니다. 빈 폴더로는 대체할 수 없습니다.",
     "couldNotReconnectThisFolder": "폴더를 다시 연결하지 못했습니다",
-    "chooseThisLoupistSOriginalOrCopiedWorkspace": "저장된 .loupist 데이터가 포함된 이 루피스트의 원래 작업 폴더나 복사본을 선택하십시오. 그래도 열리지 않으면 오류 세부 정보를 확인하십시오.",
+    "chooseThisLoupistSOriginalOrCopiedWorkspace": "저장된 .loupist 데이터가 포함된 이 Loupist의 원래 작업 폴더나 복사본을 선택하십시오. 그래도 열리지 않으면 오류 세부 정보를 확인하십시오.",
     "errorDetails": "오류 세부 정보",
     "renameChat": "리서치 세션 이름 변경",
-    "updateTheChatNameShownUnderThisLoupist": "이 루피스트 아래에 표시되는 리서치 세션 이름을 바꿉니다.",
+    "updateTheChatNameShownUnderThisLoupist": "이 Loupist 아래에 표시되는 리서치 세션 이름을 바꿉니다.",
     "name": "이름",
     "deleteChat": "리서치 세션을 삭제하시겠습니까?",
     "choosing": "선택 중…",
     "changeFolder": "폴더 변경",
     "chooseFolder": "폴더 선택",
-    "loupistWorkspace": "루피스트 작업 폴더",
+    "loupistWorkspace": "Loupist 작업 폴더",
     "reconnecting": "다시 연결 중…",
     "reconnectFolder": "폴더 다시 연결",
     "saving": "저장 중…",
@@ -29,23 +29,23 @@
     "deleting": "삭제 중…",
     "delete": "삭제",
     "andItsMessagesDocumentsAndChartsWill": "“{{title}}” 대화와 메시지, 문서, 차트가 영구적으로 삭제됩니다.",
-    "importLoupistFolder": "루피스트 가져오기",
-    "importLoupistFolderDescription": "이 앱에서 만든 루피스트 폴더나 그 복사본을 선택하십시오.",
+    "importLoupistFolder": "Loupist 가져오기",
+    "importLoupistFolderDescription": "이 앱에서 만든 Loupist 폴더나 그 복사본을 선택하십시오.",
     "couldNotImportThisFolder": "이 폴더를 가져오지 못했습니다",
     "import": "가져오기",
     "importing": "가져오는 중…",
-    "workspaceTrust": "<0>이 폴더를 신뢰합니다.</0> 루피스트는 이 폴더에 저장된 지침을 따르고, 이 폴더 안의 파일만 읽고 수정합니다.",
-    "workspaceTrustWithSkills": "<0>이 폴더를 신뢰합니다.</0> 루피스트는 이 폴더에 저장된 지침과 스킬을 따르고, 이 폴더 안의 파일만 읽고 수정합니다."
+    "workspaceTrust": "<0>이 폴더를 신뢰합니다.</0> Loupist는 이 폴더에 저장된 지침을 따르고, 이 폴더 안의 파일만 읽고 수정합니다.",
+    "workspaceTrustWithSkills": "<0>이 폴더를 신뢰합니다.</0> Loupist는 이 폴더에 저장된 지침과 스킬을 따르고, 이 폴더 안의 파일만 읽고 수정합니다."
   },
   "wizard": {
     "back": "뒤로",
     "welcomeTitle": "지켜보고, 기억하고, 설명합니다.",
-    "welcomeLead": "루피스트는 한 가지 주제를 함께 조사하는 리서치 동료입니다. 관심 자산을 지켜보고, 함께 읽은 내용을 기억하고, 달라진 점을 출처와 함께 설명합니다.",
+    "welcomeLead": "Loupist는 한 가지 주제를 함께 조사하는 리서치 동료입니다. 관심 자산을 지켜보고, 함께 읽은 내용을 기억하고, 달라진 점을 출처와 함께 설명합니다.",
     "start": "시작하기",
     "connectTitle": "AI 계정 연결",
-    "connectBody": "루피스트는 내 AI 계정으로 동작합니다. 로그인 정보와 키는 이 Mac에만 남고, 요청은 AI 서비스로 바로 전달됩니다.",
+    "connectBody": "Loupist는 내 AI 계정으로 동작합니다. 로그인 정보와 키는 이 Mac에만 남고, 요청은 AI 서비스로 바로 전달됩니다.",
     "chatgpt": "ChatGPT로 계속하기",
-    "planNote": "이미 쓰고 있는 요금제를 쓰며, 루피스트는 따로 요금을 받지 않습니다. ChatGPT는 OpenAI가 허용한 일부 요금제와 워크스페이스에서만 쓸 수 있습니다.",
+    "planNote": "이미 쓰고 있는 요금제를 쓰며, Loupist는 따로 요금을 받지 않습니다. ChatGPT는 OpenAI가 허용한 일부 요금제와 워크스페이스에서만 쓸 수 있습니다.",
     "cancel": "취소",
     "other": "다른 방법으로 연결",
     "retry": "다시 시도",
@@ -54,66 +54,66 @@
     "continue": "계속",
     "skipConnect": "먼저 둘러보기",
     "skipConnectNote": "계정 없이도 관심 자산을 정하고 둘러볼 수 있습니다. 답변을 받으려면 AI 계정이 필요합니다.",
-    "createTitle": "첫 루피스트 만들기",
+    "createTitle": "첫 Loupist 만들기",
     "createLead": "무엇을 조사할지 정하십시오. 가장 가까운 템플릿을 고르거나, 직접 만들기에서 관심 분야를 적으십시오.",
-    "newLoupist": "새 루피스트",
+    "newLoupist": "새 Loupist",
     "newLoupistBody": "리서치 동료의 관심 분야를 선택하십시오.",
-    "templatesLabel": "루피스트 템플릿",
+    "templatesLabel": "Loupist 템플릿",
     "name": "이름",
     "focus": "관심 분야",
     "focusPlaceholder": "예: 국내 2차전지 소재 기업",
-    "changeLater": "관심 분야와 말투는 나중에 루피스트 설정에서 바꿀 수 있습니다.",
-    "create": "루피스트 만들기",
+    "changeLater": "관심 분야와 말투는 나중에 Loupist 설정에서 바꿀 수 있습니다.",
+    "create": "Loupist 만들기",
     "creating": "만드는 중…",
-    "backgroundReading": "자료를 저장하면 루피스트가 백그라운드에서 읽어 월드를 만들고 분석 방법을 배웁니다. 이때 연결한 AI 계정을 사용합니다. 루피스트 설정에서 언제든 끌 수 있습니다.",
+    "backgroundReading": "자료를 저장하면 Loupist가 백그라운드에서 읽어 월드를 만들고 분석 방법을 배웁니다. 이때 연결한 AI 계정을 사용합니다. Loupist 설정에서 언제든 끌 수 있습니다.",
     "templates": {
       "portfolio": {
-        "title": "내 포트폴리오",
-        "focus": "관심 자산 전반",
-        "suggestedName": "포트폴리오 루피스트"
+        "title": "관심 종목 리서치",
+        "focus": "공시, 실적, 투자 이유를 추적합니다. 보유 수량과 수익률은 다루지 않습니다.",
+        "suggestedName": "관심 종목 Loupist"
       },
       "semiconductors": {
         "title": "반도체",
         "focus": "칩, 메모리, 파운드리, 장비",
-        "suggestedName": "반도체 루피스트"
+        "suggestedName": "반도체 Loupist"
       },
       "dividends": {
         "title": "배당 투자",
         "focus": "배당 기업과 배당 지속성",
-        "suggestedName": "배당 루피스트"
+        "suggestedName": "배당 Loupist"
       },
       "technology": {
         "title": "미국 빅테크",
         "focus": "미국 대형 기술 기업",
-        "suggestedName": "테크 루피스트"
+        "suggestedName": "테크 Loupist"
       },
       "crypto": {
         "title": "가상자산",
         "focus": "블록체인 네트워크, 토큰과 관련 기업",
-        "suggestedName": "가상자산 루피스트"
+        "suggestedName": "가상자산 Loupist"
       },
       "macro": {
         "title": "매크로·금리",
         "focus": "금리, 물가, 환율과 중앙은행",
-        "suggestedName": "매크로 루피스트"
+        "suggestedName": "매크로 Loupist"
       },
       "commodities": {
         "title": "원자재",
         "focus": "에너지·금속·농산물의 수급과 포지션",
-        "suggestedName": "원자재 루피스트"
+        "suggestedName": "원자재 Loupist"
       },
       "realAssets": {
         "title": "실물 자산",
         "focus": "부동산·인프라·토지의 소유자, 임차인, 자금 조달",
-        "suggestedName": "실물자산 루피스트"
+        "suggestedName": "실물자산 Loupist"
       },
       "custom": {
         "title": "직접 만들기",
         "focus": "관심 분야 직접 입력"
       }
     },
-    "importLoupist": "기존 루피스트 폴더 가져오기",
-    "chatgptNote": "ChatGPT 요금제를 쓰며, 루피스트는 따로 요금을 받지 않습니다. OpenAI가 허용한 일부 요금제와 워크스페이스에서만 쓸 수 있습니다.",
+    "importLoupist": "기존 Loupist 폴더 가져오기",
+    "chatgptNote": "ChatGPT 요금제를 쓰며, Loupist는 따로 요금을 받지 않습니다. OpenAI가 허용한 일부 요금제와 워크스페이스에서만 쓸 수 있습니다.",
     "supergrok": "SuperGrok으로 계속하기",
     "waitingTitle": "브라우저에서 {{provider}} 로그인을 마치십시오",
     "waitingBody": "끝나면 이 화면이 저절로 넘어갑니다. ChatGPT에는 Loupist로 연결됩니다.",
@@ -159,8 +159,8 @@
       "CL": "WTI 원유",
       "HG": "구리"
     },
-    "nameTitle": "루피스트의 이름을 정하십시오",
-    "nameLead": "이름과 얼굴은 모든 답변, 브리핑과 알림 옆에 표시됩니다. 둘 다 나중에 루피스트 설정에서 바꿀 수 있습니다.",
+    "nameTitle": "Loupist의 이름을 정하십시오",
+    "nameLead": "이름과 얼굴은 모든 답변, 브리핑과 알림 옆에 표시됩니다. 둘 다 나중에 Loupist 설정에서 바꿀 수 있습니다.",
     "next": "계속",
     "saveName": "저장 후 계속",
     "saving": "저장 중…",
@@ -168,7 +168,7 @@
   },
   "notice": {
     "title": "시작하기 전에",
-    "body": "루피스트는 AI 리서치 도구입니다. 요청하면 루피스트가 투자에 대한 의견도 제시하지만 틀릴 수 있습니다. 루피스트는 투자자문업자가 아니며 거래를 하지 않습니다. 투자 결정과 그 결과는 본인의 몫입니다.",
+    "body": "Loupist는 AI 리서치 도구입니다. 요청하면 Loupist가 투자에 대한 의견도 제시하지만 틀릴 수 있습니다. Loupist는 투자자문업자가 아니며 거래를 하지 않습니다. 투자 결정과 그 결과는 본인의 몫입니다.",
     "understand": "이해했습니다",
     "saveError": "확인 내용을 저장하지 못했습니다. 다시 시도하십시오.",
     "loadError": "안내 확인 상태를 불러오지 못했습니다. 다시 시도하십시오.",
@@ -178,7 +178,7 @@
   },
   "tone": {
     "title": "{{name}}의 말투 선택",
-    "titleDefault": "루피스트의 말투 선택",
+    "titleDefault": "Loupist의 말투 선택",
     "note": "말투는 표현만 바꾸며, 필요한 근거는 그대로입니다.",
     "careful": {
       "label": "신중하게",

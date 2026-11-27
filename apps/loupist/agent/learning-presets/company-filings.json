@@ -1,0 +1,28 @@
+{
+  "id": "company-filings",
+  "title": "Follow filings of {asset}",
+  "brief": "Keep what this Loupist knows from the filings of {asset} ({reference}) current. New since the previous run means a filing, a results release or a disclosure that the company or its regulator published. Read each one itself, at the filing register or the company's own site, in the language and reporting regime it was published in; a news report about a filing does not stand in for it. Retain each filing as a Source, keep the asset's Lens page a current account of what the filings say, and report what is new with dates and sources; stay quiet when nothing is.",
+  "slots": {},
+  "subject_kind": "asset",
+  "schedule": {
+    "kind": "daily",
+    "hour": 7,
+    "minute": 40
+  },
+  "program": {
+    "depth": "standard",
+    "scope": {
+      "connections": "all_enabled",
+      "web": true
+    },
+    "keeps": {
+      "sources": true,
+      "lens": true,
+      "asset_reads": false
+    }
+  },
+  "report": "when_new",
+  "delivery": {
+    "to": "bot"
+  }
+}

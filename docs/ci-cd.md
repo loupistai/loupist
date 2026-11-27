@@ -186,6 +186,13 @@ The [same commands](../apps/loupist/e2e/README.md#run-native-suites-on-linux) re
 available to Codex, Claude and Cursor cloud agents while implementing UI, bridge
 or storage changes. Linux does not qualify the macOS release surface.
 
+The macOS native job runs the full development-renderer suite and persistence
+suite, then requires `test:native:release`. This core smoke builds the renderer
+and runs it in WKWebView under the shipped content security policy. It reuses
+the staged runtimes and keeps the same renderer port across suites so Cargo
+can reuse the native binary. The added step has a 10-minute limit and uploads
+its own evidence.
+
 Unsigned macOS native/package jobs reuse an exact-source runtime cache through
 `.github/actions/stage-ci-runtimes`. The key covers staging scripts, runtime source
 and pins, embedding assets and toolchain/host versions. Only successful main-push

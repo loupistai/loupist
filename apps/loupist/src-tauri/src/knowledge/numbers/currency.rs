@@ -21,7 +21,11 @@ const ALIASES: &[(&str, Currency)] = &[
     ("円", "JPY"),
     ("元", "元"),
     ("RMB", "CNY"),
+    ("港元", "HKD"),
+    ("港幣", "HKD"),
+    ("港币", "HKD"),
     ("HK$", "HKD"),
+    ("R$", "BRL"),
     ("NT$", "TWD"),
     ("US$", "USD"),
     ("NZ$", "NZD"),
@@ -44,6 +48,7 @@ const ALIASES: &[(&str, Currency)] = &[
     ("￦", "KRW"),
     ("€", "EUR"),
     ("£", "GBP"),
+    ("₹", "INR"),
 ];
 
 fn word_character(c: char) -> bool {
@@ -136,6 +141,11 @@ pub(super) fn scaled_prefix(text: &str) -> Option<(Currency, f64)> {
         _ => return None,
     };
     Some((exact(&text[..last])?, scale))
+}
+
+/// `TEUR`, thousands of euros, as statements print it before a figure.
+pub(super) fn thousands_prefix(text: &str) -> Option<(Currency, f64)> {
+    (text == "TEUR").then_some(("EUR", 1e3))
 }
 
 /// Look for currency tokens in a unit phrase, allowing them alongside scales

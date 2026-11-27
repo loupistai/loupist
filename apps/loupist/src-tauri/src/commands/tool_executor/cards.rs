@@ -374,6 +374,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn accepting_a_fact_changes_offer_creates_a_paused_check() {
+        use crate::scheduled_tasks::types::{TaskStatus, TriggerPhase};
+        let root = tempfile::tempdir().unwrap();
+        let executor = executor(root.path(), ChatSurface::Scheduled);
+        let offer = cards::prepare_offer(
+            &executor.state,
+            "loupist-a",
+            OfferInput {
+                preset: WatchPreset::FactChanges,
+                asset_id: follow(&executor),
+                results_date: None,
+                reason: "Guidance can change.".into(),
+            },
+        )
+        .unwrap();
+        cards::place(&executor.state, "loupist-a", vec![offer.clone()], None).unwrap();
+        let task = cards::accept(&executor.state, "loupist-a", &offer.id).unwrap();
+        assert_eq!(task.status, TaskStatus::Paused);
+        assert!(task.awaiting_confirmation);
+        assert!(task.is_trigger_task());
+        let trigger = task.trigger.expect("the offer keeps its check");
+        assert_eq!(trigger.script.name, "world-change");
+        assert_eq!(trigger.state, TriggerPhase::Proposed);
+        assert!(executor
+            .state
+            .store
+            .scheduled_task_claim_with("loupist-a", &task.id, i64::MAX / 4, false, |_| Ok(()))
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
     async fn accepting_a_results_follow_up_uses_the_run_time_on_the_card() {
         use crate::scheduled_tasks::types::Schedule;
         let root = tempfile::tempdir().unwrap();

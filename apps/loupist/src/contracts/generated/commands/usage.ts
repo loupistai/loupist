@@ -4,6 +4,7 @@
 import type { ChatCostEstimate } from "../domain/chat";
 import type { CredentialKind } from "../providers/status";
 import type { UsageSurface } from "../runs/log";
+import type { AllowanceState } from "../scheduled_tasks/allowance";
 
 export type UsageAccount = {
   provider: string,
@@ -15,7 +16,12 @@ export type UsageByLoupist = { loupistId: string | null, name: string | null, to
 
 export type UsageBySurface = { surface: UsageSurface, totals: UsageTotals };
 
-export type UsageChecks = { evaluations: number, reads: number, met: number };
+export type UsageChecks = {
+  evaluations: number,
+  reads: number,
+  met: number,
+  lastCheckAtMs: number | null,
+};
 
 export type UsageDay = { date: string, you: number, background: number, world: number };
 
@@ -37,6 +43,7 @@ export type UsageSummary = {
   surfaces: Array<UsageBySurface>,
   loupists: Array<UsageByLoupist>,
   programs: Array<UsageProgram>,
+  allowance: AllowanceState,
 };
 
 export type UsageSummaryRequest = { fromMs: number, toMs: number, timeZone: string };

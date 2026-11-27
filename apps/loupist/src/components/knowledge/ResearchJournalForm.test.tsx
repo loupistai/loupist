@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "@/test/selectOption";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
@@ -32,10 +33,22 @@ it("saves an optional check without inferring confidence and edits the same entr
   const update = vi.spyOn(bridge, "journalUpdate");
   const onSaved = vi.fn();
   render(<ResearchJournalForm bridge={bridge} loupistId="loupist-quality" entry={entry} onSaved={onSaved} onCancel={vi.fn()} />);
-  expect(screen.getByRole("combobox", { name: "Confidence (optional)" })).toHaveValue("");
+  expect(screen.getByRole("combobox", { name: "Confidence (optional)" })).toHaveTextContent("Not sure");
   fireEvent.change(screen.getByRole("textbox", { name: "Why? (optional)" }), { target: { value: "Costs are easing" } });
   fireEvent.click(screen.getByRole("button", { name: "Save entry" }));
   await vi.waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
   expect(update).toHaveBeenCalledWith(expect.objectContaining({ journalId: entry.journalId, expectedUpdatedAtMs: entry.updatedAtMs, reasoning: "Costs are easing", check: entry.check }));
   expect((await bridge.knowledgeJournalRead({ loupistId: "loupist-quality", journalId: entry.journalId })).check?.confidence).toBeUndefined();
+});
+
+it("submits the configured direction and confidence with the check", async () => {
+  const bridge = new MockLoupistBridge({ delay_ms: 0 });
+  const entry = await bridge.journalCreate({ loupistId: "loupist-quality", judgment: "Costs could fall", check: { claim: "Costs below 40", metric: "Costs", direction: "above", threshold: 40, byDate: "2027-03-31" } });
+  const update = vi.spyOn(bridge, "journalUpdate");
+  const user = userEvent.setup();
+  render(<ResearchJournalForm bridge={bridge} loupistId="loupist-quality" entry={entry} onSaved={vi.fn()} onCancel={vi.fn()} />);
+  await chooseSelectOption(user, screen.getByRole("combobox", { name: "Direction" }), "Below");
+  await chooseSelectOption(user, screen.getByRole("combobox", { name: "Confidence (optional)" }), "60%");
+  await user.click(screen.getByRole("button", { name: "Save entry" }));
+  expect(update).toHaveBeenCalledWith(expect.objectContaining({ check: expect.objectContaining({ direction: "below", confidence: 60 }) }));
 });

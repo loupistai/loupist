@@ -94,8 +94,9 @@ A pending-news queue read failure aborts delivery without posting; it is reporte
 since nobody streamed its reply, and a hand-off's start once its session holds the request,
 since Bot posts nothing for it. The renderer answers with one workspace refresh that
 reconciles every idle chat it holds, so the open Bot and a session opened later show the
-stored messages without a reload; a refresh that cannot read the store is retried on the
-next two-second poll.
+stored messages without a reload. A session opened while that read is in flight stays
+open and stays in the list, including while another session's turn is still running.
+A refresh that cannot read the store is retried on the next two-second poll.
 Automatic link posts are disabled. Extracted product or segment relations remain
 in World; the stored paths do not prove that both ends are followed or that
 a followed asset links to a dated event. See [discovery](../knowledge/worlds.md#discovery-after-publication)
@@ -314,24 +315,27 @@ Bot's header opens the standing sheet, which lists every entry on the shown
 path with Forget and Edit. Forget still deletes every stored copy on every
 path. Edit replaces the text and keeps the kind and the messages it rests on.
 
-**Unattended runs.** A scheduled, price-setup or delegated run with Memory on
-receives `standing_preferences`: only `preference` entries, under the fixed
+**Research sessions and unattended runs.** A research session and a scheduled,
+price-setup or delegated run with Memory on receive `standing_preferences`:
+only `preference` entries, under the fixed
 rule in `chat/bot_memory.rs`. Decisions, open requests, context and the review
 queue stay on the Bot. A private turn receives neither `bot_memory` nor
 `standing_preferences`, and a message that was never stored is not delivered.
 The block is part of the envelope digest, so a changed preference is sent on
-the next unattended run. A World-link hand-off is a research session
-(`session` surface), so it does not receive the block.
+the next such run. A World-link hand-off is a research session (`session`
+surface), so it receives the block.
 
 ## Watches and background results
 
-The standing strip reads the selected Loupist's saved Schedule tasks. It shows work currently checking, recent quiet checks and tasks that paused after a failure. **Needs you** brings proposals, paused tasks, preset offers, questions a run left, and watches that have been quiet for six reports or loud for four delivered results in a week, alongside other items that need attention. **Turn on** confirms the displayed proposal revision or the displayed offer in the host. A proposal row in Needs you reads its title, timing, and revision from one Schedule snapshot. **Not now** on an offer records that the same preset and asset are not offered again. **Change** fills the composer for the user's review. An offer card names a bundled preset and a followed asset. Results follow-up cards show the results date and the run time resolved by the host. The first display or acceptance of an older card pins its missing run time in storage for future reads and acceptance. Needs you opens results follow-up cards for review. Accepting records the decision and creates that preset's task in one database transaction. Declining reserves the card before updating project configuration. A retry can finish the configuration write without reopening the card. A question card stores the chosen option on the original card. The option wording came from the model and does not enter user-authored history or standing preferences. Each reply or run can reserve two distinct offers and each run can leave one question. The host gates both free-text card tools after outside text or a Don't Save result.
+The standing strip reads the selected Loupist's saved Schedule tasks. It shows work currently checking, recent quiet checks and tasks that paused after a failure. **Needs you** brings proposals, paused tasks, preset offers, questions a run left, and watches that have been quiet for six reports or loud for four delivered results in a week, alongside other items that need attention. **Turn on** confirms the displayed proposal revision or the displayed offer in the host, and **Not now** declines it; either one removes that item from Needs you and from the sidebar together. A proposal row in Needs you reads its title, timing, and revision from one Schedule snapshot. **Not now** on an offer records that the same preset and asset are not offered again. **Change** fills the composer for the user's review. An offer card names a bundled preset and a followed asset. Results follow-up cards show the results date and the run time resolved by the host. The first display or acceptance of an older card pins its missing run time in storage for future reads and acceptance. Needs you opens results follow-up cards for review. Accepting records the decision and creates that preset's task in one database transaction. Declining reserves the card before updating project configuration. A retry can finish the configuration write without reopening the card. A question card stores the chosen option on the original card. The option wording came from the model and does not enter user-authored history or standing preferences. Each reply or run can reserve two distinct offers and each run can leave one question. The host gates both free-text card tools after outside text or a Don't Save result.
 
 A result card links to the original run and shows the host's checked and unmatched figures. **Ask about this** opens the run's conversation. Per-task notification and pause actions reuse the Schedule controls. After an absence, results can be read together in a collapsible block.
 
 **Settings › Notifications** holds the app-wide quiet hours, daily cap and details switch. Each scheduled task selects its own notification policy. The host uses the interface's notification templates and decides when to deliver.
 Each delivery accepted by the OS uses one slot. If the OS refuses the request
-or delivery fails, the result stays queued for another attempt.
+or delivery fails, the result stays queued for another attempt. The queue
+reserves each delivery before submitting it to the operating system. New
+results can join the queue while the submission waits for acknowledgement.
 
 Notification defaults are editable by kind in Settings. Line crossings, filings and results, and briefings initially notify now. Other scheduled work and failed runs initially wait for the next digest. A watch with an explicit notification setting keeps that setting when the defaults change.
 

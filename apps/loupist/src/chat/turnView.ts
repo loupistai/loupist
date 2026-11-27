@@ -139,7 +139,6 @@ export type TurnFooter =
        * order the page shows them; null when the page shows no prose.
        */
       copyText: string | null;
-      feedback: boolean;
       runState: RunState | null;
     };
 
@@ -501,7 +500,6 @@ function status(input: TurnInput) {
         kind: "settled",
         sources: answerSources(message),
         copyText: content && !isFailurePlaceholder(message) ? content : null,
-        feedback: state.kind === "complete" || state.kind === "saving",
         runState: runState(state, input, content),
       }
     : { kind: "live", line: liveLine(state, input, content), sinceMs: startedAt(message) };

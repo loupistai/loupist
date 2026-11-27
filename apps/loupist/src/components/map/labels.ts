@@ -30,7 +30,7 @@ export type LabelPriority = {
   hubs?: ReadonlySet<string>; highlightIds?: ReadonlySet<string>; learnedIds?: ReadonlySet<string>; disputedIds?: ReadonlySet<string>;
   /** The name a focal view is centred on. */
   focalId?: string;
-  /** The best-connected names (top 10 by degree): named before the rest. */
+  /** The best-connected names (top 20 by degree, metrics excluded): named before the rest. Followed names still win a collision. */
   topHubIds?: ReadonlySet<string>;
   /** Names a running step reads: the canvas draws a glow halo around each (`LIVE_GLOW_REACH`). */
   liveIds?: ReadonlySet<string>;

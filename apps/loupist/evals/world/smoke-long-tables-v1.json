@@ -1,0 +1,566 @@
+{
+  "schema": "loupist-world-suite/1",
+  "suite": "world-smoke-long-tables-v1",
+  "version": 1,
+  "description": "Two fictional table Sources longer than 7,000 characters, one Markdown (India, crore) and one HTML (United Kingdom, pounds), each with 36 labelled cells for the grader. `cells`, `profile` and `form` are grader-only and never ingested.",
+  "scenarios": [
+    {
+      "id": "LONG-IN-MARKDOWN",
+      "title": "Saraswati Looms segment information, half year FY2026-27",
+      "split": "smoke",
+      "condition": "smoke",
+      "world_enabled": true,
+      "profile": "india",
+      "form": "markdown",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "saraswati-segments",
+              "title": "Saraswati Looms segment information, half year FY2026-27",
+              "text": "# Saraswati Looms Limited: segment-wise revenue, results, assets and liabilities\n\nSaraswati Looms Limited is a fictional textile company created for a Loupist evaluation. This statement is not a market observation, a price or a recommendation.\n\nUnaudited consolidated segment information for the quarter and half year ended 30 September 2026. All amounts are in ₹ crore.\n\n| Particulars | Q2 FY2026-27 | Q1 FY2026-27 | Q2 FY2025-26 | H1 FY2026-27 | H1 FY2025-26 | FY2025-26 |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: |\n| Coimbatore spinning unit: Segment revenue | 63.18 | 63.88 | 73.16 | 127.06 | 138.40 | 276.58 |\n| Coimbatore spinning unit: Segment result before interest and tax | 8.27 | 6.96 | 6.62 | 15.23 | 12.51 | 23.88 |\n| Coimbatore spinning unit: Segment assets | 141.62 | 135.96 | 112.77 | 141.62 | 112.77 | 118.34 |\n| Coimbatore spinning unit: Segment liabilities | 55.92 | 49.00 | 56.81 | 55.92 | 56.81 | 58.79 |\n| Coimbatore spinning unit: Capital expenditure | 3.58 | 4.42 | 4.06 | 8.00 | 8.10 | 16.70 |\n| Coimbatore spinning unit: Depreciation | 2.82 | 2.86 | 2.67 | 5.68 | 4.96 | 9.46 |\n| Tiruppur knitting unit: Segment revenue | 218.44 | 186.12 | 226.42 | 404.56 | 465.64 | 902.73 |\n| Tiruppur knitting unit: Segment result before interest and tax | 23.62 | 22.45 | 22.14 | 46.07 | 45.89 | 90.44 |\n| Tiruppur knitting unit: Segment assets | 434.92 | 389.23 | 403.22 | 434.92 | 403.22 | 418.76 |\n| Tiruppur knitting unit: Segment liabilities | 152.98 | 177.98 | 154.96 | 152.98 | 154.96 | 148.45 |\n| Tiruppur knitting unit: Capital expenditure | 11.16 | 10.90 | 10.71 | 22.06 | 21.61 | 44.30 |\n| Tiruppur knitting unit: Depreciation | 7.18 | 7.71 | 7.67 | 14.89 | 15.04 | 29.53 |\n| Erode weaving unit: Segment revenue | 64.53 | 56.51 | 67.21 | 121.04 | 140.58 | 294.52 |\n| Erode weaving unit: Segment result before interest and tax | 6.93 | 7.43 | 6.54 | 14.36 | 12.80 | 27.13 |\n| Erode weaving unit: Segment assets | 111.82 | 106.97 | 105.17 | 111.82 | 105.17 | 107.20 |\n| Erode weaving unit: Segment liabilities | 51.68 | 44.30 | 44.75 | 51.68 | 44.75 | 45.45 |\n| Erode weaving unit: Capital expenditure | 4.00 | 4.22 | 3.84 | 8.22 | 7.36 | 14.53 |\n| Erode weaving unit: Depreciation | 2.22 | 2.49 | 2.37 | 4.71 | 4.86 | 9.56 |\n| Salem dyeing unit: Segment revenue | 163.41 | 159.61 | 169.99 | 323.02 | 327.17 | 668.55 |\n| Salem dyeing unit: Segment result before interest and tax | 16.28 | 16.60 | 17.64 | 32.88 | 36.82 | 76.70 |\n| Salem dyeing unit: Segment assets | 342.95 | 308.53 | 340.79 | 342.95 | 340.79 | 338.74 |\n| Salem dyeing unit: Segment liabilities | 132.79 | 143.51 | 135.79 | 132.79 | 135.79 | 138.23 |\n| Salem dyeing unit: Capital expenditure | 9.59 | 9.77 | 8.88 | 19.36 | 17.52 | 37.56 |\n| Salem dyeing unit: Depreciation | 6.77 | 7.26 | 7.29 | 14.03 | 15.08 | 32.31 |\n| Karur home textiles unit: Segment revenue | 129.67 | 157.09 | 128.87 | 286.76 | 264.43 | 541.13 |\n| Karur home textiles unit: Segment result before interest and tax | 17.47 | 17.89 | 15.02 | 35.36 | 28.83 | 60.76 |\n| Karur home textiles unit: Segment assets | 298.15 | 303.38 | 294.51 | 298.15 | 294.51 | 301.18 |\n| Karur home textiles unit: Segment liabilities | 114.57 | 117.26 | 110.33 | 114.57 | 110.33 | 108.37 |\n| Karur home textiles unit: Capital expenditure | 8.74 | 8.55 | 7.99 | 17.29 | 16.29 | 33.09 |\n| Karur home textiles unit: Depreciation | 5.37 | 5.91 | 5.39 | 11.28 | 10.03 | 19.39 |\n| Madurai yarn unit: Segment revenue | 80.54 | 74.11 | 74.17 | 154.65 | 151.11 | 293.39 |\n| Madurai yarn unit: Segment result before interest and tax | 7.87 | 9.15 | 8.69 | 17.02 | 17.59 | 36.99 |\n| Madurai yarn unit: Segment assets | 158.01 | 124.17 | 159.31 | 158.01 | 159.31 | 152.23 |\n| Madurai yarn unit: Segment liabilities | 58.96 | 52.56 | 56.50 | 58.96 | 56.50 | 56.11 |\n| Madurai yarn unit: Capital expenditure | 4.83 | 5.05 | 4.80 | 9.88 | 9.21 | 19.29 |\n| Madurai yarn unit: Depreciation | 2.92 | 2.64 | 3.29 | 5.56 | 6.09 | 11.88 |\n| Surat synthetics unit: Segment revenue | 238.76 | 236.04 | 208.71 | 474.80 | 423.10 | 861.02 |\n| Surat synthetics unit: Segment result before interest and tax | 26.45 | 20.83 | 24.25 | 47.28 | 45.62 | 87.66 |\n| Surat synthetics unit: Segment assets | 408.39 | 405.05 | 416.13 | 408.39 | 416.13 | 419.51 |\n| Surat synthetics unit: Segment liabilities | 156.94 | 155.65 | 193.95 | 156.94 | 193.95 | 201.24 |\n| Surat synthetics unit: Capital expenditure | 11.64 | 12.59 | 13.09 | 24.23 | 26.15 | 52.45 |\n| Surat synthetics unit: Depreciation | 8.59 | 9.12 | 8.43 | 17.71 | 17.59 | 37.79 |\n| Ludhiana woollens unit: Segment revenue | 72.26 | 72.82 | 69.12 | 145.08 | 131.00 | 275.38 |\n| Ludhiana woollens unit: Segment result before interest and tax | 7.53 | 8.79 | 8.85 | 16.32 | 16.97 | 33.87 |\n| Ludhiana woollens unit: Segment assets | 151.21 | 135.61 | 146.21 | 151.21 | 146.21 | 147.69 |\n| Ludhiana woollens unit: Segment liabilities | 60.46 | 65.95 | 69.68 | 60.46 | 69.68 | 70.64 |\n| Ludhiana woollens unit: Capital expenditure | 4.23 | 4.78 | 4.19 | 9.01 | 8.25 | 17.39 |\n| Ludhiana woollens unit: Depreciation | 3.20 | 3.08 | 3.08 | 6.28 | 6.23 | 12.11 |\n| Panipat recycling unit: Segment revenue | 58.30 | 66.67 | 66.17 | 124.97 | 135.85 | 279.44 |\n| Panipat recycling unit: Segment result before interest and tax | 7.59 | 7.32 | 6.95 | 14.91 | 14.39 | 29.20 |\n| Panipat recycling unit: Segment assets | 133.30 | 128.45 | 121.87 | 133.30 | 121.87 | 116.19 |\n| Panipat recycling unit: Segment liabilities | 46.04 | 53.07 | 49.89 | 46.04 | 49.89 | 47.94 |\n| Panipat recycling unit: Capital expenditure | 4.28 | 4.32 | 4.37 | 8.60 | 8.35 | 17.89 |\n| Panipat recycling unit: Depreciation | 2.38 | 2.35 | 2.91 | 4.73 | 5.86 | 11.46 |\n| Bhilwara suiting unit: Segment revenue | 120.55 | 122.36 | 114.37 | 242.91 | 236.76 | 483.70 |\n| Bhilwara suiting unit: Segment result before interest and tax | 13.83 | 11.53 | 11.92 | 25.36 | 25.00 | 48.17 |\n| Bhilwara suiting unit: Segment assets | 196.29 | 201.02 | 206.59 | 196.29 | 206.59 | 214.77 |\n| Bhilwara suiting unit: Segment liabilities | 101.83 | 83.94 | 83.22 | 101.83 | 83.22 | 80.11 |\n| Bhilwara suiting unit: Capital expenditure | 6.29 | 7.66 | 6.50 | 13.95 | 12.14 | 24.42 |\n| Bhilwara suiting unit: Depreciation | 4.14 | 4.85 | 4.12 | 8.99 | 7.69 | 15.27 |\n| Ichalkaranji powerloom unit: Segment revenue | 101.51 | 105.31 | 92.33 | 206.82 | 186.56 | 360.58 |\n| Ichalkaranji powerloom unit: Segment result before interest and tax | 10.40 | 10.74 | 11.86 | 21.14 | 22.78 | 43.33 |\n| Ichalkaranji powerloom unit: Segment assets | 175.63 | 169.62 | 171.29 | 175.63 | 171.29 | 166.86 |\n| Ichalkaranji powerloom unit: Segment liabilities | 72.67 | 81.75 | 79.12 | 72.67 | 79.12 | 75.32 |\n| Ichalkaranji powerloom unit: Capital expenditure | 6.41 | 5.76 | 5.52 | 12.17 | 11.36 | 23.28 |\n| Ichalkaranji powerloom unit: Depreciation | 3.74 | 4.11 | 4.17 | 7.85 | 8.62 | 17.82 |\n| Solapur terry unit: Segment revenue | 164.64 | 142.76 | 148.58 | 307.40 | 298.35 | 606.78 |\n| Solapur terry unit: Segment result before interest and tax | 18.52 | 18.09 | 18.51 | 36.61 | 36.66 | 70.23 |\n| Solapur terry unit: Segment assets | 276.71 | 307.62 | 340.47 | 276.71 | 340.47 | 338.11 |\n| Solapur terry unit: Segment liabilities | 133.10 | 144.99 | 140.78 | 133.10 | 140.78 | 136.93 |\n| Solapur terry unit: Capital expenditure | 8.99 | 10.84 | 8.83 | 19.83 | 17.14 | 35.19 |\n| Solapur terry unit: Depreciation | 5.76 | 7.30 | 7.02 | 13.06 | 13.63 | 26.38 |\n| Kannur handloom unit: Segment revenue | 98.54 | 95.99 | 97.47 | 194.53 | 192.16 | 370.74 |\n| Kannur handloom unit: Segment result before interest and tax | 8.85 | 9.88 | 9.11 | 18.73 | 18.82 | 35.95 |\n| Kannur handloom unit: Segment assets | 178.86 | 159.12 | 154.74 | 178.86 | 154.74 | 148.65 |\n| Kannur handloom unit: Segment liabilities | 81.70 | 81.01 | 79.97 | 81.70 | 79.97 | 78.90 |\n| Kannur handloom unit: Capital expenditure | 5.80 | 5.50 | 5.09 | 11.30 | 10.52 | 20.13 |\n| Kannur handloom unit: Depreciation | 4.12 | 3.85 | 3.57 | 7.97 | 7.40 | 15.53 |\n| Varanasi silk unit: Segment revenue | 170.34 | 159.43 | 135.42 | 329.77 | 262.50 | 555.52 |\n| Varanasi silk unit: Segment result before interest and tax | 16.20 | 19.10 | 18.17 | 35.30 | 35.36 | 72.88 |\n| Varanasi silk unit: Segment assets | 325.03 | 290.18 | 277.20 | 325.03 | 277.20 | 275.97 |\n| Varanasi silk unit: Segment liabilities | 121.72 | 118.04 | 122.52 | 121.72 | 122.52 | 118.10 |\n| Varanasi silk unit: Capital expenditure | 9.14 | 8.91 | 9.54 | 18.05 | 18.52 | 38.73 |\n| Varanasi silk unit: Depreciation | 6.70 | 6.55 | 5.51 | 13.25 | 11.00 | 22.33 |\n\nNotes: segment revenue is stated net of inter-segment transfers. Capital expenditure is cash paid in the period. FY2025-26 is the audited year ended 31 March 2026.\n",
+              "origin": "https://fixtures.invalid/world/smoke-long-tables/saraswati-segments",
+              "publication_time": "2026-11-09",
+              "acquired_at": "2026-11-09T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "row": "Coimbatore spinning unit: Segment result before interest and tax",
+          "column": "Q2 FY2026-27",
+          "value": 8.27,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Coimbatore spinning unit: Segment liabilities",
+          "column": "Q2 FY2025-26",
+          "value": 56.81,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Coimbatore spinning unit: Depreciation",
+          "column": "H1 FY2025-26",
+          "value": 4.96,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Tiruppur knitting unit: Segment assets",
+          "column": "Q2 FY2026-27",
+          "value": 434.92,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Tiruppur knitting unit: Capital expenditure",
+          "column": "Q2 FY2025-26",
+          "value": 10.71,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Erode weaving unit: Segment revenue",
+          "column": "H1 FY2025-26",
+          "value": 140.58,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Erode weaving unit: Segment liabilities",
+          "column": "Q1 FY2026-27",
+          "value": 44.3,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Erode weaving unit: Depreciation",
+          "column": "H1 FY2026-27",
+          "value": 4.71,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Salem dyeing unit: Segment result before interest and tax",
+          "column": "FY2025-26",
+          "value": 76.7,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Salem dyeing unit: Capital expenditure",
+          "column": "Q1 FY2026-27",
+          "value": 9.77,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Karur home textiles unit: Segment revenue",
+          "column": "H1 FY2026-27",
+          "value": 286.76,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Karur home textiles unit: Segment assets",
+          "column": "FY2025-26",
+          "value": 301.18,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Karur home textiles unit: Depreciation",
+          "column": "Q2 FY2025-26",
+          "value": 5.39,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Madurai yarn unit: Segment result before interest and tax",
+          "column": "H1 FY2025-26",
+          "value": 17.59,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Madurai yarn unit: Segment liabilities",
+          "column": "Q2 FY2026-27",
+          "value": 58.96,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Surat synthetics unit: Segment revenue",
+          "column": "Q2 FY2025-26",
+          "value": 208.71,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Surat synthetics unit: Segment assets",
+          "column": "H1 FY2025-26",
+          "value": 416.13,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Surat synthetics unit: Capital expenditure",
+          "column": "Q2 FY2026-27",
+          "value": 11.64,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Ludhiana woollens unit: Segment result before interest and tax",
+          "column": "H1 FY2026-27",
+          "value": 16.32,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Ludhiana woollens unit: Segment liabilities",
+          "column": "FY2025-26",
+          "value": 70.64,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Ludhiana woollens unit: Depreciation",
+          "column": "Q1 FY2026-27",
+          "value": 3.08,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Panipat recycling unit: Segment assets",
+          "column": "H1 FY2026-27",
+          "value": 133.3,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Panipat recycling unit: Capital expenditure",
+          "column": "FY2025-26",
+          "value": 17.89,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Bhilwara suiting unit: Segment revenue",
+          "column": "Q1 FY2026-27",
+          "value": 122.36,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Bhilwara suiting unit: Segment liabilities",
+          "column": "H1 FY2025-26",
+          "value": 83.22,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Bhilwara suiting unit: Depreciation",
+          "column": "Q2 FY2026-27",
+          "value": 4.14,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Ichalkaranji powerloom unit: Segment result before interest and tax",
+          "column": "Q2 FY2025-26",
+          "value": 11.86,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Ichalkaranji powerloom unit: Capital expenditure",
+          "column": "H1 FY2025-26",
+          "value": 11.36,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Solapur terry unit: Segment revenue",
+          "column": "Q2 FY2026-27",
+          "value": 164.64,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Solapur terry unit: Segment assets",
+          "column": "Q2 FY2025-26",
+          "value": 340.47,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Solapur terry unit: Depreciation",
+          "column": "FY2025-26",
+          "value": 26.38,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Kannur handloom unit: Segment result before interest and tax",
+          "column": "Q1 FY2026-27",
+          "value": 9.88,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Kannur handloom unit: Segment liabilities",
+          "column": "H1 FY2026-27",
+          "value": 81.7,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Varanasi silk unit: Segment revenue",
+          "column": "FY2025-26",
+          "value": 555.52,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Varanasi silk unit: Segment assets",
+          "column": "Q1 FY2026-27",
+          "value": 290.18,
+          "unit": "crore",
+          "currency": "INR"
+        },
+        {
+          "row": "Varanasi silk unit: Capital expenditure",
+          "column": "H1 FY2026-27",
+          "value": 18.05,
+          "unit": "crore",
+          "currency": "INR"
+        }
+      ]
+    },
+    {
+      "id": "LONG-UK-HTML",
+      "title": "Marlow & Finch divisional results, H1 2026/27",
+      "split": "smoke",
+      "condition": "smoke",
+      "world_enabled": true,
+      "profile": "united_kingdom",
+      "form": "html",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "marlow-finch-divisions",
+              "title": "Marlow & Finch divisional results, H1 2026/27",
+              "text": "<html><head><title>Marlow &amp; Finch plc: divisional results</title></head><body>\n<h1>Marlow &amp; Finch plc: divisional results for the six months ended 30 September 2026</h1>\n<p>Marlow &amp; Finch plc is a fictional engineering group created for a Loupist evaluation. This statement is not a market observation, a price or a recommendation.</p>\n<p>Unaudited. Monetary amounts are in £m. H1 is the six months ended 30 September and H2 the six months ended 31 March; the financial year ends on 31 March.</p>\n<table>\n<thead><tr><th scope=\"col\">Division and measure</th><th scope=\"col\">H1 2026/27</th><th scope=\"col\">H1 2025/26</th><th scope=\"col\">H2 2025/26</th><th scope=\"col\">FY 2025/26</th><th scope=\"col\">FY 2024/25</th></tr></thead>\n<tbody>\n<tr><th scope=\"row\">Kennet Filtration: Revenue (£m)</th><td>31.6</td><td>36.7</td><td>34.1</td><td>70.8</td><td>66.7</td></tr>\n<tr><th scope=\"row\">Kennet Filtration: Adjusted operating profit (£m)</th><td>3.6</td><td>4.2</td><td>4.1</td><td>8.3</td><td>8.5</td></tr>\n<tr><th scope=\"row\">Kennet Filtration: Order intake (£m)</th><td>36.9</td><td>31.6</td><td>36.8</td><td>68.4</td><td>66.0</td></tr>\n<tr><th scope=\"row\">Kennet Filtration: Closing order book (£m)</th><td>26.2</td><td>24.7</td><td>25.7</td><td>25.7</td><td>25.8</td></tr>\n<tr><th scope=\"row\">Kennet Filtration: Capital expenditure (£m)</th><td>1.8</td><td>1.6</td><td>1.9</td><td>3.5</td><td>3.3</td></tr>\n<tr><th scope=\"row\">Kennet Filtration: Average employees (number)</th><td>313</td><td>315</td><td>310</td><td>310</td><td>294</td></tr>\n<tr><th scope=\"row\">Medway Valves: Revenue (£m)</th><td>85.9</td><td>95.8</td><td>91.6</td><td>187.3</td><td>194.1</td></tr>\n<tr><th scope=\"row\">Medway Valves: Adjusted operating profit (£m)</th><td>10.5</td><td>10.2</td><td>11.2</td><td>21.4</td><td>21.0</td></tr>\n<tr><th scope=\"row\">Medway Valves: Order intake (£m)</th><td>91.4</td><td>107.8</td><td>100.3</td><td>208.1</td><td>190.1</td></tr>\n<tr><th scope=\"row\">Medway Valves: Closing order book (£m)</th><td>70.3</td><td>67.6</td><td>71.0</td><td>71.0</td><td>71.5</td></tr>\n<tr><th scope=\"row\">Medway Valves: Capital expenditure (£m)</th><td>4.4</td><td>4.8</td><td>4.2</td><td>9.0</td><td>8.9</td></tr>\n<tr><th scope=\"row\">Medway Valves: Average employees (number)</th><td>789</td><td>909</td><td>857</td><td>857</td><td>862</td></tr>\n<tr><th scope=\"row\">Tamar Pumps: Revenue (£m)</th><td>21.6</td><td>22.4</td><td>20.1</td><td>42.5</td><td>39.9</td></tr>\n<tr><th scope=\"row\">Tamar Pumps: Adjusted operating profit (£m)</th><td>2.4</td><td>2.7</td><td>2.5</td><td>5.2</td><td>4.9</td></tr>\n<tr><th scope=\"row\">Tamar Pumps: Order intake (£m)</th><td>22.5</td><td>23.1</td><td>24.4</td><td>47.5</td><td>48.9</td></tr>\n<tr><th scope=\"row\">Tamar Pumps: Closing order book (£m)</th><td>15.1</td><td>14.2</td><td>17.1</td><td>17.1</td><td>15.8</td></tr>\n<tr><th scope=\"row\">Tamar Pumps: Capital expenditure (£m)</th><td>1.1</td><td>1.2</td><td>1.0</td><td>2.2</td><td>2.3</td></tr>\n<tr><th scope=\"row\">Tamar Pumps: Average employees (number)</th><td>190</td><td>184</td><td>215</td><td>215</td><td>216</td></tr>\n<tr><th scope=\"row\">Solent Seals: Revenue (£m)</th><td>69.1</td><td>76.3</td><td>66.3</td><td>142.6</td><td>135.5</td></tr>\n<tr><th scope=\"row\">Solent Seals: Adjusted operating profit (£m)</th><td>8.4</td><td>8.9</td><td>9.0</td><td>18.0</td><td>18.8</td></tr>\n<tr><th scope=\"row\">Solent Seals: Order intake (£m)</th><td>74.1</td><td>70.6</td><td>81.8</td><td>152.4</td><td>158.9</td></tr>\n<tr><th scope=\"row\">Solent Seals: Closing order book (£m)</th><td>52.6</td><td>53.6</td><td>51.8</td><td>51.8</td><td>48.7</td></tr>\n<tr><th scope=\"row\">Solent Seals: Capital expenditure (£m)</th><td>3.6</td><td>3.7</td><td>3.2</td><td>6.8</td><td>6.8</td></tr>\n<tr><th scope=\"row\">Solent Seals: Average employees (number)</th><td>596</td><td>624</td><td>595</td><td>595</td><td>597</td></tr>\n<tr><th scope=\"row\">Mersey Couplings: Revenue (£m)</th><td>84.6</td><td>82.1</td><td>74.4</td><td>156.5</td><td>148.3</td></tr>\n<tr><th scope=\"row\">Mersey Couplings: Adjusted operating profit (£m)</th><td>10.0</td><td>9.2</td><td>9.6</td><td>18.8</td><td>19.5</td></tr>\n<tr><th scope=\"row\">Mersey Couplings: Order intake (£m)</th><td>75.0</td><td>81.0</td><td>82.1</td><td>163.0</td><td>157.5</td></tr>\n<tr><th scope=\"row\">Mersey Couplings: Closing order book (£m)</th><td>55.4</td><td>50.0</td><td>59.0</td><td>59.0</td><td>53.3</td></tr>\n<tr><th scope=\"row\">Mersey Couplings: Capital expenditure (£m)</th><td>4.2</td><td>4.3</td><td>4.3</td><td>8.6</td><td>8.4</td></tr>\n<tr><th scope=\"row\">Mersey Couplings: Average employees (number)</th><td>676</td><td>674</td><td>699</td><td>699</td><td>637</td></tr>\n<tr><th scope=\"row\">Tyne Actuators: Revenue (£m)</th><td>42.4</td><td>43.4</td><td>42.2</td><td>85.7</td><td>84.0</td></tr>\n<tr><th scope=\"row\">Tyne Actuators: Adjusted operating profit (£m)</th><td>5.1</td><td>4.4</td><td>5.0</td><td>9.4</td><td>9.5</td></tr>\n<tr><th scope=\"row\">Tyne Actuators: Order intake (£m)</th><td>47.0</td><td>46.7</td><td>38.3</td><td>85.0</td><td>81.4</td></tr>\n<tr><th scope=\"row\">Tyne Actuators: Closing order book (£m)</th><td>30.8</td><td>28.4</td><td>26.1</td><td>26.1</td><td>26.8</td></tr>\n<tr><th scope=\"row\">Tyne Actuators: Capital expenditure (£m)</th><td>2.1</td><td>2.3</td><td>2.1</td><td>4.3</td><td>4.0</td></tr>\n<tr><th scope=\"row\">Tyne Actuators: Average employees (number)</th><td>356</td><td>369</td><td>375</td><td>375</td><td>380</td></tr>\n<tr><th scope=\"row\">Severn Gauges: Revenue (£m)</th><td>19.5</td><td>18.9</td><td>21.3</td><td>40.2</td><td>37.4</td></tr>\n<tr><th scope=\"row\">Severn Gauges: Adjusted operating profit (£m)</th><td>2.6</td><td>2.5</td><td>2.5</td><td>4.9</td><td>4.9</td></tr>\n<tr><th scope=\"row\">Severn Gauges: Order intake (£m)</th><td>21.0</td><td>19.6</td><td>18.2</td><td>37.8</td><td>36.1</td></tr>\n<tr><th scope=\"row\">Severn Gauges: Closing order book (£m)</th><td>12.9</td><td>12.4</td><td>13.9</td><td>13.9</td><td>13.8</td></tr>\n<tr><th scope=\"row\">Severn Gauges: Capital expenditure (£m)</th><td>1.0</td><td>0.9</td><td>1.1</td><td>2.0</td><td>2.1</td></tr>\n<tr><th scope=\"row\">Severn Gauges: Average employees (number)</th><td>181</td><td>155</td><td>188</td><td>188</td><td>181</td></tr>\n<tr><th scope=\"row\">Humber Bearings: Revenue (£m)</th><td>92.3</td><td>86.3</td><td>85.4</td><td>171.7</td><td>171.7</td></tr>\n<tr><th scope=\"row\">Humber Bearings: Adjusted operating profit (£m)</th><td>11.0</td><td>11.3</td><td>10.8</td><td>22.1</td><td>21.1</td></tr>\n<tr><th scope=\"row\">Humber Bearings: Order intake (£m)</th><td>81.0</td><td>91.1</td><td>86.8</td><td>177.9</td><td>177.4</td></tr>\n<tr><th scope=\"row\">Humber Bearings: Closing order book (£m)</th><td>59.8</td><td>60.4</td><td>60.8</td><td>60.8</td><td>63.6</td></tr>\n<tr><th scope=\"row\">Humber Bearings: Capital expenditure (£m)</th><td>4.5</td><td>4.1</td><td>4.1</td><td>8.2</td><td>7.7</td></tr>\n<tr><th scope=\"row\">Humber Bearings: Average employees (number)</th><td>736</td><td>850</td><td>817</td><td>817</td><td>758</td></tr>\n<tr><th scope=\"row\">Clyde Fasteners: Revenue (£m)</th><td>36.8</td><td>34.9</td><td>32.3</td><td>67.3</td><td>69.9</td></tr>\n<tr><th scope=\"row\">Clyde Fasteners: Adjusted operating profit (£m)</th><td>4.5</td><td>4.4</td><td>4.6</td><td>9.1</td><td>9.4</td></tr>\n<tr><th scope=\"row\">Clyde Fasteners: Order intake (£m)</th><td>40.9</td><td>39.1</td><td>40.9</td><td>80.1</td><td>81.9</td></tr>\n<tr><th scope=\"row\">Clyde Fasteners: Closing order book (£m)</th><td>23.8</td><td>25.8</td><td>25.8</td><td>25.8</td><td>25.9</td></tr>\n<tr><th scope=\"row\">Clyde Fasteners: Capital expenditure (£m)</th><td>1.6</td><td>1.8</td><td>1.8</td><td>3.6</td><td>3.3</td></tr>\n<tr><th scope=\"row\">Clyde Fasteners: Average employees (number)</th><td>322</td><td>284</td><td>344</td><td>344</td><td>325</td></tr>\n<tr><th scope=\"row\">Avon Compressors: Revenue (£m)</th><td>62.7</td><td>68.3</td><td>63.6</td><td>131.9</td><td>119.5</td></tr>\n<tr><th scope=\"row\">Avon Compressors: Adjusted operating profit (£m)</th><td>6.8</td><td>7.0</td><td>6.8</td><td>13.8</td><td>14.1</td></tr>\n<tr><th scope=\"row\">Avon Compressors: Order intake (£m)</th><td>64.7</td><td>67.4</td><td>62.4</td><td>129.7</td><td>117.7</td></tr>\n<tr><th scope=\"row\">Avon Compressors: Closing order book (£m)</th><td>47.5</td><td>39.6</td><td>47.2</td><td>47.2</td><td>45.4</td></tr>\n<tr><th scope=\"row\">Avon Compressors: Capital expenditure (£m)</th><td>3.3</td><td>2.8</td><td>2.9</td><td>5.7</td><td>5.7</td></tr>\n<tr><th scope=\"row\">Avon Compressors: Average employees (number)</th><td>517</td><td>591</td><td>617</td><td>617</td><td>573</td></tr>\n<tr><th scope=\"row\">Trent Manifolds: Revenue (£m)</th><td>75.1</td><td>69.3</td><td>74.8</td><td>144.1</td><td>148.4</td></tr>\n<tr><th scope=\"row\">Trent Manifolds: Adjusted operating profit (£m)</th><td>7.8</td><td>8.8</td><td>7.8</td><td>16.7</td><td>16.9</td></tr>\n<tr><th scope=\"row\">Trent Manifolds: Order intake (£m)</th><td>69.6</td><td>68.0</td><td>79.6</td><td>147.6</td><td>144.7</td></tr>\n<tr><th scope=\"row\">Trent Manifolds: Closing order book (£m)</th><td>50.5</td><td>53.5</td><td>47.3</td><td>47.3</td><td>49.7</td></tr>\n<tr><th scope=\"row\">Trent Manifolds: Capital expenditure (£m)</th><td>3.3</td><td>3.5</td><td>3.6</td><td>7.1</td><td>6.8</td></tr>\n<tr><th scope=\"row\">Trent Manifolds: Average employees (number)</th><td>634</td><td>671</td><td>635</td><td>635</td><td>588</td></tr>\n<tr><th scope=\"row\">Wye Fittings: Revenue (£m)</th><td>51.2</td><td>47.9</td><td>53.4</td><td>101.3</td><td>99.1</td></tr>\n<tr><th scope=\"row\">Wye Fittings: Adjusted operating profit (£m)</th><td>6.5</td><td>6.1</td><td>5.6</td><td>11.7</td><td>11.9</td></tr>\n<tr><th scope=\"row\">Wye Fittings: Order intake (£m)</th><td>58.1</td><td>49.1</td><td>54.7</td><td>103.8</td><td>94.7</td></tr>\n<tr><th scope=\"row\">Wye Fittings: Closing order book (£m)</th><td>38.4</td><td>36.6</td><td>37.6</td><td>37.6</td><td>34.2</td></tr>\n<tr><th scope=\"row\">Wye Fittings: Capital expenditure (£m)</th><td>2.6</td><td>2.3</td><td>2.6</td><td>4.9</td><td>4.7</td></tr>\n<tr><th scope=\"row\">Wye Fittings: Average employees (number)</th><td>481</td><td>441</td><td>414</td><td>414</td><td>395</td></tr>\n</tbody>\n</table>\n<p>The board declared an interim dividend of 4.6 pence per share, payable on 08/01/2027.</p>\n</body></html>\n",
+              "origin": "https://fixtures.invalid/world/smoke-long-tables/marlow-finch-divisions",
+              "publication_time": "2026-11-18",
+              "acquired_at": "2026-11-18T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "row": "Kennet Filtration: Adjusted operating profit",
+          "column": "H1 2026/27",
+          "value": 3.6,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Kennet Filtration: Closing order book",
+          "column": "H2 2025/26",
+          "value": 25.7,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Kennet Filtration: Average employees",
+          "column": "FY 2024/25",
+          "value": 294,
+          "unit": "count",
+          "currency": null
+        },
+        {
+          "row": "Medway Valves: Adjusted operating profit",
+          "column": "H1 2025/26",
+          "value": 10.2,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Medway Valves: Closing order book",
+          "column": "FY 2025/26",
+          "value": 71.0,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Medway Valves: Average employees",
+          "column": "H1 2025/26",
+          "value": 909,
+          "unit": "count",
+          "currency": null
+        },
+        {
+          "row": "Tamar Pumps: Adjusted operating profit",
+          "column": "FY 2025/26",
+          "value": 5.2,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Tamar Pumps: Closing order book",
+          "column": "H1 2026/27",
+          "value": 15.1,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Tamar Pumps: Average employees",
+          "column": "H2 2025/26",
+          "value": 215,
+          "unit": "count",
+          "currency": null
+        },
+        {
+          "row": "Solent Seals: Adjusted operating profit",
+          "column": "FY 2024/25",
+          "value": 18.8,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Solent Seals: Closing order book",
+          "column": "H2 2025/26",
+          "value": 51.8,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Solent Seals: Average employees",
+          "column": "FY 2024/25",
+          "value": 597,
+          "unit": "count",
+          "currency": null
+        },
+        {
+          "row": "Mersey Couplings: Adjusted operating profit",
+          "column": "H1 2025/26",
+          "value": 9.2,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Mersey Couplings: Closing order book",
+          "column": "FY 2025/26",
+          "value": 59.0,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Mersey Couplings: Average employees",
+          "column": "H1 2026/27",
+          "value": 676,
+          "unit": "count",
+          "currency": null
+        },
+        {
+          "row": "Tyne Actuators: Adjusted operating profit",
+          "column": "FY 2025/26",
+          "value": 9.4,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Tyne Actuators: Closing order book",
+          "column": "H1 2026/27",
+          "value": 30.8,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Tyne Actuators: Average employees",
+          "column": "H2 2025/26",
+          "value": 375,
+          "unit": "count",
+          "currency": null
+        },
+        {
+          "row": "Severn Gauges: Adjusted operating profit",
+          "column": "FY 2024/25",
+          "value": 4.9,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Severn Gauges: Closing order book",
+          "column": "H1 2025/26",
+          "value": 12.4,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Severn Gauges: Average employees",
+          "column": "FY 2024/25",
+          "value": 181,
+          "unit": "count",
+          "currency": null
+        },
+        {
+          "row": "Humber Bearings: Adjusted operating profit",
+          "column": "H1 2025/26",
+          "value": 11.3,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Humber Bearings: Closing order book",
+          "column": "FY 2025/26",
+          "value": 60.8,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Humber Bearings: Average employees",
+          "column": "H1 2026/27",
+          "value": 736,
+          "unit": "count",
+          "currency": null
+        },
+        {
+          "row": "Clyde Fasteners: Adjusted operating profit",
+          "column": "H2 2025/26",
+          "value": 4.6,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Clyde Fasteners: Closing order book",
+          "column": "H1 2026/27",
+          "value": 23.8,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Clyde Fasteners: Average employees",
+          "column": "H2 2025/26",
+          "value": 344,
+          "unit": "count",
+          "currency": null
+        },
+        {
+          "row": "Avon Compressors: Adjusted operating profit",
+          "column": "FY 2024/25",
+          "value": 14.1,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Avon Compressors: Closing order book",
+          "column": "H1 2025/26",
+          "value": 39.6,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Avon Compressors: Average employees",
+          "column": "FY 2025/26",
+          "value": 617,
+          "unit": "count",
+          "currency": null
+        },
+        {
+          "row": "Trent Manifolds: Adjusted operating profit",
+          "column": "H1 2025/26",
+          "value": 8.8,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Trent Manifolds: Closing order book",
+          "column": "FY 2025/26",
+          "value": 47.3,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Trent Manifolds: Average employees",
+          "column": "H1 2026/27",
+          "value": 634,
+          "unit": "count",
+          "currency": null
+        },
+        {
+          "row": "Wye Fittings: Adjusted operating profit",
+          "column": "H2 2025/26",
+          "value": 5.6,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Wye Fittings: Closing order book",
+          "column": "FY 2024/25",
+          "value": 34.2,
+          "unit": "million",
+          "currency": "GBP"
+        },
+        {
+          "row": "Wye Fittings: Average employees",
+          "column": "H2 2025/26",
+          "value": 414,
+          "unit": "count",
+          "currency": null
+        }
+      ]
+    }
+  ]
+}

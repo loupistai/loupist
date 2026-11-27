@@ -365,6 +365,7 @@ async fn each_loupist_writes_and_marks_only_its_own_follows_until_it_is_removed(
             crate::knowledge::KnowledgeMapQuery {
                 loupist_id: loupist.into(),
                 max_nodes: None,
+                as_of: None,
             },
         )
         .unwrap()

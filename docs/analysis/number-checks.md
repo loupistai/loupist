@@ -188,7 +188,11 @@ word boundary (`fraud 12` has no AUD amount) and precede the number by at most t
 spaces without a line break; `−` (U+2212) is a minus in text and in a provider's
 text field (`"−1.20"`) as in a figure, as are `–`, `‒`, `﹣` and full-width `－`
 touching the number; a minus after a grouped or decimal amount (`1,234-`) also
-negates it; `(1,234)` and `△1,234` are negatives; `1조 2,345억원` is one amount.
+negates it; `(1,234)` and `△1,234` are negatives; `1조 2,345억원`, `86億5,000万円`
+and `1兆2,000億円` (兆 is 10^12) are each one amount; `TEUR 84.312` is thousands of
+euros printed with a decimal comma; a unit line in words (`(R$ milhões)`,
+`(em R$ milhões)`, `(Mio. EUR)`, `(₹ in crore)`, `(GBX)`) states its scale, and
+`(R$ mil)` states none, since `mil` is a thousand or a million by language.
 The filled triangle `▲` is a negative only in Japanese-context text, where
 statements print negatives with either triangle: with kana within 512 bytes
 before it, `有形固定資産の取得による支出 ▲510,803` reads −510,803. Elsewhere `▲`
