@@ -141,7 +141,6 @@ td:not([data-streamdown="table-cell"]) .number-chip { display: inline-block; min
 .composer-asof-title { color: var(--gg-color-text-tertiary); font-size: var(--gg-text-meta); }
 .composer-asof-error { color: var(--gg-color-negative); font-size: var(--gg-text-meta); }
 .composer-asof-quick { display: flex; flex-wrap: wrap; gap: var(--gg-space-1); }
-.composer-asof-explain { color: var(--gg-color-text-secondary); font-size: var(--gg-text-meta); }
 .composer-asof-actions { display: flex; justify-content: flex-end; gap: var(--gg-space-2); }
 .as-of-note { display: grid; gap: var(--gg-space-1); margin: var(--gg-space-3) 0 0; padding: var(--gg-space-3) var(--gg-space-4); border-radius: var(--gg-radius-md); background: var(--gg-color-info-soft); color: var(--gg-color-text-primary); font-size: var(--gg-text-body); line-height: var(--gg-leading-body); animation: number-chip-in var(--gg-motion-fast) var(--gg-ease-out); }
 .as-of-note p { margin: 0; }

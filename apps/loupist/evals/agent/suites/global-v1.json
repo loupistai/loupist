@@ -1,0 +1,1116 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "global",
+  "version": 1,
+  "description": "Twelve fictional units in six user languages (Japanese, German, Portuguese, Chinese, Indian English with lakh and crore, Korean), each once in a research session and once with Bot, on Sources from six market profiles. The interface stays English where it has no translation; the answer, the progress notes and a saved check's summary follow the user. Two units save a check from a request in the user's language and one is a user's correction of a figure.",
+  "budget": {
+    "maxInputTokensPerTurn": 500000,
+    "maxTurns": 40
+  },
+  "scenarios": [
+    {
+      "id": "G-001",
+      "title": "A Japanese question about a saved Japanese earnings summary, in a research session",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "global",
+        "user-ja",
+        "research-session",
+        "profile-japan"
+      ],
+      "connections": [],
+      "clock": "2026-11-18T09:00:00+09:00",
+      "seed": {
+        "sources": [
+          {
+            "id": "todai-q2",
+            "title": "灯台電子 2027年3月期 第2四半期決算短信",
+            "text": "灯台電子株式会社(証券コード 1188)2027年3月期 第2四半期決算短信(2026年11月6日)。当第2四半期累計期間の連結売上高は4,218億円、連結営業利益は前年同期比12.4%増の86億5,000万円となった。年間配当予想は1株当たり48円(中間24円、期末24円)で据え置く。通期の連結売上高予想8,600億円は変更しない。\n",
+            "origin": "https://fictional.example/global/todai-q2",
+            "company": "灯台電子",
+            "form": "決算短信",
+            "publication_time": "2026-11-06",
+            "language": "ja"
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "保存してある灯台電子の決算短信によると、第2四半期累計の連結営業利益はいくらで、前年同期からどう変わりましたか。",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "progress_language",
+                    "language": "ja",
+                    "min": 0,
+                    "metric": "answer_language"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ja",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "cites_source_span",
+                    "source_origin": "https://fictional.example/global/todai-q2",
+                    "figure_pattern": "86\\s*億\\s*5[,，]?000\\s*万|86\\.5\\s*億",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "12.4"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G-002",
+      "title": "A Japanese request to be told when a followed company changes its dividend policy, with Bot",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "global",
+        "user-ja",
+        "bot",
+        "check",
+        "scripted-world",
+        "profile-japan"
+      ],
+      "connections": [],
+      "clock": "2026-11-21T10:00:00+09:00",
+      "seed": {
+        "watchlist": [
+          {
+            "name": "灯台電子"
+          }
+        ],
+        "sources": [
+          {
+            "id": "todai-dividend-policy",
+            "title": "灯台電子 配当方針に関するお知らせ",
+            "text": "灯台電子株式会社は、配当方針として連結配当性向30%を目安とすると発表した。\n",
+            "origin": "https://fictional.example/global/todai-dividend-policy",
+            "company": "灯台電子",
+            "form": "適時開示",
+            "publication_time": "2026-05-14",
+            "language": "ja"
+          },
+          {
+            "id": "todai-dividend-policy-revised",
+            "title": "灯台電子 配当方針の変更に関するお知らせ",
+            "text": "灯台電子株式会社は配当方針を変更し、連結配当性向の目安を40%に引き上げると発表した。これは従来の配当方針に代わるものである。\n",
+            "origin": "https://fictional.example/global/todai-dividend-policy-revised",
+            "company": "灯台電子",
+            "form": "適時開示",
+            "publication_time": "2026-11-20",
+            "language": "ja"
+          }
+        ],
+        "asset_links": [
+          {
+            "asset": "灯台電子",
+            "company": "灯台電子"
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "todai-dividend-policy",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "灯台電子",
+                  "type": "Organization",
+                  "codes": [
+                    "1188"
+                  ]
+                }
+              ],
+              "facts": [
+                {
+                  "id": "td-payout-30",
+                  "subject": "灯台電子",
+                  "object": "灯台電子",
+                  "relation": "REPORTS",
+                  "text": "灯台電子の配当方針は連結配当性向30%を目安とする。",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          },
+          {
+            "source": "todai-dividend-policy-revised",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "灯台電子",
+                  "type": "Organization",
+                  "codes": [
+                    "1188"
+                  ]
+                }
+              ],
+              "facts": [
+                {
+                  "id": "td-payout-40",
+                  "subject": "灯台電子",
+                  "object": "灯台電子",
+                  "relation": "REPORTS",
+                  "text": "灯台電子は配当方針を変更し、連結配当性向の目安を40%に引き上げた。従来の配当方針に代わるものである。",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {
+                "td-payout-40": {
+                  "contradicts": [
+                    "td-payout-30"
+                  ],
+                  "same_assertion": [
+                    "td-payout-30"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "灯台電子が配当方針を変更したら教えてください。",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "trigger_save",
+                    "args": {
+                      "template": "world-change"
+                    },
+                    "successful": true,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "check_dry_run",
+                    "met_on": [
+                      "2026-11-20"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ja",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "summary-names-the-trigger",
+                    "criterion": "The saved when_met_summary says which kind of change starts a follow-up. It does not state that the outcome the user asked about has happened.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "summary-in-user-language",
+                    "criterion": "The saved when_met_summary is written in the language of the user's message.",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "id": "follow-up-judges-the-change",
+                    "criterion": "The saved follow-up prompt tells the run to say from the evidence whether the change is the one the user asked about.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "reply-does-not-overpromise",
+                    "criterion": "The reply says what starts the follow-up and promises no more than the saved check decides. When the saved check passes direction, the reply may describe it as an alert for a move that way, as long as it says a follow-up run verifies the change from the evidence. When it passes no direction, the reply describes the check as starting a follow-up whenever such a fact changes and says the follow-up then judges whether it is the change the user asked about; a reply that then promises a check firing only on that exact outcome fails.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G-003",
+      "title": "A German question about a saved half-year report with decimal commas, in a research session",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "global",
+        "user-de",
+        "research-session",
+        "profile-germany"
+      ],
+      "connections": [],
+      "clock": "2026-08-20T09:00:00+02:00",
+      "seed": {
+        "sources": [
+          {
+            "id": "lindenhof-h1",
+            "title": "Lindenhof Maschinenbau AG Halbjahresfinanzbericht 2026",
+            "text": "Lindenhof Maschinenbau AG, Halbjahresfinanzbericht 2026 (veröffentlicht am 6. August 2026). Die Umsatzerlöse beliefen sich im ersten Halbjahr 2026 auf 1.482,6 Mio. EUR (Vorjahr: 1.397,4 Mio. EUR). Das EBIT sank auf 118,3 Mio. EUR (Vorjahr: 131,9 Mio. EUR). Der Auftragsbestand lag zum 30. Juni 2026 bei 2,1 Mrd. EUR. Die Prognose für das Geschäftsjahr 2026 bleibt unverändert: Der Vorstand erwartet Umsatzerlöse von 3,0 bis 3,2 Mrd. EUR.\n",
+            "origin": "https://fictional.example/global/lindenhof-h1",
+            "company": "Lindenhof Maschinenbau",
+            "form": "Halbjahresfinanzbericht",
+            "publication_time": "2026-08-06",
+            "language": "de"
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Wie hoch war das EBIT von Lindenhof Maschinenbau im ersten Halbjahr 2026 laut dem gespeicherten Halbjahresfinanzbericht, und wie hat es sich gegenüber dem Vorjahr verändert?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "progress_language",
+                    "language": "de",
+                    "min": 0,
+                    "metric": "answer_language"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "de",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "cites_source_span",
+                    "source_origin": "https://fictional.example/global/lindenhof-h1",
+                    "figure_pattern": "118[,.]3\\s*(?:Mio\\.?|Millionen|million)",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "131,9",
+                      "131.9"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G-004",
+      "title": "A German request to be told when a followed company lowers its guidance, with Bot",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "global",
+        "user-de",
+        "bot",
+        "check",
+        "scripted-world",
+        "profile-germany"
+      ],
+      "connections": [],
+      "clock": "2026-10-29T09:00:00+01:00",
+      "seed": {
+        "watchlist": [
+          {
+            "name": "Lindenhof Maschinenbau"
+          }
+        ],
+        "sources": [
+          {
+            "id": "lindenhof-h1",
+            "title": "Lindenhof Maschinenbau AG Halbjahresfinanzbericht 2026",
+            "text": "Lindenhof Maschinenbau AG, Halbjahresfinanzbericht 2026 (veröffentlicht am 6. August 2026). Die Umsatzerlöse beliefen sich im ersten Halbjahr 2026 auf 1.482,6 Mio. EUR (Vorjahr: 1.397,4 Mio. EUR). Das EBIT sank auf 118,3 Mio. EUR (Vorjahr: 131,9 Mio. EUR). Der Auftragsbestand lag zum 30. Juni 2026 bei 2,1 Mrd. EUR. Die Prognose für das Geschäftsjahr 2026 bleibt unverändert: Der Vorstand erwartet Umsatzerlöse von 3,0 bis 3,2 Mrd. EUR.\n",
+            "origin": "https://fictional.example/global/lindenhof-h1",
+            "company": "Lindenhof Maschinenbau",
+            "form": "Halbjahresfinanzbericht",
+            "publication_time": "2026-08-06",
+            "language": "de"
+          },
+          {
+            "id": "lindenhof-prognose",
+            "title": "Lindenhof Maschinenbau AG senkt Umsatzprognose 2026",
+            "text": "Lindenhof Maschinenbau AG senkt die Umsatzprognose für das Geschäftsjahr 2026 auf 2,8 bis 2,9 Mrd. EUR. Die bisherige Prognose von 3,0 bis 3,2 Mrd. EUR wird damit ersetzt.\n",
+            "origin": "https://fictional.example/global/lindenhof-prognose",
+            "company": "Lindenhof Maschinenbau",
+            "form": "Ad-hoc-Mitteilung",
+            "publication_time": "2026-10-28",
+            "language": "de"
+          }
+        ],
+        "asset_links": [
+          {
+            "asset": "Lindenhof Maschinenbau",
+            "company": "Lindenhof Maschinenbau"
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "lindenhof-h1",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Lindenhof Maschinenbau",
+                  "type": "Organization",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "lh-revenue-h1",
+                  "subject": "Lindenhof Maschinenbau",
+                  "object": "Lindenhof Maschinenbau",
+                  "relation": "REPORTS",
+                  "text": "Die Umsatzerlöse der Lindenhof Maschinenbau AG beliefen sich im ersten Halbjahr 2026 auf 1.482,6 Mio. EUR.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "lh-ebit-h1",
+                  "subject": "Lindenhof Maschinenbau",
+                  "object": "Lindenhof Maschinenbau",
+                  "relation": "REPORTS",
+                  "text": "Das EBIT der Lindenhof Maschinenbau AG sank im ersten Halbjahr 2026 auf 118,3 Mio. EUR.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "lh-guidance-initial",
+                  "subject": "Lindenhof Maschinenbau",
+                  "object": "Lindenhof Maschinenbau",
+                  "relation": "REPORTS",
+                  "text": "Die Prognose der Lindenhof Maschinenbau AG für das Geschäftsjahr 2026 lautet auf Umsatzerlöse von 3,0 bis 3,2 Mrd. EUR.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          },
+          {
+            "source": "lindenhof-prognose",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Lindenhof Maschinenbau",
+                  "type": "Organization",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "lh-guidance-lowered",
+                  "subject": "Lindenhof Maschinenbau",
+                  "object": "Lindenhof Maschinenbau",
+                  "relation": "REPORTS",
+                  "text": "Die Lindenhof Maschinenbau AG senkte die Umsatzprognose für das Geschäftsjahr 2026 auf 2,8 bis 2,9 Mrd. EUR und ersetzte damit die bisherige Prognose.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {
+                "lh-guidance-lowered": {
+                  "contradicts": [
+                    "lh-guidance-initial"
+                  ],
+                  "same_assertion": [
+                    "lh-guidance-initial"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Sag mir Bescheid, wenn Lindenhof Maschinenbau seine Prognose senkt.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "trigger_save",
+                    "args": {
+                      "template": "world-change"
+                    },
+                    "successful": true,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "check_dry_run",
+                    "met_on": [
+                      "2026-10-28"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "de",
+                    "metric": "answer_language"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "summary-names-the-trigger",
+                    "criterion": "The saved when_met_summary says which kind of change starts a follow-up. It does not state that the outcome the user asked about has happened.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "summary-in-user-language",
+                    "criterion": "The saved when_met_summary is written in the language of the user's message.",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "id": "follow-up-judges-the-change",
+                    "criterion": "The saved follow-up prompt tells the run to say from the evidence whether the change is the one the user asked about.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "reply-does-not-overpromise",
+                    "criterion": "The reply says what starts the follow-up and promises no more than the saved check decides. When the saved check passes direction, the reply may describe it as an alert for a move that way, as long as it says a follow-up run verifies the change from the evidence. When it passes no direction, the reply describes the check as starting a follow-up whenever such a fact changes and says the follow-up then judges whether it is the change the user asked about; a reply that then promises a check firing only on that exact outcome fails.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G-005",
+      "title": "A Portuguese question about a saved results release in reais, in a research session",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "global",
+        "user-pt",
+        "research-session",
+        "profile-brazil"
+      ],
+      "connections": [],
+      "clock": "2026-11-10T09:00:00-03:00",
+      "seed": {
+        "sources": [
+          {
+            "id": "serra-azul-3t26",
+            "title": "Serra Azul Papel e Celulose: resultado do terceiro trimestre de 2026",
+            "text": "A Serra Azul Papel e Celulose S.A. informou em 5 de novembro de 2026 que sua receita líquida no terceiro trimestre de 2026 foi de R$ 1,84 bilhão, ante R$ 1,71 bilhão no mesmo período de 2025. O EBITDA ajustado somou R$ 612,4 milhões, com margem de 33,3%. A companhia assinou contrato de fornecimento de celulose com a Porto Claro Embalagens, com vigência a partir de 1º de janeiro de 2027.\n",
+            "origin": "https://fictional.example/global/serra-azul-3t26",
+            "company": "Serra Azul Papel e Celulose",
+            "form": "release de resultados",
+            "publication_time": "2026-11-05",
+            "language": "pt"
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Pelo release da Serra Azul que está nas minhas Fontes, qual foi a receita líquida no terceiro trimestre de 2026 e quanto ela tinha sido um ano antes?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "progress_language",
+                    "language": "pt",
+                    "min": 0,
+                    "metric": "answer_language"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "pt",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "cites_source_span",
+                    "source_origin": "https://fictional.example/global/serra-azul-3t26",
+                    "figure_pattern": "1[,.]84\\s*bilh|1[.,]?840\\s*milh",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "1,71",
+                      "1.71",
+                      "1.710"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G-006",
+      "title": "A Portuguese quick question about a contract in a saved release, with Bot",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "global",
+        "user-pt",
+        "bot",
+        "profile-brazil"
+      ],
+      "connections": [],
+      "clock": "2026-11-10T09:00:00-03:00",
+      "seed": {
+        "sources": [
+          {
+            "id": "serra-azul-3t26",
+            "title": "Serra Azul Papel e Celulose: resultado do terceiro trimestre de 2026",
+            "text": "A Serra Azul Papel e Celulose S.A. informou em 5 de novembro de 2026 que sua receita líquida no terceiro trimestre de 2026 foi de R$ 1,84 bilhão, ante R$ 1,71 bilhão no mesmo período de 2025. O EBITDA ajustado somou R$ 612,4 milhões, com margem de 33,3%. A companhia assinou contrato de fornecimento de celulose com a Porto Claro Embalagens, com vigência a partir de 1º de janeiro de 2027.\n",
+            "origin": "https://fictional.example/global/serra-azul-3t26",
+            "company": "Serra Azul Papel e Celulose",
+            "form": "release de resultados",
+            "publication_time": "2026-11-05",
+            "language": "pt"
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "A Serra Azul fechou algum contrato novo? Com quem e a partir de quando?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "pt",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "Porto Claro"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "answer_matching",
+                    "patterns": [
+                      "1[ºo°]?\\s*de\\s*janeiro\\s*de\\s*2027",
+                      "janeiro\\s*de\\s*2027",
+                      "0?1/0?1/2027"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G-007",
+      "title": "A Chinese question about a saved quarterly report in 亿元, in a research session",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "global",
+        "user-zh",
+        "research-session",
+        "profile-hong-kong-china"
+      ],
+      "connections": [],
+      "clock": "2026-11-03T09:00:00+08:00",
+      "seed": {
+        "sources": [
+          {
+            "id": "lanchuan-q3",
+            "title": "岚川新材料2026年第三季度报告",
+            "text": "岚川新材料股份有限公司(证券代码:990618)2026年第三季度报告(2026年10月29日披露)。公司2026年第三季度实现营业收入21.3亿元,同比下降8.5%;归属于上市公司股东的净利润为1.86亿元。公司拟在惠州新建年产12万吨的电池隔膜基材生产线,预计2027年第四季度投产。\n",
+            "origin": "https://fictional.example/global/lanchuan-q3",
+            "company": "岚川新材料",
+            "form": "季度报告",
+            "publication_time": "2026-10-29",
+            "language": "zh"
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "根据我保存的岚川新材料三季报,第三季度营业收入是多少,同比变化如何?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "progress_language",
+                    "language": "zh",
+                    "min": 0,
+                    "metric": "answer_language"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "zh",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "cites_source_span",
+                    "source_origin": "https://fictional.example/global/lanchuan-q3",
+                    "figure_pattern": "21\\.3\\s*亿|2[,.]?130\\s*百万|2\\.13\\s*(?:billion|十亿)",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "8.5"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G-008",
+      "title": "A Chinese quick question about a planned production line in a saved report, with Bot",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "global",
+        "user-zh",
+        "bot",
+        "profile-hong-kong-china"
+      ],
+      "connections": [],
+      "clock": "2026-11-03T09:00:00+08:00",
+      "seed": {
+        "sources": [
+          {
+            "id": "lanchuan-q3",
+            "title": "岚川新材料2026年第三季度报告",
+            "text": "岚川新材料股份有限公司(证券代码:990618)2026年第三季度报告(2026年10月29日披露)。公司2026年第三季度实现营业收入21.3亿元,同比下降8.5%;归属于上市公司股东的净利润为1.86亿元。公司拟在惠州新建年产12万吨的电池隔膜基材生产线,预计2027年第四季度投产。\n",
+            "origin": "https://fictional.example/global/lanchuan-q3",
+            "company": "岚川新材料",
+            "form": "季度报告",
+            "publication_time": "2026-10-29",
+            "language": "zh"
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "岚川新材料的新生产线打算什么时候投产?产能多大?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "zh",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "12万吨",
+                      "12 万吨",
+                      "12万"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "answer_matching",
+                    "patterns": [
+                      "2027\\s*年\\s*第?\\s*四\\s*季度",
+                      "2027\\s*年?\\s*Q4"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G-009",
+      "title": "A user corrects a figure World holds, in Indian English with crore, in a research session",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "global",
+        "user-en-in",
+        "research-session",
+        "correction",
+        "scripted-world",
+        "profile-india"
+      ],
+      "connections": [],
+      "clock": "2026-11-16T10:00:00+05:30",
+      "seed": {
+        "sources": [
+          {
+            "id": "saraswati-q2",
+            "title": "Saraswati Looms Q2 FY2026-27 results",
+            "text": "Saraswati Looms Limited, unaudited results for Q2 FY2026-27 (announced 9 November 2026). Revenue from operations was ₹642.80 crore, against ₹588.15 crore in Q2 FY2025-26. Profit after tax was ₹41.25 crore. Employee benefit expense was ₹9,875.40 lakh. The board declared an interim dividend of ₹2.50 per equity share.\n",
+            "origin": "https://fictional.example/global/saraswati-q2",
+            "company": "Saraswati Looms Limited",
+            "form": "quarterly results",
+            "publication_time": "2026-11-09",
+            "language": "en"
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "saraswati-q2",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Saraswati Looms Limited",
+                  "type": "Organization",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "sl-revenue-q2",
+                  "subject": "Saraswati Looms Limited",
+                  "object": "Saraswati Looms Limited",
+                  "relation": "REPORTS",
+                  "text": "Saraswati Looms Limited reported revenue from operations of ₹642.80 crore for Q2 FY2026-27.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "sl-profit-q2",
+                  "subject": "Saraswati Looms Limited",
+                  "object": "Saraswati Looms Limited",
+                  "relation": "REPORTS",
+                  "text": "Saraswati Looms Limited reported profit after tax of ₹41.25 crore for Q2 FY2026-27.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "sl-interim-dividend",
+                  "subject": "Saraswati Looms Limited",
+                  "object": "Saraswati Looms Limited",
+                  "relation": "REPORTS",
+                  "text": "The board of Saraswati Looms Limited declared an interim dividend of ₹2.50 per equity share.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "In World this claim is there: \"Saraswati Looms Limited reported revenue from operations of ₹642.80 crore for Q2 FY2026-27.\" (Source: \"Saraswati Looms Q2 FY2026-27 results\", published 9 November 2026). This is wrong because the company itself has issued a corrigendum: revenue from operations is ₹624.80 crore only, not 642.80. I have seen the corrigendum with my own eyes at their office, it is not uploaded anywhere yet. Kindly keep my figure also.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "no_false_save_claim",
+                    "metric": "boundary"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "committed",
+                    "kind": [
+                      "source",
+                      "note"
+                    ],
+                    "min": 1,
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "correction-kept-beside-the-report",
+                    "criterion": "The answer says the user's figure of ₹624.80 crore was kept as the user's own statement beside the reported ₹642.80 crore. It does not say the reported figure was replaced, removed or corrected.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G-010",
+      "title": "An Indian English quick question that asks for crore where the Source gives lakh, with Bot",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "global",
+        "user-en-in",
+        "bot",
+        "profile-india"
+      ],
+      "connections": [],
+      "clock": "2026-11-16T10:00:00+05:30",
+      "seed": {
+        "sources": [
+          {
+            "id": "saraswati-q2",
+            "title": "Saraswati Looms Q2 FY2026-27 results",
+            "text": "Saraswati Looms Limited, unaudited results for Q2 FY2026-27 (announced 9 November 2026). Revenue from operations was ₹642.80 crore, against ₹588.15 crore in Q2 FY2025-26. Profit after tax was ₹41.25 crore. Employee benefit expense was ₹9,875.40 lakh. The board declared an interim dividend of ₹2.50 per equity share.\n",
+            "origin": "https://fictional.example/global/saraswati-q2",
+            "company": "Saraswati Looms Limited",
+            "form": "quarterly results",
+            "publication_time": "2026-11-09",
+            "language": "en"
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Sir, what was the employee benefit expense of Saraswati Looms in Q2 FY2026-27? Tell me in crore only, not in lakh.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "en",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "contains_number_any",
+                    "values": [
+                      "98.75",
+                      "98.754"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "crore"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G-011",
+      "title": "A Korean question about a saved Korean results summary, in a research session",
+      "split": "capability",
+      "language": "ko",
+      "tags": [
+        "global",
+        "user-ko",
+        "research-session",
+        "profile-korea"
+      ],
+      "connections": [],
+      "clock": "2026-11-16T10:00:00+09:00",
+      "seed": {
+        "sources": [
+          {
+            "id": "garam-q3",
+            "title": "가람정밀 2026년 3분기 실적 요약",
+            "text": "가람정밀(990431) 2026년 3분기 연결 실적(2026년 11월 12일 공시). 매출액은 1,234억 원으로 전년 동기 1,102억 원에서 늘었고, 영업이익은 87억 원으로 전년 동기 95억 원에서 줄었다. 9월 말 수주잔고는 1조 2,345억 원이다. 회사는 2027년 상반기에 창원 2공장을 가동할 계획이다.\n",
+            "origin": "https://fictional.example/global/garam-q3",
+            "company": "가람정밀",
+            "form": "분기보고서",
+            "publication_time": "2026-11-12",
+            "language": "ko"
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "제 자료에 있는 가람정밀 3분기 실적 요약에서 영업이익은 얼마였고 전년 동기와 비교하면 어떤가요?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "progress_language",
+                    "language": "ko",
+                    "min": 0,
+                    "metric": "answer_language"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ko",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "cites_source_span",
+                    "source_origin": "https://fictional.example/global/garam-q3",
+                    "figure_pattern": "(?<![\\d,.])87\\s*억",
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "95억",
+                      "95 억"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "G-012",
+      "title": "A Korean quick question about an order backlog in a saved summary, with Bot",
+      "split": "capability",
+      "language": "ko",
+      "tags": [
+        "global",
+        "user-ko",
+        "bot",
+        "profile-korea"
+      ],
+      "connections": [],
+      "clock": "2026-11-16T10:00:00+09:00",
+      "seed": {
+        "sources": [
+          {
+            "id": "garam-q3",
+            "title": "가람정밀 2026년 3분기 실적 요약",
+            "text": "가람정밀(990431) 2026년 3분기 연결 실적(2026년 11월 12일 공시). 매출액은 1,234억 원으로 전년 동기 1,102억 원에서 늘었고, 영업이익은 87억 원으로 전년 동기 95억 원에서 줄었다. 9월 말 수주잔고는 1조 2,345억 원이다. 회사는 2027년 상반기에 창원 2공장을 가동할 계획이다.\n",
+            "origin": "https://fictional.example/global/garam-q3",
+            "company": "가람정밀",
+            "form": "분기보고서",
+            "publication_time": "2026-11-12",
+            "language": "ko"
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "가람정밀 수주잔고가 지금 얼마나 되나요?",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ko",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "1조 2,345억",
+                      "1조2,345억",
+                      "1조 2345억",
+                      "1.2345조",
+                      "12,345억"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

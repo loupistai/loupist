@@ -741,6 +741,79 @@ mod tests {
         assert_eq!(chart.len(), 1);
         assert_eq!((&chart[0].date, chart[0].value), (&price.date, price.value));
 
+        drop(_transport);
+        // The saved recipe still points at March 3. A background check must
+        // request the current sessions and return their own dated bars.
+        let mut check_fixture: Value = serde_json::from_str(include_str!(
+            "../../../../evals/agent/suites/replay/krx-noeul-2026-03-03.json"
+        ))
+        .unwrap();
+        let first = check_fixture["requests"][0].clone();
+        for (date, close) in [("20260304", "73000"), ("20260305", "82500")] {
+            let mut entry = first.clone();
+            entry["request"]["url"] = json!(format!(
+                "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd={date}"
+            ));
+            let row = &mut entry["response"]["body"]["OutBlock_1"][0];
+            row["BAS_DD"] = json!(date);
+            row["TDD_CLSPRC"] = json!(close);
+            row["TDD_HGPRC"] = json!("83000");
+            check_fixture["requests"]
+                .as_array_mut()
+                .unwrap()
+                .push(entry);
+        }
+        let _check_transport = serde_json::from_value::<Replay>(check_fixture)
+            .unwrap()
+            .install(&state.credential_environment)
+            .unwrap();
+        let _worker = crate::python_run::PYTHON_WORKER_TEST_LOCK.lock().await;
+        let code = crate::commands::triggers::template_source("price-band").unwrap();
+        let allowed = [
+            crate::scheduled_tasks::types::TriggerToolGrant {
+                name: "followed".into(),
+                provider: None,
+            },
+            crate::scheduled_tasks::types::TriggerToolGrant {
+                name: "price".into(),
+                provider: Some(price.provider.clone()),
+            },
+        ];
+        let check_executor =
+            AppToolExecutor::for_host(&state, loupist, [KRX_SOURCE_ID.to_owned()].into());
+        let run = |allowed| {
+            check_executor.run_check(super::super::python_reads::CheckRun {
+                code: &code,
+                after_outside_text: false,
+                use_memory: true,
+                args: Default::default(),
+                state: json!({}),
+                now: "2026-03-05T18:00:00+09:00".into(),
+                as_of: None,
+                stale_after_days: crate::scheduled_tasks::trigger::DEFAULT_STALE_AFTER_DAYS,
+                allowed,
+                discover_providers: false,
+                replay: None,
+                max_rounds: 3,
+                max_calls: 3,
+            })
+        };
+        let result = run(&allowed).await.unwrap();
+        assert_eq!(
+            result.outcome,
+            crate::scheduled_tasks::types::TriggerOutcome::Met,
+            "{result:?}"
+        );
+        assert_eq!(result.as_of.as_deref(), Some("2026-03-05"));
+        assert_eq!(result.evidence["moved"][0]["from"]["date"], "2026-03-04");
+        assert_eq!(result.evidence["moved"][0]["to"]["value"], 82500.0);
+        assert_eq!(result.reads, 2);
+        let mut wrong_provider = allowed.clone();
+        wrong_provider[1].provider = Some("different".into());
+        let refused = run(&wrong_provider).await.unwrap();
+        assert_eq!(refused.ledger[1]["response"]["code"], "not_approved");
+        assert_eq!(page().current_price.as_ref(), Some(&price));
+
         binding.enabled = false;
         binding.granted_permissions.clear();
         binding.updated_at_ms += 1;

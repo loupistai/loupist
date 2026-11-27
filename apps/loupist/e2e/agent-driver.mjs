@@ -3,7 +3,7 @@ import { readFile, mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createWebdriverHelpers } from "./webdriver-helpers.mjs";
-import { openMainTab } from "./native-shell.mjs";
+import { openComposerModelMenu, openMainTab } from "./native-shell.mjs";
 import { collectWorkProgress } from "./work-progress.mjs";
 import { assertPresetSelection, livePreset, runLabelMatches, thinkingLabels } from "./live-preset.mjs";
 import { readWindowGeometry, setWindowSize } from "./window-geometry.mjs";
@@ -214,30 +214,6 @@ async function clickVisibleMenuItem(browser, role, exactText) {
   );
 }
 
-async function openModelMenu(browser, trigger) {
-  const waitForMenu = async () => {
-    for (let attempt = 0; attempt < 15; attempt += 1) {
-      await browser.pause(100);
-      for (const menu of await browser.$$('[data-slot="dropdown-menu-content"]')) {
-        if (await visible(menu)) return menu;
-      }
-    }
-    return null;
-  };
-  const alreadyOpen = await waitForMenu();
-  if (alreadyOpen) return alreadyOpen;
-  await trigger.click();
-  let menu = await waitForMenu();
-  for (const key of ["Space", "Enter"]) {
-    if (menu) return menu;
-    await browser.keys("Escape");
-    await browser.keys(key);
-    menu = await waitForMenu();
-  }
-  if (!menu) throw new Error("Model menu did not open");
-  return menu;
-}
-
 async function visibleModelMenu(browser) {
   for (const menu of await browser.$$(
     '[data-slot="dropdown-menu-content"]',
@@ -311,7 +287,7 @@ async function configureChatModel(browser, modelText, effortText) {
       if (!(await chatModelControl.isEnabled())) {
         throw new Error(`Visible Chat model control is disabled: ${label}`);
       }
-      await openModelMenu(browser, chatModelControl);
+      await openComposerModelMenu(browser, chatModel);
       await clickVisibleMenuItem(browser, "menuitemradio", modelText);
       await openModelAdvanced(browser);
       await clickThinkingLevel(browser, effortText);
@@ -336,7 +312,7 @@ async function configurePresetModel(browser, selector, context, outsideSelector)
   if (!selectionReady(label)) {
     if (!(await control.isEnabled())) throw new Error(`${context} model control is disabled: ${label}`);
     try {
-      await openModelMenu(browser, control);
+      await openComposerModelMenu(browser, selector);
       await clickVisibleMenuItem(browser, "menuitemradio", preset.modelLabel);
       await openModelAdvanced(browser);
       await clickThinkingLevel(browser, preset.effort);

@@ -235,7 +235,7 @@
       "permission": "always",
       "component": null,
       "label": "Run Python",
-      "description": "Run Python for analysis, charts and file work. Pass the program as code (at most 64 KiB of UTF-8). timeout_seconds is optional, defaults to 60 and cannot exceed 120. The working directory is /workspace, a private copy of this Loupist folder made for the call: dot folders are left out, and so is any file over 8 MiB. Files at its top level are read-only. /attachments is this Chat's attachments, read-only. /scratch is writable and discarded when the call ends. Create or change files under /workspace/outputs/ or inside an existing top-level folder; those changes are copied back to the Loupist folder, including ones made before a timeout. There is no network, no shell, no other program and no package install. Data comes through the loupist module, which reads what you may read in this reply and nothing else. loupist.call(tool, **arguments) runs a data or Memory read by the name and arguments you would use yourself and returns its whole result as Python data; loupist.dataset, loupist.followed, loupist.price, loupist.sources and loupist.source cover the common reads, and loupist.gather takes several calls at once. Use it whenever the work is over many rows or several reads that feed each other: fetch and compute in the code and print only what you will say, because rows you pull into the conversation cost the user tokens and invite copying errors. A single figure you will quote is still a direct call, and text you have to judge (a filing, a transcript, a news report) is still yours to read. inputs names reads or datasets to fetch before the code starts, which saves a pass: the code runs again from the top each time it asks for a read it does not have yet, so ask for reads early and together. A read that is refused or fails raises loupist.Refused or loupist.Unavailable with a code (rate_limited carries retry_after); catch it when the rest of the work can go on, and say what was not read. No write, web request or question to the user is reachable from code. script runs a saved script by name (name or name@version) with args in place of code. The result lists the reads the code made, each with its citation link: a figure you take from this result cites this step, and the user can open the code and its reads and run it again on the same data. Installed: numpy, pandas, scipy, statsmodels, scikit-learn, matplotlib, seaborn, sympy, networkx, xarray, openpyxl, XlsxWriter, xlrd, python-docx, python-pptx, pypdf, pdfplumber, reportlab, Pillow, lxml, BeautifulSoup, PyYAML, tabulate and Jinja2. Fonts cover Latin text only, so Korean, Japanese or Chinese labels in a figure or PDF show as empty boxes. Save a chart as a PNG under outputs/ and the app shows it. The result has status (completed, failed, timed_out or cancelled), exit_code, stdout and stderr (64 KiB each; printing more ends the run), changed_files, and conflicts listing writes that were not copied back. Large folders use a partial snapshot: outputs first, then recent files; the result reports the omitted count and a few omitted paths, and snapshot_scan_truncated means that count is a lower bound. Output is a calculation, not a Source. Available after web pages and in unattended runs.",
+      "description": "Run Python for analysis, charts and file work. Pass the program as code (at most 64 KiB of UTF-8). timeout_seconds is optional, defaults to 60 and cannot exceed 120. The working directory is /workspace, a private copy of this Loupist folder made for the call: dot folders are left out, and so is any file over 8 MiB. Files at its top level are read-only. /attachments is this Chat's attachments, read-only. /scratch is writable and discarded when the call ends. These three paths exist only inside the call: ls, read, find and grep refuse them, and take a path in the Loupist folder or the path an attachment's entry gives. Create or change files under /workspace/outputs/ or inside an existing top-level folder; those changes are copied back to the Loupist folder, including ones made before a timeout. There is no network, no shell, no other program and no package install. Data comes through the loupist module, which reads what you may read in this reply and nothing else. loupist.call(tool, **arguments) runs a data or Memory read by the name and arguments you would use yourself and returns its whole result as Python data; loupist.dataset, loupist.followed, loupist.price, loupist.sources, loupist.source and loupist.changes (world_changes, following next for up to pages pages) cover the common reads, and loupist.gather takes several calls at once. A dataset's pointer is a JSON pointer into it, and one that matches nothing comes back as no_data: read the dataset whole when you have not seen its shape. Use it whenever the work is over many rows or several reads that feed each other: fetch and compute in the code and print only what you will say, because rows you pull into the conversation cost the user tokens and invite copying errors. A single figure you will quote is still a direct call, and text you have to judge (a filing, a transcript, a news report) is still yours to read. inputs names reads or datasets to fetch before the code starts, which saves a pass: the code runs again from the top each time it asks for a read it does not have yet, so ask for reads early and together. A read that is refused or fails raises loupist.Refused or loupist.Unavailable with a code (rate_limited carries retry_after); catch it when the rest of the work can go on, and say what was not read. Code and inputs reach data connections, datasets and Memory reads and nothing else: a web page, a capture, a write or a question to the user is refused as not_exposed, also when this reply already read that page or file. Put what you took from such text into the code as values; retained text comes from a saved Source, with loupist.source(recordId). script runs a saved script by name (name or name@version) with args in place of code. The result lists the reads the code made, each with its citation link: a figure you take from this result cites this step, and the user can open the code and its reads and run it again on the same data. Installed: numpy, pandas, scipy, statsmodels, scikit-learn, matplotlib, seaborn, sympy, networkx, xarray, openpyxl, XlsxWriter, xlrd, python-docx, python-pptx, pypdf, pdfplumber, reportlab, Pillow, lxml, BeautifulSoup, PyYAML, tabulate and Jinja2. Fonts cover Latin text only, so Korean, Japanese or Chinese labels in a figure or PDF show as empty boxes. Save a chart as a PNG under outputs/ and the app shows it. The result has status (completed, failed, timed_out or cancelled), exit_code, stdout and stderr (64 KiB each; printing more ends the run), changed_files, and conflicts listing writes that were not copied back. Large folders use a partial snapshot: outputs first, then recent files; the result reports the omitted count and a few omitted paths, and snapshot_scan_truncated means that count is a lower bound. Output is a calculation, not a Source. Available after web pages and in unattended runs.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -386,6 +386,13 @@
             "maxLength": 32768
           }
         }
+      },
+      "progress": {
+        "category": "system",
+        "operation": "write",
+        "running": "Saving a script",
+        "done": "Saved a script",
+        "target_args": ["name"]
       }
     },
     {
@@ -405,6 +412,13 @@
             "maxLength": 200
           }
         }
+      },
+      "progress": {
+        "category": "system",
+        "operation": "list",
+        "running": "Finding saved scripts",
+        "done": "Found saved scripts",
+        "target_args": ["query"]
       }
     },
     {
@@ -430,6 +444,13 @@
             "maximum": 4294967295
           }
         }
+      },
+      "progress": {
+        "category": "system",
+        "operation": "read",
+        "running": "Reading a saved script",
+        "done": "Read a saved script",
+        "target_args": ["name"]
       }
     },
     {
@@ -530,7 +551,7 @@
       "permission": "memory_read",
       "component": null,
       "label": "Search World",
-      "description": "Discover this Loupist's source-grounded knowledge and source records. Use scope world to add graph retrieval, for how names relate and for the facts recorded about one name; the default all scope and company/period/source-type filters search saved local records. Results are a bounded discovery page: follow nextOffset with the same query and filters; when capped is true, narrow the query. Follow readArgs to exact-read the matched claim or source before relying on it. A World claim whose ends are all the same name (usually relation REPORTS) is a fact reported about that name, not a relationship. partial true and warnings mean graph retrieval was unavailable; empty local matches do not establish that information is absent. Use lens_search for methods and conversation_memory for prior chats and notes. Company, period, and source-type filters match exact declared metadata, not guessed categories. Omit filters unless the stored values are known; use the query text for descriptive terms. World names and facts are stored in English, with original-language names kept as aliases. Sources retain their own wording, so include the user's spelling when searching for a named Source.",
+      "description": "Discover this Loupist's source-grounded knowledge and source records. Use scope world to add graph retrieval, for how names relate and for the facts recorded about one name; the default all scope and company/period/source-type filters search saved local records. Results are a bounded discovery page: follow nextOffset with the same query and filters; when capped is true, narrow the query. Follow readArgs to exact-read the matched claim or source before relying on it. A World claim whose ends are all the same name (usually relation REPORTS) is a fact reported about that name, not a relationship. A World hit with ended true is a claim that has ended: history, not the current state. partial true and warnings mean graph retrieval was unavailable; empty local matches do not establish that information is absent. Use lens_search for methods and conversation_memory for prior chats and notes. Company, period, and source-type filters match exact declared metadata, not guessed categories. Omit filters unless the stored values are known; use the query text for descriptive terms. World names and facts are stored in English, with original-language names kept as aliases. Sources retain their own wording, so include the user's spelling when searching for a named Source.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -610,12 +631,87 @@
       }
     },
     {
+      "name": "world_changes",
+      "method": "world.changes",
+      "permission": "memory_read",
+      "component": null,
+      "label": "Read changes",
+      "description": "What changed in this Loupist's World; needs Memory reads. Use it for a question about what changed or what is new since a date, a filing or the last run, before fetching anything again. With since it lists what this Loupist learned after that point: a fact added or supported again, a fact that ended (ending gives the end, whether it is approximate and the claim that ended it), a contradiction between Sources (conflict), a disputed or withdrawn fact, and in lens the Lens sections that went out of date. Each change names its Source with its publication time and readArgs for the exact read. axis is recorded (the default: when this Loupist learned it) or published (when the Source was published). about limits the feed to asset ids, World node ids and Lens page ids; kinds to the kinds named. pending counts Sources in scope that are still being read and failed those that could not be read, so an empty page with pending above zero does not yet show that nothing changed. When capped is true, pass next as since for the following page. The result carries a readRef, and lens_file cites a listed claim as {world: readRef, claimId}. With between, in place of since, it compares two saved Sources, such as a filing with the one before it: what the later one ended (ended_by_to), added (new_in_to), restated and contradicts (conflicts), and what it does not repeat (not_restated), which is not an ending. A between result is not a read to cite: exact-read the claims and Sources you rely on. Under an as-of date it shows only what was known by then.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "since": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "description": "A YYYY-MM-DD date; previous_run, in a learning program's run only, for everything since its last completed run started; or the next value of an earlier page."
+          },
+          "axis": {
+            "type": "string",
+            "enum": [
+              "recorded",
+              "published"
+            ]
+          },
+          "about": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "kinds": {
+            "type": "array",
+            "maxItems": 7,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "added",
+                "supported",
+                "ended",
+                "conflict",
+                "disputed",
+                "withdrawn",
+                "lens"
+              ]
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "between": {
+            "type": "object",
+            "description": "to and from are Source record ids, to the later one. Without from, the host takes the latest earlier Source of the same declared company and form, and asks for from when it finds none.",
+            "additionalProperties": false,
+            "required": ["to"],
+            "properties": {
+              "to": { "type": "string", "minLength": 1, "maxLength": 128 },
+              "from": { "type": "string", "minLength": 1, "maxLength": 128 }
+            }
+          }
+        }
+      },
+      "progress": {
+        "category": "memory",
+        "operation": "read",
+        "running": "Reading saved notes",
+        "done": "Read saved notes",
+        "source": "memory"
+      }
+    },
+    {
       "name": "world_read",
       "method": "world.read",
       "permission": "memory_read",
       "component": null,
       "label": "Read World",
-      "description": "Read the exact source span or a bounded World view for this Loupist. Copy the discovery hit's readArgs unchanged; identifiers are opaque and cannot be derived from one another. World relations and facts are attributed claims, not independent originals; a claim whose ends are all the same name (usually relation REPORTS) is a fact reported about that name, to be stated as a fact with its Source and never as a relationship between two names: follow each sourceTargets entry's readArgs to its retained Source. Complete retained spans are original evidence; do not reopen the same file or URL merely to verify them. Fetch a new original for missing coverage, newer information, or an explicit current-original request. Exact reads return a turn-local readRef and citation_url; search snippets do not acknowledge a read. Pass centerNodeId for a node neighborhood or centerClaimId to read the exact selected claim, a relationship or a fact about one name, even outside the first graph page.",
+      "description": "Read the exact source span or a bounded World view for this Loupist. Copy the discovery hit's readArgs unchanged; identifiers are opaque and cannot be derived from one another. World relations and facts are attributed claims, not independent originals; a claim whose ends are all the same name (usually relation REPORTS) is a fact reported about that name, to be stated as a fact with its Source and never as a relationship between two names: follow each sourceTargets entry's readArgs to its retained Source. Complete retained spans are original evidence; do not reopen the same file or URL merely to verify them. Fetch a new original for missing coverage, newer information, or an explicit current-original request. Exact reads return a turn-local readRef and citation_url; search snippets do not acknowledge a read. Pass centerNodeId for a node neighborhood or centerClaimId to read the exact selected claim, a relationship or a fact about one name, even outside the first graph page. A claim marked ended is history and carries its end; an approximate end means no later than that date.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -656,6 +752,14 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 128
+          },
+          "asOf": {
+            "type": "string",
+            "description": "A YYYY-MM-DD date: the World as it stood then. It narrows the turn's as-of date and never extends it."
+          },
+          "history": {
+            "type": "boolean",
+            "description": "With centerClaimId, adds lineage: the Sources that first stated the claim, supported it and ended it, each with its publication time and readArgs, the claims it ended, and whether its end was stated by a Source (stated) or taken from the date of a later statement of the same thing (reference)."
           }
         }
       },
@@ -673,7 +777,7 @@
       "permission": "memory_write",
       "component": "memory-save",
       "label": "Save a source",
-      "description": "Stage the exact delivered payload of a current-turn source result_ref. A workspace_capture retains a local user_file, not verified external origin. A pasted_capture retains a user_provided Source: the user's exact pasted text with the link and publisher they stated, none of it verified; give it a title, the date the user stated as publicationTime, and included_full only when the user pasted the whole document. Only a result that a read tool acquired from outside can be saved: a web page, a filing, a data provider's result. A dataset_query slice, a calculate or run_python result, a chart, a file you wrote and saved memory are derived and are refused here; their figures stay cited through the result they came from, so there is nothing to save. A data result that reached you as a summary (model_delivery coverage bounded_sample) is kept whole as the host retained it: save it as it is, as included_full, rather than reading it again narrower to make it fit. Only a result the host refuses as larger than one Source holds (8 MiB) calls for a narrower read, and you save that narrower result instead. The host rejects an unknown coverage and will not store a snippet as a full original. Saving must be on. The host returns a saveRef with status staged, durable false, and graph after_turn_commit, or graph not_added_price_data for price data (bars, quotes, exchange rates, index levels, rate series and tables made only of them): such a Source is kept, searchable and citable, and World reads nothing from it, so save it for its figures and never to teach World. A save becomes durable only when the reply commits, then automatic World processing can begin for the others. Never wait for graph completion inside this turn. At most 16 source saves per turn, and none in a Bot quick ask. Prioritize originals supplied by the user and evidence needed for the answer. Reuse an unchanged saved Source after reading it; do not fetch and save it again just to cite it.",
+      "description": "Stage the exact delivered payload of a current-turn source result_ref. A workspace_capture retains a local user_file, not verified external origin. A pasted_capture retains a user_provided Source: the user's exact pasted text with the link and publisher they stated, none of it verified; give it a title, the date the user stated as publicationTime, and included_full only when the user pasted the whole document. Only a result that a read tool acquired from outside can be saved: a web page, a filing, a data provider's result. A Korea Investment account or balance read (a kis_read result whose operation is account.read) stays on this computer and is refused. Use it in this answer only and keep its figures out of Memory. A dataset_query slice, a calculate or run_python result, a chart, a file you wrote and saved memory are derived and are refused here; their figures stay cited through the result they came from, so there is nothing to save. A data result that reached you as a summary (model_delivery coverage bounded_sample) is kept whole as the host retained it: save it as it is, as included_full, rather than reading it again narrower to make it fit. Only a result the host refuses as larger than one Source holds (8 MiB) calls for a narrower read, and you save that narrower result instead. The host rejects an unknown coverage and will not store a snippet as a full original. Saving must be on. The host returns a saveRef with status staged, durable false, and graph after_turn_commit, or graph not_added_price_data for price data (bars, quotes, exchange rates, index levels, rate series and tables made only of them): such a Source is kept, searchable and citable, and World reads nothing from it, so save it for its figures and never to teach World. A save becomes durable only when the reply commits, then automatic World processing can begin for the others. Never wait for graph completion inside this turn. At most 16 source saves per turn, and none in a Bot quick ask. Prioritize originals supplied by the user and evidence needed for the answer. Reuse an unchanged saved Source after reading it; do not fetch and save it again just to cite it.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -1086,7 +1190,7 @@
       "permission": "memory_write",
       "component": "memory-save",
       "label": "Save user principle",
-      "description": "Save only rules the user has explicitly stated. A user's rule that names an action (for example \"sell if margin falls below 10%\") is saved in the user's words; check its condition against dated evidence. Never save your own recommendations or rules you inferred. Call it in the reply where the user states the rule. A standing rule that fits in a sentence or two, a corrected way to compute a figure included (\"from now on…\"), is saved here only, not also as a method page. If the user explicitly asks for a method page, use lens_file instead and do not also call principle_save. The rule is kept when the reply completes; later answers lead with the figure it produces and give the standard one once.",
+      "description": "Save only rules the user has explicitly stated about how they invest or judge evidence. How they want replies written or work done is a standing preference, kept with bot_memory in the Bot and never here. A user's rule that names an action (for example \"sell if margin falls below 10%\") is saved in the user's words; check its condition against dated evidence. Never save your own recommendations or rules you inferred. Call it in the reply where the user states the rule, before that reply reads third-party text: after such a read the save is refused, and a later reply saves it once the user confirms. A standing rule that fits in a sentence or two, a corrected way to compute a figure included (\"from now on…\"), is saved here only, not also as a method page. If the user explicitly asks for a method page, use lens_file instead and do not also call principle_save. The rule is kept when the reply completes; later answers lead with the figure it produces and give the standard one once.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -1127,7 +1231,7 @@
       "permission": "memory_write",
       "component": "memory-save",
       "label": "File what this turn established",
-      "description": "File what this turn established into this Loupist's Lens pages when saving is on: the dated facts the answer used, what they mean (a mechanism, a value-chain link, a contradiction, a check that mattered) and what to check next. File without being asked when the answer rests on an original read this turn about a named company, asset, sector or theme. Create a method only for a multi-step procedure the user teaches or a page or check they ask you to keep; a rule that fits in a sentence goes to principle_save instead, unless the user explicitly asks for a method page. Save the teaching in the requested kind only, never both; your own checks stay on the subject or idea page. Read the page you will revise with lens_read first; the index and pointers in the turn envelope and lens_search hits are not reads. Revise the page you read by putting only the sections that change, each with the digest from that read, or create a page. A put replaces the whole section, so carry over what in it still holds; a taken title merges into that page. Subject and idea sections cite this turn's reads as their basis: {world, claimId} for a claim a world_read delivered, {source} for a retained original read or saved this turn, material the user pasted and source_save kept included, {said: true} for what the user states themselves, {lens} for synthesis from another page. Synthesis, and any section without a read, states its uncertainty. A method section cites {said: true}, the user's teaching, correction or request to keep it; perspective sections may carry no basis. Suggested keys: subject overview, facts, value-chain, drivers, risks, views, open-questions; method use-when, steps, checks, limits; idea claim, mechanism, evidence-for, evidence-against, would-break, checks; perspective beliefs, priorities, avoid. A Bot quick ask, chatter, explainers, arithmetic, a single looked-up figure, stated one-offs and a turn that only re-reads what a page already says file nothing. At most two calls, 8 pages and 40 ops per reply. Give a method a one-line summary of when it applies: later turns choose methods from the title and summary alone. The result is staged: pages land when the reply completes.",
+      "description": "File what this turn established into this Loupist's Lens pages when saving is on: the dated facts the answer used, what they mean (a mechanism, a value-chain link, a contradiction, a check that mattered) and what to check next. File without being asked when the answer rests on an original read this turn about a named company, asset, sector or theme. Create a method only for a multi-step procedure the user teaches or a page or check they ask you to keep; a rule that fits in a sentence goes to principle_save instead, unless the user explicitly asks for a method page. Save the teaching in the requested kind only, never both; your own checks stay on the subject or idea page. Read the page you will revise with lens_read first; the index and pointers in the turn envelope and lens_search hits are not reads. Revise the page you read by putting only the sections that change, each with the digest from that read, or create a page, which needs a summary op; a revision keeps its summary when you send none. A put replaces the whole section, so carry over what in it still holds; a taken title merges into that page. Title a subject page with the subject's name; a subject that already has a page under another spelling of its name is refused with that page's id and title, and you revise that page. Subject and idea sections cite this turn's reads as their basis: {world, claimId} for a claim a world_read or world_changes delivered, {source} for a retained original read or saved this turn, material the user pasted and source_save kept included, {said: true} for what the user states themselves, {lens} for synthesis from another page. role says what a section is: fact, view, check, open_question or refutation. When omitted the key decides: checks is a check, would-break a refutation, open-questions an open question, evidence-for and evidence-against facts, and other keys have none. A basis that cites a Lens page or no evidence, and every view, states its uncertainty. A subject or idea section with no refs is accepted only as a check, an open question or a refutation that states its uncertainty, on a page where some section cites evidence, already or in this call; any other is refused. A fact section's amounts must match what it cites: one at another scale or sign than the cited text refuses the call as figure_differs, and one the cited text does not print is filed and listed in number_checks. asOf is the date the section's content holds as of (YYYY-MM-DD, no later than this turn's date or its as-of date) and defaults to that date. A section whose basis cites an ended claim is filed as superseded until the basis also cites the claim that ended it, the passage that states the ending, or evidence published on or after the end. A method section cites {said: true}, the user's teaching, correction or request to keep it; perspective sections may carry no basis. Suggested keys: subject overview, facts, value-chain, drivers, risks, views, open-questions; method use-when, steps, checks, limits; idea claim, mechanism, evidence-for, evidence-against, would-break, checks; perspective beliefs, priorities, avoid. A Bot quick ask, chatter, explainers, arithmetic, a single looked-up figure, stated one-offs and a turn that only re-reads what a page already says file nothing. At most two calls, 8 pages and 40 ops per reply. Give a method a one-line summary of when it applies: later turns choose methods from the title and summary alone. The result is staged: pages land when the reply completes.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -1295,13 +1399,13 @@
                                           "type": "string",
                                           "minLength": 1,
                                           "maxLength": 128,
-                                          "description": "readRef of a world_read (scope world) this turn."
+                                          "description": "readRef of a world_read (scope world) or of a world_changes since read this turn."
                                         },
                                         "claimId": {
                                           "type": "string",
                                           "minLength": 1,
                                           "maxLength": 128,
-                                          "description": "A claim id (edges[].claim.id) that read delivered."
+                                          "description": "A claim id that read delivered: edges[].claim.id, or changes[].claimId."
                                         }
                                       }
                                     },
@@ -1368,9 +1472,17 @@
                                 "type": "string",
                                 "minLength": 1,
                                 "maxLength": 300,
-                                "description": "Required when the refs include a lens page or no read: how sure this synthesis is and what would change it."
+                                "description": "Required for a view, and when the refs include a Lens page or no evidence: how sure this is and what would change it."
                               }
                             }
+                          },
+                          "role": {
+                            "type": "string",
+                            "enum": ["fact", "view", "check", "open_question", "refutation"]
+                          },
+                          "asOf": {
+                            "type": "string",
+                            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
                           },
                           "expected": {
                             "type": "string",
@@ -2286,7 +2398,7 @@
       "permission": "always",
       "component": null,
       "label": "End a scheduled run quietly",
-      "description": "Unattended custom scheduled runs only; it takes no arguments and fails anywhere else. It marks this run as having nothing to tell the user: the run stays in the task's history, and the Bot posts no announcement and no inbox item for it. It exists for a task that asks to be told only when something happens, on a run that made the check and found that it has not. A run that could not make the check has not found that, and a task that asks for a report every run is never quiet. A run that fails is still reported as a failure.",
+      "description": "Unattended runs of a scheduled task or a learning program only; it takes no arguments and fails anywhere else. It marks this run as having nothing to tell the user: the run stays in the task's history, and the Bot posts no announcement and no inbox item for it. It exists for a task that asks to be told only when something happens, on a run that made the check and found that it has not. A run that could not make the check has not found that, and a task that asks for a report every run is never quiet. A run that fails is still reported as a failure.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -2305,7 +2417,7 @@
       "permission": "memory_read",
       "component": null,
       "label": "Read an asset page",
-      "description": "Exact read of the page this Loupist keeps for one asset: its name and reference, the user's reasons for following it and the lines that would change their mind (their words, from the Journal), your current read (Holding up, Weakening, Challenged or Broken) with its latest reason and its dated moves, the World entity it is linked to, the price the app last stored with its date, currency and provider, and the saved price read with its state (ready, failed or needs_connection; absent when none is saved). The saved read names the tool and arguments the app repeats for the price, which you can call yourself. Pass assetId, or asset as a ticker or name; when several assets match, they are returned as candidates and no page. The page is saved context and its citation_url cites what the page says. It records nothing of what has happened to the asset: that comes from data sources. Under an as-of date it returns only moves and line readings dated on or before the cutoff and leaves out your read.",
+      "description": "Exact read of the page this Loupist keeps for one asset: its name and reference, the user's reasons for following it and the lines that would change their mind (their words, from the Journal), your current read (Holding up, Weakening, Challenged or Broken) with its latest reason and its dated moves, the World entity it is linked to, the price the app last stored with its date, currency and provider, and the saved price read with its state (ready, failed or needs_connection; absent when none is saved). The saved read names the tool and arguments the app repeats for the price, which you can call yourself. Pass assetId, or asset as a ticker or name; when several assets match, they are returned as candidates and no page. The page is saved context and its citation_url cites what the page says. It records nothing of what has happened to the asset: that comes from data sources. sinceRead lists what this Loupist's World recorded about the asset since your read last moved: counts by kind, up to 8 changes, and next to continue with world_changes. Under an as-of date it returns only moves and line readings dated on or before the cutoff and leaves out your read and sinceRead.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -2664,7 +2776,7 @@
       "permission": "memory_write",
       "component": null,
       "label": "Remember for this conversation",
-      "description": "Bot only. Keep, change or drop what this continuing conversation carries forward once its early messages leave view (bot_memory.entries): a preference or limit the user set for how you work (preference), something they decided (decision), a request they are still waiting on (open), or their situation as it bears on later replies (context). Write short entries in your own words about what the user said; basis names the user's earlier messages it rests on and defaults to the current one. Save before reading outside material: after third-party text in a reply, remember and update pause, while resolve and forget still work. Use update when the user corrects an entry, resolve when it is done or no longer applies, and forget when they ask you to forget it (match finds what you no longer see). Never keep credentials, account details, or text from web pages, files or tools; a durable research finding goes to lens_file and an investment rule to principle_save. Changes apply when this reply finishes.",
+      "description": "Bot only. Keep, change or drop what this continuing conversation carries forward once its early messages leave view (bot_memory.entries): a preference or limit the user set for how you work or report (preference), something they decided (decision), a request they are still waiting on (open), or their situation as it bears on later replies (context). Write short entries in your own words about what the user said; basis names the user's earlier messages it rests on and defaults to the current one. Save before reading outside material: after third-party text in a reply, remember and update pause, while resolve and forget still work. Use update when the user corrects an entry, resolve when it is done or no longer applies, and forget when they ask you to forget it (match finds what you no longer see). Never keep credentials, account details, or text from web pages, files or tools; a durable research finding goes to lens_file and an investment rule to principle_save. preference entries also reach research sessions and scheduled runs as standing_preferences, so a way of working or reporting is kept here only, not also as a principle. When a forget returns principles, a Lens principle states the same thing and still applies: tell the user. Changes apply when this reply finishes.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -3664,7 +3776,7 @@
       "permission": "always",
       "component": "web-research",
       "label": "Search the public web",
-      "description": "Discover public web pages. Hits and snippets are discovery, not citations, and a hit can be about a different entity than the one you searched for. Call web_fetch on a returned source_id, or on a public URL the user named, before relying on a page; when a page you read links to the document it reports on (the filing, the release, the deck), fetch that link exactly as the page gives it. Empty results mean change the query rather than repeating it. Optional recency is day, week, month, or year. include_domains and exclude_domains are hostnames. Optional as_of is a YYYY-MM-DD cutoff.",
+      "description": "Discover public web pages. With Memory reads on, a saved Source that covers the question is read first, and the web is for what it lacks or for checking that it is still current. Hits and snippets are discovery, not citations, and a hit can be about a different entity than the one you searched for. Call web_fetch on a returned source_id, or on a public URL the user named, before relying on a page; when a page you read links to the document it reports on (the filing, the release, the deck), fetch that link exactly as the page gives it. Empty results mean change the query rather than repeating it. Optional recency is day, week, month, or year. include_domains and exclude_domains are hostnames. Optional as_of is a YYYY-MM-DD cutoff.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -5441,7 +5553,7 @@
       "permission": "always",
       "component": "schedules",
       "label": "Propose a check",
-      "description": "Bot only. Propose a check the app runs by itself on a schedule, with no model, and that starts you only when it is met. Use it when the user wants to be told about something data can decide: a price outside a band, a volume spike, a level crossed, a new filing in a list, a macro release. A condition that takes judgment (\"anything material\", \"a change in tone\") is a watch you run yourself (schedule_create), and the two combine: a new-filing check can start the run that judges it. script names a saved script, or template with template_params uses a bundled one; the script follows the check contract in the triggers Skill. prompt is what you will do once it is met, written for a run that knows nothing of this conversation. terms is one line saying what it checks, as the user would say it. This tool runs the check on today's data and on recent days and returns that dry run: read it, and if the check failed, could not read something, or would have fired on most days or on none when it should have, fix the script and save again before you answer. It always creates a proposal: code that runs unattended starts only when the user turns it on from its card, and each later change to its code is proposed again while the approved version keeps running. Tell the user in plain words what it checks, what it reads, how often it runs and when it would have fired, and that it uses no AI until it is met. Refused for the rest of a reply that has read outside text.",
+      "description": "Bot only. Propose a check the app runs by itself on a schedule, with no model, and that starts you only when it is met. Use it when the user wants to be told about something data can decide: a price outside a band, a volume spike, a level crossed, a new filing in a list, a macro release, a change in what this Loupist's Memory holds about an asset (a check may read world_changes). A condition that takes judgment (\"anything material\", \"a change in tone\") is a watch you run yourself (schedule_create), and the two combine: a new-filing check can start the run that judges it. script names a saved script, or template with template_params uses a bundled one; the script follows the check contract in the triggers Skill. prompt is what you will do once it is met, written for a run that knows nothing of this conversation. terms is one line saying what it checks, as the user would say it. This tool runs the check on today's data and on recent days and returns that dry run: read it, and if the check failed, could not read something, or would have fired on most days or on none when it should have, fix the script and save again before you answer. It always creates a proposal: code that runs unattended starts only when the user turns it on from its card, and each later change to its code is proposed again while the approved version keeps running. Tell the user in plain words what it checks, what it reads, how often it runs and when it would have fired, and that it uses no AI until it is met. A check that names a saved script is refused for the rest of a reply that has read outside text; one from a bundled template is not.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -5451,14 +5563,18 @@
           "title": { "type": "string" },
           "prompt": { "type": "string" },
           "terms": { "type": "string" },
+          "when_met_summary": {
+            "type": "string",
+            "description": "One line of at most 160 characters, in the user's language, saying what they are told when the check is met. The host starts the follow-up run whenever the check is met and judges nothing itself, so when the run has to judge what the check cannot (world-change), the line says which change starts a follow-up, not that the outcome the user asked about happened. The task's card shows it; prompt stays the run's instructions."
+          },
           "script": { "type": "string" },
           "template": {
             "type": "string",
-            "description": "A bundled check, in place of script: price-band, level-cross, volume-spike or new-item. Its parameters go in template_params."
+            "description": "A bundled check, in place of script: price-band, level-cross, volume-spike, new-item or world-change. Its parameters go in template_params."
           },
           "template_params": {
             "type": "object",
-            "description": "The template's parameters. price-band: band_percent (default 5), asset_ids (default every followed asset). level-cross: levels, {assetId: level} for each asset to check. volume-spike: tool, calls ({assetId: that asset's arguments} for a read that returns daily rows with a volume), rows, date_field, volume_field, multiple (default 3), window (default 20 days). new-item: tool, call (its arguments), rows, id_field, date_field, title_field. rows is the dotted path to the list in the read's result; the field names are those of its rows, so make the read yourself first and take them from what it returns."
+            "description": "The template's parameters. price-band: band_percent (default 5), asset_ids (default every followed asset). level-cross: levels, {assetId: level} for each asset to check. volume-spike: tool, calls ({assetId: that asset's arguments} for a read that returns daily rows with a volume), rows, date_field, volume_field, multiple (default 3), window (default 20 days). new-item: tool, call (its arguments), rows, id_field, date_field, title_field. rows is the dotted path to the list in the read's result; the field names are those of its rows, so make the read yourself first and take them from what it returns. world-change: asset_ids or asset_names (default every followed asset), kinds (default ended, conflict and lens), contains, words of which one must appear in the changed fact's text, and direction (lower or higher). It reads world_changes and is met when a fact this Loupist holds about those assets ended or is contradicted, or a Lens section about them went out of date. A fact that a later Source does not repeat does not meet it. For a request about one kind of change, such as lowered guidance, filter with contains and pass direction: an ended fact whose figure and the figure that replaced it compare then meets the check only when it moved that way, and one whose figures do not compare still meets it, marked direction_unknown. Describe the check by what starts it, and have prompt tell the run to say from the evidence whether the change is the one the user asked about and, for direction_unknown, that the figures did not show the direction."
           },
           "args": { "type": "object" },
           "schedule": { "type": "object" },
@@ -5466,6 +5582,13 @@
           "notify": { "type": "string" },
           "subjects": { "type": "array" }
         }
+      },
+      "progress": {
+        "category": "system",
+        "operation": "write",
+        "running": "Testing a check",
+        "done": "Proposed a check",
+        "target_args": ["title"]
       }
     },
     {
@@ -5474,7 +5597,7 @@
       "permission": "always",
       "component": "schedules",
       "label": "List scheduled tasks",
-      "description": "List and search this Loupist’s saved schedules, including paused and completed tasks, next runs, current time and device time zone. Use before creating to avoid duplicates and before resolving a task by name. If more than one matches an ambiguous request, ask the user which task; do not guess. Each task has a kind: briefing (a morning and an evening edition, each its own task, set with schedule_briefing) or custom.",
+      "description": "List and search this Loupist’s saved schedules, including paused and completed tasks, next runs, current time and device time zone. Use before creating to avoid duplicates and before resolving a task by name. If more than one matches an ambiguous request, ask the user which task; do not guess. Each task has a kind: briefing (a morning and an evening edition, each its own task, set with schedule_briefing) learning (a learning program, proposed with learning_program_save) or custom.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -5533,7 +5656,7 @@
       "permission": "always",
       "component": "schedules",
       "label": "Create a scheduled task",
-      "description": "Create a durable LOCAL app schedule when the user explicitly requests future or recurring work. Saves immediately even if the reply later fails. Each task has its own execution mode. Inherits this Chat’s selected model, effort and Memory settings. Use a distinct request_key per task, reusing the same key ONLY on retries. The Bot registers an explicit, unambiguous request immediately. State the next execution time and timezone. The app must be open to run it. Clear instructions authorize saving without asking first; ask only for material missing details. Check schedule_list first. A request for work a listed task already does is a change to that task (schedule_read, then schedule_update), or no change when it already matches: say what exists and what changed, and never create a second task for the same work. Create another only when the user asks for one in addition or the work differs; when you cannot tell, ask with ask_user. A briefing on what the user follows is never created here: set it with schedule_briefing. A watch, where the user wants to hear only when something happens, sets report to when_met. Its prompt states the condition, what to read to test it and what to report when it is met, and says that a run which made the check and found the condition not met calls schedule_quiet, which posts nothing. The first run of any task always reports, so the user sees where things stand and what a report looks like. When a preset fits (preset, with preset_params), pass it and leave prompt out: the app fills the check. terms is one line the task's card shows as what it checks, in the user's language. subjects names the followed assets the task is about, by the ids in What the user follows, so their pages can show it. notify says how a result reaches the user: now interrupts them, digest waits for the next digest, off stays in the Bot; leave it out unless they said. Each run is a model call and happens only while the app is open, so conditions on several assets go in one task and a daily check is usual. status proposed creates the task paused, waiting for the user's OK in its card; use it only for a task you suggested. The saved prompt names the requested answer language, defaulting to the language the user writes in. The run is unattended. It can use data connections, web research, calculate, run_python and Memory reads and saves (Sources, notes, Lens pages, asset reads). It has no read, ls, find, grep, write or edit tools, but run_python can read files in the Loupist folder (/workspace) and write under outputs/ or an existing subfolder (top-level files are read-only), so a task that summarizes a file or writes a report there is fine. Its run_python also reads the run's data connections and Memory through the loupist module and runs scripts saved in this Loupist, so the prompt can name a saved script and its arguments, or ask for work over many rows, many assets or reads that feed each other to be done in code; text the run must judge, such as a filing or a news report, it reads itself. dataset_export, dataset_import and workspace_capture are unavailable. It has no Skills, no charts, tables or documents, no question it can wait on and no Journal or principle saves. Write a prompt that needs none of those, tells the run to use run_python for any workspace file, and says what a finished result contains.",
+      "description": "Create a durable LOCAL app schedule when the user explicitly requests future or recurring work. Saves immediately even if the reply later fails. Each task has its own execution mode. Inherits this Chat’s selected model, effort and Memory settings. Use a distinct request_key per task, reusing the same key ONLY on retries. The Bot registers an explicit, unambiguous request immediately. State when it first runs once accepted, and the timezone. The app must be open to run it. Clear instructions authorize saving without asking first; ask only for material missing details. Check schedule_list first. A request for work a listed task already does is a change to that task (schedule_read, then schedule_update), or no change when it already matches: say what exists and what changed, and never create a second task for the same work. Create another only when the user asks for one in addition or the work differs; when you cannot tell, ask with ask_user. A briefing on what the user follows is never created here: set it with schedule_briefing. Neither is a learning program, for something the user wants kept current over time: propose it with learning_program_save. A watch, where the user wants to hear only when something happens, sets report to when_met. Its prompt states the condition, what to read to test it and what to report when it is met, and says that a run which made the check and found the condition not met calls schedule_quiet, which posts nothing. The first run of any task always reports, so the user sees where things stand and what a report looks like. When a preset fits (preset, with preset_params), pass it and leave prompt out: the app fills the check. terms is one line the task's card shows as what it checks, in the user's language. subjects names the followed assets the task is about, by the ids in What the user follows, so their pages can show it. notify says how a result reaches the user: now interrupts them, digest waits for the next digest, off stays in the Bot; leave it out unless they said. Each run is a model call and happens only while the app is open, so conditions on several assets go in one task and a daily check is usual. Every new task is saved paused and starts when the user accepts it in its card: status says what was asked (active or paused, or proposed for a task you suggested) and does not start it. The saved prompt names the requested answer language, defaulting to the language the user writes in. The run is unattended. It can use data connections, web research, calculate, run_python and Memory reads and saves (Sources, notes, Lens pages, asset reads). It has no read, ls, find, grep, write or edit tools, but run_python can read files in the Loupist folder (/workspace) and write under outputs/ or an existing subfolder (top-level files are read-only), so a task that summarizes a file or writes a report there is fine. Its run_python also reads the run's data connections and Memory through the loupist module and runs scripts saved in this Loupist, so the prompt can name a saved script and its arguments, or ask for work over many rows, many assets or reads that feed each other to be done in code; text the run must judge, such as a filing or a news report, it reads itself. dataset_export, dataset_import and workspace_capture are unavailable. It has no Skills, no charts, tables or documents, no question it can wait on and no Journal or principle saves. Write a prompt that needs none of those, tells the run to use run_python for any workspace file, and says what a finished result contains.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -5669,7 +5792,7 @@
               "fresh",
               "continue"
             ],
-            "description": "fresh: every run gets a new session, with the task prompt, Memory and a short record of the previous run. continue: the task keeps one session of its own and each run also sees its earlier runs there; never the conversation the task was created in. Follow the user’s choice; otherwise use fresh, or continue when each run builds on more of the earlier runs than that record, as a running log does. Either way runs are listed under the task in Schedule and reported in Bot, so the mode is not explained to the user unless they ask. Both retain the captured Loupist Memory settings."
+            "description": "fresh: every run gets a new session, with the task prompt, Memory and a short record of the previous run. continue: the task keeps one session of its own and each run also sees its earlier runs there; never the conversation the task was created in. Required with a schedule: follow the user’s choice; otherwise pass fresh, or continue when each run builds on more of the earlier runs than that record, as a running log does. Either way runs are listed under the task in Schedule and reported in Bot, so the mode is not explained to the user unless they ask. Both retain the captured Loupist Memory settings."
           },
           "status": {
             "type": "string",
@@ -5678,6 +5801,14 @@
               "paused",
               "proposed"
             ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "custom",
+              "learning"
+            ],
+            "description": "custom, the default, is an ordinary task. learning is refused here: a learning program is proposed with learning_program_save."
           },
           "handoff_id": {
             "type": "string",
@@ -5759,6 +5890,28 @@
               }
             },
             "additionalProperties": false
+          },
+          "event_date": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "date": {
+                "type": "string",
+                "format": "date"
+              },
+              "precision": {
+                "type": "string",
+                "enum": [
+                  "exact",
+                  "estimated"
+                ]
+              }
+            },
+            "required": [
+              "date",
+              "precision"
+            ],
+            "description": "The results day a results-follow-up preset is about, so the Schedule can show it; only with that preset. precision is exact when the company or its exchange announced the day, estimated when it is your expectation from earlier years."
           }
         },
         "required": [
@@ -5775,6 +5928,202 @@
         "target_args": [
           "title"
         ]
+      }
+    },
+    {
+      "name": "learning_program_save",
+      "method": "learning_program.save",
+      "permission": "always",
+      "component": "schedules",
+      "label": "Save a learning program",
+      "description": "Bot only. Propose a learning program: research this Loupist repeats on a schedule to keep what it knows about a subject current. Use it when the user wants something learned or kept up to date over time; a one-off question is answered now, and a single condition to be told about is a watch or a check. prompt is the brief, written for a run that knows nothing of this conversation: what to learn and why, what counts as new, where to keep it, sources to prefer and when to report. The host enforces the other fields: subjects (the followed assets, World names or Lens pages it is about), schedule, depth (how many requests a run may use), scope (the connections it may read and whether it may use the web), keeps (whether a run may save Sources, file Lens pages and update the reads of its asset subjects), report (when_new, every_run or on_condition) and delivery (the Bot, the next briefing, or none, which leaves results in Schedule). Ask only for a detail that would change the program. It always creates a proposal, paused until the user turns it on from its card: say what it will learn, when it runs, what it keeps, and that each run is a model run on their AI account while the app is open. schedule_create cannot create a learning program. Needs Memory reads and saving on. A program with its own brief, or from the question preset, is refused for the rest of a reply that has read outside text; one from another bundled preset is not.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "schedule": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "kind": { "const": "once" },
+                  "at": { "type": "string" }
+                },
+                "required": ["kind", "at"]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "kind": { "const": "interval" },
+                  "every_minutes": { "type": "integer", "minimum": 1, "maximum": 10080 }
+                },
+                "required": ["kind", "every_minutes"]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "kind": { "const": "daily" },
+                  "hour": { "type": "integer", "minimum": 0, "maximum": 23 },
+                  "minute": { "type": "integer", "minimum": 0, "maximum": 59 },
+                  "timezone": { "type": "string" }
+                },
+                "required": ["kind", "hour", "minute", "timezone"]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "kind": { "const": "weekly" },
+                  "days": {
+                    "type": "array",
+                    "items": { "type": "integer", "minimum": 0, "maximum": 6 },
+                    "minItems": 1,
+                    "maxItems": 7
+                  },
+                  "hour": { "type": "integer", "minimum": 0, "maximum": 23 },
+                  "minute": { "type": "integer", "minimum": 0, "maximum": 59 },
+                  "timezone": { "type": "string" }
+                },
+                "required": ["kind", "days", "hour", "minute", "timezone"]
+              }
+            ]
+          },
+          "subjects": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 1,
+              "properties": {
+                "asset": { "type": "string" },
+                "world": { "type": "string" },
+                "lens": { "type": "string" },
+                "name": { "type": "string" }
+              }
+            }
+          },
+          "preset": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "slots": {
+            "type": "object",
+            "maxProperties": 8,
+            "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 1000 },
+            "description": "With preset naming a bundled learning preset, the values of its slots: theme takes theme, macro-series takes series, market takes market and question takes question; asset-daily and company-filings take none, so pass {} with the followed asset in subjects. The app then writes the brief and the subject, and prompt is left out."
+          },
+          "depth": { "type": "string", "enum": ["light", "standard", "deep"] },
+          "scope": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "connections": {
+                "oneOf": [
+                  { "const": "all_enabled" },
+                  {
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1 },
+                    "maxItems": 32
+                  }
+                ]
+              },
+              "web": { "type": "boolean" }
+            },
+            "required": ["connections", "web"]
+          },
+          "keeps": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "sources": { "type": "boolean" },
+              "lens": { "type": "boolean" },
+              "asset_reads": { "type": "boolean" }
+            },
+            "required": ["sources", "lens", "asset_reads"]
+          },
+          "report": { "type": "string", "enum": ["when_new", "every_run", "on_condition"] },
+          "delivery": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "to": { "type": "string", "enum": ["bot", "briefing", "none"] }
+            },
+            "required": ["to"]
+          }
+        },
+        "required": ["request_key", "title", "schedule", "depth", "scope", "keeps", "report", "delivery"]
+      },
+      "progress": {
+        "category": "system",
+        "operation": "write",
+        "running": "Proposing a learning program",
+        "done": "Proposed a learning program",
+        "target_args": ["title"]
+      }
+    },
+    {
+      "name": "learning_handoff",
+      "method": "learning_program.handoff",
+      "permission": "always",
+      "component": "schedules",
+      "label": "Hand a learning request to Bot",
+      "description": "Research sessions only. Forward the user's request to keep learning about something over time to Bot, which drafts a learning program for them to turn on. Use it when the user wants a subject kept current over time; a question for now is answered here, and a reminder, a recurring briefing or a condition to be told about goes to schedule_handoff. Bot sees nothing of this session, so request carries the whole request by itself. subjects names what the program is about: {asset} with an id from What the user follows, {world} with a World node id, {lens} with a Lens page id, or {name} for anything else. Bot asks the user before it drafts, so do not ask about the program here. Refused for the rest of a reply that has read outside text, so hand the request off before reading any.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192,
+            "description": "The user's request in their own words and language, complete for a reader who has not seen this session: what to keep current, what counts as new, and any cadence, sources or way of reporting they asked for. A few sentences; Bot shows it to the user above its question."
+          },
+          "subjects": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 1,
+              "properties": {
+                "asset": {
+                  "type": "string"
+                },
+                "world": {
+                  "type": "string"
+                },
+                "lens": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "required": ["request"]
+      },
+      "progress": {
+        "category": "system",
+        "operation": "write",
+        "running": "Handing a learning request to Bot",
+        "done": "Handed a learning request to Bot"
       }
     },
     {
@@ -5919,7 +6268,7 @@
               "fresh",
               "continue"
             ],
-            "description": "fresh: every run gets a new session, with the task prompt, Memory and a short record of the previous run. continue: the task keeps one session of its own and each run also sees its earlier runs there; never the conversation the task was created in. Follow the user’s choice; otherwise use fresh, or continue when each run builds on more of the earlier runs than that record, as a running log does. Either way runs are listed under the task in Schedule and reported in Bot, so the mode is not explained to the user unless they ask. Both retain the captured Loupist Memory settings."
+            "description": "fresh: every run gets a new session, with the task prompt, Memory and a short record of the previous run. continue: the task keeps one session of its own and each run also sees its earlier runs there; never the conversation the task was created in. Required with a schedule: follow the user’s choice; otherwise pass fresh, or continue when each run builds on more of the earlier runs than that record, as a running log does. Either way runs are listed under the task in Schedule and reported in Bot, so the mode is not explained to the user unless they ask. Both retain the captured Loupist Memory settings."
           },
           "status": {
             "type": "string",
@@ -6101,6 +6450,12 @@
           "schedule",
           "enabled"
         ]
+      },
+      "progress": {
+        "category": "system",
+        "operation": "edit",
+        "running": "Setting the briefing",
+        "done": "Set the briefing"
       }
     },
     {
@@ -6109,7 +6464,7 @@
       "permission": "always",
       "component": "schedules",
       "label": "Update a scheduled task",
-      "description": "Change only requested fields of an existing schedule using its current revision from schedule_read. Preserves unmentioned settings, including model and Memory. Changing session mode starts a new execution context on the next run; existing results stay readable. A conflict requires a fresh read, never a duplicate replacement. Update affects future runs; pause/resume uses schedule_set_status. report, notify, subjects and terms change the same way; changing a watch's condition means changing its prompt and its terms together.",
+      "description": "Change only requested fields of an existing schedule using its current revision from schedule_read. Preserves unmentioned settings, including model and Memory. Changing session mode starts a new execution context on the next run; existing results stay readable. A conflict requires a fresh read, never a duplicate replacement. Update affects future runs; pause/resume uses schedule_set_status. report, notify, subjects and terms change the same way; changing a watch's condition means changing its prompt and its terms together. A learning program's title, brief (prompt), schedule, report and subjects change here; its depth, scope and keeps do not.",
       "parameters": {
         "type": "object",
         "additionalProperties": false,
@@ -6544,7 +6899,7 @@
       "id": "schedules",
       "preload": false,
       "name": "Scheduled tasks",
-      "description": "Load when the user asks to schedule, change or cancel recurring work, a recurring briefing or an alert for when something happens."
+      "description": "Load when the user asks to schedule, change or cancel recurring work, a recurring briefing, an alert for when something happens, or something to keep learning about over time."
     }
   ]
 }

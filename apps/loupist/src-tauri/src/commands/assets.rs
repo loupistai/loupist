@@ -242,6 +242,10 @@ fn with_price_setup(
     mut page: ThinAssetPageView,
 ) -> ThinAssetPageView {
     page.price_setup_running = state.price_setup.is_running(loupist, &page.asset.asset_id);
+    if page.since_read.is_none() {
+        page.since_read =
+            crate::commands::knowledge::since_read_block(state, loupist, &page.asset.asset_id).ok();
+    }
     page
 }
 

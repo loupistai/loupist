@@ -24,7 +24,7 @@ export function ApplicationSettings({ bridge }: { bridge: LoupistBridge }) {
   const labelId = useId(), descriptionId = useId(), loginId = useId(), loginDescription = useId();
   const status = resident?.loginItem;
   const needsPane = status === "requiresApproval" || status === "error";
-  const loginHelp = status === "unavailable" ? "loginItemUnavailable" : status === "requiresApproval" ? "loginItemDisabled" : status === "error" ? "loginItemDenied" : "loginItemDescription";
+  const loginHelp = status === "unavailable" ? "loginItemUnavailable" : status === "requiresApproval" ? "loginItemDisabled" : status === "error" ? "loginItemDenied" : null;
   const automatic = resident?.keepRunning === true && (resident.keepRunningChoice ?? null) === null;
   return <div className="settings-general">
     <section className="settings-general-block" aria-labelledby="settings-application-title">
@@ -37,19 +37,18 @@ export function ApplicationSettings({ bridge }: { bridge: LoupistBridge }) {
     </div>
     <div className="settings-row">
       <div><strong id={loginId}>{t("general.loginItem")}</strong>
-        <p className="settings-row-description" id={loginDescription}>{t(`general.${loginHelp}`)}{needsPane && <> <Button variant="link" onClick={() => {
+        {loginHelp ? <p className="settings-row-description" id={loginDescription}>{t(`general.${loginHelp}`)}{needsPane && <> <Button variant="link" onClick={() => {
           setPaneError(false);
           void bridge.loginItemOpenSettings().catch(() => setPaneError(true));
-        }}>{t("general.openLoginItems")}</Button></>}</p>
+        }}>{t("general.openLoginItems")}</Button></>}</p> : null}
       </div>
-      <Switch aria-labelledby={loginId} aria-describedby={loginDescription} checked={status === "on"} disabled={busy || (status !== "on" && status !== "off")}
+      <Switch aria-labelledby={loginId} aria-describedby={loginHelp ? loginDescription : undefined} checked={status === "on"} disabled={busy || (status !== "on" && status !== "off")}
         onCheckedChange={enabled => void change(() => bridge.loginItemSet({ enabled }))} />
     </div>
     {error || paneError ? <p className="inline-error" role="alert">{t(error === "load" ? "general.loadFailed" : "general.saveFailed")}</p> : null}
     </section>
     <section className="settings-general-block" aria-labelledby="settings-about-title">
       <h2 id="settings-about-title" className="settings-caption-label">{t("general.aboutTitle")}</h2>
-      <p className="settings-row-description">{t("general.betaNotice")}</p>
       {/* What a person needs in one sentence; where each kind of data goes is one step away. */}
       <div className="settings-privacy" data-privacy>
         <h3>{t("general.privacyTitle")}</h3>

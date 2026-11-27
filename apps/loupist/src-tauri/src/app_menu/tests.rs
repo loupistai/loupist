@@ -94,7 +94,7 @@ fn assert_menu_labels() {
             "Loupist Dev 종료",
             "파일",
             "새 리서치",
-            "새 루피스트…",
+            "새 Loupist…",
             "인쇄…",
             "윈도우 닫기",
             "편집",

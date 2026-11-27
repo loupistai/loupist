@@ -224,6 +224,8 @@ pub enum ToolMethod {
     ScheduleList,
     ScheduleRead,
     ScheduleCreate,
+    LearningProgramSave,
+    LearningHandoff,
     ScheduleHandoff,
     ScheduleQuiet,
     ScheduleBriefing,
@@ -266,6 +268,7 @@ pub enum ToolMethod {
     SourceSave,
     WorldSearch,
     WorldRead,
+    WorldChanges,
     NoteSave,
     JournalSave,
     JournalReview,
@@ -390,12 +393,19 @@ pub enum BrokerError {
         source: Box<BrokerError>,
         next: std::borrow::Cow<'static, str>,
     },
+    #[error("{source}")]
+    WithReason {
+        source: Box<BrokerError>,
+        reason: BrokerRefusalReason,
+    },
     #[error("tool broker authentication failed")]
     Authentication,
     #[error("tool frame exceeded the size limit")]
     FrameTooLarge,
     #[error("tool execution failed: {0}")]
     Execution(String),
+    #[error("Python execution timed out while waiting for another run")]
+    PythonWorkerBusy,
     #[error("No data was returned for this request.")]
     EmptyResult,
     #[error("{}", result_too_large_message(.bytes, .limit_bytes))]
@@ -428,6 +438,23 @@ pub enum BrokerError {
     BudgetExceeded { tool: String, limit: u8 },
     #[error("{}", format!("This turn has reached its limit of {} documents, charts or tables, so this one was not published.", .limit))]
     ArtifactLimit { limit: usize },
+    /// A `lens_file` fact section states an amount its cited evidence prints
+    /// at another power of ten or with the other sign. Nothing was staged.
+    #[error("{field}: {}", figure_differs_message(.figures))]
+    FigureDiffers {
+        field: String,
+        /// Each (stated amount, the cited one it differs from).
+        figures: Vec<(String, String)>,
+    },
+}
+
+fn figure_differs_message(figures: &[(String, String)]) -> String {
+    let pairs = figures
+        .iter()
+        .map(|(stated, cited)| format!("{stated} where the evidence it cites states {cited}"))
+        .collect::<Vec<_>>()
+        .join("; ");
+    format!("figure_differs: this fact section states {pairs}. Nothing in this call was filed: write each amount as its evidence states it, or cite the evidence that states it, and call again")
 }
 
 /// Bytes as MiB, whole when exact ("32 MiB", "54.5 MiB").
@@ -514,6 +541,25 @@ impl CustomApprovalRefusal {
     }
 }
 
+/// A refusal that carries a more specific host code than its wire error.
+#[derive(Clone, Debug)]
+pub enum BrokerRefusalReason {
+    Command(crate::app::CommandErrorCode),
+    BelowSourceCallLimit,
+}
+
+impl BrokerRefusalReason {
+    fn code(&self) -> Option<&str> {
+        match self {
+            Self::Command(crate::app::CommandErrorCode::Unlisted(_)) => None,
+            Self::Command(code) => Some(code.as_str()),
+            Self::BelowSourceCallLimit => {
+                Some(crate::commands::configuration::BELOW_SOURCE_CALL_LIMIT)
+            }
+        }
+    }
+}
+
 impl BrokerError {
     pub(crate) fn invalid(field: impl Into<String>, expected: impl Into<String>) -> Self {
         Self::InvalidArguments {
@@ -533,6 +579,27 @@ impl BrokerError {
         Self::WithNext {
             source: Box::new(self),
             next: next.into(),
+        }
+    }
+
+    pub(crate) fn with_reason(self, reason: BrokerRefusalReason) -> Self {
+        Self::WithReason {
+            source: Box::new(self),
+            reason,
+        }
+    }
+
+    pub(crate) fn trace_reason(&self) -> &str {
+        match self {
+            Self::WithReason { source, reason } => {
+                reason.code().unwrap_or_else(|| source.trace_reason())
+            }
+            Self::WithNext { source, .. } => source.trace_reason(),
+            Self::ConnectionDontSave => "connection_dont_save",
+            Self::ProviderApprovalRequired { .. } => "provider_service_approval",
+            Self::CustomApprovalRefused { cause, .. } => cause.reason(),
+            Self::PythonWorkerBusy => "python_worker_busy",
+            error => error_code(error),
         }
     }
 }
@@ -1197,7 +1264,7 @@ where
         executor.discard_delivery(policy, &delivery_id).await;
         return Ok(());
     };
-    let (response, mut transaction) = match execution_result {
+    let (response, mut transaction, mut traced_error) = match execution_result {
         Ok(executed) => (
             BrokerResponse {
                 protocol: PROTOCOL,
@@ -1207,39 +1274,49 @@ where
                 error: None,
             },
             Some((executed.method, executed.reservation)),
-        ),
-        Err((id, error)) => (
-            BrokerResponse {
-                protocol: PROTOCOL,
-                id,
-                ok: false,
-                result: None,
-                error: Some(error_body(&error)),
-            },
             None,
         ),
+        Err((id, error)) => {
+            let body = error_body(&error);
+            let traced = trace
+                .as_ref()
+                .map(|_| trace_error(&body, error.trace_reason()));
+            (
+                BrokerResponse {
+                    protocol: PROTOCOL,
+                    id,
+                    ok: false,
+                    result: None,
+                    error: Some(body),
+                },
+                None,
+                traced,
+            )
+        }
     };
     let response_id = response.id.clone();
     let result_bytes = response.result.as_ref().and_then(trace_result_size);
-    let mut trace_error = response.error.as_ref().map(trace_error);
-    let (encoded, delivered_success) = match encode_response_or_bounded_error(response) {
+    let response_ok = response.ok;
+    let (encoded, replaced) = match encode_response_or_bounded_error(response) {
         Ok(encoded) => encoded,
         Err(error) => {
             executor.discard_delivery(policy, &delivery_id).await;
             return Err(error);
         }
     };
+    if replaced && trace.is_some() {
+        traced_error = Some(trace_error(
+            &bounded_frame_error(),
+            BrokerError::FrameTooLarge.trace_reason(),
+        ));
+    }
+    let delivered_success = response_ok && !replaced;
     if !delivered_success {
-        // This is the actual bounded envelope sent to the model, including a
-        // frame-too-large substitution. Never retain its result payload.
-        trace_error = serde_json::from_slice::<Value>(&encoded)
-            .ok()
-            .and_then(|response| response.get("error").cloned());
         executor.discard_delivery(policy, &delivery_id).await;
         transaction.take();
     }
     if let Some(trace) = trace {
-        trace.finish(trace_error.as_ref(), result_bytes);
+        trace.finish(traced_error, result_bytes);
     }
     if let Err(error) = write_response(&mut writer, &encoded).await {
         if delivered_success {
@@ -1479,6 +1556,9 @@ async fn execute_request(
     // A Don't-save connection explains a blocked save even when saving was
     // already off. Both gates still run before reservation or execution.
     enforce_policy(policy, method).map_err(|error| (id.clone(), error))?;
+    tools::enforce_run_budget(policy, method, &request.params, request.call_id.as_deref())
+        .await
+        .map_err(|error| (id.clone(), error))?;
     let reservation = TransactionReservation::reserve(cardinality, method, policy)
         .map_err(|error| (id.clone(), error))?;
     if request.call_id.as_ref().is_some_and(|call_id| {
@@ -1511,24 +1591,29 @@ fn encode_response(response: &BrokerResponse) -> Result<Vec<u8>, BrokerError> {
     Ok(writer.bytes)
 }
 
+fn bounded_frame_error() -> Value {
+    json!({
+        "code": "frame_too_large",
+        "message": "The tool response exceeded the bounded broker frame.",
+        "retryable": false,
+        "next": "The result was too large. Request a smaller page or file instead of repeating this call."
+    })
+}
+
+/// The flag reports whether the frame limit replaced the original response.
 fn encode_response_or_bounded_error(
     response: BrokerResponse,
 ) -> Result<(Vec<u8>, bool), BrokerError> {
     match encode_response(&response) {
-        Ok(bytes) => Ok((bytes, response.ok)),
+        Ok(bytes) => Ok((bytes, false)),
         Err(BrokerError::FrameTooLarge) => encode_response(&BrokerResponse {
             protocol: PROTOCOL,
             id: response.id,
             ok: false,
             result: None,
-            error: Some(json!({
-                "code": "frame_too_large",
-                "message": "The tool response exceeded the bounded broker frame.",
-                "retryable": false,
-                "next": "The result was too large. Request a smaller page or file instead of repeating this call."
-            })),
+            error: Some(bounded_frame_error()),
         })
-        .map(|bytes| (bytes, false)),
+        .map(|bytes| (bytes, true)),
         Err(error) => Err(error),
     }
 }
@@ -1557,6 +1642,9 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 }
 
 pub(crate) fn error_body(error: &BrokerError) -> Value {
+    if let BrokerError::WithReason { source, .. } = error {
+        return error_body(source);
+    }
     fn sentence(message: &str) -> String {
         let message = message.trim_end();
         if message.ends_with('.') {
@@ -1628,7 +1716,7 @@ pub(crate) fn error_body(error: &BrokerError) -> Value {
             crate::custom_connections::taint::OUTSIDE_WORKSPACE_REFUSAL,
             false,
         ),
-        BrokerError::WithNext { .. } => unreachable!("handled above"),
+        BrokerError::WithNext { .. } | BrokerError::WithReason { .. } => unreachable!("handled above"),
         BrokerError::MethodDenied | BrokerError::MemoryDisabled | BrokerError::ProposalDisabled | BrokerError::ConnectionDontSave => ("", false),
         BrokerError::Malformed => (
             "Correct the request fields before calling again.",
@@ -1644,12 +1732,13 @@ pub(crate) fn error_body(error: &BrokerError) -> Value {
             false,
         ),
         BrokerError::BudgetExceeded { .. } | BrokerError::ArtifactLimit { .. } => ("", false),
+        BrokerError::FigureDiffers { .. } => ("", false),
         BrokerError::Authentication => ("The tool request was rejected. Do not retry it.", false),
         BrokerError::Io(_) => (
             "One changed attempt is reasonable; do not loop on the same call.",
             true,
         ),
-        BrokerError::Execution(_) => (
+        BrokerError::Execution(_) | BrokerError::PythonWorkerBusy => (
             "Change the request or the approach. Do not repeat the identical call.",
             false,
         ),
@@ -1676,6 +1765,12 @@ pub(crate) fn error_body(error: &BrokerError) -> Value {
         "retryable": retryable,
         "next": next,
     });
+    if let BrokerError::FigureDiffers { figures, .. } = error {
+        body["figures"] = json!(figures
+            .iter()
+            .map(|(stated, cited)| json!({"stated": stated, "cited": cited}))
+            .collect::<Vec<_>>());
+    }
     if let BrokerError::ResultTooLarge { bytes, limit_bytes } = error {
         if let Some(bytes) = bytes {
             body["bytes"] = json!(bytes);
@@ -1695,6 +1790,10 @@ fn as_of_code(message: &str) -> Option<&'static str> {
         "as_of_empty",
         "as_of_later",
         "as_of_before_check",
+        "since_previous_run_unavailable",
+        "cursor_axis_mismatch",
+        "since_after_cutoff",
+        "between_needs_from",
     ]
     .into_iter()
     .find(|code| {
@@ -1723,8 +1822,11 @@ fn error_code(error: &BrokerError) -> &'static str {
             as_of_code(expected).unwrap_or("malformed_request")
         }
         BrokerError::Malformed => "malformed_request",
-        BrokerError::WithNext { source, .. } => error_code(source),
+        BrokerError::WithNext { source, .. } | BrokerError::WithReason { source, .. } => {
+            error_code(source)
+        }
         BrokerError::Execution(message) => as_of_code(message).unwrap_or("execution_failed"),
+        BrokerError::PythonWorkerBusy => "execution_failed",
         BrokerError::EmptyResult => "empty_result",
         BrokerError::ResultTooLarge { .. } => "result_too_large",
         BrokerError::ProviderFailure { kind, .. } => kind.code(),
@@ -1736,6 +1838,7 @@ fn error_code(error: &BrokerError) -> &'static str {
         BrokerError::BudgetExceeded { .. } | BrokerError::ArtifactLimit { .. } => {
             "transaction_limit"
         }
+        BrokerError::FigureDiffers { .. } => "figure_differs",
         BrokerError::Io(_) => "io_failed",
     }
 }
@@ -1897,16 +2000,17 @@ fn trace_value(value: &Value) -> Value {
     }
 }
 
-fn trace_error(value: &Value) -> Value {
+fn trace_error(value: &Value, reason: &str) -> Value {
     // Retain the error contract even when the message exceeds the byte budget.
     let mut error = json!({
         "code": value.get("code").and_then(Value::as_str).map(|code| trace_text(code, 128)),
         "message": trace_error_text(value.get("message")),
         "retryable": value.get("retryable").and_then(Value::as_bool),
         "next": trace_error_text(value.get("next")),
+        "reason": reason,
     });
     if value.get("code").and_then(Value::as_str) == Some("needs_approval") {
-        for field in ["connection_id", "tool_name", "reason"] {
+        for field in ["connection_id", "tool_name"] {
             error[field] = value
                 .get(field)
                 .and_then(Value::as_str)
@@ -2027,13 +2131,17 @@ impl ToolTraceCapture {
             if entry.name == "capability_load" {
                 entry.result_bytes = trace_result_size(result);
                 if failed {
-                    entry.error = Some(trace_error(&json!({
-                        "code": "capability_load_failed",
-                        "message": result.get("content").and_then(Value::as_array)
-                            .and_then(|content| content.iter().find_map(|item| item.get("text").and_then(Value::as_str))),
-                        "retryable": false,
-                        "next": null,
-                    })));
+                    const CODE: &str = "capability_load_failed";
+                    entry.error = Some(trace_error(
+                        &json!({
+                            "code": CODE,
+                            "message": result.get("content").and_then(Value::as_array)
+                                .and_then(|content| content.iter().find_map(|item| item.get("text").and_then(Value::as_str))),
+                            "retryable": false,
+                            "next": null,
+                        }),
+                        CODE,
+                    ));
                 }
             }
             state.trace.push(entry);
@@ -2104,7 +2212,7 @@ impl ToolTraceCapture {
             let mut entry = entry.clone();
             entry.duration_ms = trace_millis(started.elapsed());
             entry.error = Some(
-                json!({"code": "interrupted", "message": "Tool did not finish before the turn ended", "retryable": false, "next": null}),
+                json!({"code": "interrupted", "reason": "interrupted", "message": "Tool did not finish before the turn ended", "retryable": false, "next": null}),
             );
             trace.push(entry);
         }
@@ -2138,7 +2246,7 @@ struct ToolTraceGuard {
 }
 
 impl ToolTraceGuard {
-    fn finish(mut self, error: Option<&Value>, result_bytes: Option<u64>) {
+    fn finish(mut self, error: Option<Value>, result_bytes: Option<u64>) {
         if let Some(mut entry) = self.entry.take() {
             entry.duration_ms = trace_millis(self.started.elapsed());
             entry.outcome = if error.is_some() {
@@ -2146,7 +2254,7 @@ impl ToolTraceGuard {
             } else {
                 crate::domain::ToolTraceOutcome::Ok
             };
-            entry.error = error.map(trace_error);
+            entry.error = error;
             entry.result_bytes = result_bytes;
             let mut state = self
                 .capture
@@ -2169,7 +2277,7 @@ impl Drop for ToolTraceGuard {
         if let Some(mut entry) = self.entry.take() {
             entry.duration_ms = trace_millis(self.started.elapsed());
             entry.error = Some(
-                json!({"code": "interrupted", "message": "Tool execution was interrupted", "retryable": false, "next": null}),
+                json!({"code": "interrupted", "reason": "interrupted", "message": "Tool execution was interrupted", "retryable": false, "next": null}),
             );
             self.capture
                 .state

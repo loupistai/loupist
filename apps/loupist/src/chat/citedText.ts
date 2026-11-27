@@ -28,3 +28,13 @@ export function citedParts(text: string): CitedPart[] {
 export function citedPlainText(text: string, name: (evidenceId: string) => string): string {
   return citedParts(text).map((part) => "text" in part ? part.text : part.label ?? name(part.evidenceId)).join("");
 }
+
+/**
+ * Markdown whose citations cannot open where it is shown (a Bot card holds the answer's
+ * text without its evidence): a worded citation keeps its words, and a numbered one or a
+ * bare target is left out, so no dead link or raw id remains.
+ */
+export function withoutCitationLinks(markdown: string): string {
+  return citedParts(markdown).map((part) => "text" in part ? part.text : part.label && !/^\s*\d+\s*$/u.test(part.label) ? part.label : "")
+    .join("").replace(/[ \t]+([.,;:!?)])/gu, "$1");
+}

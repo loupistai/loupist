@@ -1,5 +1,6 @@
 import i18n, { useTranslation } from "@/i18n";
 import { formatDate, formatNumber, subjectName } from "@/i18n/format";
+import { useEffect, useState } from "react";
 import { SidebarGroup, SidebarGroupContent, SidebarGroupLabel } from "@/components/ui/sidebar";
 import type { ChatThread } from "../../types";
 import type { AttentionRow } from "../../app/useAttention";
@@ -9,6 +10,30 @@ import type { AttentionItem } from "../../contracts/attention";
 
 const t = i18n.getFixedT(null, "app");
 const MAX_ROWS = 5;
+
+export const attentionItemKey = (item: Pick<AttentionItem, "kind" | "loupistId" | "recordId" | "chatId" | "title">) =>
+  `${item.kind}:${item.loupistId}:${item.recordId ?? item.chatId ?? item.title}`;
+
+const settledAttention = new Set<string>();
+const settledListeners = new Set<() => void>();
+
+/** Turn on and Not now drop the proposal from the sidebar and the Bot tray together. */
+export function settleAttention(item: Pick<AttentionItem, "kind" | "loupistId" | "recordId" | "chatId" | "title">) {
+  const key = attentionItemKey(item);
+  if (settledAttention.has(key)) return;
+  settledAttention.add(key);
+  for (const listener of settledListeners) listener();
+}
+
+export function useSettledAttention() {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const listener = () => bump((value) => value + 1);
+    settledListeners.add(listener);
+    return () => { settledListeners.delete(listener); };
+  }, []);
+  return settledAttention;
+}
 type Threads = Readonly<Record<string, readonly ChatThread[] | undefined>>;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -90,11 +115,13 @@ export function NeedsAttention({ items, threads, onOpen, onMore }: {
   onMore?: () => void;
 }) {
   useTranslation("app");
-  if (!items.length) return null;
-  const shown = items.slice(0, MAX_ROWS);
+  const settled = useSettledAttention();
+  const pending = items.filter((item) => !settled.has(attentionItemKey(item)));
+  if (!pending.length) return null;
+  const shown = pending.slice(0, MAX_ROWS);
   // Most sentences name their Loupist; a check names its claim, and its Loupist only when there are several.
-  const manyLoupists = new Set(items.map((item) => item.loupistId).filter(Boolean)).size > 1;
-  const more = items.length - shown.length;
+  const manyLoupists = new Set(pending.map((item) => item.loupistId).filter(Boolean)).size > 1;
+  const more = pending.length - shown.length;
   return <SidebarGroup className="needs-attention">
     <SidebarGroupLabel>{t("shell.needsAttention")}</SidebarGroupLabel>
     <SidebarGroupContent>

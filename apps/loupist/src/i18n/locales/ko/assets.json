@@ -110,6 +110,8 @@
       "point": "{{date}} · {{value}} · {{change}}",
       "keys": "화살표 키로 가격을 하나씩 읽습니다.",
       "failed": "가격 차트를 불러오지 못했습니다.",
+      "loading": "가격 이력을 가져오는 중입니다…",
+      "empty": "저장된 가격 이력이 없습니다. 지금 확인으로 읽습니다.",
       "short": "지금까지 저장된 가격은 {{number}}개입니다."
     },
     "open": "열기",
@@ -124,7 +126,7 @@
   },
   "saved": {
     "back": "채팅으로 돌아가기",
-    "unknown": "티커가 {{ticker}}인 자산을 루피스트가 추적하고 있지 않습니다. 관심 해제 후 삭제되었거나 링크가 다른 종목을 가리켰을 수 있습니다.",
+    "unknown": "티커가 {{ticker}}인 자산을 Loupist가 추적하고 있지 않습니다. 관심 해제 후 삭제되었거나 링크가 다른 종목을 가리켰을 수 있습니다.",
     "ambiguous": "관심 자산 중 티커가 {{ticker}}인 자산이 둘 이상입니다. 관심 자산에서 원하는 자산을 여십시오."
   },
   "price": {
@@ -145,13 +147,48 @@
     "none": "아직 가격이 없습니다. 지금 확인 또는 가격 찾기를 누르면 {{loupist}}이(가) 가격을 읽을 방법을 찾습니다. 방법을 찾지 못하면 봇에서 이유를 알려 드립니다.",
     "failed": "지난번에 {{loupist}}이(가) 가격을 읽지 못했습니다.",
     "failedKept": "{{connection}}에서 최근 가격을 읽지 못했습니다. 마지막으로 읽은 가격입니다.",
-    "needsConnection": "가격을 읽으려면 {{connection}}이(가) 필요하지만 이 루피스트에서 꺼져 있습니다.",
-    "needsConnectionKept": "이 루피스트에서 {{connection}}이(가) 꺼져 있어 마지막으로 읽은 가격을 표시합니다.",
+    "needsConnection": "가격을 읽으려면 {{connection}}이(가) 필요하지만 이 Loupist에서 꺼져 있습니다.",
+    "needsConnectionKept": "이 Loupist에서 {{connection}}이(가) 꺼져 있어 마지막으로 읽은 가격을 표시합니다.",
     "openConnections": "연결 열기",
     "setupStarted": "{{loupist}}이(가) {{name}}의 가격을 읽을 방법을 찾고 있습니다. 찾으면 여기에 표시됩니다.",
     "followRequired": "가격을 확인하려면 이 자산을 관심 자산에 추가해야 합니다.",
     "noModel": "가격을 찾으려면 {{loupist}}에 AI 계정이 필요합니다. 설정 › AI 계정에서 연결하십시오.",
     "checked": "{{name}}을(를) 확인했습니다.",
     "find": "가격 찾기"
+  },
+  "sinceRead": {
+    "title": "이 판단 이후",
+    "recent": "최근 변경",
+    "sinceMove": "{{date}} 이후",
+    "days": "30일",
+    "sinceDate": "날짜 이후…",
+    "sinceDateLabel": "날짜 이후",
+    "ended": "종료",
+    "added": "추가",
+    "disagreements": "출처 엇갈림",
+    "sections": "렌즈 섹션",
+    "showAll": "{{formattedCount}}개 모두 보기",
+    "empty": "{{date}} 이후 월드에서 바뀐 것이 없습니다.",
+    "pending": "월드가 {{name}} 관련 자료 {{formattedCount}}개를 아직 읽고 있습니다. 더 나타날 수 있습니다.",
+    "link": "변경을 보려면 {{name}}을(를) 월드 이름과 연결하십시오.",
+    "openWorld": "월드 열기",
+    "loading": "변경을 불러오는 중…",
+    "error": "변경을 불러오지 못했습니다.",
+    "retry": "다시 시도",
+    "published": "{{date}} 공개",
+    "section": "{{page}} · {{section}}"
+  },
+  "reportChanges": {
+    "title": "최근 보고서에서 달라진 점",
+    "pending": "월드가 이 보고서를 아직 읽고 있습니다.",
+    "ended": "이 보고서로 종료됨",
+    "added": "이 보고서에서 새로 나옴",
+    "disagree": "출처 엇갈림",
+    "notRepeated": "이 보고서에 다시 나오지 않음",
+    "both_other": "두 보고서에 모두 있음: {{formattedCount}}건",
+    "showAll": "모두 보기",
+    "loading": "비교를 불러오는 중…",
+    "error": "보고서를 비교하지 못했습니다.",
+    "retry": "다시 시도"
   }
 }

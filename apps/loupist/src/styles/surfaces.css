@@ -61,7 +61,7 @@
 .empty-state-action { margin-top: var(--gg-space-2); }
 
 .app-date-field { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); min-width: 0; }
-.app-date-field > * { flex: 1 1 4.5rem; min-width: 0; }
+.app-date-field > [data-slot="select-trigger"] { flex: 1 1 4.5rem; min-width: 0; }
 
 /* Cards that offer a first step in Bot and Schedule. */
 .start-option-card {

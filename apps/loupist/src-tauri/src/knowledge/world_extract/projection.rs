@@ -14,6 +14,11 @@ use serde_json::{json, Map, Value};
 use super::pipeline::{Edge, Node, Time};
 use crate::knowledge::entity_codes::Codes;
 use crate::knowledge::lens::fold_lens_title;
+use crate::knowledge::model::{
+    is_temporal_qualifier, reopening_qualifiers, CONFLICTS_WITH_CLAIM, END_BASIS,
+    SUPERSEDED_BY_CLAIM, SUPERSEDED_BY_SPAN,
+};
+use crate::knowledge::world_episodes::EndBasis;
 use crate::util::sha256;
 
 const EVIDENCE_CAP: usize = 32;
@@ -98,9 +103,15 @@ pub(crate) fn normalize_relation(name: &str) -> (String, Option<String>) {
     (clipped, Some(utf8_prefix(raw, 512)))
 }
 
-fn cap_evidence(evidence: Vec<Value>) -> Vec<Value> {
+fn cap_evidence(mut evidence: Vec<Value>, witness: Option<&str>) -> Vec<Value> {
     if evidence.len() <= EVIDENCE_CAP {
         return evidence;
+    }
+    if let Some(witness) = witness {
+        if let Some(index) = evidence.iter().position(|item| item["span_id"] == witness) {
+            let earliest = evidence.remove(index);
+            evidence.insert(0, earliest);
+        }
     }
     let mut capped = vec![evidence[0].clone()];
     capped.extend_from_slice(&evidence[evidence.len() - (EVIDENCE_CAP - 1)..]);
@@ -163,24 +174,13 @@ pub(crate) fn merged_node_properties(
         .collect()
 }
 
-/// The worker's canonical instant: whole seconds, the value's own offset.
+/// The worker's canonical precision and value.
 pub(crate) fn graph_time(value: Option<&Time>) -> Value {
-    let Some(value) = value else {
-        return Value::Null;
-    };
-    let offset = value.offset().local_minus_utc();
-    let sign = if offset < 0 { '-' } else { '+' };
-    let minutes = offset.abs() / 60;
-    json!({
-        "precision": "instant",
-        "value": format!(
-            "{}{sign}{:02}:{:02}",
-            value.format("%Y-%m-%dT%H:%M:%S"),
-            minutes / 60,
-            minutes % 60
-        ),
-        "approximate": false,
-    })
+    value
+        .and_then(|time| crate::knowledge::time::normalize_time_point(time).ok())
+        .map_or(Value::Null, |time| {
+            serde_json::to_value(time).expect("TimePoint can be serialized")
+        })
 }
 
 pub(crate) struct Binding<'a> {
@@ -192,7 +192,6 @@ pub(crate) struct Binding<'a> {
 pub(crate) struct Context<'a> {
     pub source_role: &'a str,
     pub binding: Binding<'a>,
-    pub publication_time: &'a Value,
     pub effective_time: Option<&'a Value>,
     pub recorded_at_ms: i64,
     /// Stored nodes and claims by runtime id (worker form).
@@ -205,6 +204,45 @@ pub(crate) struct Context<'a> {
 pub(crate) struct Projection {
     pub nodes: Vec<Value>,
     pub claims: Vec<Value>,
+}
+
+pub(crate) fn claim_id(prior: &HashMap<String, Value>, runtime: &str) -> String {
+    prior
+        .get(runtime)
+        .and_then(|claim| claim["adapter_id"].as_str())
+        .map(str::to_owned)
+        .unwrap_or_else(|| adapter_id("clm_", runtime))
+}
+
+fn claim_qualifiers(edge: &Edge, prior: &HashMap<String, Value>) -> Vec<Value> {
+    let mut result = Vec::new();
+    if let Some(ending) = &edge.ending {
+        result.push(json!({"key": END_BASIS, "value": match ending.basis {
+            EndBasis::Stated => "stated", EndBasis::Reference => "reference",
+        }}));
+        result.push(json!({"key": SUPERSEDED_BY_SPAN, "value": ending.span}));
+        if let Some(by) = &ending.by {
+            result.push(json!({"key": SUPERSEDED_BY_CLAIM, "value": claim_id(prior, by)}));
+        }
+    }
+    let mut conflicts: Vec<_> = edge
+        .conflicts
+        .iter()
+        .map(|id| claim_id(prior, id))
+        .collect();
+    conflicts.sort_unstable();
+    result.extend(
+        conflicts
+            .into_iter()
+            .take(4)
+            .map(|id| json!({"key": CONFLICTS_WITH_CLAIM, "value": id})),
+    );
+    result.extend(
+        reopening_qualifiers(edge.assertions.reopened.as_ref(), &edge.assertions.lapsed)
+            .into_iter()
+            .map(|(key, value)| json!({"key": key, "value": value})),
+    );
+    result
 }
 
 pub(crate) fn project_extraction(
@@ -344,8 +382,6 @@ pub(crate) fn project_extraction(
                 support["role"] = json!("supports");
             }
             if owned_by_current
-                && invalid_at.is_null()
-                && expired_at.is_null()
                 && !evidence.iter().any(|item| {
                     item["span_id"] == support["span_id"] && item["role"] == support["role"]
                 })
@@ -355,10 +391,10 @@ pub(crate) fn project_extraction(
             json!({
                 "adapter_id": prior["adapter_id"],
                 "attribution": prior["attribution"],
-                "evidence": cap_evidence(evidence),
+                "evidence": cap_evidence(evidence, edge.assertions.witness.as_ref().map(|witness| witness.span.as_str())),
                 "status": prior.get("status").cloned().unwrap_or_else(|| json!("active")),
                 "recorded_at_ms": prior["recorded_at_ms"],
-                "publication_time": prior["publication_time"],
+                "publication_time": graph_time(edge.publication()),
                 "effective_time": prior.get("effective_time").cloned().unwrap_or(Value::Null),
             })
         } else if owned_by_current {
@@ -368,7 +404,7 @@ pub(crate) fn project_extraction(
                 "evidence": [support],
                 "status": "active",
                 "recorded_at_ms": context.recorded_at_ms,
-                "publication_time": context.publication_time,
+                "publication_time": graph_time(edge.publication()),
                 "effective_time": context.effective_time.cloned().unwrap_or(Value::Null),
             })
         } else {
@@ -384,26 +420,25 @@ pub(crate) fn project_extraction(
             }
         }
         let (relation, original) = normalize_relation(&edge.name);
-        let mut qualifiers = with_original_relation(
-            prior_claim
-                .and_then(|prior| prior.get("qualifiers"))
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default(),
-            original,
+        let mut qualifiers = claim_qualifiers(edge, context.prior_claims);
+        let public_qualifiers = prior_claim
+            .and_then(|prior| prior.get("qualifiers"))
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter(|item| {
+                item["key"]
+                    .as_str()
+                    .is_some_and(|key| !is_temporal_qualifier(key))
+            })
+            .cloned()
+            .collect();
+        let available = QUALIFIER_CAP - qualifiers.len();
+        qualifiers.extend(
+            with_original_relation(public_qualifiers, original)
+                .into_iter()
+                .take(available),
         );
-        if let Some(prior) = prior_claim {
-            if !invalid_at.is_null()
-                && prior.get("invalid_at").is_none_or(blank)
-                && !qualifiers
-                    .iter()
-                    .any(|item| item["key"] == "superseded_by_span")
-                && qualifiers.len() < QUALIFIER_CAP
-            {
-                qualifiers
-                    .push(json!({"key": "superseded_by_span", "value": context.binding.span_id}));
-            }
-        }
         let mut endpoints = json!([
             {"node_id": source, "role": "source"},
             {"node_id": target, "role": "target"},
@@ -456,7 +491,6 @@ mod tests {
                 binding_role: "extracted_from",
                 attribution: "companiesmarketcap.com",
             },
-            publication_time: &Value::Null,
             effective_time: None,
             recorded_at_ms: 1,
             prior_nodes: &no_nodes,

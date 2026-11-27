@@ -49,6 +49,10 @@ macro_rules! optional_config {
 }
 
 optional_config!(ConfigDocument {
+    background_daily_requests: u32,
+    world_chat_daily_requests: u32,
+    learning_daily_requests: u32,
+    learning_program_cap: u32,
     appearance: AppearanceConfig,
     models: ModelsConfig,
     connectors: BTreeMap<String, BTreeMap<String, String>>,
@@ -180,6 +184,17 @@ impl Default for ResolvedChatConfig {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ResolvedConfig {
+    #[serde(default = "default_background_daily_requests")]
+    pub background_daily_requests: u32,
+    #[serde(default = "default_world_chat_daily_requests")]
+    pub world_chat_daily_requests: u32,
+    /// This Loupist's daily requests for automatic learning runs, inside
+    /// `background_daily_requests`. 0 turns learning runs off.
+    #[serde(default = "default_learning_daily_requests")]
+    pub learning_daily_requests: u32,
+    /// How many learning programs this Loupist may have active.
+    #[serde(default = "default_learning_program_cap")]
+    pub learning_program_cap: u32,
     pub appearance: ResolvedAppearanceConfig,
     pub models: ResolvedModelsConfig,
     pub connectors: BTreeMap<String, BTreeMap<String, String>>,
@@ -190,6 +205,10 @@ pub struct ResolvedConfig {
 impl Default for ResolvedConfig {
     fn default() -> Self {
         Self {
+            background_daily_requests: default_background_daily_requests(),
+            world_chat_daily_requests: default_world_chat_daily_requests(),
+            learning_daily_requests: default_learning_daily_requests(),
+            learning_program_cap: default_learning_program_cap(),
             appearance: ResolvedAppearanceConfig {
                 theme: "system".into(),
                 language: "system".into(),
@@ -213,6 +232,22 @@ impl Default for ResolvedConfig {
             pi: PiConfig::default(),
         }
     }
+}
+
+fn default_background_daily_requests() -> u32 {
+    crate::scheduled_tasks::allowance::DEFAULT_BACKGROUND
+}
+
+fn default_world_chat_daily_requests() -> u32 {
+    crate::scheduled_tasks::allowance::DEFAULT_WORLD_CHAT
+}
+
+fn default_learning_daily_requests() -> u32 {
+    crate::scheduled_tasks::types::DEFAULT_LEARNING_DAILY_REQUESTS
+}
+
+fn default_learning_program_cap() -> u32 {
+    crate::scheduled_tasks::types::DEFAULT_LEARNING_PROGRAM_CAP
 }
 impl ResolvedConfig {
     pub fn execution_digest(&self) -> String {
@@ -778,6 +813,36 @@ fn ignore_unknown_catalog_keys(config: &mut ConfigDocument) -> Result<Vec<String
 }
 
 fn validate(config: &ConfigDocument, scope: &ConfigScope) -> Result<(), String> {
+    for (name, value) in [
+        (
+            "background_daily_requests",
+            config.background_daily_requests,
+        ),
+        (
+            "world_chat_daily_requests",
+            config.world_chat_daily_requests,
+        ),
+    ] {
+        if let Some(value) = value {
+            if !matches!(scope, ConfigScope::Global) {
+                return Err(format!("{name} is only supported in global configuration"));
+            }
+            let floor = crate::knowledge::GraphProcessingSettings::default().max_llm_calls;
+            if value != 0 && value < floor {
+                return Err(format!("{name} must be zero or at least {floor}"));
+            }
+        }
+    }
+    if config.learning_daily_requests.is_some() || config.learning_program_cap.is_some() {
+        if matches!(scope, ConfigScope::Global) {
+            return Err("learning settings are only supported in Loupist configuration".into());
+        }
+        crate::scheduled_tasks::learning::check_settings(
+            config.learning_daily_requests,
+            config.learning_program_cap,
+        )
+        .map_err(|error| error.message)?;
+    }
     if let Some(skills) = &config.skills {
         for id in skills.keys() {
             if !crate::skills::valid_name(id) {
@@ -1091,6 +1156,30 @@ pub fn read_scope(
         warnings,
     })
 }
+/// The learning settings a Loupist's own config states, from its config
+/// folder alone: they are not global settings.
+pub(crate) fn learning_settings(
+    project_loupist_dir: &Path,
+) -> Result<crate::scheduled_tasks::learning::LearningSettings, CommandError> {
+    let loaded = load(
+        project_loupist_dir,
+        &ConfigScope::Project {
+            loupist_id: "execution".into(),
+        },
+    );
+    if let Some(error) = loaded.diagnostics.first() {
+        return Err(config_error(format!("{}: {}", error.path, error.message)));
+    }
+    let mut settings = crate::scheduled_tasks::learning::LearningSettings::default();
+    if let Some(config) = &loaded.explicit {
+        settings.daily_requests = config
+            .learning_daily_requests
+            .unwrap_or(settings.daily_requests);
+        settings.program_cap = config.learning_program_cap.unwrap_or(settings.program_cap);
+    }
+    Ok(settings)
+}
+
 pub fn resolve(
     global_root: &Path,
     project_loupist_dir: Option<&Path>,
@@ -1179,6 +1268,12 @@ fn validate_unset(path: &[String], scope: &ConfigScope) -> Result<(), CommandErr
         return Err(CommandError::invalid("Invalid configuration reset path"));
     }
     let valid = match path[0].as_str() {
+        "background_daily_requests" | "world_chat_daily_requests" => {
+            matches!(scope, ConfigScope::Global) && path.len() == 1
+        }
+        "learning_daily_requests" | "learning_program_cap" => {
+            matches!(scope, ConfigScope::Project { .. }) && path.len() == 1
+        }
         "appearance" => {
             matches!(scope, ConfigScope::Global)
                 && (path.len() == 1

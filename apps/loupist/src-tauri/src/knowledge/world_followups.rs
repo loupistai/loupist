@@ -3,7 +3,12 @@ use std::collections::BTreeSet;
 use super::connections::{self, Candidate, DetectInput, Hop};
 use super::error::{KnowledgeError, KnowledgeResult};
 use super::identity::{resolve_followed, IdentityMatch};
-use super::model::{mint_id, validate_token, ClaimStatus, WorldSnapshotBody};
+use super::model::{
+    mint_id, validate_token, ClaimStatus, TimePoint, WorldSnapshotBody, END_BASIS,
+    SUPERSEDED_BY_CLAIM, SUPERSEDED_BY_SPAN,
+};
+use super::revision::StoredRevision;
+use super::world_episodes::{EndBasis, EpisodeEnd};
 use crate::store::user_context::MapContextItem;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
@@ -70,6 +75,7 @@ pub struct ConnectionView {
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) struct Followups {
     pub contested_pages: usize,
+    pub superseded_pages: usize,
     pub resolved_anchors: usize,
     pub connections: usize,
     pub truncated: bool,
@@ -115,6 +121,160 @@ fn idea_seeds(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<Vec<Str
     )?;
     let rows = statement.query_map([loupist_id], |row| row.get::<_, String>(0))?;
     rows.collect::<Result<_, _>>().map_err(Into::into)
+}
+
+fn validity_changes(
+    previous: Option<&WorldSnapshotBody>,
+    next: &WorldSnapshotBody,
+    at_ms: i64,
+) -> BTreeSet<String> {
+    let at = TimePoint::from_unix_ms(at_ms);
+    let prior: std::collections::BTreeMap<_, _> = previous
+        .into_iter()
+        .flat_map(|body| &body.claims)
+        .map(|claim| (claim.id.as_str(), claim))
+        .collect();
+    next.claims
+        .iter()
+        .filter(|claim| {
+            if claim.status != ClaimStatus::Active {
+                return false;
+            }
+            let Some(before) = prior.get(claim.id.as_str()) else {
+                return !claim.is_current(&at);
+            };
+            before.is_current(&at) != claim.is_current(&at)
+                || (claim.has_ended(&at)
+                    && (claim.invalid_at != before.invalid_at
+                        || claim.qualifier(SUPERSEDED_BY_CLAIM)
+                            != before.qualifier(SUPERSEDED_BY_CLAIM)
+                        || claim.qualifier(SUPERSEDED_BY_SPAN)
+                            != before.qualifier(SUPERSEDED_BY_SPAN)))
+        })
+        .map(|claim| claim.id.clone())
+        .collect()
+}
+
+pub(super) fn last_effective_end(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    record_id: &str,
+) -> KnowledgeResult<Option<i64>> {
+    Ok(tx.query_row(
+        "SELECT MAX(at_ms) FROM knowledge_growth_events
+         WHERE loupist_id = ?1 AND record_id = ?2 AND kind = 'claim_ended'
+           AND origin -> 'effectiveEnd' IS NOT NULL",
+        params![loupist_id, record_id],
+        |row| row.get(0),
+    )?)
+}
+
+/// Reconcile dates crossed on the still-published World head. The recorded
+/// transitions are also the watermark for the next evaluation of this head.
+pub(super) fn reconcile_effective_ends(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    revision: &StoredRevision,
+    world: &WorldSnapshotBody,
+    at_ms: i64,
+) -> KnowledgeResult<()> {
+    let from_ms = last_effective_end(tx, loupist_id, &revision.record_id)?
+        .unwrap_or(0)
+        .max(revision.created_at_ms);
+    if at_ms <= from_ms {
+        return Ok(());
+    }
+    let from = TimePoint::from_unix_ms(from_ms);
+    let at = TimePoint::from_unix_ms(at_ms);
+    let mut ending_ids = BTreeSet::new();
+    for claim in &world.claims {
+        let Some(end) = claim.invalid_at.as_ref().filter(|end| {
+            claim.status == ClaimStatus::Active && !end.at_or_before(&from) && end.at_or_before(&at)
+        }) else {
+            continue;
+        };
+        ending_ids.insert(claim.id.clone());
+        let mut event = super::growth::GrowthEvent::new(
+            loupist_id,
+            &revision.record_id,
+            at_ms,
+            "claim_ended",
+            "processing",
+            &claim.proposition,
+        );
+        event.subject_id = Some(claim.id.clone());
+        event.publication = Some(super::growth::WorldGrowthPublication {
+            revision_id: revision.revision_id.clone(),
+            source: None,
+            fact_subject_id: if claim.connects_names() {
+                None
+            } else {
+                claim.endpoints.first().map(|end| end.node_id.clone())
+            },
+        });
+        event.origin = Some(serde_json::json!({
+            "effectiveEnd": EpisodeEnd {
+                claim: claim.id.clone(),
+                by: claim.qualifier(SUPERSEDED_BY_CLAIM).map(str::to_owned),
+                end: end.clone(),
+                basis: if claim.qualifier(END_BASIS) == Some("reference") {
+                    EndBasis::Reference
+                } else {
+                    EndBasis::Stated
+                },
+            },
+            "spanId": claim.qualifier(SUPERSEDED_BY_SPAN),
+        }));
+        event.insert(tx)?;
+    }
+    if !ending_ids.is_empty() {
+        super::lens::supersede_pages(tx, loupist_id, &ending_ids, &BTreeSet::new(), at_ms)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn reconcile_due_endings(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    at_ms: i64,
+) -> KnowledgeResult<Option<i64>> {
+    let Some(world) = super::catalog::world_record(tx, loupist_id)? else {
+        return Ok(None);
+    };
+    let Some(revision_id) = world.revision_id else {
+        return Ok(None);
+    };
+    let revision = super::revision::load_revision(tx, &revision_id)?;
+    let body: WorldSnapshotBody = super::canonical::from_json(&revision.payload_json)?;
+    reconcile_effective_ends(tx, loupist_id, &revision, &body, at_ms)?;
+    // Calendar bounds are checked by the existing local-midnight wake.
+    let next = body
+        .claims
+        .iter()
+        .filter(|claim| claim.status == ClaimStatus::Active)
+        .filter_map(|claim| claim.invalid_at.as_ref())
+        .filter(|end| end.precision == super::TimePrecision::Instant)
+        .filter_map(|end| chrono::DateTime::parse_from_rfc3339(end.value.as_deref()?).ok())
+        .map(|instant| instant.timestamp_millis())
+        .filter(|time| *time > at_ms)
+        .min();
+    Ok(next)
+}
+
+pub(super) fn reconcile_worlds(tx: &Transaction<'_>, at_ms: i64) -> KnowledgeResult<Option<i64>> {
+    let mut statement =
+        tx.prepare("SELECT owner_loupist_id FROM knowledge_records WHERE kind = 'world'")?;
+    let ids = statement
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut next = None;
+    for id in ids {
+        next = next
+            .into_iter()
+            .chain(reconcile_due_endings(tx, &id, at_ms)?)
+            .min();
+    }
+    Ok(next)
 }
 
 fn recorded_pairs(
@@ -165,10 +325,14 @@ pub(super) fn after_seal(
     at_ms: i64,
 ) -> KnowledgeResult<Followups> {
     let fallen = fallen_claims(previous, next);
-    let contested_pages = if fallen.is_empty() {
-        0
+    let changed_endings = validity_changes(previous, next, at_ms);
+    let (contested_pages, superseded_pages) = if changed_endings.is_empty() {
+        (
+            super::lens::contest_pages(tx, loupist_id, &fallen, at_ms)?,
+            0,
+        )
     } else {
-        super::lens::contest_pages(tx, loupist_id, &fallen, at_ms)?
+        super::lens::supersede_pages(tx, loupist_id, &changed_endings, &fallen, at_ms)?
     };
     // Who the filed pages are about may have changed: a pending anchor gained
     // a node, a confirmed node's name or aliases changed (learning keys its
@@ -194,6 +358,7 @@ pub(super) fn after_seal(
     if seeds.is_empty() {
         return Ok(Followups {
             contested_pages,
+            superseded_pages,
             resolved_anchors,
             ..Followups::default()
         });
@@ -229,6 +394,7 @@ pub(super) fn after_seal(
     }
     Ok(Followups {
         contested_pages,
+        superseded_pages,
         resolved_anchors,
         connections: inserted,
         truncated: detection.truncated,
@@ -484,6 +650,7 @@ mod tests {
                 .collect(),
             annotations: Vec::new(),
             relation_vocabulary: Vec::new(),
+            temporal: Default::default(),
         };
         let mut next = previous.clone();
         next.claims
@@ -687,6 +854,134 @@ mod tests {
         let again = store.read_page(LOUPIST, &page_id).unwrap();
         assert_eq!(again.revision_id, page.revision_id);
         assert!(again.body.sections()[0].contested);
+    }
+
+    #[test]
+    fn ending_evidence_controls_the_stored_state_in_either_filing_order() {
+        use crate::knowledge::lens_page::{LensBody, LensKind, SectionState};
+        for end_first in [false, true] {
+            for include_ender in [false, true] {
+                let (_directory, store) = open_store();
+                let record = world(&store);
+                let mut prior = claim("cfo-1", "a", "b");
+                let current = claim("cfo-2", "a", "b");
+                let valid = |prior: &GraphClaim, at| {
+                    seal(
+                        &store,
+                        &record,
+                        base_nodes(),
+                        vec![prior.clone(), current.clone()],
+                        &[],
+                        at,
+                    );
+                };
+                valid(&prior, 1_000);
+                let end = |prior: &mut GraphClaim, at| {
+                    prior.invalid_at = Some(TimePoint::from_unix_ms(5_000));
+                    prior.qualifiers.push(crate::knowledge::Qualifier {
+                        key: SUPERSEDED_BY_CLAIM.into(),
+                        value: current.id.clone(),
+                    });
+                    valid(prior, at);
+                };
+                let filed_at = if end_first {
+                    end(&mut prior, 7_000);
+                    8_000
+                } else {
+                    6_000
+                };
+                let mut refs = vec![BasisRef::Claim {
+                    claim_id: prior.id.clone(),
+                }];
+                if include_ender {
+                    refs.push(BasisRef::Claim {
+                        claim_id: current.id.clone(),
+                    });
+                }
+                let filing = |target, markdown: &str, expected, at| {
+                    store
+                        .transact(|write| {
+                            write.file(
+                                LOUPIST,
+                                &FilingOrigin::User {
+                                    chat_id: None,
+                                    message_id: None,
+                                },
+                                vec![PageDelta {
+                                    target,
+                                    ops: vec![LensOp::Put {
+                                        key: SectionKey::new("facts").unwrap(),
+                                        heading: "Facts".into(),
+                                        markdown: markdown.into(),
+                                        basis: Basis {
+                                            refs: refs.clone(),
+                                            uncertainty: None,
+                                        },
+                                        expected,
+                                    }],
+                                }],
+                                at,
+                            )
+                        })
+                        .unwrap()
+                        .remove(0)
+                        .record_id
+                };
+                let page_id = filing(
+                    PageTarget::Create {
+                        kind: PageKind::Subject,
+                        title: "Appointment".into(),
+                        anchors: Vec::new(),
+                    },
+                    "The original appointment.",
+                    None,
+                    filed_at,
+                );
+                if !end_first {
+                    end(&mut prior, 7_000);
+                }
+                let stored = || {
+                    store
+                        .read(|read| {
+                            let row = read.owned_record(LOUPIST, &page_id)?;
+                            let payload = read
+                                .get_revision(LOUPIST, row.revision_id.as_deref().unwrap())?
+                                .payload;
+                            LensBody::from_payload(LensKind::Subject, payload)
+                        })
+                        .unwrap()
+                        .page()
+                        .unwrap()
+                        .sections[0]
+                        .clone()
+                };
+                let expected = if include_ender {
+                    SectionState::Current
+                } else {
+                    SectionState::Superseded {
+                        since_ms: if end_first { 8_000 } else { 7_000 },
+                        claim_ids: vec![prior.id.clone()],
+                    }
+                };
+                assert_eq!(stored().state, expected);
+                let digest = super::super::lens_page::section_digest(&stored());
+                filing(
+                    PageTarget::Existing {
+                        record_id: page_id.clone(),
+                    },
+                    "The appointment in the filing.",
+                    Some(digest),
+                    9_000,
+                );
+                assert_eq!(
+                    matches!(stored().state, SectionState::Superseded { .. }),
+                    !include_ender
+                );
+                prior.status = ClaimStatus::Withdrawn;
+                valid(&prior, 10_000);
+                assert!(matches!(stored().state, SectionState::Contested { .. }));
+            }
+        }
     }
 
     #[test]

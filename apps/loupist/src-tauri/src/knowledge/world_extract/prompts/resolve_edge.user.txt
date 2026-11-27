@@ -4,6 +4,7 @@ NEVER mark facts as duplicates if they have key differences, particularly around
 IMPORTANT constraints:
 - duplicate_facts: ONLY idx values from EXISTING FACTS (NEVER include FACT INVALIDATION CANDIDATES)
 - contradicted_facts: idx values from EITHER list (EXISTING FACTS or FACT INVALIDATION CANDIDATES)
+- same_assertion_facts: ONLY idx values that are also in contradicted_facts
 - The idx values are continuous across both lists (INVALIDATION CANDIDATES start where EXISTING FACTS end)
 
 <EXISTING FACTS>
@@ -31,16 +32,33 @@ EXISTING FACTS are indexed first, followed by FACT INVALIDATION CANDIDATES.
    - Return all contradicted idx values in contradicted_facts.
    - If no contradictions, return an empty list for contradicted_facts.
 
+3. SAME ASSERTION:
+   - From contradicted_facts, return in same_assertion_facts the facts that state the same thing as the NEW FACT with a different value: the same subject and role with a different holder, or the same metric for the same period on the same basis with a different figure, forecast against forecast and actual against actual.
+   - Facts arrive in any order, so do not judge which of the two is newer. The host orders them by their Sources' dates, and ends nothing by those dates for a fact that is not listed here.
+   - If none, return an empty list for same_assertion_facts.
+
 <EXAMPLE>
-EXISTING FACT: idx=0, "Alice joined Acme Corp in 2020"
-NEW FACT: "Alice joined Acme Corp in 2020"
-Result: duplicate_facts=[0], contradicted_facts=[] (identical factual information)
+EXISTING FACT: idx=0, "Aldera Power guides fiscal 2026 revenue to $4.0 billion to $4.2 billion"
+NEW FACT: "Aldera Power guides fiscal 2026 revenue to $3.6 billion to $3.8 billion"
+Result: duplicate_facts=[], contradicted_facts=[0], same_assertion_facts=[0] (revised guidance for the same period: the same forecast with a different value)
 
-EXISTING FACT: idx=1, "Alice works at Acme Corp as a software engineer"
-NEW FACT: "Alice works at Acme Corp as a senior engineer"
-Result: duplicate_facts=[], contradicted_facts=[1] (same relationship but updated title — contradiction, NOT a duplicate)
+EXISTING FACT: idx=1, "Kestrel Shipping reported first-quarter 2026 revenue of EUR 910 million"
+NEW FACT: "Kestrel Shipping reported second-quarter 2026 revenue of EUR 980 million"
+Result: duplicate_facts=[], contradicted_facts=[], same_assertion_facts=[] (figures for different periods: both stand)
 
-EXISTING FACT: idx=2, "Bob ran 5 miles on Tuesday"
-NEW FACT: "Bob ran 3 miles on Wednesday"
-Result: duplicate_facts=[], contradicted_facts=[] (different events on different days — neither duplicate nor contradiction)
+EXISTING FACT: idx=2, "Ines Varga is chief executive officer of Aldera Power"
+NEW FACT: "Tomas Reyes is chief executive officer of Aldera Power"
+Result: duplicate_facts=[], contradicted_facts=[2], same_assertion_facts=[2] (a different holder of a role one person holds)
+
+EXISTING FACT: idx=3, "A short seller's report alleges that Aldera Power overstated its 2025 order backlog"
+NEW FACT: "Aldera Power denies that it overstated its 2025 order backlog"
+Result: duplicate_facts=[], contradicted_facts=[], same_assertion_facts=[] (an allegation and its denial are two attributed statements: neither ends the other)
+
+EXISTING FACT: idx=4, "Sorano Materials reported fiscal 2025 operating profit of JPY 52.0 billion"
+NEW FACT: "Sorano Materials restated fiscal 2025 operating profit to JPY 48.8 billion"
+Result: duplicate_facts=[], contradicted_facts=[4], same_assertion_facts=[4] (a restated figure for the same period and basis)
+
+EXISTING FACT: idx=5, "Kestrel Shipping forecasts fiscal 2025 revenue of EUR 3.9 billion"
+NEW FACT: "Kestrel Shipping reported fiscal 2025 revenue of EUR 3.7 billion"
+Result: duplicate_facts=[], contradicted_facts=[], same_assertion_facts=[] (a forecast and the later actual: the forecast was made, and the actual does not replace it)
 </EXAMPLE>

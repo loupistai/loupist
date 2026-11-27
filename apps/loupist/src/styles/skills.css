@@ -1,8 +1,8 @@
 .skills-settings { display: grid; gap: var(--gg-space-5); }
 .skills-scope { display: flex; align-items: center; justify-content: space-between; gap: var(--gg-space-5); }
 .skills-scope label { font-weight: var(--gg-weight-semibold); }
-.skills-scope p, .skills-status, .skill-origin { color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
-.skills-scope select { max-width: 300px; }
+.skills-status, .skill-origin { color: var(--gg-color-text-secondary); font-size: var(--gg-text-control); }
+.skills-scope [data-slot="select-trigger"] { max-width: 300px; }
 .skills-toolbar { display: flex; gap: var(--gg-space-2); flex-wrap: wrap; align-items: center; }
 .skills-search { position: relative; flex: 1; min-width: 180px; }
 .skills-search svg { position: absolute; left: 10px; top: 10px; width: var(--gg-space-4); height: var(--gg-space-4); color: var(--gg-color-text-secondary); }
@@ -21,5 +21,5 @@
 .skills-empty { padding: var(--gg-space-8) 0; display: grid; justify-items: center; gap: var(--gg-space-3); color: var(--gg-color-text-secondary); }
 /* A narrow window keeps a Skill's switch beside its text; only a row too narrow for both wraps the switch under it. */
 /* token-exception: breakpoint; vars unsupported in query conditions */
-@media (max-width: 760px) { .skills-scope { align-items: stretch; flex-direction: column; } .skills-scope select { max-width: none; } .skill-row { flex-wrap: wrap; gap: var(--gg-space-3); } .skill-summary { flex: 1 1 14rem; } }
+@media (max-width: 760px) { .skills-scope { align-items: stretch; flex-direction: column; } .skills-scope [data-slot="select-trigger"] { max-width: none; } .skill-row { flex-wrap: wrap; gap: var(--gg-space-3); } .skill-summary { flex: 1 1 14rem; } }
 .skills-advanced-actions { display: flex; flex-wrap: wrap; gap: var(--gg-space-2); margin-bottom: var(--gg-space-3); }

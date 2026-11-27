@@ -107,7 +107,9 @@ const scalePatterns = [
   ["eok", /(?<![가-힣])억(?=\s*(?:원|달러|엔|유로|위안|파운드|[)\]]|$))/u],
   ["man", /(?<![가-힣])만(?=\s*(?:원|달러|엔|유로|위안|파운드|[)\]]|$))/u],
 ] as const;
-const SCALE_NAMES = { tn: ["tn", "조"], bn: ["bn", "십억"], m: ["m", "백만"], k: ["k", "천"], eok: ["100m", "억"], man: ["10k", "만"] } as const;
+/** The scales a dataset's unit can name; each is worded by the catalog (`chartAxis.scale`). */
+const SCALES = ["tn", "bn", "m", "k", "eok", "man"] as const;
+type Scale = (typeof SCALES)[number];
 
 const currencyIn = (text: string) => CURRENCY_CODE.exec(text)?.[1]?.toUpperCase() ?? CURRENCY_SIGN.find(([pattern]) => pattern.test(text))?.[1];
 const scaleIn = (text: string) => {
@@ -117,7 +119,7 @@ const scaleIn = (text: string) => {
 };
 
 /** The column's currency and scale, and whether both already appear in the label. */
-export function columnUnit(id: string, label: string, semantic = ""): { currency?: string; scale?: keyof typeof SCALE_NAMES; named: boolean } {
+export function columnUnit(id: string, label: string, semantic = ""): { currency?: string; scale?: Scale; named: boolean } {
   const labelCurrency = currencyIn(label);
   const labelScale = scaleIn(label);
   const currency = labelCurrency ?? currencyIn(id.replaceAll("_", " ")) ?? currencyIn(semantic);
@@ -128,7 +130,6 @@ export function columnUnit(id: string, label: string, semantic = ""): { currency
 /** The unit as a title names it once: "KRW", "KRW bn" / "원", "십억 원"; empty when the dataset names none. */
 export function unitText(unit: ReturnType<typeof columnUnit>): string {
   if (!unit.currency && !unit.scale) return "";
-  const korean = /^ko(?:-|$)/iu.test(i18n.language);
-  const scale = unit.scale ? SCALE_NAMES[unit.scale][korean ? 1 : 0] : "";
+  const scale = unit.scale ? t(`chartAxis.scale.${unit.scale}`) : "";
   return t("chartAxis.unit", { currency: unit.currency ? currencyName(unit.currency) : "", scale }).replace(/\s+/gu, " ").trim();
 }

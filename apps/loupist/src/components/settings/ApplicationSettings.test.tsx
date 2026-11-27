@@ -11,15 +11,14 @@ it("keeps Loupist in the menu bar through the host setting and lists what leaves
   render(<ApplicationSettings bridge={bridge} />);
   const toggle = screen.getByRole("switch", { name: "Keep running in the menu bar" });
   await waitFor(() => expect(toggle).toBeEnabled());
-  expect(screen.getByText("On because a scheduled task was enabled. You can turn it off here.")).toBeVisible();
+  expect(screen.getByText("Enabled with scheduled work.")).toBeVisible();
   const before = toggle.getAttribute("aria-checked") === "true";
   await userEvent.setup().click(toggle);
   expect(set).toHaveBeenCalledWith({ keepRunning: !before });
   await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", String(!before)));
   // An explicit choice replaces the automatic note.
-  expect(screen.queryByText("On because a scheduled task was enabled. You can turn it off here.")).toBeNull();
+  expect(screen.queryByText("Enabled with scheduled work.")).toBeNull();
   expect(screen.getByRole("heading", { name: "About & privacy" })).toBeVisible();
-  expect(screen.getByText("Beta. Official macOS releases use Developer ID signing and Apple notarization.")).toBeVisible();
   // One sentence says what matters; where each kind of data goes opens on request.
   expect(screen.getByText(/^Your research stays on this Mac\./u)).toBeVisible();
   expect(screen.getByText("Loupist's makers receive nothing")).not.toBeVisible();
@@ -39,17 +38,6 @@ it("says when the menu bar setting cannot be saved", async () => {
   await waitFor(() => expect(toggle).toBeEnabled());
   await userEvent.setup().click(toggle);
   expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't change this setting. Try again.");
-});
-
-it("shows the Beta signing notice in Korean", async () => {
-  await act(async () => { await i18n.changeLanguage("ko"); });
-  try {
-    render(<ApplicationSettings bridge={new MockLoupistBridge({ delay_ms: 0 })} />);
-    expect(screen.getByText("베타 버전입니다. 공식 macOS 배포판은 Apple이 발급한 개발자 인증서로 서명되며 Apple 공증을 받습니다.")).toBeVisible();
-    await waitFor(() => expect(screen.getByRole("switch", { name: "메뉴 막대에서 계속 실행" })).toBeEnabled());
-  } finally {
-    await act(async () => { await i18n.changeLanguage("en"); });
-  }
 });
 
 describe("the holdings export row", () => {

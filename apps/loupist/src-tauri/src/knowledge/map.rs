@@ -17,6 +17,10 @@ use crate::store::user_context::{MapContext, MapContextItem};
 pub struct KnowledgeMapQuery {
     pub loupist_id: String,
     pub max_nodes: Option<u32>,
+    /// World as of a calendar day (`YYYY-MM-DD`, today or earlier), as
+    /// `WorldGraphQuery.asOf` reads it.
+    #[serde(default)]
+    pub as_of: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,6 +110,18 @@ pub struct KnowledgeMap {
     pub world_revision_id: Option<String>,
     /// Latest contributing stored timestamp, not wall-clock request time.
     pub generated_at_ms: i64,
+    /// What the query's `asOf` left out; absent without one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub as_of_report: Option<super::WorldAsOfReport>,
+}
+
+/// A map read under an as-of date: World as the cutoff projection left it,
+/// and whether something this device recorded at a time was known by then
+/// (Lens pages, Journal entries and method learning follow that rule).
+pub(crate) struct MapAsOf<'a> {
+    pub world: WorldSnapshotBody,
+    pub recorded: &'a dyn Fn(i64) -> bool,
 }
 
 fn edge(kind: &str, source: &str, target: &str) -> KnowledgeMapEdge {
@@ -153,12 +169,23 @@ fn extension_marks(
         .unwrap_or((None, None))
 }
 
-pub(super) fn query(
+#[cfg(test)]
+fn query(
     tx: &Transaction<'_>,
     request: &KnowledgeMapQuery,
     context: &MapContext,
 ) -> KnowledgeResult<KnowledgeMap> {
+    query_as_of(tx, request, context, None)
+}
+
+pub(super) fn query_as_of(
+    tx: &Transaction<'_>,
+    request: &KnowledgeMapQuery,
+    context: &MapContext,
+    as_of: Option<MapAsOf<'_>>,
+) -> KnowledgeResult<KnowledgeMap> {
     validate_loupist_id(&request.loupist_id)?;
+    let recorded = |at: i64| as_of.as_ref().is_none_or(|as_of| (as_of.recorded)(at));
     let limit = request.max_nodes.unwrap_or(1000);
     if !(1..=1500).contains(&limit) {
         return Err(KnowledgeError::Invalid(
@@ -174,10 +201,13 @@ pub(super) fn query(
          WHERE record.owner_loupist_id=?1 AND record.kind='world' ORDER BY record.record_id LIMIT 1",
         [loupist], |row| Ok((row.get::<_,String>(0)?, row.get::<_,String>(1)?, row.get::<_,i64>(2)?)),
     ).optional()?;
-    let body: Option<WorldSnapshotBody> = world
-        .as_ref()
-        .map(|(_, json, _)| serde_json::from_str(json))
-        .transpose()?;
+    let body: Option<WorldSnapshotBody> = match &as_of {
+        Some(as_of) => Some(as_of.world.clone()),
+        None => world
+            .as_ref()
+            .map(|(_, json, _)| serde_json::from_str(json))
+            .transpose()?,
+    };
     let mut generated = context
         .updated_at_ms
         .max(world.as_ref().map_or(0, |row| row.2));
@@ -192,7 +222,13 @@ pub(super) fn query(
         ))
     })? {
         let (kind, id, at, last) = row?;
-        generated = generated.max(last);
+        // Under an as-of date a name or relationship was first seen when the
+        // projection says (its first reading of a Source known then), not
+        // when a Source published later first added it.
+        if !recorded(at) || (as_of.is_some() && kind != "lens_created") {
+            continue;
+        }
+        generated = generated.max(if recorded(last) { last } else { at });
         if let Some(id) = id {
             first.insert((kind, id), at);
         }
@@ -318,11 +354,13 @@ pub(super) fn query(
         ))
     })? {
         let (id, label, archived, created, updated, kind) = row?;
-        if removed.contains(&id) {
+        // Under an as-of date a page is known when it existed by then, as a
+        // chat as-of read of it is; a principle applies as it is today.
+        if removed.contains(&id) || (kind != "principle" && !recorded(created)) {
             continue;
         }
         generated = generated.max(updated).max(created);
-        let learned: Option<(i64,String)>=tx.query_row("SELECT finished_at_ms,rationale FROM knowledge_learning_reviews WHERE loupist_id=?1 AND lens_record_id=?2 AND status IN ('created','refined') ORDER BY finished_at_ms DESC LIMIT 1",rusqlite::params![loupist,id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+        let learned: Option<(i64,String)>=tx.query_row("SELECT finished_at_ms,rationale FROM knowledge_learning_reviews WHERE loupist_id=?1 AND lens_record_id=?2 AND status IN ('created','refined') ORDER BY finished_at_ms DESC LIMIT 1",rusqlite::params![loupist,id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?.filter(|(at, _)| recorded(*at));
         nodes.insert(
             id.clone(),
             KnowledgeMapNode {
@@ -362,7 +400,7 @@ pub(super) fn query(
     }
     for journal in super::journal::list(tx, loupist)?
         .into_iter()
-        .filter(|j| !j.archived)
+        .filter(|j| !j.archived && recorded(j.created_at_ms))
     {
         generated = generated.max(journal.updated_at_ms);
         for entity in &journal.entities {
@@ -535,6 +573,7 @@ pub(super) fn query(
         counts,
         world_revision_id: world.map(|row| row.0),
         generated_at_ms: generated,
+        as_of_report: None,
     })
 }
 
@@ -652,6 +691,7 @@ mod tests {
         KnowledgeMapQuery {
             loupist_id: "loupist-a".into(),
             max_nodes: limit,
+            as_of: None,
         }
     }
     fn applied(tx: &Transaction<'_>, turn: &str, id: &str, at: i64, ids: &[String]) {
@@ -796,6 +836,7 @@ mod tests {
             &KnowledgeMapQuery {
                 loupist_id: "loupist-b".into(),
                 max_nodes: None,
+                as_of: None,
             },
             &MapContext::default(),
         )

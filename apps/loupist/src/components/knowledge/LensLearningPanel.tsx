@@ -4,6 +4,7 @@ import { formatDate } from "../../i18n/format";
 import { acknowledgeMethod, useLearningState } from "../map/learningState";
 import { isStandingPlaceholder } from "../map/lensReading";
 import { Button } from "../ui/button";
+import { LearningWaitLine } from "./LearningWaitLine";
 import type { GrowthEvent, LearningReview, KnowledgeMapNode } from "../../contracts/knowledge";
 import type { LoupistBridge } from "../../types";
 
@@ -55,6 +56,7 @@ export function LensLearningPanel({ bridge, loupistId, node, onArchived }: {
     finally { setBusy(false); }
   }
   return <>
+    {node.kind === "lens_method" ? <LearningWaitLine bridge={bridge} loupistId={loupistId} /> : null}
     {error ? <p role="alert">{t("learning.loadError")} <Button variant="link" onClick={() => setReload(value => value + 1)}>{t("map.retry")}</Button></p> : null}
     {node.kind === "lens_method" && learnedAt !== undefined ? <section className="method-learning" aria-label={t("learning.heading")}>
       <h3>{t("learning.heading")}</h3>

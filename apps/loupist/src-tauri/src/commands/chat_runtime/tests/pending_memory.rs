@@ -320,7 +320,10 @@ async fn a_pending_save_keeps_a_lens_section() {
     fixture.stage(ToolMethod::LensFile, json!({
         "pages": [{
             "page": {"create": {"kind": "method", "title": "Capacity checks"}},
-            "ops": [{"op": "put", "key": "steps", "heading": "Steps", "markdown": "Compare design and operating capacity.", "basis": {"refs": [{"said": true}]}}]
+            "ops": [
+                {"op": "put", "key": "steps", "heading": "Steps", "markdown": "Compare design and operating capacity.", "basis": {"refs": [{"said": true}]}},
+                {"op": "summary", "text": "Check capacity by comparing its design and operating figures.", "said": true}
+            ]
         }],
         "rationale": "Keep the comparison method."
     })).await;
@@ -328,6 +331,10 @@ async fn a_pending_save_keeps_a_lens_section() {
     fixture.read(|_, write, loupist| {
         let page = write.read_page(loupist, &change.record_id)?;
         assert_eq!(page.title, "Capacity checks");
+        assert_eq!(
+            page.body.summary(),
+            "Check capacity by comparing its design and operating figures."
+        );
         assert_eq!(page.body.sections()[0].heading, "Steps");
         Ok(())
     });
@@ -402,4 +409,228 @@ async fn a_pending_save_keeps_the_world_enqueue() {
         );
         Ok(())
     });
+}
+
+/// A research reply may keep every Source its budget admits and file several
+/// Lens pages. The receipt listing them must not refuse the turn's whole save.
+#[tokio::test(start_paused = true)]
+async fn a_reply_keeping_sixteen_sources_and_three_lens_pages_saves_them_all() {
+    let notices = (1..=crate::broker::MAX_CHAT_TURN_SOURCES)
+        .map(|index| format!("Notice {index}: the maker revised capacity line {index}."))
+        .collect::<Vec<_>>();
+    let fixture = PendingMemoryFixture::new(&format!(
+        "Keep these methods and notices.\n{}",
+        notices.join("\n")
+    ));
+    for (index, notice) in notices.iter().enumerate() {
+        let pasted = fixture
+            .stage(ToolMethod::PastedCapture, json!({"text": notice}))
+            .await;
+        fixture.stage(ToolMethod::SourceSave, json!({
+            "result_ref": pasted["result_ref"], "title": format!("Capacity notice {}", index + 1), "coverage": "included_full",
+        })).await;
+    }
+    let pages = ["Capacity checks", "Utilization checks", "Inventory checks"].map(|title| json!({
+        "page": {"create": {"kind": "method", "title": title}},
+        "ops": [
+            {"op": "put", "key": "steps", "heading": "Steps", "markdown": "Compare design and operating capacity.", "basis": {"refs": [{"said": true}]}},
+            {"op": "summary", "text": format!("{title} compare design and operating figures."), "said": true}
+        ]
+    }));
+    fixture
+        .stage(
+            ToolMethod::LensFile,
+            json!({"pages": pages, "rationale": "Keep the comparison methods."}),
+        )
+        .await;
+    let message = commit_test_reply(
+        &fixture.executor.state,
+        &fixture.chat,
+        &fixture.executor.capture,
+        "I kept the notices and filed three methods.",
+        Some(|| {}),
+    )
+    .await;
+    let update = message.memory_update.unwrap();
+    assert_eq!(update.skip_reason, None, "{update:?}");
+    assert_eq!(update.status, MemoryUpdateStatus::Applied);
+    let count = |kind: &str| {
+        update
+            .changes
+            .iter()
+            .filter(|change| change.kind == kind)
+            .count()
+    };
+    assert_eq!(count("Source"), 16);
+    assert_eq!(count("Lens"), 3);
+}
+
+/// Another writer, such as a World publication, holds the Loupist's store for
+/// `hold` from the moment the save waits, then lets go.
+fn hold_the_store<'h>(
+    fixture: &PendingMemoryFixture,
+    hold: Duration,
+    holder: &'h std::cell::RefCell<Option<std::thread::JoinHandle<()>>>,
+) -> impl FnOnce() + 'h {
+    let state = fixture.executor.state.clone();
+    let loupist = fixture.policy.loupist_id.clone();
+    move || {
+        let (locked, store_held) = std::sync::mpsc::channel();
+        *holder.borrow_mut() = Some(std::thread::spawn(move || {
+            let _connection = state.store.lock_loupist(&loupist).unwrap();
+            locked.send(()).unwrap();
+            std::thread::sleep(hold);
+        }));
+        store_held.recv().unwrap();
+    }
+}
+
+fn source_records(fixture: &PendingMemoryFixture) -> i64 {
+    let mut count = 0;
+    fixture.read(|tx, _, loupist| {
+        count = tx.query_row(
+            "SELECT COUNT(*) FROM knowledge_records WHERE owner_loupist_id = ?1 AND kind = 'source'",
+            [loupist],
+            |row| row.get(0),
+        )?;
+        Ok(())
+    });
+    count
+}
+
+/// A save whose store stays busy through every retry says so, rather than only
+/// that saving failed, and lists what it did not keep.
+#[tokio::test(start_paused = true)]
+async fn a_save_behind_a_store_busy_past_every_retry_names_the_cause() {
+    crate::store::TEST_SAVE_BUDGET.set(Some(Duration::from_secs(1)));
+    let fixture = PendingMemoryFixture::new(MATERIAL);
+    fixture.stage_source().await;
+    let holder = std::cell::RefCell::new(None);
+    // Three attempts of a second each; the skipped receipt is written after.
+    let message = commit_test_reply(
+        &fixture.executor.state,
+        &fixture.chat,
+        &fixture.executor.capture,
+        "I kept the notice.",
+        Some(hold_the_store(
+            &fixture,
+            Duration::from_millis(3_500),
+            &holder,
+        )),
+    )
+    .await;
+    holder.into_inner().unwrap().join().unwrap();
+    let update = message.memory_update.unwrap();
+    assert_eq!(
+        update.skip_reason,
+        Some(crate::domain::MemorySaveSkipReason::StoreBusy)
+    );
+    assert_eq!(
+        update.discarded_memory_items.unwrap()[0].title,
+        "Capacity notice"
+    );
+    assert_eq!(source_records(&fixture), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_save_behind_a_busy_store_saves_on_a_retry_and_only_once() {
+    crate::store::TEST_SAVE_BUDGET.set(Some(Duration::from_secs(1)));
+    let fixture = PendingMemoryFixture::new(MATERIAL);
+    fixture.stage_source().await;
+    let holder = std::cell::RefCell::new(None);
+    let message = commit_test_reply(
+        &fixture.executor.state,
+        &fixture.chat,
+        &fixture.executor.capture,
+        "I kept the notice.",
+        Some(hold_the_store(
+            &fixture,
+            Duration::from_millis(1_500),
+            &holder,
+        )),
+    )
+    .await;
+    holder.into_inner().unwrap().join().unwrap();
+    let update = message.memory_update.unwrap();
+    assert_eq!(update.skip_reason, None, "{update:?}");
+    assert_eq!(update.status, MemoryUpdateStatus::Applied);
+    assert!(update.discarded_memory_items.is_none());
+    assert_eq!(
+        update
+            .changes
+            .iter()
+            .filter(|change| change.kind == "Source")
+            .count(),
+        1
+    );
+    assert_eq!(source_records(&fixture), 1);
+}
+
+/// One refused item does not lose the others: its stage is left out, the rest
+/// saves, and the receipt names what was not kept and why.
+#[tokio::test(start_paused = true)]
+async fn one_refused_item_is_left_out_and_the_rest_of_the_turn_saves() {
+    let fixture = PendingMemoryFixture::new(MATERIAL);
+    fixture.stage_source().await;
+    fixture
+        .stage(
+            ToolMethod::LensFile,
+            json!({"pages": [{
+                "page": {"create": {"kind": "method", "title": "Capacity checks"}},
+                "ops": [
+                    {"op": "put", "key": "steps", "heading": "Steps", "markdown": "Compare design and operating capacity.", "basis": {"refs": [{"said": true}]}},
+                    {"op": "summary", "text": "Capacity checks compare design and operating figures.", "said": true}
+                ]
+            }], "rationale": "Keep the capacity method."}),
+        )
+        .await;
+    // A principle edit naming a revision that does not exist is refused.
+    fixture
+        .executor
+        .capture
+        .staged_principles
+        .lock()
+        .await
+        .push(crate::commands::tool_executor::StagedPrinciple {
+            record_id: format!("rec_{}", uuid::Uuid::new_v4().simple()),
+            expected_revision_id: Some(format!("rev_{}", uuid::Uuid::new_v4().simple())),
+            input: crate::knowledge::PrincipleInput {
+                statement: "Check cash flow in both years".into(),
+                why: None,
+                example: None,
+                origin: "settings".into(),
+                origin_chat_id: None,
+                origin_message_id: None,
+            },
+        });
+    let message = commit_test_reply(
+        &fixture.executor.state,
+        &fixture.chat,
+        &fixture.executor.capture,
+        "I kept the notice and the principle.",
+        Some(|| {}),
+    )
+    .await;
+    let update = message.memory_update.unwrap();
+    assert_eq!(update.skip_reason, None, "{update:?}");
+    assert_eq!(update.status, MemoryUpdateStatus::Applied);
+    assert_eq!(
+        update
+            .changes
+            .iter()
+            .map(|change| change.kind.as_str())
+            .collect::<Vec<_>>(),
+        ["Source", "Lens"]
+    );
+    let left_out = update.discarded_memory_items.unwrap();
+    assert_eq!(left_out.len(), 1, "{left_out:?}");
+    assert_eq!(
+        left_out[0].kind,
+        crate::domain::DiscardedMemoryKind::Principle
+    );
+    assert_eq!(
+        left_out[0].reason,
+        Some(crate::domain::MemorySaveSkipReason::Invalid)
+    );
+    assert_eq!(source_records(&fixture), 1);
 }

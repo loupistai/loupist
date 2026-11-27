@@ -1,4 +1,4 @@
-import { formatDate, formatPercent } from "../../i18n/format";
+import { formatCalendarDate, formatNumber, formatPercent } from "../../i18n/format";
 import i18n, { useTranslation, Trans } from "../../i18n";
 import {
   CheckCircle2Icon,
@@ -36,8 +36,7 @@ const publishedAtMs = (value: string) => {
 const displayPublishedAt = (value: string) => {
   const timestamp = publishedAtMs(value);
   if (timestamp === null) return null;
-  // Korean reads the long form (2026년 11월 4일), not "2026. 11. 4.", as Schedule and sources do.
-  return formatDate(timestamp, { dateStyle: i18n.language.toLowerCase().startsWith("ko") ? "long" : "medium" });
+  return formatCalendarDate(timestamp);
 };
 
 const blockerLabel = (kind: string) => {
@@ -186,7 +185,7 @@ export function UpdateSettingsCard({
           <div className="update-summary update-summary-warning" role="status">
             <ShieldAlertIcon aria-hidden="true" />
             <div>
-              <strong>{i18n.t("settings:updateSettingsCard.finishActiveWorkBeforeUpdating")}</strong>
+              <strong>{i18n.t("settings:updateSettingsCard.waitingForWork", { count: updateState.blockers.length, formattedCount: formatNumber(updateState.blockers.length) })}</strong>
               <ul>
                 {updateState.blockers.map((blocker) => (
                   <li key={`${blocker.kind}:${blocker.id}`}>{blockerLabel(blocker.kind)}</li>

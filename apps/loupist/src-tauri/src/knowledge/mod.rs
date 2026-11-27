@@ -20,11 +20,11 @@ pub(crate) mod connections;
 mod error;
 mod followed;
 mod graph_inference;
-pub use graph_inference::LocalModel;
 #[cfg(test)]
-pub(crate) use graph_inference::{
-    embed_local_batch, fixture_model, InferenceDisposition, InferenceReply,
-};
+pub(crate) use graph_inference::fixture_model;
+pub use graph_inference::LocalModel;
+#[cfg(any(test, feature = "eval-harness"))]
+pub(crate) use graph_inference::{embed_local_batch, InferenceDisposition, InferenceReply};
 pub(crate) use graph_inference::{loaded_local_model, local_model, ModelLookup};
 
 /// The staged bundled embedding model, for tests that need its real vectors.
@@ -42,10 +42,14 @@ mod graph_projection;
 mod graph_service;
 mod growth;
 pub(crate) mod journal;
+pub(crate) mod learned_marks;
 pub mod learning;
 mod lens;
 pub mod lens_page;
-pub use lens::{IndexEntry, LearnedDigest, PageRead, PageSummary, Screen};
+mod program_undo;
+pub(crate) use lens::recorded_message_undo;
+pub use lens::{IndexEntry, LearnedDigest, MessageUndo, PageRead, PageSummary, Screen};
+pub use program_undo::ProgramUndo;
 pub mod memory_controls;
 pub mod memory_reset;
 pub mod principles;
@@ -54,7 +58,9 @@ mod identity;
 mod map;
 pub use growth::{GrowthEventsPage, GrowthEventsQuery};
 pub(crate) use identity::{match_items, IdentityMatch};
+pub(crate) use map::MapAsOf;
 pub use map::{KnowledgeMap, KnowledgeMapQuery};
+pub(crate) mod figure_check;
 mod model;
 pub mod numbers;
 mod present;
@@ -78,12 +84,15 @@ mod world;
 pub(crate) mod world_extract;
 mod world_followups;
 pub(crate) use world_followups::{
-    connection_in_loupist, mark_shown as connections_mark_shown,
+    connection_in_loupist, mark_shown as connections_mark_shown, reconcile_due_endings,
     set_status as set_connection_status, to_show as connections_to_show,
 };
 pub use world_followups::{ConnectionStatus, ConnectionView};
 mod world_filter;
 pub(crate) use world_filter::{last_day, published_by};
+pub(crate) mod world_changes;
+#[cfg(feature = "e2e")]
+pub(crate) use model::world_episodes;
 mod world_schema;
 mod world_source;
 pub use world_source::{SourceWorldClaim, WorldSourceTarget};
@@ -103,11 +112,12 @@ pub(crate) use graph_jobs::pause_copied_processing;
 pub use graph_jobs::SealedWorldIndex;
 pub use graph_jobs::{
     get_job, get_processing_job, list_jobs, load_settings, pause_processing, recover_world,
-    recovery_status, resume_processing, retry_source_processing, retry_sources_processing,
+    recovery_status, resume_processing, retry_admitted_source, retry_sources_processing,
     store_settings, GraphJobView, GraphProcessingSettings, GraphProcessingView,
     GraphPublicSettings, GraphReadiness, ReadinessNote, RecommendedWorldModel, SourcesRetried,
     WorldModel, WorldModelChoice,
 };
+pub(crate) use graph_jobs::{queued_holds, JobHold, JobOrigin};
 pub use graph_service::GraphSupervisor;
 pub use model::*;
 pub use present::present_world;
@@ -335,7 +345,19 @@ impl KnowledgeStore {
         job_id: &str,
         now_ms: i64,
     ) -> KnowledgeResult<graph_jobs::GraphJobClaim> {
-        self.transact(|write| graph_jobs::claim_running(write.tx, settings, job_id, now_ms))
+        let limits = graph_jobs::allowance_limits(&self.connection);
+        let admission = crate::scheduled_tasks::allowance::Admission::prepare(
+            &self.connection,
+            self.loupist_id.as_deref(),
+        )
+        .map_err(|_| KnowledgeError::Invalid("could not read the daily allowance"))?;
+        self.transact(|write| {
+            let connection: &rusqlite::Connection = write.tx;
+            let state = admission
+                .state(Some(connection), limits, now_ms)
+                .map_err(|_| KnowledgeError::Invalid("could not read the daily allowance"))?;
+            graph_jobs::claim_running(write.tx, settings, job_id, now_ms, Some(&state))
+        })
     }
 
     pub fn graph_note_inference(&self, job_id: &str, attempt_id: &str) -> KnowledgeResult<()> {
@@ -362,6 +384,7 @@ impl KnowledgeStore {
                 outcome,
                 usage_uncertain,
                 validated,
+                None,
                 now_ms,
             )
         })
@@ -437,8 +460,9 @@ impl<'a> KnowledgeWrite<'a> {
         &self,
         request: &KnowledgeMapQuery,
         context: &crate::store::user_context::MapContext,
+        as_of: Option<map::MapAsOf<'_>>,
     ) -> KnowledgeResult<KnowledgeMap> {
-        map::query(self.tx, request, context)
+        map::query_as_of(self.tx, request, context, as_of)
     }
 
     /// A Source a Chat reply saved. A user-provided one names the message it
@@ -447,6 +471,7 @@ impl<'a> KnowledgeWrite<'a> {
         &self,
         request: RetainNewSource,
         origin_message_id: &str,
+        admitted: JobOrigin,
         provided: Option<&ProvidedOrigin>,
     ) -> KnowledgeResult<RetainedSource> {
         source::retain_new_source_with_origin(
@@ -454,6 +479,7 @@ impl<'a> KnowledgeWrite<'a> {
             self.blobs,
             request,
             Some(origin_message_id),
+            Some(admitted),
             provided,
         )
     }
@@ -519,7 +545,7 @@ impl<'a> KnowledgeWrite<'a> {
         world_source::related_claims(self.tx, loupist_id, record_id, revision_id, source_id)
     }
 
-    #[cfg(any(test, feature = "eval-harness", feature = "e2e"))]
+    #[cfg(any(test, feature = "e2e"))]
     pub fn retain_source(&self, request: RetainSource) -> KnowledgeResult<RetainedSource> {
         source::retain_source(self.tx, self.blobs, request)
     }
@@ -669,6 +695,19 @@ impl<'a> KnowledgeWrite<'a> {
         lens::file(self.tx, loupist_id, origin, deltas, at_ms)
     }
 
+    /// Seeds pages a profile already held, before subject admission refused a
+    /// second create for the same company.
+    #[cfg(test)]
+    pub fn file_as_held(
+        &self,
+        loupist_id: &str,
+        origin: &lens_page::FilingOrigin,
+        deltas: Vec<lens_page::PageDelta>,
+        at_ms: i64,
+    ) -> KnowledgeResult<Vec<lens_page::FiledPage>> {
+        lens::file_as_held(self.tx, loupist_id, origin, deltas, at_ms)
+    }
+
     pub fn read_page(&self, loupist_id: &str, record_id: &str) -> KnowledgeResult<PageRead> {
         lens::read_page(self.tx, loupist_id, record_id)
     }
@@ -692,6 +731,15 @@ impl<'a> KnowledgeWrite<'a> {
 
     pub fn undo_op(&self, loupist_id: &str, op_id: &str, at_ms: i64) -> KnowledgeResult<PageRead> {
         lens::undo_op(self.tx, loupist_id, op_id, at_ms)
+    }
+
+    pub fn undo_message(
+        &self,
+        loupist_id: &str,
+        message_id: &str,
+        at_ms: i64,
+    ) -> KnowledgeResult<MessageUndo> {
+        lens::undo_message(self.tx, loupist_id, message_id, at_ms)
     }
 
     pub fn forget_section(
@@ -1000,6 +1048,10 @@ pub fn erase_loupist_private(tx: &Transaction<'_>, loupist_id: &str) -> Knowledg
 
 fn erase_guarded_rows(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<u32> {
     tx.execute(
+        "DELETE FROM knowledge_world_episodes WHERE loupist_id = ?1",
+        [loupist_id],
+    )?;
+    tx.execute(
         "DELETE FROM knowledge_growth_events WHERE loupist_id = ?1",
         [loupist_id],
     )?;
@@ -1132,6 +1184,16 @@ pub struct SourceProcessing {
     pub job_id: Option<String>,
     pub status: String,
     pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub failure: Option<graph_jobs::JobFailure>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub retryable: Option<bool>,
+    /// Waiting on the daily allowance. The status stays queued.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub hold: Option<graph_jobs::JobHold>,
 }
 
 impl KnowledgeWrite<'_> {
@@ -1142,13 +1204,16 @@ impl KnowledgeWrite<'_> {
     ) -> KnowledgeResult<SourceProcessing> {
         let record = self.owned_record(loupist_id, record_id)?;
         if let Some(job) = graph_jobs::source_status_job(self.tx, loupist_id, record_id)? {
-            let status = graph_jobs::processing_status(self.tx, loupist_id, &job.status)?;
+            let failure = job.document.failure.clone();
+            let retryable = graph_jobs::job_retryable(&job).then_some(true);
+            let status = graph_jobs::processing_status(self.tx, &job)?;
             return Ok(SourceProcessing {
                 job_id: Some(job.job_id),
-                error: (job.document.usage_uncertain).then(|| {
-                    "The helper response was uncertain. Automatic retry is disabled.".into()
-                }),
+                error: None,
                 status,
+                failure,
+                retryable,
+                hold: None,
             });
         }
         let reflected: bool = self.tx.query_row(
@@ -1160,6 +1225,9 @@ impl KnowledgeWrite<'_> {
                 job_id: None,
                 status: "completed".into(),
                 error: None,
+                failure: None,
+                retryable: None,
+                hold: None,
             });
         }
         let mut text_span = None;
@@ -1211,6 +1279,9 @@ impl KnowledgeWrite<'_> {
             job_id: None,
             status: status.into(),
             error: None,
+            failure: None,
+            retryable: None,
+            hold: None,
         })
     }
 }

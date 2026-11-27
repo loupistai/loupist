@@ -53,6 +53,7 @@ export const scheduleScenarios: PreviewScenario[] = [
     ["briefing-failed", "A briefing that could not finish", ".briefings-failure"],
     ["briefing-suggested", "A briefing keeps the changes that prompted it", ".briefing-sections"],
     ["schedule-task-active", "An active task's own controls: pause, run now, delete and change with Bot", ".schedule-task-controls [data-schedule-status='paused']"],
+    ["schedule-watch-delivery-menu", "A watch's delivery choices open in Schedule", '[role="listbox"] [role="option"]'],
     ["schedule-task-paused", "A paused task offers Resume", ".schedule-task-controls [data-schedule-status='active']"],
     ["schedule-task-failed", "A task whose last run failed says why, beside its controls", ".schedule-task-error"],
   ] as const).map(([id, title, landmark]): PreviewScenario => ({
@@ -81,6 +82,12 @@ export const scheduleScenarios: PreviewScenario[] = [
       await navigate(root, "schedule");
       if (id === "schedule-dialog") await click('[data-schedule-task="preview-briefing"] .schedule-task-summary');
       if (id === "schedule-task-active" || id === "schedule-task-failed") await click('[data-schedule-task="preview-task-0"] .schedule-task-summary');
+      if (id === "schedule-watch-delivery-menu") {
+        await click('[data-schedule-task="preview-task-0"] .schedule-task-summary');
+        const trigger = await until(() => select('.schedule-delivery [role="combobox"]') as HTMLElement | null, "Delivery choice did not load");
+        trigger.focus();
+        trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+      }
       if (id === "schedule-task-paused") {
         await click('[data-schedule-filter] [role="radio"][value="all"]');
         await click('[data-schedule-task="preview-task-1"] .schedule-task-summary');
@@ -108,6 +115,17 @@ export const scheduleScenarios: PreviewScenario[] = [
         const list = bridge.scheduledTasksList.bind(bridge);
         bridge.scheduledTasksList = async request => (await list(request)).map(task => task.id === "preview-task-0" && task.latest_run
           ? { ...task, latest_run: { ...task.latest_run, status: "failed" as const, error: "provider_auth: 401 unauthorized" } } : task);
+      }
+      if (id === "schedule-watch-delivery-menu") {
+        const list = bridge.scheduledTasksList.bind(bridge);
+        const get = bridge.scheduledTaskGet.bind(bridge);
+        const watch = <T extends { id: string }>(task: T) => task.id === "preview-task-0"
+          ? { ...task, report: "when_met" as const, delivery: { to: "bot" as const } } : task;
+        bridge.scheduledTasksList = async request => (await list(request)).map(watch);
+        bridge.scheduledTaskGet = async request => {
+          const task = await get(request);
+          return task && watch(task);
+        };
       }
     },
   })),

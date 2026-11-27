@@ -563,24 +563,31 @@ it('keeps lines one screen pixel thin at every zoom, dashes included', () => {
 
 it('fades ordinary names in as World zooms in, keeping prominent ones named', () => {
   reducedMotion();
-  // A hundred names on a grid: the ten best-connected keep their names, the next hubs fade in first.
-  const nodes = Array.from({ length: 100 }, (_, index) => ({ ...node(`n${index}`, (index % 10) * 80 - 400), y: Math.floor(index / 10) * 60 - 280, fy: Math.floor(index / 10) * 60 - 280, watched: false, degree: 100 - index }));
+  // Two hundred names: the twenty best-connected and a followed name stay named when zoomed out.
+  // The next hubs fade in first; an ordinary name waits until the map is closer.
+  const nodes = Array.from({ length: 200 }, (_, index) => {
+    const at = [0, 19, 25, 80, 199].indexOf(index);
+    return { ...node(`n${index}`, at < 0 ? 5000 : at * 100), y: 0, fy: 0, watched: index === 199, degree: index === 199 ? 1 : 200 - index };
+  });
   render(<MapCanvas {...base} nodes={nodes} scopeKey="label-zoom-fade" />);
   const labelled = (scale: number) => {
     const { ctx, record } = drawing();
     renderer.props!.onRenderFramePost?.(ctx, scale);
     return new Map(record.texts.map(item => [item.text, item.alpha]));
   };
-  const far = labelled(.7);
+  const far = labelled(.4);
   expect(far.get('n0')).toBe(1);
-  expect(far.get('n12')).toBeGreaterThan(0);
-  expect(far.get('n12')).toBeLessThan(1);
-  expect(far.has('n50')).toBe(false);
+  expect(far.get('n19')).toBe(1);
+  expect(far.get('n199')).toBe(1);
+  expect(far.has('n80')).toBe(false);
+  const hubs = labelled(.7);
+  expect(hubs.get('n25')).toBeGreaterThan(0);
+  expect(hubs.get('n25')).toBeLessThan(1);
   // Between 1.2× and 1.6× every other name fades in.
   const middle = labelled(1.4);
-  expect(middle.get('n50')).toBeGreaterThan(0);
-  expect(middle.get('n50')).toBeLessThan(1);
-  expect(labelled(1.7).get('n50')).toBe(1);
+  expect(middle.get('n80')).toBeGreaterThan(0);
+  expect(middle.get('n80')).toBeLessThan(1);
+  expect(labelled(1.7).get('n80')).toBe(1);
 });
 
 it('draws the final state once the last transition ends, even when no frame was drawn during it', () => {

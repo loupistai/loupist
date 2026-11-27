@@ -8,7 +8,8 @@ description: Use when the user teaches or corrects a reusable method, asks to ke
 Lens is this Loupist's wiki: the standing perspective, methods (when and how to
 check something, and what would disprove it), subject pages, ideas and the
 user's principles. The system prompt says when to read and when to file; this
-Skill covers how to write a method and how to review the library.
+Skill covers how to write a method, how to keep a page current and how to
+review the library.
 
 ## Teach or correct a method
 
@@ -40,6 +41,16 @@ revision.
 
 Link a related method as `[title](lens:recordId)` with a discovered id, and say
 whether it is a prerequisite, alternative, refinement or countercheck.
+
+## Keep a subject or idea page current
+
+A section is an account as of its date. A superseded section cites a claim that has since ended, and a
+contested one cites a claim Sources dispute or World no longer holds: read the page, then rewrite the
+section from the evidence that ended or disputes the claim and cite that evidence. What to check, what is
+still open and what would break an idea are sections in their own right (`role`): they need no source of
+their own on a page where another section cites evidence, and each says how sure it is. One subject has
+one page, under the subject's name; when a create is refused because the subject has a page, revise that
+page.
 
 ## Replace a principle
 

@@ -270,11 +270,7 @@ async fn settle_turn_runtime(turn: SettleTurn<'_>) -> (Option<PiSessionCache>, b
             .unwrap_or_else(|e| e.into_inner())
             .as_mut()
         {
-            record.usage = Some(crate::runs::log::Usage {
-                input: token_usage.input.saturating_add(token_usage.cache_write),
-                cached_input: token_usage.cache_read,
-                output: token_usage.output,
-            });
+            record.usage = token_usage.token_totals();
         }
     }
     let activity_settled = match tokio::time::timeout(
@@ -304,7 +300,7 @@ async fn settle_turn_runtime(turn: SettleTurn<'_>) -> (Option<PiSessionCache>, b
     #[cfg(feature = "eval-harness")]
     if let (Some(capture), Some(reason)) = (&on_event.eval_pi_event, failure.as_deref()) {
         capture(
-            &serde_json::json!({"type":"eval_error","message":crate::pi::e2e_failure_category(reason)}),
+            &serde_json::json!({"type":"eval_error","message":crate::pi::e2e_failure_category(reason),"reason":reason}),
         );
     }
     #[cfg(any(debug_assertions, feature = "e2e"))]

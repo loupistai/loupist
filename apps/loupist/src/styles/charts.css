@@ -1,7 +1,7 @@
 /* One row of chart chrome (it wraps only when the panel is very narrow), so the plot keeps its height. */
 .chart-local-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gg-space-1) 5px; padding: var(--gg-space-1) var(--gg-space-2); border-bottom: 1px solid var(--gg-color-border-subtle); font-size: var(--gg-text-caption); }
-.chart-local-toolbar button, .chart-local-toolbar select { padding: var(--gg-space-1) 7px; border: 1px solid var(--gg-color-border-subtle); border-radius: 5px; background: var(--gg-color-bg-app); color: var(--gg-color-text-primary); font-size: var(--gg-text-caption); }
-.chart-local-toolbar select { max-width: 150px; }
+.chart-local-toolbar button:not([data-slot="select-trigger"]) { padding: var(--gg-space-1) 7px; border: 1px solid var(--gg-color-border-subtle); border-radius: 5px; background: var(--gg-color-bg-app); color: var(--gg-color-text-primary); font-size: var(--gg-text-caption); }
+.chart-local-toolbar [data-slot="select-trigger"] { max-width: 150px; }
 .chart-local-toolbar button:disabled { opacity: .4; }
 .chart-local-toolbar button[aria-pressed="true"] { background: var(--gg-color-bg-selected); color: var(--gg-color-text-primary); }
 .chart-local-toolbar .chart-more-trigger { display: inline-grid; place-items: center; min-width: var(--gg-size-control-sm); min-height: var(--gg-size-control-sm); margin-left: auto; padding: 0; border-color: transparent; background: transparent; }

@@ -27,12 +27,17 @@ pub(crate) mod knowledge;
 pub(crate) mod legacy_holdings;
 pub(crate) mod loupist;
 pub(crate) mod power;
+pub(crate) mod provider_quota;
 pub(crate) mod questions;
 pub(crate) mod records;
 pub(crate) mod scheduled_tasks;
 pub(crate) mod scripts;
 pub(crate) mod skills;
 mod tool_executor;
+#[cfg(feature = "eval-harness")]
+pub(crate) use tool_executor::schedules::{eval_dry_run_check, eval_save_check, ScheduleContext};
+#[cfg(test)]
+pub(crate) use tool_executor::source_save_origin;
 pub(crate) mod triggers;
 pub(crate) use tool_executor::number_checks::replay::ReplayCache;
 pub(crate) use tool_executor::prewarm_market_data;
@@ -170,10 +175,18 @@ pub(crate) fn map_store(error: crate::store::StoreError) -> CommandError {
         StoreError::Sqlite(rusqlite::Error::QueryReturnedNoRows) => {
             CommandError::not_found("record")
         }
+        StoreError::Sqlite(error) if knowledge::sqlite_is_busy(&error) => CommandError::new(
+            crate::app::CommandErrorCode::StoreBusy,
+            "Loupist's data was busy with other work and could not be reached in time.",
+        ),
         StoreError::Sqlite(error) => {
             eprintln!("Could not access saved data: {error}");
             CommandError::internal("Could not access saved data.")
         }
+        StoreError::ChatSaveDeadline => CommandError::new(
+            crate::app::CommandErrorCode::StoreBusy,
+            "Loupist was busy saving other work and could not reach its data in time.",
+        ),
         other => CommandError::internal(other.to_string()),
     }
 }

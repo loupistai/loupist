@@ -131,6 +131,9 @@ pub(crate) struct InboxItem {
     pub thread_id: Option<String>,
     pub message_id: Option<String>,
     pub skipped_tools: Vec<SkippedTool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub undo: Option<crate::knowledge::MessageUndo>,
 }
 impl From<Run> for InboxItem {
     fn from(r: Run) -> Self {
@@ -149,6 +152,7 @@ impl From<Run> for InboxItem {
             thread_id: r.thread_id,
             message_id: r.message_id,
             skipped_tools: r.skipped_tools,
+            undo: r.undo,
         }
     }
 }

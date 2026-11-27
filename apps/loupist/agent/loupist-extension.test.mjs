@@ -21,6 +21,33 @@ import loupistTerminalExtension, {
 const CATALOG = JSON.parse(readFileSync(new URL("./tool-catalog.json", import.meta.url), "utf8"));
 const WORKSPACE_TOOLS = ["read", "write", "edit", "ls", "find", "grep"];
 
+test("a frozen soft budget appends one note to the next tool result", async (t) => {
+  const context = runtimeContext("chat", ["lens_read"]);
+  context.agent_runtime.budget = { requests: 12, soft: 2, hard: 4 };
+  const { temporary, path } = useHostContext(t, context);
+  context.workspace = emptyWorkspace(temporary);
+  writeFileSync(path, JSON.stringify(context), { mode: 0o600 });
+  await startToolBroker(t);
+  const { handlers, subscriptions } = loadExtension();
+  const onMessageEnd = () => Promise.all(subscriptions.get("message_end")
+    .map(handler => handler({ message: { role: "assistant" } })));
+  const onToolResult = handlers.get("tool_result");
+  const result = { content: [{ type: "text", text: "evidence" }] };
+  await onMessageEnd();
+  assert.equal(onToolResult(result), undefined);
+  const onCompaction = (compactionEntry) => Promise.all(subscriptions.get("session_compact")
+    .map(handler => handler({ reason: "threshold", compactionEntry })));
+  await onCompaction({});
+  assert.equal(onToolResult(result), undefined);
+  await onCompaction({ usage: { input: 1 } });
+  const annotated = onToolResult(result);
+  assert.equal(annotated.content.length, 2);
+  assert.equal(annotated.content[0], result.content[0]);
+  assert.equal(annotated.content[1].type, "text");
+  assert(annotated.content[1].text.length > 0);
+  assert.equal(onToolResult(result), undefined);
+});
+
 test("keeps host-context nofollow protection off Windows only", () => {
   assert.equal(hostContextOpenNoFollowForPlatform("win32"), 0);
   assert.equal(hostContextOpenNoFollowForPlatform("darwin"), constants.O_NOFOLLOW ?? 0);
@@ -348,15 +375,19 @@ function useHostContext(t, context, runOptions = "{}") {
 function loadExtension(commands = []) {
   const registered = new Map();
   const handlers = new Map();
+  const subscriptions = new Map();
   const snapshots = [];
   loupistTerminalExtension({
     registerCommand() {},
     registerTool: (definition) => registered.set(definition.name, definition),
-    on: (name, handler) => handlers.set(name, handler),
+    on: (name, handler) => {
+      handlers.set(name, handler);
+      subscriptions.set(name, [...subscriptions.get(name) ?? [], handler]);
+    },
     setActiveTools: (names) => snapshots.push(names),
     getCommands: () => commands,
   });
-  return { registered, handlers, snapshots, active: () => snapshots.at(-1) };
+  return { registered, handlers, subscriptions, snapshots, active: () => snapshots.at(-1) };
 }
 
 /** A private one-request broker that acknowledges delivery like the Rust host. */

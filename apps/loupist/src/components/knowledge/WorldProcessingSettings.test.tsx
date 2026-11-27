@@ -17,6 +17,24 @@ const selection = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.keyboard("{Escape}");
 };
 
+it("chooses the routine-check model from the model menu", async () => {
+  const props = setup();
+  const save = vi.spyOn(props.bridge, "knowledgeGraphSettingsSet");
+  render(<WorldProcessingSettings {...props} />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByText("Advanced limits"));
+  expect(screen.queryByRole("textbox", { name: "Fast model" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Fast model/ }));
+  await user.click(await screen.findByRole("menuitemradio", { name: "Same as the processing model" }));
+  expect(save).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("menuitemradio", { name: "GPT-5.6 Luna" }));
+  await user.keyboard("{Escape}");
+  await user.click(screen.getByRole("button", { name: "Save processing settings" }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
+    settings: expect.objectContaining({ fastModel: "model-test" }),
+  })));
+});
+
 it("uses the shared model catalog and controls while leaving automatic processing opt-in", async () => {
   const props = setup();
   await props.bridge.modelVisibilityUpdate({ model_profile_id: "model-test", visible_in_chat: false });
@@ -113,7 +131,7 @@ it("starts the model control with the recommended model and keeps its options re
   await user.keyboard("{Escape}");
   await inKorean(async () => {
     expect(modelControl()).toHaveTextContent("권장 (GPT-5.6 Luna)");
-    expect(screen.getByText("루피스트가 연결된 AI 계정에 맞춰 월드 구성 모델을 고릅니다. 직접 고르면 그 모델로 고정됩니다.")).toBeVisible();
+    expect(screen.getByText("Loupist가 연결된 AI 계정에 맞춰 월드 구성 모델을 고릅니다. 직접 고르면 그 모델로 고정됩니다.")).toBeVisible();
   });
   expect(save).not.toHaveBeenCalled();
 });
@@ -247,7 +265,7 @@ it("recovers explicitly without a connected model, enabling processing, or savin
   await act(async () => resolve(saved));
   expect(screen.getByLabelText("Maximum model requests per source")).toHaveValue(8);
   expect(autoProcess()).not.toBeChecked();
-  expect(screen.getByRole("status")).toHaveTextContent("Interrupted processing was not retried");
+  expect(screen.getByRole("status")).toHaveTextContent("World building recovered. Your sources are still saved.");
   expect(screen.queryByRole("button", { name: "Recover World building" })).toBeNull();
   expect(save).not.toHaveBeenCalled();
   expect(props.onChanged).toHaveBeenCalledOnce();
@@ -379,4 +397,22 @@ it("shows how many sources keep the Mac awake and when battery power lets it sle
     expect(screen.queryByText(/Keeping this Mac awake/)).toBeNull();
     expect(screen.getByText("On battery power, so this Mac can sleep as usual.")).toBeVisible();
   } finally { vi.useRealTimers(); }
+});
+
+it("offers Read now for a Source waiting on a plan limit", async () => {
+  const props = setup();
+  const catalog = await props.bridge.knowledgeCatalog({ loupistId: props.loupistId });
+  const source = catalog.sources.find(item => item.kind === "source") ?? catalog.sources[0];
+  if (!source) throw new Error("fixture has no source");
+  vi.spyOn(props.bridge, "knowledgeCatalog").mockResolvedValue({
+    ...catalog,
+    sources: [{ ...source, objects: [{ id: "held", title: "Quarterly filing", processing: { jobId: "held-job", status: "queued", error: null, hold: { cause: "plan_limit" } } }] }],
+  });
+  const retry = vi.spyOn(props.bridge, "knowledgeGraphRetrySource").mockResolvedValue({
+    jobId: "held-job", loupistId: props.loupistId, worldRecordId: "world", worldRevisionId: "rev", status: "queued", payloadDigest: "digest", createdAtMs: 1, hostMayRedrive: false,
+  });
+  render(<WorldProcessingSettings {...props} />);
+  expect(await screen.findByText(/Your AI plan's limit was reached/)).toBeVisible();
+  await userEvent.setup().click(screen.getByRole("button", { name: "Read now" }));
+  await waitFor(() => expect(retry).toHaveBeenCalledWith({ loupistId: props.loupistId, recordId: source.recordId }));
 });

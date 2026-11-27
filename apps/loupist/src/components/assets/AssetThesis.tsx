@@ -6,7 +6,7 @@ import type { ChatThread, LoupistBridge } from "../../types";
 import type { AssetLine, AssetPage, AssetReason } from "../../contracts/assets";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { NativeSelect } from "../ui/native-select";
+import { SelectField, SelectItem } from "../ui/select";
 import { Textarea } from "../ui/textarea";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { VerdictChip } from "./VerdictChip";
@@ -78,7 +78,7 @@ function ThesisForm({ bridge, loupistId, page, editing, onDone, onCancel }: {
       <Input id={`${id}-claim`} value={claim} onChange={event => setClaim(event.target.value)} maxLength={1000} required autoFocus />
       <div className="asset-thesis-form-grid">
         <label>{tJournal("journal.metric")}<Input value={metric} onChange={event => setMetric(event.target.value)} maxLength={200} required /></label>
-        <label>{tJournal("journal.direction")}<NativeSelect value={direction} onChange={event => setDirection(event.target.value as "above" | "below")}><option value="above">{tJournal("journal.above")}</option><option value="below">{tJournal("journal.below")}</option></NativeSelect></label>
+        <label>{tJournal("journal.direction")}<SelectField value={direction} onValueChange={value => setDirection(value as "above" | "below")}><SelectItem value="above">{tJournal("journal.above")}</SelectItem><SelectItem value="below">{tJournal("journal.below")}</SelectItem></SelectField></label>
         <label>{tJournal("journal.threshold")}<Input type="number" step="any" value={threshold} onChange={event => setThreshold(event.target.value)} required /></label>
         <label>{tJournal("journal.unit")}<Input value={unit} onChange={event => setUnit(event.target.value)} maxLength={80} /></label>
       </div>

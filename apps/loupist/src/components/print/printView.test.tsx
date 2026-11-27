@@ -1,6 +1,6 @@
 import { act, fireEvent } from "@testing-library/react";
 import type { ChatThread } from "../../types";
-import { printChat, printableCopy } from "./printDocuments";
+import { printAnswer, printChat, printableCopy } from "./printDocuments";
 import { endPrint } from "./printView";
 
 const thread: ChatThread = {
@@ -86,5 +86,27 @@ describe("print to PDF (X9)", () => {
     expect(copy.querySelector("[id]")).toBeNull();
     // The reader on screen is untouched.
     expect(reader.querySelector("button[data-print=\"omit\"]")).not.toBeNull();
+  });
+});
+
+describe("an answer on paper (plan 4.7)", () => {
+  afterEach(() => { act(() => endPrint()); });
+
+  it("keeps the chart as rendered and numbers each Source with its URL, a Source without one by its title", async () => {
+    const print = vi.spyOn(window, "print").mockImplementation(() => undefined);
+    const answer = document.createElement("article");
+    answer.innerHTML = `<div class="message-content"><p>Margins held <span class="loupist-citation">1</span>.</p></div>
+      <div class="chat-artifact-block"><canvas width="10" height="10"></canvas></div>
+      <details class="message-sources"><summary>2 sources</summary><ol><li>example.de</li></ol></details>`;
+    const toDataURL = vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,AA==");
+    await act(async () => { await printAnswer(answer, [{ title: "Geschäftsbericht 2025", url: "https://example.de/gb-2025" }, { title: "Your note" }], "Margins · Nov 3, 2026"); });
+    toDataURL.mockRestore();
+    print.mockRestore();
+    const paper = sheet()!;
+    expect(paper.querySelector(".chat-artifact-block img.print-canvas")).toHaveAttribute("src", "data:image/png;base64,AA==");
+    expect(paper.querySelector(".message-sources")).toBeNull();
+    expect([...paper.querySelectorAll(".print-sources li")].map((item) => item.textContent)).toEqual(["Geschäftsbericht 2025 — https://example.de/gb-2025", "Your note"]);
+    expect(paper.textContent?.trim().endsWith("AI can be wrong. Not a licensed financial adviser.")).toBe(true);
+    expect(document.title).toBe("Margins · Nov 3, 2026");
   });
 });

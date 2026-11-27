@@ -14,16 +14,24 @@ import { useChatMap } from "../workspace/ChatMapContext";
 
 vi.mock("../workspace/ChatMapContext", () => ({ useChatMap: vi.fn(() => null) }));
 
-const skipReasons: Array<[MemorySaveSkipReason, string, string]> = [
+const askAgain = ["Ask again in this conversation to read and keep them again.", "이 대화에서 다시 요청하면 자료를 다시 읽고 보관합니다."] as const;
+// A failure with a recorded cause also says what to do; one from before causes were recorded keeps its old text.
+const skipReasons: Array<[MemorySaveSkipReason, string, string, (readonly [string, string])?]> = [
   ["user", "you skipped saving.", "저장을 건너뛰었습니다."],
   ["deadline", "another conversation was still running after 10 minutes.", "10분이 지나도 다른 대화가 끝나지 않았습니다."],
   ["interrupted", "Loupist quit before saving finished.", "저장이 끝나기 전에 Loupist가 종료되었습니다."],
   ["failed", "saving failed.", "저장에 실패했습니다."],
   ["policy_changed", "Memory was reset while this answer was being written.", "답변을 작성하는 동안 메모리가 초기화되었습니다."],
+  ["invalid", "Loupist refused something this answer tried to keep, so nothing from it was saved.", "이 답변이 보관하려던 항목을 Loupist가 거부하여 아무것도 저장되지 않았습니다.",
+    ["Ask again in this conversation to read and keep them again. If it fails again, keep fewer items in one answer.", "이 대화에서 다시 요청하면 자료를 다시 읽고 보관합니다. 다시 실패하면 한 답변에서 보관할 항목을 줄이십시오."]],
+  ["store_busy", "Loupist was busy saving other work and could not finish this save in time.", "다른 저장 작업으로 Loupist가 바빠 제시간에 저장을 마치지 못했습니다.", askAgain],
+  ["storage", "Loupist could not write to this Loupist’s data.", "Loupist가 이 Loupist의 데이터에 쓰지 못했습니다.",
+    ["Check that the disk has free space and the Loupist folder is available, then ask again in this conversation.", "디스크 여유 공간과 Loupist 폴더를 확인한 뒤 이 대화에서 다시 요청하십시오."]],
+  ["conflict", "this conversation or Memory changed while the answer was being saved.", "저장하는 동안 이 대화나 메모리가 바뀌었습니다.", askAgain],
 ];
 
-it.each(skipReasons.flatMap(([reason, en, ko]) => [false, true].map(staged => ({ reason, en, ko, staged }))))(
-  "shows the terminal receipt for $reason with staged writes = $staged in both languages", async ({ reason, en, ko, staged }) => {
+it.each(skipReasons.flatMap(([reason, en, ko, next]) => [false, true].map(staged => ({ reason, en, ko, next, staged }))))(
+  "shows the terminal receipt for $reason with staged writes = $staged in both languages", async ({ reason, en, ko, next, staged }) => {
   const items = [
     { kind: "note", title: "Overlap check" }, { kind: "source", title: "Annual report" },
     { kind: "lens_page", title: "Fiscal calendar" }, { kind: "journal_entry", title: "Margin thesis" },
@@ -36,8 +44,11 @@ it.each(skipReasons.flatMap(([reason, en, ko]) => [false, true].map(staged => ({
   const { unmount } = renderWithOpen(<MessageMemoryRow loupistId="loupist-a" message={message} />);
   try {
     const receipt = screen.getByTestId("memory-row");
-    const assertReceipt = (status: string, correction: string, heading: string, kinds: string[]) => {
+    const assertReceipt = (status: string, correction: string, heading: string, kinds: string[], nextStep?: string) => {
       const line = within(receipt).getByText(status);
+      const shownNext = receipt.querySelector("[data-save-next]");
+      if (nextStep) expect(shownNext).toHaveTextContent(nextStep);
+      else expect(shownNext).toBeNull();
       expect(line).toBeVisible();
       expect(within(receipt).getByRole("button")).toBeVisible();
       expect(within(receipt).queryByText(i18n.t("chat:chatReceipt.nothingNew"))).toBeNull();
@@ -51,9 +62,9 @@ it.each(skipReasons.flatMap(([reason, en, ko]) => [false, true].map(staged => ({
         expect(within(receipt).queryByRole("list", { name: heading })).toBeNull();
       }
     };
-    assertReceipt(`Not saved to Memory: ${en}`, "What this answer says it saved was not kept.", "Not kept", ["Note", "Source", "Lens page", "Journal entry", "Principle"]);
+    assertReceipt(`Not saved to Memory: ${en}`, "Anything this answer says it saved or filed was not kept.", "Not kept", ["Note", "Source", "Lens page", "Journal entry", "Principle"], next?.[0]);
     await act(async () => { await i18n.changeLanguage("ko"); });
-    assertReceipt(`메모리에 저장하지 않음: ${ko}`, "이 답변에서 저장했다고 한 내용은 보관되지 않았습니다.", "보관되지 않음", ["메모", "출처", "렌즈 페이지", "저널 항목", "원칙"]);
+    assertReceipt(`메모리에 저장하지 않음: ${ko}`, "이 답변에서 저장하거나 기록했다고 한 내용은 보관되지 않았습니다.", "보관되지 않음", ["메모", "출처", "렌즈 페이지", "저널 항목", "원칙"], next?.[1]);
   } finally {
     unmount();
     await i18n.changeLanguage("en");
@@ -218,4 +229,34 @@ describe("what the answer learned", () => {
     expect(screen.queryByText(/Learned/)).toBeNull();
     expect(read).not.toHaveBeenCalled();
   });
+});
+
+it("shows a partly kept save as kept, and names what it left out, why and what to do", async () => {
+  const kept = { kind: "Source" as const, operation: "create" as const, title: "Annual report", recordId: "src-1", lesson: "", basis: "", futureUse: "",
+    knowledge: { kind: "source" as const, recordId: "rec-src-1", revisionId: "rev", objectId: "src-1" } };
+  const message: ChatMessage = { id: "answer", role: "assistant", content: "I saved the report and the principle.", status: "complete", created_at: new Date().toISOString(),
+    memory_update: { status: "applied", commitId: "commit", changes: [kept],
+      discardedMemoryItems: [{ kind: "principle", title: "Read comparable periods", reason: "invalid" }] } };
+  const { unmount } = renderWithOpen(<MessageMemoryRow loupistId="loupist-a" message={message} />);
+  try {
+    const receipt = screen.getByTestId("memory-row");
+    expect(within(receipt).getByRole("button", { name: "Saved 1 source" })).toBeVisible();
+    const assertPartly = (status: string, claim: string, heading: string, item: string, next: string) => {
+      expect(within(receipt).getByText(status)).toBeVisible();
+      expect(within(receipt).getByText(claim)).toBeVisible();
+      const list = within(receipt).getByRole("list", { name: heading });
+      expect(within(list).getAllByRole("listitem").map(entry => entry.textContent)).toEqual([item]);
+      expect(receipt.querySelector("[data-save-next]")).toHaveTextContent(next);
+    };
+    assertPartly("Partly saved to Memory: Loupist refused something this answer tried to keep and saved the rest.",
+      "Anything listed below that this answer says it saved or filed was not kept.", "Not kept", "Principle · Read comparable periods",
+      "Ask again in this conversation to read and keep them again. If it fails again, keep fewer items in one answer.");
+    await act(async () => { await i18n.changeLanguage("ko"); });
+    assertPartly("메모리에 일부만 저장함: 이 답변이 보관하려던 항목 일부를 Loupist가 거부하고 나머지를 저장했습니다.",
+      "아래 목록에서 이 답변이 저장하거나 기록했다고 한 내용은 보관되지 않았습니다.", "보관되지 않음", "원칙 · Read comparable periods",
+      "이 대화에서 다시 요청하면 자료를 다시 읽고 보관합니다. 다시 실패하면 한 답변에서 보관할 항목을 줄이십시오.");
+  } finally {
+    unmount();
+    await i18n.changeLanguage("en");
+  }
 });

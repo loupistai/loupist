@@ -13,15 +13,21 @@ export function useScheduledRuns(bridge: LoupistBridge, loupistId: string | null
 
   /** Reads the Loupist's chats again; resolves with the ids the host has now. */
   const refreshThreads = useCallback(async (id: string) => {
+    // Captured before the read, so a session opened while it is in flight is not
+    // treated as one the host deleted. A running turn's refresh must not close it.
+    const presentAtRead = new Set((threadsByLoupistRef.current[id] ?? []).map((thread) => thread.id));
     const workspace = await bridge.loupistSelect(id);
     const known = new Set(workspace.threads.map((thread) => thread.id));
-    // A session the host deleted (a scheduled run's, gone with its run or task) is not left open empty.
     const active = activeThreadIdsRef.current[id];
-    const gone = active && !isEmptyChatThreadId(active) && !known.has(active) && !chatRegistry.isActive(id, active)
-      && (threadsByLoupistRef.current[id] ?? []).some((thread) => thread.id === active);
+    // A session the host deleted (a scheduled run's, gone with its run or task) is not left open empty.
+    const gone = Boolean(active && !isEmptyChatThreadId(active) && !known.has(active) && !chatRegistry.isActive(id, active)
+      && presentAtRead.has(active));
     setThreadsForLoupist(id, (current) => {
       const canonical = workspace.threads.map((thread) => chatRegistry.reconcile(thread));
-      return [...canonical, ...current.filter((thread) => !known.has(thread.id) && chatRegistry.isActive(id, thread.id))];
+      const kept = current.filter((thread) => !known.has(thread.id) && (
+        chatRegistry.isActive(id, thread.id) || !presentAtRead.has(thread.id)
+      ));
+      return [...canonical, ...kept];
     });
     if (gone && activeThreadIdsRef.current[id] === active) setActiveThreadForLoupist(id, null);
     return known;

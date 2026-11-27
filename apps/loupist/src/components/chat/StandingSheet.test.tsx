@@ -13,7 +13,16 @@ const decision: BotMemoryListEntry = {
 
 function usage(programs: UsageSummary["programs"]): UsageSummary {
   const totals = { runs: 0, unknownRuns: 0, requests: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, costEstimate: null };
-  return { fromMs: 0, toMs: 1, totals, accounts: [], days: [], surfaces: [], loupists: [], programs };
+  return {
+    fromMs: 0, toMs: 1, totals, accounts: [], days: [], surfaces: [], loupists: [], programs,
+    allowance: {
+      background: { limit: 400, used: 0, reserved: 0, state: "ok" },
+      worldChat: { limit: 300, used: 0, reserved: 0, state: "ok" },
+      worldShare: { limit: 200, used: 0 },
+      learningRunning: false,
+      providerHolds: {},
+    },
+  };
 }
 
 function bridge(entries = [preference, decision]) {
@@ -22,7 +31,7 @@ function bridge(entries = [preference, decision]) {
   const botMemoryForget = vi.fn(async ({ id }: { id: string }) => {
     const next = list.filter(entry => entry.id !== id);
     list.splice(0, list.length, ...next);
-    return next.map(entry => ({ ...entry }));
+    return { entries: next.map(entry => ({ ...entry })), principles: [] };
   });
   const botMemoryUpdate = vi.fn(async ({ id, text }: { id: string; text: string }) => {
     const entry = list.find(item => item.id === id);

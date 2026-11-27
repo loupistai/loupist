@@ -44,8 +44,58 @@ ends into one node, before any relation-resolution call is spent on it. A `REPOR
 claim is exempt: it is a value reported about one subject, which it names in both roles.
 
 Long Sources become bounded episodes retaining the original span as evidence.
+Chunker 2 (`graph_jobs/chunking.rs`) cuts between blocks: a Markdown table, an HTML
+`<table>`, a fenced block, a paragraph. A block that fits one episode stays whole,
+except a table of more than 24 data rows, which is cut into the fewest equal runs of at
+most 24 rows: one extraction call over the 84-row, six-period Markdown table of the
+long-table evaluation (402 cells in its first 7,000-character episode) timed out, and
+at 40 rows a call still took 75 to 110 seconds of its 120 and sometimes timed out.
+24 rows of five or six periods keep an episode near 120 to 144 cells. A longer table
+also splits between rows by characters, and each continuation opens with repeated context:
+the table's header and the unit statement of the nearest line within three lines
+above it that states a currency, scale or unit as `numbers.rs` reads one, at most 600
+characters under a marker line. The unit statement is a whole unit line, such as
+"(단위: 백만원)", or the sentence of an introducing paragraph that states the unit,
+such as "All amounts are in ₹ crore."; a sentence with no digit is preferred, since
+it states no amount. Repeated context counts toward the episode budget but not toward its
+character range, which stays a true offset into the Source. Each job stores its
+`chunker` (absent means 1, blank-line paragraphs, then fixed character runs). A Source
+that already has jobs keeps its chunker, so Try again, Continue and Read now reuse its
+chunks. A Source that fits one episode is one episode under both chunkers, whatever its rows.
 Each episode runs after the one before it, whose text is its extraction context; once
 that episode completed or can no longer finish, the next one runs.
+A published chunk has an immutable episode with its character range in the original
+span, its exact Source binding and a bounded list of the changes it made. The episode
+and World head commit together. A published reference comes from the Source's
+publication time. Otherwise the reference comes from the capture time. Only published
+assertions set a claim's publication time, and a repeat can move it earlier.
+
+World keeps year, month, date and instant precision for stated validity. The resolver
+selects pairs to compare. Explicit validity takes precedence. When the resolver
+identifies two different values for the same assertion, each claim's publication days
+decide it. If every day of one claim precedes every day of the other, the earlier
+claim ends at the other's first day. If the days interleave (January X, February Y,
+March X), the claim asserted last stays current and the other ends at that claim's
+first day after its own last day. This needs a Source that restated it after that day
+to have selected the pair as the same assertion itself; otherwise the two conflict.
+Both claims asserted last on one day also conflict. Received-only assertions, unordered
+dates and unrelated selections cannot cause that approximate ending. The World keeps
+the ending's witness span, and conflicts keep links to up to four other claims. An
+ended claim keeps no conflict link to a claim whose only Source witnessed its ending:
+the Source that replaced a figure does not also disagree with it. A claim that another
+Source also supports keeps the link. A later publication can revise or withdraw a
+reference-based ending. A claim kept current that way carries host qualifiers:
+`reopened_at` (the approximate day), `reopened_by_span` (the restating Source's span)
+and `lapsed` (the gaps it was not current, as `from/to` pairs, at most eight). When an
+ending is withdrawn and the claim is current again, the publication records a
+`claim_reopened` growth event, and a Lens section superseded by that ending reads
+Current again. A stated ending is never reopened. Under a cutoff the same rule runs on
+the publication days and witnesses the cutoff knows, so a view as of a date equals the
+World that read only the Sources published by then. A stated future end becomes
+effective on its date. The outcome is the same in every ingestion order for one set of
+resolver selections. A restatement that matches a stored claim word for word skips the
+resolver, so it never makes that selection.
+
 Every World extracts with one shared core vocabulary, listed once in
 `knowledge/world_extract/ontology.rs`: the entity types Organization, Person, Asset,
 Product, Place, Policy, Event, Technology and Segment, and seventeen relation
@@ -85,17 +135,81 @@ English claims retain a non-English metric label with its English rendering besi
 it. A synonym, accounting term or acronym cannot replace the stated label:
 operating profit, operating income, EBIT and adjusted operating profit stay distinct.
 
+### Figure checks
+
+Before a chunk's extracted facts reach relation resolution, the host checks each
+fact's figures against the chunk text, and, for a figure the chunk does not print,
+against the whole Source (`knowledge/figure_check.rs`). A chunk job reads the whole
+Source's numbers once, however many of its figures the chunk misses. It reads numbers with the
+answer checker's reader ([Number matching](../analysis/number-checks.md#number-matching)).
+A figure is a currency amount, a percentage, points, a per-share amount or a count
+with a scale word; years, dates, ordinals and codes are not figures. Each figure is
+`matched` (equal after a scale or unit conversion, such as 1,234억 원 and
+KRW 123.4 billion, 1,234p and £12.34, or ₹2.5 crore and INR 25 million),
+`rounded` (within half a unit of its last printed digit), `differs` (no passage
+number matches, and one of the same kind and currency equals it times a power of ten
+from 10^-6 to 10^6, or its negation when both carry a sign or a direction word),
+`not_found`, or `unchecked`. A number the reader cannot read one way is `unchecked`,
+never `differs`: an unknown shape (`1'234`), a scale word with two meanings (`mil`),
+or a lone `1,234` or `1.234` that no other number in the text and no scale word
+after it settles. A fact takes its worst figure's verdict, in the order `differs`,
+`not_found`, `unchecked`, `rounded`, `matched`; a fact with no figure is
+`unchecked`.
+
+A fact that `differs` is not published from that chunk. It neither becomes a claim
+nor adds support to an existing claim, it costs no model call, and no other claim's
+status changes because of it. A claim that resolution matches with this chunk's
+support is checked by its stored proposition, and differing support is not added.
+The job counts these facts in `dropped.figureMismatch` and keeps the first eight in
+`droppedFigures` (the proposition up to 240 characters, the figure as stated and
+the chunk's range). For any other verdict the new support stores `figureCheck`
+(`matched`, `rounded` or `not_found`; absent means unchecked or an older snapshot)
+and `passage`, the chunk's index and character range in the Source (absent means
+unknown). No proposition is rewritten and a figure never makes a claim disputed.
+Both fields sit on the evidence entry, so an as-of read that hides the entry hides
+them with it.
+`world_search` and `world_read` results name only one verdict to the agent: a
+relationship with a `not_found` support carries `figure: "not_found"`, the
+per-support verdicts are left out, and each support keeps its `passage`.
+
+An `ended` row of `world_changes` whose ending names the claim that ended it
+carries `figures {from, to, comparable, direction}`: each proposition's figure as
+printed when it states exactly one, and, when both are read one way and have the
+same kind, currency and per-share nature, `direction` `lower`, `higher` or `same`.
+The bundled `world-change` check takes an optional `direction` (`lower` or
+`higher`): a comparable row is reported only when it moved that way, and a row
+whose figures do not compare is still reported, marked `direction_unknown`.
+Nothing is stored; a check saved on the earlier template keeps its pinned code.
+
 ### Queue and interruptions
+
+Schema and learning reviews share a single review slot. World job selection
+continues while a review waits for inference. Each review admits one background
+call in the transaction that claims it, and reserves that call until the usage
+row is stored. A ledger write that fails keeps the reservation. Startup counts
+a reservation left by a crash before releasing it, so a review cannot start
+once the background allowance is spent and a crash cannot free the call before
+it is counted.
+Each World job still owns its Loupist's World slot through publication.
 
 World jobs wait in each Loupist's folder database and survive restarts. The graph
 worker (`knowledge/graph_service.rs`) runs up to two jobs at once, never two for one
 Loupist, since each publishes on its own World head; their paid calls share four
-slots, so a provider sees at most four World calls at a time. A Loupist with a Chat
-turn in the last 30 minutes goes first, and among its jobs the Sources that Chat
-saved come before an older backlog (`queued_loupist_heads`). The other Loupists take
-turns, the one that started a job longest ago first, so one Loupist's backlog does
-not hold back another's research. A job that ran without progress waits until
-something outside the loop changes (a save, a setting, a connection).
+slots, so a provider sees at most four World calls at a time. Among jobs that can
+run, a Try again, Continue or Read now attempt goes first, then jobs whose Source
+was saved in a Chat turn or by the user (`origin` `chat`), then background work,
+oldest first inside each class. The Source save stores the origin admitted for
+its turn on the capture (`knowledge_capture_lineage.allowance_origin`): chat
+for an interactive turn, background for a scheduled or other unattended run,
+including when its task targets an existing Chat. Queueing reads that stored
+origin, never the Chat id or a running row, including when backlog queues the
+Source later. A capture stored without it is chat only when the user saved or
+retained it directly. A job the daily allowance cannot start is skipped
+and does not block the jobs after it. After three chat-origin claims in a row,
+the next claim is one runnable background job. A job that ran without progress
+waits until something outside the loop changes (a save, a setting, a connection).
+The claim also runs at startup, when settings change, when a job or run finishes,
+and at local midnight.
 
 Within an episode, calls whose inputs do not depend on each other go out together:
 entity resolution with relation extraction (relations name the entities as
@@ -116,7 +230,11 @@ keeps ownership while waiting. Entity and relation extraction share the provider
 A newly queued Source span has one frozen model-call allowance across its episodes.
 Each model dispatch reserves a call durably, a refusal refunds it, and completed
 or uncertain calls stay spent across retries and restarts. The next episode gets
-its predecessor's unused calls; splitting a Source cannot increase its total.
+its predecessor's unused calls once that predecessor has completed, been
+reconciled, or been cancelled. A retryable stop (`failed_extraction`,
+`failed_before_mutation`) keeps those calls and parks the chunks after it, so
+they cannot spend them or block Try again on the chunk that failed. Splitting a
+Source cannot increase its total.
 Previously saved positive per-chunk allowances stay as saved, since an old
 completed receipt does not say how many of its calls were unused.
 An episode that exhausts its allowance pauses its unfunded tail without repeating
@@ -148,7 +266,8 @@ request limit" (`waitingLabel` in `knowledge/mapProcessing.ts`). World's status
 line, the Library status and the reader carry the control that opens World building
 settings (Maximum model requests per source,
 1–64, default 32 per Loupist, since a clean run of a 20 KB filing needs up to 24 on
-every recommended model; there is no daily or token cap). World settings saved before
+every recommended model; that per-Source count is separate from the local-day
+allowance below). World settings saved before
 Loupists recorded their World model choice that still hold the old default, 16, read
 as 32 and record it on the next save; settings saved since keep what they hold. Chat's status still
 reads "World: building paused for this source (request allowance reached)". A row reads "World building
@@ -212,12 +331,59 @@ identity: an old worker cannot record calls or publish after reclamation.
   (`retry_once`), on the app's next pump or after a restart. A second such attempt
   quarantines its generation and is not retried. A Source is charged at most two
   attempts this way, four when the host cut two short.
+- **The model reply could not be read** (`invalid_json`, `schema_mismatch`,
+  `incomplete_response`, `output_size`, `content_type`): the job ends as
+  `failed_extraction`. It records `failure.kind` and does not quarantine the World
+  or become `reconciled_without_retry`.
+- **The World is nearly full**: before the first paid call, a head that already
+  holds at least 95% of the node limit or the claim limit pauses as `paused_budget`
+  with `failure.kind` `world_full`. The later hard limit still applies. Resume does
+  not clear this pause; only Try again checks the limit again, and no model call
+  is made while the head is still that full.
+
+A queued Source span also waits on the local-day allowance (`scheduled_tasks::allowance`).
+The claim asks `admit_world_attempt` for the job's remaining `max_llm_calls` and does
+not change that count. That comparison is the job's own calls against what remains:
+the five-call floor that keeps a scheduled run from starting does not apply to World.
+Chat-origin work, including a user attempt, draws on the chat bucket. Background work draws on the background bucket and its World share, and stops
+for a provider's `plan_limit` or `out_of_credit` until the next local day. A chat-origin
+job does not. A user attempt is never refused. While the attempt runs, its `origin`
+is `chat` when it counts against the chat bucket, and each model call is written to
+the usage ledger before the outbox budget drops, so the allowance does not undercount
+calls that have already been sent. A job the allowance will not start stays `queued`.
+Nothing is stored to hold it and nothing has to resume it: the next claim sees the
+new day. The job view reports `hold.cause` (`allowance`, `plan_limit`, or
+`out_of_credit`) and `hold.provider` for the provider stops. The status stays
+`queued`. The Library row, the chat World status, and World settings read
+`hold.cause`: `allowance` says "Waiting for tomorrow's allowance." and offers
+Read now; `plan_limit` and `out_of_credit` say "Your AI plan's limit was reached.
+Reading resumes tomorrow." and offer Read now.
+
+Try again, Continue and Read now mark the attempt `user_attempt` and `origin` `chat`.
+Read now on a Source that is still queued because the daily allowance will not
+start it promotes that job in place and keeps the calls it has left. The
+admission lock is released when that write commits, before the hold is read
+back, so the command can return and wake World building. A hold lookup that
+fails after that save leaves the hold unset and still wakes the worker. Every successful
+single-Source retry does the same, including Try again on a stopped span,
+which still grants a fresh allowance.
+Try again accepts a stopped span in `paused_budget` (the allowance ran out, or the
+World is full), `failed_extraction`, or `failed_before_mutation`, and nothing else.
+A chunk retired after recovery stays as it ended; it settles the span after it, which
+can then be retried. The job view reports `failure.kind` and `retryable`. One bad
+attribute or relation-resolution row is dropped and counted on the job
+(`dropped.attributes`, `dropped.edges`); the rest of that batch is kept. A `REPORTS`
+edge is kept only when both roles name the same subject.
 
 After a quarantine the graph worker queues the recovery itself
 (`recover_world_unattended`): the rebuild calls no model, re-queues the jobs that
 never ran, and enqueues Sources saved during the quarantine. If that rebuild fails,
 the next one waits for World building recovery in Loupist settings, so a broken
 rebuild cannot loop.
+After recovery, Chat and the Library show why a retired attempt stopped when
+the host recorded the cause: interruption, timeout or unconfirmed model usage.
+When the cause is unavailable, the status says that World building did not finish.
+Try again continues a Source's allowance-stopped span under the rules above.
 Only a committed `reconcile_required` receipt may add a generation to quarantine;
 a rolled-back attempt cannot leave a quarantine without a recovery receipt.
 Pausing processing pauses every queued chunk of a Source, including Sources saved
@@ -234,16 +400,19 @@ never from the title:
 - **The producing tool**: a retained dataset whose recorded producer and request
   name a price route, with the recorded `trust: numeric`. The price routes are the
   bundled market-data routes for price history and bars at any interval, quotes,
-  snapshots and price performance, exchange rates, index and commodity levels, and
-  yield and rate series (`PRICE_OPENBB_TOOLS`, each on the reviewed numeric-only
-  list), the KRX daily quote, and the KIS operations that return prices, order books,
-  trades, bars or index levels.
-- **The result's shape**: rows whose columns are only dates, instrument identifiers
-  (symbol, ticker, pair, currency) and price fields (open, high, low, close, price,
-  bid, ask, rate, yield and the like, with volume and change beside them), with a
-  number in every price cell. This covers a stored bar table whose dataset row is
-  gone, and a table the model composed from such results and saved from the
-  workspace (CSV, TSV, a Markdown pipe table or JSON rows).
+  snapshots and price performance, exchange rates, and index and commodity levels
+  (`PRICE_OPENBB_TOOLS`, each on the reviewed numeric-only list), the KRX daily quote,
+  and the KIS operations that return prices, order books, trades, bars or index levels.
+  Yield curves, treasury and policy rates, and other macro series are not price routes.
+- **The result's shape**, when the tool did not decide: rows whose columns are only
+  dates, instrument identifiers (symbol, ticker, pair, currency) and price fields,
+  with a date or an instrument and at least two price-family columns (open, high,
+  low, close, adjusted close, volume, vwap, and quote fields such as price, bid and
+  ask, including the Korean headers 시가, 고가, 저가, 종가 and 거래량). A lone `rate`,
+  `yield` or `exchangerate` column decides nothing. A number fills every price cell.
+  This covers a stored bar table whose dataset row is gone, and a table the model
+  composed from such results and saved from the workspace (CSV, including quoted
+  fields, TSV, a Markdown pipe table or JSON rows).
 
 Company statements and fundamentals (income statement, balance sheet, cash flow,
 metrics, ratios, estimates) stay queued, since their figures can be facts worth
@@ -357,15 +526,20 @@ is data, not extraction instructions. A peer table, screen or ranking is evidenc
 about its topic. The extraction prompt keeps the rows discussed in surrounding
 text, named in the research focus, or stating a relationship to another name.
 It requires evidence beyond a name's row of figures to add it to World. The
-other rows remain searchable in the retained Source. Temporal bounds require explicit effective
-instants; date-only precision is retained in the fact text. A replacement needs
-ordered start instants on both claims, so a date-only correction can be retained
-without structurally ending the earlier claim. An explicit termination can instead
-close an earlier claim at its end instant without restating a start instant. The
-resolver must select the same assertion as explicitly ended or replaced, and the
-earlier claim must start before that boundary; different relation labels or
-endpoints do not by themselves establish a replacement. Denials, rumours,
-allegations and unrelated later facts do not establish an ending.
+other rows remain searchable in the retained Source. The extraction text sets a
+temporal bound only when the Source states it or a relative expression resolves
+against the reference time, at the Source's precision; it adds no time of day and
+no first day of a month or year. The request says whether the reference time is the
+Source's publication time or only when it was received, and a relative expression is
+not resolved against a received time. An explicit termination can close an earlier
+claim at its stated end without restating a start. The resolver selects the same
+assertion as corrected, retracted or replaced, and lists in `same_assertion_facts`
+the selected facts that state the same thing with a different value: the same
+subject and role, or the same metric for the same period on the same basis, forecast
+against forecast and actual against actual. Only those can end by the Sources'
+dates; different relation labels or endpoints do not by themselves establish a
+replacement. Denials, rumours, allegations, a forecast beside its later actual and
+unrelated later facts do not establish an ending.
 End-bounded resolution supplies the relation, participant identities and stored
 validity beside the fact text, distinguishing an open relationship described in
 the past tense from a historical event. A different explicit end cannot disappear
@@ -395,12 +569,38 @@ in `world_extract/pipeline.rs`).
   - it is the initials of the name before it ("General Motors GM").
 - Two names agree when, without their code, legal forms, punctuation and case, they
   are equal or one's words begin the other's ("Toyota", "Toyota Motor", "Toyota
-  Motor Corporation"). Names in different scripts do not agree.
+  Motor Corporation"). A spelling stored on the node counts the same way. Names in
+  different scripts do not agree unless one of those spellings does.
+- A single letter after a dot is a share class kept on the ticker (`BRK.B`,
+  `NYSE:BRK.B`), not an exchange. A bare number names no market: six digits are
+  Korean, Shanghai and Shenzhen codes, four digits Tokyo and Hong Kong codes. A bare
+  code joins a suffixed or prefixed code only when the node's stored `exchange`
+  names the market or the names agree, so `KRX:600731` and `SSE:600731`, or
+  `TSE:6481` and `HKEX:6481`, never join through the number alone. A node's codes
+  include those its stored spellings state, so a node with no code of its own that
+  took one share class's name refuses the other. A trailing capital that abbreviates the name
+  (`LG Energy Solution LGES`) is not a code. Different tickers in one market never
+  join (`005930.KS` and `000660.KS`, `BRK.A` and `BRK.B`), and a shared CIK or other
+  identifying code does not override that split. A node that carries only that
+  shared code cannot put both classes in one repair group, and a model merge
+  into the other class is refused. A chunk that names both
+  `Berkshire Hathaway (NYSE:BRK.A)` and `Berkshire Hathaway (NYSE:BRK.B)` keeps
+  both; the shared issuer name does not collapse them first. Repair and the
+  resolver both use this join.
+- Which names become one node does not depend on their order. Names in one chunk
+  that share a name key or a code the host joins by, and stored nodes the host
+  joins in repair, form groups by connection. A group that holds two names the
+  codes keep apart loses each name that joins both to a group of its own; when no
+  such name explains the conflict, the group stays unmerged. In one chunk the
+  name kept is the more specific type, then the longer name, then the first in
+  code-point order.
+  Across markets, names must agree through a spelling or the two must share an
+  identifying code such as an ISIN.
 - The host refuses a merge the model proposed when the codes differ and the names do
-  not agree ("Stellantis STLA" into "Dongfeng Motor 0489.HK"). When the codes differ
-  but the names agree, the model's decision stands. Such codes are listings of one
-  company as often as two companies ("Toyota TM" and "Toyota 7203.T", "Alphabet
-  GOOG" and "Alphabet GOOGL").
+  not agree ("Stellantis STLA" into "Dongfeng Motor 0489.HK"), and when the tickers
+  split one market ("BRK.A" into "BRK.B", "Alphabet GOOG" into "Alphabet GOOGL").
+  When the codes differ across markets but the names agree, the model's decision
+  stands ("Toyota TM" and "Toyota 7203.T").
 - The host joins a name to a stored node without the model when a code is equal and
   either the code identifies the entity on its own or the names agree. The node must
   be of the same kind, or one of the two untyped. Codes that identify on their own:
@@ -431,7 +631,10 @@ repairs the existing World:
   relationship between two merged nodes is now about one entity and is withdrawn,
   as publication already withdraws such relationships. Growth events stay as written.
 - Lens anchors and asset pages that named a merged node name the survivor.
-  Discovered connections keep their stored ends.
+  Discovered connections, journal entity ids and Lens `world:` links in the
+  current page text name the survivor too. That page is reindexed on its new
+  revision the way Lens publication indexes a page. A connection whose ends
+  become one node is dropped. Growth events and the op log stay as written.
 - The repair touches a node only under those two rules. Names whose codes differ but
   agree in name ("Toyota TM" aliased "Toyota 7203.T") stay as the model resolved them,
   and so do names that share only an equal bare trailing capital.
@@ -446,8 +649,9 @@ writes its growth events, with no model call. Three things follow from the diff
 between the previous and the new snapshot. Lens sections whose `claim` basis names
 a claim the publication disputed, withdrew or dropped become contested (one page
 revision and one `lens_contested` growth event per page; the section's text is
-kept). Pending subject name anchors resolve by canonical name or alias, exactly,
-and by nothing else ([Lens](lens.md#lens)); when any resolves, when a node a
+kept). Pending subject name anchors resolve by a node's stored spellings or
+identifying codes ([Lens](lens.md#lens)); a shared entity key does not store a
+node. When any resolves, when a node a
 confirmed subject anchor names has another name or alias set than in the
 previous snapshot, or while any live page still has a pending subject anchor
 (method learning may read it as the company the Sources it cites confirm,

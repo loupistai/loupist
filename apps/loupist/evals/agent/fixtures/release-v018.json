@@ -1,0 +1,302 @@
+{
+  "schema": "loupist-agent-fixture/1",
+  "suite": "release",
+  "source_fixture": "change-feed-v1.json",
+  "description": "Runner seeds of the release units that need a staged profile. Sources and scripts not listed here come from the source fixture. Each scenario of the suite carries the same seeds inline; suites.test.mjs proves they are equal.",
+  "sources": {
+    "alderquay-outlook": {
+      "title": "Alderquay Bearings FY2027 production outlook",
+      "text": "Alderquay Bearings issued fiscal 2027 production guidance of 64,000 bearing assemblies.\n",
+      "origin": "https://fictional.example/release/alderquay-outlook",
+      "company": "Alderquay Bearings",
+      "form": "operating notice",
+      "publication_time": "2026-11-12",
+      "language": "en"
+    },
+    "alderquay-outlook-update": {
+      "title": "Alderquay Bearings FY2027 production guidance update",
+      "text": "Alderquay Bearings lowered its fiscal 2027 production guidance to 58,000 bearing assemblies. This replaces its prior production guidance for the same fiscal year.\n",
+      "origin": "https://fictional.example/release/alderquay-outlook-update",
+      "company": "Alderquay Bearings",
+      "form": "operating notice",
+      "publication_time": "2026-11-24",
+      "language": "en"
+    }
+  },
+  "scripts": {
+    "alderquay-outlook": {
+      "entities": [
+        {
+          "name": "Alderquay Bearings",
+          "type": "Organization",
+          "codes": []
+        }
+      ],
+      "facts": [
+        {
+          "id": "outlook-64000",
+          "subject": "Alderquay Bearings",
+          "object": "Alderquay Bearings",
+          "relation": "REPORTS",
+          "text": "Alderquay Bearings issued fiscal 2027 production guidance of 64,000 bearing assemblies.",
+          "valid_at": null,
+          "invalid_at": null
+        }
+      ],
+      "resolutions": {}
+    },
+    "alderquay-outlook-update": {
+      "entities": [
+        {
+          "name": "Alderquay Bearings",
+          "type": "Organization",
+          "codes": []
+        }
+      ],
+      "facts": [
+        {
+          "id": "outlook-58000",
+          "subject": "Alderquay Bearings",
+          "object": "Alderquay Bearings",
+          "relation": "REPORTS",
+          "text": "Alderquay Bearings lowered its fiscal 2027 production guidance to 58,000 bearing assemblies, replacing its prior production guidance for the same fiscal year.",
+          "valid_at": null,
+          "invalid_at": null
+        }
+      ],
+      "resolutions": {
+        "outlook-58000": {
+          "contradicts": [
+            "outlook-64000"
+          ],
+          "same_assertion": [
+            "outlook-64000"
+          ]
+        }
+      }
+    }
+  },
+  "units": {
+    "R018-07": {
+      "seed": {
+        "sources": [
+          "alderquay-q2",
+          "alderquay-q3"
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "alderquay-q2",
+            "after": "seed"
+          },
+          {
+            "source": "alderquay-q3",
+            "after": "seed"
+          }
+        ]
+      }
+    },
+    "R018-08": {
+      "seed": {
+        "watchlist": [
+          {
+            "name": "Alderquay Bearings"
+          }
+        ],
+        "sources": [
+          "alderquay-outlook",
+          "alderquay-outlook-update"
+        ],
+        "asset_links": [
+          {
+            "asset": "Alderquay Bearings",
+            "company": "Alderquay Bearings"
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "alderquay-outlook",
+            "after": "seed"
+          },
+          {
+            "source": "alderquay-outlook-update",
+            "after": "seed"
+          }
+        ]
+      }
+    },
+    "R018-09": {
+      "seed": {
+        "sources": [
+          "alderquay-q2",
+          "alderquay-q3",
+          "alderquay-east-quay"
+        ],
+        "lens_pages": [
+          {
+            "title": "Alderquay Bearings research",
+            "summary": "Research notes on Alderquay Bearings.",
+            "kind": "subject",
+            "sections": [
+              {
+                "key": "leadership",
+                "heading": "Leadership",
+                "markdown": "Lila Trent is CFO.",
+                "refs": [
+                  {
+                    "source": "alderquay-q2",
+                    "fact": "q2-cfo"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "programs": [
+          {
+            "id": "alderquay-program",
+            "title": "Alderquay Bearings",
+            "prompt": "Keep what this Loupist knows about Alderquay Bearings current: its officers, suppliers, production lines, guidance and stated risks. The user follows the company's operations closely. New is anything a filing or company notice published since the last run adds, ends or contradicts. Keep it on the page \"Alderquay Bearings research\", revising whatever a change makes out of date. Prefer the company's own filings and notices among what is already kept here. Report when something changed, with dates and sources; otherwise stay quiet.",
+            "schedule": {
+              "kind": "weekly",
+              "days": [
+                1
+              ],
+              "hour": 9,
+              "minute": 0,
+              "timezone": "UTC"
+            },
+            "subjects": [
+              {
+                "name": "Alderquay Bearings"
+              }
+            ],
+            "depth": "standard",
+            "scope": {
+              "connections": [],
+              "web": false
+            },
+            "keeps": {
+              "sources": true,
+              "lens": true,
+              "asset_reads": false
+            },
+            "report": "when_new",
+            "delivery": {
+              "to": "bot"
+            },
+            "previous_run": {
+              "clock": "2026-10-12T09:00:00Z"
+            }
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "alderquay-q2",
+            "after": "seed"
+          },
+          {
+            "source": "alderquay-q3",
+            "after": "seed"
+          },
+          {
+            "source": "alderquay-east-quay",
+            "after": "seed"
+          }
+        ]
+      }
+    },
+    "R018-10": {
+      "seed": {
+        "sources": [
+          "alderquay-q2",
+          "alderquay-q3",
+          "alderquay-east-quay"
+        ],
+        "lens_pages": [
+          {
+            "title": "Alderquay Bearings research",
+            "summary": "Research notes on Alderquay Bearings.",
+            "kind": "subject",
+            "sections": [
+              {
+                "key": "leadership",
+                "heading": "Leadership",
+                "markdown": "Micah Reed is CFO. He succeeded Lila Trent, who held the role until no later than October 22, 2026.",
+                "refs": [
+                  {
+                    "source": "alderquay-q3",
+                    "fact": "q3-cfo"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "programs": [
+          {
+            "id": "alderquay-program",
+            "title": "Alderquay Bearings",
+            "prompt": "Keep what this Loupist knows about Alderquay Bearings current: its officers, suppliers, production lines, guidance and stated risks. The user follows the company's operations closely. New is anything a filing or company notice published since the last run adds, ends or contradicts. Keep it on the page \"Alderquay Bearings research\", revising whatever a change makes out of date. Prefer the company's own filings and notices among what is already kept here. Report when something changed, with dates and sources; otherwise stay quiet.",
+            "schedule": {
+              "kind": "weekly",
+              "days": [
+                1
+              ],
+              "hour": 9,
+              "minute": 0,
+              "timezone": "UTC"
+            },
+            "subjects": [
+              {
+                "name": "Alderquay Bearings"
+              }
+            ],
+            "depth": "standard",
+            "scope": {
+              "connections": [],
+              "web": false
+            },
+            "keeps": {
+              "sources": true,
+              "lens": true,
+              "asset_reads": false
+            },
+            "report": "when_new",
+            "delivery": {
+              "to": "bot"
+            },
+            "previous_run": {
+              "clock": "2026-10-26T09:00:00Z"
+            }
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "alderquay-q2",
+            "after": "seed"
+          },
+          {
+            "source": "alderquay-q3",
+            "after": "seed"
+          },
+          {
+            "source": "alderquay-east-quay",
+            "after": "seed"
+          }
+        ]
+      }
+    }
+  }
+}

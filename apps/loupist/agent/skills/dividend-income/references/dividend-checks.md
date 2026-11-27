@@ -2,8 +2,8 @@
 
 ## Coverage
 
-Payout on earnings is cash dividends ÷ net income attributable to owners (for a
-Korean filer, the consolidated figure); keep totals with totals and
+Payout on earnings is cash dividends ÷ net income attributable to owners (the
+consolidated figure where the company consolidates); keep totals with totals and
 per-share figures with per-share figures. Payout on free cash flow is dividends
 ÷ (operating cash flow − capital spending). A payout above 100% is paid from
 savings or borrowing; one year can be distorted by a one-off, so read the
@@ -21,13 +21,12 @@ twelve months, say which) ÷ a dated close.
 
 ## Dates
 
-A buyer before the ex-dividend date receives the dividend. In the US (T+1
-settlement) the ex-date is the record date. In Korea (T+2) it is one business
-day before the record date. Since 2023 many Korean companies set the
-record date after the dividend is decided, often in February to April; the cash
-dividend decision notice states it. When `dart_dividends`
-reports the record date as `in_notice` or `no_notice`, say so rather than
-assuming December 31.
+A buyer before the ex-dividend date receives the dividend. The ex-date follows
+from the market's settlement cycle: with next-day settlement (T+1) it is the
+record date, with T+2 one business day before it. A record date is not always
+the fiscal year-end: a company may set it when it decides the dividend, and
+then the decision notice states it. When `dart_dividends` reports the record
+date as `in_notice` or `no_notice`, say so rather than assuming the year-end.
 
 ## Implied dividend growth
 

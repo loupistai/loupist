@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type SetStateAction } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type SetStateAction } from "react";
 import type {
   ChatArtifactRef,
   ChatEvidenceRef,
@@ -48,6 +48,33 @@ export type VisibleWorkspace = {
   threadId: string | null;
   tab: AppTab;
 };
+
+/**
+ * Evidence, a chart, a World item, or a saved reader (a Source becomes a knowledge
+ * entry on restore) keeps a restored panel. Files and an empty reader do not.
+ */
+export function sessionHasWorkspaceSubject(session: ChatWorkspaceSession | undefined): boolean {
+  if (!session) return false;
+  return session.tabs.some((tab) => {
+    if (tab.kind === "evidence") return tab.entries.some((entry) => entry.kind === "evidence" || entry.kind === "knowledge");
+    return tab.kind === "work" && tab.artifact?.kind === "chart";
+  });
+}
+
+/**
+ * The panel's open flag belongs to one chat. A chat the user has not chosen for
+ * stays closed unless it already has evidence, a chart or a World item and this
+ * is the open state restored for the chat on screen.
+ */
+export function workspaceOpenForChat(session: ChatWorkspaceSession | undefined, choice: boolean | undefined, savedOpen: boolean): boolean {
+  if (choice !== undefined) return choice;
+  if (session?.dismissed) return false;
+  if (!sessionHasWorkspaceSubject(session)) return false;
+  return savedOpen;
+}
+
+const visibleChatKey = (visible: VisibleWorkspace): string | null =>
+  visible.loupistId && visible.threadId ? chatSessionKey(visible.loupistId, visible.threadId) : null;
 
 const isNativeBrowserTab = (
   tab: ChatWorkspaceTab,
@@ -126,6 +153,7 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
       const nextLayout = { ...restored.layout };
       for (const field of changedLayoutFields.current) Object.assign(nextLayout, { [field]: layoutRef.current[field] });
       const nextSessions = pendingSessionChanges.current.reduce((current, apply) => apply(current), restored.sessions);
+      restoredOpen.current = restored.layout.open;
       layoutRef.current = nextLayout;
       sessionsRef.current = nextSessions;
       changedLayoutFields.current.clear();
@@ -169,6 +197,26 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
     threadId: null,
     tab: "chat",
   });
+  const openChoice = useRef<Record<string, boolean>>({});
+  const seenChat = useRef<string | null | undefined>(undefined);
+  /** The open flag read from disk. Later chats still use it; closing one chat must not erase it. */
+  const restoredOpen = useRef(false);
+  // Runs after every render: the visible chat is a ref the shell writes during its own render,
+  // so a dependency list would miss the switch from a research chat to Bot.
+  useLayoutEffect(() => {
+    const key = visibleChatKey(visibleRef.current);
+    if (seenChat.current !== key) {
+      if (typeof seenChat.current === "string") openChoice.current[seenChat.current] = layoutRef.current.open;
+      seenChat.current = key;
+    }
+    if (!key || !hydratedRef.current) return;
+    // The app may open on Bot before the chat that saved the reader. Restore that chat when it is shown.
+    if (openChoice.current[key] === undefined && restoredOpen.current && sessionHasWorkspaceSubject(sessionsRef.current[key]) && !sessionsRef.current[key]?.dismissed) {
+      openChoice.current[key] = true;
+    }
+    const next = workspaceOpenForChat(sessionsRef.current[key], openChoice.current[key], false);
+    if (layoutRef.current.open !== next) setOpen(next);
+  });
 
   /** Pointer or key activity inside the panel; recent activity turns content arrival into a badge. */
   const lastInteraction = useRef(0);
@@ -184,6 +232,7 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
 
   /** The user opened the panel in this chat: it may open by itself here again. */
   const show = useCallback((key?: string) => {
+    if (key) openChoice.current[key] = true;
     if (key && sessionsRef.current[key]?.dismissed) {
       updateSession(key, (session) => {
         const next = { ...session };
@@ -196,6 +245,7 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
 
   /** The user closed the panel in this chat: nothing reopens it until they open it again. */
   const dismiss = useCallback((key?: string) => {
+    if (key) openChoice.current[key] = false;
     if (key && !sessionsRef.current[key]?.dismissed) updateSession(key, (session) => ({ ...session, dismissed: true }));
     setOpen(false);
   }, [setOpen, updateSession]);
@@ -249,7 +299,10 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
     const onScreen = visible.tab === "chat" && visible.loupistId === loupistId && visible.threadId === threadId;
     if (!onScreen || sessionsRef.current[key]?.dismissed || window.matchMedia(workspaceOverlayMedia).matches || window.innerWidth < MAP_REVEAL_MIN_WIDTH) return "none";
     if (layoutRef.current.open && Date.now() - lastInteraction.current < 10_000) return "badged";
-    if (!layoutRef.current.open) setOpen(true);
+    if (!layoutRef.current.open) {
+      openChoice.current[key] = true;
+      setOpen(true);
+    }
     return "opened";
   }, [setOpen]);
 
@@ -361,7 +414,10 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
         const badges = session.badges?.filter((id) => id !== tab.id);
         return { ...current, [key]: { ...session, tabs, active_tab_id, badges: badges?.length ? badges : undefined } };
       });
-      if (!sessionsRef.current[key]?.tabs.length) setOpen(false);
+      if (!sessionsRef.current[key]?.tabs.length) {
+        openChoice.current[key] = false;
+        setOpen(false);
+      }
     },
     [bridge, setOpen, updateSessions],
   );
@@ -369,6 +425,11 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
   /** Moves a pending session (e.g. the empty-thread draft) onto a persisted thread. */
   const adoptSession = useCallback((fromKey: string, toKey: string) => {
     if (fromKey === toKey) return;
+    // The split panel was opened on the empty draft. The sent chat is that same conversation.
+    if (Object.prototype.hasOwnProperty.call(openChoice.current, fromKey)) {
+      openChoice.current[toKey] = openChoice.current[fromKey];
+      delete openChoice.current[fromKey];
+    }
     updateSessions((current) => {
       const pending = current[fromKey];
       if (!pending) return current;
@@ -405,6 +466,7 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
         visibleRef.current.loupistId === loupistId &&
         visibleRef.current.threadId === threadId
       ) {
+        openChoice.current[key] = false;
         setOpen(false);
       }
       await Promise.all(
@@ -432,7 +494,11 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
           Object.entries(current).filter(([key]) => !key.startsWith(prefix)),
         ),
       );
-      if (visibleRef.current.loupistId === loupistId) setOpen(false);
+      if (visibleRef.current.loupistId === loupistId) {
+        const key = visibleChatKey(visibleRef.current);
+        if (key) openChoice.current[key] = false;
+        setOpen(false);
+      }
       await Promise.all(
         browserTabs.map((tab) =>
           bridge.browserTabClose(tab.native_id!).catch(() => undefined),
@@ -451,7 +517,11 @@ export function useWorkspacePanel(bridge: LoupistBridge) {
   }, [dismiss, placement, setPlacement, show, updateLayout]);
 
   /** Programmatic close (overlay hand-offs, Loupist changes); it is not the user's choice for the chat. */
-  const close = useCallback(() => setOpen(false), [setOpen]);
+  const close = useCallback(() => {
+    const key = visibleChatKey(visibleRef.current);
+    if (key) openChoice.current[key] = false;
+    setOpen(false);
+  }, [setOpen]);
   /** The Dock control: re-docks the panel and remembers the choice for the content kind on screen. */
   const togglePlacement = useCallback((next: WorkspacePlacement, key?: string, kind?: DockKind) => {
     if (open && placement === next) {

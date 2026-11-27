@@ -32,7 +32,7 @@ export type ModelProviderActions = {
 type Props = ModelProviderActions & {
   catalog: ModelCatalog | null;
   loadError: string | null;
-  bridge: ConnectSheetBridge & Pick<LoupistBridge, "providerOpenUsage" | "usageSummary">;
+  bridge: ConnectSheetBridge & Pick<LoupistBridge, "providerOpenUsage" | "usageSummary"> & Partial<Pick<LoupistBridge, "providerQuotaRead">>;
   /** The effective Chat default; null or empty means no model is available. */
   chatModelProfileId?: string | null;
   discoverModels?: boolean;
@@ -297,6 +297,7 @@ export function ModelSettingsPanel({
                 reloadDisabled={loadingProviderIds.size > 0 || providerMutationBusy || visibilityBusyId !== null}
                 visibilityBusyId={visibilityBusyId}
                 weeklyUsage={weeklyUsage ? weeklyUsage.accounts.find(({ provider }) => provider === option.id)?.totals ?? { requests: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 } : undefined}
+                readQuota={bridge.providerQuotaRead}
                 onOpenUsageSettings={onOpenUsageSettings}
                 onReload={() => void refreshModels(option.id)}
                 onConnect={openSheet}

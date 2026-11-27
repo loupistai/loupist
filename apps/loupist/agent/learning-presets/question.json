@@ -1,0 +1,33 @@
+{
+  "id": "question",
+  "title": "Answer: {question}",
+  "brief": "Keep a current answer to this question: {question}\n\nNew since the previous run means evidence that changes the answer or how sure it is. Keep one Lens page with the answer as it stands and its date, the evidence for it and against it with dates and sources, and what would change it. Report when the answer or its support changes, and say what moved it; stay quiet when neither does.",
+  "slots": {
+    "question": {
+      "max_chars": 500
+    }
+  },
+  "subject_kind": "none",
+  "schedule": {
+    "kind": "weekly",
+    "days": [4],
+    "hour": 7,
+    "minute": 50
+  },
+  "program": {
+    "depth": "standard",
+    "scope": {
+      "connections": "all_enabled",
+      "web": true
+    },
+    "keeps": {
+      "sources": true,
+      "lens": true,
+      "asset_reads": false
+    }
+  },
+  "report": "when_new",
+  "delivery": {
+    "to": "bot"
+  }
+}

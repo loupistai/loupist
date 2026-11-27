@@ -192,6 +192,7 @@ pub struct RunRegistration {
 
 #[derive(Debug)]
 pub struct RunLease {
+    pub(crate) budget: Option<super::budget::BudgetLease>,
     run_id: String,
     coordinator: Weak<Mutex<RunTable>>,
     changes: watch::Sender<u64>,
@@ -622,6 +623,7 @@ impl RunCoordinator {
         Ok(RunRegistration {
             cancel: receiver,
             lease: RunLease {
+                budget: None,
                 run_id,
                 coordinator: Arc::downgrade(&self.inner),
                 changes: self.changes.clone(),

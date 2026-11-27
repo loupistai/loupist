@@ -327,6 +327,20 @@ test('codex judge runs tool-free with the verdict schema and reads the last mess
   for (const flag of ['features.shell_tool=false', 'web_search="disabled"', 'model_reasoning_effort="low"', 'read-only']) assert.ok(seen.args.includes(flag), flag);
   assert.deepEqual(seen.schema.required, ['pass', 'reason']);
   assert.equal(modelFamily(backend.model), 'openai');
+  assert.equal(seen.args.includes('service_tier="priority"'), false);
+  // Fast is the priority tier of the same model and effort, and its verdicts have their own cache key.
+  const fast = codexBackend({ model: 'gpt-6-astra', performance: 'fast', run: async (command, args) => {
+    seen = { args };
+    await writeFile(args[args.indexOf('--output-last-message') + 1], '{"pass":true,"reason":"ok"}');
+    return '';
+  } });
+  await fast.judge('Judge this.', { reasoningEffort: 'low' });
+  assert.ok(seen.args.includes('service_tier="priority"'));
+  assert.equal(seen.args[seen.args.indexOf('-m') + 1], 'gpt-6-astra');
+  assert.ok(seen.args.includes('model_reasoning_effort="low"'));
+  const key = (performance) => judgeCacheKey({ input: { a: 1 }, criterion: 'c', model: 'gpt-6-astra', performance });
+  assert.equal(key(undefined), key('standard'));
+  assert.notEqual(key('fast'), key('standard'));
 });
 
 test('codex judge sends a Stage A sized prompt intact over stdin', async (t) => {
@@ -520,7 +534,7 @@ test('a scheduled rubric sees the full verified reply and the exact Bot preview'
   const identity = { run_id: 'scheduled-run', task_id: 'scheduled-task' };
   const reply = { thread_id: 'research-thread', message_id: 'originating-reply' };
   const trace = { ...traces[0], suite: 'scheduled', scenario_id: 'VALUATION', session_id: 'bot',
-    turn_index: 0, user, answer, resolved_appearance: 'en',
+    turn_index: 0, user, answer: full, delivered_summary: answer, resolved_appearance: 'en',
     saved_task: { id: identity.task_id, prompt: user, kind },
     admission: { ...identity, prompt: user, surface: 'scheduled', thread_id: reply.thread_id },
     home_thread_id: 'home-thread',
@@ -538,10 +552,10 @@ test('a scheduled rubric sees the full verified reply and the exact Bot preview'
     { ...trace, session_answer: { ...trace.session_answer, host_composed: true } },
     { ...trace, deliveries: [] },
   ]) {
-    assert.equal(input(changed).answer, answer);
+    assert.equal(input(changed).answer, full);
     assert.equal(Object.hasOwn(input(changed), 'bot_preview'), false);
   }
   const interactive = structuredClone(scheduledSuite);
   delete interactive.scenarios[0].sessions[0].turns[0].scheduled;
-  assert.equal(buildJudgeInput(interactive, judgeItems(interactive, [trace])[0], [trace]).answer, answer);
+  assert.equal(buildJudgeInput(interactive, judgeItems(interactive, [trace])[0], [trace]).answer, full);
 });

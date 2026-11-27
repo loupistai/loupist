@@ -1,8 +1,11 @@
 //! Host path for a check: dry run, approval, and the due evaluation.
+use std::{future::Future, time::Duration};
+
 use serde_json::{json, Map, Value};
 
 use crate::{
     app::{AppState, CommandError},
+    broker::BrokerError,
     commands::{map_store, now_ms},
     scheduled_tasks::{
         self,
@@ -25,8 +28,6 @@ pub(crate) struct TriggerContext {
 }
 
 pub(crate) enum DueCheck {
-    /// Not a live check. The scheduler claims a model run as usual.
-    Pass,
     /// The check was handled and no model run starts.
     Done,
     /// The check was met. Commit the evaluation and card with its explanation claim.
@@ -43,25 +44,64 @@ pub(crate) struct TriggerOccurrence {
     pub manual: bool,
 }
 
-pub(crate) async fn on_due(
+pub(crate) enum DuePreparation {
+    Pass,
+    Done,
+    Evaluate(Box<DueEvaluation>),
+}
+
+pub(crate) struct DueEvaluation {
+    task: Task,
+    scheduled_for: i64,
+    manual: bool,
+    inputs: Result<CheckInputs, Box<CheckOutput>>,
+}
+
+struct CheckInputs {
+    script: crate::store::scripts::ScriptVersion,
+    args: Map<String, Value>,
+    allowance: u32,
+}
+
+pub(crate) const EVALUATION_LIMIT: Duration = Duration::from_secs(90);
+
+pub(crate) enum EvaluationResult {
+    Completed(Box<CheckOutput>),
+    Failed(BrokerError),
+    TimedOut,
+}
+
+pub(crate) async fn evaluate_with_deadline(
+    limit: Duration,
+    evaluation: impl Future<Output = Result<CheckOutput, BrokerError>>,
+) -> EvaluationResult {
+    match tokio::time::timeout(limit, evaluation).await {
+        Ok(Ok(output)) => EvaluationResult::Completed(Box::new(output)),
+        Ok(Err(error)) => EvaluationResult::Failed(error),
+        Err(_) => EvaluationResult::TimedOut,
+    }
+}
+
+pub(crate) fn prepare_due(
     state: &AppState,
     loupist_id: &str,
     task_id: &str,
     now: i64,
     manual: bool,
-) -> Result<DueCheck, CommandError> {
+    other_checks_running: bool,
+) -> Result<DuePreparation, CommandError> {
     let Some(mut task) = state
         .store
         .scheduled_task_get(loupist_id, task_id)
         .map_err(map_store)?
     else {
-        return Ok(DueCheck::Pass);
+        return Ok(DuePreparation::Pass);
     };
     let Some(trigger) = task.trigger.clone() else {
         return Ok(if task.is_trigger_task() {
-            DueCheck::Done
+            DuePreparation::Done
         } else {
-            DueCheck::Pass
+            DuePreparation::Pass
         });
     };
     let due = task.next_run_at_ms.filter(|due| *due <= now);
@@ -70,7 +110,7 @@ pub(crate) async fn on_due(
         || !trigger.state.evaluates()
         || (!manual && due.is_none())
     {
-        return Ok(DueCheck::Done);
+        return Ok(DuePreparation::Done);
     }
     if trigger
         .last
@@ -78,7 +118,7 @@ pub(crate) async fn on_due(
         .and_then(|last| trigger::backoff_until(&trigger, last.at_ms))
         .is_some_and(|retry_at| now < retry_at)
     {
-        return Ok(DueCheck::Done);
+        return Ok(DuePreparation::Done);
     }
     let manual = due.is_none();
     let scheduled_for = due.unwrap_or(now);
@@ -87,7 +127,7 @@ pub(crate) async fn on_due(
             task.next_run_at_ms =
                 trigger::next_open(&task.schedule, Some(&hours), now).map_err(map_store)?;
             write(state, task, now)?;
-            return Ok(DueCheck::Done);
+            return Ok(DuePreparation::Done);
         }
     }
     let tasks = state
@@ -97,105 +137,159 @@ pub(crate) async fn on_due(
     let load = trigger::load_counts(&tasks, None, now);
     let allowance = trigger::read_allowance(load.reads_today);
     if allowance == 0 {
+        // Another in-flight check may return unused reads before the next poll.
+        if other_checks_running {
+            return Ok(DuePreparation::Done);
+        }
         if let Some(trigger) = task.trigger.as_mut() {
             trigger.counters.reads_blocked = true;
         }
         task.next_run_at_ms = Some(now.saturating_add(24 * 60 * 60 * 1000));
         write(state, task, now)?;
-        return Ok(DueCheck::Done);
+        return Ok(DuePreparation::Done);
     }
-    let script = match approved_source(&state.store, loupist_id, &trigger) {
-        Ok(script) => script,
-        Err(error) => {
-            return finish(
-                state,
-                task,
-                now,
-                scheduled_for,
-                manual,
-                errored(&error.to_string()),
-                load.agent_runs_today,
-            );
+    let inputs = match approved_source(&state.store, loupist_id, &trigger) {
+        Ok(script) => {
+            let price_ids = scoped_price_ids(state, loupist_id, &task.watch)?;
+            if price_ids.as_ref().is_some_and(Vec::is_empty) {
+                let mut missing = errored("No matching asset is followed.");
+                missing.outcome = TriggerOutcome::NoData;
+                Err(Box::new(missing))
+            } else {
+                // Reserve before handing the worker any reads. A crash or an uncounted
+                // failure leaves the conservative reservation in the daily ledger.
+                let counters = &mut task.trigger.as_mut().expect("trigger").counters;
+                trigger::roll_day(counters, now);
+                counters.today.reads = counters.today.reads.saturating_add(allowance);
+                task = write(state, task, now)?;
+                Ok(CheckInputs {
+                    script,
+                    args: scoped_price_args(&trigger.args, price_ids.as_deref()),
+                    allowance,
+                })
+            }
         }
+        Err(error) => Err(Box::new(errored(&error.to_string()))),
     };
-    let price_ids = scoped_price_ids(state, loupist_id, &task.watch)?;
-    if price_ids.as_ref().is_some_and(Vec::is_empty) {
-        let mut missing = errored("No matching asset is followed.");
-        missing.outcome = TriggerOutcome::NoData;
-        return finish(
+    Ok(DuePreparation::Evaluate(Box::new(DueEvaluation {
+        task,
+        scheduled_for,
+        manual,
+        inputs,
+    })))
+}
+
+impl DueEvaluation {
+    pub(crate) async fn evaluate(
+        &self,
+        state: &AppState,
+        now: i64,
+    ) -> Result<CheckOutput, BrokerError> {
+        let inputs = match &self.inputs {
+            Ok(inputs) => inputs,
+            Err(output) => return Ok((**output).clone()),
+        };
+        let loupist_id = &self.task.loupist_id;
+        let trigger = self.task.trigger.as_ref().expect("due trigger");
+        let authority = super::capture_chat_connector_authority(state, loupist_id)
+            .map_err(|error| BrokerError::Execution(error.to_string()))?;
+        let executor = super::tool_executor::AppToolExecutor::for_host_with_connector_authority(
+            state, loupist_id, authority,
+        );
+        executor
+            .run_check(super::tool_executor::CheckRun {
+                code: &inputs.script.code,
+                after_outside_text: inputs.script.summary.metadata.after_outside_text,
+                use_memory: self.task.use_memory,
+                args: inputs.args.clone(),
+                state: trigger.script_state.clone(),
+                stale_after_days: trigger.stale_after_days,
+                now: crate::local_time::at_ms(now)
+                    .ok_or_else(|| BrokerError::Execution("Invalid check time".into()))?
+                    .to_rfc3339(),
+                as_of: None,
+                allowed: &trigger.tools,
+                discover_providers: false,
+                replay: None,
+                max_rounds: crate::scheduled_tasks::types::MAX_TRIGGER_ROUNDS,
+                max_calls: inputs.allowance as usize,
+            })
+            .await
+    }
+
+    pub(crate) fn finish(
+        self,
+        state: &AppState,
+        now: i64,
+        result: EvaluationResult,
+    ) -> Result<DueCheck, CommandError> {
+        let Self {
+            mut task,
+            scheduled_for,
+            manual,
+            inputs,
+        } = self;
+        let tasks = state
+            .store
+            .scheduled_tasks_list(&task.loupist_id)
+            .map_err(map_store)?;
+        if !tasks
+            .iter()
+            .any(|current| current.id == task.id && current.revision == task.revision)
+        {
+            return Ok(DueCheck::Done);
+        }
+        let output = match result {
+            EvaluationResult::Completed(output) => {
+                if let Ok(inputs) = inputs {
+                    let counters = &mut task.trigger.as_mut().expect("trigger").counters;
+                    counters.today.reads = counters.today.reads.saturating_sub(inputs.allowance);
+                }
+                *output
+            }
+            EvaluationResult::Failed(BrokerError::PythonWorkerBusy) => {
+                if let Some(trigger) = task.trigger.as_mut() {
+                    trigger::note_skipped(
+                        trigger,
+                        now,
+                        scheduled_for,
+                        TriggerOutcome::SkippedBusy,
+                        Some("The Python worker was busy.".into()),
+                    );
+                }
+                task.next_run_at_ms = trigger::next_open(
+                    &task.schedule,
+                    task.trigger.as_ref().and_then(|t| t.active_hours.as_ref()),
+                    now,
+                )
+                .map_err(map_store)?;
+                write(state, task, now)?;
+                return Ok(DueCheck::Done);
+            }
+            EvaluationResult::Failed(error) => errored(&error.to_string()),
+            EvaluationResult::TimedOut => {
+                let mut output = errored("The check exceeded its evaluation time limit.");
+                // Some reads may have happened, so the replay prefix no longer covers
+                // this slot. Account for the abandoned reservation exactly once.
+                if let Ok(inputs) = inputs {
+                    let counters = &mut task.trigger.as_mut().expect("trigger").counters;
+                    counters.today.reads = counters.today.reads.saturating_sub(inputs.allowance);
+                    output.reads = inputs.allowance;
+                }
+                output
+            }
+        };
+        let load = trigger::load_counts(&tasks, None, now);
+        finish(
             state,
             task,
             now,
             scheduled_for,
             manual,
-            missing,
+            output,
             load.agent_runs_today,
-        );
+        )
     }
-    // Reserve before handing the worker any reads. A crash or an uncounted failure
-    // leaves the conservative reservation in the daily ledger.
-    let counters = &mut task.trigger.as_mut().expect("trigger").counters;
-    trigger::roll_day(counters, now);
-    counters.today.reads = counters.today.reads.saturating_add(allowance);
-    let mut task = write(state, task, now)?;
-    let authority = super::capture_chat_connector_authority(state, loupist_id)?;
-    let executor = super::tool_executor::AppToolExecutor::for_host_with_connector_authority(
-        state, loupist_id, authority,
-    );
-    let output = match executor
-        .run_check(super::tool_executor::CheckRun {
-            code: &script.code,
-            after_outside_text: script.summary.metadata.after_outside_text,
-            use_memory: task.use_memory,
-            args: scoped_price_args(&trigger.args, price_ids.as_deref()),
-            state: trigger.script_state.clone(),
-            now: chrono::DateTime::from_timestamp_millis(now)
-                .ok_or_else(|| CommandError::invalid("Invalid check time"))?
-                .to_rfc3339(),
-            as_of: None,
-            allowed: &trigger.tools,
-            discover_providers: false,
-            replay: None,
-            max_rounds: crate::scheduled_tasks::types::MAX_TRIGGER_ROUNDS,
-            max_calls: allowance as usize,
-        })
-        .await
-    {
-        Ok(output) => {
-            let counters = &mut task.trigger.as_mut().expect("trigger").counters;
-            counters.today.reads = counters.today.reads.saturating_sub(allowance);
-            output
-        }
-        Err(error) if error.to_string().contains("timed out while waiting") => {
-            if let Some(trigger) = task.trigger.as_mut() {
-                trigger::note_skipped(
-                    trigger,
-                    now,
-                    scheduled_for,
-                    TriggerOutcome::SkippedBusy,
-                    Some("The Python worker was busy.".into()),
-                );
-            }
-            task.next_run_at_ms = trigger::next_open(
-                &task.schedule,
-                task.trigger.as_ref().and_then(|t| t.active_hours.as_ref()),
-                now,
-            )
-            .map_err(map_store)?;
-            write(state, task, now)?;
-            return Ok(DueCheck::Done);
-        }
-        Err(error) => errored(&error.to_string()),
-    };
-    finish(
-        state,
-        task,
-        now,
-        scheduled_for,
-        manual,
-        output,
-        load.agent_runs_today,
-    )
 }
 
 fn finish(
@@ -270,6 +364,7 @@ fn errored(line: &str) -> CheckOutput {
         outcome: TriggerOutcome::Error,
         reading: String::new(),
         as_of: None,
+        per_item_dates: false,
         evidence: Value::Null,
         state: json!({}),
         error: Some(line.to_owned()),
@@ -317,7 +412,8 @@ pub(crate) fn install_template(
             loupist_id,
             ScriptDraft {
                 name: template_id.to_owned(),
-                title: Some(summary.to_owned()),
+                // A check can describe more than fits in the script title.
+                title: Some(summary.chars().take(120).collect()),
                 summary: summary.to_owned(),
                 args: None,
                 code,
@@ -330,15 +426,60 @@ pub(crate) fn install_template(
         .map_err(map_store)
 }
 
+const TEMPLATE_SOURCES: &[(&str, &str)] = &[
+    (
+        "price-band",
+        include_str!("../../../agent/trigger-templates/price-band.py"),
+    ),
+    (
+        "volume-spike",
+        include_str!("../../../agent/trigger-templates/volume-spike.py"),
+    ),
+    (
+        "level-cross",
+        include_str!("../../../agent/trigger-templates/level-cross.py"),
+    ),
+    (
+        "new-item",
+        include_str!("../../../agent/trigger-templates/new-item.py"),
+    ),
+    (
+        "world-change",
+        include_str!("../../../agent/trigger-templates/world-change.py"),
+    ),
+];
+
 pub(crate) fn template_source(id: &str) -> Result<String, CommandError> {
-    let source = match id {
-        "price-band" => include_str!("../../../agent/trigger-templates/price-band.py"),
-        "volume-spike" => include_str!("../../../agent/trigger-templates/volume-spike.py"),
-        "level-cross" => include_str!("../../../agent/trigger-templates/level-cross.py"),
-        "new-item" => include_str!("../../../agent/trigger-templates/new-item.py"),
-        _ => return Err(CommandError::invalid("Unknown check template")),
-    };
-    Ok(source.to_owned())
+    TEMPLATE_SOURCES
+        .iter()
+        .find_map(|(name, source)| (*name == id).then(|| (*source).to_owned()))
+        .ok_or_else(|| CommandError::invalid("Unknown check template"))
+}
+
+/// This code is exactly one of the bundled check templates: what the host
+/// ships and pins, not code a model wrote.
+pub(crate) fn is_bundled_template_code(code: &str) -> bool {
+    TEMPLATE_SOURCES
+        .iter()
+        .any(|(_, source)| source.trim_end() == code.trim_end())
+}
+
+pub(super) fn template_has_item_dates(code: &str) -> bool {
+    TEMPLATE_SOURCES
+        .iter()
+        .any(|(_, source)| source.trim_end() == code.trim_end())
+}
+
+// Approved scripts retain their original source and hash. Guard verdicts from
+// the shipped pre-freshness templates without changing their approved code.
+pub(super) fn legacy_template(code: &str) -> Option<&'static str> {
+    match crate::util::sha256(code.as_bytes()).as_str() {
+        "f162671686e2cf2daecd34d43fcf5c0800dcc03c5c07b0763f98711a1cc1e4d4" => Some("price-band"),
+        "51591f4127c3c07979c1afe7555d6fcd0a19b2d363af7d49fe7958a175986d47" => Some("level-cross"),
+        "35063962fad6a2056d059cd149a19e40f763c3a3d09ad2f5baf9bbed15b10b6a" => Some("volume-spike"),
+        "97fccc73a8aa189b6291aa2c6db6d84240a4720d7a8403287f1ad76072d10357" => Some("new-item"),
+        _ => None,
+    }
 }
 
 pub(crate) fn script_ref(version: &crate::store::scripts::ScriptVersion) -> TriggerScriptRef {
@@ -380,6 +521,7 @@ pub(crate) fn note_saved_version(
             test: None,
             configuration: Some(TriggerConfiguration {
                 summary: Some(trigger.summary.clone()),
+                when_met_summary: trigger.when_met_summary.clone(),
                 args: trigger.args.clone(),
                 tools: Vec::new(),
                 reads_per_check: 0,
@@ -740,12 +882,15 @@ pub(crate) async fn test_now(
             .as_ref()
             .and_then(|item| item.configuration.clone())
             .unwrap_or_else(|| trigger.configuration());
-        if review_watch.preset == Some(WatchPreset::PriceMove) {
+        if review_watch.preset.is_some_and(WatchPreset::runs_on_check) {
             trigger::set_price_subject_args(
                 &mut configuration.args,
                 review_watch.subjects.as_deref(),
             );
-            configuration.price_subjects = Some(review_watch.subjects.unwrap_or_default());
+            if review_watch.preset == Some(WatchPreset::PriceMove) {
+                configuration.price_subjects =
+                    Some(review_watch.subjects.clone().unwrap_or_default());
+            }
             if trigger.pending.is_none() {
                 if let Some(terms) = &review_watch.terms {
                     configuration.summary = Some(terms.clone());
@@ -763,6 +908,7 @@ pub(crate) async fn test_now(
             },
             trigger.approved_ref().cloned(),
             task.use_memory,
+            trigger.stale_after_days,
         )
         .await
         .map_err(|_| CommandError::invalid("The dry run could not finish"))?
@@ -788,7 +934,8 @@ pub(crate) async fn test_now(
                 use_memory: task.use_memory,
                 args: scoped_price_args(&trigger.args, price_ids.as_deref()),
                 state: trigger.script_state.clone(),
-                now: chrono::Utc::now().to_rfc3339(),
+                stale_after_days: trigger.stale_after_days,
+                now: crate::local_time::now().to_rfc3339(),
                 as_of: None,
                 allowed: &trigger.tools,
                 discover_providers: false,
@@ -844,6 +991,28 @@ mod tests {
     use super::*;
     use crate::store::scripts::ScriptDraft;
 
+    #[test]
+    fn bundled_checks_keep_summaries_longer_than_the_script_title() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(root.path().join("app"));
+        let owner = "loupist-a";
+        crate::test_fixtures::create_folder_loupist(
+            &state.store,
+            owner,
+            &root.path().join("workspace"),
+        );
+        let long_summary = format!("{}report", "Board’s quarterly ".repeat(7));
+        for summary in ["Fact changes", &long_summary] {
+            let installed = install_template(&state, owner, "world-change", summary).unwrap();
+            let metadata = installed.summary.metadata;
+            assert_eq!(
+                metadata.title,
+                summary.chars().take(120).collect::<String>()
+            );
+            assert_eq!(metadata.summary, summary);
+        }
+    }
+
     fn met_task(state: &AppState) -> Task {
         use crate::scheduled_tasks::types::{TaskDraft, TaskTarget};
         let workspace = state
@@ -880,6 +1049,7 @@ mod tests {
                 sha256: sha256.clone(),
             },
             summary: "Prices outside a band".into(),
+            when_met_summary: None,
             tools: Vec::new(),
             args: Map::new(),
             active_hours: None,
@@ -898,7 +1068,7 @@ mod tests {
             evaluations: Vec::new(),
             counters: Default::default(),
             approved_versions: Vec::new(),
-            stale_after_days: 5,
+            stale_after_days: crate::scheduled_tasks::trigger::DEFAULT_STALE_AFTER_DAYS,
             reads_per_check: 1,
             proposal_test: None,
         });
@@ -909,7 +1079,7 @@ mod tests {
     fn met_output(reading: &str) -> CheckOutput {
         trigger::output_from_worker(
             &json!({"status": "completed", "check_verdict": {
-                "met": true, "reading": reading, "as_of": "2026-11-24", "state": {"sent": true}
+                "met": true, "reading": reading, "as_of": "1970-01-01T00:00:00Z", "state": {"sent": true}
             }}),
             vec![json!({"call":{"tool":"price"}, "response":{"status":"ok"}})],
             1,
@@ -1099,6 +1269,56 @@ mod tests {
     }
 
     #[test]
+    fn a_trigger_explanation_uses_the_previous_succeeded_run() {
+        use crate::scheduled_tasks::types::RunStatus;
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(root.path().join("app"));
+        crate::test_fixtures::create_folder_loupist(&state.store, "loupist-a", root.path());
+        let task = met_task(&state);
+        let (first, due) = evaluate_met(&state, task, "Moved 7%");
+        let created = first.task.created_at_ms;
+        let (claim, ()) = state
+            .store
+            .scheduled_trigger_consume(&first, due, false, |_| Ok(()))
+            .unwrap()
+            .unwrap();
+        let context =
+            crate::scheduled_tasks::scheduled_run_context(&state, "loupist-a", &claim.run.run_id)
+                .unwrap()
+                .unwrap();
+        assert!(context.first_run);
+        assert_eq!(context.previous_run_started_at_ms, created);
+        state
+            .store
+            .scheduled_task_finish(
+                "loupist-a",
+                &claim.run.run_id,
+                RunStatus::Succeeded,
+                None,
+                due + 1,
+            )
+            .unwrap();
+        let task = state
+            .store
+            .scheduled_task_get("loupist-a", &claim.run.task_id)
+            .unwrap()
+            .unwrap();
+        let (second, next) = evaluate_met(&state, task, "Moved 8%");
+        assert!(second.start_run);
+        let (again, ()) = state
+            .store
+            .scheduled_trigger_consume(&second, next, false, |_| Ok(()))
+            .unwrap()
+            .unwrap();
+        let context =
+            crate::scheduled_tasks::scheduled_run_context(&state, "loupist-a", &again.run.run_id)
+                .unwrap()
+                .unwrap();
+        assert!(!context.first_run);
+        assert_eq!(context.previous_run_started_at_ms, claim.run.started_at_ms);
+    }
+
+    #[test]
     fn met_occurrences_route_only_to_the_selected_destination() {
         use crate::scheduled_tasks::types::{
             DeliveryTarget, NotifyPolicy, ReportPolicy, TaskDelivery,
@@ -1231,7 +1451,7 @@ mod tests {
             let due = task.next_run_at_ms.unwrap();
             let output = trigger::output_from_worker(
                 &json!({"status":"completed","check_verdict":{
-                    "met":met,"reading":"Northwind volume 5.0x","as_of":"2026-11-24"
+                    "met":met,"reading":"Northwind volume 5.0x","as_of":"1970-01-01T00:00:00Z"
                 }}),
                 vec![
                     json!({"call":{"tool":"price"},"response":{"status":"ok"}}),
@@ -1496,6 +1716,7 @@ mod tests {
         let pending = update.trigger.as_mut().unwrap().pending.as_mut().unwrap();
         pending.configuration = Some(TriggerConfiguration {
             summary: Some("Beta moves 20%".into()),
+            when_met_summary: Some("Tell me when Beta moves.".into()),
             args: Map::from_iter([
                 ("band_percent".into(), json!(20)),
                 ("asset_names".into(), json!(["Beta"])),
@@ -1531,6 +1752,10 @@ mod tests {
         .unwrap();
         let renewed_trigger = renewed.trigger.as_ref().unwrap();
         assert_eq!(renewed_trigger.summary, "Beta moves 20%");
+        assert_eq!(
+            renewed_trigger.when_met_summary.as_deref(),
+            Some("Tell me when Beta moves.")
+        );
         assert_eq!(renewed.watch.terms.as_deref(), Some("Beta moves 20%"));
         let live_ids = scoped_price_ids(&state, loupist, &renewed.watch).unwrap();
         let live_args = scoped_price_args(&renewed_trigger.args, live_ids.as_deref());
@@ -1595,6 +1820,7 @@ mod tests {
         let trigger = TaskTrigger {
             script: script_ref(&first),
             summary: "Prices outside a band".into(),
+            when_met_summary: None,
             tools: Vec::new(),
             args: Map::new(),
             active_hours: None,
@@ -1618,7 +1844,7 @@ mod tests {
             evaluations: Vec::new(),
             counters: Default::default(),
             approved_versions: Vec::new(),
-            stale_after_days: 5,
+            stale_after_days: crate::scheduled_tasks::trigger::DEFAULT_STALE_AFTER_DAYS,
             reads_per_check: 1,
             proposal_test: None,
         };

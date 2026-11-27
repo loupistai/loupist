@@ -319,7 +319,7 @@ fn a_price_table_composed_in_the_workspace_is_price_data() {
         ..source_request(
             L,
             &module,
-            b"date,close\n2026-11-21,3010.5\n2026-11-22,3075\n2026-11-23,3069.25\n",
+            b"date,close,volume\n2026-11-21,3010.5,120\n2026-11-22,3075,98\n2026-11-23,3069.25,110\n",
         )
     };
     request.material.as_mut().unwrap().media_type = "text/csv".into();

@@ -6,8 +6,9 @@ description: Check how safe and how steady a company's dividend looks from its h
 # Dividend income
 
 Read the dividend history first: `equity_fundamental_dividends` from the market
-data connection, or for a Korean company `dart_dividends` for each fiscal year
-needed (it also reads the record date from the decision notice). Use five or
+data connection, or `dart_dividends` where OpenDART covers the company, for
+each fiscal year needed (it also reads the record date from the decision
+notice). Use five or
 more years when the sources have them. Then work through these steps, each
 derived figure from `calculate` with its sources in `input_sources`:
 
@@ -20,6 +21,6 @@ derived figure from `calculate` with its sources in `input_sources`:
 5. Record, ex-dividend and payment dates; say when a date is only in the notice.
 
 Read [dividend checks](references/dividend-checks.md) for coverage traps and
-Korean dividend practice, and before showing what dividend growth the price
-implies. Work out yearly income only from a known share count. Give a
+how ex-dividend and record dates relate, and before showing what dividend
+growth the price implies. Work out yearly income only from a known share count. Give a
 conditional view of what supports the dividend and what would threaten it.

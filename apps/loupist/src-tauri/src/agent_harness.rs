@@ -119,6 +119,14 @@ const PROVIDER_EXTENSION_FILES: &[(&str, &[u8])] = &[
 /// Optional workflows. Each entry has its own default; authoring starts off.
 const SELECTABLE_SKILLS: &[BundledSkill] = &[
     BundledSkill {
+        id: "learning",
+        name: "Learning",
+        default_enabled: false,
+        relative_path: "skills/learning/SKILL.md",
+        content: include_bytes!("../../agent/skills/learning/SKILL.md"),
+        support_files: &[],
+    },
+    BundledSkill {
         id: "skill-creator",
         name: "Skill Creator",
         default_enabled: false,
@@ -194,6 +202,14 @@ const SELECTABLE_SKILLS: &[BundledSkill] = &[
         )],
     },
     BundledSkill {
+        id: "deep-research",
+        name: "deep-research",
+        default_enabled: true,
+        relative_path: "skills/deep-research/SKILL.md",
+        content: include_bytes!("../../agent/skills/deep-research/SKILL.md"),
+        support_files: &[],
+    },
+    BundledSkill {
         id: VALUATION_SKILL_ID,
         name: "Valuation",
         default_enabled: true,
@@ -225,6 +241,10 @@ const SELECTABLE_SKILLS: &[BundledSkill] = &[
             (
                 "skills/filings/references/earnings-review.md",
                 include_bytes!("../../agent/skills/filings/references/earnings-review.md"),
+            ),
+            (
+                "skills/filings/references/filing-changes.md",
+                include_bytes!("../../agent/skills/filings/references/filing-changes.md"),
             ),
             (
                 "skills/filings/references/korea-statements.md",
@@ -399,6 +419,8 @@ pub struct AgentHarnessSnapshot {
 #[serde(deny_unknown_fields)]
 pub struct AgentRuntimeProfile {
     pub schema: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget: Option<crate::scheduled_tasks::types::RunBudget>,
     pub mode: String,
     pub memory_access_enabled: bool,
     pub memory_update_enabled: bool,
@@ -603,6 +625,7 @@ impl AgentRuntimeProfile {
             core_tool_names: core_tools,
             components,
             unavailable_connections,
+            budget: None,
         })
     }
 
@@ -1251,7 +1274,6 @@ pub(crate) fn attach_trigger(
 
 pub(crate) fn trigger_text_for_model(text: &str) -> String {
     use crate::custom_connections::taint::{delimited, fresh_id};
-    // TODO(model-text): Check the trigger result's source label.
     delimited(text, "trigger check result", &fresh_id())
 }
 
@@ -1269,6 +1291,17 @@ pub(crate) fn attach_previous_run(
     };
     block.insert("hint".into(), Value::String(PREVIOUS_RUN_HINT.into()));
     object.insert("previous_run".into(), Value::Object(block));
+    serde_json::to_string(&value).unwrap_or_else(|_| envelope.to_owned())
+}
+
+pub(crate) fn attach_learning_context(envelope: &str, learning: &Value) -> String {
+    let Ok(mut value) = serde_json::from_str::<Value>(envelope) else {
+        return envelope.to_owned();
+    };
+    let Some(object) = value.as_object_mut() else {
+        return envelope.to_owned();
+    };
+    object.insert("learning".into(), learning.clone());
     serde_json::to_string(&value).unwrap_or_else(|_| envelope.to_owned())
 }
 

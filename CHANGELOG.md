@@ -1,5 +1,94 @@
 # Changelog
 
+## 0.1.8 - 2026-11-28
+
+**Memory upgrade.** Loupist 0.1.8 upgrades Memory storage to Knowledge 12 and saves a backup beside each database before upgrading it. Loupist 0.1.7 cannot open a profile that 0.1.8 has opened.
+
+- See when each fact in World held: a fact keeps the dates it was true for, the day it was published and the day your Loupist learned it, and reads Current, Ended, Disputed or Withdrawn.
+- Have World end a fact when a later Source replaces it, mark two facts that cannot both be true as a disagreement, and make an ended fact current again when a later Source states it again, instead of keeping every statement as if it still held.
+- Open a fact's History to see the Sources that created it, supported it and ended it, and to open the fact that replaced it.
+- Open History on a name in World to read, in order of publication, what was added about it, what ended and where Sources disagree.
+- Turn on Fact changes for an asset you follow: the app checks every hour, with no AI, whether a fact about it ended or was contradicted or a Lens section went out of date, and when one did the Bot reports what was stated before and now, with the Sources and their dates. Only changes that arrive after you turn it on are reported.
+- Ask the Bot for a fact check that reports only when a figure moved lower, or only when it moved higher; a change whose figures cannot be compared is still reported, and says so.
+- Trust the figures World keeps: each recognized amount, percentage and per-share figure in a fact is checked against the passage it came from and the whole Source before World keeps it. A fact whose figure differs is left out, and the same amount in another unit (1,234억 원 and KRW 123.4 billion) counts as a match. Unrecognized number formats are left unchecked.
+- See what a figure check did: the Library row and the Source reader say how many facts were left out and show the figures as stated, and a fact whose figure was not found in its passage says so in its inspector and opens the Source at that passage.
+- Keep a wrong figure out of Lens: a fact section whose amount differs from the text it cites is not filed.
+- Set up a learning program: a research brief your Loupist runs on a schedule, starting each run from the last one, with a request budget, a choice of what it keeps (Sources, Lens, asset reads) and where it reports (Bot, the next briefing or only Schedule). The Bot proposes one on a card, and nothing runs until you turn it on.
+- Start a learning program from a template: Track daily, Theme, Company filings, Economic series, Question or Market.
+- Turn on Track daily on an asset's page to have your Loupist read what is new about it each weekday at 06:30 and keep its Lens page, thesis read and price read current.
+- Ask for a learning program where you are: Learn about this on a name in World, Keep this page current on a Lens page, or a request in a research session, which is handed to the Bot.
+- Edit a learning program in Schedule without asking the Bot: its title, what to learn, up to eight subjects, when it runs, its depth, its sources and what it keeps. Changes apply from the next run.
+- Undo what a learning program wrote to Lens: Undo this run on one run, or Undo all runs after a count of what goes back. A section changed since is kept, and Sources stay in the Library.
+- See in Lens which sections a learning program wrote: each carries the date and the program, and opens that run in Schedule.
+- See what each learning run used and why one waits: its requests and outcome, a run stopped at its request limit, and a program waiting for another learning run or for tomorrow's allowance.
+- Set how much learning a Loupist may do in its settings: the requests a day for learning runs (132 by default, 0 turns them off) and how many programs can be on at once (20 by default).
+- Read World as of a date from its toolbar: the map, search, both inspectors and History show only what was published by that day, with a line saying how many later facts are hidden.
+- Have a long table read into World in full: it is read in shorter runs of rows, each with the table's header and unit line repeated so a continued part is read as part of the same table, where one long table could time out.
+- Use the deep-research Skill for a question that rests on many sources: your Loupist writes a plan for you to approve, keeps its progress in a file so a stopped reply can resume, looks for evidence against its conclusion and ends in a cited report.
+- Ask in Chat what changed in World since a date, or what a company's latest report changed against the one before.
+- See on an asset's page what World learned since your last read: facts that ended, facts added, disagreements and Lens sections affected, since the read, over 30 days or since a date you pick.
+- See on an asset's page what its latest report changed against the one before: what it ended, what is new, where Sources disagree, and what it did not repeat, which is not called ended.
+- See when a Lens section rests on a fact that changed: the section reads Superseded with the date and the Source, or Sources disagree, the page counts such sections, and a section reads Current again when its fact is stated again.
+- Tell Loupist a World fact is wrong from its inspector: the fact, its dates and its Sources are quoted into a message for you to finish, and nothing is sent until you send it.
+- Read World's counters as names, new names this week and disagreements, with ended facts and superseded Lens sections listed in what is new.
+- Have one company stay one name in World: a bare KRX code and its .KS form are the same listing, share classes such as BRK.A and BRK.B stay apart, and when two names are joined your connections, Journal entries and Lens links follow.
+- Have methods learned from subjects other than companies, such as an economic series or a theme, and read in Lens why method learning is waiting: for a second case, for Sources still to be read, or for an allowance.
+- Have the preferences you gave the Bot apply in research sessions too, when Memory is on; Forget removes one from the next message.
+- Ask the Bot a quick question about a figure in a saved Source: it now searches what your Loupist has saved when no data connection answers, instead of saying the figure could not be verified.
+- Keep outside text from changing your standing instructions: once a reply has read a web page or other third-party text, it cannot save a principle, a preference for the Bot or a learning program with its own brief in that turn. A bundled check, or a learning template that only names its subject, is still offered on a card, because you turn it on yourself.
+- Find everything the Bot is waiting on you for in one Needs you list, and open Standing as a panel at the window's edge.
+- Read a met check's explanation on its Bot card with its formatting, instead of raw Markdown marks.
+- See each followed asset's price, its change from the previous close with that close's date, and whether a check, a watch or Track daily is on, in its Following row.
+- Open Ahead in Following to see the next 60 days: results follow-ups with the results day, Journal checks that are due, overdue ones first, and the latest briefing's Looking ahead.
+- Confirm before you stop following an asset, and choose there whether to pause its Track daily too.
+- Find Schedule in sections, Briefings, Checks, Scheduled research and Learning, each with its count.
+- Read a check in Schedule without opening its code: when it is met and what it then tells you, what it reads, the assets by name, every recent evaluation including those that started no run, and each day its test run would have been met.
+- Keep automatic work inside a daily allowance: 400 model requests a day for background work, half of them for World, and 300 for reading Sources saved in Chat. Settings › Usage shows both with a warning at 80%, a task or Source that is held says "Waiting for tomorrow's allowance", Run now starts a held task after you confirm, and Read now reads a held Source at once.
+- See why background work stopped when an AI plan reached its limit or ran out of credit: the task or Source says so and resumes the next day.
+- Print one answer or save it as a PDF, or copy it as Markdown with its citations as numbered footnotes, from the answer's menu.
+- Print an asset's page or save it as a PDF, and see "Getting price history…" on a new asset's page instead of an empty chart.
+- The Helpful, Not helpful and Suggest a correction controls are gone from answers; say what was wrong in a message.
+- Keep the side panel as each chat left it: a chat with nothing to show starts with it closed, switching between a research session and the Bot no longer carries it across, and a Source you left open is open again when you return.
+- See a table saved as a Source previewed in the Library by its row count and the period it covers.
+- See why a Source stopped being read into World: interrupted, timed out, a model reply that could not be used, an AI provider error, or a World that is full, with Try again where it can help.
+- Keep World working when a model reply cannot be read: only that Source stops, where the whole World could be set aside until recovery.
+- See on each saved script what it reads, which task uses it and its last result.
+- Find data connections in three groups, Works without a key, Filings and market data, and More providers, with the markets you follow first.
+- See an OpenRouter key's remaining credit and when it resets on its account card.
+- See what a check cost in Settings › Usage: its last check, checks today, data reads, how often it was met and the model requests it started.
+- Pick World's fast model for routine checks from the model menu instead of typing its name, or leave it the same as the processing model.
+- Use dropdowns that match the app's menus in Settings, Schedule, an asset's page and the Journal, and read quiet hours as times in your interface language.
+- See what an update is waiting on before it installs, and see that line go when the work ends.
+- Edit or archive a principle from its reader.
+- Read how often a principle was used as a count of the answers that cited or read it, not of every answer it was offered to.
+- Start a Loupist from the Real assets template, and find the portfolio template renamed Watchlist research, which says it follows filings, results and your reasons and does not track holdings or returns.
+- Read Loupist, Bot, Schedule and Digest as one Korean term each across the interface.
+- Fixed: 0.1.7 could fail to save everything a long reply kept. A reply that kept more than 18 things, for example 16 Sources and three Lens pages, lost all of them behind "Not saved to Memory: saving failed"; 0.1.8 saves the whole reply. On 0.1.7, keep the Sources in one message and file to Lens in the next.
+- Fixed: a save whose writes had all finished on a busy Mac was thrown away because it passed its time budget; it is now kept.
+- See why a Memory save failed and what to do next: the notice names the cause (something refused, Loupist busy saving other work, the disk, or a conversation that changed meanwhile) and says that whatever the answer claims it saved was not kept.
+- Keep the rest of a reply's save when one item is refused: the notice reads "Partly saved to Memory" and lists what was not kept, and a save that found Loupist busy is tried again, up to three times.
+- Fixed: the daily allowance counts each World request on the day it was made, also across midnight, keeps counting a run that ended in a crash, and treats an AI plan limit reached in Chat as a reason to hold background work on that account for the day.
+- Fixed: a research session started while another one was refreshing no longer disappears from the list.
+- Fixed: a one-year price chart opens on the whole year instead of its last month with a clipped date label.
+- Fixed: the Bot's list of scheduled tasks and the next briefing's estimated time use your time zone, not UTC, when macOS reports a zone without a name.
+- Fixed: a Lens page taller than the side panel scrolls, a Lens link stays on the line with the punctuation after it, and the model menu no longer shows the page through it.
+
+How this release was measured. We ran the release suite on the final build with GPT-6.2 Sol (medium effort, fast tier) as the agent and with xAI Grok 4.7 as a second model family. Sol passed the required checks of all ten release units and the security suite (62 of 62 checks over two trials). Grok passed the security suite (31 of 31) and six of the ten release units: two runs stopped at the suite's per-turn input limit, one cited a saved Source without its exact passage, and one did not keep a Bot memory entry. World extraction was measured with GPT-6 Luna (high effort): no false ending in the six control scenarios, 17 of 18 temporal scenarios on the first trial with the remaining one passing two of its three trials, and the ontology checks passed. Rubric items were judged by Claude Opus 5.5 with GPT-6.2 Astra as a second judge; they agreed on all 17 items, a small sample, and neither judge was calibrated against human labels.
+
+### Known limits
+
+- A corrected figure can appear as a disagreement between Sources while the earlier fact stays open.
+- World reads long tables in sections and shows when a section timed out. A very wide table can still time out in part.
+- Each Source has its own limit on World model requests. A Source that reaches the limit pauses and shows **Try again** to give it another allowance.
+
+### Planned follow-ups
+
+- A dedicated Deep Research mode is deferred. The deep-research Skill is included.
+- Stored corrections to World facts, entity matches and Lens sections are deferred. **Tell Loupist this is wrong** drafts a Chat message from a fact and its evidence.
+- Structured figures and the metric-by-period table are deferred. Source figure checks and the comparison between the latest report and the previous one are included.
+- Normalized World storage is deferred. World still offers fact History and an as-of view.
+- Resuming a failed Memory save after a restart and letting saves proceed independently across conversations are deferred. This release retries busy saves and reports what a partial save kept.
+
 ## 0.1.7 - 2026-11-25
 
 - Pick a model for one chat without changing another: each chat keeps its own choice, Default included, and a new chat starts on the model your last message ran on.

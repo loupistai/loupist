@@ -16,6 +16,7 @@ import {
   coldStartMark,
   dialogByTitle,
   mapNameCount,
+  openComposerModelMenu,
   openMapLibrary,
   openCustomConnections,
   loupistSwitcherAction,
@@ -156,24 +157,8 @@ async function visibleMenuItem(exactText) {
 async function choosePreset() {
   await openDestination(browser, "chat");
   const composer = await displayed('textarea[aria-label="Message Loupist"]');
-  const modelMenu = await displayed('[aria-label$="Model settings for this message"]');
-  await browser.waitUntil(async () => modelMenu.isEnabled(), {
-    timeout: 90_000,
-    timeoutMsg: "The Chat model menu did not become available",
-  });
   await composer.click();
-  const openModelMenu = async () => {
-    await clickControl(browser, '[aria-label$="Model settings for this message"]');
-    if ((await modelMenu.getAttribute("aria-expanded")) !== "true") {
-      // The native WebKit driver can focus a Radix trigger without delivering
-      // its pointerdown. Activate that focused button through its keyboard path.
-      await browser.keys("Enter");
-    }
-    await browser.waitUntil(async () => (await modelMenu.getAttribute("aria-expanded")) === "true", {
-      timeout: 5_000, interval: 100, timeoutMsg: "The Chat model menu did not open",
-    });
-  };
-  await openModelMenu();
+  const modelMenu = await openComposerModelMenu(browser, undefined, 90_000);
   // Filter the scrollable catalog so the exact preset is visible regardless
   // of provider ordering and the native WebView's clipped-item visibility.
   await (await displayed('.model-menu-header input[type="search"]')).setValue(preset.modelLabel);
@@ -197,7 +182,7 @@ async function choosePreset() {
   await browser.waitUntil(async () => (await modelMenu.getAttribute("aria-description"))?.includes(preset.modelLabel), {
     timeout: 10_000, interval: 150, timeoutMsg: "The selected Chat model did not apply",
   });
-  if ((await modelMenu.getAttribute("aria-expanded")) !== "true") await openModelMenu();
+  await openComposerModelMenu(browser, undefined, 90_000);
   const advanced = await displayed("[data-testid=model-menu-advanced]");
   if ((await advanced.getAttribute("aria-expanded")) !== "true") {
     await advanced.click();

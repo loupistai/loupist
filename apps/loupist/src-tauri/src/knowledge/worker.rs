@@ -3,7 +3,8 @@ use serde_json::{Map, Value};
 use super::error::{KnowledgeError, KnowledgeResult};
 use super::model::{
     validate_text, validate_time, validate_time_point, validate_token, BindingRole, ClaimEndpoint,
-    ClaimStatus, EvidenceBinding, GraphClaim, GraphNode, Qualifier, TimePoint, TimePrecision,
+    ClaimStatus, EvidenceBinding, EvidenceFigure, GraphClaim, GraphNode, PassageRange, Qualifier,
+    TimePoint, TimePrecision,
 };
 
 /// Map one private Graphiti snapshot claim onto the host claim.
@@ -127,13 +128,51 @@ fn evidence_list(value: &Value) -> KnowledgeResult<Vec<EvidenceBinding>> {
         let span_id = text_field(raw, "span_id", 128, false)?;
         let role = BindingRole::parse(&text_field(raw, "role", 64, false)?)?;
         let attribution = text_field(raw, "attribution", 500, false)?;
+        let figure_check = match raw.get("figure_check") {
+            None | Some(Value::Null) => None,
+            Some(value) => Some(
+                value
+                    .as_str()
+                    .and_then(EvidenceFigure::parse)
+                    .ok_or(KnowledgeError::Invalid("worker evidence is invalid"))?,
+            ),
+        };
+        let passage = match raw.get("passage") {
+            None | Some(Value::Null) => None,
+            Some(value) => Some(passage_range(value)?),
+        };
         evidence.push(EvidenceBinding {
             span_id,
             role,
             attribution,
+            figure_check,
+            passage,
         });
     }
     Ok(evidence)
+}
+
+fn passage_range(value: &Value) -> KnowledgeResult<PassageRange> {
+    let invalid = KnowledgeError::Invalid("worker evidence passage is invalid");
+    let raw = object(value, "worker evidence passage is invalid")?;
+    if raw.len() != 3 {
+        return Err(invalid);
+    }
+    let field = |key: &str| {
+        raw.get(key)
+            .and_then(Value::as_u64)
+            .and_then(|number| u32::try_from(number).ok())
+    };
+    match (field("chunk_index"), field("char_start"), field("char_end")) {
+        (Some(chunk_index), Some(char_start), Some(char_end)) if char_start <= char_end => {
+            Ok(PassageRange {
+                chunk_index,
+                char_start,
+                char_end,
+            })
+        }
+        _ => Err(invalid),
+    }
 }
 
 fn qualifiers(value: &Value) -> KnowledgeResult<Vec<Qualifier>> {

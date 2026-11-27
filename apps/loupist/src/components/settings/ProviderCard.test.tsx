@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import type { ConfiguredModel, ModelProviderOption, ProviderStatusView } from "../../types";
@@ -119,4 +119,32 @@ it("lists models with their context and an In menu switch, keeping raw IDs in th
   // The switch's name holds its visible label, In menu.
   await user.click(within(card).getByRole("switch", { name: "Show GPT-6.1 Sol in menu" }));
   expect(onSetVisibility).toHaveBeenCalledWith("openai/gpt-6.1-sol", false);
+});
+
+it("shows the OpenRouter credit line and does not read credit for another account", async () => {
+  const quota = { limitUsd: 50, remainingUsd: 12.5, usageDailyUsd: 1.25, usageMonthlyUsd: 37.5, reset: null as string | null };
+  const readQuota = vi.fn(async () => quota);
+  const openrouter = renderCard({
+    option: option("openrouter", { label: "OpenRouter", billing_note: null, status: status({ credential_kind: "api_key" }) }),
+    readQuota,
+  });
+  expect(await within(openrouter.card).findByText("$12.50 of $50.00 left")).toBeVisible();
+  expect(readQuota).toHaveBeenCalledExactlyOnceWith("openrouter");
+  document.body.innerHTML = "";
+
+  const other = vi.fn(async () => quota);
+  const chatgpt = renderCard({ option: option("openai"), readQuota: other });
+  await act(async () => {});
+  expect(chatgpt.card.querySelector("[data-credit]")).toBeNull();
+  expect(other).not.toHaveBeenCalled();
+});
+
+it("leaves the credit line off when OpenRouter has no balance to report", async () => {
+  const readQuota = vi.fn(async () => null);
+  const { card } = renderCard({
+    option: option("openrouter", { label: "OpenRouter", billing_note: null, status: status({ credential_kind: "api_key" }) }),
+    readQuota,
+  });
+  await act(async () => {});
+  expect(card.querySelector("[data-credit]")).toBeNull();
 });

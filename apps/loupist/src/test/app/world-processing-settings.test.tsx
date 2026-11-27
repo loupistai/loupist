@@ -46,7 +46,7 @@ it("recovers World building and refreshes an uncertain Chat update without retry
   };
   vi.spyOn(bridge, "loupistSelect").mockResolvedValue(workspace);
   let recovered = false;
-  vi.spyOn(bridge, "knowledgeGraphJob").mockImplementation(async ({ loupistId, jobId }) => ({ jobId, loupistId, worldRecordId: "world-protocols", worldRevisionId: "rev-owned-1", payloadDigest: "digest", createdAtMs: 0, hostMayRedrive: false, status: recovered ? "reconciled_without_retry" : "reconcile_required" }));
+  vi.spyOn(bridge, "knowledgeGraphJob").mockImplementation(async ({ loupistId, jobId }) => ({ jobId, loupistId, worldRecordId: "world-protocols", worldRevisionId: "rev-owned-1", payloadDigest: "digest", createdAtMs: 0, hostMayRedrive: false, status: recovered ? "interrupted" : "reconcile_required" }));
   const settings = await bridge.knowledgeGraphSettingsGet({ loupistId: "loupist-quality" });
   vi.spyOn(bridge, "knowledgeGraphSettingsGet").mockImplementation(async () => recovered ? settings : { ...settings, readiness: { status: "reconciliation_required" } });
   const recover = vi.spyOn(bridge, "knowledgeGraphRecover").mockImplementation(async () => { recovered = true; return settings; });
@@ -59,7 +59,7 @@ it("recovers World building and refreshes an uncertain Chat update without retry
   await screen.findByText(/World building recovered/);
   await user.click(await mainTab(/Chat/));
   await user.click(await screen.findByRole("button", { name: "Saved 1 source" }));
-  expect(await screen.findByText("Source retained · Interrupted World building was not retried")).toBeVisible();
+  expect(await screen.findByText("Source saved · World building was interrupted")).toBeVisible();
   expect(recover).toHaveBeenCalledExactlyOnceWith({ loupistId: "loupist-quality" });
   expect(chatSend).not.toHaveBeenCalled();
 });

@@ -1,5 +1,7 @@
 import i18n, { type resources } from "@/i18n";
-import type { AssetReferenceFields } from "../../contracts/assets";
+import type { AssetPricePoint, AssetReferenceFields, AssetStoredPrice } from "../../contracts/assets";
+import type { TaskSubject } from "../../contracts/generated/scheduled_tasks/types";
+import type { ScheduledTaskListItem } from "../../types";
 import { listingExchange } from "../assets/listingExchange";
 
 type SecurityType = keyof typeof resources.en.briefings.following.securityType;
@@ -32,4 +34,46 @@ export function listingLabel(language: string) {
     const key = type && types.get(type.toLowerCase());
     return [fields.ticker?.trim(), exchange, key ? t(`following.securityType.${key}`) : type].filter(Boolean).join(" · ") || null;
   };
+}
+
+const subjectAsset = (subject: TaskSubject) => "asset" in subject ? subject.asset : null;
+
+function taskCovers(task: Pick<ScheduledTaskListItem, "subjects" | "trigger">, assetId: string) {
+  if (task.subjects?.some(subject => subjectAsset(subject) === assetId)) return true;
+  const ids = task.trigger?.args.asset_ids;
+  return Array.isArray(ids) && ids.includes(assetId);
+}
+
+export type FollowingBadge = { kind: "check" | "watch" | "daily"; count: number; failing: boolean };
+
+/** Active checks, watches and a daily learning task for one followed asset. */
+export function followingBadges(assetId: string, tasks: readonly ScheduledTaskListItem[]): FollowingBadge[] {
+  const active = tasks.filter(task => task.status === "active");
+  const checks = active.filter(task => Boolean(task.trigger) && taskCovers(task, assetId));
+  const watches = active.filter(task => {
+    const watched = Boolean(task.preset) && taskCovers(task, assetId);
+    const custom = task.kind !== "learning" && !task.trigger && task.subjects?.some(subject => subjectAsset(subject) === assetId);
+    return watched || custom;
+  });
+  const daily = active.filter(task => task.kind === "learning"
+    && task.subjects?.length === 1 && subjectAsset(task.subjects[0]!) === assetId);
+  const badges: FollowingBadge[] = [];
+  if (checks.length) badges.push({ kind: "check", count: checks.length, failing: checks.some(task => task.trigger?.state === "failing") });
+  if (watches.length) badges.push({ kind: "watch", count: watches.length, failing: false });
+  if (daily.length) badges.push({ kind: "daily", count: 1, failing: false });
+  return badges;
+}
+
+/** Active learning programs whose subject is this asset. Track daily is one of them. */
+export function learningProgramsFor(assetId: string, tasks: readonly ScheduledTaskListItem[]) {
+  return tasks.filter(task => task.status === "active" && task.kind === "learning" && task.subjects?.some(subject => subjectAsset(subject) === assetId));
+}
+
+/** The move from the latest stored point dated before this price. No earlier point is omitted, never zero. */
+export function priceChange(price: Pick<AssetStoredPrice, "value" | "date">, points: readonly AssetPricePoint[]) {
+  const previous = points.filter(point => point.date < price.date).sort((left, right) => left.date < right.date ? -1 : left.date > right.date ? 1 : 0).at(-1);
+  if (!previous) return null;
+  const delta = price.value - previous.value;
+  const percent = previous.value === 0 ? null : delta / previous.value;
+  return { delta, percent, date: previous.date };
 }

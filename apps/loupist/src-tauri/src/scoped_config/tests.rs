@@ -36,6 +36,148 @@ fn patch(source: &str) -> ConfigDocument {
 }
 
 #[test]
+fn loupist_learning_settings_default_validate_and_stay_out_of_global() {
+    let global = directory();
+    let project = directory();
+    let snapshot = read_scope(global.path(), Some(project.path()), scope()).unwrap();
+    assert_eq!(
+        (
+            snapshot.effective.learning_daily_requests,
+            snapshot.effective.learning_program_cap
+        ),
+        (132, 20)
+    );
+    assert_eq!(
+        learning_settings(project.path()).unwrap(),
+        crate::scheduled_tasks::learning::LearningSettings::default()
+    );
+    let refused = |scope: ConfigScope, project: Option<&Path>, set: ConfigDocument| {
+        let prior = read_scope(global.path(), project, scope.clone()).unwrap();
+        update_scope(
+            global.path(),
+            project,
+            &ConfigUpdateRequest {
+                scope,
+                expected_revision: prior.revision,
+                set,
+                unset: vec![],
+            },
+        )
+        .unwrap_err()
+        .code
+    };
+    for set in [
+        ConfigDocument {
+            learning_daily_requests: Some(5),
+            ..Default::default()
+        },
+        ConfigDocument {
+            learning_program_cap: Some(0),
+            ..Default::default()
+        },
+        ConfigDocument {
+            learning_program_cap: Some(51),
+            ..Default::default()
+        },
+    ] {
+        assert_eq!(
+            refused(scope(), Some(project.path()), set),
+            "invalid_configuration"
+        );
+    }
+    assert_eq!(
+        refused(
+            ConfigScope::Global,
+            None,
+            ConfigDocument {
+                learning_daily_requests: Some(0),
+                ..Default::default()
+            }
+        ),
+        "invalid_configuration"
+    );
+    let floor = crate::scheduled_tasks::types::LearningProgram::light_update_hard_budget();
+    for (requests, cap) in [(0, 1), (floor, 50)] {
+        let snapshot = update(
+            global.path(),
+            Some(project.path()),
+            scope(),
+            ConfigDocument {
+                learning_daily_requests: Some(requests),
+                learning_program_cap: Some(cap),
+                ..Default::default()
+            },
+            vec![],
+        );
+        assert_eq!(snapshot.effective.learning_daily_requests, requests);
+        assert_eq!(snapshot.effective.learning_program_cap, cap);
+        assert_eq!(
+            learning_settings(project.path()).unwrap(),
+            crate::scheduled_tasks::learning::LearningSettings {
+                daily_requests: requests,
+                program_cap: cap,
+            }
+        );
+    }
+    let snapshot = update(
+        global.path(),
+        Some(project.path()),
+        scope(),
+        ConfigDocument::default(),
+        vec![
+            vec!["learning_daily_requests".into()],
+            vec!["learning_program_cap".into()],
+        ],
+    );
+    assert_eq!(snapshot.effective.learning_daily_requests, 132);
+    assert_eq!(snapshot.effective.learning_program_cap, 20);
+    write(project.path(), "learning_daily_requests = 7\n");
+    assert!(learning_settings(project.path()).is_err());
+}
+
+#[test]
+fn global_daily_allowances_use_defaults_and_validate_updates() {
+    let global = directory();
+    let scope = ConfigScope::Global;
+    write(global.path(), "[chat]\nuse_memory = true\n");
+    let snapshot = read_scope(global.path(), None, scope.clone()).unwrap();
+    assert_eq!(snapshot.effective.background_daily_requests, 400);
+    assert_eq!(snapshot.effective.world_chat_daily_requests, 300);
+    let floor = crate::knowledge::GraphProcessingSettings::default().max_llm_calls;
+    for (background, world_chat) in [(floor - 1, floor), (floor, 1)] {
+        let error = update_scope(
+            global.path(),
+            None,
+            &ConfigUpdateRequest {
+                scope: scope.clone(),
+                expected_revision: snapshot.revision.clone(),
+                set: ConfigDocument {
+                    background_daily_requests: Some(background),
+                    world_chat_daily_requests: Some(world_chat),
+                    ..Default::default()
+                },
+                unset: vec![],
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "invalid_configuration");
+    }
+    let snapshot = update(
+        global.path(),
+        None,
+        scope,
+        ConfigDocument {
+            background_daily_requests: Some(0),
+            world_chat_daily_requests: Some(floor),
+            ..Default::default()
+        },
+        vec![],
+    );
+    assert_eq!(snapshot.effective.background_daily_requests, 0);
+    assert_eq!(snapshot.effective.world_chat_daily_requests, floor);
+}
+
+#[test]
 fn merges_each_field_and_records_its_source() {
     let global = directory();
     let project = directory();

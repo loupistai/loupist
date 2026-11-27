@@ -131,3 +131,7 @@
 .loupist-tracking-copy { min-width:0; }
 .loupist-tracking-copy strong { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; overflow-wrap:anywhere; font-size:var(--gg-text-body); font-weight:var(--gg-weight-semibold); line-height:var(--gg-leading-body); }
 .loupist-tracking-desc { font-size:var(--gg-text-meta); line-height:var(--gg-leading-meta); color:var(--gg-color-text-secondary); }
+
+/* Loupist settings › Learning: the host's refusal of a limit, under its field. */
+.learning-limits { display: grid; gap: var(--gg-space-3); }
+.learning-limit-refusal { margin: var(--gg-space-1) 0 0; color: var(--gg-color-negative); font-size: var(--gg-text-meta); }

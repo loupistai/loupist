@@ -25,7 +25,7 @@ async function setup() {
     return <MemoryWorkspace bridge={bridge} loupist={loupist} navigation={navigation} catalogState={catalogState} onPatch={next => setNavigation(n => patchKnowledgeLocation(n, next))} onOpen={next => setNavigation(n => openKnowledgeLocation(n, next))} onBack={vi.fn()} onAsk={vi.fn()} />;
   }
   const view = render(<Harness />);
-  await screen.findByText('1 in World · 0 relationships');
+  await screen.findByText('1 name · 0 relationships');
   return { user: userEvent.setup(), method, perspective, read, remount: () => { view.rerender(<></>); view.rerender(<Harness />); } };
 }
 it('opens a compact Source library and reads an exact source in World inspector', async () => {

@@ -4,25 +4,28 @@ import { ConnectionOrigin } from "../connections/custom/ConnectionOrigin";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeftIcon, XIcon } from "lucide-react";
 import { LensLearningPanel } from "../knowledge/LensLearningPanel";
-import type { KnowledgeMap, KnowledgeMapEdge, KnowledgeMapNode } from "../../contracts/knowledge";
+import type { KnowledgeMap, KnowledgeMapEdge, KnowledgeMapNode, PassageRange } from "../../contracts/knowledge";
 import type { LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin, PageSummary, WorldGraphView } from "../../types";
 import { useTranslation } from "../../i18n";
 import { formatDate } from "../../i18n/format";
 import { PrincipleForm } from "./PrincipleForm";
 import type { Principle } from "../../types";
 import { dateValue } from "../../knowledge/presentation";
-import { pinForClaim, pinForNode } from "../../knowledge/location";
+import { pinForClaim, pinForNode, sourceTargetLocation } from "../../knowledge/location";
 import { Button } from "../ui/button";
 import { extensionKindLabel, nodeCategory } from "../../knowledge/mapKinds";
 import { entityLabel, isDrawnRelation } from "../../knowledge/mapItems";
+import { orderEntityClaims } from "./claimFacts";
 import { useInspectorScroll, useMapDetail } from "./useMapData";
 import { InspectorThesis } from "../assets/InspectorThesis";
+import { MapEntityHistory } from "./MapEntityHistory";
 import { MapRelationships } from "./MapRelationships";
 import { hasRelationshipsView } from "./relationships";
 import { isBasePerspective, isLensNode, isStandingPlaceholder, lensDisplayTitle } from "./lensReading";
 import { sharingReleaseVisible } from "../../sharing/releaseVisibility";
 import { SharedOrigin } from "../sharing/SharedOrigin";
 import { SHARED_SECTION_ITEM } from "../sharing/SharedPacks";
+import { LearnRequest } from "../briefings/LearnRequest";
 export function MapInspector({ onShowConnections, node, map, bridge, location, onClose, onSelect, onOpen, onAsk, providedGraph, catalog, onChanged, onOpenChat, onExplainDisagreement, onPointRelationship, onRevisionChange }: {
   catalog?: KnowledgeCatalog; onChanged?: () => void; onOpenChat?: (chatId: string) => void;
   /** A relationship chip the user points at; the canvas widens that line. */
@@ -39,6 +42,7 @@ export function MapInspector({ onShowConnections, node, map, bridge, location, o
   const name = entityLabel(node, i18n.language);
   const heading = useRef<HTMLHeadingElement>(null);
   const [more, setMore] = useState(false);
+  const [allFacts, setAllFacts] = useState(false);
   const [allConnections, setAllConnections] = useState(false);
   const detail = useMapDetail(bridge, location, node.kind === "entity" && !providedGraph ? node.id : undefined, "node", onRevisionChange);
   const graph = providedGraph ?? detail.graph;
@@ -85,8 +89,9 @@ export function MapInspector({ onShowConnections, node, map, bridge, location, o
     walkingTo.current = previous.id;
     onSelect(previous);
   };
-  useEffect(() => { heading.current?.focus({ preventScroll: true }); setMore(false); setAllConnections(false); }, [node.id]);
-  const claims = [...(graph?.edges ?? [])].filter((e) => e.endpoints.some((p) => p.nodeId === node.id)).sort((a, b) => (b.claim.recordedAtMs ?? 0) - (a.claim.recordedAtMs ?? 0)).slice(0, 6);
+  useEffect(() => { heading.current?.focus({ preventScroll: true }); setMore(false); setAllConnections(false); setAllFacts(false); }, [node.id]);
+  const orderedClaims = orderEntityClaims(graph?.edges ?? [], node.id, Date.now());
+  const claims = allFacts ? orderedClaims : orderedClaims.slice(0, 6);
   const disputed = (graph?.edges ?? []).filter(edge => edge.claim.status === "disputed" && edge.endpoints.some(endpoint => endpoint.nodeId === node.id));
   // The World contract has no pair ID. Group reports about the same relation and
   // role-labelled endpoints, preserving every attributed report in the group.
@@ -99,9 +104,9 @@ export function MapInspector({ onShowConnections, node, map, bridge, location, o
   // Grouped by the label the reader sees: two stored names with one label are one group.
   const relationLabel = (edge: KnowledgeMapEdge) => edge.relation ? relationName(edge.relation, t) : "";
   const connections = connected.filter((e) => e.kind === "claim" && isDrawnRelation(e)).sort((a, b) => relationLabel(a).localeCompare(relationLabel(b)));
-  const openSource = (spanId: string) => {
+  const openSource = (spanId: string, passage?: PassageRange) => {
     const target = graph?.sourceTargets?.[spanId];
-    if (target) onOpen({ loupistId: location.loupistId, surface: "source", recordId: target.recordId, revisionId: target.revisionId, objectId: target.sourceId, selection: { kind: "source", sourceId: target.sourceId, spanId: target.spanId, worldRecordId: target.worldRecordId, worldRevisionId: target.worldRevisionId } });
+    if (target) onOpen(sourceTargetLocation(location.loupistId, target, passage));
   };
   if (node.kind === "journal") return <aside className="map-inspector journal-inspector" aria-label={t("journal.entry")}><Button variant="ghost" size="icon-sm" className="map-inspector-close" aria-label={t("map.close")} onClick={onClose}><XIcon /></Button><ResearchReader bridge={bridge} location={{ loupistId: location.loupistId, surface: "note", selection: { kind: "journal", journalId: node.id } }} onOpen={onOpen} onAsk={onAsk} onOpenChat={onOpenChat} onChanged={onChanged} /></aside>;
   if (node.kind === "lens_principle" && node.recordId) return <PrincipleInspector key={`${location.loupistId}:${node.recordId}`} bridge={bridge} loupistId={location.loupistId} refreshKey={lens?.revisionId ?? node.label} node={node} map={map} onClose={onClose} onSelect={onSelect} onChanged={onChanged} onOpenChat={onOpenChat} />;
@@ -125,7 +130,7 @@ export function MapInspector({ onShowConnections, node, map, bridge, location, o
       const target = graph?.sourceTargets?.[evidence.spanId];
       const source = catalog?.sources.flatMap(record => record.objects).find(source => source.id === target?.sourceId);
       const date = source?.publicationTime?.value ?? claim.publicationTime?.value ?? (claim.recordedAtMs ? new Date(claim.recordedAtMs).toISOString() : undefined);
-      return <small key={`${evidence.spanId}:${index}`}>{source?.title ?? evidence.attribution ?? claim.attribution}{date ? ` · ${dateValue(date)}` : ""}{target && <Button variant="link" onClick={() => openSource(evidence.spanId)}>{t("map.openSource")}</Button>}</small>;
+      return <small key={`${evidence.spanId}:${index}`}>{source?.title ?? evidence.attribution ?? claim.attribution}{date ? ` · ${dateValue(date)}` : ""}{target && <Button variant="link" onClick={() => openSource(evidence.spanId, evidence.passage)}>{t("map.openSource")}</Button>}</small>;
     }) : <small>{claim.attribution}{claim.publicationTime?.value ? ` · ${dateValue(claim.publicationTime.value)}` : ""}</small>}</div>)}</div>)}
       {onExplainDisagreement && location.recordId && location.revisionId ? <Button variant="ghost" size="sm" data-explain-disagreement aria-label={`${t("map.explainDisagreement")} · ${name}`} onClick={() => {
         const recordId = location.recordId!;
@@ -139,8 +144,10 @@ export function MapInspector({ onShowConnections, node, map, bridge, location, o
     </div> : null}
     {showRelationships ? <MapRelationships map={map} node={node} onSelect={(next) => { onPointRelationship?.(); walk(next); }} onPoint={onPointRelationship} /> : null}
     {showRelationships ? null : node.kind === "entity" ? <><InspectorThesis bridge={bridge} loupistId={location.loupistId} entityId={node.id} /><h3>{t("map.keyFacts")}</h3>{!graph && !error ? <p role="status">{t("map.loadingFacts")}</p> : null}
-      <ul className="map-facts">{claims.map(({ claim }) => <li key={claim.id}><p>{claim.proposition}</p><small>{claim.publicationTime?.value ? dateValue(claim.publicationTime.value) : claim.recordedAtMs ? dateValue(new Date(claim.recordedAtMs).toISOString()) : null}{[...new Set(claim.evidence.map((e) => e.spanId).filter((id): id is string => !!id && !!graph?.sourceTargets?.[id]))].map((spanId) => <Button variant="link" key={spanId} onClick={() => openSource(spanId)}>{t("map.openSource")}</Button>)}</small></li>)}</ul>
+      <ul className="map-facts" aria-label={t("map.keyFacts")}>{claims.map(({ claim }) => <li key={claim.id}><p>{claim.proposition}</p><small>{claim.publicationTime?.value ? dateValue(claim.publicationTime.value) : claim.recordedAtMs ? dateValue(new Date(claim.recordedAtMs).toISOString()) : null}{[...new Set(claim.evidence.map((e) => e.spanId).filter((id): id is string => !!id && !!graph?.sourceTargets?.[id]))].map((spanId) => <Button variant="link" key={spanId} onClick={() => openSource(spanId, claim.evidence.find((e) => e.spanId === spanId && e.passage)?.passage)}>{t("map.openSource")}</Button>)}</small></li>)}</ul>
+      {orderedClaims.length > 6 ? <Button variant="link" onClick={() => setAllFacts(value => !value)}>{t(allFacts ? "map.less" : "map.showAllFacts")}</Button> : null}
       {graph && !claims.length ? <p className="map-muted">{t("map.noFacts", { name })}</p> : null}
+      <MapEntityHistory bridge={bridge} loupistId={location.loupistId} entityId={node.id} name={name} onOpenClaim={id => onOpen({ ...location, surface: "world", selection: { kind: "claim", id } })} />
       {notes.length ? <section className="map-notes" aria-label={t("map.notes")}><h3>{t("map.notes")}</h3>
         <ul>{notes.map((note) => <li key={note.recordId}><button type="button" onClick={() => onOpen({ loupistId: location.loupistId, surface: "lens", recordId: note.recordId, objectId: note.recordId, selection: { kind: "lens", recordId: note.recordId } })}>
           <strong>{note.title}</strong><small>{t(`pageReader.kind.${note.kind}`)}</small>{note.summary ? <span>{note.summary}</span> : null}</button></li>)}</ul></section> : null}
@@ -151,6 +158,7 @@ export function MapInspector({ onShowConnections, node, map, bridge, location, o
     {connections.length > 8 ? <Button variant="link" onClick={() => setAllConnections(!allConnections)}>{t(allConnections ? "map.less" : "map.more")}</Button> : null}</>}
     <footer>{onShowConnections ? <Button variant="outline" onClick={onShowConnections}>{t("map.showConnections")}</Button> : null}
     {node.kind === "entity" && location.recordId && location.revisionId ? <Button onClick={() => onAsk(pinForNode(location.loupistId, location.recordId!, location.revisionId!, entity ?? { id: node.id, name: node.label, aliases: [], description: "", kind: node.entityKind ?? "", sourceRole: "", properties: {} }))}>{t("map.askAbout")}</Button> : null}
+    {node.kind === "entity" ? <LearnRequest kind="world" subject={name} /> : null}
     <p className="map-disclosure">{t("map.disclosure")}</p></footer>
   </aside>;
 }

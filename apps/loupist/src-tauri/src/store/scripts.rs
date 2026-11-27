@@ -174,7 +174,7 @@ pub(crate) fn script_reference(reference: &str) -> StoreResult<(&str, Option<u32
     Ok((name, version))
 }
 
-fn validate_draft(draft: &ScriptDraft) -> StoreResult<()> {
+pub(crate) fn validate_draft(draft: &ScriptDraft) -> StoreResult<()> {
     validate_name(&draft.name)?;
     if draft.code.trim().is_empty() || draft.code.len() > 32 * 1024 || draft.code.contains('\0') {
         return Err(invalid(

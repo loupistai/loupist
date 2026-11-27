@@ -1,4 +1,5 @@
 import i18n, { useTranslation } from "@/i18n";
+import { localizedValue } from "@/i18n/localized";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { ChatMessage, LoupistBridge } from "../../types";
 import { BotPostBody } from "./BotPost";
@@ -17,8 +18,8 @@ export function ThreadVocabulary({ message, bridge, loupistId, loupistName }: {
   const [undone, setUndone] = useState(false);
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
-  const korean = i18n.language.toLowerCase().startsWith("ko") && record.labelsKo?.length === record.labels.length;
-  const list = (korean ? record.labelsKo! : record.labels).join(", ");
+  // The host sends English labels and, when it has them, Korean ones of the same length.
+  const list = (localizedValue({ en: record.labels, ko: record.labelsKo }, i18n.language, labels => labels.length === record.labels.length) ?? record.labels).join(", ");
   const at = Date.parse(message.created_at);
   // Undo goes away once it has run: focus moves to what happened.
   const statusRef = useRef<HTMLParagraphElement>(null);

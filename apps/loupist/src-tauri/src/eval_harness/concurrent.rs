@@ -131,7 +131,7 @@ pub async fn run(options: Options) -> Result<()> {
                 }),
             )?;
             let app_dir = root.join("app");
-            let mut state = AppState::for_eval(app_dir.clone());
+            let mut state = super::trial::trial_state(app_dir.clone());
             state.eval_pi_agent_dir = Some(options.pi_agent_dir.clone());
             Arc::make_mut(&mut state.artifacts).pi = Some(pi.clone());
             fs::write(
@@ -327,7 +327,7 @@ pub async fn run(options: Options) -> Result<()> {
             }
             state.shutdown().await?;
             drop(state);
-            let reopened = AppState::for_eval(app_dir);
+            let reopened = super::trial::trial_state(app_dir);
             for chat in &saved_chats {
                 checks.insert(
                     format!("{}:reopen", chat.id),

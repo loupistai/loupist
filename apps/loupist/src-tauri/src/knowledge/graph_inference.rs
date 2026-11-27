@@ -274,34 +274,94 @@ pub async fn dispatch_inference(
             run_options: settings.run_options.clone(),
         })
         .await;
+    provider_reply(reply)
+}
+
+/// The graph worker's reply for one isolated provider result. A failure keeps
+/// the provider's usage and its typed kind; the worker reads both from `body`.
+pub(super) fn provider_reply(
+    reply: crate::providers::inference::ProviderInferenceReply,
+) -> InferenceReply {
     use crate::providers::inference::ProviderInferenceDisposition;
-    match reply.disposition {
-        ProviderInferenceDisposition::NotSent => not_sent("World provider request was not sent"),
-        ProviderInferenceDisposition::Uncertain => uncertain("World provider outcome is uncertain"),
-        ProviderInferenceDisposition::Completed => InferenceReply {
-            disposition: InferenceDisposition::Completed,
-            body: json!({"status":"ok", "json_object":reply.body, "vectors":null, "usage":graph_usage(reply.usage.as_ref())}),
+    let mut body = match reply.disposition {
+        ProviderInferenceDisposition::NotSent => {
+            json!({"status": "not_sent", "message": "World provider request was not sent"})
+        }
+        ProviderInferenceDisposition::Uncertain => json!({
+            "status": "uncertain",
+            "message": "World provider outcome is uncertain",
+            "usage": graph_usage(reply.usage.as_ref()),
+        }),
+        ProviderInferenceDisposition::Completed => json!({
+            "status": "ok",
+            "json_object": reply.body,
+            "vectors": null,
+            "usage": graph_usage(reply.usage.as_ref()),
+        }),
+    };
+    if let Some(kind) = reply.failure_kind {
+        body["failure_kind"] = json!(kind);
+    }
+    if let Some(hold) = reply.account_hold {
+        body["account_hold"] = json!(hold.as_str());
+    }
+    if reply.disposition == ProviderInferenceDisposition::NotSent && reply.usage.is_some() {
+        body["usage"] = graph_usage(reply.usage.as_ref());
+    }
+    InferenceReply {
+        disposition: match reply.disposition {
+            ProviderInferenceDisposition::NotSent => InferenceDisposition::NotSent,
+            ProviderInferenceDisposition::Uncertain => InferenceDisposition::Uncertain,
+            ProviderInferenceDisposition::Completed => InferenceDisposition::Completed,
         },
+        body,
     }
 }
 
-fn graph_usage(usage: Option<&Value>) -> Value {
-    let input = usage.and_then(|usage| {
-        usage
-            .get("input")?
-            .as_u64()?
-            .checked_add(usage.get("cacheRead")?.as_u64()?)?
-            .checked_add(usage.get("cacheWrite")?.as_u64()?)
-    });
-    let output = usage
-        .and_then(|usage| usage.get("output"))
-        .and_then(Value::as_u64);
-    json!({"input_tokens":input, "output_tokens":output,
-        "input":usage.and_then(|u| u.get("input")).and_then(Value::as_u64),
-        "cacheRead":usage.and_then(|u| u.get("cacheRead")).and_then(Value::as_u64),
-        "cacheWrite":usage.and_then(|u| u.get("cacheWrite")).and_then(Value::as_u64),
+/// Whether this reply is a model-output failure extraction must stop on,
+/// rather than retry or quarantine.
+pub(crate) fn model_output_failure(reply: &InferenceReply) -> Option<&'static str> {
+    let parsed: crate::providers::inference::InferenceFailureKind =
+        serde_json::from_value(reply.body.get("failure_kind")?.clone()).ok()?;
+    parsed.model_output().then_some(parsed.as_str())
+}
+
+pub(super) fn graph_usage(usage: Option<&Value>) -> Value {
+    let tokens = crate::runs::log::PiTokenCounts::read(usage.unwrap_or(&Value::Null), "output");
+    let input = tokens.total_input();
+    json!({"input_tokens":input, "output_tokens":tokens.output,
+        "input":tokens.input,
+        "cacheRead":tokens.cache_read,
+        "cacheWrite":tokens.cache_write,
         "cost":usage.and_then(|u| u.get("cost")),
-        "certainty":if input.is_some() && output.is_some() {"accounted"} else {"uncertain"}})
+        "certainty":if input.is_some() && tokens.output.is_some() {"accounted"} else {"uncertain"}})
+}
+
+/// Usage of the paid calls in one World, schema or learning attempt.
+/// A sent call with no accounted tokens is marked partial; reported tokens stay.
+#[derive(Default)]
+pub(crate) struct CallLedger {
+    usage: crate::runs::log::InferenceUsage,
+    tokens_partial: bool,
+}
+
+impl CallLedger {
+    pub(crate) fn begin(&mut self) {
+        self.usage.begin();
+    }
+
+    pub(crate) fn observe(&mut self, reply: &InferenceReply) {
+        let not_sent = reply.disposition == InferenceDisposition::NotSent;
+        self.usage.observe(&reply.body["usage"], not_sent);
+        if !not_sent && reply.body["usage"]["certainty"] != "accounted" {
+            self.tokens_partial = true;
+        }
+    }
+
+    pub(crate) fn apply(&self, log: &mut crate::runs::log::RunLog) {
+        self.usage.apply(log);
+        log.tokens_partial |= self.tokens_partial;
+    }
 }
 
 /// The bundled embedding model, loaded from one verified set of asset bytes.
@@ -749,33 +809,152 @@ mod tests {
 
     #[test]
     fn shared_provider_usage_is_translated_without_inventing_missing_counts() {
-        let tokens = |usage: Value| {
-            let result = graph_usage(Some(&usage));
-            (
-                result["input_tokens"].clone(),
-                result["output_tokens"].clone(),
-                result["certainty"].clone(),
-            )
-        };
-        // Cached input is billed input.
-        assert_eq!(
-            tokens(json!({"input":12,"cacheRead":9,"cacheWrite":3,"output":7})),
-            (json!(24), json!(7), json!("accounted"))
-        );
-        // A missing or overflowing count is unknown, never zero.
-        assert_eq!(
-            tokens(json!({"input":12,"cacheWrite":3,"output":7})),
-            (Value::Null, json!(7), json!("uncertain"))
-        );
-        assert_eq!(
-            tokens(json!({"input":u64::MAX,"cacheRead":1,"cacheWrite":0,"output":7})),
-            (Value::Null, json!(7), json!("uncertain"))
-        );
-        assert_eq!(
-            tokens(json!({"input":12,"cacheRead":0,"cacheWrite":0})),
-            (json!(12), Value::Null, json!("uncertain"))
-        );
+        use crate::runs::log::{InferenceUsage, RunLog};
+        for input in [None, Some(0), Some(500)] {
+            for output in [None, Some(0), Some(120)] {
+                for read in [None, Some(0), Some(9)] {
+                    for write in [None, Some(0), Some(3)] {
+                        let mut usage = json!({"input":input,"output":output});
+                        for (key, count) in [("cacheRead", read), ("cacheWrite", write)] {
+                            if let Some(count) = count {
+                                usage[key] = json!(count);
+                            }
+                        }
+                        let graph = graph_usage(Some(&usage));
+                        assert_eq!(graph["cacheRead"], json!(read), "{usage}");
+                        assert_eq!(graph["cacheWrite"], json!(write), "{usage}");
+                        let mut log = RunLog::new("world", "test", "run", 0);
+                        let mut inference = InferenceUsage::default();
+                        inference.begin();
+                        inference.observe(&graph, false);
+                        inference.apply(&mut log);
+                        match (input, output) {
+                            (Some(input), Some(output)) => {
+                                let cached = read.unwrap_or_default();
+                                let written = write.unwrap_or_default();
+                                assert_eq!(graph["certainty"], "accounted", "{usage}");
+                                assert_eq!(
+                                    graph["input_tokens"],
+                                    input + cached + written,
+                                    "{usage}"
+                                );
+                                let measured = log.usage.unwrap();
+                                assert_eq!(
+                                    (measured.input, measured.cached_input, measured.output),
+                                    (input + written, cached, output),
+                                    "{usage}"
+                                );
+                            }
+                            _ => {
+                                assert_eq!(graph["certainty"], "uncertain", "{usage}");
+                                assert!(log.usage.is_none(), "{usage}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for usage in [
+            json!({"input":u64::MAX,"cacheRead":1,"output":7}),
+            json!({"input":500,"output":120,"cacheWrite":-1}),
+        ] {
+            let graph = graph_usage(Some(&usage));
+            assert_eq!(graph["input_tokens"], Value::Null);
+            assert_eq!(graph["certainty"], "uncertain");
+            let mut inference = InferenceUsage::default();
+            inference.begin();
+            inference.observe(&graph, false);
+            let mut log = RunLog::new("world", "test", "run", 0);
+            inference.apply(&mut log);
+            assert!(log.usage.is_none());
+        }
     }
+
+    #[test]
+    fn failed_inference_keeps_usage_and_marks_the_ledger_partial_when_absent() {
+        use crate::providers::inference::{
+            InferenceFailureKind, ProviderInferenceDisposition, ProviderInferenceReply,
+        };
+        use crate::runs::log::RunLog;
+        let kinds = [
+            InferenceFailureKind::PayloadInvalid,
+            InferenceFailureKind::RetryRefused,
+            InferenceFailureKind::DispatchMarkerFailed,
+            InferenceFailureKind::IdentityMismatch,
+            InferenceFailureKind::IncompleteResponse,
+            InferenceFailureKind::ContentType,
+            InferenceFailureKind::OutputSize,
+            InferenceFailureKind::InvalidJson,
+            InferenceFailureKind::SchemaMismatch,
+            InferenceFailureKind::Cancelled,
+            InferenceFailureKind::ProviderFailure,
+        ];
+        let directory = tempfile::tempdir().unwrap();
+        let store =
+            crate::store::SqliteStore::open_catalog(directory.path().join("catalog.sqlite3"))
+                .unwrap();
+        crate::test_fixtures::create_folder_loupist(
+            &store,
+            "usage",
+            &directory.path().join("workspace"),
+        );
+        let reported = json!({
+            "input": 11,
+            "output": 7,
+            "cacheRead": 3,
+            "cacheWrite": 1,
+            "cost": {"total": 0.000002, "totalFromProvider": true}
+        });
+        for (index, kind) in kinds.into_iter().enumerate() {
+            for with_usage in [false, true] {
+                let reply = provider_reply(ProviderInferenceReply {
+                    disposition: ProviderInferenceDisposition::Uncertain,
+                    body: json!({"status": "uncertain", "message": "host"}),
+                    usage: with_usage.then(|| reported.clone()),
+                    failure_kind: Some(kind),
+                    account_hold: None,
+                });
+                assert_eq!(reply.disposition, InferenceDisposition::Uncertain);
+                assert_eq!(reply.body["failure_kind"], json!(kind.as_str()), "{kind:?}");
+                let mut ledger = CallLedger::default();
+                ledger.begin();
+                ledger.observe(&reply);
+                let started = 1_700_000_000_000 + index as i64 * 10 + i64::from(with_usage);
+                let mut log =
+                    RunLog::new("world", "usage", &format!("{kind:?}-{with_usage}"), started);
+                log.model = Some("openai/gpt-test".into());
+                log.finish("failed", Some("world_job_failed"));
+                ledger.apply(&mut log);
+                log.record(&store);
+                let rows = store.model_usage_in_range(0, i64::MAX).unwrap();
+                let measures = &rows
+                    .iter()
+                    .find(|row| row.data.run_id == format!("{kind:?}-{with_usage}"))
+                    .unwrap_or_else(|| panic!("{kind:?} usage={with_usage} was not recorded"))
+                    .data
+                    .measures;
+                assert_eq!(measures.requests, Some(1), "{kind:?} usage={with_usage}");
+                if with_usage {
+                    assert_eq!(reply.body["usage"]["certainty"], "accounted");
+                    assert_eq!(reply.body["usage"]["input_tokens"], 15);
+                    assert_eq!(reply.body["usage"]["output_tokens"], 7);
+                    assert!(!measures.tokens_partial);
+                    assert_eq!(measures.input, Some(12));
+                    assert_eq!(measures.cached_input, Some(3));
+                    assert_eq!(measures.output, Some(7));
+                    assert_eq!(measures.cost_microusd, Some(2));
+                    assert_eq!(measures.cost_from_provider, Some(true));
+                } else {
+                    assert_eq!(reply.body["usage"]["certainty"], "uncertain");
+                    assert!(measures.tokens_partial, "{kind:?}");
+                    assert!(measures.input.is_none());
+                    assert!(measures.output.is_none());
+                    assert!(measures.cached_input.is_none());
+                }
+            }
+        }
+    }
+
     #[test]
     fn reasoning_has_answer_room_with_a_bounded_total_allowance() {
         assert_eq!(output_allowance(Some(4096), "off"), 4096);

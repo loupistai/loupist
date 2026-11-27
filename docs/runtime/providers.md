@@ -245,6 +245,8 @@ lists also use Pi's catalog. A 404 `model_not_found` puts the model
 on a persistent gone list (`provider_gone_model`); refreshes leave it out until
 the provider is connected again.
 
+An OpenRouter account is read with one `GET https://openrouter.ai/api/v1/key` of the key already stored for that provider: redirects are refused, the body is capped, and a second read inside five minutes makes no request. Only the limit, the remaining balance, daily and monthly usage, and the reset period are kept; a missing key, a key with no limit, or any failed read is null, and nothing from the response is logged or stored.
+
 Use a model on this Mac (`providers/local.rs`) probes Ollama, LM Studio and
 llama.cpp on `127.0.0.1` at their default ports in parallel, 600 ms each, without
 proxy or redirects. It reads model lists and serving context (GET requests, plus
@@ -298,7 +300,10 @@ replay calls the provider without a model.
 
 Settings › Usage shows Today, 7 days and 30 days in the device's time zone.
 Requests are grouped by AI account, local day, kind of work, Loupist and scheduled
-program. Each AI account card links to this page from its seven-day total.
+program. Programs include scheduled checks that make no model requests.
+For a check, Usage shows its last evaluation and the selected local days'
+evaluation, data-read, met and model request counts. Schedule shows evaluations
+alongside any model runs they started. Each AI account card links to this page from its seven-day total.
 
 A request is one terminal Pi assistant message, including failed attempts and
 automatic retries, or a compaction that reports usage. If a turn retries on
@@ -307,8 +312,9 @@ in the overall totals. Each isolated model call
 sent for World building, schema review or method learning also counts. Local
 embeddings and account management do not make model requests.
 
-Input tokens include cache writes, with cached reads broken out. If any attempt
-is missing token measurements, Settings shows the measured counts as partial.
+Input tokens include cache writes, with cached reads broken out. An attempt with
+measured input and output can omit either cache counter. If required counts are
+missing or token arithmetic overflows, Settings shows that the totals are partial.
 Costs are
 shown for API-key and environment accounts. Pi estimates costs from its model
 prices and can also report a billed amount from the service, such as OpenRouter.

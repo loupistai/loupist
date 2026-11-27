@@ -7,6 +7,30 @@
 use super::*;
 use crate::custom_connections::taint::{retained_trusted, Returning, ReturningSource};
 
+/// A Source pointer with a real record id. `""` is not a missing field: it is
+/// an empty id, and a Source lookup of it fails the whole delivery.
+/// A span that could not be resolved is still someone else's text. The label
+/// names no title or URL, because those are what could not be resolved.
+fn unresolved_label(row: &Value) -> Option<String> {
+    row.get("evidenceUnresolved")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        .then(|| "saved Source".to_owned())
+}
+
+fn read_target(value: &Value) -> Option<(&str, Option<&str>, &str)> {
+    let record = value
+        .get("recordId")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())?;
+    let revision = value
+        .get("revisionId")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty());
+    let span = value.get("spanId").and_then(Value::as_str).unwrap_or("");
+    Some((record, revision, span))
+}
+
 impl AppToolExecutor {
     /// The third-party text this result brings back, if any. Called before the
     /// result is delivered, so the tier rises first.
@@ -33,7 +57,6 @@ impl AppToolExecutor {
                         .and_then(Value::as_str)
                         .is_some_and(|text| !text.is_empty())
                     {
-                        // TODO(model-text): Check the trigger result's source label.
                         fields.insert(pointer, "trigger check result".into());
                     }
                 };
@@ -252,8 +275,140 @@ impl AppToolExecutor {
                 }
                 Ok((!sources.is_empty()).then_some(Returning::Hits(sources)))
             }
+            ToolMethod::WorldChanges | ToolMethod::AssetPageRead => {
+                self.returning_change_feed(method, result)
+            }
             _ => Ok(None),
         }
+    }
+
+    /// Publisher text in a change feed, including a comparison and the feed
+    /// embedded in an asset page. A clean feed does not raise the turn.
+    fn returning_change_feed(
+        &self,
+        method: ToolMethod,
+        result: &Value,
+    ) -> Result<Option<Returning>, BrokerError> {
+        let mut fields = BTreeMap::new();
+        let roots: Vec<(&str, &Value)> = if method == ToolMethod::AssetPageRead {
+            result
+                .get("sinceRead")
+                .map(|feed| ("/sinceRead", feed))
+                .into_iter()
+                .collect()
+        } else {
+            vec![("", result)]
+        };
+        for (prefix, root) in roots {
+            if let Some(rows) = root.get("changes").and_then(Value::as_array) {
+                for (index, row) in rows.iter().enumerate() {
+                    // A disputed or withdrawn row has no event Source. An empty
+                    // record id is not a Source, and looking it up fails the feed.
+                    // The displayed proposition also carries the claim's evidence,
+                    // which can be a publisher's even when the event Source is the user's.
+                    let event = row.pointer("/source/readArgs").and_then(read_target);
+                    let mut event_label = None;
+                    if let Some((record, revision, span)) = event {
+                        if let Some(source) = self.third_party_source(record, revision, span)? {
+                            event_label = Some(source.label);
+                        }
+                    }
+                    let mut evidence_label = None;
+                    if let Some(evidence) = row.get("evidence").and_then(Value::as_array) {
+                        for item in evidence {
+                            let Some((record, revision, span)) = read_target(item) else {
+                                continue;
+                            };
+                            if event.is_some_and(|(event_record, _, event_span)| {
+                                event_record == record && event_span == span
+                            }) {
+                                continue;
+                            }
+                            if let Some(source) = self.third_party_source(record, revision, span)? {
+                                evidence_label = Some(source.label);
+                                break;
+                            }
+                        }
+                    }
+                    if let Some(label) = event_label
+                        .clone()
+                        .or(evidence_label)
+                        .or_else(|| unresolved_label(row))
+                    {
+                        let pointer = format!("{prefix}/changes/{index}/proposition");
+                        if result.pointer(&pointer).and_then(Value::as_str).is_some() {
+                            fields.insert(pointer, label);
+                        }
+                    }
+                    // The event Source's title keeps that Source's own attribution.
+                    // A publisher claim does not relabel the user's supporting note.
+                    if let Some(label) = event_label {
+                        let pointer = format!("{prefix}/changes/{index}/source/title");
+                        if result.pointer(&pointer).and_then(Value::as_str).is_some() {
+                            fields.insert(pointer, label);
+                        }
+                    }
+                }
+            }
+            for side in ["from", "to"] {
+                // A blank title is a Source the cutoff has not reached. Its
+                // record is not looked up, so its title and URL cannot label
+                // a proposition that is still visible.
+                let title = root
+                    .pointer(&format!("/{side}/title"))
+                    .and_then(Value::as_str)
+                    .filter(|title| !title.is_empty());
+                let Some(_) = title else {
+                    continue;
+                };
+                let Some(record) = root
+                    .pointer(&format!("/{side}/recordId"))
+                    .and_then(Value::as_str)
+                    .filter(|id| !id.is_empty())
+                else {
+                    continue;
+                };
+                let Some(source) = self.third_party_source(record, None, "")? else {
+                    continue;
+                };
+                fields.insert(format!("{prefix}/{side}/title"), source.label);
+            }
+            for list in [
+                "ended_by_to",
+                "new_in_to",
+                "restated",
+                "not_restated",
+                "endedByTo",
+                "newInTo",
+                "notRestated",
+            ] {
+                let Some(rows) = root.get(list).and_then(Value::as_array) else {
+                    continue;
+                };
+                for (index, row) in rows.iter().enumerate() {
+                    if row.get("proposition").and_then(Value::as_str).is_none() {
+                        continue;
+                    }
+                    let mut label = None;
+                    if let Some(evidence) = row.get("evidence").and_then(Value::as_array) {
+                        for item in evidence {
+                            let Some((record, revision, span)) = read_target(item) else {
+                                continue;
+                            };
+                            if let Some(source) = self.third_party_source(record, revision, span)? {
+                                label = Some(source.label);
+                                break;
+                            }
+                        }
+                    }
+                    let label = label.or_else(|| unresolved_label(row));
+                    if let Some(label) = label {
+                        fields.insert(format!("{prefix}/{list}/{index}/proposition"), label);
+                    }
+                }
+            }
+        }
+        Ok((!fields.is_empty()).then_some(Returning::Fields(fields)))
     }
 
     fn receipt_carries_untrusted_text(&self, entry: &Value) -> bool {
@@ -476,11 +631,16 @@ impl AppToolExecutor {
         result: &Value,
         view: Option<&Value>,
     ) -> Result<Option<ReturningSource>, BrokerError> {
+        // A delivered view is already as of its date; a bare hit takes the
+        // turn's cutoff, so no later Source becomes its label.
+        let cutoff =
+            crate::commands::knowledge::as_of::Cutoff::parse(self.capture.turn_as_of.as_deref());
         let (targets, unresolved) = crate::commands::knowledge::returning_world_sources(
             &self.state,
             &self.loupist_id,
             result,
             view,
+            cutoff,
         )
         .map_err(command_error)?;
         if unresolved {

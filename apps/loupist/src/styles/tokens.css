@@ -407,6 +407,12 @@ button, input, textarea, select {
 @media (forced-colors: active) {
   :focus-visible { outline-color: CanvasText !important; }
 }
+/* An option list shows the option under the pointer or the arrow keys by its highlight (`focus:bg-accent`),
+   as a macOS pop-up menu does: the list and its options draw no ring, which the list's scrolling edge would clip. */
+[data-slot="select-content"]:focus-visible, [data-slot="select-item"]:focus-visible { outline: none !important; }
+@media (forced-colors: active) {
+  [data-slot="select-item"]:focus { outline: 2px solid Highlight !important; outline-offset: -2px !important; }
+}
 /* A menu takes focus itself when a press opens it; its items show keyboard focus, so the menu never rings. */
 [data-slot="dropdown-menu-content"]:focus-visible { outline: none !important; }
 /* A menu trigger and items that a press reached (`lib/inputModality`) show no ring, even where WebKit counts

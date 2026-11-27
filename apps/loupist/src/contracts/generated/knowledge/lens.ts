@@ -1,7 +1,8 @@
 // Generated from Rust by ts-rs; do not edit. Regenerate with:
 // LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract
 
-import type { Basis, BasisChip, IdeaState, LensKind, Origin, SectionKey } from "../knowledge/lens_page";
+import type { LearnedMark } from "../knowledge/learned_marks";
+import type { Basis, BasisChip, IdeaState, LensKind, Origin, SectionKey, SectionRole } from "../knowledge/lens_page";
 import type { ScriptRef } from "../store/scripts";
 
 export type AnchorRole = "subject" | "mention" | "applied";
@@ -47,6 +48,13 @@ export type LensLogEntry = {
   undoesOpId?: string,
 };
 
+export type MessageUndo = {
+  /** Sections this message filed that were restored. */
+  undone: number,
+  /** Sections this message filed that a later edit kept. */
+  kept: number,
+};
+
 /** One page as the bridge and the `lens_read` tool deliver it. */
 export type PageRead = {
   recordId: string,
@@ -81,5 +89,11 @@ export type SectionView = {
   origin: Origin,
   contested: boolean,
   contestedClaimIds: Array<string>,
+  role?: SectionRole,
+  asOf?: string,
+  sinceMs?: number,
+  claimIds?: Array<string>,
   updatedAtMs: number,
+  /** The learning run that filed this section's newest op, while nothing changed it since. */
+  learned?: LearnedMark,
 };

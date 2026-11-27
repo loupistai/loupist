@@ -1,3 +1,4 @@
+import { SelectField, SelectItem } from "../ui/select";
 import { formatDate, formatDateTime, formatNumber } from "@/i18n/format";
 import i18n, { useTranslation } from "@/i18n";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -6,7 +7,7 @@ import { MoreHorizontalIcon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { ChartDataset, ChartDocument } from "../../types";
 import { datasetRows, numericValue, timestampValue } from "./dataset";
-import { drawingOverlays, indicatorConfig, periodFor, ticksClearOfLastPrice } from "./financialAdapter";
+import { drawingOverlays, fittedRange, formatChartPrice, indicatorConfig, periodFor, ticksClearOfLastPrice, ticksThatFit } from "./financialAdapter";
 import { customSeriesConfig } from "./customSeries";
 import { useChartTokens } from "./chartTokens";
 import { registerReviewedOverlays } from "./financialOverlays";
@@ -46,6 +47,18 @@ const NARROW_CHART_PX = 560;
 /** A panel chart shorter than this (the default bottom dock) shows the legend on hover; its header names the symbol. */
 const SHORT_CHART_PX = 260;
 const VOLUME_AVERAGES = [5, 10, 20];
+
+/** A month label is the widest date a daily chart prints; the measured string is only a width probe. */
+const AXIS_LABEL_PROBE = "Sep 2026";
+
+function axisLabelWidth(text: string): number {
+  const context = document.createElement("canvas").getContext("2d");
+  if (!context) return text.length * 7;
+  const family = getComputedStyle(document.body).fontFamily || "sans-serif";
+  context.font = `12px ${family}`;
+  const measured = context.measureText(text).width;
+  return measured > 0 ? measured : text.length * 7;
+}
 
 type ColorTokens = ReturnType<typeof useChartTokens>;
 
@@ -119,6 +132,10 @@ export default function FinancialChart({ chart, dataset, onAskRange, compact = f
   const [color, setColor] = useState(() => colors.accent);
   const [rangeStart, setRangeStart] = useState(0);
   const [rangeEnd, setRangeEnd] = useState(Math.max(0, dataset.rows.length - 1));
+  const rangeRef = useRef({ start: rangeStart, end: rangeEnd });
+  rangeRef.current = { start: rangeStart, end: rangeEnd };
+  const seriesCountRef = useRef(0);
+  const showRangeRef = useRef<() => void>(() => {});
   const chartStyles = (): DeepPartial<Styles> => ({
         grid: {
           horizontal: { color: colors.border, style: "dashed" },
@@ -160,6 +177,9 @@ export default function FinancialChart({ chart, dataset, onAskRange, compact = f
       });
   const rows = useMemo(() => datasetRows(dataset), [dataset]);
   const timeColumn = chart.view.kind === "candlestick" ? chart.view.time : "";
+  const pricePrecision = chart.view.kind === "candlestick" ? chart.view.price_precision ?? 2 : 2;
+  const latestClose = chart.view.kind === "candlestick" ? numericValue(rows.at(-1)?.[chart.view.close]) : undefined;
+  const chartDescription = latestClose === undefined ? undefined : t("artifactChart.latestClose", { value1: formatChartPrice(latestClose, pricePrecision) });
   const saveDrawings = () => {
     const current = instanceRef.current;
     if (!current) return;
@@ -214,7 +234,8 @@ export default function FinancialChart({ chart, dataset, onAskRange, compact = f
         }),
       },
       layout: {
-        barSpaceLimit: { min: 2, max: 36 },
+        // A year of daily bars has to fit a docked panel; the library's 10px default shows only the last month.
+        barSpaceLimit: { min: 0.05, max: 36 },
       },
       styles: chartStyles(),
     });
@@ -265,11 +286,38 @@ export default function FinancialChart({ chart, dataset, onAskRange, compact = f
       const paneHeight = Math.max(1, height * 0.65);
       const top = hoverLegend ? 0.2 : Math.min(0.45, Math.max(0.2, LEGEND_CLEARANCE_PX / paneHeight));
       // A short price pane (an answer card, a hover-legend chart) keeps room under the lowest bar for its low-price mark.
-      instance.overrideYAxis?.({ paneId: "candle_pane", gap: { top, bottom: hoverLegend || compact ? 0.18 : 0.08 }, createTicks: ({ defaultTicks }) => ticksClearOfLastPrice(defaultTicks, lastClose) });
+      const precision = view.price_precision ?? 2;
+      instance.overrideYAxis?.({ paneId: "candle_pane", gap: { top, bottom: hoverLegend || compact ? 0.18 : 0.08 }, createTicks: ({ defaultTicks }) => ticksClearOfLastPrice(defaultTicks, lastClose).map((tick) => {
+        const value = Number(tick.value);
+        return Number.isFinite(value) ? { ...tick, text: formatChartPrice(value, precision) } : tick;
+      }) });
     };
+    seriesCountRef.current = bars.length;
+    // The selected From/To range, and on mount the whole series, stays in view. The rightmost
+    // date is shifted in so a center-aligned label is not cut off the plot.
+    const showSelectedRange = () => {
+      const width = instance.getSize?.("candle_pane", "main")?.width || container.clientWidth;
+      const count = seriesCountRef.current;
+      if (!width || !count) return;
+      const { start, end } = rangeRef.current;
+      const from = Math.max(0, Math.min(start, end, count - 1));
+      const to = Math.max(from, Math.min(Math.max(start, end), count - 1));
+      const endBar = bars[to];
+      const label = Math.max(axisLabelWidth(endBar ? rangeDateLabel(endBar.timestamp) : AXIS_LABEL_PROBE), axisLabelWidth(AXIS_LABEL_PROBE));
+      const fitted = fittedRange(width, to - from + 1, count, to, label);
+      if (!fitted) return;
+      instance.setLeftMinVisibleBarCount?.(0);
+      instance.setRightMinVisibleBarCount?.(0);
+      instance.setBarSpace?.(fitted.barSpace);
+      // The public type omits the second flag; without it the library stores the inset and does not redraw.
+      (instance.setOffsetRightDistance as (distance: number, update?: boolean) => void)?.(fitted.offsetRight, true);
+      instance.overrideXAxis?.({ createTicks: ({ defaultTicks, bounding }) => ticksThatFit(defaultTicks, bounding.width, axisLabelWidth) });
+    };
+    showRangeRef.current = showSelectedRange;
     fitPanes();
     instance.resize();
-    const observer = new ResizeObserver(() => { fitPanes(); instance.resize(); });
+    showSelectedRange();
+    const observer = new ResizeObserver(() => { fitPanes(); instance.resize(); showSelectedRange(); });
     observer.observe(container);
     return () => {
       observer.disconnect();
@@ -278,6 +326,8 @@ export default function FinancialChart({ chart, dataset, onAskRange, compact = f
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the chart is rebuilt only for new data or compact layout; the style and edit callbacks are read at build time.
   }, [chart, dataset, compact]);
+
+  useEffect(() => { showRangeRef.current(); }, [rangeStart, rangeEnd]);
 
   useEffect(() => {
     instanceRef.current?.setStyles(chartStyles());
@@ -318,12 +368,16 @@ export default function FinancialChart({ chart, dataset, onAskRange, compact = f
             <DropdownMenuItem onSelect={() => instanceRef.current?.scrollToRealTime()}>{t("financialChart.latest")}</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <label>{t("financialChart.from")}<select aria-label={t("financialChart.rangeStart")} value={rangeStart} onChange={(event) => setRangeStart(Number(event.target.value))}>{rows.map((row, index) => <option key={index} value={index}>{rangeDateLabel(row[timeColumn])}</option>)}</select></label>
-        <label>{t("financialChart.to")}<select aria-label={t("financialChart.rangeEnd")} value={rangeEnd} onChange={(event) => setRangeEnd(Number(event.target.value))}>{rows.map((row, index) => <option key={index} value={index}>{rangeDateLabel(row[timeColumn])}</option>)}</select></label>
+        <label>{t("financialChart.from")}<SelectField compact aria-label={t("financialChart.rangeStart")} value={String(rangeStart)} onValueChange={value => setRangeStart(Number(value))}>
+          {rows.map((row, index) => <SelectItem key={index} value={String(index)}>{rangeDateLabel(row[timeColumn])}</SelectItem>)}
+        </SelectField></label>
+        <label>{t("financialChart.to")}<SelectField compact aria-label={t("financialChart.rangeEnd")} value={String(rangeEnd)} onValueChange={value => setRangeEnd(Number(value))}>
+          {rows.map((row, index) => <SelectItem key={index} value={String(index)}>{rangeDateLabel(row[timeColumn])}</SelectItem>)}
+        </SelectField></label>
         {onAskRange && <button type="button" disabled={rangeStart > rangeEnd || !rows.length} onClick={() => onAskRange({ start: String(rows[rangeStart]?.[timeColumn]), end: String(rows[rangeEnd]?.[timeColumn]) })}>{t("financialChart.askAboutRange")}</button>}
         <output>{rangeStart <= rangeEnd ? t("financialChart.selectedBars", { count: rangeEnd - rangeStart + 1, formattedCount: formatNumber(rangeEnd - rangeStart + 1) }) : t("financialChart.chooseAStartBeforeTheEnd")}</output>
       </div>}
-      <div ref={containerRef} className="chart-financial-canvas" role="group" aria-label={t("financialChart.interactiveFinancialChart")} />
+      <div ref={containerRef} className="chart-financial-canvas" role="group" aria-label={t("financialChart.interactiveFinancialChart")} aria-description={chartDescription} />
     </div>
   );
 }

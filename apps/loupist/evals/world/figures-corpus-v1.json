@@ -1,0 +1,1004 @@
+{
+  "schema": "loupist-world-suite/1",
+  "suite": "world-figures-v1",
+  "version": 1,
+  "description": "Sixteen fictional Sources, two for each of eight market profiles, with every figure labelled as stated: metric, period, period end, basis, value, scale, unit and currency. `cells` and `profile` are grader-only and never ingested.",
+  "scenarios": [
+    {
+      "id": "FIG-US-1",
+      "title": "Halvorsen Devices quarterly report, fiscal quarter ended October 31, 2026",
+      "split": "figures",
+      "condition": "figures",
+      "world_enabled": true,
+      "profile": "us",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "fig-us-1",
+              "title": "Halvorsen Devices quarterly report, fiscal quarter ended October 31, 2026",
+              "text": "Halvorsen Devices, Inc. quarterly report for the fiscal quarter ended October 31, 2026. Net revenue was $1,482.6 million. Operating income was $163.1 million. Diluted earnings per share were $1.42. Gross margin was 41.5%.\n",
+              "origin": "https://fixtures.invalid/world/figures/fig-us-1",
+              "publication_time": "2026-11-24",
+              "acquired_at": "2026-11-24T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "metric": "Net revenue",
+          "period": "fiscal quarter ended October 31, 2026",
+          "period_end": "2026-10-31",
+          "basis": "actual",
+          "value": 1482.6,
+          "scale": 1000000.0,
+          "unit": "amount",
+          "currency": "USD"
+        },
+        {
+          "metric": "Operating income",
+          "period": "fiscal quarter ended October 31, 2026",
+          "period_end": "2026-10-31",
+          "basis": "actual",
+          "value": 163.1,
+          "scale": 1000000.0,
+          "unit": "amount",
+          "currency": "USD"
+        },
+        {
+          "metric": "Diluted earnings per share",
+          "period": "fiscal quarter ended October 31, 2026",
+          "period_end": "2026-10-31",
+          "basis": "actual",
+          "value": 1.42,
+          "scale": 1,
+          "unit": "amount",
+          "currency": "USD"
+        },
+        {
+          "metric": "Gross margin",
+          "period": "fiscal quarter ended October 31, 2026",
+          "period_end": "2026-10-31",
+          "basis": "actual",
+          "value": 41.5,
+          "scale": 1,
+          "unit": "percent",
+          "currency": null
+        }
+      ]
+    },
+    {
+      "id": "FIG-US-2",
+      "title": "Halvorsen Devices current report, November 24, 2026",
+      "split": "figures",
+      "condition": "figures",
+      "world_enabled": true,
+      "profile": "us",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "fig-us-2",
+              "title": "Halvorsen Devices current report, November 24, 2026",
+              "text": "Halvorsen Devices, Inc. current report dated November 24, 2026. For the fiscal year ending January 31, 2027, the company expects net revenue of approximately $6.0 billion and capital expenditures of approximately $420 million. The board declared a dividend of $0.28 per share for the fiscal quarter ended October 31, 2026.\n",
+              "origin": "https://fixtures.invalid/world/figures/fig-us-2",
+              "publication_time": "2026-11-24",
+              "acquired_at": "2026-11-24T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "metric": "net revenue",
+          "period": "fiscal year ending January 31, 2027",
+          "period_end": "2027-01-31",
+          "basis": "guidance",
+          "value": 6.0,
+          "scale": 1000000000.0,
+          "unit": "amount",
+          "currency": "USD"
+        },
+        {
+          "metric": "capital expenditures",
+          "period": "fiscal year ending January 31, 2027",
+          "period_end": "2027-01-31",
+          "basis": "guidance",
+          "value": 420,
+          "scale": 1000000.0,
+          "unit": "amount",
+          "currency": "USD"
+        },
+        {
+          "metric": "dividend",
+          "period": "fiscal quarter ended October 31, 2026",
+          "period_end": "2026-10-31",
+          "basis": "actual",
+          "value": 0.28,
+          "scale": 1,
+          "unit": "amount",
+          "currency": "USD"
+        }
+      ]
+    },
+    {
+      "id": "FIG-KR-1",
+      "title": "가람정밀 2026년 3분기 연결 실적",
+      "split": "figures",
+      "condition": "figures",
+      "world_enabled": true,
+      "profile": "korea",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "fig-kr-1",
+              "title": "가람정밀 2026년 3분기 연결 실적",
+              "text": "가람정밀(990431) 2026년 3분기(2026년 9월 30일 종료) 연결 실적. 매출액 1,234억 원, 영업이익 87억 원, 당기순이익 61억 원. 영업이익률 7.1%.\n",
+              "origin": "https://fixtures.invalid/world/figures/fig-kr-1",
+              "publication_time": "2026-11-12",
+              "acquired_at": "2026-11-12T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "metric": "매출액",
+          "period": "2026년 3분기",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 1234,
+          "scale": 100000000.0,
+          "unit": "amount",
+          "currency": "KRW"
+        },
+        {
+          "metric": "영업이익",
+          "period": "2026년 3분기",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 87,
+          "scale": 100000000.0,
+          "unit": "amount",
+          "currency": "KRW"
+        },
+        {
+          "metric": "당기순이익",
+          "period": "2026년 3분기",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 61,
+          "scale": 100000000.0,
+          "unit": "amount",
+          "currency": "KRW"
+        },
+        {
+          "metric": "영업이익률",
+          "period": "2026년 3분기",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 7.1,
+          "scale": 1,
+          "unit": "percent",
+          "currency": null
+        }
+      ]
+    },
+    {
+      "id": "FIG-KR-2",
+      "title": "가람정밀 영업실적 등에 대한 전망",
+      "split": "figures",
+      "condition": "figures",
+      "world_enabled": true,
+      "profile": "korea",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "fig-kr-2",
+              "title": "가람정밀 영업실적 등에 대한 전망",
+              "text": "가람정밀(990431) 영업실적 등에 대한 전망(공정공시), 2026년 11월 20일. 2026 사업연도(2026년 12월 31일 종료) 매출액 전망 5,200억 원, 영업이익 전망 410억 원. 2026년 9월 30일 현재 수주잔고는 1조 2,345억 원.\n",
+              "origin": "https://fixtures.invalid/world/figures/fig-kr-2",
+              "publication_time": "2026-11-20",
+              "acquired_at": "2026-11-20T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "metric": "매출액 전망",
+          "period": "2026 사업연도",
+          "period_end": "2026-12-31",
+          "basis": "forecast",
+          "value": 5200,
+          "scale": 100000000.0,
+          "unit": "amount",
+          "currency": "KRW"
+        },
+        {
+          "metric": "영업이익 전망",
+          "period": "2026 사업연도",
+          "period_end": "2026-12-31",
+          "basis": "forecast",
+          "value": 410,
+          "scale": 100000000.0,
+          "unit": "amount",
+          "currency": "KRW"
+        },
+        {
+          "metric": "수주잔고",
+          "period": "2026년 9월 30일 현재",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 12345,
+          "scale": 100000000.0,
+          "unit": "amount",
+          "currency": "KRW"
+        }
+      ]
+    },
+    {
+      "id": "FIG-JP-1",
+      "title": "灯台電子 2027年3月期 第2四半期決算短信",
+      "split": "figures",
+      "condition": "figures",
+      "world_enabled": true,
+      "profile": "japan",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "fig-jp-1",
+              "title": "灯台電子 2027年3月期 第2四半期決算短信",
+              "text": "灯台電子株式会社(証券コード 1188)2027年3月期 第2四半期(中間期)決算短信。2026年4月1日から2026年9月30日までの連結売上高は4,218億円、営業利益は86億5,000万円、親会社株主に帰属する中間純利益は52億円だった。中間配当は1株当たり24円とする。\n",
+              "origin": "https://fixtures.invalid/world/figures/fig-jp-1",
+              "publication_time": "2026-11-06",
+              "acquired_at": "2026-11-06T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "metric": "連結売上高",
+          "period": "2026年4月1日から2026年9月30日まで",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 4218,
+          "scale": 100000000.0,
+          "unit": "amount",
+          "currency": "JPY"
+        },
+        {
+          "metric": "営業利益",
+          "period": "2026年4月1日から2026年9月30日まで",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 86.5,
+          "scale": 100000000.0,
+          "unit": "amount",
+          "currency": "JPY"
+        },
+        {
+          "metric": "親会社株主に帰属する中間純利益",
+          "period": "2026年4月1日から2026年9月30日まで",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 52,
+          "scale": 100000000.0,
+          "unit": "amount",
+          "currency": "JPY"
+        },
+        {
+          "metric": "中間配当",
+          "period": "第2四半期(中間期)",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 24,
+          "scale": 1,
+          "unit": "amount",
+          "currency": "JPY"
+        }
+      ]
+    },
+    {
+      "id": "FIG-JP-2",
+      "title": "灯台電子 2027年3月期 通期連結業績予想",
+      "split": "figures",
+      "condition": "figures",
+      "world_enabled": true,
+      "profile": "japan",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "fig-jp-2",
+              "title": "灯台電子 2027年3月期 通期連結業績予想",
+              "text": "灯台電子株式会社(証券コード 1188)2027年3月期 通期連結業績予想(2026年11月6日公表)。売上高8,600億円、営業利益190億円、年間配当予想は1株当たり48円。\n",
+              "origin": "https://fixtures.invalid/world/figures/fig-jp-2",
+              "publication_time": "2026-11-06",
+              "acquired_at": "2026-11-06T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "metric": "売上高",
+          "period": "2027年3月期",
+          "period_end": "2027-03",
+          "basis": "forecast",
+          "value": 8600,
+          "scale": 100000000.0,
+          "unit": "amount",
+          "currency": "JPY"
+        },
+        {
+          "metric": "営業利益",
+          "period": "2027年3月期",
+          "period_end": "2027-03",
+          "basis": "forecast",
+          "value": 190,
+          "scale": 100000000.0,
+          "unit": "amount",
+          "currency": "JPY"
+        },
+        {
+          "metric": "年間配当予想",
+          "period": "2027年3月期",
+          "period_end": "2027-03",
+          "basis": "forecast",
+          "value": 48,
+          "scale": 1,
+          "unit": "amount",
+          "currency": "JPY"
+        }
+      ]
+    },
+    {
+      "id": "FIG-DE-1",
+      "title": "Lindenhof Maschinenbau Halbjahresfinanzbericht zum 30. Juni 2026",
+      "split": "figures",
+      "condition": "figures",
+      "world_enabled": true,
+      "profile": "germany",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "fig-de-1",
+              "title": "Lindenhof Maschinenbau Halbjahresfinanzbericht zum 30. Juni 2026",
+              "text": "Lindenhof Maschinenbau AG, Halbjahresfinanzbericht zum 30. Juni 2026. Umsatzerlöse im ersten Halbjahr 2026: 1.482,6 Mio. EUR. EBIT im ersten Halbjahr 2026: 118,3 Mio. EUR. EBIT-Marge im ersten Halbjahr 2026: 8,0 %. Auftragsbestand zum 30. Juni 2026: 2,1 Mrd. EUR.\n",
+              "origin": "https://fixtures.invalid/world/figures/fig-de-1",
+              "publication_time": "2026-08-06",
+              "acquired_at": "2026-08-06T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "metric": "Umsatzerlöse",
+          "period": "erstes Halbjahr 2026",
+          "period_end": "2026-06-30",
+          "basis": "actual",
+          "value": 1482.6,
+          "scale": 1000000.0,
+          "unit": "amount",
+          "currency": "EUR"
+        },
+        {
+          "metric": "EBIT",
+          "period": "erstes Halbjahr 2026",
+          "period_end": "2026-06-30",
+          "basis": "actual",
+          "value": 118.3,
+          "scale": 1000000.0,
+          "unit": "amount",
+          "currency": "EUR"
+        },
+        {
+          "metric": "EBIT-Marge",
+          "period": "erstes Halbjahr 2026",
+          "period_end": "2026-06-30",
+          "basis": "actual",
+          "value": 8.0,
+          "scale": 1,
+          "unit": "percent",
+          "currency": null
+        },
+        {
+          "metric": "Auftragsbestand",
+          "period": "zum 30. Juni 2026",
+          "period_end": "2026-06-30",
+          "basis": "actual",
+          "value": 2.1,
+          "scale": 1000000000.0,
+          "unit": "amount",
+          "currency": "EUR"
+        }
+      ]
+    },
+    {
+      "id": "FIG-DE-2",
+      "title": "Lindenhof Maschinenbau Ad-hoc-Mitteilung vom 28. Oktober 2026",
+      "split": "figures",
+      "condition": "figures",
+      "world_enabled": true,
+      "profile": "germany",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "fig-de-2",
+              "title": "Lindenhof Maschinenbau Ad-hoc-Mitteilung vom 28. Oktober 2026",
+              "text": "Lindenhof Maschinenbau AG, Ad-hoc-Mitteilung vom 28. Oktober 2026. Für das Geschäftsjahr 2026 (1. Januar bis 31. Dezember 2026) erwartet der Vorstand nun Umsatzerlöse von rund 2,85 Mrd. EUR und ein EBIT von rund 210 Mio. EUR. Die Dividende für das Geschäftsjahr 2025 (1. Januar bis 31. Dezember 2025) betrug 1,20 EUR je Aktie.\n",
+              "origin": "https://fixtures.invalid/world/figures/fig-de-2",
+              "publication_time": "2026-10-28",
+              "acquired_at": "2026-10-28T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "metric": "Umsatzerlöse",
+          "period": "Geschäftsjahr 2026",
+          "period_end": "2026-12-31",
+          "basis": "guidance",
+          "value": 2.85,
+          "scale": 1000000000.0,
+          "unit": "amount",
+          "currency": "EUR"
+        },
+        {
+          "metric": "EBIT",
+          "period": "Geschäftsjahr 2026",
+          "period_end": "2026-12-31",
+          "basis": "guidance",
+          "value": 210,
+          "scale": 1000000.0,
+          "unit": "amount",
+          "currency": "EUR"
+        },
+        {
+          "metric": "Dividende",
+          "period": "Geschäftsjahr 2025",
+          "period_end": "2025-12-31",
+          "basis": "actual",
+          "value": 1.2,
+          "scale": 1,
+          "unit": "amount",
+          "currency": "EUR"
+        }
+      ]
+    },
+    {
+      "id": "FIG-UK-1",
+      "title": "Marlow & Finch interim results for the six months ended 30 September 2026",
+      "split": "figures",
+      "condition": "figures",
+      "world_enabled": true,
+      "profile": "united_kingdom",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "fig-uk-1",
+              "title": "Marlow & Finch interim results for the six months ended 30 September 2026",
+              "text": "Marlow & Finch plc, interim results for the six months ended 30 September 2026. Revenue was £318.4m. Adjusted operating profit was £27.9m. Basic earnings per share were 18.6p. The interim dividend is 4.6p per share.\n",
+              "origin": "https://fixtures.invalid/world/figures/fig-uk-1",
+              "publication_time": "2026-11-18",
+              "acquired_at": "2026-11-18T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "metric": "Revenue",
+          "period": "six months ended 30 September 2026",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 318.4,
+          "scale": 1000000.0,
+          "unit": "amount",
+          "currency": "GBP"
+        },
+        {
+          "metric": "Adjusted operating profit",
+          "period": "six months ended 30 September 2026",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 27.9,
+          "scale": 1000000.0,
+          "unit": "amount",
+          "currency": "GBP"
+        },
+        {
+          "metric": "Basic earnings per share",
+          "period": "six months ended 30 September 2026",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 18.6,
+          "scale": 0.01,
+          "unit": "amount",
+          "currency": "GBP"
+        },
+        {
+          "metric": "interim dividend",
+          "period": "six months ended 30 September 2026",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 4.6,
+          "scale": 0.01,
+          "unit": "amount",
+          "currency": "GBP"
+        }
+      ]
+    },
+    {
+      "id": "FIG-UK-2",
+      "title": "Marlow & Finch trading update, 14/01/2027",
+      "split": "figures",
+      "condition": "figures",
+      "world_enabled": true,
+      "profile": "united_kingdom",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "fig-uk-2",
+              "title": "Marlow & Finch trading update, 14/01/2027",
+              "text": "Marlow & Finch plc, trading update, 14/01/2027. For the year ending 31 March 2027 the board expects revenue of about £655m and adjusted operating profit of about £60m. Company-compiled analyst consensus for adjusted operating profit for the year ending 31 March 2027 is £58.4m. Net debt at 31 December 2026 was £112.5m.\n",
+              "origin": "https://fixtures.invalid/world/figures/fig-uk-2",
+              "publication_time": "2027-01-14",
+              "acquired_at": "2027-01-14T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "metric": "revenue",
+          "period": "year ending 31 March 2027",
+          "period_end": "2027-03-31",
+          "basis": "guidance",
+          "value": 655,
+          "scale": 1000000.0,
+          "unit": "amount",
+          "currency": "GBP"
+        },
+        {
+          "metric": "adjusted operating profit",
+          "period": "year ending 31 March 2027",
+          "period_end": "2027-03-31",
+          "basis": "guidance",
+          "value": 60,
+          "scale": 1000000.0,
+          "unit": "amount",
+          "currency": "GBP"
+        },
+        {
+          "metric": "analyst consensus for adjusted operating profit",
+          "period": "year ending 31 March 2027",
+          "period_end": "2027-03-31",
+          "basis": "estimate",
+          "value": 58.4,
+          "scale": 1000000.0,
+          "unit": "amount",
+          "currency": "GBP"
+        },
+        {
+          "metric": "Net debt",
+          "period": "at 31 December 2026",
+          "period_end": "2026-12-31",
+          "basis": "actual",
+          "value": 112.5,
+          "scale": 1000000.0,
+          "unit": "amount",
+          "currency": "GBP"
+        }
+      ]
+    },
+    {
+      "id": "FIG-IN-1",
+      "title": "Saraswati Looms results for the quarter ended 30 September 2026",
+      "split": "figures",
+      "condition": "figures",
+      "world_enabled": true,
+      "profile": "india",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "fig-in-1",
+              "title": "Saraswati Looms results for the quarter ended 30 September 2026",
+              "text": "Saraswati Looms Limited, unaudited results for the quarter ended 30 September 2026 (Q2 FY2026-27). Revenue from operations was ₹642.80 crore. Profit after tax was ₹41.25 crore. Employee benefit expense was ₹9,875.40 lakh. Basic earnings per share were ₹8.25.\n",
+              "origin": "https://fixtures.invalid/world/figures/fig-in-1",
+              "publication_time": "2026-11-09",
+              "acquired_at": "2026-11-09T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "metric": "Revenue from operations",
+          "period": "quarter ended 30 September 2026",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 642.8,
+          "scale": 10000000.0,
+          "unit": "amount",
+          "currency": "INR"
+        },
+        {
+          "metric": "Profit after tax",
+          "period": "quarter ended 30 September 2026",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 41.25,
+          "scale": 10000000.0,
+          "unit": "amount",
+          "currency": "INR"
+        },
+        {
+          "metric": "Employee benefit expense",
+          "period": "quarter ended 30 September 2026",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 9875.4,
+          "scale": 100000.0,
+          "unit": "amount",
+          "currency": "INR"
+        },
+        {
+          "metric": "Basic earnings per share",
+          "period": "quarter ended 30 September 2026",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 8.25,
+          "scale": 1,
+          "unit": "amount",
+          "currency": "INR"
+        }
+      ]
+    },
+    {
+      "id": "FIG-IN-2",
+      "title": "Saraswati Looms investor presentation, 12 November 2026",
+      "split": "figures",
+      "condition": "figures",
+      "world_enabled": true,
+      "profile": "india",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "fig-in-2",
+              "title": "Saraswati Looms investor presentation, 12 November 2026",
+              "text": "Saraswati Looms Limited, investor presentation, 12 November 2026. For the financial year ending 31 March 2027 (FY2026-27) management guides revenue from operations of about ₹2,600 crore and capital expenditure of about ₹180 crore. The order book at 30 September 2026 stood at ₹1,150 crore.\n",
+              "origin": "https://fixtures.invalid/world/figures/fig-in-2",
+              "publication_time": "2026-11-12",
+              "acquired_at": "2026-11-12T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "metric": "revenue from operations",
+          "period": "financial year ending 31 March 2027",
+          "period_end": "2027-03-31",
+          "basis": "guidance",
+          "value": 2600,
+          "scale": 10000000.0,
+          "unit": "amount",
+          "currency": "INR"
+        },
+        {
+          "metric": "capital expenditure",
+          "period": "financial year ending 31 March 2027",
+          "period_end": "2027-03-31",
+          "basis": "guidance",
+          "value": 180,
+          "scale": 10000000.0,
+          "unit": "amount",
+          "currency": "INR"
+        },
+        {
+          "metric": "order book",
+          "period": "at 30 September 2026",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 1150,
+          "scale": 10000000.0,
+          "unit": "amount",
+          "currency": "INR"
+        }
+      ]
+    },
+    {
+      "id": "FIG-BR-1",
+      "title": "Serra Azul Papel e Celulose: resultados do terceiro trimestre de 2026",
+      "split": "figures",
+      "condition": "figures",
+      "world_enabled": true,
+      "profile": "brazil",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "fig-br-1",
+              "title": "Serra Azul Papel e Celulose: resultados do terceiro trimestre de 2026",
+              "text": "Serra Azul Papel e Celulose S.A., resultados do terceiro trimestre de 2026 (trimestre encerrado em 30 de setembro de 2026). Receita líquida: R$ 1,84 bilhão. EBITDA ajustado: R$ 612,4 milhões. Margem EBITDA ajustada: 33,3%. Lucro líquido: R$ 218,7 milhões.\n",
+              "origin": "https://fixtures.invalid/world/figures/fig-br-1",
+              "publication_time": "2026-11-05",
+              "acquired_at": "2026-11-05T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "metric": "Receita líquida",
+          "period": "terceiro trimestre de 2026",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 1.84,
+          "scale": 1000000000.0,
+          "unit": "amount",
+          "currency": "BRL"
+        },
+        {
+          "metric": "EBITDA ajustado",
+          "period": "terceiro trimestre de 2026",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 612.4,
+          "scale": 1000000.0,
+          "unit": "amount",
+          "currency": "BRL"
+        },
+        {
+          "metric": "Margem EBITDA ajustada",
+          "period": "terceiro trimestre de 2026",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 33.3,
+          "scale": 1,
+          "unit": "percent",
+          "currency": null
+        },
+        {
+          "metric": "Lucro líquido",
+          "period": "terceiro trimestre de 2026",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 218.7,
+          "scale": 1000000.0,
+          "unit": "amount",
+          "currency": "BRL"
+        }
+      ]
+    },
+    {
+      "id": "FIG-BR-2",
+      "title": "Serra Azul Papel e Celulose: fato relevante de 10 de dezembro de 2026",
+      "split": "figures",
+      "condition": "figures",
+      "world_enabled": true,
+      "profile": "brazil",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "fig-br-2",
+              "title": "Serra Azul Papel e Celulose: fato relevante de 10 de dezembro de 2026",
+              "text": "Serra Azul Papel e Celulose S.A., fato relevante de 10 de dezembro de 2026. Para o exercício a encerrar-se em 31 de dezembro de 2027, a companhia projeta investimentos de R$ 2,3 bilhões e produção de celulose de 4,1 milhões de toneladas. Dívida líquida em 30 de setembro de 2026: R$ 9,6 bilhões.\n",
+              "origin": "https://fixtures.invalid/world/figures/fig-br-2",
+              "publication_time": "2026-12-10",
+              "acquired_at": "2026-12-10T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "metric": "investimentos",
+          "period": "exercício a encerrar-se em 31 de dezembro de 2027",
+          "period_end": "2027-12-31",
+          "basis": "guidance",
+          "value": 2.3,
+          "scale": 1000000000.0,
+          "unit": "amount",
+          "currency": "BRL"
+        },
+        {
+          "metric": "produção de celulose",
+          "period": "exercício a encerrar-se em 31 de dezembro de 2027",
+          "period_end": "2027-12-31",
+          "basis": "guidance",
+          "value": 4.1,
+          "scale": 1000000.0,
+          "unit": "count",
+          "currency": null
+        },
+        {
+          "metric": "Dívida líquida",
+          "period": "em 30 de setembro de 2026",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 9.6,
+          "scale": 1000000000.0,
+          "unit": "amount",
+          "currency": "BRL"
+        }
+      ]
+    },
+    {
+      "id": "FIG-HK-1",
+      "title": "岚川新材料2026年第三季度报告",
+      "split": "figures",
+      "condition": "figures",
+      "world_enabled": true,
+      "profile": "hong_kong_china",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "fig-hk-1",
+              "title": "岚川新材料2026年第三季度报告",
+              "text": "岚川新材料股份有限公司(证券代码:990618)2026年第三季度报告(报告期:2026年7月1日至2026年9月30日)。营业收入21.3亿元,归属于上市公司股东的净利润1.86亿元,基本每股收益0.42元,毛利率18.4%。\n",
+              "origin": "https://fixtures.invalid/world/figures/fig-hk-1",
+              "publication_time": "2026-10-29",
+              "acquired_at": "2026-10-29T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "metric": "营业收入",
+          "period": "2026年第三季度",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 21.3,
+          "scale": 100000000.0,
+          "unit": "amount",
+          "currency": "CNY"
+        },
+        {
+          "metric": "归属于上市公司股东的净利润",
+          "period": "2026年第三季度",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 1.86,
+          "scale": 100000000.0,
+          "unit": "amount",
+          "currency": "CNY"
+        },
+        {
+          "metric": "基本每股收益",
+          "period": "2026年第三季度",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 0.42,
+          "scale": 1,
+          "unit": "amount",
+          "currency": "CNY"
+        },
+        {
+          "metric": "毛利率",
+          "period": "2026年第三季度",
+          "period_end": "2026-09-30",
+          "basis": "actual",
+          "value": 18.4,
+          "scale": 1,
+          "unit": "percent",
+          "currency": null
+        }
+      ]
+    },
+    {
+      "id": "FIG-HK-2",
+      "title": "港湾恒信控股截至2026年6月30日止六个月中期业绩",
+      "split": "figures",
+      "condition": "figures",
+      "world_enabled": true,
+      "profile": "hong_kong_china",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "fig-hk-2",
+              "title": "港湾恒信控股截至2026年6月30日止六个月中期业绩",
+              "text": "港湾恒信控股有限公司(股份代号:4477)截至2026年6月30日止六个月中期业绩。收益为38.6亿港元,股东应占溢利为4.2亿港元,中期股息每股0.35港元。本公司预期截至2026年12月31日止年度资本开支约为9,500万港元。\n",
+              "origin": "https://fixtures.invalid/world/figures/fig-hk-2",
+              "publication_time": "2026-08-27",
+              "acquired_at": "2026-08-27T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "cells": [
+        {
+          "metric": "收益",
+          "period": "截至2026年6月30日止六个月",
+          "period_end": "2026-06-30",
+          "basis": "actual",
+          "value": 38.6,
+          "scale": 100000000.0,
+          "unit": "amount",
+          "currency": "HKD"
+        },
+        {
+          "metric": "股东应占溢利",
+          "period": "截至2026年6月30日止六个月",
+          "period_end": "2026-06-30",
+          "basis": "actual",
+          "value": 4.2,
+          "scale": 100000000.0,
+          "unit": "amount",
+          "currency": "HKD"
+        },
+        {
+          "metric": "中期股息",
+          "period": "截至2026年6月30日止六个月",
+          "period_end": "2026-06-30",
+          "basis": "actual",
+          "value": 0.35,
+          "scale": 1,
+          "unit": "amount",
+          "currency": "HKD"
+        },
+        {
+          "metric": "资本开支",
+          "period": "截至2026年12月31日止年度",
+          "period_end": "2026-12-31",
+          "basis": "forecast",
+          "value": 9500,
+          "scale": 10000.0,
+          "unit": "amount",
+          "currency": "HKD"
+        }
+      ]
+    }
+  ]
+}

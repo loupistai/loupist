@@ -265,6 +265,7 @@ fn read_cited_filing(
                 }),
             },
             "answer",
+            crate::knowledge::JobOrigin::Chat,
             None,
         )
     })

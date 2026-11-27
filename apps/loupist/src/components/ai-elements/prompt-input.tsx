@@ -627,8 +627,21 @@ export const PromptInputButton = ({
   const newSize =
     size ?? (Children.count(props.children) > 1 ? "sm" : "icon-sm");
 
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => {
+    const node = buttonRef.current;
+    if (!node) return undefined;
+    // A menu trigger sets data-state="open" on this button. The tooltip would otherwise stay up over the menu.
+    const sync = () => setMenuOpen(node.dataset.state === "open");
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(node, { attributes: true, attributeFilter: ["data-state"] });
+    return () => observer.disconnect();
+  }, []);
   const button = (
     <InputGroupButton
+      ref={buttonRef}
       className={cn(className)}
       size={newSize}
       type="button"
@@ -647,7 +660,7 @@ export const PromptInputButton = ({
   const side = typeof tooltip === "string" ? "top" : (tooltip.side ?? "top");
 
   return (
-    <Tooltip>
+    <Tooltip open={menuOpen ? false : undefined}>
       <TooltipTrigger asChild>{button}</TooltipTrigger>
       <TooltipContent side={side}>
         {tooltipContent}

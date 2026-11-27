@@ -165,16 +165,12 @@ export async function verifyChatTransitions(browser, { open, capture, cases }) {
   for (const locale of ["ko", "en"]) for (const nearTop of [false, true]) {
     await setWindowSize(browser, { width: 1120, height: 780 });
     await open(nearTop ? "bot-quick-answer" : "bot-activity-layout", locale);
-    const correct = `${latest} .answer-feedback button[aria-expanded]`;
-    const actions = [correct, `${latest} .turn-footer .message-action-bar > .message-actions button`,
-      `${latest} .answer-feedback button[aria-pressed]:nth-of-type(1)`, `${latest} .answer-feedback button[aria-pressed]:nth-of-type(2)`];
-    for (const [index, action] of actions.entries()) {
-      await browser.execute((selector) => document.querySelector(selector).focus({ preventScroll: true }), action);
-      await browser.waitUntil(async () => Boolean(await browser.execute(measureTooltip, action)), { timeout: 5_000, interval: 50 });
-      assertTooltip(await record(`answer-tooltip-${locale}-${nearTop ? "near-top" : "at-end"}-${index}`, measureTooltip, action));
-    }
+    const copy = `${latest} .turn-footer .message-action-bar > .message-actions button`;
+    await browser.execute((selector) => document.querySelector(selector).focus({ preventScroll: true }), copy);
+    await browser.waitUntil(async () => Boolean(await browser.execute(measureTooltip, copy)), { timeout: 5_000, interval: 50 });
+    assertTooltip(await record(`answer-tooltip-${locale}-${nearTop ? "near-top" : "at-end"}-copy`, measureTooltip, copy));
     await setWindowSize(browser, { width: 880, height: 780 });
-    const resized = await record(`answer-tooltip-${locale}-${nearTop ? "near-top" : "at-end"}-resized`, measureTooltip, actions.at(-1));
+    const resized = await record(`answer-tooltip-${locale}-${nearTop ? "near-top" : "at-end"}-resized`, measureTooltip, copy);
     if (resized) assertTooltip(resized);
   }
 }

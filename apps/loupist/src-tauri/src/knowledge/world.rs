@@ -10,10 +10,12 @@ use super::model::{
     mint_id, validate_knowledge_id, validate_loupist_id, validate_text, validate_time,
     validate_time_point, validate_token, DependencyRole, EvidenceRevision, GraphClaim,
     GraphCoverage, GraphEdge, GraphNode, IndexingState, QueryScan, RecordKind, SealWorld,
-    WorldGraphQuery, WorldGraphView, WorldRevision, WorldSnapshotBody, MAX_WORLD_CLAIMS,
-    MAX_WORLD_NODES,
+    WorldGraphQuery, WorldGraphView, WorldRevision, WorldSnapshotBody, WorldTemporal,
+    CONFLICTS_WITH_CLAIM, END_BASIS, MAX_WORLD_CLAIMS, MAX_WORLD_NODES, SUPERSEDED_BY_CLAIM,
+    SUPERSEDED_BY_SPAN,
 };
 use super::revision::{normalize_dependencies, publish_revision, visible_by_digest};
+use super::world_episodes::WorldEpisode;
 use super::world_filter::{filter as filter_world, WorldFilters};
 use crate::store::user_context::MapContextItem;
 
@@ -30,6 +32,8 @@ struct PublicationOrigin<'a> {
     message_id: Option<&'a str>,
     source: Option<WorldGrowthSource>,
     other: Option<serde_json::Value>,
+    episode: Option<WorldEpisode>,
+    temporal: Option<WorldTemporal>,
 }
 
 pub(super) fn seal_world_with_actor(
@@ -53,6 +57,7 @@ pub(super) fn seal_world_with_actor(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn seal_world_from_source(
     tx: &Transaction<'_>,
     request: SealWorld,
@@ -60,6 +65,8 @@ pub(super) fn seal_world_from_source(
     message_id: Option<&str>,
     source: Option<WorldGrowthSource>,
     followed: &[MapContextItem],
+    episode: WorldEpisode,
+    temporal: Option<WorldTemporal>,
 ) -> KnowledgeResult<WorldRevision> {
     seal_world_with_origin(
         tx,
@@ -69,6 +76,8 @@ pub(super) fn seal_world_from_source(
             chat_id,
             message_id,
             source,
+            episode: Some(episode),
+            temporal,
             other: None,
         },
         followed,
@@ -97,9 +106,9 @@ pub(super) fn seal_world_with_provenance(
 
 fn seal_world_with_origin(
     tx: &Transaction<'_>,
-    request: SealWorld,
+    mut request: SealWorld,
     actor: &str,
-    origin: PublicationOrigin<'_>,
+    mut origin: PublicationOrigin<'_>,
     followed: &[MapContextItem],
 ) -> KnowledgeResult<WorldRevision> {
     validate_loupist_id(&request.loupist_id)?;
@@ -110,23 +119,63 @@ fn seal_world_with_origin(
         return Err(KnowledgeError::Invalid("record is not World"));
     }
     require_edit(&module, &request.loupist_id)?;
+    let previous = module
+        .head_revision_id
+        .as_deref()
+        .map(|id| {
+            let revision = super::revision::load_revision(tx, id)?;
+            let body = from_json::<WorldSnapshotBody>(&revision.payload_json)?;
+            super::world_followups::reconcile_effective_ends(
+                tx,
+                &request.loupist_id,
+                &revision,
+                &body,
+                request.at_ms,
+            )?;
+            Ok::<_, KnowledgeError>(body)
+        })
+        .transpose()?;
+    if actor == "import" {
+        let prior: std::collections::BTreeMap<_, _> = previous
+            .iter()
+            .flat_map(|body| &body.claims)
+            .map(|claim| (&claim.id, &claim.qualifiers))
+            .collect();
+        for claim in &mut request.claims {
+            let qualifiers = prior.get(&claim.id);
+            claim.qualifiers.retain(|item| {
+                !super::model::is_temporal_qualifier(&item.key)
+                    || qualifiers.is_some_and(|previous| previous.contains(item))
+            });
+        }
+    }
+    let mut temporal = origin.temporal.take().unwrap_or_else(|| {
+        previous
+            .as_ref()
+            .map(|previous| previous.temporal.clone())
+            .unwrap_or_default()
+    });
+    let claim_ids: BTreeSet<&str> = request
+        .claims
+        .iter()
+        .map(|claim| claim.id.as_str())
+        .collect();
+    temporal.links.retain(|link| {
+        claim_ids.contains(link.left.as_str()) && claim_ids.contains(link.right.as_str())
+    });
+    temporal
+        .assertions
+        .retain(|id, _| claim_ids.contains(id.as_str()));
     let body = normalize_world(WorldSnapshotBody {
         nodes: request.nodes,
         claims: request.claims,
         annotations: request.annotations,
         relation_vocabulary: Vec::new(),
+        temporal,
     })?;
     authorize_spans(tx, &request.loupist_id, &body)?;
     let dependencies = validate_world_dependencies(tx, &request.loupist_id, &request.dependencies)?;
     let payload = to_value(&body)?;
-    let previous = module
-        .head_revision_id
-        .as_deref()
-        .map(|id| {
-            super::revision::load_revision(tx, id)
-                .and_then(|revision| from_json::<WorldSnapshotBody>(&revision.payload_json))
-        })
-        .transpose()?;
     let published = publish_revision(
         tx,
         &module,
@@ -152,7 +201,12 @@ fn seal_world_with_origin(
         source: origin.source,
         fact_subject_id: None,
     });
-    super::growth::world_diff(tx, &event, previous.as_ref(), &body)?;
+    let changes = super::growth::world_diff(tx, &event, previous.as_ref(), &body)?;
+    if let Some(mut episode) = origin.episode {
+        episode.sealed_revision_id = published.revision_id.clone();
+        episode.changes = changes;
+        super::world_episodes::insert(tx, &episode)?;
+    }
     super::world_followups::after_seal(
         tx,
         &request.loupist_id,
@@ -218,7 +272,7 @@ pub(super) fn query_world(
         "search": query.search,
         "statuses": query.statuses,
         "publicationTimes": query.publication_times,
-        "publishedBy": query.published_by,
+        "asOf": query.as_of,
     });
     let filter_hash = digest_json(&filter)?;
     let after = match &query.cursor {
@@ -445,12 +499,15 @@ fn page_claims(
 }
 
 fn edge_from_claim(claim: &GraphClaim) -> GraphEdge {
+    let (ended, end) = super::world_changes::ended_fields(claim);
     GraphEdge {
         id: claim.id.clone(),
         relation: claim.relation.clone(),
         endpoints: claim.endpoints.clone(),
         status: claim.status,
         claim: claim.clone(),
+        ended: ended.then_some(true),
+        end,
     }
 }
 
@@ -552,10 +609,33 @@ pub(super) fn normalize_world(mut body: WorldSnapshotBody) -> KnowledgeResult<Wo
             return Err(KnowledgeError::Invalid("claim qualifiers are invalid"));
         }
         let mut qualifier_keys = BTreeSet::new();
+        let mut conflicts = BTreeSet::new();
         for qualifier in &claim.qualifiers {
             validate_token(&qualifier.key, 64, "qualifier key is invalid")?;
             validate_text(&qualifier.value, 512, true, "qualifier value is invalid")?;
-            if !qualifier_keys.insert(qualifier.key.clone()) {
+            match qualifier.key.as_str() {
+                CONFLICTS_WITH_CLAIM => {
+                    validate_token(&qualifier.value, 128, "conflicting claim is invalid")?;
+                    if qualifier.value == claim.id
+                        || !conflicts.insert(qualifier.value.as_str())
+                        || conflicts.len() > 4
+                    {
+                        return Err(KnowledgeError::Invalid(
+                            "conflicting claim is duplicated or exceeds the limit",
+                        ));
+                    }
+                    continue;
+                }
+                SUPERSEDED_BY_SPAN => validate_knowledge_id(&qualifier.value, "spn")?,
+                SUPERSEDED_BY_CLAIM => {
+                    validate_token(&qualifier.value, 128, "ending claim is invalid")?
+                }
+                END_BASIS if !matches!(qualifier.value.as_str(), "reference" | "stated") => {
+                    return Err(KnowledgeError::Invalid("claim ending basis is invalid"));
+                }
+                _ => {}
+            }
+            if !qualifier_keys.insert(qualifier.key.as_str()) {
                 return Err(KnowledgeError::Invalid("qualifier key is duplicated"));
             }
         }
@@ -693,9 +773,14 @@ pub(super) fn authorize_spans(
 ) -> KnowledgeResult<()> {
     let mut authorized = BTreeSet::new();
     for claim in &body.claims {
-        for evidence in &claim.evidence {
-            if authorized.insert(evidence.span_id.as_str()) {
-                super::source::require_any_visible_span(tx, loupist_id, &evidence.span_id)?;
+        for span in claim
+            .evidence
+            .iter()
+            .map(|item| item.span_id.as_str())
+            .chain(claim.qualifier(SUPERSEDED_BY_SPAN))
+        {
+            if authorized.insert(span) {
+                super::source::require_any_visible_span(tx, loupist_id, span)?;
             }
         }
     }
@@ -752,7 +837,7 @@ fn world_filters(query: &WorldGraphQuery) -> WorldFilters<'_> {
         binding_roles: &query.binding_roles,
         statuses: &query.statuses,
         publication_times: &query.publication_times,
-        published_by: query.published_by.as_deref(),
+        published_by: query.as_of.as_deref(),
     }
 }
 

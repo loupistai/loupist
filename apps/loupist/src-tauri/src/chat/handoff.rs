@@ -1829,6 +1829,7 @@ mod tests {
         let items = Some(vec![crate::domain::DiscardedMemoryItem {
             kind: crate::domain::DiscardedMemoryKind::JournalEntry,
             title: "Watch the sales trend".into(),
+            reason: None,
         }]);
         checkpoint.memory_update = Some(crate::domain::MemoryUpdateResult {
             discarded_memory_items: items.clone(),

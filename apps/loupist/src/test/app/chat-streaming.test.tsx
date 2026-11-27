@@ -1,7 +1,7 @@
 import { onTestFinished } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ChatStreamEvent } from "../../types";
+import type { ChatStreamEvent, InboxChangedEvent } from "../../types";
 import { App } from "../../App";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
 import { chooseLoupist, loupistIsRunning, newChatButton, openApp, privateChatOn, rowIsRunning, waitForLoupistRunning, openChat } from "../renderApp";
@@ -184,6 +184,50 @@ describe("Loupist · Chat streaming and concurrency", () => {
       await waitFor(() => expect(loupistIsRunning("Contrarian Value")).toBe(false));
     } finally {
       release();
+    }
+  });
+
+  it("keeps a new research session when a refresh for the running session lands without it", async () => {
+    const user = userEvent.setup();
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    const releaseStreams = bridge.pauseChatStreams();
+    const select = bridge.loupistSelect.bind(bridge);
+    const before = await select("loupist-quality");
+    let hold = false;
+    let releaseSelect: (() => void) | undefined;
+    vi.spyOn(bridge, "loupistSelect").mockImplementation((id) => {
+      if (hold && id === "loupist-quality") return new Promise((resolve) => { releaseSelect = () => resolve(before); });
+      return select(id);
+    });
+    const listeners = new Set<(event: InboxChangedEvent) => void>();
+    vi.spyOn(bridge, "onInboxChanged").mockImplementation((handler) => {
+      listeners.add(handler);
+      return () => { listeners.delete(handler); };
+    });
+    const nativeCreate = bridge.chatCreate.bind(bridge);
+    vi.spyOn(bridge, "chatCreate").mockImplementation(async (request) => {
+      const created = await nativeCreate(request);
+      queueMicrotask(() => releaseSelect?.());
+      return created;
+    });
+    try {
+      await openApp(bridge);
+      await send(user, "Running in the first session");
+      await screen.findByRole("button", { name: "Stop response" });
+      hold = true;
+      await act(async () => { for (const listener of listeners) listener({ loupistId: "loupist-quality" }); });
+      await user.click(newChatButton());
+      await user.type(screen.getByRole("textbox", { name: "Message Loupist" }), "Second session question");
+      await user.keyboard("{Enter}");
+      await waitFor(() => expect(screen.getByRole("heading", { name: "Untitled research session", level: 1 })).toBeVisible());
+      expect(screen.queryByText("Running in the first session")).toBeNull();
+      expect(document.querySelector("[data-thread-id]")?.getAttribute("data-thread-id")).not.toBe("thread-margin");
+      const current = document.querySelector("[aria-current='page'][data-thread-id]");
+      expect(current?.getAttribute("data-thread-id")).not.toBe("thread-margin");
+      expect(screen.getByText("Second session question")).toBeVisible();
+    } finally {
+      hold = false;
+      releaseStreams();
     }
   });
 

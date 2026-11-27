@@ -88,7 +88,7 @@ import { usePersistedChatDraft } from "./app/usePersistedChatDraft";
 import { useChatDrafts } from "./app/useChatDrafts";
 import { useFileDropGuard } from "./app/useFileDropGuard";
 import { useScheduledRuns } from "./app/useScheduledRuns";
-import { useNativeMenu } from "./app/useNativeMenu";
+import { menuLanguage, useNativeMenu } from "./app/useNativeMenu";
 import { useIsMobile } from "./hooks/use-mobile";
 import { useLoupistVisit } from "./app/loupistVisit";
 import type { ConnectSheetTarget } from "./components/settings/ConnectSheet";
@@ -101,6 +101,7 @@ import { FixMemoryProvider } from "./components/memory/fixMemory";
 import { SHARED_SECTION_ITEM } from "./components/sharing/SharedPacks";
 import { sharingReleaseVisible } from "./sharing/releaseVisibility";
 import { PackLinkDialog } from "./components/sharing/PackLinkDialog";
+import { learnBlock, LearnRequestProvider } from "./components/briefings/LearnRequest";
 import { DeepLinkConfirm, useDeepLinks } from "./components/sharing/DeepLinkConfirm";
 import type { PackAddResult, PackOpenResult } from "./contracts/sharing";
 
@@ -654,6 +655,31 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
     else setActiveThreadForLoupist(selectedLoupistId, targetThreadId);
     setTab("chat");
   }, [selectedLoupistId, effectiveThreadId, drafts, openDraftChatForLoupist, setActiveThreadForLoupist, setTab]);
+  /**
+   * "Tell Loupist this is wrong" (plan 4.6): the correction goes into the current research
+   * session's composer, or a new one's when the current Chat is Bot or none. Never sends.
+   */
+  const correctClaim = useCallback((text: string) => {
+    const session = threads.find((thread) => thread.id === effectiveThreadId && !thread.home);
+    askInChat(text, session?.id ?? EMPTY_CHAT_THREAD_ID);
+  }, [threads, effectiveThreadId, askInChat]);
+  /**
+   * The Learn entry points (plan 4.4): Bot receives the request as the user's message and the
+   * user lands on Bot, where its proposal card arrives. ChatView sends it once Bot is open and idle.
+   */
+  const [botRequest, setBotRequest] = useState<{ id: number; loupistId: string; threadId: string; text: string } | null>(null);
+  const askBot = useCallback((text: string) => {
+    if (!selectedLoupistId) return;
+    const threadId = `home-${selectedLoupistId}`;
+    setBotRequest({ id: Date.now(), loupistId: selectedLoupistId, threadId, text });
+    setMemoryPage(null);
+    dispatchSurface({ type: "closeAssetPage" });
+    setNoteReaderOpen(false);
+    if (window.matchMedia(workspaceOverlayMedia).matches) closeWorkspace();
+    setActiveThreadForLoupist(selectedLoupistId, threadId);
+    setTab("chat");
+  }, [selectedLoupistId, dispatchSurface, closeWorkspace, setActiveThreadForLoupist, setTab]);
+  const learnRequests = useMemo(() => ({ block: learnBlock(model.catalog, configuration.snapshot?.effective.chat), ask: askBot }), [model.catalog, configuration.snapshot, askBot]);
   // The Work tab lists charts the visible chat is still building, and re-reads when it publishes.
   const workspaceMessages = threads.find((thread) => thread.id === workspaceThreadId)?.messages;
   const buildingWork = useMemo(() => (workspaceMessages ?? []).flatMap((message) => message.role === "assistant" && message.status === "streaming"
@@ -704,7 +730,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
   const activeExportThread = threads.find((thread) => thread.id === activeThreadId && thread.messages.length > 0);
   const sidebarCanToggle = useIsMobile() || tab !== "settings";
   useNativeMenu(bridge, {
-    language: interfaceLanguage === "ko" ? "ko" : "en",
+    language: menuLanguage(interfaceLanguage),
     shell: shellMenuReady,
     loupist: canCreateChat,
     print: Boolean(activeExportThread),
@@ -918,7 +944,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
 
   return (
     <TooltipProvider>
-      <ExtensionAvailabilityProvider value={extensions}><DisplayFxProvider value={displayFx}><AssetPageOpenerProvider value={openAssetPage}><RequestTurnProvider value={requestTurn}><LookBackProvider value={lookBack}><FixMemoryProvider value={fixMemory}>
+      <ExtensionAvailabilityProvider value={extensions}><DisplayFxProvider value={displayFx}><AssetPageOpenerProvider value={openAssetPage}><RequestTurnProvider value={requestTurn}><LookBackProvider value={lookBack}><FixMemoryProvider value={fixMemory}><LearnRequestProvider value={learnRequests}>
       <OpenProvider open={openOnSurface} externalLinks={!view.chatVisible}>
       <SourceFaviconProvider bridge={bridge}>
       <SidebarProvider
@@ -1145,10 +1171,11 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                     hidden={tab !== "chat"}
                     inert={tab !== "chat"}
                   >
-                    {chatViewProps ? <ChatView key={selectedLoupist.id} {...chatViewProps} attentionItems={attention} onOpenAttention={item => void openAttention(item)} /> : null}
+                    {chatViewProps ? <ChatView key={selectedLoupist.id} {...chatViewProps} pendingSend={botRequest?.loupistId === selectedLoupist.id ? botRequest : undefined}
+                      onPendingSendDone={id => setBotRequest(current => current?.id === id ? null : current)} attentionItems={attention} onOpenAttention={item => void openAttention(item)} /> : null}
                   </div>
                   {tab === "following" ? <div className="app-panel following-route" id="main-panel-following" aria-labelledby="current-location">
-                    <FollowingPage key={selectedLoupist.id} bridge={bridge} loupist={selectedLoupist} focusSearch={followingSearchFocus} onAskInChat={askInChat} onOpenConnections={connectionId => openSettings("connections", { entryId: connectionId })} />
+                    <FollowingPage key={selectedLoupist.id} bridge={bridge} loupist={selectedLoupist} focusSearch={followingSearchFocus} onAskInChat={askInChat} onOpenTask={openScheduledTask} onOpenConnections={connectionId => openSettings("connections", { entryId: connectionId })} />
                   </div> : null}
                   {tab === "schedule" ? <div className="app-panel" id="main-panel-schedule" aria-labelledby="current-location">
                     <ScheduleView onOpenModelSettings={() => openSettings("model")} onAskHome={text => askInChat(text, `home-${selectedLoupist.id}`)} modelCatalog={model.catalog} initialRun={inboxFocus?.loupistId === selectedLoupist.id ? inboxFocus.run : undefined} initialRunId={inboxFocus?.loupistId === selectedLoupist.id ? inboxFocus.runId ?? undefined : undefined} initialTaskId={scheduledFocus?.loupistId === selectedLoupist.id ? scheduledFocus.taskId : undefined} onInitialConsumed={() => { setInboxFocus(null); setScheduledFocus(null); }} key={`${selectedLoupist.id}:${selectedLoupist.workspace_path}`} bridge={bridge} loupist={selectedLoupist} theme={resolvedTheme}
@@ -1190,6 +1217,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
                         onOpenChat={threadId => { chat.setActiveThreadForLoupist(selectedLoupist.id, threadId); setTab("chat"); }}
                         onAsk={addKnowledgeToChat}
                         onExplainDisagreement={explainDisagreement}
+                        onCorrectClaim={correctClaim}
                         onAskInChat={() => { pendingComposerFocus.current = effectiveChatKey; setTab("chat"); }}
                         onOpenLink={openLink}
                         onManageProviders={() => openSettings("model")}
@@ -1331,7 +1359,7 @@ function AppContent({ bridge: providedBridge }: { bridge?: LoupistBridge }) {
       </SourceFaviconProvider>
       <p className="sr-only" role="status" aria-live="polite" data-panel-announcement="">{panelAnnouncement ? <span key={panelAnnouncement.key}>{panelAnnouncement.text}</span> : null}</p>
       </OpenProvider>
-      </FixMemoryProvider></LookBackProvider></RequestTurnProvider></AssetPageOpenerProvider></DisplayFxProvider></ExtensionAvailabilityProvider>
+      </LearnRequestProvider></FixMemoryProvider></LookBackProvider></RequestTurnProvider></AssetPageOpenerProvider></DisplayFxProvider></ExtensionAvailabilityProvider>
     </TooltipProvider>
   );
 }

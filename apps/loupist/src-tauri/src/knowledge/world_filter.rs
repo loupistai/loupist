@@ -13,7 +13,8 @@ pub(super) struct WorldFilters<'a> {
     pub binding_roles: &'a [BindingRole],
     pub statuses: &'a [ClaimStatus],
     pub publication_times: &'a [String],
-    /// An as-of cutoff: undated relationships and ones published later are left out.
+    /// An as-of cutoff restricts the node set to relationship endpoints.
+    /// The read projection decides claim visibility from authorized Source spans.
     pub published_by: Option<&'a str>,
 }
 
@@ -130,21 +131,32 @@ fn claim_matches(claim: &GraphClaim, filters: &WorldFilters<'_>) -> bool {
                 .publication_times
                 .iter()
                 .any(|value| value == publication_value(claim)))
-        && filters
-            .published_by
-            .is_none_or(|cutoff| published_by(claim.publication_time.as_ref(), cutoff))
 }
 
-/// Whether a publication time falls on or before `cutoff` (`YYYY-MM-DD`). A
-/// month or year counts at its last day; an undated value never does.
+/// Whether a publication time falls on or before `cutoff` (`YYYY-MM-DD`) on
+/// the user's calendar. An instant counts on the user's date at that instant,
+/// whatever offset it was written with; a date counts as written; a month or
+/// year at its last day; an undated value never does. Every cutoff reader
+/// decides publication through this function.
 pub(crate) fn published_by(time: Option<&super::model::TimePoint>, cutoff: &str) -> bool {
-    let Some(value) = time.and_then(|time| time.value.as_deref()) else {
+    let Some(time) = time else {
         return false;
     };
     let Ok(cutoff) = chrono::NaiveDate::parse_from_str(cutoff, "%Y-%m-%d") else {
         return false;
     };
-    last_day(value).is_some_and(|day| day <= cutoff)
+    publication_day(time).is_some_and(|day| day <= cutoff)
+}
+
+/// The user's calendar day of a publication time, as [`published_by`] reads it.
+pub(crate) fn publication_day(time: &super::model::TimePoint) -> Option<chrono::NaiveDate> {
+    let value = time.value.as_deref()?;
+    if time.precision == super::model::TimePrecision::Instant {
+        if let Ok(at) = chrono::DateTime::parse_from_rfc3339(value.trim()) {
+            return crate::local_time::date_at_ms(at.timestamp_millis());
+        }
+    }
+    last_day(value)
 }
 
 /// The last calendar day a date-like value can mean (`2026-03-18…`, `2026-03`, `2026`).

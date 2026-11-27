@@ -9,9 +9,7 @@ ID = loupist.args.get("id_field") or "id"
 DATE = loupist.args.get("date_field") or "date"
 TITLE = loupist.args.get("title_field") or "title"
 
-def day(value):
-    text = str(value)[:10]
-    return f"{text[:4]}-{text[4:6]}-{text[6:8]}" if len(text) == 8 and text.isdigit() else text
+day = loupist.observation_day
 
 payload = loupist.call(TOOL, **CALL)
 for key in ROWS.split("."):
@@ -22,22 +20,22 @@ rows = [row for row in payload if isinstance(row, dict) and row.get(ID) not in (
 
 first = "seen" not in loupist.state
 seen = set(loupist.state.get("seen") or [])
-since = loupist.state.get("since")
-# An id that is new but dated before the newest date already seen is an old row coming back.
-fresh = [row for row in rows if str(row[ID]) not in seen
-         and not (since and row.get(DATE) and day(row[DATE]) < since)]
-if first:
-    fresh = []  # what is already listed is the baseline, not news
-
-dates = [day(row[DATE]) for row in rows if row.get(DATE)]
-kept = [str(row[ID]) for row in sorted(rows, key=lambda row: day(row.get(DATE) or ""), reverse=True)]
+dated = [(day(row.get(DATE)), row) for row in rows]
+current = [(date, row) for date, row in dated if loupist.fresh_item(date)]
+if rows and not current and not first:
+    raise loupist.Unavailable("stale")
+fresh = [(date, row) for date, row in current if not first and str(row[ID]) not in seen]
+dates = [date for date, _ in current]
+listed = [str(row[ID]) for _, row in sorted(current, key=lambda item: item[0], reverse=True)]
+kept = list(dict.fromkeys([*listed, *(loupist.state.get("seen") or [])]))
 while len(json.dumps(kept)) > 6000:  # the app keeps at most 8 KiB of state; the oldest go first
     kept.pop()
 loupist.state["seen"] = kept
-loupist.state["since"] = max([since or "", *dates]) or None
+loupist.state.pop("since", None)
 
-as_of = max(dates) if dates else loupist.now[:10]
-reading = "; ".join(str(row.get(TITLE) or row[ID]) for row in fresh[:4]) or (
+as_of = max((date for date, _ in fresh), default=max(dates, default=loupist.now[:10]))
+reading = "; ".join(str(row.get(TITLE) or row[ID]) for _, row in fresh[:4]) or (
     f"Recorded {len(rows)} listed items" if first else "No new item")
 loupist.result(met=bool(fresh), reading=reading[:160], as_of=as_of,
-               evidence={"tool": TOOL, "new": fresh[:8], "listed": len(rows)})
+               evidence={"tool": TOOL, "new": [row for _, row in fresh[:8]], "listed": len(rows),
+                         "unavailable": len(rows) - len(current)})

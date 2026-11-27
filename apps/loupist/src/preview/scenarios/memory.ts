@@ -8,37 +8,28 @@ const ensurePrinciple = async (bridge: PreviewBridge, request: Parameters<Previe
 
 /** A principle saved from Chat. */
 export const principleScenarios: PreviewScenario[] = [
-  ...["chat-feedback-principle", "chat-memory-principle"].map((id): PreviewScenario => ({
-    ...base(id, "A principle saved from Chat", () => select(id === "chat-feedback-principle" ? ".principle-saved" : ".memory-principle"), async root => {
-      await until(() => root.querySelector("article.message.assistant.complete"), "Answer did not load");
-      if (id === "chat-feedback-principle") {
-        await click("[data-feedback-principle]", root);
-        await click('.principle-form button[type="submit"]', root);
-        await until(() => select(".principle-saved"), "Principle did not save");
-      }
-      if (hasLayout()) {
-        await until(() => root.querySelector("button.loupist-citation"), "Answer rendering did not finish");
-        select(id === "chat-feedback-principle" ? ".answer-correction" : ".memory-principle")?.scrollIntoView({ block: "center" });
-      }
-    }),
-    setup: async bridge => {
-      await prepareFixture(bridge, "answer");
-      const principle = (await bridge.principleList({ loupistId: "loupist-quality" }))[0];
-      const original = bridge.loupistSelect.bind(bridge);
-      bridge.loupistSelect = async loupistId => {
-        const workspace = await original(loupistId);
-        const message = workspace.threads[0].messages.find(item => item.id === "preview-answer")!;
-        if (id === "chat-feedback-principle") message.feedback = { rating: "down", correction: "Compare cash conversion over several reporting periods before interpreting margin growth.", updatedAt: Date.now() };
-        else message.memory_update = { status: "applied", commitId: "preview-principle", changes: [{ kind: "principle", statement: principle.statement, recordId: principle.recordId, operation: "create", title: principle.statement, lesson: "", basis: "", futureUse: "", knowledge: { kind: "lens", recordId: principle.recordId, revisionId: principle.revisionId, objectId: principle.recordId } }] };
-        return workspace;
-      };
-    },
-  })),
+  { ...base("chat-memory-principle", "A principle saved from Chat", () => select(".memory-principle"), async root => {
+    await until(() => root.querySelector("article.message.assistant.complete"), "Answer did not load");
+    if (hasLayout()) {
+      await until(() => root.querySelector("button.loupist-citation"), "Answer rendering did not finish");
+      select(".memory-principle")?.scrollIntoView({ block: "center" });
+    }
+  }), setup: async bridge => {
+    await prepareFixture(bridge, "answer");
+    const principle = (await bridge.principleList({ loupistId: "loupist-quality" }))[0];
+    const original = bridge.loupistSelect.bind(bridge);
+    bridge.loupistSelect = async loupistId => {
+      const workspace = await original(loupistId);
+      const message = workspace.threads[0].messages.find(item => item.id === "preview-answer")!;
+      message.memory_update = { status: "applied", commitId: "preview-principle", changes: [{ kind: "principle", statement: principle.statement, recordId: principle.recordId, operation: "create", title: principle.statement, lesson: "", basis: "", futureUse: "", knowledge: { kind: "lens", recordId: principle.recordId, revisionId: principle.revisionId, objectId: principle.recordId } }] };
+      return workspace;
+    };
+  } },
 ];
 
-/** "{Loupist}’s Lens" and corrections under an answer. */
+/** "{Loupist}’s Lens" and saved Memory in Chat. */
 export const memoryScenarios: PreviewScenario[] = [
-  // W15.15–W15.17: "{Loupist}’s Lens", the inline correction under an answer, and the once-per-chat decline.
+  // W15.15–W15.17: "{Loupist}’s Lens", the principle receipt under an answer, and the once-per-chat decline.
   ...(["memory-page", "memory-page-empty", "memory-paused", "memory-reset-dialog"] as const).map((id): PreviewScenario => ({
     ...base(id, id === "memory-page" ? "The Loupist’s Lens, with a principle open" : id === "memory-paused" ? "Learning is paused" : "A new Loupist has no pages yet",
       () => select(id === "memory-reset-dialog" ? ".memory-reset-dialog" : id === "memory-page" ? ".memory-reader:not(.is-empty)" : id === "memory-paused" ? ".memory-page-paused" : ".memory-empty"), async root => {
@@ -213,17 +204,5 @@ export const receiptScenarios: PreviewScenario[] = [
     };
     const event = (index: number, kind: "entity_added" | "claim_disputed", subjectId: string) => ({ eventId: `next-growth-${index}`, loupistId: "loupist-quality", originChatId: "preview-chat", originMessageId: "preview-answer", atMs: Date.now() - 60_000, kind, subjectId, recordId: "preview-world", actor: "loupist" as const, summary: "", beforeSummary: null, afterSummary: null });
     bridge.knowledgeGrowthEvents = async () => ({ events: [event(0, "claim_disputed", "next-edge-1"), event(1, "entity_added", "next-node-1"), event(2, "entity_added", "next-node-2")], nextCursor: null });
-  } },
-  // Suggest a correction, open with a draft: the label, the count and Save or Cancel.
-  { ...base("chat-feedback-correcting", "Suggesting a correction to an answer", () => select(".answer-correction textarea"), async root => {
-    await until(() => root.querySelector("article.message.assistant.complete"), "Answer did not load");
-    await click('.answer-feedback button[aria-expanded="false"]', root);
-    const field = await until(() => select(".answer-correction textarea"), "The correction editor did not open") as HTMLTextAreaElement;
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(field, previewKo() ? "연결 기준이 아니라 별도 기준 수치입니다." : "These are separate, not consolidated, figures.");
-    field.dispatchEvent(new Event("input", { bubbles: true }));
-    if (hasLayout()) select(".answer-correction")?.scrollIntoView({ block: "center" });
-  }), setup: async bridge => {
-    await prepareFixture(bridge, "answer");
-    asSession(bridge);
   } },
 ];

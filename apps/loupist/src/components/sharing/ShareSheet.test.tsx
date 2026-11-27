@@ -1,3 +1,4 @@
+import { chooseSelectOption, openSelect } from "@/test/selectOption";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MockLoupistBridge } from "../../bridge/mockBridge";
@@ -41,7 +42,7 @@ it("keeps every output disabled until a blocking finding is left out, and offers
   expect(save).toBeEnabled();
 
   await user.click(within(dialog).getByRole("switch", { name: "Principles" }));
-  await user.selectOptions(within(dialog).getByRole("combobox", { name: "License" }), "CC0-1.0");
+  await chooseSelectOption(user, within(dialog).getByRole("combobox", { name: "License" }), "CC0 1.0");
   await user.type(within(dialog).getByRole("textbox", { name: "Name to show (optional)" }), "Kim J.");
   await user.click(save);
   await waitFor(() => expect(exported).toHaveBeenCalledWith({
@@ -132,10 +133,11 @@ it("offers only the licenses Rust allows, starts from its default and says what 
   const { bridge, dialog, user } = await fixture();
   const exported = vi.spyOn(bridge, "shareExport");
   const select = within(dialog).getByRole("combobox", { name: "License" });
-  expect(within(select).getAllByRole("option").map(option => option.textContent)).toEqual(["CC BY-NC-SA 4.0", "CC BY 4.0", "CC BY-SA 4.0", "CC0 1.0", "CC BY-NC 4.0"]);
-  expect(select).toHaveValue("CC-BY-NC-SA-4.0");
+  expect((await openSelect(user, select)).getAllByRole("option").map(option => option.textContent)).toEqual(["CC BY-NC-SA 4.0", "CC BY 4.0", "CC BY-SA 4.0", "CC0 1.0", "CC BY-NC 4.0"]);
+  await user.keyboard("{Escape}");
+  expect(select).toHaveTextContent("CC BY-NC-SA 4.0");
   expect(select).toHaveAccessibleDescription("Anyone can share and adapt it with credit, not for commercial use, and must keep the same license.");
-  await user.selectOptions(select, "CC-BY-NC-4.0");
+  await chooseSelectOption(user, select, "CC BY-NC 4.0");
   expect(select).toHaveAccessibleDescription("Anyone can share and adapt it with credit, not for commercial use.");
   await user.click(within(dialog).getByRole("button", { name: "Save as ZIP" }));
   await waitFor(() => expect(exported).toHaveBeenCalledWith(expect.objectContaining({ license: "CC-BY-NC-4.0", destination: "zip" })));
@@ -150,7 +152,7 @@ it("links the chosen license's name to the legal text Rust names for it", async 
   await user.click(within(dialog).getByRole("button", { name: "CC BY-NC-SA 4.0" }));
   expect(opened).toHaveBeenLastCalledWith(legal["CC-BY-NC-SA-4.0"]);
   // Choosing another license links that license's own text.
-  await user.selectOptions(within(dialog).getByRole("combobox", { name: "License" }), "CC-BY-SA-4.0");
+  await chooseSelectOption(user, within(dialog).getByRole("combobox", { name: "License" }), "CC BY-SA 4.0");
   expect(within(dialog).queryByRole("button", { name: "CC BY-NC-SA 4.0" })).toBeNull();
   await user.click(within(dialog).getByRole("button", { name: "CC BY-SA 4.0" }));
   expect(opened).toHaveBeenLastCalledWith(legal["CC-BY-SA-4.0"]);
@@ -163,7 +165,7 @@ it("fixes the license that shared items allow, and counts items whose license do
   });
   const select = within(dialog).getByRole("combobox", { name: "License" });
   await waitFor(() => expect(select).toBeDisabled());
-  expect(select).toHaveValue("CC-BY-SA-4.0");
+  expect(select).toHaveTextContent("CC BY-SA 4.0");
   expect(select).toHaveAccessibleDescription(/must keep the same license\. Set by the license of items that came from shared Loupists\./);
   expect(within(dialog).getByText("Left out: 2 items whose license doesn't allow sharing")).toBeVisible();
   expect(within(dialog).getByRole("button", { name: "Save as folder" })).toBeEnabled();
@@ -193,8 +195,9 @@ it("names the items whose licenses clash and keeps outputs off until one side is
   // Leaving out the share-alike item leaves the non-commercial licenses, which Rust offers again.
   await user.click(within(rows[0]).getByRole("button", { name: "Leave it out" }));
   const select = await within(dialog).findByRole("combobox", { name: "License" });
-  expect(within(select).getAllByRole("option").map(option => option.textContent)).toEqual(["CC BY-NC-SA 4.0", "CC BY-NC 4.0"]);
-  expect(select).toHaveValue("CC-BY-NC-SA-4.0");
+  expect((await openSelect(user, select)).getAllByRole("option").map(option => option.textContent)).toEqual(["CC BY-NC-SA 4.0", "CC BY-NC 4.0"]);
+  await user.keyboard("{Escape}");
+  expect(select).toHaveTextContent("CC BY-NC-SA 4.0");
   await user.click(within(dialog).getByRole("button", { name: "Save as folder" }));
   await waitFor(() => expect(exported).toHaveBeenCalledWith(expect.objectContaining({ license: "CC-BY-NC-SA-4.0", excludedItemKeys: ["m-dividend-growth"] })));
 });

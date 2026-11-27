@@ -7,6 +7,11 @@ use std::sync::Arc;
 use super::*;
 
 impl KnowledgeStore {
+    /// The app database this fixture shares with scheduled runs.
+    pub(crate) fn app_store(&self) -> &crate::store::SqliteStore {
+        &self.connection
+    }
+
     /// Fixtures exercise the same schema and connection authority as the app.
     pub(crate) fn open(path: impl AsRef<Path>) -> KnowledgeResult<Self> {
         let path = path.as_ref();

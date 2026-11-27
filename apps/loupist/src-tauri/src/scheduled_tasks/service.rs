@@ -37,6 +37,19 @@ pub(crate) fn saved_task(state: &AppState, task: Task) -> Result<Task, CommandEr
 }
 
 pub(crate) fn present(state: &AppState, mut task: Task) -> Task {
+    if let Some(program) = &task.program {
+        let completed = state
+            .store
+            .completed_learning_programs(&task.loupist_id)
+            .unwrap_or_default();
+        task.budget = Some(program.budget(
+            task.watch.subjects.as_deref().unwrap_or_default(),
+            !completed.contains(&task.id),
+        ));
+    }
+    task.hold = task
+        .hold
+        .filter(|hold| hold.local_day == crate::local_time::today().to_string());
     let level = if task.thinking_level.is_empty() {
         preferred_level(state, &task.loupist_id)
     } else {
@@ -61,6 +74,14 @@ pub(crate) fn list(state: &AppState, loupist_id: &str) -> Result<Vec<TaskListIte
         .scheduled_tasks_list_with_latest(loupist_id)
         .map_err(map_store)?;
     if !items.is_empty() {
+        let completed = if items.iter().any(|item| item.task.program.is_some()) {
+            state
+                .store
+                .completed_learning_programs(loupist_id)
+                .map_err(map_store)?
+        } else {
+            Default::default()
+        };
         let catalog = state.selection_catalog().ok();
         let level = if items.iter().any(|item| item.task.thinking_level.is_empty()) {
             preferred_level(state, loupist_id)
@@ -71,8 +92,19 @@ pub(crate) fn list(state: &AppState, loupist_id: &str) -> Result<Vec<TaskListIte
             if item.task.is_unreadable_list_item() {
                 continue;
             }
+            item.task.hold = item
+                .task
+                .hold
+                .take()
+                .filter(|hold| hold.local_day == crate::local_time::today().to_string());
             item.task
                 .resolve_selection(catalog.as_ref(), level.as_deref());
+            if let Some(program) = &item.task.program {
+                item.task.budget = Some(program.budget(
+                    item.task.watch.subjects.as_deref().unwrap_or_default(),
+                    !completed.contains(&item.task.id),
+                ));
+            }
         }
     }
     Ok(items)
@@ -112,16 +144,14 @@ pub(crate) fn create_definition(
         .admit_kind(MaintenanceActivityKind::ChatMutation)?;
     state.ensure_loupist_available(loupist_id)?;
     validate_draft(state, &draft)?;
+    let kind = if definition.program.is_some() {
+        TaskKind::Learning
+    } else {
+        TaskKind::Custom
+    };
     state
         .store
-        .scheduled_task_create_definition(
-            loupist_id,
-            request_id,
-            draft,
-            TaskKind::Custom,
-            definition,
-            now_ms(),
-        )
+        .scheduled_task_create_definition(loupist_id, request_id, draft, kind, definition, now_ms())
         .map_err(map_store)
         .and_then(|task| saved_task(state, task))
 }
@@ -172,7 +202,9 @@ pub(crate) fn update(
             ))
         }
         // The store refuses a kind another version wrote.
-        super::types::TaskKind::Custom | super::types::TaskKind::Unknown(_) => {}
+        super::types::TaskKind::Custom
+        | super::types::TaskKind::Learning
+        | super::types::TaskKind::Unknown(_) => {}
     }
     validate_draft(state, &draft)?;
     state
@@ -222,6 +254,7 @@ pub(crate) fn propose_change(
         draft,
         &format!("schedule-proposal-{}", &key[..32]),
         TaskDefinition {
+            program: current.program.clone(),
             watch,
             proposed_in_message_id: Some(message_id.to_owned()),
             trigger: current.trigger.clone(),
@@ -386,28 +419,42 @@ pub(crate) fn release_sessions(
 
 pub(crate) fn runs(state: &AppState, loupist_id: &str, id: &str) -> Result<Vec<Run>, CommandError> {
     ensure_visible(state, loupist_id)?;
-    state
+    let mut runs = state
         .store
         .scheduled_task_runs(loupist_id, id)
-        .map_err(map_store)
+        .map_err(map_store)?;
+    state
+        .store
+        .populate_scheduled_usage(loupist_id, &mut runs)
+        .map_err(map_store)?;
+    Ok(runs)
 }
 
 pub(crate) async fn run_now(
     state: &AppState,
     loupist_id: &str,
     id: &str,
+    confirmed: bool,
 ) -> Result<Run, CommandError> {
     state.ensure_loupist_available(loupist_id)?;
-    if get(state, loupist_id, id)?.awaiting_confirmation {
+    let task = get(state, loupist_id, id)?;
+    if task.awaiting_confirmation {
         return Err(CommandError::conflict(
             "This task needs your approval before it can run",
         ));
     }
     state
         .scheduled
-        .dispatch(state, loupist_id, id, true)
+        .dispatch_manual(state, loupist_id, id, confirmed)
         .await?
-        .ok_or_else(|| CommandError::conflict("This scheduled task is already running"))
+        .ok_or_else(|| {
+            let message = if task.kind == TaskKind::Learning {
+                "A learning program is already running"
+            } else {
+                "This scheduled task is already running"
+            };
+            CommandError::conflict(message)
+        })
 }
 
 pub(crate) async fn stop(

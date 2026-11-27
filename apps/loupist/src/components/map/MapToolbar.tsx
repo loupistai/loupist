@@ -12,6 +12,7 @@ import { entityLabel } from "../../knowledge/mapItems";
 import { mapScopes, type MapScope } from "./localView";
 import { foldProps, useScopeOverflow } from "./toolbarOverflow";
 import { formatNumber } from "../../i18n/format";
+import { WorldAsOfButton, type WorldAsOfControl } from "./MapAsOf";
 export type MapFilters = { kinds: string[]; personal: boolean; disputed: boolean; metrics: boolean };
 export const defaultFilters = (): MapFilters => ({ kinds: [...entityCategories], personal: false, disputed: false, metrics: true });
 export function filtersActive(filters: MapFilters) {
@@ -31,11 +32,13 @@ export type MapLocalControls = {
 export type MapWhatsNewControl = { count: number; open: boolean; onToggle: () => void };
 const scopeKey = { "1": "map.scope1", "2": "map.scope2", all: "map.scopeAll" } as const;
 
-export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect, list, onList, lenses, overlayId, onOverlay, appliedCounts, lensTitles, baseLensIds, libraryOpen, onLibrary, replayActive, onReplay, exportActions, disabled, replayDisabled = false, listDisabled = false, empty = false, local, whatsNew }: {
+export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect, list, onList, lenses, overlayId, onOverlay, appliedCounts, lensTitles, baseLensIds, libraryOpen, onLibrary, replayActive, onReplay, exportActions, disabled, replayDisabled = false, listDisabled = false, empty = false, local, whatsNew, asOf }: {
   disabled?: boolean; replayDisabled?: boolean; listDisabled?: boolean;
   /** Nothing on the Map yet: What's new, Filter and More have nothing to act on. */
   empty?: boolean;
   local?: MapLocalControls; whatsNew?: MapWhatsNewControl;
+  /** World as of a date. Stays available on an empty as-of World, so a later date can be chosen. */
+  asOf?: WorldAsOfControl;
   replayActive?: boolean; onReplay?: () => void;
   /** Image and replay-video export, offered in More. */
   exportActions?: { image: () => void; video: () => void; disabled?: boolean };
@@ -86,6 +89,7 @@ export function MapToolbar({ nodes, query, onQuery, filters, onFilters, onSelect
       {filtersActive(filters) || overlayId ? <Button disabled={disabled} variant="link" onClick={() => { onFilters(defaultFilters()); onOverlay(undefined); }}>{t("map.clearFilters")}</Button> : null}
     </PopoverContent></Popover>
     <Button className="map-toolbar-button" disabled={disabled} variant="ghost" data-map-library aria-label={t("map.library")} title={t("map.library")} aria-expanded={libraryOpen} onClick={onLibrary}><BookOpenIcon /><span className="map-control-label">{t("map.library")}</span></Button>
+    {asOf ? <WorldAsOfButton control={asOf} disabled={disabled} /> : null}
     <div className="map-toolbar-spacer" />
     <DropdownMenu>
       <DropdownMenuTrigger asChild><Button className="map-toolbar-button" variant="ghost" data-map-more disabled={disabled || empty} aria-label={t("map.moreActions")} title={t("map.moreActions")}><MoreHorizontalIcon /></Button></DropdownMenuTrigger>

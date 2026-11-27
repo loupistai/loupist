@@ -194,7 +194,7 @@
     "searchShortcut": "Search {{shortcut}}",
     "unreadScheduledResults_one": "{{count}} unread scheduled result",
     "unreadScheduledResults_other": "{{count}} unread scheduled results",
-    "needsAttention": "Needs attention",
+    "needsAttention": "Needs you",
     "panel": "Panel",
     "togglePanel": "Show or hide the panel ({{shortcut}})",
     "switchLoupist": "Switch Loupist, its settings or a new one",

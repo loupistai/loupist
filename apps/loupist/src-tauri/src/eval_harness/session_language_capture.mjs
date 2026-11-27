@@ -1,6 +1,6 @@
 // LG-003 uses the pinned Pi SDK's RPC mode with an in-memory provider.
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -15,6 +15,7 @@ import {
 import {
   fauxAssistantMessage,
   fauxProvider,
+  fauxText,
   fauxToolCall,
   getCurrentTools,
   InMemoryCredentialStore,
@@ -95,13 +96,101 @@ function assertToolDeclarations(context) {
 const text = result => result.content.find(block => block.type === "text").text;
 let readArgs;
 
-faux.setResponses([
+// Optional progress notes, one written before each tool round of LG-003.
+const notesPath = join(fixtureRoot, "progress-notes.json");
+const notes = existsSync(notesPath) ? JSON.parse(readFileSync(notesPath, "utf8")) : [];
+const round = (index, calls) =>
+  fauxAssistantMessage(notes[index] === undefined ? calls : [fauxText(notes[index]), ...calls], { stopReason: "toolUse" });
+const toolCalls = message => message.content.filter(block => block.type !== "text" || !notes.includes(block.text));
+
+const learningPath = join(fixtureRoot, "learning-script.json");
+if (existsSync(learningPath)) {
+  const spec = JSON.parse(readFileSync(learningPath, "utf8"));
+  const invoke = (name, args) => fauxAssistantMessage(fauxToolCall(name, args), { stopReason: "toolUse" });
+  const sum = () => invoke("calculate", { operation: "sum", series: [1, 2] });
+  const count = spec.cancel ? spec.requests : spec.soft;
+  const responses = Array.from({ length: count }, () => sum);
+  responses[0] = (context) => {
+    const envelope = context.messages.find(message => message.role === "user").content[0].text;
+    const facts = JSON.parse(envelope.split("<turn_envelope>\n")[1].split("\n</turn_envelope>")[0]).learning;
+    assert.equal(facts.firstRun, false);
+    assert.equal(facts.previousRuns[0].startedAtMs, spec.previous);
+    assert.equal(facts.budget.requests, spec.requests);
+    assert(envelope.includes('<skill name="learning"'), "sealed Skill body missing");
+    const active = getCurrentTools(context.messages).map(tool => tool.name);
+    for (const omitted of ["web_search", "source_save", "thesis_update", "price_read_save"]) {
+      assert(!active.includes(omitted), omitted);
+    }
+    assert(active.includes("lens_file"));
+    return invoke("world_changes", { since: "previous_run" });
+  };
+  responses[1] = (context) => {
+    delivered(context, ["world_changes"]);
+    return invoke("world_search", { query: "Alder Rail quarterly note", scope: "source" });
+  };
+  responses[2] = (context) => {
+    const [, search] = delivered(context, ["world_changes", "world_search"]);
+    const hit = JSON.parse(text(search)).hits.find(item => item.readArgs?.spanId);
+    assert(hit, JSON.stringify(search.content));
+    return invoke("world_read", hit.readArgs);
+  };
+  responses[3] = (context) => {
+    const [, , read] = delivered(context, ["world_changes", "world_search", "world_read"]);
+    const source = JSON.parse(text(read)).readRef;
+    assert(source);
+    return invoke("lens_file", {
+      pages: [{
+        page: { create: { kind: "subject", title: spec.title } },
+        ops: [
+          { op: "put", key: "facts", heading: "Facts", markdown: "Alder Rail carried 18 million passengers in the third quarter.", basis: { refs: [{ source }] } },
+          { op: "summary", text: "Alder Rail's third-quarter passenger volume." },
+        ],
+      }],
+      rationale: "Keep the quarterly result in the supplied Source.",
+    });
+  };
+  responses[4] = (context) => {
+    delivered(context, ["world_changes", "world_search", "world_read", "lens_file"]);
+    return sum();
+  };
+  if (spec.cancel) {
+    responses[spec.hard - 1] = (context) => {
+      const last = context.messages.filter(message => message.role === "toolResult").at(-1);
+      assert(!last.isError, JSON.stringify(last.content));
+      return sum();
+    };
+    responses[spec.hard] = (context) => {
+      const last = context.messages.filter(message => message.role === "toolResult").at(-1);
+      assert(last.isError, "data call at the hard limit succeeded");
+      return sum();
+    };
+  } else {
+    responses.push((context) => {
+      const last = context.messages.filter(message => message.role === "toolResult").at(-1);
+      assert.equal(last.content.length, 2);
+      assert.equal(last.content[1].type, "text");
+      return invoke("schedule_quiet", {});
+    }, (context) => {
+      const last = context.messages.filter(message => message.role === "toolResult").at(-1);
+      assert(!last.isError, JSON.stringify(last.content));
+      return fauxAssistantMessage("");
+    });
+  }
+  faux.setResponses(responses.map(response => (...input) => {
+    try {
+      return response(...input);
+    } catch (error) {
+      writeFileSync(join(fixtureRoot, "learning-script-error.txt"), String(error));
+      throw error;
+    }
+  }));
+} else faux.setResponses([
   (context, options, _state, model) => {
     capture("first.json", context, options, model);
     assertToolDeclarations(context);
-    return fauxAssistantMessage([
+    return round(0, [
       fauxToolCall("world_search", { query: "Alder Rail quarterly note", scope: "source" }),
-    ], { stopReason: "toolUse" });
+    ]);
   },
   (context) => {
     const [search] = delivered(context, firstBatch);
@@ -109,14 +198,14 @@ faux.setResponses([
     const hit = hits.find(hit => hit.readArgs?.scope === "source" && hit.readArgs.spanId);
     assert(hit, "Expected a Source span in the search result");
     readArgs = hit.readArgs;
-    return fauxAssistantMessage(fauxToolCall("world_read", readArgs), { stopReason: "toolUse" });
+    return round(1, [fauxToolCall("world_read", readArgs)]);
   },
   (context, options, _state, model) => {
     capture("after-read.json", context, options, model);
     assertToolDeclarations(context);
     const results = delivered(context, [...firstBatch, "world_read"]);
     const calls = context.messages.filter(message => message.role === "assistant")
-      .map(message => message.content.map(block => {
+      .map(message => toolCalls(message).map(block => {
         assert.equal(block.type, "toolCall");
         return block;
       }));

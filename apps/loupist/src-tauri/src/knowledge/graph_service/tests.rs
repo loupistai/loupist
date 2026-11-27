@@ -323,6 +323,8 @@ fn sealed_world(
                     span_id: span.to_string(),
                     role: BindingRole::ExtractedFrom,
                     attribution: "example-publisher".to_string(),
+                    figure_check: None,
+                    passage: None,
                 }],
                 status: ClaimStatus::Active,
                 recorded_at_ms: Some(1_700_000_000_000),
@@ -462,6 +464,7 @@ async fn rust_engine_drives_queued_jobs_without_a_staged_worker_or_runtime() {
                     super::super::graph_jobs::JOB_FAILED_BEFORE,
                     true,
                     false,
+                    None,
                     now_ms(),
                 )?;
                 Err(KnowledgeError::Invalid("roll back the attempt receipt"))
@@ -523,6 +526,19 @@ fn schedule_rank_puts_the_attended_loupist_first_then_takes_turns() {
     // older job.
     assert!(schedule_rank(None, 0, 900) < schedule_rank(None, 3, 1));
     assert!(schedule_rank(None, 3, 1) < schedule_rank(None, 3, 2));
+}
+
+#[test]
+fn the_worker_wakes_at_the_next_local_midnight() {
+    let now = crate::local_time::now();
+    let at = super::next_local_midnight_ms(now.timestamp_millis()).unwrap();
+    let midnight = crate::local_time::at_ms(at).unwrap();
+    assert!(at > now.timestamp_millis());
+    assert_eq!(
+        midnight.time(),
+        chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap()
+    );
+    assert_eq!(midnight.date_naive(), now.date_naive().succ_opt().unwrap());
 }
 
 /// Queue `count` Source jobs for `loupist` in a fresh World, `at_ms` apart.
@@ -600,20 +616,17 @@ async fn a_backlog_in_one_loupist_no_longer_holds_back_another() {
     }
     let backlog = queued_jobs(&knowledge, "loupist-backlog", 3, 1_700_000_000_000);
     let fresh = queued_jobs(&knowledge, "loupist-new", 1, 1_700_000_100_000);
-    // Neither has been served: the older job goes first.
+    // Oldest background job first.
     assert_eq!(
         select(&supervisor),
         Some(("loupist-backlog".into(), backlog[0].clone()))
     );
-    finish_worker(&supervisor, "loupist-backlog");
-    // With one slot free, the Loupist that has waited takes its turn before the
-    // backlog's next job (the old queue drained the backlog first).
+    // That Loupist is in flight, so the other Loupist's job takes the free slot
+    // instead of waiting for the rest of the backlog.
     assert_eq!(
         select(&supervisor),
         Some(("loupist-new".into(), fresh[0].clone()))
     );
-    // One job per Loupist at a time: the backlog runs alongside it.
-    assert_eq!(select(&supervisor).unwrap().0, "loupist-backlog");
     assert_eq!(
         select(&supervisor),
         None,
@@ -622,7 +635,7 @@ async fn a_backlog_in_one_loupist_no_longer_holds_back_another() {
 }
 
 #[tokio::test]
-async fn the_loupist_with_a_recent_chat_turn_goes_first() {
+async fn a_chat_origin_job_goes_before_an_older_background_backlog() {
     let directory = tempfile::tempdir().unwrap();
     let (supervisor, knowledge) = supervised(directory.path(), None);
     for loupist in ["loupist-backlog", "loupist-research"] {
@@ -635,7 +648,17 @@ async fn the_loupist_with_a_recent_chat_turn_goes_first() {
     }
     queued_jobs(&knowledge, "loupist-backlog", 3, 1_700_000_000_000);
     let research = queued_jobs(&knowledge, "loupist-research", 1, 1_700_000_100_000);
-    supervisor.note_attention("loupist-research", "chat-research");
+    knowledge
+        .transact(|write| {
+            write.tx.execute(
+                "UPDATE knowledge_graph_outbox
+                 SET payload_json = json_set(payload_json, '$.origin', 'chat')
+                 WHERE job_id = ?1",
+                [&research[0]],
+            )?;
+            Ok(())
+        })
+        .unwrap();
     assert_eq!(
         select(&supervisor),
         Some(("loupist-research".into(), research[0].clone()))
@@ -693,16 +716,22 @@ async fn the_loop_runs_world_jobs_for_different_loupists_up_to_the_job_limit() {
         );
     }
     let inner = supervisor.inner.clone();
-    assert!(inner.step().await.unwrap());
+    assert!(inner.step().unwrap());
     assert_eq!(inner.running_count(), MAX_WORLD_JOBS);
-    let running: HashSet<String> = inner.running.lock().unwrap().keys().cloned().collect();
+    let running: HashSet<String> = inner
+        .running
+        .lock()
+        .unwrap()
+        .values()
+        .map(|worker| worker.job_id.clone())
+        .collect();
     assert_eq!(
-        running.len(),
+        inner.running.lock().unwrap().len(),
         MAX_WORLD_JOBS,
         "never two jobs for one Loupist"
     );
     // With no provider nothing is sent: each worker frees its slot and its job
-    // waits for a wake from outside the loop.
+    // waits for a wake from outside the loop. Other queued jobs still run.
     tokio::time::timeout(std::time::Duration::from_secs(30), async {
         while inner.running_count() > 0 {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -711,12 +740,23 @@ async fn the_loop_runs_world_jobs_for_different_loupists_up_to_the_job_limit() {
     .await
     .expect("workers finish");
     assert_eq!(inner.stalled.lock().unwrap().len(), MAX_WORLD_JOBS);
-    assert!(inner.step().await.unwrap());
-    let next: Vec<String> = inner.running.lock().unwrap().keys().cloned().collect();
-    assert_eq!(next.len(), 1);
+    assert!(inner.step().unwrap());
+    let next: HashSet<String> = inner
+        .running
+        .lock()
+        .unwrap()
+        .values()
+        .map(|worker| worker.job_id.clone())
+        .collect();
+    assert_eq!(next.len(), MAX_WORLD_JOBS);
     assert!(
-        !running.contains(&next[0]),
-        "the Loupist that waited runs now"
+        next.is_disjoint(&running),
+        "a job that made no progress stays out until an outside wake"
+    );
+    assert_eq!(
+        inner.running.lock().unwrap().len(),
+        MAX_WORLD_JOBS,
+        "still one job per Loupist"
     );
     supervisor.shutdown().await.unwrap();
 }

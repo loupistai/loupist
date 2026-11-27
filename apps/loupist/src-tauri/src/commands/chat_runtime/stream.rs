@@ -67,6 +67,12 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
     let mut answer_text_ms: Option<u64> = None;
     let mut generation_ms: Option<u64> = None;
     let mut token_usage = AssistantTokenUsage::default();
+    let budget = crate::runs::budget::for_chat(profile_id, thread_id);
+    let budget_timer = tokio::time::sleep_until(budget.as_ref().map_or_else(
+        || Instant::now() + std::time::Duration::from_secs(24 * 60 * 60),
+        |budget| budget.deadline(),
+    ));
+    tokio::pin!(budget_timer);
     let mut progress = carried_progress.take().unwrap_or_else(|| {
         let mut progress = ChatProgressProjection::new(progress_started_at_ms);
         progress.set_asset_names(asset_names(app_state, profile_id));
@@ -85,6 +91,22 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
     let commentary_flush = tokio::time::sleep(std::time::Duration::from_secs(24 * 60 * 60));
     tokio::pin!(commentary_flush);
     loop {
+        if let Some(budget) = &budget {
+            let now = Instant::now();
+            if budget.exhausted(now)
+                && (assistant_capture.finish_settled().is_err() || now >= budget.deadline())
+                && !*cancel.borrow()
+            {
+                budget.mark_cancelled();
+                let _ = app_state
+                    .cancel_run(task_run_id, crate::runs::coordinator::RunKind::Chat)
+                    .await;
+                aborted = true;
+                let _ = pi.abort().await;
+                break;
+            }
+            budget_timer.as_mut().reset(budget.deadline());
+        }
         while let Ok((call_id, evidence_id)) = result_links.try_recv() {
             progress.attach_result(&call_id, &evidence_id);
             publish_progress(on_event, task_run_id, &mut progress, &mut commentary);
@@ -122,6 +144,7 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
                 tokio::select! {
                     _ = &mut commentary_flush, if commentary.is_pending() => ChatLoopInput::CommentaryFlush,
                     _ = &mut provider_wait_timer => ChatLoopInput::WatchdogElapsed,
+                    _ = &mut budget_timer, if budget.is_some() && !*cancel.borrow() => continue,
                     changed = cancel.changed() => ChatLoopInput::CancelChanged(changed),
                     control = chat_controls.recv() => ChatLoopInput::Control(control),
                     card = card_rx.recv(), if cards_open => ChatLoopInput::Card(card),
@@ -255,6 +278,29 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
                             &payload,
                         )
                         .await;
+                        if let Some(budget) = budget.as_ref().filter(|_| {
+                            matches!(
+                                payload["type"].as_str(),
+                                Some("message_end" | "auto_compaction_end")
+                            )
+                        }) {
+                            let calls = payload["type"]
+                                .as_str()
+                                .filter(|kind| {
+                                    *kind == "message_end"
+                                        && payload["message"]["role"] == "assistant"
+                                })
+                                .and_then(|_| {
+                                    payload
+                                        .pointer("/message/content")
+                                        .and_then(Value::as_array)
+                                })
+                                .into_iter()
+                                .flatten()
+                                .filter(|entry| entry["type"] == "toolCall")
+                                .filter_map(|entry| entry["id"].as_str());
+                            budget.observe(token_usage.requests, now, calls);
+                        }
                         if matches!(step, pi_dispatch::PiRpcStep::Break) {
                             break;
                         }
@@ -294,6 +340,15 @@ pub(super) async fn stream_chat_turn(turn: &mut LaunchedChatTurn) -> StreamedCha
             }
             ChatLoopInput::WatchdogElapsed => unreachable!("normalized before dispatch"),
         }
+    }
+    if let Some(budget) = &budget {
+        let _ = crate::store::bounded_chat_save(|| {
+            app_state.store.scheduled_run_set_budget_outcome(
+                profile_id,
+                task_run_id,
+                budget.outcome(),
+            )
+        });
     }
     StreamedChatTurn {
         content,

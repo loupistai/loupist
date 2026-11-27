@@ -1,0 +1,77 @@
+{
+  "schema": "loupist-world-suite/1",
+  "suite": "world-smoke-v018",
+  "version": 1,
+  "description": "Three short fictional Sources in separate profiles, with one World-only trial per Source.",
+  "scenarios": [
+    {
+      "id": "SMOKE-FILING",
+      "title": "Tandrel Castings half-year filing",
+      "split": "smoke",
+      "condition": "smoke",
+      "world_enabled": true,
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "filing",
+              "title": "Tandrel Castings half-year filing",
+              "text": "Tandrel Castings signed a five-year supply agreement with Briar Dock Foundry. Briar Dock will supply pump housings to Tandrel starting July 1, 2026.\n",
+              "origin": "https://fixtures.invalid/world/smoke/filing",
+              "publication_time": "2026-07-10",
+              "acquired_at": "2026-07-10T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SMOKE-NEWS",
+      "title": "Hearth Quay news brief",
+      "split": "smoke",
+      "condition": "smoke",
+      "world_enabled": true,
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "news",
+              "title": "Hearth Quay news brief",
+              "text": "Hearth Quay News reported that Spindleharbor Motors opened a new assembly plant in Kettle Bay on July 8, 2026.\n",
+              "origin": "https://fixtures.invalid/world/smoke/news",
+              "publication_time": "2026-07-10",
+              "acquired_at": "2026-07-10T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SMOKE-TABLE",
+      "title": "Caldermere testing results",
+      "split": "smoke",
+      "condition": "smoke",
+      "world_enabled": true,
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "table",
+              "title": "Caldermere testing results",
+              "text": "Company | Facility | Q2 2026 commissioned test cells\nCaldermere Instruments | Elm Shore lab | 6\nCaldermere Instruments | Ash Pier lab | 4\n",
+              "origin": "https://fixtures.invalid/world/smoke/table",
+              "publication_time": "2026-07-10",
+              "acquired_at": "2026-07-10T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

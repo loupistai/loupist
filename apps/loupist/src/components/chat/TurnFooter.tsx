@@ -109,7 +109,7 @@ type Props = {
   /** Guidance sent while this reply runs; it applies after the current step. */
   guiding?: readonly string[];
   savingLine?: ReactNode;
-  /** The settled row: sources, copy, receipt and feedback, drawn by the card. */
+  /** The settled row: sources, copy and receipt, drawn by the card. */
   children?: ReactNode;
   /** The reply shows its notes on the page, so the line does not repeat the latest one. */
   noteOnPage?: boolean;

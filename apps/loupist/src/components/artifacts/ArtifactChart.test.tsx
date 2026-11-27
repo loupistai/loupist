@@ -25,7 +25,11 @@ const financial: ChartDocument = {
 
 it("routes financial documents to the KLine engine and analytic documents to the Flint engine", async () => {
   const view = render(<ArtifactChart chart={financial} dataset={dataset} theme="light" />);
-  expect(screen.getByRole("figure", { name: "Financial chart" })).toHaveAccessibleDescription(expect.stringContaining("Latest close 2"));
+  expect(screen.getByRole("figure", { name: "Financial chart" })).toHaveAccessibleDescription(expect.stringContaining("Latest close 2.00"));
+  const precise = { ...dataset, rows: [["2026-08-01", 1, 3, 0, 155.3800048828125]] };
+  view.rerender(<ArtifactChart chart={financial} dataset={precise} theme="light" />);
+  expect(screen.getByRole("figure", { name: "Financial chart" })).toHaveAccessibleDescription(expect.stringContaining("Latest close 155.38"));
+  expect(screen.getByRole("figure", { name: "Financial chart" })).not.toHaveAccessibleDescription(/155\.3800048828125/);
   expect(await screen.findByText("financial-engine")).toBeVisible();
   view.unmount();
   const analytic: ChartDocument = { dataset_id: dataset.id, dataset_digest: dataset.digest, studies: [], drawings: [],

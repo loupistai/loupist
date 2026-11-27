@@ -191,14 +191,26 @@ fn knowledge_growth_source_retention_deduplication_and_rollback() {
     let mut request = source_request("loupist-a", b"Retained source");
     request.origin_chat_id = Some("chat-a".into());
     let rollback = store.transact(|write| -> KnowledgeResult<()> {
-        write.retain_new_source_with_origin(request.clone(), "message-a", None)?;
+        write.retain_new_source_with_origin(
+            request.clone(),
+            "message-a",
+            crate::knowledge::JobOrigin::Chat,
+            None,
+        )?;
         assert_eq!(write.growth_events(&query("loupist-a"))?.events.len(), 1);
         Err(KnowledgeError::Invalid("rollback test"))
     });
     assert!(rollback.is_err());
     assert!(events_since(&store, None).is_empty());
     let saved = store
-        .transact(|write| write.retain_new_source_with_origin(request.clone(), "message-a", None))
+        .transact(|write| {
+            write.retain_new_source_with_origin(
+                request.clone(),
+                "message-a",
+                crate::knowledge::JobOrigin::Chat,
+                None,
+            )
+        })
         .unwrap();
     store.retain_new_source(request).unwrap();
     let events = events_since(&store, None);
@@ -301,4 +313,27 @@ fn knowledge_growth_caps_publications_and_keeps_events_immutable() {
             Ok(())
         })
         .unwrap();
+}
+
+#[test]
+fn a_claim_current_again_records_claim_reopened() {
+    let (_directory, store) = open_store();
+    let mut request = world_request(&store);
+    request.claims[0].invalid_at = Some(TimePoint::from_unix_ms(1));
+    let sealed = store.seal_world(request.clone()).unwrap();
+    assert!(events_since(&store, None)
+        .iter()
+        .all(|event| event.kind != "claim_reopened"));
+    request.expected_revision_id = Some(sealed.revision_id);
+    request.at_ms = 3;
+    request.claims[0].invalid_at = None;
+    store.seal_world(request).unwrap();
+    let reopened: Vec<_> = events_since(&store, Some(3))
+        .into_iter()
+        .map(|event| (event.kind, event.subject_id))
+        .collect();
+    assert_eq!(
+        reopened,
+        vec![("claim_reopened".to_owned(), Some("one".to_owned()))]
+    );
 }

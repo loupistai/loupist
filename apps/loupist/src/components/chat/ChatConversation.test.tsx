@@ -207,7 +207,7 @@ describe("Bot greeting", () => {
     expect(tiles[1]!.querySelector("[data-price-currency=unknown]")).toHaveTextContent("Currency unknown");
     // No close or session wording, no change it was not given, and no news bubble built from prices.
     expect(greeting).not.toHaveTextContent(/close|fell|rose|%/iu);
-    expect(greeting.querySelectorAll(".bot-bubble")).toHaveLength(1);
+    expect(greeting.querySelector(".bot-bubble")).toBeNull();
     expect(screen.getByRole("region", { name: "Following" })).toBeVisible();
   });
 

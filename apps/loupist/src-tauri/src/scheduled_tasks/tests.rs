@@ -18,6 +18,9 @@ use super::{
     types::*,
 };
 
+mod admission;
+mod learning_presets;
+mod market_fallback;
 mod regressions;
 
 /// An instant as `previous_run` gives it: at the user's offset then.
@@ -72,6 +75,576 @@ fn draft() -> TaskDraft {
         update_memory: false,
         status: TaskStatus::Active,
     }
+}
+
+#[test]
+fn a_fact_changes_preset_without_its_check_is_not_run_as_a_model_task() {
+    let store = fixture();
+    let mut saved = draft();
+    saved.schedule = Schedule::Interval { every_minutes: 60 };
+    saved.status = TaskStatus::Active;
+    let task = store
+        .scheduled_task_create_definition(
+            "loupist-a",
+            "watch-facts",
+            saved,
+            TaskKind::Custom,
+            TaskDefinition {
+                watch: TaskWatch {
+                    preset: Some(WatchPreset::FactChanges),
+                    subjects: Some(vec![TaskSubject::Asset {
+                        asset: "ast_0123456789abcdef".into(),
+                    }]),
+                    report: Some(ReportPolicy::EveryRun),
+                    delivery: None,
+                    terms: Some("Facts".into()),
+                    event: None,
+                },
+                ..TaskDefinition::default()
+            },
+            at("2026-11-25T00:00:00Z"),
+        )
+        .unwrap();
+    assert!(task.is_trigger_task());
+    assert!(claim_task(
+        &store,
+        "loupist-a",
+        &task.id,
+        at("2026-11-25T02:00:00Z"),
+        false
+    )
+    .unwrap()
+    .is_none());
+}
+
+#[test]
+fn a_subject_edit_replaces_the_fact_changes_arguments() {
+    let store = fixture();
+    let mut saved = draft();
+    saved.status = TaskStatus::Paused;
+    saved.schedule = Schedule::Interval { every_minutes: 60 };
+    let old = "ast_0123456789abcdef";
+    let new = "ast_fedcba9876543210";
+    let task = store
+        .scheduled_task_create_definition(
+            "loupist-a",
+            "watch-facts",
+            saved,
+            TaskKind::Custom,
+            TaskDefinition {
+                watch: TaskWatch {
+                    preset: Some(WatchPreset::FactChanges),
+                    subjects: Some(vec![TaskSubject::Asset { asset: old.into() }]),
+                    report: Some(ReportPolicy::EveryRun),
+                    delivery: None,
+                    terms: Some("Facts".into()),
+                    event: None,
+                },
+                proposed_in_message_id: Some("preset-facts".into()),
+                trigger: Some(TaskTrigger {
+                    script: TriggerScriptRef {
+                        name: "world-change".into(),
+                        version: 1,
+                        sha256: "ab".repeat(32),
+                    },
+                    summary: "Facts".into(),
+                    when_met_summary: None,
+                    args: serde_json::json!({"asset_ids": [old]})
+                        .as_object()
+                        .cloned()
+                        .unwrap(),
+                    tools: Vec::new(),
+                    active_hours: None,
+                    approved: None,
+                    pending: None,
+                    state: TriggerPhase::Proposed,
+                    script_state: serde_json::json!({}),
+                    replay_boundary: Some(ReplayBoundary::INITIAL),
+                    last: None,
+                    evaluations: Vec::new(),
+                    counters: TriggerCounters::default(),
+                    approved_versions: Vec::new(),
+                    stale_after_days: 5,
+                    reads_per_check: 0,
+                    proposal_test: None,
+                }),
+                edition: None,
+                replaces: None,
+                program: None,
+            },
+            at("2026-11-25T00:00:00Z"),
+        )
+        .unwrap();
+    let edited = task.draft();
+    let mut watch = task.watch.clone();
+    watch.subjects = Some(vec![TaskSubject::Asset { asset: new.into() }]);
+    let updated = store
+        .scheduled_task_update_definition(
+            "loupist-a",
+            &task.id,
+            task.revision,
+            edited,
+            Some((watch, None)),
+            at("2026-11-25T01:00:00Z"),
+        )
+        .unwrap();
+    assert_eq!(
+        updated.trigger.unwrap().args["asset_ids"],
+        serde_json::json!([new])
+    );
+}
+
+#[test]
+fn learning_program_validation_round_trip_and_active_limit() {
+    let store = fixture();
+    let owner = "loupist-a";
+    let mut learning = draft();
+    learning.update_memory = true;
+    let program = LearningProgram {
+        depth: LearningDepth::Standard,
+        scope: LearningScope {
+            connections: LearningConnections::All(AllLearningConnections::AllEnabled),
+            web: true,
+        },
+        keeps: LearningKeeps {
+            sources: true,
+            lens: true,
+            asset_reads: true,
+        },
+        preset: None,
+    };
+    let asset = TaskSubject::Asset {
+        asset: "asset-a".into(),
+    };
+    let definition = TaskDefinition {
+        program: Some(program.clone()),
+        watch: TaskWatch {
+            subjects: Some(vec![asset.clone()]),
+            report: Some(ReportPolicy::WhenNew),
+            delivery: Some(TaskDelivery {
+                to: DeliveryTarget::Briefing,
+                notify: None,
+            }),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let create = |id: &str, draft: TaskDraft, kind, definition| {
+        store.scheduled_task_create_definition(owner, id, draft, kind, definition, 1)
+    };
+    let mut no_asset = definition.clone();
+    no_asset.watch.subjects = Some(vec![TaskSubject::World {
+        world: "company".into(),
+    }]);
+    let mut too_many = definition.clone();
+    too_many.watch.subjects = Some(vec![asset.clone(); 9]);
+    let mut invalid_connection = definition.clone();
+    invalid_connection
+        .program
+        .as_mut()
+        .unwrap()
+        .scope
+        .connections = LearningConnections::Selected(vec![String::new()]);
+    for (draft, kind, definition) in [
+        (
+            learning.clone(),
+            TaskKind::Learning,
+            TaskDefinition::default(),
+        ),
+        (learning.clone(), TaskKind::Custom, definition.clone()),
+        (
+            TaskDraft {
+                use_memory: false,
+                ..learning.clone()
+            },
+            TaskKind::Learning,
+            definition.clone(),
+        ),
+        (
+            TaskDraft {
+                target: TaskTarget::Dedicated,
+                ..learning.clone()
+            },
+            TaskKind::Learning,
+            definition.clone(),
+        ),
+        (
+            TaskDraft {
+                prompt: "a".repeat(8 * 1024 + 1),
+                ..learning.clone()
+            },
+            TaskKind::Learning,
+            definition.clone(),
+        ),
+        (learning.clone(), TaskKind::Learning, no_asset),
+        (learning.clone(), TaskKind::Learning, too_many),
+        (learning.clone(), TaskKind::Learning, invalid_connection),
+    ] {
+        assert!(create("invalid", draft, kind, definition).is_err());
+    }
+    let valid = create(
+        "learning-1",
+        learning.clone(),
+        TaskKind::Learning,
+        definition.clone(),
+    )
+    .unwrap();
+    let saved = store.scheduled_task_get(owner, &valid.id).unwrap().unwrap();
+    assert_eq!(valid, saved);
+    let json = serde_json::to_value(&saved).unwrap();
+    assert_eq!(json["kind"], "learning");
+    assert_eq!(json["program"]["scope"]["connections"], "all_enabled");
+    assert_eq!(json["subjects"][0]["asset"], "asset-a");
+    assert_eq!(json["report"], "when_new");
+    assert_eq!(json["delivery"]["to"], "briefing");
+    assert_eq!(serde_json::from_value::<Task>(json).unwrap(), saved);
+    let old = create("custom-1", draft(), TaskKind::Custom, Default::default()).unwrap();
+    let old_json = serde_json::to_value(old).unwrap();
+    assert!(old_json.get("program").is_none());
+    assert!(serde_json::from_value::<Task>(old_json)
+        .unwrap()
+        .program
+        .is_none());
+    for i in 2..=20 {
+        create(
+            &format!("learning-{i}"),
+            learning.clone(),
+            TaskKind::Learning,
+            definition.clone(),
+        )
+        .unwrap();
+    }
+    assert!(create(
+        "extra-active",
+        learning.clone(),
+        TaskKind::Learning,
+        definition.clone()
+    )
+    .is_err());
+    let paused = create(
+        "extra-paused",
+        TaskDraft {
+            status: TaskStatus::Paused,
+            ..learning
+        },
+        TaskKind::Learning,
+        definition,
+    )
+    .unwrap();
+    assert!(store
+        .scheduled_task_set_status(owner, &paused.id, paused.revision, TaskStatus::Active, 2)
+        .is_err());
+    assert_eq!(
+        program.budget(std::slice::from_ref(&asset), true),
+        LearningBudget { soft: 20, hard: 26 }
+    );
+    assert_eq!(
+        program.budget(&[asset], false),
+        LearningBudget { soft: 21, hard: 28 }
+    );
+
+    let now = crate::commands::now_ms();
+    let allowance = super::store::LaunchAllowance {
+        admission: super::allowance::Admission::prepare(&store, Some(owner)).unwrap(),
+        limits: Default::default(),
+        provider: None,
+        confirmed: false,
+    };
+    let (claim, _) = store
+        .scheduled_task_claim(
+            owner,
+            &saved.id,
+            now,
+            true,
+            super::store::ClaimScope::Unscoped,
+            Some(&allowance),
+            |_| Ok(()),
+        )
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let mut usage = crate::store::model_usage::fixture_row(now);
+    usage.loupist_id = Some(owner.into());
+    usage.task_id = Some(saved.id.clone());
+    usage.data.run_id = claim.run.run_id.clone();
+    usage.data.measures.requests = Some(23);
+    store.put_model_usage("learning-usage", &usage).unwrap();
+    let run = store
+        .scheduled_task_finish(
+            owner,
+            &claim.run.run_id,
+            RunStatus::Interrupted,
+            Some(super::BUDGET_EXCEEDED),
+            now + 23,
+        )
+        .unwrap();
+    assert_eq!(run.budget.unwrap().outcome, BudgetOutcome::Cancelled);
+    assert_eq!(run.usage.as_ref().unwrap().requests, Some(23));
+    assert_eq!(
+        store.scheduled_task_run_get(owner, &run.run_id).unwrap(),
+        Some(run)
+    );
+}
+
+#[test]
+fn learning_admission_is_serial_and_enforces_each_loupists_daily_budget() {
+    use super::{
+        allowance::{Admission, HoldReason, Limits},
+        store::{ClaimScope, LaunchAllowance},
+    };
+    let store = fixture();
+    let now = crate::commands::now_ms();
+    let create = |owner: &str, id: &str| {
+        store
+            .scheduled_task_create_definition(
+                owner,
+                id,
+                TaskDraft {
+                    update_memory: true,
+                    ..draft()
+                },
+                TaskKind::Learning,
+                TaskDefinition {
+                    program: Some(LearningProgram {
+                        depth: LearningDepth::Standard,
+                        scope: LearningScope {
+                            connections: LearningConnections::Selected(vec![]),
+                            web: false,
+                        },
+                        keeps: LearningKeeps {
+                            sources: false,
+                            lens: true,
+                            asset_reads: false,
+                        },
+                        preset: None,
+                    }),
+                    watch: TaskWatch {
+                        report: Some(ReportPolicy::EveryRun),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                now - 1,
+            )
+            .unwrap()
+    };
+    let first = create("loupist-a", "first");
+    let other = create("loupist-b", "other");
+    let admit = |task: &Task| {
+        let allowance = LaunchAllowance {
+            admission: Admission::prepare(&store, Some(&task.loupist_id)).unwrap(),
+            limits: Limits::default(),
+            provider: None,
+            confirmed: false,
+        };
+        store
+            .scheduled_task_claim(
+                &task.loupist_id,
+                &task.id,
+                now,
+                true,
+                ClaimScope::Unscoped,
+                Some(&allowance),
+                |_| Ok(()),
+            )
+            .unwrap()
+    };
+    let (running, _) = admit(&first).unwrap().unwrap();
+    assert!(admit(&other).unwrap().is_none());
+    store
+        .scheduled_task_finish(
+            &first.loupist_id,
+            &running.run.run_id,
+            RunStatus::Succeeded,
+            None,
+            now,
+        )
+        .unwrap();
+    let (update, _) = admit(&first).unwrap().unwrap();
+    assert!(!update.run.first_run);
+    assert!(!store
+        .scheduled_run_allows_quiet(&first.loupist_id, &update.run.run_id)
+        .unwrap());
+    store
+        .scheduled_task_finish(
+            &first.loupist_id,
+            &update.run.run_id,
+            RunStatus::Succeeded,
+            None,
+            now,
+        )
+        .unwrap();
+    let mut used = crate::store::model_usage::fixture_row(now);
+    used.loupist_id = Some(first.loupist_id.clone());
+    used.data.surface = crate::runs::log::UsageSurface::Learning;
+    used.data.measures.requests = Some(121);
+    store
+        .put_model_usage("spent-learning-allowance", &used)
+        .unwrap();
+    assert!(matches!(admit(&first), Err(hold) if hold.reason == HoldReason::Allowance));
+    assert!(admit(&other).unwrap().is_some());
+}
+
+#[test]
+fn allowance_hold_survives_restart_and_expires_without_filing_a_run() {
+    use super::{
+        allowance::{Admission, HoldReason, Limits},
+        store::{ClaimScope, LaunchAllowance},
+    };
+
+    let folder = tempfile::tempdir().unwrap();
+    let path = folder.path().join("scheduled.sqlite3");
+    let store = SqliteStore::open(&path).unwrap();
+    let owner = "loupist-a";
+    store.create_loupist(&loupist(owner)).unwrap();
+    let start = at("2027-01-12T12:00:00Z");
+    let task = store.scheduled_task_create(owner, draft(), start).unwrap();
+    assert!(task.hold.is_none());
+    let success = claim_task(&store, owner, &task.id, start + 1, true)
+        .unwrap()
+        .unwrap();
+    store
+        .scheduled_task_finish(
+            owner,
+            &success.run.run_id,
+            RunStatus::Succeeded,
+            None,
+            start + 2,
+        )
+        .unwrap();
+    let failure = claim_task(&store, owner, &task.id, start + 3, true)
+        .unwrap()
+        .unwrap();
+    store
+        .scheduled_task_finish(
+            owner,
+            &failure.run.run_id,
+            RunStatus::Failed,
+            Some("failed"),
+            start + 4,
+        )
+        .unwrap();
+    for error in [
+        crate::pi::provider_failure::PLAN_LIMIT,
+        crate::pi::provider_failure::OUT_OF_CREDIT,
+    ] {
+        let run = claim_task(&store, owner, &task.id, start + 5, true)
+            .unwrap()
+            .unwrap();
+        let terminal = store
+            .scheduled_task_finish(
+                owner,
+                &run.run.run_id,
+                RunStatus::Failed,
+                Some(error),
+                start + 6,
+            )
+            .unwrap();
+        assert!(terminal.failure_streak.is_none());
+    }
+    let before = store.scheduled_task_runs(owner, &task.id).unwrap();
+    let due = store
+        .scheduled_task_get(owner, &task.id)
+        .unwrap()
+        .unwrap()
+        .next_run_at_ms
+        .unwrap();
+    {
+        let allowance = LaunchAllowance {
+            admission: Admission::prepare(&store, Some(owner)).unwrap(),
+            limits: Limits {
+                background: 0,
+                ..Limits::default()
+            },
+            provider: None,
+            confirmed: false,
+        };
+        let outcome = store
+            .scheduled_task_claim(
+                owner,
+                &task.id,
+                due,
+                false,
+                ClaimScope::Unscoped,
+                Some(&allowance),
+                |_| -> crate::store::StoreResult<()> {
+                    panic!("held task must never reserve Chat")
+                },
+            )
+            .unwrap();
+        assert!(matches!(outcome, Err(hold) if hold.reason == HoldReason::Allowance));
+    }
+    drop(store);
+
+    let reopened = SqliteStore::open(&path).unwrap();
+    let held = reopened
+        .scheduled_task_get(owner, &task.id)
+        .unwrap()
+        .unwrap();
+    assert!(held.hold.is_some());
+    assert!(held.next_run_at_ms.unwrap() > due);
+    assert_eq!(
+        reopened.scheduled_task_runs(owner, &task.id).unwrap(),
+        before
+    );
+    let tomorrow = due + 86_400_000;
+    reopened.scheduled_tasks_due(tomorrow, 10).unwrap();
+    assert!(reopened
+        .scheduled_task_get(owner, &task.id)
+        .unwrap()
+        .unwrap()
+        .hold
+        .is_none());
+    let allowance = LaunchAllowance {
+        admission: Admission::prepare(&reopened, Some(owner)).unwrap(),
+        limits: Limits {
+            background: 32,
+            ..Limits::default()
+        },
+        provider: None,
+        confirmed: false,
+    };
+    let (claim, _) = reopened
+        .scheduled_task_claim(
+            owner,
+            &task.id,
+            tomorrow,
+            false,
+            ClaimScope::Unscoped,
+            Some(&allowance),
+            |_| Ok(()),
+        )
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(claim.run.budget.unwrap().requests, 32);
+    let other = reopened
+        .scheduled_task_create(owner, draft(), tomorrow)
+        .unwrap();
+    let blocked = reopened
+        .scheduled_task_claim(
+            owner,
+            &other.id,
+            tomorrow,
+            true,
+            ClaimScope::Unscoped,
+            Some(&allowance),
+            |_| -> crate::store::StoreResult<()> {
+                panic!("the first running row owns the allowance")
+            },
+        )
+        .unwrap();
+    assert!(matches!(blocked, Err(hold) if hold.reason == HoldReason::Allowance));
+    let failed = reopened
+        .scheduled_task_finish(
+            owner,
+            &claim.run.run_id,
+            RunStatus::Failed,
+            None,
+            tomorrow + 1,
+        )
+        .unwrap();
+    assert_eq!(failed.failure_streak.unwrap().count, 2);
 }
 
 #[test]
@@ -1369,6 +1942,8 @@ fn a_run_is_given_how_its_tasks_last_run_ended_and_what_last_reached_the_user() 
 fn a_previous_summary_is_bounded_and_one_that_read_third_party_text_is_delimited() {
     use crate::custom_connections::taint::delimited_body;
     let run = |id: &str, finished: i64, summary: &str, quiet: bool| Run {
+        usage: None,
+        budget: None,
         failure_streak: None,
         first_run: false,
         discarded_memory_items: None,
@@ -1380,6 +1955,7 @@ fn a_previous_summary_is_bounded_and_one_that_read_third_party_text_is_delimited
         quiet,
         message_id: Some(format!("answer-{id}")),
         skipped_tools: Vec::new(),
+        undo: None,
         id: format!("row-{id}"),
         task_id: "task".into(),
         loupist_id: "loupist-a".into(),
@@ -1393,6 +1969,7 @@ fn a_previous_summary_is_bounded_and_one_that_read_third_party_text_is_delimited
         status: RunStatus::Succeeded,
         error: None,
         trigger: None,
+        provider: None,
     };
     let long = "가".repeat(300);
     let quiet = run(
@@ -1435,6 +2012,8 @@ fn a_previous_summary_is_bounded_and_one_that_read_third_party_text_is_delimited
     let interrupted = PreviousRun::from_runs(
         &[
             Run {
+                usage: None,
+                budget: None,
                 failure_streak: None,
                 first_run: false,
                 discarded_memory_items: None,
@@ -1590,6 +2169,7 @@ fn crash_recovery_completes_scheduled_answers_with_interrupted_memory() {
         let items = Some(vec![DiscardedMemoryItem {
             kind: DiscardedMemoryKind::Source,
             title: "Annual report".into(),
+            reason: None,
         }]);
         answer.memory_update = Some(MemoryUpdateResult {
             discarded_memory_items: items.clone(),
@@ -1873,6 +2453,8 @@ fn sql_json_paths_name_fields_tasks_and_runs_serialize() {
     assert!(extract(&json, "$.next_run_at_ms").is_some());
 
     let run = Run {
+        usage: None,
+        budget: None,
         failure_streak: None,
         first_run: false,
         discarded_memory_items: None,
@@ -2103,4 +2685,147 @@ fn a_declined_proposal_can_be_restored_during_its_visit_and_is_deleted_after_it(
     assert!(store
         .scheduled_task_confirm(loupist, &restored.id, restored.revision, 201)
         .is_ok());
+}
+
+#[test]
+fn a_learning_run_and_a_check_cursor_survive_restart() {
+    use super::{
+        allowance::{Admission, Limits},
+        store::{ClaimScope, LaunchAllowance},
+    };
+
+    let folder = tempfile::tempdir().unwrap();
+    let path = folder.path().join("scheduled.sqlite3");
+    let store = SqliteStore::open(&path).unwrap();
+    let owner = "loupist-a";
+    store.create_loupist(&loupist(owner)).unwrap();
+    let now = at("2026-11-25T12:00:00Z");
+    let learning = store
+        .scheduled_task_create_definition(
+            owner,
+            "learning-run",
+            TaskDraft {
+                update_memory: true,
+                ..draft()
+            },
+            TaskKind::Learning,
+            TaskDefinition {
+                program: Some(LearningProgram {
+                    depth: LearningDepth::Standard,
+                    scope: LearningScope {
+                        connections: LearningConnections::Selected(vec![]),
+                        web: false,
+                    },
+                    keeps: LearningKeeps {
+                        sources: false,
+                        lens: true,
+                        asset_reads: false,
+                    },
+                    preset: None,
+                }),
+                watch: TaskWatch {
+                    report: Some(ReportPolicy::EveryRun),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            now - 1,
+        )
+        .unwrap();
+    let allowance = LaunchAllowance {
+        admission: Admission::prepare(&store, Some(owner)).unwrap(),
+        limits: Limits::default(),
+        provider: None,
+        confirmed: false,
+    };
+    let (running, _) = store
+        .scheduled_task_claim(
+            owner,
+            &learning.id,
+            now,
+            true,
+            ClaimScope::Unscoped,
+            Some(&allowance),
+            |_| Ok(()),
+        )
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let budget = running.run.budget.expect("learning run freezes a budget");
+    assert!(budget.requests > 0);
+    assert_eq!(running.run.status, RunStatus::Running);
+    assert_eq!(running.run.kind, TaskKind::Learning);
+    let cursor = "wch1.eyJ2IjoxLCJheGlzIjoicmVjb3JkZWQiLCJ1bnRpbF9yZXZpc2lvbiI6InJldl8wMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCJ9";
+    let state = serde_json::json!({"cursor": cursor, "axis": "recorded"});
+    let mut saved = draft();
+    saved.status = TaskStatus::Paused;
+    saved.schedule = Schedule::Interval { every_minutes: 60 };
+    let check = store
+        .scheduled_task_create_definition(
+            owner,
+            "change-check",
+            saved,
+            TaskKind::Custom,
+            TaskDefinition {
+                watch: TaskWatch {
+                    preset: Some(WatchPreset::FactChanges),
+                    subjects: Some(vec![TaskSubject::Asset {
+                        asset: "ast_0123456789abcdef".into(),
+                    }]),
+                    report: Some(ReportPolicy::EveryRun),
+                    delivery: None,
+                    terms: Some("Facts".into()),
+                    event: None,
+                },
+                trigger: Some(TaskTrigger {
+                    script: TriggerScriptRef {
+                        name: "world-change".into(),
+                        version: 1,
+                        sha256: "ab".repeat(32),
+                    },
+                    summary: "Facts".into(),
+                    when_met_summary: None,
+                    args: serde_json::json!({"asset_ids": ["ast_0123456789abcdef"]})
+                        .as_object()
+                        .cloned()
+                        .unwrap(),
+                    tools: Vec::new(),
+                    active_hours: None,
+                    approved: None,
+                    pending: None,
+                    state: TriggerPhase::Proposed,
+                    script_state: state.clone(),
+                    replay_boundary: Some(ReplayBoundary::INITIAL),
+                    last: None,
+                    evaluations: Vec::new(),
+                    counters: TriggerCounters::default(),
+                    approved_versions: Vec::new(),
+                    stale_after_days: 5,
+                    reads_per_check: 0,
+                    proposal_test: None,
+                }),
+                ..Default::default()
+            },
+            now,
+        )
+        .unwrap();
+    assert_eq!(
+        check.trigger.as_ref().unwrap().script_state["cursor"],
+        cursor
+    );
+    drop(store);
+
+    let store = SqliteStore::open(&path).unwrap();
+    let runs = store.scheduled_task_runs(owner, &learning.id).unwrap();
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].status, RunStatus::Running);
+    assert_eq!(runs[0].kind, TaskKind::Learning);
+    assert_eq!(runs[0].budget, Some(budget));
+    assert_eq!(runs[0].run_id, running.run.run_id);
+    let check = store.scheduled_task_get(owner, &check.id).unwrap().unwrap();
+    assert_eq!(check.trigger.as_ref().unwrap().script_state, state);
+    assert_eq!(
+        check.trigger.as_ref().unwrap().script_state["cursor"],
+        cursor
+    );
 }

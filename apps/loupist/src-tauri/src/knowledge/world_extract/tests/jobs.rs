@@ -18,6 +18,7 @@ use crate::knowledge::{
     RetainMaterial, RetainSource, SealWorld, Selector, SourceClass, WorldSnapshotBody,
 };
 
+mod figures;
 mod settings_changes;
 
 const LOUPIST: &str = "loupist-extract";
@@ -267,7 +268,7 @@ impl Script {
             body: json!({
                 "status": "ok",
                 "json_object": value,
-                "usage": {"input_tokens": 100, "output_tokens": 10, "certainty": "accounted"},
+                "usage": crate::knowledge::graph_inference::graph_usage(Some(&json!({"input": 500, "output": 120}))),
             }),
         }
     }
@@ -642,6 +643,7 @@ fn a_spelling_the_resolver_confirms_becomes_an_alias_that_resolves_pending_ancho
         graph_jobs::JOB_COMPLETED
     );
     // A Chat files about the company under a spelling the World does not hold.
+    // A shared entity key does not bind the anchor; the stored alias does.
     let page = fixture.file_about("Acme Corporation");
     assert_eq!(
         fixture.subject_anchor(&page),
@@ -728,6 +730,15 @@ fn jobs_seal_the_world_and_its_index_together_and_reuse_stored_entities() {
     let (first, second, script) = two_sources(&mut fixture);
     assert_eq!(first.status, graph_jobs::JOB_COMPLETED);
     assert_eq!(second.status, graph_jobs::JOB_COMPLETED);
+    for job in [&first, &second] {
+        let source = job.document.source_binding.as_ref().unwrap();
+        let processing = fixture
+            .store
+            .read(|read| read.source_processing(LOUPIST, &source.source_record_id))
+            .unwrap();
+        assert_eq!(processing.status, graph_jobs::JOB_COMPLETED);
+        assert!(processing.error.is_none());
+    }
     let body = fixture.body();
     let mut names: Vec<&str> = body.nodes.iter().map(|node| node.name.as_str()).collect();
     names.sort();
@@ -1474,5 +1485,63 @@ fn a_ranking_resolved_a_row_late_keeps_one_node_per_code_and_repairs_the_stored_
     assert_eq!(
         fixture.subject_anchor(&page),
         ("dongfeng motor 0489.hk".into(), Some(DONGFENG.to_string()))
+    );
+}
+
+#[test]
+fn a_full_world_pauses_before_any_inference_call() {
+    use crate::knowledge::graph_jobs::JobFailureKind;
+    use crate::knowledge::model::{GraphNode, MAX_WORLD_NODES};
+    use crate::knowledge::world_extract::job::world_is_full;
+    let mut fixture = Fixture::new();
+    let count = MAX_WORLD_NODES - MAX_WORLD_NODES / 20;
+    assert!(world_is_full(count, 0));
+    assert!(!world_is_full(count - 1, 0));
+    let nodes = (0..count)
+        .map(|index| GraphNode {
+            id: format!("n{index}"),
+            name: format!("Firm {index}"),
+            aliases: Vec::new(),
+            description: String::new(),
+            kind: "Organization".into(),
+            source_role: "source".into(),
+            properties: Default::default(),
+        })
+        .collect();
+    fixture
+        .store
+        .seal_world(crate::knowledge::SealWorld {
+            loupist_id: LOUPIST.into(),
+            record_id: fixture.world.clone(),
+            expected_revision_id: Some(fixture.head()),
+            at_ms: AT,
+            nodes,
+            claims: Vec::new(),
+            annotations: Vec::new(),
+            dependencies: Vec::new(),
+        })
+        .unwrap();
+    let script = Arc::new(Mutex::new(Script::default()));
+    let job = fixture.queue("Full world", "Acme reported revenue.");
+    let finished = drive(&mut fixture, &job, &script, "fixture");
+    assert!(script.lock().unwrap().calls.is_empty());
+    assert_eq!(finished.status, graph_jobs::JOB_PAUSED);
+    assert_eq!(
+        finished.failure.as_ref().map(|failure| failure.kind),
+        Some(JobFailureKind::WorldFull)
+    );
+    assert_eq!(finished.retryable, Some(true));
+    let resumed = fixture
+        .store
+        .transact(|write| graph_jobs::resume_processing(write.tx, &mut fixture.settings, LOUPIST))
+        .unwrap();
+    assert_eq!(resumed, 0);
+    assert_eq!(
+        fixture
+            .store
+            .graph_job(LOUPIST, &job.job_id)
+            .unwrap()
+            .status,
+        graph_jobs::JOB_PAUSED
     );
 }

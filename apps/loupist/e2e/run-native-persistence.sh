@@ -37,7 +37,7 @@ if [ "$E2E_STARTUP_TIMEOUT_MS" -le 0 ]; then
 fi
 
 # No secret and no network: the e2e catalog marker opens the shell without a
-# provider sign-in. Nothing in this suite sends a model request.
+# provider sign-in. The learning case uses a local scripted reply on this host.
 export LOUPIST_E2E_PROVIDER_READY=1
 # Each launch lets Vite bind its own private port.
 
@@ -143,10 +143,13 @@ run_phase() {
     fi
 }
 
-# The fixture adds a sealed World and a saved Chat turn to the first launch only.
-export LOUPIST_E2E_KNOWLEDGE_SEED=1
+# Seed a sealed World, a saved Chat turn and one Usage ledger row on first launch.
+export LOUPIST_E2E_KNOWLEDGE_SEED=persistence
+if [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ]; then
+    export LOUPIST_E2E_RELEASE_LEARNING=1
+fi
 run_phase seed seed
-unset LOUPIST_E2E_KNOWLEDGE_SEED
+unset LOUPIST_E2E_KNOWLEDGE_SEED LOUPIST_E2E_RELEASE_LEARNING
 run_phase restart seed
 mkdir -p "$STATE_ROOT/copy" "$STATE_ROOT/fork"
 cp -R "$STATE_ROOT/seed/workspace" "$STATE_ROOT/copy/workspace"

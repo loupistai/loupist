@@ -70,7 +70,7 @@ export function scheduledDeliveryEvidence(trace, scenario, turn, traces = [], qu
     || delivery.thread_id !== home || delivery.run_thread_id !== run.thread_id || delivery.kind !== task.kind
     || delivery.status !== 'succeeded' || delivery.finished_at_ms !== run.finished_at_ms
     || !present(source.content) || !present(delivery.message_id) || delivery.message_id === source.message_id
-    || !present(run.summary) || delivery.content !== run.summary || trace.answer !== delivery.content) {
+    || !present(run.summary) || delivery.content !== run.summary || trace.delivered_summary !== delivery.content) {
     return fail('persisted Bot delivery does not match the completed scheduled reply');
   }
   return { pass: true, detail: 'one scheduled model reply delivered to Bot' };

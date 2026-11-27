@@ -1,25 +1,29 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
-import { measureMapDrawProbe, measureMapProbe, openMapLibrary, openCustomConnections, openLoupistSwitcher, openMainTab, readVisibleMapStats, selectLoupistTemplate } from "./native-shell.mjs";
+import { measureMapDrawProbe, measureMapProbe, openComposerModelMenu, openMapLibrary, openCustomConnections, openLoupistSwitcher, openMainTab, readVisibleMapStats, selectLoupistTemplate, switcherLoupists, waitForNoLayers, waitForRenderedButton } from "./native-shell.mjs";
 
 test("reopening the Loupist switcher activates its trigger during menu exit", async () => {
   let expanded = false;
   let clicks = 0;
   const trigger = "[data-testid=loupist-header-identity]";
   const browser = {
-    execute: async (_callback, selector) => {
-      assert.equal(selector, trigger);
-      return "ready";
+    execute: async (callback, selector) => {
+      if (selector === trigger) return "ready";
+      assert.equal(selector, '.loupist-switcher-menu[data-state="open"]');
+      return runInNewContext(`(${callback})(selector)`, {
+        selector,
+        document: { querySelector: () => expanded ? { getClientRects: () => [{}] } : null },
+        getComputedStyle: () => ({ visibility: "visible" }),
+      });
     },
     $: selector => selector === trigger ? {
       getAttribute: async name => name === "aria-haspopup" ? "menu" : String(expanded),
       isDisplayed: async () => true,
       click: async () => { clicks++; expanded = true; },
     } : {
-      // A closing Radix menu can still have layout and be displayed.
-      isDisplayed: async () => true,
-      waitForDisplayed: async () => assert(expanded),
+      // The WebView renders the portal even when WebDriver says it is hidden.
+      waitForDisplayed: async () => assert.fail("The driver's visibility does not describe this menu"),
     },
     waitUntil: async condition => {
       assert(await condition());
@@ -31,16 +35,165 @@ test("reopening the Loupist switcher activates its trigger during menu exit", as
   assert.equal(clicks, 1);
 });
 
+test("reading the switcher waits for menu focus and verifies Escape dismissed it", async () => {
+  const trigger = { getAttribute: async () => "true" };
+  let activeElement = trigger;
+  let open = true;
+  let escapeEvents = 0;
+  const option = {
+    getAttribute: name => name === "data-loupist-option" ? "folder-id" : null,
+    querySelector: () => ({ textContent: "Folder" }),
+    dispatchEvent: event => {
+      assert.deepEqual([event.type, event.key, event.bubbles, event.cancelable], ["keydown", "Escape", true, true]);
+      escapeEvents++;
+      if (escapeEvents === 1) return true;
+      open = false;
+      return false;
+    },
+  };
+  const menu = {
+    getClientRects: () => [{}],
+    contains: element => element === option,
+  };
+  class KeyboardEvent {
+    constructor(type, props) { Object.assign(this, props, { type }); }
+  }
+  const browser = {
+    execute: async (callback, selector) => runInNewContext(`(${callback})(selector)`, {
+      selector,
+      document: {
+        activeElement,
+        querySelector: () => open ? menu : null,
+        querySelectorAll: () => open ? [option] : [],
+      },
+      getComputedStyle: () => ({ visibility: "visible" }),
+      KeyboardEvent,
+    }),
+    $: selector => selector === "[data-testid=loupist-header-identity]" ? trigger : {
+      waitForExist: async ({ reverse }) => {
+        assert.ok(reverse);
+        assert.equal(open, false);
+      },
+    },
+    waitUntil: async condition => {
+      if (await condition()) return;
+      assert.equal(escapeEvents, 0, "Escape must wait for focus to enter the menu");
+      activeElement = option;
+      assert.equal(await condition(), false, "A key event alone does not prove the menu closed");
+      assert.equal(await condition(), false, "Wait for the closed state after Escape is handled");
+      assert.ok(await condition());
+    },
+    keys: async () => assert.fail("Escape must be dispatched from the focused menu element in the same WebView call"),
+  };
+  const [listed] = await switcherLoupists(browser);
+  assert.equal(listed.id, "folder-id");
+  assert.equal(listed.name, "Folder");
+  assert.equal(escapeEvents, 2);
+});
+
+test("an Open button must be rendered and enabled in the requested card", async () => {
+  let scrolled = 0;
+  const target = {
+    textContent: " Open ",
+    disabled: false,
+    getClientRects: () => [{}],
+    scrollIntoView: () => { scrolled++; },
+  };
+  const buttons = [{ ...target, disabled: true }, { ...target, textContent: "Stop" }];
+  const browser = {
+    execute: async (callback, selector, name) => runInNewContext(`(${callback})(selector, name)`, {
+      selector,
+      name,
+      document: { querySelector: root => {
+        assert.equal(root, "#stopped-card");
+        return { closest: () => null, querySelectorAll: () => buttons };
+      } },
+      getComputedStyle: () => ({ visibility: "visible" }),
+    }),
+    waitUntil: async condition => {
+      assert.equal(await condition(), false);
+      buttons.push(target);
+      assert.equal(await condition(), true);
+    },
+  };
+  await waitForRenderedButton(browser, "#stopped-card", "Open");
+  assert.equal(scrolled, 1);
+});
+
+test("a lingering tooltip does not hold the composer after a menu closes", async () => {
+  const overlay = (role, tooltip = false) => ({
+    getClientRects: () => [{}],
+    closest: () => null,
+    matches: () => role === null,
+    querySelector: selector => tooltip && selector === '[data-slot="tooltip-content"]' ? {} : null,
+    getAttribute: () => role,
+  });
+  const tooltip = overlay(null, true);
+  let layers = [tooltip, overlay("menu")];
+  const browser = {
+    execute: async callback => runInNewContext(`(${callback})()`, {
+      document: { querySelectorAll: () => layers },
+    }),
+    waitUntil: async condition => {
+      assert.equal(await condition(), false);
+      layers = [tooltip];
+      assert.equal(await condition(), true);
+    },
+  };
+  await waitForNoLayers(browser);
+});
+
+test("the model picker opens by keyboard when WebKit delivers a click without pointerdown", async () => {
+  const selector = '[data-testid="composer-model-menu"]';
+  let focused = false;
+  let expanded = false;
+  let clicks = 0;
+  class Trigger {
+    closest() { return null; }
+    matches() { return false; }
+    focus() { focused = true; }
+    async click() { clicks++; }
+    async isDisplayed() { return true; }
+    async waitForDisplayed() {}
+    async waitForEnabled() {}
+    async getAttribute(name) {
+      return name === "aria-haspopup" ? "dialog" : String(expanded);
+    }
+  }
+  const trigger = new Trigger();
+  const browser = {
+    $: () => trigger,
+    execute: async (script, sel) => runInNewContext(`(${script})(selector)`, {
+      selector: sel,
+      document: { querySelector: () => trigger },
+      HTMLElement: Trigger,
+    }),
+    keys: async key => {
+      assert.equal(key, "Enter");
+      assert.ok(focused);
+      expanded = true;
+    },
+    waitUntil: async condition => {
+      assert(await condition());
+      return true;
+    },
+  };
+  await openComposerModelMenu(browser, selector);
+  assert.ok(expanded);
+  await openComposerModelMenu(browser, selector);
+  assert.equal(clicks, 1, "An open picker must stay open");
+});
+
 test("map counts come from the visible map after routing, never a retained hidden view", async () => {
   const span = (textContent, { hidden = false, width = 200, visibility = "visible" } = {}) => ({
     textContent, visibility,
     closest: () => hidden ? {} : null,
     getClientRects: () => width ? [{}] : [],
   });
-  let spans = [span("99 in World · 88 relationships", { hidden: true }),
-    span("77 in World · 66 relationships", { width: 0 }),
-    span("55 in World · 44 relationships", { visibility: "hidden" }),
-    span(" · 1 new this week"), span("34 in World · 34 relationships")];
+  let spans = [span("99 names · 88 relationships", { hidden: true }),
+    span("77 names · 66 relationships", { width: 0 }),
+    span("55 names · 44 relationships", { visibility: "hidden" }),
+    span("1 new name this week"), span("35 names · 38 relationships")];
   const browser = { execute: async script => runInNewContext(`(${script})()`, {
     document: { querySelectorAll: selector => {
       assert.equal(selector, "[data-testid=map-view] [data-testid=map-stats] > span");
@@ -48,9 +201,18 @@ test("map counts come from the visible map after routing, never a retained hidde
     } },
     getComputedStyle: element => ({ visibility: element.visibility }),
   }) };
-  assert.equal(await readVisibleMapStats(browser), "34 in World · 34 relationships");
-  spans = [span("99 in World · 88 relationships", { hidden: true }), span("Loading")];
-  assert.equal(await readVisibleMapStats(browser), "");
+  assert.equal(await readVisibleMapStats(browser), "35 names · 38 relationships");
+
+  for (const [status, expected] of [
+    ["1 name · 1 relationship · 1 new name this week", "1 name · 1 relationship"],
+    ["1,375 names · 1,588 relationships · 12 new names this week · 3 disagreements", "1,375 names · 1,588 relationships"],
+    ["Showing 991 of 1,375 names · 1,588 relationships · 3 disagreements", "Showing 991 of 1,375 names · 1,588 relationships"],
+    ["5 of 35 in World around Sealed Hub", ""],
+    ["Loading", ""],
+  ]) {
+    spans = [span("99 names · 88 relationships", { hidden: true }), span(status)];
+    assert.equal(await readVisibleMapStats(browser), expected, status);
+  }
 });
 
 const origin = "http://127.0.0.1:1430";
@@ -77,7 +239,7 @@ function browserFixture(frames) {
       const frame = frames[Math.min(reads++, frames.length - 1)];
       const host = mapHost(frame);
       const hidden = mapHost({ text: "1000 nodes · median 90.00 ms · p95 99.00 ms", width: 0 });
-      return runInNewContext(`(${script})(...args)`, {
+      const value = runInNewContext(`(${script})(...args)`, {
         args,
         location: { href: frame.url ?? requestedUrl },
         document: {
@@ -85,6 +247,9 @@ function browserFixture(frames) {
           querySelector: (selector) => selector === '#main-panel-map [data-testid=map-view] [data-testid=map-canvas]' ? host : hidden,
         },
       });
+      // The native driver treats a top-level error field as a script error.
+      if (value?.error) throw new Error("WebDriver script error");
+      return value;
     },
     waitUntil: async (condition, { timeoutMsg }) => {
       for (let attempt = 0; attempt < frames.length + 1; attempt++) if (await condition()) return;

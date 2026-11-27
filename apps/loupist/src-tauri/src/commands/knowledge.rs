@@ -53,6 +53,17 @@ pub struct KnowledgeCatalogRequest {
     pub loupist_id: String,
 }
 
+/// Row count and the first and last period of a table Source. Absent unless
+/// the object's leading column is a date or a fiscal period. Nothing here is stored.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgeTablePreviewDto {
+    pub rows: usize,
+    pub first: String,
+    pub last: String,
+}
+
 #[derive(Debug, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
@@ -60,6 +71,10 @@ pub struct KnowledgeObjectRefDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub origin: Option<crate::custom_connections::taint::CustomOrigin>,
+    /// A table Source's row count and the span of its leading period column.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub table: Option<KnowledgeTablePreviewDto>,
     pub summary: Option<String>,
     pub origin_label: Option<String>,
     pub acquired_at: Option<crate::knowledge::TimePoint>,
@@ -248,6 +263,14 @@ pub struct MemoryOpUndoRequest {
 #[derive(Debug, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MemoryMessageUndoRequest {
+    pub loupist_id: String,
+    pub message_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MemoryLearnedRequest {
     pub loupist_id: String,
     pub message_ids: Vec<String>,
@@ -334,6 +357,10 @@ pub struct WorldQueryDto {
     pub view: WorldGraphView,
     pub origin_label: String,
     pub applied_cursor: Option<String>,
+    /// What the query's `asOf` left out; absent without one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub as_of_report: Option<crate::knowledge::WorldAsOfReport>,
 }
 
 #[tauri::command(async)]
@@ -353,6 +380,21 @@ pub fn knowledge_growth_events(
     with_loupist_knowledge(state.inner(), &request.loupist_id, |tx, blobs| {
         crate::knowledge::KnowledgeWrite::bind(tx, blobs).growth_events(&request)
     })
+}
+
+/// Where method learning stands for a Loupist and why it waits.
+#[tauri::command(async)]
+pub fn knowledge_learning_state(
+    request: KnowledgeCatalogRequest,
+    state: State<'_, AppState>,
+) -> Result<crate::knowledge::learning::LearningState, CommandError> {
+    admit(state.inner(), &request.loupist_id)?;
+    crate::knowledge::learning::read_state(
+        &state.store,
+        &request.loupist_id,
+        crate::commands::now_ms(),
+    )
+    .map_err(map_knowledge)
 }
 
 #[tauri::command(async)]
@@ -376,13 +418,54 @@ pub(crate) fn map(
     request: crate::knowledge::KnowledgeMapQuery,
 ) -> Result<crate::knowledge::KnowledgeMap, CommandError> {
     admit(state, &request.loupist_id)?;
+    let cutoff = as_of::Cutoff::requested(request.as_of.as_deref())?;
     let context = state
         .store
         .map_context(&request.loupist_id)
         .map_err(super::map_store)?;
     with_loupist_knowledge(state, &request.loupist_id, |tx, blobs| {
-        crate::knowledge::KnowledgeWrite::bind(tx, blobs).map(&request, &context)
+        let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
+        let Some(cutoff) = cutoff else {
+            return write.map(&request, &context, None);
+        };
+        // The unchanged map code, on World as the one cutoff projection
+        // leaves it; Lens, Journal and learning follow the recorded rule.
+        let projected =
+            crate::knowledge::world_changes::world_head_revision(tx, &request.loupist_id)?
+                .map(|revision| as_of::world_as_of(&write, &request.loupist_id, &revision, cutoff))
+                .transpose()?;
+        let recorded = |at: i64| cutoff.recorded(at);
+        let (world, report) = match projected {
+            Some(projected) => (Some(projected.body), projected.report),
+            None => (
+                None,
+                crate::knowledge::WorldAsOfReport {
+                    facts: 0,
+                    sources: 0,
+                },
+            ),
+        };
+        let mut map = write.map(
+            &request,
+            &context,
+            Some(crate::knowledge::MapAsOf {
+                world: world.unwrap_or_else(empty_world),
+                recorded: &recorded,
+            }),
+        )?;
+        map.as_of_report = Some(report);
+        Ok(map)
     })
+}
+
+fn empty_world() -> crate::knowledge::WorldSnapshotBody {
+    crate::knowledge::WorldSnapshotBody {
+        nodes: Vec::new(),
+        claims: Vec::new(),
+        annotations: Vec::new(),
+        relation_vocabulary: Vec::new(),
+        temporal: Default::default(),
+    }
 }
 
 #[tauri::command(async)]
@@ -452,6 +535,21 @@ pub fn memory_section_forget(
             &request.loupist_id,
             &request.record_id,
             &request.key,
+            crate::commands::now_ms(),
+        )
+    })
+}
+
+#[tauri::command(async)]
+pub fn memory_message_undo(
+    request: MemoryMessageUndoRequest,
+    state: State<'_, AppState>,
+) -> Result<crate::knowledge::MessageUndo, CommandError> {
+    let _activity = admit_mutation(&state, &request.loupist_id)?;
+    with_loupist_knowledge(&state, &request.loupist_id.clone(), |tx, blobs| {
+        crate::knowledge::KnowledgeWrite::bind(tx, blobs).undo_message(
+            &request.loupist_id,
+            &request.message_id,
             crate::commands::now_ms(),
         )
     })
@@ -904,9 +1002,14 @@ pub fn knowledge_graph_job(
     state: State<'_, AppState>,
 ) -> Result<crate::knowledge::GraphJobView, CommandError> {
     admit(state.inner(), &request.loupist_id)?;
-    with_loupist_knowledge(state.inner(), &request.loupist_id.clone(), |tx, _blobs| {
-        crate::knowledge::get_processing_job(tx, &request.loupist_id, &request.job_id)
-    })
+    let mut job =
+        with_loupist_knowledge(state.inner(), &request.loupist_id.clone(), |tx, _blobs| {
+            crate::knowledge::get_processing_job(tx, &request.loupist_id, &request.job_id)
+        })?;
+    job.hold = queued_holds(state.inner(), &request.loupist_id)
+        .get(&job.job_id)
+        .cloned();
+    Ok(job)
 }
 
 pub(crate) fn host_world_jobs(
@@ -914,9 +1017,13 @@ pub(crate) fn host_world_jobs(
     loupist_id: &str,
 ) -> Result<serde_json::Value, CommandError> {
     admit(state, loupist_id)?;
-    let jobs = with_loupist_knowledge(state, loupist_id, |tx, _| {
+    let mut jobs = with_loupist_knowledge(state, loupist_id, |tx, _| {
         crate::knowledge::list_jobs(tx, loupist_id)
     })?;
+    let holds = queued_holds(state, loupist_id);
+    for job in &mut jobs {
+        job.hold = holds.get(&job.job_id).cloned();
+    }
     serde_json::to_value(jobs).map_err(|error| CommandError::internal(error.to_string()))
 }
 
@@ -951,15 +1058,13 @@ pub fn knowledge_graph_retry_source(
     if !state.graph.runtime_available() {
         return Err(CommandError::invalid("World building is unavailable"));
     }
-    let job = with_loupist_knowledge(state.inner(), &request.loupist_id.clone(), |tx, _| {
-        let settings = crate::knowledge::load_settings(tx, &request.loupist_id)?;
-        crate::knowledge::retry_source_processing(
-            tx,
-            &settings,
-            &request.loupist_id,
-            &request.record_id,
-        )
-    })?;
+    let job = crate::knowledge::retry_admitted_source(
+        state.inner().store.as_ref(),
+        &request.loupist_id,
+        &request.record_id,
+        crate::commands::now_ms(),
+    )
+    .map_err(map_knowledge)?;
     state.graph.wake();
     Ok(job)
 }
@@ -1122,12 +1227,33 @@ fn removed_pack_sources(
     Ok(removed)
 }
 
+fn queued_holds(
+    state: &AppState,
+    loupist_id: &str,
+) -> std::collections::BTreeMap<String, crate::knowledge::JobHold> {
+    crate::knowledge::queued_holds(&state.store, loupist_id, crate::commands::now_ms())
+        .unwrap_or_default()
+}
+
+fn apply_processing_hold(
+    holds: &std::collections::BTreeMap<String, crate::knowledge::JobHold>,
+    processing: &mut Option<crate::knowledge::SourceProcessing>,
+) {
+    let Some(processing) = processing else {
+        return;
+    };
+    processing.hold = processing
+        .job_id
+        .as_ref()
+        .and_then(|job_id| holds.get(job_id).cloned());
+}
+
 pub(crate) fn catalog(
     state: &AppState,
     request: KnowledgeCatalogRequest,
 ) -> Result<KnowledgeCatalogDto, CommandError> {
     admit(state, &request.loupist_id)?;
-    with_loupist_knowledge(state, &request.loupist_id.clone(), |tx, blobs| {
+    let mut page = with_loupist_knowledge(state, &request.loupist_id.clone(), |tx, blobs| {
         let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
         let mut worlds = Vec::new();
         let mut lenses = Vec::new();
@@ -1151,7 +1277,14 @@ pub(crate) fn catalog(
             lenses,
             sources,
         })
-    })
+    })?;
+    let holds = queued_holds(state, &page.loupist_id);
+    for source in &mut page.sources {
+        for object in &mut source.objects {
+            apply_processing_hold(&holds, &mut object.processing);
+        }
+    }
+    Ok(page)
 }
 
 pub(crate) fn world_query(
@@ -1159,6 +1292,7 @@ pub(crate) fn world_query(
     mut request: WorldGraphQuery,
 ) -> Result<WorldQueryDto, CommandError> {
     admit(state, &request.loupist_id)?;
+    let cutoff = as_of::Cutoff::requested(request.as_of.as_deref())?;
     with_loupist_knowledge(state, &request.loupist_id.clone(), |tx, blobs| {
         let write = crate::knowledge::KnowledgeWrite::bind(tx, blobs);
         // The renderer browses the live World. A continuation still belongs to
@@ -1167,7 +1301,17 @@ pub(crate) fn world_query(
             request.revision_id =
                 current_world_revision(&write, &request.loupist_id, &request.record_id)?;
         }
-        world_view_with_sources(&write, request)
+        let revision_id = request.revision_id.clone();
+        let mut result = world_view_with_sources(&write, request.clone())?;
+        if let Some(cutoff) = cutoff {
+            result.as_of_report = Some(as_of::world_as_of_report(
+                &write,
+                &request.loupist_id,
+                &revision_id,
+                cutoff,
+            )?);
+        }
+        Ok(result)
     })
 }
 
@@ -1190,7 +1334,7 @@ fn world_view_with_sources(
     let (_, _, byte_limit) = query.limits()?;
     for _ in 0..16 {
         let mut view = write.query_world(query.clone())?;
-        if let Some(cutoff) = as_of::Cutoff::parse(query.published_by.as_deref()) {
+        if let Some(cutoff) = as_of::Cutoff::parse(query.as_of.as_deref()) {
             // Under an as-of cutoff a name's summary may carry later facts, and
             // a relationship shows its status and evidence as they were then.
             for node in &mut view.nodes {
@@ -1213,8 +1357,10 @@ fn world_view_with_sources(
                 edge.claim
                     .evidence
                     .iter()
-                    .map(|evidence| evidence.span_id.clone())
+                    .map(|evidence| evidence.span_id.as_str())
+                    .chain(edge.claim.qualifier(crate::knowledge::SUPERSEDED_BY_SPAN))
             })
+            .map(str::to_owned)
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
@@ -1236,6 +1382,7 @@ fn world_view_with_sources(
             applied_cursor: presented.applied_cursor,
             origin_label: presented.origin_label,
             view: presented.body,
+            as_of_report: None,
         };
         let size = serde_json::to_vec(&result)?.len() as u32;
         if size <= byte_limit {
@@ -1252,6 +1399,101 @@ fn world_view_with_sources(
     Err(KnowledgeError::ItemTooLarge)
 }
 
+#[cfg(test)]
+mod world_cutoff_tests {
+    use super::*;
+    use crate::knowledge::{
+        CreateRecord, DependencyRole, EvidenceRevision, KnowledgeWrite, RetainNewSource,
+        RetainedSource, SealWorld, SUPERSEDED_BY_SPAN,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn world_cutoff_uses_establishing_evidence_and_links_only_visible_ending_witnesses() {
+        let directory = tempfile::tempdir().unwrap();
+        let state = AppState::for_test(directory.path().join("app"));
+        let loupist = "loupist-a";
+        state
+            .store
+            .create_loupist(&crate::test_fixtures::loupist_profile(loupist))
+            .unwrap();
+        with_loupist_knowledge(&state, loupist, |tx, blobs| {
+            let write = KnowledgeWrite::bind(tx, blobs);
+            let retain = |title: &str, day: &str| -> crate::knowledge::KnowledgeResult<RetainedSource> {
+                let source: RetainNewSource = serde_json::from_value(json!({
+                    "loupistId": loupist, "atMs": 1, "title": title,
+                    "sourceClass": "publisher_document", "authorship": "publisher",
+                    "originLocator": format!("https://example.test/{day}"),
+                    "providerIdentity": "publisher", "coverage": "included_full",
+                    "publicationTime": {"precision": "date", "value": day},
+                    "material": {
+                        "mediaType": "text/plain", "role": "original", "documentId": day,
+                        "inputSpanIds": [], "bytes": title.as_bytes(),
+                        "selector": {"kind": "byte_range", "start": 0, "end": title.len()},
+                        "contextNote": "A dated filing",
+                    },
+                }))?;
+                write.retain_new_source(source)
+            };
+            let evidence = retain("Original appointment", "2026-02-20")?;
+            let notice = retain("Departure notice", "2026-04-15")?;
+            let evidence_span = evidence.span_id.as_deref().unwrap();
+            let witness_span = notice.span_id.as_deref().unwrap();
+            let world = write.create_record(CreateRecord {
+                loupist_id: loupist.into(),
+                kind: RecordKind::World,
+                title: "Appointments".into(),
+                at_ms: 1,
+            })?;
+            let dependencies = [&evidence, &notice].map(|source| EvidenceRevision {
+                record_id: source.record_id.clone(),
+                revision_digest: source.revision_digest.clone(),
+                role: DependencyRole::WorldSource,
+            });
+            let snapshot: SealWorld = serde_json::from_value(json!({
+                "loupistId": loupist, "recordId": world.record_id, "atMs": 2,
+                "nodes": [{
+                    "id": "kim", "name": "Kim", "aliases": [], "description": "",
+                    "kind": "Person", "sourceRole": "source", "properties": {},
+                }],
+                "claims": [{
+                    "id": "cfo", "proposition": "Kim serves as CFO", "attribution": "publisher",
+                    "relation": "holds", "endpoints": [{"nodeId": "kim", "role": "subject"}],
+                    "qualifiers": [{"key": SUPERSEDED_BY_SPAN, "value": witness_span}],
+                    "evidence": [{"spanId": evidence_span, "role": "supports", "attribution": "publisher"}],
+                    "status": "active",
+                    "publicationTime": {"precision": "date", "value": "2026-05-01"},
+                    "invalidAt": {"precision": "date", "value": "2026-03-15"},
+                }],
+                "annotations": [],
+                "dependencies": dependencies,
+            }))?;
+            let revision = write.seal_world(snapshot)?;
+            let read = |day: &str| {
+                let query = serde_json::from_value(json!({
+                    "loupistId": loupist, "recordId": world.record_id,
+                    "revisionId": revision.revision_id, "asOf": day,
+                }))?;
+                world_view_with_sources(&write, query)
+            };
+
+            let early = read("2026-03-30")?.view;
+            assert_eq!(early.edges.len(), 1);
+            assert!(early.edges[0].claim.invalid_at.is_none());
+            assert!(early.source_targets.contains_key(evidence_span));
+            assert!(!early.source_targets.contains_key(witness_span));
+
+            let known = read("2026-04-16")?.view;
+            assert!(known.edges[0].claim.invalid_at.is_some());
+            assert_eq!(known.edges[0].claim.evidence.len(), 1);
+            assert_eq!(known.source_targets[witness_span].record_id, notice.record_id);
+            assert_eq!(known.source_targets[witness_span].span_id, witness_span);
+            Ok(())
+        })
+        .unwrap();
+    }
+}
+
 pub(crate) fn source_read(
     state: &AppState,
     request: KnowledgeSourceReadRequest,
@@ -1262,7 +1504,8 @@ pub(crate) fn source_read(
             "source reads from the renderer are inspection only",
         ));
     }
-    with_loupist_knowledge(state, &request.loupist_id.clone(), |tx, blobs| {
+    let loupist_id = request.loupist_id.clone();
+    let mut detail = with_loupist_knowledge(state, &request.loupist_id.clone(), |tx, blobs| {
         if removed_pack_sources(tx, &request.loupist_id)?.contains(&request.record_id) {
             return Err(KnowledgeError::NotFound);
         }
@@ -1478,7 +1721,10 @@ pub(crate) fn source_read(
             acquired_at,
             provided,
         })
-    })
+    })?;
+    let holds = queued_holds(state, &loupist_id);
+    apply_processing_hold(&holds, &mut detail.processing);
+    Ok(detail)
 }
 
 pub(crate) fn lens_read(
@@ -1637,11 +1883,139 @@ fn admit(state: &AppState, loupist_id: &str) -> Result<(), CommandError> {
     Ok(())
 }
 
-fn admit_mutation(state: &AppState, loupist_id: &str) -> Result<ActivityLease, CommandError> {
+pub(crate) fn admit_mutation(
+    state: &AppState,
+    loupist_id: &str,
+) -> Result<ActivityLease, CommandError> {
     admit(state, loupist_id)?;
     state
         .maintenance
         .admit_kind(MaintenanceActivityKind::MemoryMutation)
+}
+
+/// The leading column when it is a date or a fiscal period: row count, first
+/// cell, last cell. A name or a figure in that column is not a period.
+fn table_period(table: &impl serde::Serialize) -> Option<KnowledgeTablePreviewDto> {
+    let value = serde_json::to_value(table).ok()?;
+    let rows_n = value.get("totalRows").and_then(serde_json::Value::as_u64)? as usize;
+    let header = value
+        .get("columns")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|columns| columns.first())
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let rows = value.get("rows").and_then(serde_json::Value::as_array)?;
+    let cells = rows
+        .iter()
+        .filter_map(|row| row.as_array()?.first())
+        .filter_map(cell_text)
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>();
+    let period =
+        period_header(header) || (!cells.is_empty() && cells.iter().all(|cell| period_value(cell)));
+    if !period || rows_n == 0 {
+        return None;
+    }
+    Some(KnowledgeTablePreviewDto {
+        rows: rows_n,
+        first: cells.first()?.clone(),
+        last: cells.last()?.clone(),
+    })
+}
+
+fn cell_text(cell: &serde_json::Value) -> Option<String> {
+    match cell.get("kind").and_then(serde_json::Value::as_str) {
+        Some("text" | "number") => cell
+            .get("value")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned),
+        _ => None,
+    }
+}
+
+fn period_header(name: &str) -> bool {
+    let folded: String = name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .flat_map(|c| c.to_lowercase())
+        .collect();
+    matches!(
+        folded.as_str(),
+        "date"
+            | "datetime"
+            | "timestamp"
+            | "time"
+            | "period"
+            | "year"
+            | "fiscalyear"
+            | "fiscalquarter"
+            | "quarter"
+            | "fy"
+            | "asof"
+            | "asofdate"
+    ) || matches!(name.trim(), "날짜" | "일자" | "기간" | "분기")
+}
+
+fn period_value(text: &str) -> bool {
+    looks_like_date(text) || looks_like_quarter(text)
+}
+
+fn looks_like_date(text: &str) -> bool {
+    let text = text.trim();
+    let head = text.get(..10).unwrap_or(text);
+    let bytes = head.as_bytes();
+    let ymd = |mark: u8| {
+        bytes.len() == 10
+            && bytes[4] == mark
+            && bytes[7] == mark
+            && bytes
+                .iter()
+                .enumerate()
+                .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit())
+    };
+    let dated = ymd(b'-') || ymd(b'/');
+    dated
+        && (text.len() == 10
+            || text
+                .as_bytes()
+                .get(10)
+                .is_some_and(|byte| matches!(byte, b'T' | b' ')))
+        || (bytes.len() == 8 && bytes.iter().all(u8::is_ascii_digit) && text.len() == 8)
+        || (bytes.len() == 7
+            && bytes[4] == b'-'
+            && bytes
+                .iter()
+                .enumerate()
+                .all(|(index, byte)| index == 4 || byte.is_ascii_digit())
+            && text.len() == 7)
+}
+
+fn looks_like_quarter(text: &str) -> bool {
+    let folded: String = text
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '-')
+        .flat_map(|c| c.to_uppercase())
+        .collect();
+    let Some(at) = folded.find('Q') else {
+        return false;
+    };
+    if !matches!(
+        folded.as_bytes().get(at + 1),
+        Some(b'1' | b'2' | b'3' | b'4')
+    ) {
+        return false;
+    }
+    let year = |token: &str| {
+        let digits = token.strip_prefix("FY").unwrap_or(token);
+        digits.len() == 4
+            && digits.bytes().all(|byte| byte.is_ascii_digit())
+            && (token == digits || token.starts_with("FY"))
+    };
+    let before = &folded[..at];
+    let after = &folded[at + 2..];
+    (year(before) && after.is_empty()) || (before.is_empty() && year(after))
 }
 
 fn summarize(
@@ -1664,6 +2038,7 @@ fn summarize(
             serde_json::from_value(write.get_revision(loupist_id, &revision_id)?.payload)?;
         let source = payload.source;
         let capture = source.captures.last();
+        let mut table_preview = None;
         let summary = capture.and_then(|capture| {
             capture.representations.iter().find_map(|rep| {
                 if !rep.media_type.starts_with("text/") && rep.media_type != "application/json" {
@@ -1688,7 +2063,8 @@ fn summarize(
                     &rep.media_type,
                     &text,
                 ) {
-                    if let Some(table) = web.table {
+                    if let Some(table) = web.table.as_ref() {
+                        table_preview = table_period(table);
                         return Some(crate::util::shorten(&table.columns.join(" · "), 240));
                     }
                     source_presentation::catalog_preview(
@@ -1708,6 +2084,7 @@ fn summarize(
             })
         });
         vec![KnowledgeObjectRefDto {
+            table: table_preview,
             user_provided: source.source_class == crate::knowledge::SourceClass::UserProvided,
             origin: source.origin.clone(),
             title_key: crate::knowledge::title_key(&source.provider_identity),
@@ -1780,7 +2157,7 @@ pub(crate) fn is_loupist_lens_record(
     })
 }
 
-fn with_loupist_knowledge<T>(
+pub(crate) fn with_loupist_knowledge<T>(
     state: &AppState,
     loupist_id: &str,
     body: impl FnOnce(&rusqlite::Transaction<'_>, &BlobStore) -> crate::knowledge::KnowledgeResult<T>,
@@ -1822,7 +2199,7 @@ pub(crate) fn knowledge_blobs(state: &AppState) -> Result<BlobStore, CommandErro
     BlobStore::open(root).map_err(map_knowledge)
 }
 
-fn sqlite_is_busy(error: &rusqlite::Error) -> bool {
+pub(crate) fn sqlite_is_busy(error: &rusqlite::Error) -> bool {
     matches!(
         error,
         rusqlite::Error::SqliteFailure(code, _)
@@ -1949,11 +2326,65 @@ mod memory_error_tests {
     }
 }
 
+pub(crate) mod world_changes;
+pub(in crate::commands) use world_changes::{
+    read_between, read_changes, read_lineage, since_read_block,
+};
+
+#[cfg(test)]
+mod table_preview_tests {
+    use super::table_period;
+    use serde_json::json;
+
+    fn parsed(header: &str, cells: &[&str], rows: usize) -> serde_json::Value {
+        json!({
+            "columns": [header, "Value"],
+            "rows": cells.iter().map(|cell| json!([{"kind": "text", "value": cell}, {"kind": "number", "value": "1"}])).collect::<Vec<_>>(),
+            "rowOffset": 0,
+            "totalRows": rows,
+        })
+    }
+
+    #[test]
+    fn a_table_preview_is_the_leading_period_and_absent_otherwise() {
+        let cases = [
+            (
+                Some(parsed(
+                    "Date",
+                    &["2024-01-31", "2024-02-29", "2024-03-31"],
+                    3,
+                )),
+                Some(("2024-01-31", "2024-03-31", 3usize)),
+            ),
+            (
+                Some(parsed("Period", &["2024Q1", "Q2 FY2024", "FY2024 Q4"], 4)),
+                Some(("2024Q1", "FY2024 Q4", 4)),
+            ),
+            (Some(parsed("Symbol", &["AAPL", "MSFT"], 2)), None),
+            (None, None),
+        ];
+        for (table, expected) in cases {
+            let preview = table.as_ref().and_then(table_period);
+            match expected {
+                Some((first, last, rows)) => {
+                    let preview = preview.expect("period table");
+                    assert_eq!(preview.first, first);
+                    assert_eq!(preview.last, last);
+                    assert_eq!(preview.rows, rows);
+                }
+                None => assert!(preview.is_none(), "{table:?}"),
+            }
+        }
+    }
+}
+
 #[cfg(feature = "e2e")]
 mod e2e_fixture;
 #[cfg(feature = "e2e")]
 pub(crate) use e2e_fixture::seed_e2e_knowledge_fixture;
 
+#[cfg(test)]
+pub(in crate::commands) mod as_of_oracle;
 #[cfg(test)]
 mod memory_tests;
 #[cfg(test)]

@@ -14,6 +14,7 @@ import { renderWithOpen, destinations } from "../../test/open";
 import type { ChatDestination, Open } from "../../chat/navigation";
 import { onTestFinished, type Mock } from "vitest";
 import { previewGridLinkAnswer, SENSITIVITY_EVIDENCE } from "../../preview/korea";
+import { endPrint } from "../print/printView";
 
 const source: KnowledgeReference = { kind: "source", recordId: "source-record", revisionId: "source-v1", objectId: "source-original", spanId: "passage-1", receiptId: "selected-receipt" };
 const read = (read_ref: string, knowledge = source): MemoryRef => ({ read_ref, kind: "source", title: "Annual report", excerpt: "Original passage", access: "exact_read", knowledge, as_of: null, section: null });
@@ -269,8 +270,10 @@ describe("response details", () => {
     expect(dialog).not.toHaveTextContent(/cache|session|setup|first text/);
   });
 
-  it("never manufactures usage from missing or nonfinite counters, and keeps zero distinct", async () => {
-    expect(await details({ ...performance, cacheWriteTokens: undefined } as unknown as ChatPerformance)).toHaveTextContent("Input: unavailable");
+  it("counts reported tokens when cache fields are absent and preserves unknown required counts", async () => {
+    expect(await details({ ...performance, cacheWriteTokens: undefined } as unknown as ChatPerformance)).toHaveTextContent("Input: 175 tokens");
+    cleanup();
+    expect(await details({ ...performance, inputTokens: undefined } as unknown as ChatPerformance)).toHaveTextContent("Input: unavailable");
     cleanup();
     expect(await details({ ...performance, outputTokens: Infinity })).toHaveTextContent("Output: unavailable");
     cleanup();
@@ -936,4 +939,47 @@ it("opens an asset page citation by the id and name it stored", async () => {
   const { open } = renderAnswer(answer({ content: `[Asset page: Alpha](#evidence-${read.id})`, evidence_refs: [read] }));
   await user().click(screen.getByRole("button", { name: "Source 1: Asset page: Alpha" }));
   expect(opened(open, "asset")).toEqual([{ kind: "asset", target: { loupistId: "loupist-a", assetId: "ast_00000000000a1fa0", name: "Alpha Inc." } }]);
+});
+
+describe("answer export (plan 4.7)", () => {
+  const filing = evidenceFixture({ id: "ev_filing", title: "Bộ báo cáo thường niên 2025", url: "https://investors.example.vn/ar-2025.pdf" });
+  const release = evidenceFixture({ id: "ev_release", title: "Résultats annuels", url: "https://example.fr/resultats" });
+  const cited = answer({ content: "Revenue rose [1](#evidence-ev_filing) while margins held [2](#evidence-ev_release).", evidence_refs: [filing, release] });
+
+  it("offers neither Print nor Copy as Markdown while the answer streams", () => {
+    renderAnswer(answer({ ...cited, status: "streaming" }));
+    expect(screen.queryByRole("button", { name: "More for this answer" })).toBeNull();
+  });
+
+  it("copies the answer as Markdown with its Sources as numbered footnotes", async () => {
+    renderAnswer(cited);
+    const reader = user();
+    const write = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    await reader.click(screen.getByRole("button", { name: "More for this answer" }));
+    await reader.click(await screen.findByRole("menuitem", { name: "Copy as Markdown" }));
+    const markdown = write.mock.calls[0]![0];
+    expect(markdown).toContain("Revenue rose [^1] while margins held [^2].");
+    expect(markdown).toContain("[^1]: Bộ báo cáo thường niên 2025 — https://investors.example.vn/ar-2025.pdf");
+    expect(markdown).toContain("[^2]: Résultats annuels — https://example.fr/resultats");
+    expect(markdown.trim().endsWith("_AI can be wrong. Not a licensed financial adviser._")).toBe(true);
+  });
+
+  it("prints the answer as drawn with its Sources as numbered URLs, under the question's words", async () => {
+    const print = vi.spyOn(window, "print").mockImplementation(() => undefined);
+    onTestFinished(() => { endPrint(); print.mockRestore(); });
+    renderAnswer(cited, { previousQuestion: "Why did revenue rise?" });
+    const reader = user();
+    await reader.click(screen.getByRole("button", { name: "More for this answer" }));
+    await reader.click(await screen.findByRole("menuitem", { name: "Print or save as PDF…" }));
+    await waitFor(() => expect(print).toHaveBeenCalledOnce());
+    const paper = document.querySelector<HTMLElement>(".print-sheet")!;
+    expect(paper).toHaveTextContent("Revenue rose");
+    expect([...paper.querySelectorAll(".print-sources li")].map((item) => item.textContent)).toEqual([
+      "Bộ báo cáo thường niên 2025 — https://investors.example.vn/ar-2025.pdf",
+      "Résultats annuels — https://example.fr/resultats",
+    ]);
+    // The answer's controls and the Sources fold stay on screen only.
+    expect(paper.querySelector(".message-actions, .message-sources, button")).toBeNull();
+    expect(document.title.startsWith("Why did revenue rise? · ")).toBe(true);
+  });
 });

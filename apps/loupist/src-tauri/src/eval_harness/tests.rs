@@ -1,5 +1,35 @@
 use super::*;
 
+/// Run one test of this binary alone in a child process, by its libtest name
+/// from `module` (a `module_path!()`) and `test`, and require that it ran and
+/// passed. `command` adds the child's environment.
+pub(super) fn run_child_test(
+    module: &str,
+    test: &str,
+    command: impl FnOnce(&mut std::process::Command) -> &mut std::process::Command,
+) {
+    let module = module.split_once("::").map_or(module, |(_, path)| path);
+    let name = format!("{module}::{test}");
+    let executable = std::env::current_exe().unwrap();
+    let mut child = std::process::Command::new(&executable);
+    child.args(["--exact", &name, "--nocapture"]);
+    let output = command(&mut child).output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // A build of another tree into a shared target directory can replace the
+    // binary at this path while this one runs; the child then lacks the test.
+    let replaced = stdout.contains("running 0 tests");
+    assert!(
+        output.status.success() && stdout.contains("1 passed"),
+        "{name} in {executable:?}{}: {stdout}{}",
+        if replaced {
+            ", which no longer holds this test (replaced by another build)"
+        } else {
+            ""
+        },
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 fn agent_eval_defaults_to_the_pinned_sol_route_and_accepts_an_explicit_model() {
     assert_eq!(
@@ -89,13 +119,15 @@ async fn invalid_pi_agent_directory_is_rejected_before_chat_side_effects() {
     if std::env::var_os(CHILD).is_none() {
         // A child test process keeps this failure injection out of every
         // other test's environment, even with parallel libtest execution.
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "eval_harness::tests::invalid_pi_agent_directory_is_rejected_before_chat_side_effects", "--nocapture"])
-            .env(CHILD, "1")
-            .env_remove(crate::app::LIVE_PI_AGENT_DATA_DIR_ENV)
-            .status()
-            .unwrap();
-        assert!(status.success());
+        run_child_test(
+            module_path!(),
+            "invalid_pi_agent_directory_is_rejected_before_chat_side_effects",
+            |child| {
+                child
+                    .env(CHILD, "1")
+                    .env_remove(crate::app::LIVE_PI_AGENT_DATA_DIR_ENV)
+            },
+        );
         return;
     }
     let root = tempfile::tempdir().unwrap();
@@ -232,10 +264,17 @@ async fn completed_eval_turn_does_not_wait_for_an_unrelated_chat() {
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
 pub(super) fn scripted(state: &mut AppState, root: &Path) {
+    Arc::make_mut(&mut state.artifacts).pi =
+        Some(scripted_pi(root, include_str!("scripted_pi.py")));
+}
+
+/// A launcher for the Python fixture `source`, staged as a Pi runtime under `root`.
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+pub(super) fn scripted_pi(root: &Path, source: &str) -> PiArtifacts {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let executable = root.join("fixture-pi");
     let script = root.join("fixture.py");
-    fs::write(&script, include_str!("scripted_pi.py")).unwrap();
+    fs::write(&script, source).unwrap();
     let compiled = std::process::Command::new("/usr/bin/cc")
         .args(["-std=c11", "-Wall", "-Werror"])
         .arg("-DFIXTURE_PYTHON=\"/usr/bin/python3\"")
@@ -273,7 +312,7 @@ pub(super) fn scripted(state: &mut AppState, root: &Path) {
         fs::write(runtime.join(name), value).unwrap();
     }
     let agent = manifest.parent().unwrap().join("agent");
-    Arc::make_mut(&mut state.artifacts).pi = Some(PiArtifacts {
+    PiArtifacts {
         executable,
         runtime_dir: runtime,
         extension: agent.join("loupist-extension.mjs"),
@@ -284,7 +323,97 @@ pub(super) fn scripted(state: &mut AppState, root: &Path) {
         thinking_level: String::new(),
         run_options: Default::default(),
         provider_credential: None,
-    });
+    }
+}
+
+/// A [`trial::Recorder`] that keeps every record and admits every turn.
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+#[derive(Default)]
+pub(super) struct Kept(pub Vec<Value>);
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+impl trial::Recorder for Kept {
+    fn admit_turn(&mut self) -> bool {
+        true
+    }
+    fn record(
+        &mut self,
+        session: &Session,
+        turn_index: usize,
+        _turn: &Turn,
+        _model: &crate::providers::catalog::ConfiguredModel,
+        mut record: Value,
+    ) -> Result<AfterTurn> {
+        record["session_id"] = json!(session.id);
+        record["turn_index"] = json!(turn_index);
+        let next = after_turn(&record, false);
+        self.0.push(record);
+        Ok(next)
+    }
+}
+
+/// A trial host for a scripted Pi and the test profile's fixture model.
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+pub(super) fn scripted_host(pi: PiArtifacts) -> trial::TrialHost {
+    trial::TrialHost {
+        pi,
+        pi_agent_dir: None,
+        config_toml: None,
+        python_cache: None,
+        model: "fixture".into(),
+        thinking: "medium".into(),
+        turn_timeout_ms: 600_000,
+        discovery: None,
+        keep: false,
+    }
+}
+
+#[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
+#[tokio::test]
+async fn one_process_runs_every_trial_of_a_scenario() {
+    const CHILD: &str = "LOUPIST_TEST_EVERY_TRIAL";
+    if std::env::var_os(CHILD).is_none() {
+        // The child closes its own process's spawn admission, as the runner
+        // binary's exit path does, so no other test may share that process.
+        run_child_test(
+            module_path!(),
+            "one_process_runs_every_trial_of_a_scenario",
+            |child| child.env(CHILD, "1"),
+        );
+        return;
+    }
+    let root = tempfile::Builder::new()
+        .prefix("eval-test-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let scenario: Scenario = serde_json::from_value(json!({
+        "id": "TRIALS-001", "title": "Two trials in one process", "language": "en",
+        "sessions": [{"id": "teach", "role": "train", "memory": "remember",
+            "turns": [{"user": "TEACH_EVAL: save my fully diluted share method"}]}],
+    }))
+    .unwrap();
+    let mut host = scripted_host(scripted_pi(root.path(), include_str!("scripted_pi.py")));
+    let mut kept = Kept::default();
+    for _ in 0..2 {
+        assert!(!trial::run_trial(&mut host, &scenario, None, &mut kept)
+            .await
+            .unwrap());
+        // A test build's AppState::shutdown closes a private registry, so that
+        // parallel tests keep spawning; the runner binary's closes this one.
+        crate::process_lease::ProcessGroups::host()
+            .finish_shutdown(std::time::Instant::now() + Duration::from_secs(2), true);
+    }
+    let [first, second] = kept.0.as_slice() else {
+        panic!("expected one record per trial: {:?}", kept.0);
+    };
+    for record in [first, second] {
+        assert_eq!(record["status"], "completed", "{record}");
+        assert!(record["memory_commits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|commit| commit["title"] == "Hanbit diluted-share rule"));
+    }
 }
 #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
 #[tokio::test]
@@ -587,7 +716,7 @@ async fn eval_memory_write_without_reply_commits_receipts_but_provider_failure_d
         assert_eq!(result["failureKind"], json!(failure), "{result}");
         assert_eq!(
             result["memory_save_skip"],
-            json!(save_failed.then_some("failed"))
+            json!(save_failed.then_some("storage"))
         );
         if save_failed {
             assert_eq!(result["answer"], "Saved the rule.");
@@ -681,7 +810,7 @@ async fn eval_memory_write_without_reply_commits_receipts_but_provider_failure_d
                     .memory_update
                     .as_ref()
                     .expect("skipped save receipt");
-                assert_eq!(update.skip_reason, Some(MemorySaveSkipReason::Failed));
+                assert_eq!(update.skip_reason, Some(MemorySaveSkipReason::Storage));
                 assert!(update.commit_id.is_none());
                 assert_eq!(message.content, result["answer"].as_str().unwrap());
             } else {
@@ -838,7 +967,21 @@ async fn eval_timeout_during_startup_awaits_owned_cleanup_before_shutdown() {
         memory: "off".into(),
         turns: vec![],
     };
-    let result = run_turn(
+    // Time out once the held Pi is live and has read a startup control, however
+    // long a loaded machine takes to start it.
+    let trace = root.path().join("startup-trace.jsonl");
+    let live: Deadline = Box::pin(async move {
+        while !fs::read_to_string(&trace)
+            .unwrap_or_default()
+            .lines()
+            .any(|line| {
+                serde_json::from_str::<Value>(line).is_ok_and(|event| event["event"] != "launch")
+            })
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    });
+    let result = run_turn_until(
         &state,
         &chat,
         &session,
@@ -849,7 +992,7 @@ async fn eval_timeout_during_startup_awaits_owned_cleanup_before_shutdown() {
         },
         "fixture",
         "medium",
-        1000,
+        live,
     )
     .await
     .unwrap();
@@ -1017,11 +1160,19 @@ fn product_eval_budget_counts_cached_input_and_unknown_usage() {
         budget.stop_reason(&record).unwrap()["error"],
         "budget_usage_unknown"
     );
-    record["error"] = json!("provider_error");
+    // A completed turn whose usage is unknown stops the batch.
+    record["status"] = json!("completed");
     budget.enforce(&mut record).unwrap();
-    assert_eq!(record["error"], "provider_error");
     assert_eq!(record["budget_stop"]["error"], "budget_usage_unknown");
     assert_eq!(record["status"], "failed");
+    // A failed unit with unknown usage is recorded and the batch goes on.
+    let mut failed = json!({"status": "failed", "error": "provider_error",
+        "usage": {"input": null, "cache_read": null, "cache_write": null}});
+    assert!(budget.enforce(&mut failed).is_none());
+    assert_eq!(failed["error"], "provider_error");
+    assert_eq!(failed["budget_note"]["error"], "budget_usage_unknown");
+    assert!(failed["budget_stop"].is_null());
+    assert_eq!(after_turn(&failed, false), AfterTurn::Continue);
 }
 
 #[cfg(unix)]
@@ -1219,6 +1370,7 @@ fn an_eval_turn_settles_a_waiting_question_at_once() {
                 questions: Some(vec![question]),
             },
         },
+        Approvals::Decline,
     );
     let mut receiver = receiver;
     assert_eq!(
@@ -1417,4 +1569,101 @@ fn live_market_scenario_discovers_only_valid_bundles_without_starting_them() {
     scenario.connections.push("openbb.platform".into());
     fs::write(runtime.join("uv.lock"), b"tampered").unwrap();
     assert!(configure_market_runtime(&mut state, &scenario, &runtime_root).is_err());
+}
+
+#[test]
+fn repository_suites_pass_the_runner_validation() {
+    let suites = Path::new(env!("CARGO_MANIFEST_DIR")).join("../evals/agent/suites");
+    let mut failures = Vec::new();
+    for entry in fs::read_dir(&suites).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|extension| extension != "json") {
+            continue;
+        }
+        let bytes = fs::read(&path).unwrap();
+        let schema: Value = serde_json::from_slice(&bytes).unwrap();
+        if schema["schema"] != "loupist-agent-suite/1" {
+            continue;
+        }
+        let checked = contract::load(&bytes)
+            .and_then(|(suite, _)| validate_suite(&suite))
+            .map_err(|error| error.to_string());
+        if let Err(error) = checked {
+            failures.push(format!("{}: {error}", path.display()));
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+#[test]
+fn an_accepted_question_takes_its_recommended_option() {
+    use crate::chat::progress::ChatProgressPatch;
+    use crate::chat::questions::{ChatQuestion, ChatQuestionOption, QuestionAnswer, QuestionState};
+    use crate::commands::ChatStreamEvent;
+    let receiver =
+        crate::chat::questions::register("eval-question-accept", "loupist-eval", None, None, 2);
+    let option = |label: &str| ChatQuestionOption {
+        label: label.into(),
+        description: None,
+    };
+    let question = ChatQuestion {
+        request_id: "eval-question-accept".into(),
+        item_id: None,
+        question: "Which period?".into(),
+        options: vec![option("Latest quarter"), option("Full year")],
+        recommended: Some(1),
+        state: QuestionState::Waiting,
+        answer: None,
+        requested_at_ms: 0,
+    };
+    settle_waiting_cards(
+        "loupist-eval",
+        &ChatStreamEvent::ProgressPatch {
+            run_id: "eval-run".into(),
+            patch: ChatProgressPatch {
+                sequence: 1,
+                upsert_items: Vec::new(),
+                append_text: Vec::new(),
+                remove_item_ids: Vec::new(),
+                finished_at_ms: None,
+                plan: None,
+                approvals: None,
+                questions: Some(vec![question]),
+            },
+        },
+        Approvals::Accept,
+    );
+    let mut receiver = receiver;
+    assert_eq!(receiver.try_recv(), Ok(QuestionAnswer::Choice(1)));
+}
+
+#[test]
+fn every_path_a_run_gives_pi_is_its_own_real_path() {
+    // Pi's extension reads a selected Skill only at its real path; macOS /tmp
+    // is a link to /private/tmp, so a Learning run's Skill was refused.
+    let root = eval_temp_root();
+    assert_eq!(fs::canonicalize(&root).unwrap(), root);
+    let frozen = artifacts::FrozenArtifacts::with_override(
+        PiArtifacts {
+            executable: PathBuf::from("/bin/sh"),
+            runtime_dir: PathBuf::new(),
+            extension: PathBuf::new(),
+            provider_extension: PathBuf::new(),
+            system_prompt: PathBuf::new(),
+            provider: String::new(),
+            model: String::new(),
+            thinking_level: String::new(),
+            run_options: Default::default(),
+            provider_credential: None,
+        },
+        None,
+    )
+    .unwrap();
+    let skill = frozen
+        .pi
+        .system_prompt
+        .parent()
+        .unwrap()
+        .join("skills/learning/SKILL.md");
+    assert_eq!(fs::canonicalize(&skill).unwrap(), skill);
 }

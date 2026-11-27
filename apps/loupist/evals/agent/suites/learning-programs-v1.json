@@ -1,0 +1,1756 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "learning-programs",
+  "version": 1,
+  "description": "Six fictional learning program occurrences on scripted World, dispatched through the production scheduler: a first run that builds the base, an update after two new filings, a quiet control, a run with a Source still being read, a run that meets its soft budget note, and a program whose brief is in Japanese.",
+  "budget": {
+    "maxInputTokensPerTurn": 500000,
+    "maxTurns": 20
+  },
+  "scenarios": [
+    {
+      "id": "LP-001",
+      "title": "A program's first run builds the base page from what is already kept",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "learning",
+        "scripted-world",
+        "first-run"
+      ],
+      "connections": [],
+      "seed": {
+        "sources": [
+          {
+            "id": "alderquay-q2",
+            "title": "Alderquay Bearings Q2 2026 report",
+            "text": "Officers: Lila Trent is chief financial officer. Supply: Seabright Metals has supplied bearing steel under a contract effective June 1, 2026. Service: Our bearing housings carry a 24-month warranty. Risk factors: Port delays may interrupt inbound shipments.\n",
+            "origin": "https://fictional.example/change-feed/alderquay-q2",
+            "company": "Alderquay Bearings",
+            "form": "quarterly report",
+            "publication_time": "2026-08-06",
+            "language": "en"
+          }
+        ],
+        "programs": [
+          {
+            "id": "alderquay-program",
+            "title": "Alderquay Bearings",
+            "prompt": "Keep what this Loupist knows about Alderquay Bearings current: its officers, suppliers, production lines, guidance and stated risks. The user follows the company's operations closely. New is anything a filing or company notice published since the last run adds, ends or contradicts. Keep it on the page \"Alderquay Bearings research\", revising whatever a change makes out of date. Prefer the company's own filings and notices among what is already kept here. Report when something changed, with dates and sources; otherwise stay quiet.",
+            "schedule": {
+              "kind": "weekly",
+              "days": [
+                1
+              ],
+              "hour": 9,
+              "minute": 0,
+              "timezone": "UTC"
+            },
+            "subjects": [
+              {
+                "name": "Alderquay Bearings"
+              }
+            ],
+            "depth": "standard",
+            "scope": {
+              "connections": [],
+              "web": false
+            },
+            "keeps": {
+              "sources": true,
+              "lens": true,
+              "asset_reads": false
+            },
+            "report": "when_new",
+            "delivery": {
+              "to": "bot"
+            }
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "alderquay-q2",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Lila Trent",
+                  "type": "Person",
+                  "codes": []
+                },
+                {
+                  "name": "Seabright Metals",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Port delays",
+                  "type": "Event",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "q2-cfo",
+                  "subject": "Lila Trent",
+                  "object": "Alderquay Bearings",
+                  "relation": "LEADS",
+                  "text": "Lila Trent is chief financial officer of Alderquay Bearings.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-supply",
+                  "subject": "Seabright Metals",
+                  "object": "Alderquay Bearings",
+                  "relation": "SUPPLIES",
+                  "text": "Seabright Metals has supplied bearing steel to Alderquay Bearings under a contract effective June 1, 2026.",
+                  "valid_at": "2026-06-01",
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-warranty",
+                  "subject": "Alderquay Bearings",
+                  "object": "Alderquay Bearings",
+                  "relation": "REPORTS",
+                  "text": "Alderquay Bearings' bearing housings carry a 24-month warranty.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-risk-port",
+                  "subject": "Port delays",
+                  "object": "Alderquay Bearings",
+                  "relation": "AFFECTS",
+                  "text": "Port delays may interrupt Alderquay Bearings' inbound shipments.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "The Alderquay Bearings learning program runs its first occurrence, on August 10, 2026.",
+              "scheduled": {
+                "kind": "learning",
+                "program": "alderquay-program",
+                "clock": "2026-08-10T09:00:00Z"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_run",
+                    "status": "succeeded",
+                    "quiet": false,
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "Alderquay Bearings",
+                    "min": 1,
+                    "section_matches": "Lila Trent",
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "base-cites-the-report",
+                    "criterion": "Every section of the stored page that states a fact about Alderquay Bearings has the Q2 report of August 6, 2026 or one of its claims in its basis.",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LP-002",
+      "title": "A program run revises a page after two new filings",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "learning",
+        "scripted-world"
+      ],
+      "connections": [],
+      "seed": {
+        "sources": [
+          {
+            "id": "alderquay-q2",
+            "title": "Alderquay Bearings Q2 2026 report",
+            "text": "Officers: Lila Trent is chief financial officer. Supply: Seabright Metals has supplied bearing steel under a contract effective June 1, 2026. Service: Our bearing housings carry a 24-month warranty. Risk factors: Port delays may interrupt inbound shipments.\n",
+            "origin": "https://fictional.example/change-feed/alderquay-q2",
+            "company": "Alderquay Bearings",
+            "form": "quarterly report",
+            "publication_time": "2026-08-06",
+            "language": "en"
+          },
+          {
+            "id": "alderquay-q3",
+            "title": "Alderquay Bearings Q3 2026 report",
+            "text": "Officers: Micah Reed is chief financial officer, succeeding Lila Trent. Supply: On September 23, 2026, the bearing-steel supply agreement with Seabright Metals ended. Risk factors: The heat-treatment ramp could raise quality rejects until operators complete qualification.\n",
+            "origin": "https://fictional.example/change-feed/alderquay-q3",
+            "company": "Alderquay Bearings",
+            "form": "quarterly report",
+            "publication_time": "2026-10-22",
+            "language": "en"
+          },
+          {
+            "id": "alderquay-east-quay",
+            "title": "Alderquay Bearings East Quay commissioning notice",
+            "text": "On October 23, 2026, Alderquay Bearings commissioned its East Quay automated inspection line.\n",
+            "origin": "https://fictional.example/change-feed/alderquay-east-quay",
+            "company": "Alderquay Bearings",
+            "form": "operating notice",
+            "publication_time": "2026-10-23",
+            "language": "en"
+          }
+        ],
+        "lens_pages": [
+          {
+            "title": "Alderquay Bearings research",
+            "summary": "Research notes on Alderquay Bearings.",
+            "kind": "subject",
+            "sections": [
+              {
+                "key": "leadership",
+                "heading": "Leadership",
+                "markdown": "Lila Trent is CFO.",
+                "refs": [
+                  {
+                    "source": "alderquay-q2",
+                    "fact": "q2-cfo"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "programs": [
+          {
+            "id": "alderquay-program",
+            "title": "Alderquay Bearings",
+            "prompt": "Keep what this Loupist knows about Alderquay Bearings current: its officers, suppliers, production lines, guidance and stated risks. The user follows the company's operations closely. New is anything a filing or company notice published since the last run adds, ends or contradicts. Keep it on the page \"Alderquay Bearings research\", revising whatever a change makes out of date. Prefer the company's own filings and notices among what is already kept here. Report when something changed, with dates and sources; otherwise stay quiet.",
+            "schedule": {
+              "kind": "weekly",
+              "days": [
+                1
+              ],
+              "hour": 9,
+              "minute": 0,
+              "timezone": "UTC"
+            },
+            "subjects": [
+              {
+                "name": "Alderquay Bearings"
+              }
+            ],
+            "depth": "standard",
+            "scope": {
+              "connections": [],
+              "web": false
+            },
+            "keeps": {
+              "sources": true,
+              "lens": true,
+              "asset_reads": false
+            },
+            "report": "when_new",
+            "delivery": {
+              "to": "bot"
+            },
+            "previous_run": {
+              "clock": "2026-10-12T09:00:00Z"
+            }
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "alderquay-q2",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Lila Trent",
+                  "type": "Person",
+                  "codes": []
+                },
+                {
+                  "name": "Seabright Metals",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Port delays",
+                  "type": "Event",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "q2-cfo",
+                  "subject": "Lila Trent",
+                  "object": "Alderquay Bearings",
+                  "relation": "LEADS",
+                  "text": "Lila Trent is chief financial officer of Alderquay Bearings.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-supply",
+                  "subject": "Seabright Metals",
+                  "object": "Alderquay Bearings",
+                  "relation": "SUPPLIES",
+                  "text": "Seabright Metals has supplied bearing steel to Alderquay Bearings under a contract effective June 1, 2026.",
+                  "valid_at": "2026-06-01",
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-warranty",
+                  "subject": "Alderquay Bearings",
+                  "object": "Alderquay Bearings",
+                  "relation": "REPORTS",
+                  "text": "Alderquay Bearings' bearing housings carry a 24-month warranty.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-risk-port",
+                  "subject": "Port delays",
+                  "object": "Alderquay Bearings",
+                  "relation": "AFFECTS",
+                  "text": "Port delays may interrupt Alderquay Bearings' inbound shipments.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          },
+          {
+            "source": "alderquay-q3",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Micah Reed",
+                  "type": "Person",
+                  "codes": []
+                },
+                {
+                  "name": "Lila Trent",
+                  "type": "Person",
+                  "codes": []
+                },
+                {
+                  "name": "Seabright Metals",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Heat-treatment ramp",
+                  "type": "Event",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "q3-cfo",
+                  "subject": "Micah Reed",
+                  "object": "Alderquay Bearings",
+                  "relation": "LEADS",
+                  "text": "Micah Reed is chief financial officer of Alderquay Bearings, succeeding Lila Trent.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "q3-supply-end",
+                  "subject": "Seabright Metals",
+                  "object": "Alderquay Bearings",
+                  "relation": "SUPPLIES",
+                  "text": "The bearing-steel supply agreement between Seabright Metals and Alderquay Bearings ended on September 23, 2026.",
+                  "valid_at": null,
+                  "invalid_at": "2026-09-23"
+                },
+                {
+                  "id": "q3-risk-ramp",
+                  "subject": "Heat-treatment ramp",
+                  "object": "Alderquay Bearings",
+                  "relation": "AFFECTS",
+                  "text": "The heat-treatment ramp could raise quality rejects at Alderquay Bearings until operators complete qualification.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {
+                "q3-cfo": {
+                  "contradicts": [
+                    "q2-cfo"
+                  ],
+                  "same_assertion": [
+                    "q2-cfo"
+                  ]
+                },
+                "q3-supply-end": {
+                  "contradicts": [
+                    "q2-supply"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "source": "alderquay-east-quay",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "East Quay automated inspection line",
+                  "type": "Technology",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "east-quay-line",
+                  "subject": "Alderquay Bearings",
+                  "object": "East Quay automated inspection line",
+                  "relation": "USES",
+                  "text": "Alderquay Bearings commissioned its East Quay automated inspection line on October 23, 2026.",
+                  "valid_at": "2026-10-23",
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "The Alderquay Bearings learning program runs its October 26, 2026 occurrence.",
+              "scheduled": {
+                "kind": "learning",
+                "program": "alderquay-program",
+                "clock": "2026-10-26T09:00:00Z"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_run",
+                    "status": "succeeded",
+                    "quiet": false,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "world_changes",
+                    "args": {
+                      "since": "previous_run"
+                    },
+                    "successful": true,
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "Alderquay Bearings research",
+                    "count": 1,
+                    "section_matches": "Micah Reed",
+                    "metric": "lens_update"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "cites-both-new-sources",
+                    "criterion": "The run's reply cites both Sources published since the previous run: the Q3 report of October 22, 2026 and the East Quay commissioning notice of October 23, 2026.",
+                    "metric": "task_success"
+                  },
+                  {
+                    "id": "leadership-section-current",
+                    "criterion": "The stored Leadership section names Micah Reed as the current chief financial officer and keeps Lila Trent as the former one, with the Q3 report or its claim in the section's basis.",
+                    "metric": "lens_update"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LP-003",
+      "title": "A program run with nothing new stays quiet and writes nothing",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "learning",
+        "scripted-world",
+        "quiet-control"
+      ],
+      "connections": [],
+      "seed": {
+        "sources": [
+          {
+            "id": "alderquay-q2",
+            "title": "Alderquay Bearings Q2 2026 report",
+            "text": "Officers: Lila Trent is chief financial officer. Supply: Seabright Metals has supplied bearing steel under a contract effective June 1, 2026. Service: Our bearing housings carry a 24-month warranty. Risk factors: Port delays may interrupt inbound shipments.\n",
+            "origin": "https://fictional.example/change-feed/alderquay-q2",
+            "company": "Alderquay Bearings",
+            "form": "quarterly report",
+            "publication_time": "2026-08-06",
+            "language": "en"
+          },
+          {
+            "id": "alderquay-q3",
+            "title": "Alderquay Bearings Q3 2026 report",
+            "text": "Officers: Micah Reed is chief financial officer, succeeding Lila Trent. Supply: On September 23, 2026, the bearing-steel supply agreement with Seabright Metals ended. Risk factors: The heat-treatment ramp could raise quality rejects until operators complete qualification.\n",
+            "origin": "https://fictional.example/change-feed/alderquay-q3",
+            "company": "Alderquay Bearings",
+            "form": "quarterly report",
+            "publication_time": "2026-10-22",
+            "language": "en"
+          },
+          {
+            "id": "alderquay-east-quay",
+            "title": "Alderquay Bearings East Quay commissioning notice",
+            "text": "On October 23, 2026, Alderquay Bearings commissioned its East Quay automated inspection line.\n",
+            "origin": "https://fictional.example/change-feed/alderquay-east-quay",
+            "company": "Alderquay Bearings",
+            "form": "operating notice",
+            "publication_time": "2026-10-23",
+            "language": "en"
+          }
+        ],
+        "lens_pages": [
+          {
+            "title": "Alderquay Bearings research",
+            "summary": "Research notes on Alderquay Bearings.",
+            "kind": "subject",
+            "sections": [
+              {
+                "key": "leadership",
+                "heading": "Leadership",
+                "markdown": "Micah Reed is CFO. He succeeded Lila Trent, who held the role until no later than October 22, 2026.",
+                "refs": [
+                  {
+                    "source": "alderquay-q3",
+                    "fact": "q3-cfo"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "programs": [
+          {
+            "id": "alderquay-program",
+            "title": "Alderquay Bearings",
+            "prompt": "Keep what this Loupist knows about Alderquay Bearings current: its officers, suppliers, production lines, guidance and stated risks. The user follows the company's operations closely. New is anything a filing or company notice published since the last run adds, ends or contradicts. Keep it on the page \"Alderquay Bearings research\", revising whatever a change makes out of date. Prefer the company's own filings and notices among what is already kept here. Report when something changed, with dates and sources; otherwise stay quiet.",
+            "schedule": {
+              "kind": "weekly",
+              "days": [
+                1
+              ],
+              "hour": 9,
+              "minute": 0,
+              "timezone": "UTC"
+            },
+            "subjects": [
+              {
+                "name": "Alderquay Bearings"
+              }
+            ],
+            "depth": "standard",
+            "scope": {
+              "connections": [],
+              "web": false
+            },
+            "keeps": {
+              "sources": true,
+              "lens": true,
+              "asset_reads": false
+            },
+            "report": "when_new",
+            "delivery": {
+              "to": "bot"
+            },
+            "previous_run": {
+              "clock": "2026-10-26T09:00:00Z"
+            }
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "alderquay-q2",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Lila Trent",
+                  "type": "Person",
+                  "codes": []
+                },
+                {
+                  "name": "Seabright Metals",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Port delays",
+                  "type": "Event",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "q2-cfo",
+                  "subject": "Lila Trent",
+                  "object": "Alderquay Bearings",
+                  "relation": "LEADS",
+                  "text": "Lila Trent is chief financial officer of Alderquay Bearings.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-supply",
+                  "subject": "Seabright Metals",
+                  "object": "Alderquay Bearings",
+                  "relation": "SUPPLIES",
+                  "text": "Seabright Metals has supplied bearing steel to Alderquay Bearings under a contract effective June 1, 2026.",
+                  "valid_at": "2026-06-01",
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-warranty",
+                  "subject": "Alderquay Bearings",
+                  "object": "Alderquay Bearings",
+                  "relation": "REPORTS",
+                  "text": "Alderquay Bearings' bearing housings carry a 24-month warranty.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-risk-port",
+                  "subject": "Port delays",
+                  "object": "Alderquay Bearings",
+                  "relation": "AFFECTS",
+                  "text": "Port delays may interrupt Alderquay Bearings' inbound shipments.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          },
+          {
+            "source": "alderquay-q3",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Micah Reed",
+                  "type": "Person",
+                  "codes": []
+                },
+                {
+                  "name": "Lila Trent",
+                  "type": "Person",
+                  "codes": []
+                },
+                {
+                  "name": "Seabright Metals",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Heat-treatment ramp",
+                  "type": "Event",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "q3-cfo",
+                  "subject": "Micah Reed",
+                  "object": "Alderquay Bearings",
+                  "relation": "LEADS",
+                  "text": "Micah Reed is chief financial officer of Alderquay Bearings, succeeding Lila Trent.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "q3-supply-end",
+                  "subject": "Seabright Metals",
+                  "object": "Alderquay Bearings",
+                  "relation": "SUPPLIES",
+                  "text": "The bearing-steel supply agreement between Seabright Metals and Alderquay Bearings ended on September 23, 2026.",
+                  "valid_at": null,
+                  "invalid_at": "2026-09-23"
+                },
+                {
+                  "id": "q3-risk-ramp",
+                  "subject": "Heat-treatment ramp",
+                  "object": "Alderquay Bearings",
+                  "relation": "AFFECTS",
+                  "text": "The heat-treatment ramp could raise quality rejects at Alderquay Bearings until operators complete qualification.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {
+                "q3-cfo": {
+                  "contradicts": [
+                    "q2-cfo"
+                  ],
+                  "same_assertion": [
+                    "q2-cfo"
+                  ]
+                },
+                "q3-supply-end": {
+                  "contradicts": [
+                    "q2-supply"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "source": "alderquay-east-quay",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "East Quay automated inspection line",
+                  "type": "Technology",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "east-quay-line",
+                  "subject": "Alderquay Bearings",
+                  "object": "East Quay automated inspection line",
+                  "relation": "USES",
+                  "text": "Alderquay Bearings commissioned its East Quay automated inspection line on October 23, 2026.",
+                  "valid_at": "2026-10-23",
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "The Alderquay Bearings learning program runs its November 2, 2026 occurrence.",
+              "scheduled": {
+                "kind": "learning",
+                "program": "alderquay-program",
+                "clock": "2026-11-02T09:00:00Z"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_run",
+                    "status": "succeeded",
+                    "quiet": true,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "world_changes",
+                    "args": {
+                      "since": "previous_run"
+                    },
+                    "successful": true,
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "lens_unchanged",
+                    "metric": "boundary"
+                  },
+                  {
+                    "assert": "not_committed",
+                    "kind": [
+                      "source",
+                      "note",
+                      "lens",
+                      "principle",
+                      "journal"
+                    ],
+                    "metric": "boundary"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LP-004",
+      "title": "A program run does not go quiet while a Source is still being read",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "learning",
+        "scripted-world",
+        "pending-control"
+      ],
+      "connections": [],
+      "seed": {
+        "sources": [
+          {
+            "id": "alderquay-q2",
+            "title": "Alderquay Bearings Q2 2026 report",
+            "text": "Officers: Lila Trent is chief financial officer. Supply: Seabright Metals has supplied bearing steel under a contract effective June 1, 2026. Service: Our bearing housings carry a 24-month warranty. Risk factors: Port delays may interrupt inbound shipments.\n",
+            "origin": "https://fictional.example/change-feed/alderquay-q2",
+            "company": "Alderquay Bearings",
+            "form": "quarterly report",
+            "publication_time": "2026-08-06",
+            "language": "en"
+          },
+          {
+            "id": "alderquay-q3",
+            "title": "Alderquay Bearings Q3 2026 report",
+            "text": "Officers: Micah Reed is chief financial officer, succeeding Lila Trent. Supply: On September 23, 2026, the bearing-steel supply agreement with Seabright Metals ended. Risk factors: The heat-treatment ramp could raise quality rejects until operators complete qualification.\n",
+            "origin": "https://fictional.example/change-feed/alderquay-q3",
+            "company": "Alderquay Bearings",
+            "form": "quarterly report",
+            "publication_time": "2026-10-22",
+            "language": "en"
+          }
+        ],
+        "lens_pages": [
+          {
+            "title": "Alderquay Bearings research",
+            "summary": "Research notes on Alderquay Bearings.",
+            "kind": "subject",
+            "sections": [
+              {
+                "key": "leadership",
+                "heading": "Leadership",
+                "markdown": "Lila Trent is CFO.",
+                "refs": [
+                  {
+                    "source": "alderquay-q2",
+                    "fact": "q2-cfo"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "programs": [
+          {
+            "id": "alderquay-program",
+            "title": "Alderquay Bearings",
+            "prompt": "Keep what this Loupist knows about Alderquay Bearings current: its officers, suppliers, production lines, guidance and stated risks. The user follows the company's operations closely. New is anything a filing or company notice published since the last run adds, ends or contradicts. Keep it on the page \"Alderquay Bearings research\", revising whatever a change makes out of date. Prefer the company's own filings and notices among what is already kept here. Report when something changed, with dates and sources; otherwise stay quiet.",
+            "schedule": {
+              "kind": "weekly",
+              "days": [
+                1
+              ],
+              "hour": 9,
+              "minute": 0,
+              "timezone": "UTC"
+            },
+            "subjects": [
+              {
+                "name": "Alderquay Bearings"
+              }
+            ],
+            "depth": "standard",
+            "scope": {
+              "connections": [],
+              "web": false
+            },
+            "keeps": {
+              "sources": true,
+              "lens": true,
+              "asset_reads": false
+            },
+            "report": "when_new",
+            "delivery": {
+              "to": "bot"
+            },
+            "previous_run": {
+              "clock": "2026-10-12T09:00:00Z"
+            }
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "alderquay-q2",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Lila Trent",
+                  "type": "Person",
+                  "codes": []
+                },
+                {
+                  "name": "Seabright Metals",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Port delays",
+                  "type": "Event",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "q2-cfo",
+                  "subject": "Lila Trent",
+                  "object": "Alderquay Bearings",
+                  "relation": "LEADS",
+                  "text": "Lila Trent is chief financial officer of Alderquay Bearings.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-supply",
+                  "subject": "Seabright Metals",
+                  "object": "Alderquay Bearings",
+                  "relation": "SUPPLIES",
+                  "text": "Seabright Metals has supplied bearing steel to Alderquay Bearings under a contract effective June 1, 2026.",
+                  "valid_at": "2026-06-01",
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-warranty",
+                  "subject": "Alderquay Bearings",
+                  "object": "Alderquay Bearings",
+                  "relation": "REPORTS",
+                  "text": "Alderquay Bearings' bearing housings carry a 24-month warranty.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-risk-port",
+                  "subject": "Port delays",
+                  "object": "Alderquay Bearings",
+                  "relation": "AFFECTS",
+                  "text": "Port delays may interrupt Alderquay Bearings' inbound shipments.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          },
+          {
+            "source": "alderquay-q3",
+            "after": {
+              "session": "bot",
+              "turn": 0
+            },
+            "recorded_time": "2026-10-26T12:00:00Z",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Micah Reed",
+                  "type": "Person",
+                  "codes": []
+                },
+                {
+                  "name": "Lila Trent",
+                  "type": "Person",
+                  "codes": []
+                },
+                {
+                  "name": "Seabright Metals",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Heat-treatment ramp",
+                  "type": "Event",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "q3-cfo",
+                  "subject": "Micah Reed",
+                  "object": "Alderquay Bearings",
+                  "relation": "LEADS",
+                  "text": "Micah Reed is chief financial officer of Alderquay Bearings, succeeding Lila Trent.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "q3-supply-end",
+                  "subject": "Seabright Metals",
+                  "object": "Alderquay Bearings",
+                  "relation": "SUPPLIES",
+                  "text": "The bearing-steel supply agreement between Seabright Metals and Alderquay Bearings ended on September 23, 2026.",
+                  "valid_at": null,
+                  "invalid_at": "2026-09-23"
+                },
+                {
+                  "id": "q3-risk-ramp",
+                  "subject": "Heat-treatment ramp",
+                  "object": "Alderquay Bearings",
+                  "relation": "AFFECTS",
+                  "text": "The heat-treatment ramp could raise quality rejects at Alderquay Bearings until operators complete qualification.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {
+                "q3-cfo": {
+                  "contradicts": [
+                    "q2-cfo"
+                  ],
+                  "same_assertion": [
+                    "q2-cfo"
+                  ]
+                },
+                "q3-supply-end": {
+                  "contradicts": [
+                    "q2-supply"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "The Alderquay Bearings learning program runs its October 26, 2026 occurrence while the Q3 report is still being read.",
+              "scheduled": {
+                "kind": "learning",
+                "program": "alderquay-program",
+                "clock": "2026-10-26T09:00:00Z"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_run",
+                    "status": "succeeded",
+                    "quiet": false,
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LP-005",
+      "title": "A program run that meets its soft budget note still finishes and files",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "learning",
+        "scripted-world",
+        "soft-budget"
+      ],
+      "connections": [],
+      "seed": {
+        "sources": [
+          {
+            "id": "alderquay-q2",
+            "title": "Alderquay Bearings Q2 2026 report",
+            "text": "Officers: Lila Trent is chief financial officer. Supply: Seabright Metals has supplied bearing steel under a contract effective June 1, 2026. Service: Our bearing housings carry a 24-month warranty. Risk factors: Port delays may interrupt inbound shipments.\n",
+            "origin": "https://fictional.example/change-feed/alderquay-q2",
+            "company": "Alderquay Bearings",
+            "form": "quarterly report",
+            "publication_time": "2026-08-06",
+            "language": "en"
+          },
+          {
+            "id": "alderquay-q3",
+            "title": "Alderquay Bearings Q3 2026 report",
+            "text": "Officers: Micah Reed is chief financial officer, succeeding Lila Trent. Supply: On September 23, 2026, the bearing-steel supply agreement with Seabright Metals ended. Risk factors: The heat-treatment ramp could raise quality rejects until operators complete qualification.\n",
+            "origin": "https://fictional.example/change-feed/alderquay-q3",
+            "company": "Alderquay Bearings",
+            "form": "quarterly report",
+            "publication_time": "2026-10-22",
+            "language": "en"
+          },
+          {
+            "id": "alderquay-east-quay",
+            "title": "Alderquay Bearings East Quay commissioning notice",
+            "text": "On October 23, 2026, Alderquay Bearings commissioned its East Quay automated inspection line.\n",
+            "origin": "https://fictional.example/change-feed/alderquay-east-quay",
+            "company": "Alderquay Bearings",
+            "form": "operating notice",
+            "publication_time": "2026-10-23",
+            "language": "en"
+          }
+        ],
+        "lens_pages": [
+          {
+            "title": "Alderquay Bearings research",
+            "summary": "Research notes on Alderquay Bearings.",
+            "kind": "subject",
+            "sections": [
+              {
+                "key": "leadership",
+                "heading": "Leadership",
+                "markdown": "Lila Trent is CFO.",
+                "refs": [
+                  {
+                    "source": "alderquay-q2",
+                    "fact": "q2-cfo"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "programs": [
+          {
+            "id": "alderquay-program",
+            "title": "Alderquay Bearings",
+            "prompt": "Keep what this Loupist knows about Alderquay Bearings current: its officers, suppliers, production lines, guidance and stated risks. The user follows the company's operations closely. New is anything a filing or company notice published since the last run adds, ends or contradicts. Keep it on the page \"Alderquay Bearings research\", revising whatever a change makes out of date. Prefer the company's own filings and notices among what is already kept here. Report when something changed, with dates and sources; otherwise stay quiet.",
+            "schedule": {
+              "kind": "weekly",
+              "days": [
+                1
+              ],
+              "hour": 9,
+              "minute": 0,
+              "timezone": "UTC"
+            },
+            "subjects": [
+              {
+                "name": "Alderquay Bearings"
+              }
+            ],
+            "depth": "standard",
+            "scope": {
+              "connections": [],
+              "web": false
+            },
+            "keeps": {
+              "sources": true,
+              "lens": true,
+              "asset_reads": false
+            },
+            "report": "when_new",
+            "delivery": {
+              "to": "bot"
+            },
+            "previous_run": {
+              "clock": "2026-10-12T09:00:00Z"
+            }
+          }
+        ],
+        "learning_allowance": 13
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "alderquay-q2",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Lila Trent",
+                  "type": "Person",
+                  "codes": []
+                },
+                {
+                  "name": "Seabright Metals",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Port delays",
+                  "type": "Event",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "q2-cfo",
+                  "subject": "Lila Trent",
+                  "object": "Alderquay Bearings",
+                  "relation": "LEADS",
+                  "text": "Lila Trent is chief financial officer of Alderquay Bearings.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-supply",
+                  "subject": "Seabright Metals",
+                  "object": "Alderquay Bearings",
+                  "relation": "SUPPLIES",
+                  "text": "Seabright Metals has supplied bearing steel to Alderquay Bearings under a contract effective June 1, 2026.",
+                  "valid_at": "2026-06-01",
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-warranty",
+                  "subject": "Alderquay Bearings",
+                  "object": "Alderquay Bearings",
+                  "relation": "REPORTS",
+                  "text": "Alderquay Bearings' bearing housings carry a 24-month warranty.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "q2-risk-port",
+                  "subject": "Port delays",
+                  "object": "Alderquay Bearings",
+                  "relation": "AFFECTS",
+                  "text": "Port delays may interrupt Alderquay Bearings' inbound shipments.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          },
+          {
+            "source": "alderquay-q3",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Micah Reed",
+                  "type": "Person",
+                  "codes": []
+                },
+                {
+                  "name": "Lila Trent",
+                  "type": "Person",
+                  "codes": []
+                },
+                {
+                  "name": "Seabright Metals",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "Heat-treatment ramp",
+                  "type": "Event",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "q3-cfo",
+                  "subject": "Micah Reed",
+                  "object": "Alderquay Bearings",
+                  "relation": "LEADS",
+                  "text": "Micah Reed is chief financial officer of Alderquay Bearings, succeeding Lila Trent.",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "q3-supply-end",
+                  "subject": "Seabright Metals",
+                  "object": "Alderquay Bearings",
+                  "relation": "SUPPLIES",
+                  "text": "The bearing-steel supply agreement between Seabright Metals and Alderquay Bearings ended on September 23, 2026.",
+                  "valid_at": null,
+                  "invalid_at": "2026-09-23"
+                },
+                {
+                  "id": "q3-risk-ramp",
+                  "subject": "Heat-treatment ramp",
+                  "object": "Alderquay Bearings",
+                  "relation": "AFFECTS",
+                  "text": "The heat-treatment ramp could raise quality rejects at Alderquay Bearings until operators complete qualification.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {
+                "q3-cfo": {
+                  "contradicts": [
+                    "q2-cfo"
+                  ],
+                  "same_assertion": [
+                    "q2-cfo"
+                  ]
+                },
+                "q3-supply-end": {
+                  "contradicts": [
+                    "q2-supply"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "source": "alderquay-east-quay",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                },
+                {
+                  "name": "East Quay automated inspection line",
+                  "type": "Technology",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "east-quay-line",
+                  "subject": "Alderquay Bearings",
+                  "object": "East Quay automated inspection line",
+                  "relation": "USES",
+                  "text": "Alderquay Bearings commissioned its East Quay automated inspection line on October 23, 2026.",
+                  "valid_at": "2026-10-23",
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "The Alderquay Bearings learning program runs its October 26, 2026 occurrence with thirteen requests left for learning today.",
+              "scheduled": {
+                "kind": "learning",
+                "program": "alderquay-program",
+                "clock": "2026-10-26T09:00:00Z"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_run",
+                    "status": "succeeded",
+                    "quiet": false,
+                    "after_soft_note": true,
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "Alderquay Bearings research",
+                    "count": 1,
+                    "section_matches": "Micah Reed",
+                    "metric": "lens_update"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LP-006",
+      "title": "A program whose brief is in Japanese reports a changed dividend policy in Japanese",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "learning",
+        "scripted-world",
+        "user-ja",
+        "profile-japan"
+      ],
+      "connections": [],
+      "seed": {
+        "sources": [
+          {
+            "id": "todai-dividend-policy",
+            "title": "灯台電子 配当方針に関するお知らせ",
+            "text": "灯台電子株式会社は、配当方針として連結配当性向30%を目安とすると発表した。\n",
+            "origin": "https://fictional.example/global/todai-dividend-policy",
+            "company": "灯台電子",
+            "form": "適時開示",
+            "publication_time": "2026-05-14",
+            "language": "ja"
+          },
+          {
+            "id": "todai-q2",
+            "title": "灯台電子 2027年3月期 第2四半期決算短信",
+            "text": "灯台電子株式会社(証券コード 1188)2027年3月期 第2四半期決算短信(2026年11月6日)。当第2四半期累計期間の連結売上高は4,218億円、連結営業利益は前年同期比12.4%増の86億5,000万円となった。年間配当予想は1株当たり48円(中間24円、期末24円)で据え置く。通期の連結売上高予想8,600億円は変更しない。\n",
+            "origin": "https://fictional.example/global/todai-q2",
+            "company": "灯台電子",
+            "form": "決算短信",
+            "publication_time": "2026-11-06",
+            "language": "ja"
+          },
+          {
+            "id": "todai-dividend-policy-revised",
+            "title": "灯台電子 配当方針の変更に関するお知らせ",
+            "text": "灯台電子株式会社は配当方針を変更し、連結配当性向の目安を40%に引き上げると発表した。これは従来の配当方針に代わるものである。\n",
+            "origin": "https://fictional.example/global/todai-dividend-policy-revised",
+            "company": "灯台電子",
+            "form": "適時開示",
+            "publication_time": "2026-11-20",
+            "language": "ja"
+          }
+        ],
+        "lens_pages": [
+          {
+            "title": "灯台電子 調査メモ",
+            "summary": "灯台電子に関する調査メモ。",
+            "kind": "subject",
+            "sections": [
+              {
+                "key": "dividend-policy",
+                "heading": "配当方針",
+                "markdown": "配当方針は連結配当性向30%を目安とする。",
+                "refs": [
+                  {
+                    "source": "todai-dividend-policy",
+                    "fact": "td-payout-30"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "programs": [
+          {
+            "id": "todai-program",
+            "title": "灯台電子",
+            "prompt": "灯台電子(証券コード 1188)について、業績、通期予想、配当方針の最新の状況を把握し続ける。前回の実行以降に公表された決算短信や適時開示で、追加・終了・矛盾した事実を新しい情報とする。内容は「灯台電子 調査メモ」ページにまとめ、変化で古くなった箇所は書き直す。すでに手元にある資料のうち、会社自身の開示を優先する。変化があれば日付と出典を付けて報告し、なければ報告しない。",
+            "schedule": {
+              "kind": "weekly",
+              "days": [
+                1
+              ],
+              "hour": 9,
+              "minute": 0,
+              "timezone": "Asia/Tokyo"
+            },
+            "subjects": [
+              {
+                "name": "灯台電子"
+              }
+            ],
+            "depth": "standard",
+            "scope": {
+              "connections": [],
+              "web": false
+            },
+            "keeps": {
+              "sources": true,
+              "lens": true,
+              "asset_reads": false
+            },
+            "report": "when_new",
+            "delivery": {
+              "to": "bot"
+            },
+            "previous_run": {
+              "clock": "2026-11-10T09:00:00+09:00"
+            }
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "todai-dividend-policy",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "灯台電子",
+                  "type": "Organization",
+                  "codes": [
+                    "1188"
+                  ]
+                }
+              ],
+              "facts": [
+                {
+                  "id": "td-payout-30",
+                  "subject": "灯台電子",
+                  "object": "灯台電子",
+                  "relation": "REPORTS",
+                  "text": "灯台電子の配当方針は連結配当性向30%を目安とする。",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          },
+          {
+            "source": "todai-q2",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "灯台電子",
+                  "type": "Organization",
+                  "codes": [
+                    "1188"
+                  ]
+                }
+              ],
+              "facts": [
+                {
+                  "id": "td-revenue-h1",
+                  "subject": "灯台電子",
+                  "object": "灯台電子",
+                  "relation": "REPORTS",
+                  "text": "灯台電子の2027年3月期第2四半期累計の連結売上高は4,218億円だった。",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "td-operating-profit-h1",
+                  "subject": "灯台電子",
+                  "object": "灯台電子",
+                  "relation": "REPORTS",
+                  "text": "灯台電子の2027年3月期第2四半期累計の連結営業利益は前年同期比12.4%増の86億5,000万円だった。",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "td-dividend-forecast",
+                  "subject": "灯台電子",
+                  "object": "灯台電子",
+                  "relation": "REPORTS",
+                  "text": "灯台電子は2027年3月期の年間配当予想を1株当たり48円で据え置いた。",
+                  "valid_at": null,
+                  "invalid_at": null
+                },
+                {
+                  "id": "td-revenue-guidance",
+                  "subject": "灯台電子",
+                  "object": "灯台電子",
+                  "relation": "REPORTS",
+                  "text": "灯台電子は2027年3月期の通期連結売上高予想8,600億円を変更しなかった。",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          },
+          {
+            "source": "todai-dividend-policy-revised",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "灯台電子",
+                  "type": "Organization",
+                  "codes": [
+                    "1188"
+                  ]
+                }
+              ],
+              "facts": [
+                {
+                  "id": "td-payout-40",
+                  "subject": "灯台電子",
+                  "object": "灯台電子",
+                  "relation": "REPORTS",
+                  "text": "灯台電子は配当方針を変更し、連結配当性向の目安を40%に引き上げた。従来の配当方針に代わるものである。",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {
+                "td-payout-40": {
+                  "contradicts": [
+                    "td-payout-30"
+                  ],
+                  "same_assertion": [
+                    "td-payout-30"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "The Todai Denshi learning program, whose brief is in Japanese, runs its November 24, 2026 occurrence.",
+              "scheduled": {
+                "kind": "learning",
+                "program": "todai-program",
+                "clock": "2026-11-24T09:00:00+09:00"
+              },
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "scheduled_run",
+                    "status": "succeeded",
+                    "quiet": false,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "world_changes",
+                    "args": {
+                      "since": "previous_run"
+                    },
+                    "successful": true,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "progress_language",
+                    "language": "ja",
+                    "min": 0,
+                    "metric": "answer_language"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "answer_language",
+                    "language": "ja",
+                    "metric": "answer_language"
+                  },
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "40%",
+                      "40％",
+                      "40 %"
+                    ],
+                    "metric": "task_success"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "灯台電子",
+                    "count": 1,
+                    "section_matches": "40\\s*[%％]",
+                    "metric": "lens_update"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -288,6 +288,7 @@ fn note_and_journal_preserve_distinct_evidence_at_their_combined_limit() {
             document_id: format!("filing-{index}"),
             material_role: "original".into(),
             provided: None,
+            admitted: crate::knowledge::JobOrigin::Chat,
         })
         .collect();
     let mut research = staged(

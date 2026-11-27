@@ -3,6 +3,8 @@
 mod checkpoint;
 mod lens_seed;
 pub mod scale;
+pub(crate) mod script;
+mod temporal;
 use super::{append_atomic, artifacts, batch, new_chat, run_turn, Result, Session, Turn};
 use crate::{app::AppState, domain::ChatSession, knowledge::*};
 use serde::{Deserialize, Serialize};
@@ -83,6 +85,8 @@ struct Scenario {
     seed_sources: Vec<Source>,
     #[serde(default)]
     seed_lenses: Vec<lens_seed::SeedLens>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pre_file: Option<temporal::PreFile>,
     /// Custom research focus, the same text the product stores on a new Loupist.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     research_focus: String,
@@ -120,6 +124,8 @@ struct Step {
     sources: Vec<Source>,
     #[serde(default)]
     query: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    as_of_reads: Vec<String>,
     #[serde(default)]
     user: Option<String>,
     #[serde(default)]
@@ -136,8 +142,14 @@ fn probe() -> String {
     "probe".into()
 }
 
-fn time_point(value: &str) -> Result<TimePoint> {
-    let precision = if value.len() == 10 {
+pub(super) fn time_point(value: &str) -> Result<TimePoint> {
+    let precision = if value.len() == 4 {
+        chrono::NaiveDate::parse_from_str(&format!("{value}-01-01"), "%Y-%m-%d")?;
+        TimePrecision::Year
+    } else if value.len() == 7 {
+        chrono::NaiveDate::parse_from_str(&format!("{value}-01"), "%Y-%m-%d")?;
+        TimePrecision::Month
+    } else if value.len() == 10 {
         chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")?;
         TimePrecision::Date
     } else {
@@ -222,6 +234,7 @@ fn validate(suite: &Suite, options: &Options) -> Result<()> {
             }
         }
         lens_seed::validate(&scenario.seed_lenses, &scenario.seed_sources)?;
+        temporal::validate(scenario)?;
         custom_focus(scenario)?;
         for (index, step) in scenario.steps.iter().enumerate() {
             for path in step.workspace_files.keys() {
@@ -664,11 +677,14 @@ async fn setup(
         .iter()
         .find(|model| model.id == options.world_model)
         .unwrap();
-    config.run_options = world_model
-        .run_controls
-        .iter()
-        .map(|control| (control.id.clone(), control.default_choice.clone()))
-        .collect();
+    config.run_options = super::with_performance(
+        world_model
+            .run_controls
+            .iter()
+            .map(|control| (control.id.clone(), control.default_choice.clone()))
+            .collect(),
+        super::eval_performance().as_deref(),
+    );
     world_model
         .validate_run_options(&config.run_options)
         .map_err(|error| error.message)?;
@@ -743,7 +759,10 @@ pub async fn run(options: Options) -> Result<()> {
         "trial_count":options.trials,"selected_trial_index":options.trial_index,
         "chat_model":options.model,"chat_thinking":options.thinking,"world_model":options.world_model,
         "world_thinking":options.world_thinking,"turn_timeout_ms":options.turn_timeout_ms,
-        "world_timeout_ms":options.world_timeout_ms,"stage_timeout_ms":options.stage_timeout_ms});
+        "world_timeout_ms":options.world_timeout_ms,"stage_timeout_ms":options.stage_timeout_ms,
+        "performance":super::eval_performance(),
+        // Resolved before the first World call, so a refused override stops the run.
+        "world_prompts_sha256":crate::knowledge::world_extract::world_prompts_sha256()?});
     let journal = PathBuf::from(format!("{}.pending.jsonl", options.out.display()));
     if journal.exists() {
         return Err("attempt journal already exists".into());
@@ -769,7 +788,7 @@ pub async fn run(options: Options) -> Result<()> {
             let workspace = temporary.path().join("workspace");
             fs::create_dir(&workspace)?;
             let initial_files = introduce_workspace_files(&workspace, &scenario.workspace_files)?;
-            let mut state = AppState::for_eval(temporary.path().join("app"));
+            let mut state = super::trial::trial_state(temporary.path().join("app"));
             let replay_guard = frozen_replay
                 .clone()
                 .map(|replay| replay.install(&state.credential_environment))
@@ -907,6 +926,12 @@ pub async fn run(options: Options) -> Result<()> {
                     record["before_chat"] = snapshot(&state, &loupist_id, step.query.as_deref()).await?;
                     if record["processing"]["status"] != "completed" { return Err("World processing did not complete".into()); }
                     if record["before_chat"]["query_status"] == "failed" { return Err("World retrieval did not complete".into()); }
+                    if let Some(prefile) = scenario.pre_file.as_ref().filter(|filing| filing.after_step == step.id) {
+                        record["pre_file"] = temporal::file(&state, &loupist_id, prefile, &record["source_ingestion"], &record["before_chat"])?;
+                    }
+                    if !step.as_of_reads.is_empty() {
+                        record["as_of_views"] = temporal::cutoff_views(&state, &loupist_id, &step.as_of_reads, &record["before_chat"])?;
+                    }
                     if let Some(user) = &step.user {
                         let chat_name = step.chat.as_deref().unwrap_or(&step.id).to_string();
                         if !chats.contains_key(&chat_name) { chats.insert(chat_name.clone(), new_chat(&state, &loupist_id, &chat_name)?); }
@@ -993,7 +1018,7 @@ pub async fn run(options: Options) -> Result<()> {
             }
             drop(state);
             drop(replay_guard);
-            if options.keep {
+            if options.keep || scenario.pre_file.is_some() {
                 eprintln!("kept {}", temporary.keep().display());
             }
             if stop_batch {

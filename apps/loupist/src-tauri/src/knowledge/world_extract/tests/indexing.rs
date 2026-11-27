@@ -64,6 +64,9 @@ fn edge(uuid: &str, source: &str, target: &str, fact: &str, cos: f32) -> Edge {
         invalid_at: None,
         expired_at: None,
         fact_embedding: Some(at(cos)),
+        assertions: Default::default(),
+        ending: None,
+        conflicts: Vec::new(),
     }
 }
 
@@ -123,6 +126,7 @@ fn relation_candidates_are_directed_pairs_and_hybrid_search_returns_ten() {
             key: "ep".into(),
             content: String::new(),
             valid_at: text::from_isoformat("2026-01-01").unwrap(),
+            source: None,
         },
         Vec::new(),
         String::new(),

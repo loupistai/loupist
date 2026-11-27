@@ -1,0 +1,49 @@
+{
+  "schema": "loupist-lens-research/1",
+  "loupist": {
+    "name": "Energy transition themes",
+    "focus": "Fictional build-out themes: announced pipelines against built capacity, demand, costs and support",
+    "instructions": "Use only the attached fictional reports and do not fetch external data. Provide information, not investment advice."
+  },
+  "training": [
+    {
+      "id": "grid-storage",
+      "user": "The storage association's outlook is attached. The pipeline looks enormous. How much of it is likely to be operating by 2028, and what would tell me this theme is real rather than announcements?",
+      "attachments": [
+        {
+          "filename": "northern-interconnect-storage-2026.md",
+          "media_type": "text/markdown",
+          "text": "# Northern Interconnect Storage Association: grid battery outlook 2026\n\nThe Northern Interconnect is a fictional power market and this outlook was created for a Loupist evaluation. This release is not a market observation, a price or a recommendation.\n\n## Pipeline\n\nDevelopers have announced 42 GWh of grid battery projects for completion by 2029. Of these, 9 GWh are under construction and 3.8 GWh are in commercial operation. A year ago 2.1 GWh were in operation.\n\n## Grid connection\n\nProjects holding a signed connection agreement total 13 GWh. Over the last five years, 62% of the capacity that applied for a connection withdrew before signing. The median wait from application to energization is 41 months.\n\n## Revenues\n\nBatteries in operation earned 58% of their revenue from frequency services in 2025. Clearing prices in that market fell 44% over the year as new batteries entered; it has a fixed size of about 1.6 GW. Revenue per MW of installed capacity fell 31%.\n\n## Costs and finance\n\nInstalled system cost fell 18% in the year. Two lenders now require a contracted floor on revenue for at least half of a project's capacity before financing it. Projects with such a contract total 2.4 GWh.\n\n## Association view\n\nThe association expects 30 GWh in operation by the end of 2028 and calls storage the fastest-growing asset class in the market.\n"
+        }
+      ]
+    },
+    {
+      "id": "electrolysers",
+      "user": "Here is the Southern Basin electrolyser review. The agency says the pipeline proves the industry is scaling. Does the evidence support that, and what should I watch to know whether the 2030 target is reachable?",
+      "attachments": [
+        {
+          "filename": "southern-basin-electrolysers-2026.md",
+          "media_type": "text/markdown",
+          "text": "# Southern Basin Energy Agency: electrolyser capacity review 2026\n\nThe Southern Basin is a fictional region and this review was created for a Loupist evaluation. This release is not a market observation, a price or a recommendation.\n\n## Pipeline\n\nAnnounced electrolyser projects total 14 GW for 2030. Projects that have taken a final investment decision total 1.1 GW, and 0.2 GW is operating. A year ago the announced total was 9 GW and 0.15 GW was operating.\n\n## Demand\n\nSigned offtake contracts cover 8% of the announced output. Three fertilizer producers account for most of them. The agency's survey found that buyers without a contract would pay at most 60% of the current production cost.\n\n## Costs and support\n\nProduction cost per kilogram rose 12% in the year with electricity prices and equipment costs. The first subsidy auction awarded support to 0.4 GW; bids for a further 2.3 GW were rejected on price. The second auction is planned for 2027 with a budget one third smaller.\n\n## Infrastructure\n\nNo pipeline connects the largest announced sites to industrial buyers. The grid operator plans the first 300 km for 2031.\n\n## Agency view\n\nThe agency keeps its 2030 target of 10 GW and describes the pipeline as proof that the industry is scaling.\n"
+        }
+      ]
+    }
+  ],
+  "probes": {
+    "applicable": {
+      "id": "heat-pumps",
+      "user": "Mereland's heat pump report is attached. Announced factory capacity is far above today's sales. How much of the announced build-out should I count on, and what would show the theme is turning?",
+      "attachments": [
+        {
+          "filename": "mereland-heat-pumps-2026.md",
+          "media_type": "text/markdown",
+          "text": "# Mereland Building Authority: heat pump market report 2026\n\nMereland is a fictional country and this report was created for a Loupist evaluation. This release is not a market observation, a price or a recommendation.\n\n## Capacity and sales\n\nManufacturers have announced plants able to build 1.9 million units a year by 2028. Plants operating today can build 0.7 million and built 0.31 million in the last twelve months. Installations were 0.26 million, down from 0.34 million the year before.\n\n## Demand\n\nThe purchase grant was cut from 40% to 25% of the installed price in January 2026. Electricity costs 3.4 times as much as gas per unit of heat, against 2.9 times a year earlier. Trained installers number 11,000; the authority estimates 30,000 are needed for one million installations a year.\n\n## Stocks\n\nDistributors hold seven months of sales in stock, against three months two years ago. Two manufacturers have postponed their new plants by a year.\n\n## Policy\n\nA ban on new gas boilers in new buildings takes effect in 2028. A proposal to extend it to replacements was withdrawn in June 2026.\n\n## Authority view\n\nThe authority keeps its goal of one million installations a year by 2030 and says announced factory capacity shows the transition is under way.\n"
+        }
+      ]
+    },
+    "unrelated": {
+      "id": "like-for-like",
+      "user": "A grocer reports like-for-like sales growth of 4% in a year when its shelf prices rose 3%. What does that say about the volumes it sold, and what does like-for-like leave out?"
+    }
+  }
+}

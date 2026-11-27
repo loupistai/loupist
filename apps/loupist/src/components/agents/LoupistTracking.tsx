@@ -2,6 +2,7 @@ import type { LoupistBridge } from "../../contracts/bridge";
 import type { TFunction } from "i18next";
 import type { ExtensionType, SchemaChange, SchemaLabels, WorldSchemaView } from "../../contracts/knowledge";
 import { formatDate } from "../../i18n/format";
+import { localizedValue, primaryLanguage } from "../../i18n/localized";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "../../i18n";
 import { XIcon } from "lucide-react";
@@ -9,15 +10,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import "../../styles/map.css";
 
 function schemaLabel(labels: SchemaLabels, language: string) {
-  return language.toLowerCase().startsWith("ko") && labels.ko ? labels.ko : labels.en;
+  return localizedValue<string>(labels, language) ?? labels.en;
 }
 
-// English shows `en`. Any other language shows that language's blurb, or nothing.
+// Each language shows its own blurb, or nothing: a blurb is never shown in another language.
 function schemaBlurb(blurbs: SchemaLabels, language: string): string | null {
-  const lang = language.toLowerCase();
-  if (lang.startsWith("en")) return blurbs.en || null;
-  if (lang.startsWith("ko")) return blurbs.ko || null;
-  return null;
+  return (blurbs as Readonly<Record<string, string | undefined>>)[primaryLanguage(language)] || null;
 }
 
 function relationLine(items: Array<{ labels: SchemaLabels }>, language: string) {

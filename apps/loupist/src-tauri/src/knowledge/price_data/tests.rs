@@ -69,8 +69,16 @@ fn the_producing_tool_decides_for_a_retained_dataset() {
         "crypto_price_historical",
         TRUST_NUMERIC
     )));
-    assert!(price_dataset(&mcp(
+    assert!(!price_dataset(&mcp(
         "fixedincome_government_treasury_rates",
+        TRUST_NUMERIC
+    )));
+    assert!(!price_dataset(&mcp(
+        "fixedincome_government_yield_curve",
+        TRUST_NUMERIC
+    )));
+    assert!(price_dataset(&mcp(
+        "fixedincome_government_treasury_prices",
         TRUST_NUMERIC
     )));
     assert!(price_dataset(&mcp(
@@ -117,8 +125,8 @@ fn the_producing_tool_decides_for_a_retained_dataset() {
 fn a_stored_bar_table_is_price_data_by_its_shape() {
     // The dataset row is gone; the stored rows still say what they are.
     assert!(price_payload(&stored(hourly_bars()), None));
-    // A table of closes.
-    assert!(price_payload(
+    // One close column is not a price family.
+    assert!(!price_payload(
         &stored(
             json!([{"date": "2026-11-20", "close": 3010.5}, {"date": "2026-11-21", "close": null}])
         ),
@@ -177,13 +185,13 @@ fn a_composed_table_is_price_data_by_its_shape() {
     assert!(price_file("text/plain", csv));
     assert!(price_file(
         "text/tab-separated-values",
-        "Date\tClose\n2026-11-20\t3010.5\n2026-11-21\t3075\n"
+        "Date\tClose\tVolume\n2026-11-20\t3010.5\t120\n2026-11-21\t3075\t98\n"
     ));
-    let markdown = "# ETH-USD closes\n\n| Date | Close | Change % |\n|---|---:|---:|\n| 2026-11-20 | 3,010.50 | +0.4% |\n| 2026-11-21 | 3,075.00 | 2.1% |\n";
+    let markdown = "# ETH-USD closes\n\n| Date | Close | Volume |\n|---|---:|---:|\n| 2026-11-20 | 3,010.50 | 120 |\n| 2026-11-21 | 3,075.00 | 98 |\n";
     assert!(price_file("text/markdown", markdown));
     assert!(price_file(
         "application/json",
-        r#"[{"date":"2026-11-20","close":3010.5},{"date":"2026-11-21","close":3075}]"#
+        r#"[{"date":"2026-11-20","close":3010.5,"volume":120},{"date":"2026-11-21","close":3075,"volume":98}]"#
     ));
 
     for (media_type, text) in [
@@ -213,4 +221,43 @@ fn a_composed_table_is_price_data_by_its_shape() {
     ] {
         assert!(!price_file(media_type, text), "{media_type}: {text}");
     }
+}
+
+#[test]
+fn the_tool_decides_before_a_single_rate_or_yield_column() {
+    let world = [
+        ("text/csv", "date,rate\n2026-01-01,4.2\n2026-02-01,4.1\n"),
+        (
+            "text/csv",
+            "date,policy_rate\n2026-01-01,3.50\n2026-02-01,3.25\n",
+        ),
+        (
+            "text/csv",
+            "date,dividend_yield\n2026-01-01,1.4\n2026-02-01,1.5\n",
+        ),
+        ("text/csv", "date,yield\n2026-01-01,4.1\n"),
+        ("text/csv", "date,exchangerate\n2026-01-01,1350\n"),
+        ("text/csv", "date,close\n2026-11-20,3010.5\n"),
+    ];
+    for (media_type, text) in world {
+        assert!(!price_file(media_type, text), "{text}");
+    }
+    let curve = stored(json!([
+        {"date": "2026-11-20", "maturity": "10Y", "rate": 4.2},
+        {"date": "2026-11-21", "maturity": "10Y", "rate": 4.1},
+    ]));
+    assert!(!price_payload(
+        &curve,
+        Some(&mcp("fixedincome_government_yield_curve", TRUST_NUMERIC))
+    ));
+
+    let quoted = "\"date\",\"open\",\"high\",\"low\",\"close\",\"volume\"\n\"2026-11-20\",\"3,000\",\"3,050\",\"2,990\",\"3,010.5\",\"120\"\n\"2026-11-21\",\"3010.5\",\"3080\",\"3001\",\"3075\",\"98\"\n";
+    assert!(price_file("text/csv", quoted));
+    let korean = "날짜,시가,고가,저가,종가,거래량\n2026-11-20,70000,71000,69000,70500,1000\n2026-11-21,70500,72000,70000,71500,1100\n";
+    assert!(price_file("text/csv", korean));
+    assert!(price_payload(&stored(hourly_bars()), None));
+    assert!(price_payload(
+        &stored(json!([{"date": "2026-11-20", "close": 1.0, "volume": 2}])),
+        Some(&mcp("equity_price_historical", TRUST_NUMERIC))
+    ));
 }

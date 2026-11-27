@@ -33,7 +33,7 @@ describe("design preview scenarios", () => {
       }
       if (scenario.id === "answer-reading-column") {
         const answer = document.querySelector('article.message.assistant[data-message-id="preview-answer"]');
-        for (const selector of ["h2", ".message-content p", ".message-content ul", ".chat-artifact-block", ".message-sources", ".memory-row", ".answer-feedback", ".message-action-bar > .message-actions"]) {
+        for (const selector of ["h2", ".message-content p", ".message-content ul", ".chat-artifact-block", ".message-sources", ".memory-row", ".message-action-bar > .message-actions"]) {
           expect(answer?.querySelector(selector)?.closest("article.message")).toBe(answer);
         }
         expect(answer?.querySelectorAll("table")).toHaveLength(2);
@@ -81,11 +81,10 @@ describe("design preview scenarios", () => {
         expect(document.querySelector('.bot-greeting [data-ask="status"]')).toHaveTextContent("Hanul Precision");
         expect(document.querySelector(".morning-message")).toBeNull();
       }
-      // A tile only for an asset with a stored price; the greeting's bubble is its prompt, never a price move.
+      // A tile only for an asset with a stored price.
       if (scenario.id === "bot-greeting") {
         expect(document.querySelectorAll(".bot-greeting .bot-ask")).toHaveLength(4);
         expect(document.querySelectorAll(".bot-greeting .bot-tile")).toHaveLength(3);
-        expect(document.querySelectorAll(".bot-greeting .bot-bubble")).toHaveLength(1);
         expect(document.querySelector(".bot-greeting .bot-tiles")).not.toHaveTextContent(/close|%/iu);
       }
       // The unread briefing and the two checks.
@@ -132,5 +131,29 @@ describe("design preview scenarios", () => {
     await configureTheme(bridge, theme);
     render(<App bridge={bridge} />);
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe(theme));
+  });
+
+  it("reaches the draw probe canvas when the WebView suspends animation frames", async () => {
+    const scenario = scenarios.find(candidate => candidate.id === "map-1000")!;
+    const view = render(<>
+      <textarea data-chat-composer />
+      <div data-sidebar-place="map"><button type="button">World</button></div>
+      <div className="map-view"><canvas /></div>
+    </>);
+    const map = view.container.querySelector(".map-view")!;
+    Object.defineProperty(map, "clientWidth", { value: 800 });
+    const animationFrame = vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => {
+      throw new Error("The hidden WebView cannot deliver animation frames");
+    });
+    const originalUrl = window.location.href;
+    window.history.replaceState(null, "", "?probe=draw");
+    try {
+      await scenario.enter(view.container);
+      expect(scenario.landmark()).toBe(map.querySelector("canvas"));
+      expect(animationFrame).not.toHaveBeenCalled();
+    } finally {
+      window.history.replaceState(null, "", originalUrl);
+      animationFrame.mockRestore();
+    }
   });
 });

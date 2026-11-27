@@ -21,9 +21,8 @@ export type ScheduledTaskDefinition = {
   update_memory: boolean;
   status: "active" | "paused";
 };
-/** The scheduler holds only agent work: the briefing and custom tasks (an alert is a custom task whose prompt states the condition). */
-export type ScheduledTaskKind = "custom" | "briefing";
-export type ScheduledTask = Omit<ScheduledTaskDefinition, "status"> & Wire.TaskWatch & {
+export type ScheduledTaskKind = "custom" | "briefing" | "learning";
+export type ScheduledTask = Omit<ScheduledTaskDefinition, "status"> & Wire.TaskWatch & Pick<Wire.Task, "program" | "budget" | "hold"> & {
   model_selection?: Wire.ResolvedModelSelection;
   kind: ScheduledTaskKind;
   id: string;
@@ -55,12 +54,21 @@ export type BriefingCheck = Wire.BriefingCheck;
 export type BriefingContext = Wire.BriefingContext;
 export type ScheduledRun = Wire.Run;
 export type ScheduledTaskIdentity = { loupist_id: string; task_id: string };
+export type LearningProgramUpdateRequest = Wire.LearningProgramUpdateRequest;
+export type LearningProgramPatch = Wire.ProgramPatch;
+/** The host's limits for a program (`scheduled_tasks/types.rs`): title and brief in UTF-8 bytes. */
+export const LEARNING_PROGRAM_LIMITS = { titleBytes: 200, briefBytes: 8 * 1024, subjects: 8 } as const;
+export type LearningProgramUndoAllRequest = Wire.LearningProgramUndoAllRequest;
+export type ProgramUndo = Wire.ProgramUndo;
+/** The field a refused `learningProgramUpdate` names: an `invalid_request` with detail `{ field, reason }`. */
+export type ProgramField = keyof Wire.ProgramPatch;
+export type ProgramFieldRefusal = { field: ProgramField; reason: string };
 export type ScheduledRunIdentity = ScheduledTaskIdentity & { run_id: string };
 export type ScheduledTaskCreateRequest = ScheduledTaskDefinition & { loupist_id: string };
 export type ScheduledTaskWatch = { run: ScheduledRun; thread: ChatThread };
 
 export type ScheduleReceipt = { task_id: string; title: string; question: string } | TaskScheduleReceipt;
-export type TaskScheduleReceipt = Wire.TaskWatch & {
+export type TaskScheduleReceipt = Wire.TaskWatch & Pick<Wire.TaskReceipt, "program" | "budget"> & {
   task_id: string;
   title: string;
   revision: number;

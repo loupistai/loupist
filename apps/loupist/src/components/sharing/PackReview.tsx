@@ -8,7 +8,7 @@ import type { PackAddResult, PackFlag, PackItemView, PackManifestView, PackOpenR
 import { Button } from "../ui/button";
 import { ExternalLinkError, useExternalLink } from "../navigation/ExternalLinkError";
 import { Input } from "../ui/input";
-import { NativeSelect } from "../ui/native-select";
+import { SelectField, SelectItem } from "../ui/select";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
@@ -118,9 +118,9 @@ function ReviewBody({ bridge, preview, loupists, currentLoupistId, focusAdd, onA
         <div className="pack-review-profile">
           <label className="share-field" htmlFor={ids.name}><span>{i18n.t("onboarding:wizard.name")}</span><Input id={ids.name} value={merge ? preview.profile.name : name} disabled={merge || Boolean(adding)} maxLength={80} onChange={event => setName(event.target.value)} /></label>
           <label className="share-field" htmlFor={ids.tone}><span>{i18n.t("app:loupistProfile.tone")}</span>
-            <NativeSelect id={ids.tone} value={tone} disabled={merge || Boolean(adding)} onChange={event => setTone(event.target.value as LoupistTone)}>
-              {LOUPIST_TONES.map(value => <option key={value} value={value}>{i18n.t(`onboarding:tone.${value}.label`)}</option>)}
-            </NativeSelect>
+            <SelectField id={ids.tone} value={tone} disabled={merge || Boolean(adding)} onValueChange={value => setTone(value as LoupistTone)}>
+              {LOUPIST_TONES.map(value => <SelectItem key={value} value={value}>{i18n.t(`onboarding:tone.${value}.label`)}</SelectItem>)}
+            </SelectField>
           </label>
         </div>
         {preview.profile.focus ? <p className="pack-review-focus"><span>{i18n.t("onboarding:wizard.focus")}</span> “{preview.profile.focus}”</p> : null}
@@ -150,9 +150,9 @@ function ReviewBody({ bridge, preview, loupists, currentLoupistId, focusAdd, onA
           <div className="share-radio-row"><RadioGroupItem id={`${ids.mode}-new`} value="new" /><label htmlFor={`${ids.mode}-new`}>{t("asNew")}</label></div>
           {loupists.length ? <div className="share-radio-row pack-review-merge">
             <RadioGroupItem value="merge" aria-label={t("asMerge", { name: targetName })} />
-            <NativeSelect aria-label={t("addAs")} value={target} disabled={!merge || modeLocked} onChange={event => setTarget(event.target.value)}>
-              {loupists.map(item => <option key={item.id} value={item.id}>{t("asMerge", { name: item.name })}</option>)}
-            </NativeSelect>
+            <SelectField aria-label={t("addAs")} value={target} disabled={!merge || modeLocked} onValueChange={value => setTarget(value)}>
+              {loupists.map(item => <SelectItem key={item.id} value={item.id}>{t("asMerge", { name: item.name })}</SelectItem>)}
+            </SelectField>
           </div> : null}
         </RadioGroup>
       </div>

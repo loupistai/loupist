@@ -5,7 +5,7 @@
   "description": "Lens lifecycle: research turns file subject pages from retained originals, later Chats read and reuse them, newer originals revise the same page (including a stale premise, an alias and a small update that must keep earlier detail), one case never becomes a method, read-only and light turns file nothing, and a method applies only where it fits.",
   "budget": {
     "maxInputTokensPerTurn": 1000000,
-    "maxTurns": 75
+    "maxTurns": 90
   },
   "scenarios": [
     {
@@ -1275,6 +1275,232 @@
         }
       ],
       "language": "en"
+    },
+    {
+      "id": "LL-012",
+      "title": "An evidence-backed idea keeps unreferenced checks and refutations",
+      "split": "regression",
+      "tags": [
+        "en",
+        "basis"
+      ],
+      "language": "en",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "file",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Keep an idea page for Harrowfen Pumps: the rental fleet may bring more repeat orders. My next check is the share of first-time renters who reorder within 90 days. The idea would break if repeat orders stayed flat after fleet expansion. Treat those two items as prospective tests without evidence of their own. Use the attached bulletin to ground what we know today.",
+              "attachments": [
+                {
+                  "filename": "harrowfen-bulletin.txt",
+                  "media_type": "text/plain",
+                  "text": "Harrowfen Pumps operating bulletin, August 7, 2026. The active rental fleet grew from 240 to 310 pumps during the second quarter. The bulletin does not report customer reorder data.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "kind": "idea",
+                    "title_matches": "Harrowfen Pumps",
+                    "count": 1,
+                    "basis": "span",
+                    "assert": "lens_pages",
+                    "metric": "save_recall"
+                  },
+                  {
+                    "kind": "idea",
+                    "title_matches": "Harrowfen Pumps",
+                    "count": 1,
+                    "section_matches": "\\b90\\b",
+                    "assert": "lens_pages",
+                    "metric": "save_recall"
+                  },
+                  {
+                    "kind": "idea",
+                    "title_matches": "Harrowfen Pumps",
+                    "count": 1,
+                    "section_matches": "flat",
+                    "assert": "lens_pages",
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "grounded-idea-with-ref-free-tests",
+                    "criterion": "The saved Harrowfen Pumps idea has a nonempty summary and a section backed by the retained bulletin. Its checks and would-break sections each have an empty basis ref list. The former says to test 90-day reorders, the latter says flat repeat orders after expansion would break the idea. The tool arguments state uncertainty for both and the saved page treats them as prospective tests.",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LL-013",
+      "title": "An empty summary cannot create a page",
+      "split": "regression",
+      "tags": [
+        "en",
+        "basis"
+      ],
+      "language": "en",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "file",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Test a draft subject page titled Ternwick Valves with its summary set to an empty string. Give it one factual section from the attached bulletin. Please try filing exactly that draft. If filing rejects it, leave the draft unfiled without adding a summary.",
+              "attachments": [
+                {
+                  "filename": "ternwick-bulletin.txt",
+                  "media_type": "text/plain",
+                  "text": "Ternwick Valves operating bulletin, June 2, 2026. The Flint Gate plant completed its pressure-test line upgrade.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "kind": "subject",
+                    "title_matches": ".",
+                    "count": 0,
+                    "assert": "lens_pages",
+                    "metric": "boundary"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "refused-empty-summary",
+                    "criterion": "A lens_file attempt to create the Ternwick Valves subject page has an empty or missing summary and a grounded factual section. The filing result refuses creation because the summary is required. No subject page persisted and the answer does not claim it was saved.",
+                    "metric": "boundary"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "Now file Ternwick Valves with a short nonempty summary based on the Flint Gate upgrade bulletin.",
+              "expect": {
+                "memory": [
+                  {
+                    "kind": "subject",
+                    "title_matches": "Ternwick Valves",
+                    "count": 1,
+                    "assert": "lens_pages",
+                    "metric": "save_recall"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "positive-summary-control",
+                    "criterion": "The stored Ternwick Valves subject page has a nonempty summary that accurately describes the completed Flint Gate pressure-test line upgrade, grounded in the bulletin.",
+                    "metric": "save_recall"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LL-014",
+      "title": "Another spelling updates the original subject page",
+      "split": "regression",
+      "tags": [
+        "en",
+        "alias",
+        "update"
+      ],
+      "language": "en",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "first",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Start a subject page about Veyr Loom Robotics using this production bulletin.",
+              "attachments": [
+                {
+                  "filename": "veyr-loom-initial.txt",
+                  "media_type": "text/plain",
+                  "text": "Veyr Loom Robotics initial production bulletin, May 12, 2026. The North Hall assembly line completed 84 robot arms in April.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "kind": "subject",
+                    "title_matches": "Veyr Loom Robotics",
+                    "count": 1,
+                    "assert": "lens_pages",
+                    "metric": "save_recall"
+                  },
+                  {
+                    "kind": "subject",
+                    "title_matches": ".",
+                    "count": 1,
+                    "assert": "lens_pages",
+                    "metric": "save_precision"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "second",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "File this newer Veyr-Loom Robotics bulletin under the company. Start a new subject page only if the company has no page yet.",
+              "attachments": [
+                {
+                  "filename": "veyr-loom-followup.txt",
+                  "media_type": "text/plain",
+                  "text": "Veyr-Loom Robotics follow-up production bulletin, June 12, 2026. The North Hall assembly line completed 103 robot arms in May.\n"
+                }
+              ],
+              "expect": {
+                "memory": [
+                  {
+                    "kind": "subject",
+                    "title_matches": "Veyr Loom Robotics",
+                    "count": 1,
+                    "section_matches": "\\b103\\b",
+                    "assert": "lens_pages",
+                    "metric": "lens_update"
+                  },
+                  {
+                    "kind": "subject",
+                    "title_matches": ".",
+                    "count": 1,
+                    "assert": "lens_pages",
+                    "metric": "save_precision"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "spelling-shares-one-subject",
+                    "criterion": "The original Veyr Loom Robotics subject page is updated with May output of 103 robot arms grounded in the follow-up bulletin. Exactly one subject page exists after the second turn. A second page under Veyr-Loom Robotics or any other spelling fails.",
+                    "metric": "lens_update"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }

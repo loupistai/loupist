@@ -5,7 +5,7 @@
   "description": "Fictional product regression and private-context capability scenarios; deterministic checks precede independent binary rubrics.",
   "budget": {
     "maxInputTokensPerTurn": 500000,
-    "maxTurns": 120
+    "maxTurns": 126
   },
   "scenarios": [
     {
@@ -415,7 +415,7 @@
           "memory": "remember",
           "turns": [
             {
-              "user": "Remember my research rule: describe every earnings-quality summary with the private label violet lantern.",
+              "user": "Remember this research rule, which I call my violet lantern test: do not trust reported profit when operating cash flow is less than half of it.",
               "expect": {
                 "memory": [
                   {
@@ -1291,6 +1291,59 @@
                     "id": "missing-cash-flow",
                     "metric": "carry_forward",
                     "criterion": "Link the saved rule and apply it to the 17 million credits of profit reported on 29 September 2026. Explain in the answer’s language that the evidence is insufficient to tell whether cash supports those earnings and identify operating cash flow for the same period as the missing input. Treating missing cash flow as zero, inventing a value or concluding that earnings quality is strong or weak fails."
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-R11",
+      "title": "An investment-analysis method belongs in a Lens principle",
+      "split": "regression",
+      "tags": [
+        "en"
+      ],
+      "language": "en",
+      "connections": [],
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "train",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Remember this standing research rule. When comparing two manufacturers' working capital, compare inventory days on the same period and flag when a product launch built up inventory.",
+              "expect": {
+                "trace": [
+                  {
+                    "tool": "bot_memory",
+                    "assert": "tool_not_called",
+                    "metric": "boundary"
+                  }
+                ],
+                "memory": [
+                  {
+                    "kind": "principle",
+                    "count": 1,
+                    "assert": "committed",
+                    "metric": "save_recall"
+                  },
+                  {
+                    "kind": "principle",
+                    "title_matches": ".",
+                    "count": 1,
+                    "assert": "lens_pages",
+                    "metric": "save_precision"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "analysis-method",
+                    "criterion": "One persisted Lens principle preserves both parts of the user's rule: compare inventory days for matching periods and flag inventory built for a product launch. No Bot memory write carries this rule.",
+                    "metric": "save_precision"
                   }
                 ]
               }

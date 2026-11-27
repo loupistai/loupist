@@ -133,7 +133,7 @@ for (const language of ["en", "ko"] as const) {
     it("localizes update blockers by kind, including unknown activities", () => {
       const kinds = ["chat", "chat_mutation", "memory_write", "memory_mutation", "loupist_mutation", "loupist_deletion", "marketplace_configuration", "marketplace_credential", "keychain_mutation", "provider_inference", "provider_support", "graph", "update", "future_kind"];
       const expected = language === "ko" ? [
-        "응답 작성 중", "리서치 세션 변경 중", "기억 저장 중", "기억 변경 중", "루피스트 변경 중", "루피스트 삭제 중", "연결 설정 변경 중", "연결 키 변경 중", "저장된 키 변경이 아직 macOS의 응답을 기다리고 있습니다. 잠시 후 업데이트를 다시 시도하십시오.", "백그라운드 모델 작업 중", "모델 연결 확인 중", "월드 처리 중", "업데이트 설치 중", "작업 진행 중",
+        "응답 작성 중", "리서치 세션 변경 중", "기억 저장 중", "기억 변경 중", "Loupist 변경 중", "Loupist 삭제 중", "연결 설정 변경 중", "연결 키 변경 중", "저장된 키 변경이 아직 macOS의 응답을 기다리고 있습니다. 잠시 후 업데이트를 다시 시도하십시오.", "백그라운드 모델 작업 중", "모델 연결 확인 중", "월드 처리 중", "업데이트 설치 중", "작업 진행 중",
       ] : [
         "A reply in progress", "Changing a research session", "Saving Memory", "Changing Memory", "Changing a Loupist", "Deleting a Loupist", "Changing connection settings", "Changing a connection's key", "A saved-key change is still waiting for macOS. Try the update again in a moment.", "Background model work", "Checking a model connection", "Processing World", "Installing an update", "Work in progress",
       ];
@@ -142,6 +142,19 @@ for (const language of ["en", "ko"] as const) {
     });
   });
 }
+
+it("names the work an update is waiting for and clears that notice when the work ends", () => {
+  const actions = { onCheck: vi.fn(), onInstall: vi.fn() };
+  const blocked = { ...idle, blockers: [{ id: "a", kind: "chat", label: "raw host label" }, { id: "b", kind: "graph", label: "raw host label" }] };
+  const view = render(<UpdateSettingsCard {...actions} status={blocked} phase="idle" error="Couldn't install the update. Try again." />);
+  expect(screen.getByText("Waiting for 2 things to finish")).toBeVisible();
+  expect(screen.getByText("A reply in progress")).toBeVisible();
+  expect(screen.getByText("Processing World")).toBeVisible();
+  view.rerender(<UpdateSettingsCard {...actions} status={{ ...blocked, blockers: [] }} phase="idle" error={null} />);
+  expect(screen.queryByText(/Waiting for/)).not.toBeInTheDocument();
+  expect(screen.queryByText("A reply in progress")).not.toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
 
 it("rewords an existing error when the interface language changes", async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });

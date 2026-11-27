@@ -14,7 +14,7 @@ const DAY_MS = 86_400_000;
 const SOURCE_GROUP_THRESHOLD = 3;
 
 /** What changed in the Loupist's knowledge, in the rows the What's new drawer lists. A `fact` is a value reported about one name. */
-export type WhatsNewKind = "name" | "relationship" | "fact" | "conflict" | "method" | "principle" | "subject" | "idea";
+export type WhatsNewKind = "name" | "relationship" | "fact" | "conflict" | "ended" | "disagree" | "superseded" | "method" | "principle" | "subject" | "idea";
 export type WhatsNewRow = {
   id: string;
   kind: WhatsNewKind;
@@ -28,6 +28,9 @@ export type WhatsNewRow = {
   /** The World name a name row adds, which a bounded overview may leave out. */
   nameId?: string;
   recordId?: string;
+  /** A superseded Lens section: the page title and the section heading. */
+  page?: string;
+  section?: string;
   publicationKey: string;
   source?: WorldGrowthSource;
   /** New facts folded into a new name's row in the same publication. */
@@ -116,6 +119,7 @@ export function whatsNewRows(events: readonly GrowthEvent[] | null | undefined, 
   const seen = new Set<string>();
   const alike = new Map<string, WhatsNewRow>();
   for (const event of ordered) {
+    const growth = event.kind as string;
     const origin = event.originMessageId ? sources.get(event.originMessageId) : undefined;
     const source = event.publication?.source;
     const publicationKey = JSON.stringify(event.publication
@@ -155,6 +159,16 @@ export function whatsNewRows(events: readonly GrowthEvent[] | null | undefined, 
         ...(single && a ? { node: gone || a.archived ? undefined : a, category: nodeCategory(a) } : {}) };
       alike.set(key, row);
       rows.push(row);
+    } else if ((growth === "claim_ended" || growth === "claim_conflict") && event.summary.trim()) {
+      const edge = event.subjectId ? claims.get(event.subjectId) : undefined;
+      const kind = growth === "claim_ended" ? "ended" : "disagree";
+      const gone = !edge && !claimsBounded;
+      rows.push({ ...base, kind, label: event.summary.trim(), claimId: event.subjectId ?? undefined, edge, gone });
+    } else if (growth === "lens_superseded" && event.summary.trim()) {
+      const node = event.recordId ? lenses.get(event.recordId) : undefined;
+      const page = node?.label || event.beforeSummary?.trim() || "";
+      const section = event.afterSummary?.trim() || event.summary.trim();
+      rows.push({ ...base, kind: "superseded", label: section, page, section, recordId: event.recordId ?? undefined, node, gone: !!node?.archived });
     } else if (event.kind === "lens_created" && event.recordId) {
       const node = lenses.get(event.recordId);
       const kind = lensKind(event, node);
@@ -223,7 +237,7 @@ export function whatsNewEntries(rows: readonly WhatsNewRow[], language: string):
  */
 export function whatsNewTotals(rows: readonly WhatsNewRow[]) {
   const sum = (kind: WhatsNewKind) => rows.reduce((total, row) => total + (row.kind === kind && !row.gone ? row.count : 0), 0);
-  return { names: sum("name"), links: sum("relationship"), conflicts: sum("conflict") };
+  return { names: sum("name"), links: sum("relationship"), conflicts: sum("conflict") + sum("disagree") };
 }
 
 const startOfDay = (ms: number) => { const day = new Date(ms); day.setHours(0, 0, 0, 0); return day.getTime(); };

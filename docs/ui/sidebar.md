@@ -64,7 +64,7 @@ shows one status at its end, first match: the spinner while a reply runs
 ([running replies](#running-replies)), a grey dot for a run that finished out of sight
 (another chat or page showing, or the window hidden; a visible window behind another app
 still shows its chat), then the private-chat mark.
-`attention_notify` builds an OS notification body from the stored answer, only with
+`attention_notify` builds an OS notification body from the stored answer when desktop notification details are on, and sends an empty body when they are off or the setting cannot be read. It sends only with
 the user's notification permission and at most once per chat per minute; it is
 used for approvals and runs that finish while the window is hidden. While the main window is not focused, Rust counts the rows of the same list that arrived since the window was last in front (grouped results and alerts by their count; checks coming due are not counted), prefixes the window title with the count ("(3) Loupist") and sets the Dock badge; focusing the window clears both and marks the list seen (`commands/attention.rs`).
 

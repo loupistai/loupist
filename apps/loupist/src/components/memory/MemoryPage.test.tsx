@@ -245,3 +245,33 @@ it("offers + Add principle on an empty Lens and opens the principle it saves", a
   expect(await within(page).findByRole("complementary", { name: /Check capacity costs before trusting a margin recovery/ })).toBeVisible();
   expect((await bridge.principleList({ loupistId: loupist.id })).map(item => item.statement)).toContain("Check capacity costs before trusting a margin recovery.");
 });
+
+it("edits and archives a principle, and keeps View Markdown in More for one sentence", async () => {
+  let recordId = "";
+  const { bridge, loupist, view, user } = await fixture(async (bridge, loupist) => {
+    recordId = (await bridge.principleCreate({ loupistId: loupist.id, statement: "Check cash before profit.", origin: "settings" })).recordId;
+    (bridge as unknown as { state: { memoryUsage: Record<string, unknown> } }).state.memoryUsage = {
+      [loupist.id]: [{ recordId, usedCount: 1, lastUsedAtMs: Date.UTC(2026, 9, 28), usedIn: [{ chatId: "chat-margin", atMs: Date.UTC(2026, 9, 28) }] }],
+    };
+  });
+  const update = vi.spyOn(bridge, "principleUpdate");
+  const archive = vi.spyOn(bridge, "principleArchive");
+  render(view(recordId));
+  const reader = await screen.findByRole("complementary", { name: "Check cash before profit." });
+  expect(within(reader).getByText("Counted once per completed reply when this item was supplied or applied.")).toBeVisible();
+  expect(reader).not.toHaveTextContent(/does not (?:mean|prove)/i);
+  const more = within(reader).getByText("More").closest("details")!;
+  expect(more.querySelector("summary")).toHaveTextContent("More");
+  expect(more).not.toHaveAttribute("open");
+  expect(more).toHaveTextContent("View Markdown");
+  await user.click(within(reader).getByRole("button", { name: "Edit" }));
+  const statement = within(reader).getByRole("textbox", { name: "Statement" });
+  await user.clear(statement);
+  await user.type(statement, "Check cash. Then the story.");
+  await user.click(within(reader).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(update).toHaveBeenCalledWith(expect.objectContaining({ recordId, statement: "Check cash. Then the story." })));
+  const reread = await screen.findByRole("complementary", { name: /Check cash/ });
+  expect(within(reread).getByText("View Markdown").closest("details")?.querySelector("summary")).toHaveTextContent("View Markdown");
+  await user.click(within(reread).getByRole("button", { name: "Archive" }));
+  await waitFor(() => expect(archive).toHaveBeenCalledWith({ loupistId: loupist.id, recordId, archived: true }));
+});

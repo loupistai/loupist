@@ -117,6 +117,10 @@ pub(crate) struct RunLedger {
     pub(crate) inputs: BTreeMap<String, ReadCall>,
     pub(crate) entries: Vec<LedgerEntry>,
     pub(crate) final_round: bool,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) bar_dates: BTreeMap<String, [String; 3]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) check_stale_days: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]

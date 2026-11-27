@@ -104,12 +104,16 @@ const GROWTH_KINDS: &[&str] = &[
     "claim_added",
     "claim_disputed",
     "claim_withdrawn",
+    "claim_ended",
+    "claim_reopened",
+    "claim_conflict",
     "lens_created",
     "lens_revised",
     "lens_renamed",
     "lens_archived",
     "lens_restored",
     "lens_contested",
+    "lens_superseded",
     "source_retained",
     "journal_created",
     "journal_updated",
@@ -122,6 +126,51 @@ const GROWTH_KINDS: &[&str] = &[
     "growth_truncated",
 ];
 const GROWTH_ACTORS: &[&str] = &["user", "loupist", "import", "processing"];
+
+#[cfg(test)]
+#[test]
+fn temporal_growth_kinds_round_trip() {
+    let store = crate::store::SqliteStore::open_in_memory().unwrap();
+    let mut db = store.lock().unwrap();
+    let tx = db.transaction().unwrap();
+    let kinds = [
+        "claim_ended",
+        "claim_reopened",
+        "claim_conflict",
+        "lens_superseded",
+    ];
+    for (index, kind) in kinds.iter().enumerate() {
+        GrowthEvent::new(
+            "owner",
+            "record",
+            index as i64,
+            kind,
+            "processing",
+            "change",
+        )
+        .insert(&tx)
+        .unwrap();
+    }
+    let page = query(
+        &tx,
+        &GrowthEventsQuery {
+            loupist_id: "owner".into(),
+            since_ms: None,
+            until_ms: None,
+            world_revision_id: None,
+            limit: None,
+            cursor: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        page.events
+            .iter()
+            .map(|event| event.kind.as_str())
+            .collect::<Vec<_>>(),
+        kinds,
+    );
+}
 
 pub(super) fn one_line(text: &str) -> String {
     text.split_whitespace()
@@ -187,11 +236,15 @@ pub(super) fn world_diff(
     context: &GrowthEvent,
     previous: Option<&WorldSnapshotBody>,
     next: &WorldSnapshotBody,
-) -> KnowledgeResult<()> {
-    let prior_nodes: BTreeSet<_> = previous
+) -> KnowledgeResult<super::world_episodes::EpisodeChanges> {
+    use super::model::{TimePoint, CONFLICTS_WITH_CLAIM, END_BASIS, SUPERSEDED_BY_CLAIM};
+    use super::world_episodes::{EndBasis, EpisodeChanges, EpisodeConflict, EpisodeEnd};
+    let at = TimePoint::from_unix_ms(context.at_ms);
+    let mut episode = EpisodeChanges::default();
+    let prior_nodes: BTreeMap<_, _> = previous
         .into_iter()
         .flat_map(|body| &body.nodes)
-        .map(|node| node.id.as_str())
+        .map(|node| (node.id.as_str(), node))
         .collect();
     let prior_claims: BTreeMap<_, _> = previous
         .into_iter()
@@ -201,13 +254,27 @@ pub(super) fn world_diff(
     let next_claims: BTreeSet<_> = next.claims.iter().map(|claim| claim.id.as_str()).collect();
     let mut changes = Vec::new();
     for node in &next.nodes {
-        if !prior_nodes.contains(node.id.as_str()) {
-            changes.push(("entity_added", node.id.as_str(), node.name.as_str(), None));
+        match prior_nodes.get(node.id.as_str()) {
+            None => {
+                episode.entities_added.push(node.id.clone());
+                changes.push(("entity_added", node.id.as_str(), node.name.clone(), None));
+            }
+            Some(prior) if **prior != *node => episode.entities_touched.push(node.id.clone()),
+            _ => {}
         }
     }
+    let after_claims: BTreeMap<_, _> = next
+        .claims
+        .iter()
+        .map(|claim| (claim.id.as_str(), claim))
+        .collect();
     for claim in &next.claims {
-        let kind = match prior_claims.get(claim.id.as_str()) {
-            None => Some("claim_added"),
+        let previous = prior_claims.get(claim.id.as_str()).copied();
+        let kind = match previous {
+            None => {
+                episode.created.push(claim.id.clone());
+                Some("claim_added")
+            }
             Some(old) if old.status != claim.status => match claim.status {
                 ClaimStatus::Disputed => Some("claim_disputed"),
                 ClaimStatus::Withdrawn => Some("claim_withdrawn"),
@@ -215,19 +282,91 @@ pub(super) fn world_diff(
             },
             _ => None,
         };
+        let subject = if claim.connects_names() {
+            None
+        } else {
+            claim.endpoints.first().map(|end| end.node_id.as_str())
+        };
         if let Some(kind) = kind {
-            let subject = if claim.connects_names() {
-                None
-            } else {
-                claim.endpoints.first().map(|end| end.node_id.as_str())
-            };
-            changes.push((kind, claim.id.as_str(), claim.proposition.as_str(), subject));
+            changes.push((kind, claim.id.as_str(), claim.proposition.clone(), subject));
+        }
+        if let Some(old) = previous {
+            if claim
+                .evidence
+                .iter()
+                .any(|item| !old.evidence.contains(item))
+            {
+                episode.supported.push(claim.id.clone());
+            }
+            // Current again: a restatement reopened it or its ending moved away.
+            if old.has_ended(&at) && claim.is_current(&at) {
+                episode.reopened.push(claim.id.clone());
+                changes.push((
+                    "claim_reopened",
+                    claim.id.as_str(),
+                    claim.proposition.clone(),
+                    subject,
+                ));
+            }
+        }
+        if let Some(end) = claim
+            .invalid_at
+            .as_ref()
+            .filter(|end| end.at_or_before(&at))
+        {
+            if previous.is_none_or(|old| !old.has_ended(&at)) {
+                let by = claim.qualifier(SUPERSEDED_BY_CLAIM);
+                episode.ended.push(EpisodeEnd {
+                    claim: claim.id.clone(),
+                    by: by.map(str::to_owned),
+                    end: end.clone(),
+                    basis: if claim.qualifier(END_BASIS) == Some("reference") {
+                        EndBasis::Reference
+                    } else {
+                        EndBasis::Stated
+                    },
+                });
+                let summary = by.and_then(|id| after_claims.get(id)).map_or_else(
+                    || claim.proposition.clone(),
+                    |ender| format!("{} · Ended by {}", claim.proposition, ender.proposition),
+                );
+                changes.push(("claim_ended", claim.id.as_str(), summary, subject));
+            }
+        }
+        let mut partners = Vec::new();
+        for qualifier in claim
+            .qualifiers
+            .iter()
+            .filter(|item| item.key == CONFLICTS_WITH_CLAIM)
+        {
+            if previous.is_some_and(|old| old.qualifiers.contains(qualifier)) {
+                continue;
+            }
+            episode.conflicts.push(EpisodeConflict {
+                claim: claim.id.clone(),
+                with: qualifier.value.clone(),
+            });
+            if let Some(partner) = after_claims.get(qualifier.value.as_str()) {
+                partners.push(partner.proposition.as_str());
+            }
+        }
+        if !partners.is_empty() {
+            changes.push((
+                "claim_conflict",
+                claim.id.as_str(),
+                format!(
+                    "{} · Conflicts with {}",
+                    claim.proposition,
+                    partners.join(" / ")
+                ),
+                subject,
+            ));
         }
     }
     // A removed claim is a withdrawal even when the producer omitted a tombstone.
     for (id, claim) in &prior_claims {
         if !next_claims.contains(id) && claim.status != ClaimStatus::Withdrawn {
-            changes.push(("claim_withdrawn", *id, claim.proposition.as_str(), None));
+            changes.push(("claim_withdrawn", *id, claim.proposition.clone(), None));
         }
     }
     changes.sort_unstable();
@@ -263,7 +402,7 @@ pub(super) fn world_diff(
         );
         event.insert(tx)?;
     }
-    Ok(())
+    Ok(episode)
 }
 
 pub(super) fn query(

@@ -58,3 +58,22 @@ it("keeps evidence visible when undoing a saved script from the first result", a
   expect(remove).toHaveBeenCalledWith({ loupistId, ...script });
   expect(screen.getByText("3 figures checked · 2 sources")).toBeVisible();
 });
+
+it("renders a met check's explanation as Markdown, with citations as their plain words and no link", async () => {
+  const message: ChatMessage = {
+    id: "met", role: "assistant", status: "complete", created_at: new Date().toISOString(),
+    content: "The supply notice says the agreement [has ended](#evidence-ev_86c0aa12). **Shipments stop in March** [2](#evidence-ev_86c0bb34).\n\n- Notice dated 2026-11-20\n- Signed by both parties",
+    delivery: {
+      run_id: "run", task_id: "task", task_title: "Supplier contract check", task_kind: "custom", status: "succeeded",
+      schedule: null, run_thread_id: "thread", finished_at_ms: Date.now(),
+    },
+  };
+  render(<ThreadDelivery message={message} loupistName="Research" />);
+  const explanation = document.querySelector<HTMLElement>("[data-delivery-explanation]")!;
+  await waitFor(() => expect(explanation).toHaveTextContent("The supply notice says the agreement has ended."));
+  await waitFor(() => expect(explanation.querySelector("ul")).not.toBeNull(), { timeout: 5000 });
+  expect(within(explanation).getByText("Shipments stop in March")).toHaveAttribute("data-streamdown", "strong");
+  expect(within(explanation).getAllByRole("listitem").map(item => item.textContent)).toEqual(["Notice dated 2026-11-20", "Signed by both parties"]);
+  expect(explanation).not.toHaveTextContent(/#evidence|\*\*|\]\(/u);
+  expect(explanation.querySelector("a, button")).toBeNull();
+});

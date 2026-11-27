@@ -96,9 +96,26 @@ thread_local! {
 }
 
 /// Give one synchronous Chat finalization step a finite store-lock budget.
+/// It bounds each wait for a store lock, before and during the writes. A
+/// transaction whose writes all succeeded commits even past it: rolling it
+/// back would discard the turn's finished save without freeing the lock sooner.
 /// The caller remains on this thread until the transaction commits or rolls back.
 pub(crate) fn bounded_chat_save<T>(body: impl FnOnce() -> T) -> T {
-    const SAVE_BUDGET: Duration = Duration::from_secs(10);
+    #[cfg(test)]
+    if let Some(budget) = TEST_SAVE_BUDGET.get() {
+        return bounded_chat_save_within(budget, body);
+    }
+    bounded_chat_save_within(Duration::from_secs(10), body)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A shorter save budget for this test's thread, so a busy store fails
+    /// within a second instead of ten.
+    pub(crate) static TEST_SAVE_BUDGET: Cell<Option<Duration>> = const { Cell::new(None) };
+}
+
+fn bounded_chat_save_within<T>(budget: Duration, body: impl FnOnce() -> T) -> T {
     struct Restore(Option<Instant>);
     impl Drop for Restore {
         fn drop(&mut self) {
@@ -106,7 +123,7 @@ pub(crate) fn bounded_chat_save<T>(body: impl FnOnce() -> T) -> T {
         }
     }
     let run = || {
-        let deadline = Instant::now() + SAVE_BUDGET;
+        let deadline = Instant::now() + budget;
         let _restore = Restore(CHAT_SAVE_DEADLINE.replace(Some(deadline)));
         body()
     };
@@ -244,6 +261,9 @@ pub struct SqliteStore {
     database_path: Option<PathBuf>,
     folder_catalog: bool,
     folders: Mutex<HashMap<String, folder::FolderConnection>>,
+    /// Plan-limit and out-of-credit rows the ledger refused, kept in memory
+    /// until restart so their provider hold is not lost with the row.
+    lost_holds: Mutex<Vec<model_usage::LostHold>>,
 }
 
 fn root_identity_columns(profile: &LoupistProfile) -> (Option<String>, Option<String>) {
@@ -377,7 +397,6 @@ impl SqliteStore {
             return Err(StoreError::Conflict("Chat compare-and-swap"));
         }
         during(&transaction)?;
-        check_chat_save_deadline()?;
         transaction.commit()?;
         Ok(())
     }
@@ -466,7 +485,6 @@ impl SqliteStore {
             return Err(StoreError::Conflict("artifact Chat compare-and-swap"));
         }
         during(&transaction)?;
-        check_chat_save_deadline()?;
         transaction.commit()?;
         Ok(())
     }

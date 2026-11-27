@@ -5,9 +5,10 @@ import { formatDateTime } from "@/i18n/format";
 import { useContext, useEffect, useState, type ReactNode } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import type { ScheduleReceipt, ScheduledTask, ScheduledTaskListItem } from "../../types";
-import { cadenceLabel, scheduledTaskTitle, unreadableTask } from "../briefings/scheduledPresentation";
+import { cadenceLabel, scheduledTaskTitle, tellsYouKey, unreadableTask } from "../briefings/scheduledPresentation";
 import { Button } from "../ui/button";
 import { TriggerCard } from "./TriggerCard";
+import { LearningProgramCard } from "./LearningProgramCard";
 import { BotScheduleTasks } from "./BotScheduleTasks";
 import { useChatExecution } from "./ChatExecutionContext";
 
@@ -40,7 +41,9 @@ export function MessageSchedules({ receipts, onChangeDraft }: {
       </button></article> : scope?.surface === "bot"
       ? <BotTaskCard key={receipt.task_id} receipt={receipt} onChangeDraft={onChangeDraft} onChanged={refresh} task={currentTask(receipt.task_id)} onOpen={onOpen} />
       : receipt.action === "created" && receipt.awaiting_confirmation
-      ? <ProposalCard key={`${receipt.task_id}:${receipt.revision}`} receipt={receipt} onOpen={onOpen} />
+      ? receipt.program
+        ? <LearningProgramCard key={`${receipt.task_id}:${receipt.revision}`} receipt={receipt} onOpen={onOpen} />
+        : <ProposalCard key={`${receipt.task_id}:${receipt.revision}`} receipt={receipt} onOpen={onOpen} />
       : <ScheduleCard key={receipt.task_id} receipt={receipt} onOpen={onOpen} status={status(receipt)} detail={receipt.next_run_at_ms && receipt.status === "active" ? t("messageSchedules.nextRun", { date: formatDateTime(receipt.next_run_at_ms) }) : undefined} />)}
   </div>;
 }
@@ -54,13 +57,16 @@ function BotTaskCard({ receipt, task, onOpen, onChanged, onChangeDraft }: {
   if (!task) return <ScheduleCard receipt={receipt} onOpen={onOpen} showCadence={false} gone={false} />;
   if (unreadableTask(task)) return <ScheduleCard receipt={receipt} status={i18n.t("briefings:schedule.unreadableTask")} showCadence={false} />;
   const current = { ...receipt, task_id: task.id, revision: task.revision, title: scheduledTaskTitle(task.kind, task.title), schedule: task.schedule,
-    terms: task.terms, delivery: task.delivery, report: task.report, preset: task.preset };
+    terms: task.terms, delivery: task.delivery, report: task.report, preset: task.preset, trigger: task.trigger ?? receipt.trigger };
   if (task.trigger && !task.replaces && scope) {
-    return <ScheduleCard receipt={current} onOpen={onOpen} status={statuses()[task.status]} detail={task.awaiting_confirmation ? t("messageSchedules.proposalHint") : undefined}>
-      <TriggerCard trigger={task.trigger} bridge={scope.bridge} loupistId={task.loupist_id} taskId={task.id} revision={task.revision} schedule={task.schedule} prompt={task.prompt} onChanged={onChanged} onChangeDraft={onChangeDraft} />
+    return <ScheduleCard receipt={current} onOpen={onOpen} status={statuses()[task.status]}>
+      <TriggerCard trigger={task.trigger} bridge={scope.bridge} loupistId={task.loupist_id} taskId={task.id} revision={task.revision} schedule={task.schedule} prompt={task.prompt} preset={task.preset} onChanged={onChanged} onChangeDraft={onChangeDraft} />
     </ScheduleCard>;
   }
   if (task.awaiting_confirmation && receipt.awaiting_confirmation) {
+    if (task.program || receipt.program) {
+      return <LearningProgramCard key={current.revision} receipt={{ ...current, program: task.program ?? receipt.program, budget: task.budget ?? receipt.budget, subjects: task.subjects ?? receipt.subjects, report: task.report ?? receipt.report, delivery: task.delivery ?? receipt.delivery }} onOpen={onOpen} />;
+    }
     if (task.revision !== receipt.revision) return <ScheduleCard receipt={receipt} status={t("messageSchedules.replaced")} gone />;
     return <ProposalCard key={current.revision} receipt={current} onOpen={onOpen} onChanged={onChanged} onChangeDraft={onChangeDraft} awaiting declinedInVisit={task.declined_in_visit} />;
   }
@@ -76,7 +82,7 @@ function WatchTerms({ receipt }: { receipt: TaskReceipt }) {
   const { t: bt } = useTranslation("briefings");
   return <dl className="schedule-delivery">
     {receipt.terms && <div><dt>{bt("schedule.checks")}</dt><dd>{receipt.terms}</dd></div>}
-    <div><dt>{bt("schedule.tellsYou")}</dt><dd>{bt(receipt.report === "when_met" ? "schedule.whenMet" : "schedule.everyRun")}</dd></div>
+    <div><dt>{bt("schedule.tellsYou")}</dt><dd>{bt(tellsYouKey(receipt))}</dd></div>
     <div><dt>{bt("schedule.notifies")}</dt><dd>{bt(receipt.delivery?.notify === "now" ? "schedule.notifyNow" : receipt.delivery?.notify === "off" ? "schedule.notifyOff" : receipt.delivery?.notify === "digest" ? "schedule.notifyDigest" : "schedule.notifyInherited")}</dd></div>
   </dl>;
 }
@@ -103,7 +109,6 @@ function WatchReceipt({ receipt, task, onOpen, onChanged, onChangeDraft }: {
     : task.next_run_at_ms == null ? undefined : t("messageSchedules.nextRun", { date: formatDateTime(task.next_run_at_ms) });
   return <ScheduleCard receipt={receipt} status={statuses()[task.status]} onOpen={onOpen} detail={detail}>
     <WatchTerms receipt={receipt} />
-    <p className="message-schedule-spending">{bt("schedule.watchCost")}</p>
     <div className="message-schedule-actions">
       {scope && task.status === "active" && <Button size="sm" variant="outline" disabled={busy} onClick={() => void pause()}>{bt("schedule.pause")}</Button>}
       {onChangeDraft && <Button size="sm" variant="ghost" onClick={() => onChangeDraft(bt("schedule.changePrompt", { title: task.title }))}>{bt("schedule.changeAsk")}</Button>}
@@ -202,9 +207,9 @@ function ProposalCard({ receipt, onOpen, awaiting, onChanged, onChangeDraft, dec
   if (receipt.schedule.kind === "once" && receipt.schedule.at_ms <= Date.now()) {
     return <ScheduleCard receipt={receipt} status={t("messageSchedules.expired")} gone />;
   }
-  return <ScheduleCard receipt={receipt} onOpen={onOpen} status={t("messageSchedules.awaiting")} detail={t("messageSchedules.proposalHint")}>
+  return <ScheduleCard receipt={receipt} onOpen={onOpen} status={t("messageSchedules.awaiting")}>
     {(receipt.report || receipt.terms) && <WatchTerms receipt={receipt} />}
-    <p className="message-schedule-spending">{t("messageSchedules.spending")}</p>
+    <p className="message-schedule-spending">{i18n.t("briefings:schedule.spending")}</p>
     {scope ? <div className="message-schedule-actions">
       <Button type="button" size="sm" disabled={busy} onClick={() => void act("confirm")}>{t("messageSchedules.turnOn")}</Button>
       {onChangeDraft && <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => onChangeDraft(i18n.t("briefings:schedule.changePrompt", { title: receipt.title }))}>{i18n.t("briefings:schedule.changeAsk")}</Button>}

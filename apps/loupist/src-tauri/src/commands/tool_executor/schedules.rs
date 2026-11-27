@@ -5,14 +5,17 @@ use crate::{
     scheduled_tasks::{
         service,
         types::{
-            NotifyPolicy, ReportPolicy, Schedule, ScheduleAction, ScheduleReceipt, Task,
-            TaskDefinition, TaskDraft, TaskStatus, TaskSubject, TaskTarget, TaskTrigger, TaskWatch,
-            TriggerDryRun, TriggerOutcome, TriggerPhase, TriggerScriptRef, TriggerToolGrant,
-            WatchPreset,
+            LearningDepth, LearningKeeps, LearningProgram, LearningScope, NotifyPolicy,
+            ReportPolicy, Schedule, ScheduleAction, ScheduleReceipt, Task, TaskDefinition,
+            TaskDelivery, TaskDraft, TaskKind, TaskStatus, TaskSubject, TaskTarget, TaskTrigger,
+            TaskWatch, TriggerDryRun, TriggerOutcome, TriggerPhase, TriggerScriptRef,
+            TriggerToolGrant, WatchPreset,
         },
     },
 };
 use chrono::Datelike;
+
+use super::learning_handoff::LEARNING_HANDOFF_PREFIX;
 
 pub(in crate::commands) struct TriggerReviewRun {
     pub test: crate::scheduled_tasks::types::TriggerDryRun,
@@ -27,12 +30,89 @@ pub(in crate::commands) fn spawn_dry_run(
     previous: Vec<crate::scheduled_tasks::types::TriggerEvaluation>,
     baseline: Option<TriggerScriptRef>,
     use_memory: bool,
+    stale_after_days: u32,
 ) -> tokio::task::JoinHandle<Result<TriggerReviewRun, String>> {
     tokio::spawn(async move {
         executor
-            .dry_run(&code, &args, &previous, baseline.as_ref(), use_memory)
+            .dry_run(
+                &code,
+                &args,
+                &previous,
+                baseline.as_ref(),
+                use_memory,
+                stale_after_days,
+            )
             .await
     })
+}
+
+/// An evaluation fixture's check, saved from `trigger_save`'s arguments
+/// through its own path and production dry run, outside a Chat turn, as a
+/// proposal `proposed_in` names. The user's yes on its card is the caller's.
+#[cfg(feature = "eval-harness")]
+pub(crate) async fn eval_save_check(
+    state: &crate::app::AppState,
+    loupist_id: &str,
+    proposed_in: &str,
+    context: ScheduleContext,
+    params: Value,
+) -> Result<Task, crate::app::CommandError> {
+    let mut executor = AppToolExecutor::for_host(state, loupist_id, BTreeSet::new());
+    let capture = Arc::get_mut(&mut executor.capture).expect("new capture");
+    capture.schedule_context = Some(context);
+    capture.source_message_id = Some(proposed_in.to_owned());
+    let policy = ToolPolicy {
+        loupist_id: loupist_id.to_owned(),
+        session_id: format!("eval-check-{loupist_id}"),
+        use_memory: true,
+        propose_memory_updates: true,
+        memory_proposal_budget: 1,
+        as_of: None,
+        display_currency: None,
+    };
+    // Boxed: the save and its dry run are a large future for a caller's stack.
+    let saved = Box::pin(executor.save_trigger(&policy, params)).await;
+    executor.host_shutdown().await;
+    saved
+        .map(|(task, _)| task)
+        .map_err(|error| crate::app::CommandError::invalid(error.to_string()))
+}
+
+/// A saved check's dry run at the current clock, run as `trigger_save` runs
+/// it, outside a Chat turn: the days it would have been met and the tools it read.
+#[cfg(feature = "eval-harness")]
+pub(crate) async fn eval_dry_run_check(
+    state: &crate::app::AppState,
+    task: &Task,
+) -> Result<(TriggerDryRun, Vec<TriggerToolGrant>), crate::app::CommandError> {
+    let check = task
+        .trigger
+        .as_ref()
+        .ok_or_else(|| crate::app::CommandError::invalid("This task has no check"))?;
+    let script = state
+        .store
+        .script_get(
+            &task.loupist_id,
+            &check.script.name,
+            Some(check.script.version),
+        )
+        .map_err(crate::commands::map_store)?;
+    let executor = AppToolExecutor::for_host(state, &task.loupist_id, BTreeSet::new());
+    let host = executor.clone();
+    let reviewed = spawn_dry_run(
+        executor,
+        script.code.clone(),
+        check.args.clone(),
+        check.evaluations.clone(),
+        check.approved_ref().cloned(),
+        task.use_memory,
+        check.stale_after_days,
+    )
+    .await
+    .map_err(|_| crate::app::CommandError::internal("The dry run could not finish."))?;
+    host.host_shutdown().await;
+    let reviewed = reviewed.map_err(crate::app::CommandError::internal)?;
+    Ok((reviewed.test, reviewed.tools))
 }
 
 #[derive(Clone)]
@@ -129,11 +209,15 @@ struct CreateRequest {
     terms: Option<String>,
     preset: Option<WatchPreset>,
     preset_params: Option<crate::scheduled_tasks::presets::PresetParams>,
+    /// The results day a results follow-up is about.
+    event_date: Option<crate::scheduled_tasks::types::TaskEvent>,
     schedule: Option<ScheduleInput>,
     question: Option<String>,
     handoff_id: Option<String>,
     session_mode: Option<SessionMode>,
     status: Option<CreateStatus>,
+    /// `learning` is refused. A learning program is `learning_program_save`.
+    kind: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -171,6 +255,91 @@ struct StopRequest {
     run_id: String,
 }
 
+/// A learning program's brief and subjects. With `slots`, the named bundled
+/// learning preset fills them in the user's zone, and Bot gives no prompt;
+/// without, Bot's prompt and subjects stand and `preset` is a display label.
+fn learning_brief(
+    state: &AppState,
+    loupist_id: &str,
+    preset: Option<&str>,
+    slots: Option<std::collections::BTreeMap<String, String>>,
+    prompt: Option<String>,
+    subjects: Vec<TaskSubject>,
+) -> Result<(String, Vec<TaskSubject>), BrokerError> {
+    let Some(slots) = slots else {
+        let prompt = prompt.ok_or_else(|| {
+            BrokerError::invalid(
+                "prompt",
+                "A learning program needs its brief: write it in prompt, or name a bundled preset and pass its slots.",
+            )
+        })?;
+        return Ok((prompt, subjects));
+    };
+    let id = preset
+        .and_then(|id| {
+            serde_json::from_value::<crate::scheduled_tasks::types::LearningPresetId>(json!(id))
+                .ok()
+        })
+        .ok_or_else(|| {
+            BrokerError::invalid(
+                "preset",
+                "slots fill a bundled learning preset: set preset to asset-daily, company-filings, macro-series, market, question or theme, or drop slots and write the brief in prompt.",
+            )
+        })?;
+    if prompt.is_some() {
+        return Err(BrokerError::invalid(
+            "prompt",
+            "With slots the preset writes the brief: leave prompt out, or drop preset and slots to use your own brief.",
+        ));
+    }
+    let filled = crate::commands::scheduled_tasks::fill_learning_preset(
+        state,
+        loupist_id,
+        id,
+        &subjects,
+        &slots,
+        crate::scheduled_tasks::presets::local_timezone(),
+    )
+    .map_err(error)?;
+    Ok((filled.prompt, filled.subjects))
+}
+
+fn event_date_refusal() -> BrokerError {
+    BrokerError::invalid(
+        "event_date",
+        "event_date is the results day of a results-follow-up preset: leave it out of any other task.",
+    )
+}
+
+/// A results follow-up's day comes from `event_date` or `results_date`; when
+/// both are given they must name the same day.
+fn results_params(
+    preset: WatchPreset,
+    mut params: crate::scheduled_tasks::presets::PresetParams,
+    event: Option<&crate::scheduled_tasks::types::TaskEvent>,
+) -> Result<crate::scheduled_tasks::presets::PresetParams, BrokerError> {
+    let Some(event) = event else {
+        return Ok(params);
+    };
+    if preset != WatchPreset::ResultsFollowUp {
+        return Err(event_date_refusal());
+    }
+    event.validate().map_err(|error| {
+        BrokerError::invalid("event_date", crate::commands::map_store(error).message)
+    })?;
+    match params.results_date.as_deref() {
+        Some(date) if date != event.date => Err(BrokerError::invalid(
+            "event_date",
+            "event_date and preset_params.results_date must be the same day: pass one of them, or the same date in both.",
+        )),
+        Some(_) => Ok(params),
+        None => {
+            params.results_date = Some(event.date.clone());
+            Ok(params)
+        }
+    }
+}
+
 fn decode<T: serde::de::DeserializeOwned>(params: Value) -> Result<T, BrokerError> {
     serde_json::from_value(params).map_err(|_| BrokerError::Malformed)
 }
@@ -196,6 +365,51 @@ fn require_task_memory(policy: &ToolPolicy, task: &Task) -> Result<(), BrokerErr
         return Err(memory_schedule_refusal());
     }
     Ok(())
+}
+
+fn refuse_saved_task_kind(kind: Option<&str>) -> Result<(), BrokerError> {
+    match kind {
+        None | Some("custom") => Ok(()),
+        Some("learning") => Err(BrokerError::invalid(
+            "kind",
+            "learning programs are saved with learning_program_save",
+        )
+        .with_next(
+            "Propose the program with learning_program_save; schedule_create never creates one.",
+        )),
+        Some(_) => Err(BrokerError::invalid("kind", "custom")),
+    }
+}
+
+/// A forwarded learning request leaves Bot's queue when Bot saves the program
+/// for it, declines it, or it is as old as an unanswered Bot card.
+fn expire_learning_handoffs(state: &AppState, loupist: &str) -> Result<(), BrokerError> {
+    let now = crate::commands::now_ms();
+    for question in crate::scheduled_tasks::questions::pending(state, loupist).map_err(error)? {
+        if question
+            .receipt
+            .task_id
+            .starts_with(LEARNING_HANDOFF_PREFIX)
+            && now.saturating_sub(question.created_at_ms) >= crate::chat::cards::CARD_TTL_MS
+        {
+            crate::scheduled_tasks::questions::resolve(state, loupist, &question.receipt.task_id)
+                .map_err(error)?;
+        }
+    }
+    Ok(())
+}
+
+/// How Bot answers one pending question in `schedule_list`.
+fn pending_question(question: crate::scheduled_tasks::questions::BotQuestion) -> Value {
+    let mut entry = json!({"handoff_id":question.receipt.task_id,"title":question.receipt.title,"prompt":question.prompt,"question":question.receipt.question});
+    if question
+        .receipt
+        .task_id
+        .starts_with(LEARNING_HANDOFF_PREFIX)
+    {
+        entry["answer"] = json!("A research session forwarded this, and its question is posted here for the user. When they want the program, propose it with learning_program_save: this handoff_id as request_key, a brief from prompt and their answer, and the subjects listed in prompt, if any. When they decline it, or a listed task already does this work, call schedule_delete with this handoff_id as task_id and expected_revision 1, which clears only this request.");
+    }
+    entry
 }
 
 fn schedule_context_refusal() -> BrokerError {
@@ -294,8 +508,11 @@ impl AppToolExecutor {
             .scheduled_task_run_get(&self.loupist_id, run_id)
             .map_err(crate::commands::tool_executor::store_error)?;
         let Some(run) = run.filter(|run| {
-            run.kind == crate::scheduled_tasks::types::TaskKind::Custom
-                && run.status == crate::scheduled_tasks::types::RunStatus::Running
+            matches!(
+                run.kind,
+                crate::scheduled_tasks::types::TaskKind::Custom
+                    | crate::scheduled_tasks::types::TaskKind::Learning
+            ) && run.status == crate::scheduled_tasks::types::RunStatus::Running
         }) else {
             return Err(BrokerError::invalid(
                 "schedule_quiet",
@@ -357,6 +574,15 @@ impl AppToolExecutor {
             _ => is_bot,
         };
         if !allowed_in_thread {
+            if method == ToolMethod::LearningProgramSave {
+                return Err(BrokerError::invalid(
+                    "learning_program_save",
+                    "A learning program is saved in the Bot.",
+                )
+                .with_next(
+                    "Tell the user to ask for it in the Bot. schedule_handoff and schedule_create do not carry a learning program.",
+                ));
+            }
             return Err(BrokerError::invalid(
                 method.tool_name(),
                 if is_bot {
@@ -371,6 +597,7 @@ impl AppToolExecutor {
         }
         let state = &self.state;
         let loupist = &self.loupist_id;
+        expire_learning_handoffs(state, loupist)?;
         let (task, action) = match method {
             ToolMethod::ScheduleBriefing => {
                 if !policy.use_memory || !policy.propose_memory_updates {
@@ -433,7 +660,7 @@ impl AppToolExecutor {
                     })
                     .collect::<Vec<_>>();
                 return Ok(
-                    json!({"tasks":tasks,"pending_questions":if is_bot { crate::scheduled_tasks::questions::pending(state,loupist).map_err(error)?.into_iter().map(|q| json!({"handoff_id":q.receipt.task_id,"title":q.receipt.title,"prompt":q.prompt,"question":q.receipt.question})).collect::<Vec<_>>() } else { vec![] },"total":items.len(),"local_timezone":iana_time_zone::get_timezone().ok(),
+                    json!({"tasks":tasks,"pending_questions":if is_bot { crate::scheduled_tasks::questions::pending(state,loupist).map_err(error)?.into_iter().map(pending_question).collect::<Vec<_>>() } else { vec![] },"total":items.len(),"local_timezone":crate::scheduled_tasks::presets::local_timezone().to_string(),
                     "current_time":Utc::now().to_rfc3339(),"execution":"local_app_open","max_concurrent_runs":4,
                     "notice":"Includes active, paused and completed tasks in this Loupist. Read a task before changing it. Runs need Loupist open; missed recurring times catch up once. A request for work a listed task already does changes that task; it is not a new one."}),
                 );
@@ -445,8 +672,10 @@ impl AppToolExecutor {
                     ScheduleAction::Viewed,
                 )
             }
+            ToolMethod::LearningProgramSave => self.save_learning_program(policy, params)?,
             ToolMethod::ScheduleCreate | ToolMethod::ScheduleHandoff => {
                 let request: CreateRequest = decode(params)?;
+                refuse_saved_task_kind(request.kind.as_deref())?;
                 if request.request_key.is_empty()
                     || request.request_key.len() > 64
                     || !request
@@ -549,16 +778,22 @@ impl AppToolExecutor {
                             "A Bot preset supplies the prompt.",
                         ));
                     }
+                    let params = results_params(
+                        preset,
+                        request.preset_params.unwrap_or_default(),
+                        request.event_date.as_ref(),
+                    )?;
                     let filled = crate::scheduled_tasks::presets::fill(
                         state,
                         loupist,
                         preset,
                         request.subjects.clone(),
-                        request.preset_params.unwrap_or_default(),
+                        params,
                         None,
                     )
                     .map_err(error)?;
                     watch = filled.watch;
+                    watch.event = request.event_date;
                     trigger_template = filled.trigger_template;
                     prompt = Some(filled.prompt);
                     schedule = schedule.or(Some(filled.schedule));
@@ -569,6 +804,9 @@ impl AppToolExecutor {
                             "preset_params",
                             "Choose a preset first.",
                         ));
+                    }
+                    if request.event_date.is_some() {
+                        return Err(event_date_refusal());
                     }
                     watch.subjects = request.subjects;
                 }
@@ -702,10 +940,9 @@ impl AppToolExecutor {
                         .as_ref()
                         .is_some_and(|target| target.id.starts_with("briefing-"))
                 {
-                    // TODO(model-text): Direct briefing edits through its host-owned settings.
                     return Err(BrokerError::invalid(
                         "schedule",
-                        "Use briefing settings to edit the host-authored briefing",
+                        "The briefing is host-authored and is not edited here. Set it with schedule_briefing.",
                     ));
                 }
                 if current.watch.preset == Some(WatchPreset::PriceMove)
@@ -715,17 +952,15 @@ impl AppToolExecutor {
                         .is_some_and(|check| check.approved.is_some())
                     && (request.subjects.is_some() || request.terms.is_some())
                 {
-                    // TODO(model-text): Route price-check subject and term changes through candidate review.
                     return Err(BrokerError::invalid(
                         "trigger",
-                        "Use trigger_save to test new price check subjects or terms",
+                        "A price check's subjects and terms change through trigger_save, which tests the new check before it replaces this one.",
                     ));
                 }
                 if request.args.is_some() {
-                    // TODO(model-text): Route check argument changes through a new dry run.
                     return Err(BrokerError::invalid(
                         "args",
-                        "Use trigger_save to test new check arguments",
+                        "A check's arguments change through trigger_save, which runs the check once with them before saving.",
                     ));
                 }
                 if let Some(hours) = request.active_hours {
@@ -832,6 +1067,14 @@ impl AppToolExecutor {
             }
             ToolMethod::ScheduleDelete => {
                 let request: RevisionRequest = decode(params)?;
+                if request.task_id.starts_with(LEARNING_HANDOFF_PREFIX) {
+                    crate::scheduled_tasks::questions::resolve(state, loupist, &request.task_id)
+                        .map_err(error)?;
+                    return Ok(
+                        json!({"declined": true, "handoff_id": request.task_id, "saved": false,
+                        "notice": "Declined: the forwarded learning request is cleared and no program was saved."}),
+                    );
+                }
                 let task = service::get(state, loupist, &request.task_id).map_err(error)?;
                 service::delete(state, loupist, &request.task_id, request.expected_revision)
                     .map_err(revision_error)?;
@@ -841,7 +1084,7 @@ impl AppToolExecutor {
                 let request: ReadRequest = decode(params)?;
                 let task = service::get(state, loupist, &request.task_id).map_err(error)?;
                 require_task_memory(policy, &task)?;
-                service::run_now(state, loupist, &request.task_id)
+                service::run_now(state, loupist, &request.task_id, false)
                     .await
                     .map_err(error)?;
                 (
@@ -876,13 +1119,13 @@ impl AppToolExecutor {
         result["memory"] = json!({"use_memory":task.use_memory,"update_memory":task.update_memory});
         result["notice"]=json!("Runs while Loupist is open; on a Mac the user can have it open at login under Settings > General. This saved action remains if the reply later stops. Fresh runs have new Chat history; continue runs reuse only this task’s dedicated Chat. Both use the saved Memory settings.");
         if task.awaiting_confirmation {
-            // TODO(model-text): Describe proposals and retain the existing schedule until approval.
-            result["notice"] = json!("Saved paused, waiting for the user's OK in the card under your reply; nothing runs until they turn it on there. Tell the user this in their language without naming the button, and do not turn it on yourself in this reply.");
+            result["notice"] = json!("Saved as a proposal: paused until the user accepts it in the card under your reply. A task it would change keeps running as it is until then. Tell the user so without naming a button, and do not turn it on yourself in this reply.");
         }
         if let Some(trigger) = &task.trigger {
             result["trigger"] = json!({
                 "state": trigger.state,
                 "summary": trigger.summary,
+                "when_met_summary": trigger.when_met_summary,
                 "tools": trigger.tools,
                 "script": trigger.script,
                 "approved": trigger.approved.as_ref().map(|approved| json!({
@@ -893,6 +1136,7 @@ impl AppToolExecutor {
                 "pending": trigger.pending.as_ref().map(|pending| json!({
                     "version": pending.version, "sha256": pending.sha256,
                     "summary": pending.configuration.as_ref().and_then(|plan| plan.summary.as_ref()),
+                    "when_met_summary": pending.configuration.as_ref().and_then(|plan| plan.when_met_summary.as_ref()),
                 })),
             });
             if policy.use_memory && task.use_memory {
@@ -924,6 +1168,123 @@ impl AppToolExecutor {
         Ok(result)
     }
 
+    fn save_learning_program(
+        &self,
+        policy: &ToolPolicy,
+        params: Value,
+    ) -> Result<(Task, ScheduleAction), BrokerError> {
+        if !policy.use_memory || !policy.propose_memory_updates {
+            return Err(memory_schedule_refusal());
+        }
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Request {
+            request_key: String,
+            title: String,
+            #[serde(default)]
+            prompt: Option<String>,
+            schedule: ScheduleInput,
+            #[serde(default)]
+            subjects: Vec<TaskSubject>,
+            #[serde(default)]
+            preset: Option<String>,
+            /// With a bundled learning preset: the host fills its brief and subject.
+            #[serde(default)]
+            slots: Option<std::collections::BTreeMap<String, String>>,
+            depth: LearningDepth,
+            scope: LearningScope,
+            keeps: LearningKeeps,
+            report: ReportPolicy,
+            delivery: TaskDelivery,
+        }
+        let request: Request = decode(params)?;
+        // The preset id is kept on the program for display only.
+        if request
+            .preset
+            .as_deref()
+            .is_some_and(|id| id.is_empty() || id.len() > 64 || id.contains('\0'))
+        {
+            return Err(BrokerError::invalid("preset", "preset id is invalid"));
+        }
+        if request.request_key.is_empty()
+            || request.request_key.len() > 64
+            || !request
+                .request_key
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+        {
+            return Err(BrokerError::invalid(
+                "request_key",
+                "1–64 letters, digits, hyphens or underscores; use a distinct key for each program and reuse it on retries",
+            ));
+        }
+        let context = self
+            .capture
+            .schedule_context
+            .as_ref()
+            .ok_or_else(schedule_context_refusal)?;
+        let message = self.schedule_source()?;
+        let id = format!(
+            "learning-{}",
+            &crate::util::sha256(
+                format!("{}\0{message}\0{}", self.loupist_id, request.request_key).as_bytes(),
+            )[..32]
+        );
+        let (prompt, subjects) = learning_brief(
+            &self.state,
+            &self.loupist_id,
+            request.preset.as_deref(),
+            request.slots,
+            request.prompt,
+            request.subjects,
+        )?;
+        let draft = TaskDraft {
+            title: request.title,
+            prompt,
+            schedule: request.schedule.resolve()?,
+            target: TaskTarget::NewChat,
+            model_profile_id: context.model_profile_id.clone(),
+            thinking_level: context.thinking_level.clone(),
+            run_options: context.run_options.clone(),
+            use_memory: true,
+            update_memory: true,
+            status: TaskStatus::Paused,
+        };
+        let definition = TaskDefinition {
+            program: Some(LearningProgram {
+                depth: request.depth,
+                scope: request.scope,
+                keeps: request.keeps,
+                preset: request.preset,
+            }),
+            watch: TaskWatch {
+                report: Some(request.report),
+                delivery: Some(request.delivery),
+                subjects: Some(subjects),
+                ..TaskWatch::default()
+            },
+            proposed_in_message_id: Some(message.to_owned()),
+            ..TaskDefinition::default()
+        };
+        let task =
+            service::create_definition(&self.state, &self.loupist_id, draft, &id, definition)
+                .map_err(error)?;
+        if task.kind != TaskKind::Learning || !task.awaiting_confirmation {
+            return Err(BrokerError::Execution(
+                "The learning program was not saved as a proposal.".into(),
+            ));
+        }
+        if request.request_key.starts_with(LEARNING_HANDOFF_PREFIX) {
+            crate::scheduled_tasks::questions::resolve(
+                &self.state,
+                &self.loupist_id,
+                &request.request_key,
+            )
+            .map_err(error)?;
+        }
+        Ok((task, ScheduleAction::Created))
+    }
+
     async fn save_trigger(
         &self,
         policy: &ToolPolicy,
@@ -935,6 +1296,7 @@ impl AppToolExecutor {
             title: Option<String>,
             prompt: String,
             terms: String,
+            when_met_summary: Option<String>,
             script: Option<String>,
             template: Option<String>,
             args: Option<serde_json::Map<String, Value>>,
@@ -947,6 +1309,11 @@ impl AppToolExecutor {
         let request: Request = decode(params)?;
         crate::scheduled_tasks::trigger::validate_summary(&request.terms)
             .map_err(|_| BrokerError::invalid("terms", "one line of at most 160 characters"))?;
+        if let Some(line) = request.when_met_summary.as_deref() {
+            crate::scheduled_tasks::types::validate_when_met_summary(line).map_err(|_| {
+                BrokerError::invalid("when_met_summary", "one line of at most 160 characters")
+            })?;
+        }
         use crate::commands::triggers::{price_review_watch, scoped_price_args, scoped_price_ids};
         use crate::scheduled_tasks::trigger::set_price_subject_args;
         let args = crate::commands::triggers::trigger_args(request.args, request.template_params);
@@ -988,6 +1355,7 @@ impl AppToolExecutor {
         let mut trigger = TaskTrigger {
             script: crate::commands::triggers::script_ref(&saved),
             summary: request.terms.clone(),
+            when_met_summary: request.when_met_summary.clone(),
             tools: Vec::new(),
             args: args.clone(),
             active_hours: request.active_hours.clone(),
@@ -1000,7 +1368,7 @@ impl AppToolExecutor {
             evaluations: Vec::new(),
             counters: Default::default(),
             approved_versions: Vec::new(),
-            stale_after_days: 5,
+            stale_after_days: crate::scheduled_tasks::trigger::DEFAULT_STALE_AFTER_DAYS,
             reads_per_check: 1,
             proposal_test: None,
         };
@@ -1009,6 +1377,13 @@ impl AppToolExecutor {
             .as_ref()
             .map(|id| service::get(&self.state, &self.loupist_id, id).map_err(error))
             .transpose()?;
+        if trigger.when_met_summary.is_none() {
+            trigger.when_met_summary = original.as_ref().and_then(|task| {
+                task.trigger
+                    .as_ref()
+                    .and_then(|check| check.when_met_summary.clone())
+            });
+        }
         let mut price_subjects = None;
         let mut test_args = args;
         let (use_memory, previous, baseline) = if let Some(task) = &original {
@@ -1030,10 +1405,9 @@ impl AppToolExecutor {
                 crate::commands::triggers::args_ok(&trigger.args).map_err(error)?;
                 let ids = scoped_price_ids(&self.state, &self.loupist_id, &watch).map_err(error)?;
                 if ids.as_ref().is_some_and(Vec::is_empty) {
-                    // TODO(model-text): Report a candidate with no matching followed asset.
                     return Err(BrokerError::invalid(
                         "subjects",
-                        "No matching asset is followed.",
+                        "None of these subjects is a followed asset, and a price check reads only followed assets.",
                     ));
                 }
                 test_args = scoped_price_args(&trigger.args, ids.as_deref());
@@ -1056,6 +1430,7 @@ impl AppToolExecutor {
             previous,
             baseline,
             use_memory,
+            trigger.stale_after_days,
         )
         .await
         .map_err(|_| BrokerError::Execution("The dry run could not finish.".into()))?
@@ -1157,6 +1532,7 @@ impl AppToolExecutor {
         previous: &[crate::scheduled_tasks::types::TriggerEvaluation],
         baseline: Option<&TriggerScriptRef>,
         use_memory: bool,
+        stale_after_days: u32,
     ) -> Result<TriggerReviewRun, String> {
         use crate::scheduled_tasks::types::{MAX_TRIGGER_READS_PER_EVALUATION, MAX_TRIGGER_ROUNDS};
         let allowed = super::python_reads::CHECK_READ_TOOLS
@@ -1166,7 +1542,7 @@ impl AppToolExecutor {
                 provider: None,
             })
             .collect::<Vec<_>>();
-        let now = chrono::Utc::now();
+        let now = crate::local_time::now();
         let request =
             |now, as_of, state, replay, max_rounds, max_calls| super::python_reads::CheckRun {
                 code,
@@ -1175,6 +1551,7 @@ impl AppToolExecutor {
                 args: args.clone(),
                 state,
                 now,
+                stale_after_days,
                 as_of,
                 allowed: &allowed,
                 discover_providers: true,
@@ -1265,11 +1642,18 @@ where
             if let Some(now) =
                 now.filter(|_| evaluation.reads == 0 || !evaluation.ledger.is_empty())
             {
-                match check(now.to_rfc3339(), state.clone(), &evaluation.ledger).await {
+                match check(
+                    crate::local_time::at(now).to_rfc3339(),
+                    state.clone(),
+                    &evaluation.ledger,
+                )
+                .await
+                {
                     Ok(output) => {
                         let mut freshness = freshness;
                         let mut outcome = output.outcome;
                         if outcome.updates_state()
+                            && !output.per_item_dates
                             && stale_or_advance(
                                 &mut freshness.latest,
                                 &mut freshness.unchanged_since_ms,
@@ -1373,6 +1757,7 @@ mod tests {
     use super::*;
     use crate::{
         app::PiArtifacts,
+        broker::error_body,
         commands::tests::{profile, seed_profile},
     };
     fn comparison_pin() -> TriggerScriptRef {
@@ -1387,7 +1772,7 @@ mod tests {
         crate::scheduled_tasks::types::ReplayFreshness {
             latest: None,
             unchanged_since_ms: None,
-            stale_after_days: 5,
+            stale_after_days: crate::scheduled_tasks::trigger::DEFAULT_STALE_AFTER_DAYS,
         }
     }
 
@@ -1402,7 +1787,7 @@ mod tests {
             scheduled_for_ms: at,
             outcome,
             reading: "Listed items".into(),
-            as_of: Some("2026-11-24".into()),
+            as_of: Some("1970-01-01T00:00:00Z".into()),
             evidence: Value::Null,
             version: 1,
             sha256: "ab".repeat(32),
@@ -1433,7 +1818,7 @@ mod tests {
                 let met = state["seen"].as_str().is_some_and(|prior| prior != seen);
                 Ok(trigger::output_from_worker(
                     &json!({"status":"completed","check_verdict":{
-                        "met": met, "reading": "Listed items", "as_of":"2026-11-24",
+                        "met": met, "reading": "Listed items", "as_of":"1970-01-01T00:00:00Z",
                         "state":{"seen":seen}
                     }}),
                     vec![],
@@ -1461,7 +1846,7 @@ mod tests {
             scheduled_for_ms: at,
             outcome,
             reading: "Checked".into(),
-            as_of: Some("2026-11-24".into()),
+            as_of: Some("1970-01-01T00:00:00Z".into()),
             evidence: Value::Null,
             version: 1,
             sha256: "ab".repeat(32),
@@ -1485,7 +1870,7 @@ mod tests {
             let matched = !ledger.is_empty() && state["ready"] == true;
             std::future::ready(Ok(trigger::output_from_worker(
                 &json!({"status":"completed", "check_verdict":{
-                    "met": matched, "reading":"Checked", "as_of":"2026-11-24",
+                    "met": matched, "reading":"Checked", "as_of":"1970-01-01T00:00:00Z",
                     "state":{"ready":true}
                 }}),
                 vec![],
@@ -1518,7 +1903,7 @@ mod tests {
         let verdict = |met, state, reads| {
             output_from_worker(
                 &json!({"status":"completed", "check_verdict":{
-                    "met": met, "reading":"Checked", "as_of":"2026-11-24", "state":state
+                    "met": met, "reading":"Checked", "as_of":"1970-01-01T00:00:00Z", "state":state
                 }}),
                 vec![],
                 reads,
@@ -1588,7 +1973,7 @@ mod tests {
         let verdict = |met, state, reads| {
             output_from_worker(
                 &json!({"status":"completed", "check_verdict":{
-                    "met":met,"reading":"Checked","as_of":"2026-11-24","state":state
+                    "met":met,"reading":"Checked","as_of":"1970-01-01T00:00:00Z","state":state
                 }}),
                 vec![],
                 reads,
@@ -1719,6 +2104,9 @@ mod tests {
         )
         .unwrap();
 
+        let start_ms = chrono::DateTime::parse_from_rfc3339("2026-11-25T15:00:00Z")
+            .unwrap()
+            .timestamp_millis();
         for seed in 1_u64..=16 {
             let mut random = seed;
             let mut live = initial.clone();
@@ -1785,10 +2173,16 @@ mod tests {
                                 live_latest = Some(input.day);
                                 output.outcome
                             };
-                            apply_output(&mut live, at, at, output, 0);
+                            apply_output(&mut live, start_ms + at, start_ms + at, output, 0);
                             assert_eq!(live.last.as_ref().unwrap().outcome, expected_live);
                         } else {
-                            note_skipped(&mut live, at, at, TriggerOutcome::SkippedBusy, None);
+                            note_skipped(
+                                &mut live,
+                                start_ms + at,
+                                start_ms + at,
+                                TriggerOutcome::SkippedBusy,
+                                None,
+                            );
                         }
                         reset = false;
                         events.push_back(Occurrence {
@@ -2105,6 +2499,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn trigger_save_rejects_a_when_met_summary_that_is_not_one_line() {
+        let temp = tempfile::tempdir().unwrap();
+        let (executor, policy) = fixture(&temp, true, "home-loupist-a");
+        let cases = [
+            "",
+            "   ",
+            "line\nbreak",
+            "bell\u{0007}here",
+            &"a".repeat(161),
+        ];
+        for line in cases {
+            let error = executor
+                .execute(
+                    &policy,
+                    ToolMethod::TriggerSave,
+                    json!({
+                        "prompt": "Report it.",
+                        "terms": "A price moved",
+                        "when_met_summary": line,
+                        "template": "price-band",
+                        "schedule": {"kind": "interval", "every_minutes": 15}
+                    }),
+                )
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(error, BrokerError::InvalidArguments { ref field, .. } if field == "when_met_summary"),
+                "{line:?} -> {error}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn price_move_preset_requires_the_trigger_path_in_chat_and_manual_dispatch() {
         let temp = tempfile::tempdir().unwrap();
         let (executor, policy) = fixture(&temp, true, "home-loupist-a");
@@ -2121,6 +2548,10 @@ mod tests {
             .unwrap();
         assert_eq!(saved["awaiting_confirmation"], true);
         assert_eq!(saved["trigger"]["state"], "proposed");
+        assert_eq!(
+            saved["trigger"]["when_met_summary"],
+            "schedule.preset.priceMove.whenMet"
+        );
         let state = &executor.state;
         let loupist = &policy.loupist_id;
         let proposed = service::get(state, loupist, saved["task_id"].as_str().unwrap()).unwrap();
@@ -2635,6 +3066,222 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_results_follow_up_keeps_its_event_date_on_the_task() {
+        use crate::scheduled_tasks::types::{EventPrecision, TaskEvent};
+        let temp = tempfile::tempdir().unwrap();
+        let (executor, policy) = fixture(&temp, true, "home-loupist-a");
+        let follow_up = |key: &str| {
+            json!({
+                "request_key": key,
+                "title": format!("Results {key}"),
+                "preset": "results-follow-up",
+                "subjects": [{"name": "Kaskad Oyj"}],
+                "status": "proposed",
+            })
+        };
+        let mut estimated = follow_up("estimated");
+        estimated["event_date"] = json!({"date": "2099-11-15", "precision": "estimated"});
+        let saved = executor
+            .execute(&policy, ToolMethod::ScheduleCreate, estimated)
+            .await
+            .unwrap();
+        let task = service::get(
+            &executor.state,
+            "loupist-a",
+            saved["task_id"].as_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            task.watch.event,
+            Some(TaskEvent {
+                date: "2099-11-15".into(),
+                precision: EventPrecision::Estimated
+            })
+        );
+        assert!(
+            task.prompt.contains("2099-11-15"),
+            "the event day fills the results date"
+        );
+        let wire = serde_json::to_value(&task).unwrap();
+        assert_eq!(
+            wire["event"],
+            json!({"date": "2099-11-15", "precision": "estimated"})
+        );
+
+        let mut agreeing = follow_up("agreeing");
+        agreeing["event_date"] = json!({"date": "2099-03-02", "precision": "exact"});
+        agreeing["preset_params"] = json!({"results_date": "2099-03-02"});
+        executor
+            .execute(&policy, ToolMethod::ScheduleCreate, agreeing)
+            .await
+            .unwrap();
+
+        let mut plain = follow_up("plain");
+        plain["preset_params"] = json!({"results_date": "2099-05-20"});
+        let saved = executor
+            .execute(&policy, ToolMethod::ScheduleCreate, plain)
+            .await
+            .unwrap();
+        let task = service::get(
+            &executor.state,
+            "loupist-a",
+            saved["task_id"].as_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(task.watch.event, None);
+        assert!(serde_json::to_value(&task).unwrap().get("event").is_none());
+
+        let refusals = [
+            {
+                let mut args = follow_up("disagreeing");
+                args["event_date"] = json!({"date": "2099-03-02", "precision": "exact"});
+                args["preset_params"] = json!({"results_date": "2099-03-03"});
+                args
+            },
+            {
+                let mut args = follow_up("not-a-day");
+                args["event_date"] = json!({"date": "2099-02-30", "precision": "exact"});
+                args
+            },
+            {
+                let mut args = follow_up("other-preset");
+                args["preset"] = json!("filings-and-results");
+                args["status"] = json!("active");
+                args["event_date"] = json!({"date": "2099-03-02", "precision": "exact"});
+                args
+            },
+            {
+                let mut args = create("no-preset", "fresh");
+                args["event_date"] = json!({"date": "2099-03-02", "precision": "exact"});
+                args
+            },
+        ];
+        for args in refusals {
+            let key = args["request_key"].clone();
+            let refused = executor
+                .execute(&policy, ToolMethod::ScheduleCreate, args)
+                .await
+                .expect_err("refused");
+            assert!(
+                refused.to_string().contains("event_date"),
+                "{key}: {refused}"
+            );
+        }
+        assert_eq!(
+            service::list(&executor.state, "loupist-a").unwrap().len(),
+            3
+        );
+    }
+
+    #[tokio::test]
+    async fn schedule_list_names_a_zone_when_the_system_zone_has_no_name() {
+        let temp = tempfile::tempdir().unwrap();
+        let (executor, policy) = fixture(&temp, true, "home-loupist-a");
+        crate::scheduled_tasks::presets::SYSTEM_ZONE_NAME
+            .with(|name| *name.borrow_mut() = Some(None));
+        let listed = executor
+            .execute(&policy, ToolMethod::ScheduleList, json!({}))
+            .await;
+        crate::scheduled_tasks::presets::SYSTEM_ZONE_NAME.with(|name| *name.borrow_mut() = None);
+        let zone = listed.unwrap()["local_timezone"]
+            .as_str()
+            .expect("a zone, not null")
+            .parse::<chrono_tz::Tz>()
+            .unwrap();
+        assert_eq!(
+            zone,
+            crate::scheduled_tasks::presets::local_timezone_without_name()
+        );
+    }
+
+    #[tokio::test]
+    async fn learning_program_save_fills_a_bundled_preset_from_its_slots() {
+        let temp = tempfile::tempdir().unwrap();
+        let (mut executor, mut policy) = fixture(&temp, true, "home-loupist-a");
+        policy.use_memory = true;
+        policy.propose_memory_updates = true;
+        {
+            let context = Arc::get_mut(&mut executor.capture)
+                .unwrap()
+                .schedule_context
+                .as_mut()
+                .unwrap();
+            context.use_memory = true;
+            context.update_memory = true;
+        }
+        Arc::make_mut(&mut executor.state.artifacts)
+            .pi
+            .as_mut()
+            .unwrap()
+            .system_prompt =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../agent/SYSTEM.md");
+        let program = |key: &str| {
+            let mut body = learning_program(true);
+            body["request_key"] = json!(key);
+            body["title"] = json!(format!("Börse {key}"));
+            body.as_object_mut().unwrap().remove("prompt");
+            body["subjects"] = json!([]);
+            body["keeps"]["asset_reads"] = json!(false);
+            body["preset"] = json!("market");
+            body["slots"] = json!({"market": "Nairobi Securities Exchange"});
+            body
+        };
+        let saved = executor
+            .execute(&policy, ToolMethod::LearningProgramSave, program("filled"))
+            .await
+            .unwrap();
+        assert_eq!(saved["receipt"]["program"]["preset"], "market");
+        let task = service::get(
+            &executor.state,
+            "loupist-a",
+            saved["task_id"].as_str().unwrap(),
+        )
+        .unwrap();
+        assert!(
+            task.prompt.contains("Nairobi Securities Exchange"),
+            "{}",
+            task.prompt
+        );
+        assert_eq!(
+            task.watch.subjects,
+            Some(vec![TaskSubject::Name {
+                name: "Nairobi Securities Exchange".into()
+            }])
+        );
+        assert_eq!(
+            task.title, "Börse filled",
+            "Bot's title in the user's language stands"
+        );
+
+        let mut unknown = program("unknown-slot");
+        unknown["slots"]["exchange"] = json!("NSE");
+        let mut with_prompt = program("with-prompt");
+        with_prompt["prompt"] = json!("A brief of its own.");
+        let mut not_bundled = program("not-bundled");
+        not_bundled["preset"] = json!("my-own-label");
+        let mut no_brief = program("no-brief");
+        no_brief.as_object_mut().unwrap().remove("slots");
+        for (args, field) in [
+            (unknown, "no slot of that name"),
+            (with_prompt, "prompt"),
+            (not_bundled, "preset"),
+            (no_brief, "prompt"),
+        ] {
+            let key = args["request_key"].clone();
+            let refused = executor
+                .execute(&policy, ToolMethod::LearningProgramSave, args)
+                .await
+                .expect_err("refused")
+                .to_string();
+            assert!(refused.contains(field), "{key}: {refused}");
+        }
+        assert_eq!(
+            service::list(&executor.state, "loupist-a").unwrap().len(),
+            1
+        );
+    }
+
+    #[tokio::test]
     async fn schedule_quiet_requires_a_committed_original_after_a_data_attempt() {
         let temp = tempfile::tempdir().unwrap();
         let (mut executor, policy) = fixture(&temp, true, "home-loupist-a");
@@ -2887,6 +3534,8 @@ mod tests {
         assert_eq!(receipt["task_id"], task.id);
         assert_eq!(receipt["last_error"], RUN_FAILED);
         let run = Run {
+            usage: None,
+            budget: None,
             failure_streak: None,
             first_run: false,
             discarded_memory_items: None,
@@ -2911,6 +3560,8 @@ mod tests {
             status: RunStatus::Failed,
             error: Some(private.into()),
             trigger: None,
+            undo: None,
+            provider: None,
         };
         let receipt = safe_run(run);
         assert_eq!(receipt["run_id"], "run-a");
@@ -3080,9 +3731,20 @@ mod tests {
                 .scheduled_task_claim_with("loupist-a", &task.id, 1_000, true, |_| Ok(()))
                 .unwrap()
                 .unwrap();
-            assert!(
-                matches!(executor.execute(&policy, ToolMethod::ScheduleRunNow, json!({"task_id":task.id})).await,
-                Err(BrokerError::Execution(ref message)) if message == "This scheduled task is already running")
+            let refused = executor
+                .execute(
+                    &policy,
+                    ToolMethod::ScheduleRunNow,
+                    json!({"task_id":task.id}),
+                )
+                .await
+                .unwrap_err();
+            assert_eq!(refused.trace_reason(), "conflict");
+            let body = error_body(&refused);
+            assert_eq!(body["code"], "execution_failed");
+            assert_eq!(
+                body["message"],
+                "tool execution failed: This scheduled task is already running."
             );
             assert_eq!(
                 service::runs(&executor.state, "loupist-a", &task.id)
@@ -3221,13 +3883,17 @@ mod tests {
     async fn schedule_errors_only_suggest_saved_revisions_for_conflicting_mutations() {
         let temp = tempfile::tempdir().unwrap();
         let (executor, policy) = fixture(&temp, true, "home-loupist-a");
+        let generic_repair =
+            "Change the request or the approach. Do not repeat the identical call.";
         let mut invalid = create("bad", "continue");
         invalid["title"] = json!("");
         let refused = executor
             .execute(&policy, ToolMethod::ScheduleCreate, invalid)
             .await
             .unwrap_err();
-        assert!(matches!(refused, BrokerError::Execution(_)), "{refused:?}");
+        let body = error_body(&refused);
+        assert_eq!(body["code"], "execution_failed");
+        assert_eq!(body["next"], generic_repair);
         let task = executor
             .execute(
                 &policy,
@@ -3238,10 +3904,10 @@ mod tests {
             .unwrap();
         let refused = executor.execute(&policy, ToolMethod::ScheduleSetStatus,
             json!({"task_id":task["task_id"], "expected_revision":task["revision"], "status":"completed"})).await.unwrap_err();
-        assert!(
-            matches!(refused, BrokerError::InvalidArguments { .. }),
-            "{refused:?}"
-        );
+        let body = error_body(&refused);
+        assert_eq!(body["code"], "malformed_request");
+        assert_eq!(body["message"], "status: active or paused.");
+        assert_eq!(body["next"], "");
         let unchanged = service::get(
             &executor.state,
             "loupist-a",
@@ -3259,9 +3925,10 @@ mod tests {
             )
             .await
             .unwrap_err();
-        assert!(
-            matches!(refused, BrokerError::WithNext { .. }),
-            "{refused:?}"
+        assert_eq!(refused.trace_reason(), "conflict");
+        assert_eq!(
+            error_body(&refused)["next"],
+            "Read the saved task before retrying. Keep its current revision and change only the requested fields; do not create a replacement."
         );
         executor
             .state
@@ -3274,7 +3941,9 @@ mod tests {
             .execute(&policy, ToolMethod::ScheduleList, json!({}))
             .await
             .unwrap_err();
-        assert!(matches!(refused, BrokerError::Execution(_)), "{refused:?}");
+        let body = error_body(&refused);
+        assert_eq!(body["code"], "execution_failed");
+        assert_eq!(body["next"], generic_repair);
     }
 
     #[tokio::test]
@@ -3395,5 +4064,202 @@ mod tests {
         assert!(service::list(&executor.state, "loupist-a")
             .unwrap()
             .is_empty());
+    }
+
+    fn learning_program(valid: bool) -> Value {
+        let mut body = json!({
+            "request_key": "track",
+            "title": "Northwind daily",
+            "prompt": "Track what changed for Northwind.",
+            "schedule": {"kind":"weekly","days":[1,2,3,4,5],"hour":6,"minute":30,"timezone":"UTC"},
+            "subjects": [{"asset": "asset-a"}],
+            "depth": "standard",
+            "scope": {"connections": "all_enabled", "web": true},
+            "keeps": {"sources": true, "lens": true, "asset_reads": true},
+            "report": "when_new",
+            "delivery": {"to": "briefing"},
+        });
+        if !valid {
+            body["subjects"] = json!([{"name": "A theme with no asset"}]);
+        }
+        body
+    }
+
+    #[tokio::test]
+    async fn learning_program_save_is_a_bot_proposal_and_refuses_the_other_cases() {
+        for tainted in [false, true] {
+            for valid in [false, true] {
+                for bot in [false, true] {
+                    let temp = tempfile::tempdir().unwrap();
+                    let thread = if bot { "home-loupist-a" } else { "chat-a" };
+                    let (mut executor, mut policy) = fixture(&temp, true, thread);
+                    policy.use_memory = true;
+                    policy.propose_memory_updates = true;
+                    {
+                        let context = Arc::get_mut(&mut executor.capture)
+                            .unwrap()
+                            .schedule_context
+                            .as_mut()
+                            .unwrap();
+                        context.use_memory = true;
+                        context.update_memory = true;
+                    }
+                    if tainted {
+                        executor.capture.turn_taint.mark_untrusted_text();
+                    }
+                    let result = executor
+                        .execute(
+                            &policy,
+                            ToolMethod::LearningProgramSave,
+                            learning_program(valid),
+                        )
+                        .await;
+                    let saved = service::list(&executor.state, "loupist-a").unwrap();
+                    if tainted || !bot || !valid {
+                        assert!(
+                            result.is_err(),
+                            "tainted={tainted} valid={valid} bot={bot} saved a program"
+                        );
+                        assert!(
+                            saved.is_empty(),
+                            "tainted={tainted} valid={valid} bot={bot} left a row"
+                        );
+                        if tainted {
+                            assert!(matches!(result, Err(BrokerError::UntrustedTextPaused)));
+                        }
+                    } else {
+                        let result = result.expect("a clean Bot saves a valid program");
+                        assert_eq!(saved.len(), 1);
+                        assert_eq!(result["kind"], "learning");
+                        assert_eq!(result["status"], "paused");
+                        assert_eq!(result["awaiting_confirmation"], true);
+                        assert_eq!(result["receipt"]["program"]["depth"], "standard");
+                        assert_eq!(result["receipt"]["report"], "when_new");
+                        assert!(saved[0].task.awaiting_confirmation);
+                        assert_eq!(saved[0].task.kind, TaskKind::Learning);
+                    }
+                }
+            }
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let (executor, policy) = fixture(&temp, true, "home-loupist-a");
+        let mut create_learning = create("learn", "fresh");
+        create_learning["kind"] = json!("learning");
+        let refused = executor
+            .execute(&policy, ToolMethod::ScheduleCreate, create_learning)
+            .await
+            .expect_err("schedule_create refuses kind learning");
+        assert!(
+            refused.to_string().contains("learning_program_save"),
+            "{refused}"
+        );
+        assert!(service::list(&executor.state, "loupist-a")
+            .unwrap()
+            .is_empty());
+    }
+
+    fn queue_learning_handoff(executor: &AppToolExecutor, id: &str, created_at_ms: i64) {
+        use crate::scheduled_tasks::{questions, types::QuestionReceipt};
+        questions::enqueue(
+            &executor.state,
+            "loupist-a",
+            questions::BotQuestion {
+                receipt: QuestionReceipt {
+                    task_id: id.into(),
+                    title: "Learning program request".into(),
+                    question: "Shall I draft a learning program for this?".into(),
+                },
+                prompt: "Keep learning about container rates.".into(),
+                model_profile_id: "fixture".into(),
+                thinking_level: "medium".into(),
+                run_options: BTreeMap::new(),
+                use_memory: true,
+                update_memory: true,
+                created_at_ms,
+            },
+        )
+        .unwrap();
+    }
+
+    fn queued_ids(executor: &AppToolExecutor) -> Vec<String> {
+        crate::scheduled_tasks::questions::pending(&executor.state, "loupist-a")
+            .unwrap()
+            .into_iter()
+            .map(|question| question.receipt.task_id)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_learning_handoff_leaves_bots_queue_when_saved_declined_or_expired() {
+        use super::learning_handoff::LEARNING_HANDOFF_PREFIX;
+        let temp = tempfile::tempdir().unwrap();
+        let (mut executor, mut policy) = fixture(&temp, true, "home-loupist-a");
+        policy.use_memory = true;
+        policy.propose_memory_updates = true;
+        {
+            let context = Arc::get_mut(&mut executor.capture)
+                .unwrap()
+                .schedule_context
+                .as_mut()
+                .unwrap();
+            context.use_memory = true;
+            context.update_memory = true;
+        }
+        let now = crate::commands::now_ms();
+        let saved = format!("{LEARNING_HANDOFF_PREFIX}saved");
+        let declined = format!("{LEARNING_HANDOFF_PREFIX}declined");
+        let fresh = format!("{LEARNING_HANDOFF_PREFIX}fresh");
+        let old = format!("{LEARNING_HANDOFF_PREFIX}old");
+        for id in [&saved, &declined, &fresh] {
+            queue_learning_handoff(&executor, id, now);
+        }
+        queue_learning_handoff(&executor, &old, now - crate::chat::cards::CARD_TTL_MS - 1);
+
+        let listed = executor
+            .execute(&policy, ToolMethod::ScheduleList, json!({}))
+            .await
+            .unwrap();
+        let listed = listed["pending_questions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|question| question["handoff_id"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(listed, [saved.clone(), declined.clone(), fresh.clone()]);
+        assert_eq!(
+            queued_ids(&executor),
+            [saved.clone(), declined.clone(), fresh.clone()]
+        );
+
+        let mut program = learning_program(true);
+        program["request_key"] = json!(saved);
+        for _ in 0..2 {
+            executor
+                .execute(&policy, ToolMethod::LearningProgramSave, program.clone())
+                .await
+                .unwrap();
+        }
+        assert_eq!(queued_ids(&executor), [declined.clone(), fresh.clone()]);
+        assert_eq!(
+            service::list(&executor.state, "loupist-a").unwrap().len(),
+            1
+        );
+
+        for _ in 0..2 {
+            let result = executor
+                .execute(
+                    &policy,
+                    ToolMethod::ScheduleDelete,
+                    json!({"task_id": declined, "expected_revision": 1}),
+                )
+                .await
+                .unwrap();
+            assert_eq!(result["declined"], true);
+        }
+        assert_eq!(queued_ids(&executor), [fresh]);
+        assert_eq!(
+            service::list(&executor.state, "loupist-a").unwrap().len(),
+            1
+        );
     }
 }

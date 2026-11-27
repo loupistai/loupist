@@ -1,9 +1,14 @@
 use crate::app::{AppState, CommandError, PiArtifacts};
 
 pub(crate) const MODEL_PROFILE: &str = "e2e-link-research";
+pub(crate) const LEARNING_MODEL_PROFILE: &str = "e2e-release-learning";
 
-fn enabled() -> bool {
+fn slow_handoff() -> bool {
     std::env::var_os("LOUPIST_E2E_SLOW_HANDOFF").as_deref() == Some(std::ffi::OsStr::new("1"))
+}
+
+pub(crate) fn release_learning() -> bool {
+    std::env::var_os("LOUPIST_E2E_RELEASE_LEARNING").as_deref() == Some(std::ffi::OsStr::new("1"))
 }
 
 fn directory(state: &AppState) -> std::path::PathBuf {
@@ -11,7 +16,7 @@ fn directory(state: &AppState) -> std::path::PathBuf {
 }
 
 pub(crate) fn prepare(state: &AppState) -> Result<(), CommandError> {
-    if !enabled() {
+    if !slow_handoff() && !release_learning() {
         return Ok(());
     }
     #[cfg(all(target_os = "macos", target_arch = "aarch64", debug_assertions))]
@@ -27,7 +32,7 @@ pub(crate) fn prepare(state: &AppState) -> Result<(), CommandError> {
         let _ = state;
         Err(CommandError::new(
             "pi_unavailable",
-            "The slow hand-off fixture requires a macOS Apple Silicon debug build",
+            "The scripted reply fixture requires a macOS Apple Silicon debug build",
         ))
     }
 }
@@ -38,7 +43,9 @@ pub(crate) fn select(
     host_handoff: bool,
     mut artifacts: PiArtifacts,
 ) -> Result<PiArtifacts, CommandError> {
-    if enabled() && host_handoff && model_profile_id == MODEL_PROFILE {
+    if (model_profile_id == MODEL_PROFILE && slow_handoff() && host_handoff)
+        || (model_profile_id == LEARNING_MODEL_PROFILE && release_learning())
+    {
         let directory = directory(state);
         artifacts.executable = directory.join("fixture-pi");
         artifacts.runtime_dir = directory.join("fixture-runtime");
@@ -46,7 +53,7 @@ pub(crate) fn select(
         if !artifacts.executable.is_file() {
             return Err(CommandError::new(
                 "pi_unavailable",
-                "The slow hand-off fixture is missing",
+                "The scripted reply fixture is missing",
             ));
         }
     }

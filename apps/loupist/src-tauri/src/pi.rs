@@ -1269,6 +1269,16 @@ fn write_bootstrap_file(
     Ok(bootstrap)
 }
 
+/// Pi's stderr. A headless evaluation keeps it in the runner's log, where a Pi
+/// that stops before its turn settles says why; the app discards it.
+fn pi_stderr() -> Stdio {
+    if cfg!(feature = "eval-harness") {
+        Stdio::inherit()
+    } else {
+        Stdio::null()
+    }
+}
+
 fn pi_command(
     executable: &Path,
     arguments: Vec<String>,
@@ -1284,7 +1294,7 @@ fn pi_command(
         .envs(environment)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(pi_stderr())
         .kill_on_drop(true);
     #[cfg(unix)]
     command.process_group(0);

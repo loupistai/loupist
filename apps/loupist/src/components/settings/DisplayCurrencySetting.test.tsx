@@ -1,3 +1,4 @@
+import { chooseSelectOption, openSelect } from "@/test/selectOption";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import i18n, { resources } from "@/i18n";
@@ -41,7 +42,7 @@ async function settings({ loupistId = QUALITY as string | null, configured, prep
   render(<Shell />);
   const select = await screen.findByRole("combobox", { name: i18n.t("settings:appearance.displayCurrency.label") });
   await waitFor(() => expect(select).toBeEnabled());
-  return { bridge, select: select as HTMLSelectElement, updates, recorded, reads, openConnections, user: userEvent.setup() };
+  return { bridge, select, updates, recorded, reads, openConnections, user: userEvent.setup() };
 }
 
 const status = () => document.querySelector<HTMLElement>("[data-fx-status]")!;
@@ -49,32 +50,28 @@ const status = () => document.querySelector<HTMLElement>("[data-fx-status]")!;
 afterEach(async () => { cleanup(); vi.restoreAllMocks(); await i18n.changeLanguage("en"); });
 
 it("offers As listed and the 30 reference currencies by code and localized name, in English and Korean", async () => {
-  const { select } = await settings();
-  const options = within(select).getAllByRole("option") as HTMLOptionElement[];
-  expect(options.map(option => option.value)).toEqual(["", ...DISPLAY_CURRENCIES]);
-  expect(options).toHaveLength(31);
-  expect(options[0]).toHaveTextContent(en.asListed);
-  expect(select.value).toBe("");
-  const won = options.find(option => option.value === "KRW")!;
-  expect(won).toHaveTextContent(fill(en.option, { code: "KRW", name: displayCurrencyName("KRW", "en") }));
+  const { select, user } = await settings();
+  expect(select).toHaveTextContent(en.asListed);
+  const options = (await openSelect(user, select)).getAllByRole("option");
+  expect(options.map(option => option.textContent?.split(" — ")[0])).toEqual([en.asListed, ...DISPLAY_CURRENCIES]);
+  expect(options.find(option => option.textContent?.startsWith("KRW"))).toHaveTextContent(fill(en.option, { code: "KRW", name: displayCurrencyName("KRW", "en") }));
   expect(displayCurrencyName("KRW", "en")).not.toBe("KRW");
-  // The description says the amount is approximate and the reported currency stays.
-  expect(screen.getByText(en.description)).toBeVisible();
-  // Nothing set: no rate status at all.
+  await user.keyboard("{Escape}");
+  expect(select).toHaveFocus();
   expect(status()).toBeEmptyDOMElement();
 
   await act(async () => { await i18n.changeLanguage("ko"); });
-  expect(within(select).getByRole("option", { name: ko.asListed })).toHaveValue("");
-  const koreanWon = within(select).getAllByRole("option").find(option => (option as HTMLOptionElement).value === "KRW")!;
-  expect(koreanWon).toHaveTextContent(fill(ko.option, { code: "KRW", name: displayCurrencyName("KRW", "ko") }));
+  const korean = await openSelect(user, select);
+  expect(korean.getByRole("option", { name: ko.asListed })).toBeVisible();
+  expect(korean.getByRole("option", { name: fill(ko.option, { code: "KRW", name: displayCurrencyName("KRW", "ko") }) })).toBeVisible();
   expect(displayCurrencyName("KRW", "ko")).not.toBe(displayCurrencyName("KRW", "en"));
   expect(displayCurrencyName("ZZZ", "ko")).toBe("ZZZ");
 });
 
 it("saves a code to global appearance only, resets through the unset path, and shows the status for this Loupist", async () => {
   const { bridge, select, updates, user } = await settings();
-  await user.selectOptions(select, "KRW");
-  await waitFor(() => expect(select.value).toBe("KRW"));
+  await chooseSelectOption(user, select, /^KRW/);
+  await waitFor(() => expect(select).toHaveTextContent(/^KRW/));
   expect(updates).toEqual([{ scope: { kind: "global" }, expectedRevision: "0", set: { appearance: { display_currency: "KRW" } }, unset: [] }]);
   await waitFor(() => expect(status()).toHaveTextContent(en.status.waiting));
 
@@ -84,8 +81,8 @@ it("saves a code to global appearance only, resets through the unset path, and s
   await waitFor(() => expect(status()).toHaveTextContent(fill(en.status.ready, { source: fixtures.ready.source, date: formatDay(fixtures.ready.date) })));
   expect(select).toHaveFocus();
 
-  await user.selectOptions(select, "");
-  await waitFor(() => expect(select.value).toBe(""));
+  await chooseSelectOption(user, select, en.asListed);
+  await waitFor(() => expect(select).toHaveTextContent(en.asListed));
   expect(updates[1]).toEqual({ scope: { kind: "global" }, expectedRevision: "1", set: {}, unset: [["appearance", "display_currency"]] });
   expect(status()).toBeEmptyDOMElement();
   const stored = await bridge.configRead({ scope: { kind: "global" } });
@@ -94,8 +91,8 @@ it("saves a code to global appearance only, resets through the unset path, and s
 
 it("saves with no Loupist open, without inventing one or reading rates", async () => {
   const { bridge, select, updates, reads, user } = await settings({ loupistId: null });
-  await user.selectOptions(select, "CAD");
-  await waitFor(() => expect(select.value).toBe("CAD"));
+  await chooseSelectOption(user, select, /^CAD/);
+  await waitFor(() => expect(select).toHaveTextContent(/^CAD/));
   expect(updates[0]?.scope).toEqual({ kind: "global" });
   expect(reads).not.toHaveBeenCalled();
   expect(bridge.fxDisplayControl.rateReads).toBe(0);
@@ -105,13 +102,14 @@ it("saves with no Loupist open, without inventing one or reading rates", async (
 
 it("keeps and names a configured code outside the table until another is chosen", async () => {
   const { select, updates, user } = await settings({ configured: "XAU" });
-  await waitFor(() => expect(select.value).toBe("XAU"));
-  expect(within(select).getByRole("option", { name: fill(en.unsupported, { code: "XAU" }) })).toBeInTheDocument();
-  expect(within(select).getAllByRole("option")).toHaveLength(32);
-  await user.selectOptions(select, "USD");
-  await waitFor(() => expect(select.value).toBe("USD"));
+  await waitFor(() => expect(select).toHaveTextContent(/^XAU/));
+  const choices = await openSelect(user, select);
+  expect(choices.getByRole("option", { name: fill(en.unsupported, { code: "XAU" }) })).toBeInTheDocument();
+  expect(choices.getAllByRole("option")).toHaveLength(32);
+  await user.click(choices.getByRole("option", { name: /^USD/ }));
+  await waitFor(() => expect(select).toHaveTextContent(/^USD/));
   expect(updates[0]?.set).toEqual({ appearance: { display_currency: "USD" } });
-  expect(within(select).queryByRole("option", { name: fill(en.unsupported, { code: "XAU" }) })).toBeNull();
+  expect((await openSelect(user, select)).queryByRole("option", { name: fill(en.unsupported, { code: "XAU" }) })).toBeNull();
 });
 
 const date = formatDay("2026-11-16");
@@ -161,11 +159,11 @@ it("drops Connect once Market data is enabled for this Loupist and the host send
 
 it("keeps the saved choice when a save fails, and recovers a failed rate read with Retry", async () => {
   const { bridge, select, recorded, reads, user } = await settings({ configured: "KRW" });
-  await waitFor(() => expect(select.value).toBe("KRW"));
+  await waitFor(() => expect(select).toHaveTextContent(/^KRW/));
   recorded.mockRejectedValueOnce(new Error("disk full"));
-  await user.selectOptions(select, "JPY");
+  await chooseSelectOption(user, select, /^JPY/);
   expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
-  expect(select.value).toBe("KRW");
+  expect(select).toHaveTextContent(/^KRW/);
   expect((await bridge.configRead({ scope: { kind: "global" } })).effective.appearance.display_currency).toBe("KRW");
 
   reads.mockRejectedValueOnce(new Error("bridge closed"));

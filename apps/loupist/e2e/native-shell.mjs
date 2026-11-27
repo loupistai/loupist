@@ -3,14 +3,15 @@
 // round trip is not part of the measurement.
 import { randomUUID } from "node:crypto";
 
-/** Read the current rendered count after routing, ignoring retained hidden maps
- * and auxiliary badges. Never accept a count from a hidden or inert view. */
+/** Read the name and relationship counts from the visible World status.
+ * The persistence suite selects English. Weekly and disagreement counts can
+ * change independently of the World size. */
 export async function readVisibleMapStats(browser) {
   return browser.execute(() => [...document.querySelectorAll("[data-testid=map-view] [data-testid=map-stats] > span")]
     .filter(element => !element.closest('[hidden], [inert], [aria-hidden="true"]')
       && element.getClientRects().length > 0 && getComputedStyle(element).visibility === "visible")
-    .map(element => element.textContent?.trim() ?? "")
-    .find(text => /^[\d,]+ in World · [\d,]+ relationships$/.test(text)) ?? "");
+    .map(element => element.textContent?.trim().split(" · ", 2).join(" · ") ?? "")
+    .find(text => /^(?:Showing [\d,]+ of )?[\d,]+ names? · [\d,]+ relationships?$/.test(text)) ?? "");
 }
 
 export async function onboardingStep(browser) {
@@ -69,7 +70,9 @@ export async function clickControl(browser, selector) {
   if (state === "missing") throw new Error(`Control was not in the page: ${selector}`);
   if (state === "disabled") throw new Error(`Control is disabled: ${selector}`);
   const element = await browser.$(selector);
-  const isMenu = await element.getAttribute("aria-haspopup") === "menu";
+  const popup = await element.getAttribute("aria-haspopup");
+  const reportsExpansion = popup === "menu" ||
+    (popup === "dialog" && (await element.getAttribute("aria-expanded")) !== null);
   if (await element.isDisplayed().catch(() => false)) {
     await element.click();
   } else {
@@ -81,7 +84,7 @@ export async function clickControl(browser, selector) {
     }, selector);
     if (!clicked) throw new Error(`Control could not be activated: ${selector}`);
   }
-  if (isMenu) {
+  if (reportsExpansion) {
     const opened = () => element.getAttribute("aria-expanded").then(value => value === "true");
     if (!await browser.waitUntil(opened, { timeout: 750, interval: 50 }).catch(() => false)) {
       // The pinned WebKit driver can omit Radix's pointerdown. Use the menu's
@@ -89,10 +92,25 @@ export async function clickControl(browser, selector) {
       await browser.execute((sel) => document.querySelector(sel)?.focus(), selector);
       await browser.keys("Enter");
       await browser.waitUntil(opened, {
-        timeout: 5_000, interval: 100, timeoutMsg: `Menu did not open: ${selector}`,
+        timeout: 5_000, interval: 100, timeoutMsg: `Popup did not open: ${selector}`,
       });
     }
   }
+}
+
+/** Open the Radix model picker and leave it open if it already is. */
+export async function openComposerModelMenu(browser, selector = "[data-testid=composer-model-menu]", timeout = 20_000) {
+  const picker = `${selector}[aria-haspopup="dialog"]`;
+  const trigger = await browser.$(picker);
+  await trigger.waitForDisplayed({ timeout });
+  await trigger.waitForEnabled({ timeout });
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") {
+    await clickControl(browser, picker);
+  }
+  await browser.waitUntil(async () => (await browser.$(picker).getAttribute("aria-expanded")) === "true", {
+    timeout: 5_000, interval: 100, timeoutMsg: `Model picker did not open: ${selector}`,
+  });
+  return trigger;
 }
 
 /** Library is a persistent toolbar action at every Map width. */
@@ -136,6 +154,8 @@ export async function waitForNoLayers(browser, timeout = 10_000) {
   await browser.waitUntil(async () => {
     open = await browser.execute(() => [...document.querySelectorAll('[role="menu"], [role="dialog"], [role="alertdialog"], [data-radix-popper-content-wrapper]')]
       .filter((element) => element.getClientRects().length && !element.closest("[data-sidebar=sidebar], [hidden]"))
+      // Hover can leave a non-blocking Tooltip on the settled composer.
+      .filter((element) => !element.matches("[data-radix-popper-content-wrapper]") || !element.querySelector('[data-slot="tooltip-content"]'))
       .map((element) => element.getAttribute("role") ?? "popper"));
     return open.length === 0;
   }, { timeout, interval: 100 }).catch((error) => {
@@ -220,6 +240,21 @@ export async function selectedLoupistTitle(browser) {
 
 const loupistSwitcherTrigger = "[data-testid=loupist-header-identity]";
 const loupistSwitcherMenu = ".loupist-switcher-menu";
+const openSwitcherMenu = `${loupistSwitcherMenu}[data-state="open"]`;
+
+/** Check a named button in the rendered WebView, without its driver visibility calculation. */
+export async function waitForRenderedButton(browser, root, label, timeout = 15_000) {
+  await browser.waitUntil(() => browser.execute((selector, name) => {
+    const card = document.querySelector(selector);
+    if (!card || card.closest("[hidden], [inert]")) return false;
+    const button = [...card.querySelectorAll("button")].find(element =>
+      element.textContent?.trim() === name && !element.disabled &&
+      element.getClientRects().length > 0 && getComputedStyle(element).visibility === "visible");
+    if (!button) return false;
+    button.scrollIntoView({ block: "center" });
+    return true;
+  }, root, label), { timeout, interval: 100, timeoutMsg: `No rendered ${label} button in ${root}` });
+}
 
 /** Opens the Loupist switcher at the top of the sidebar: every Loupist, its settings and New Loupist. */
 export async function openLoupistSwitcher(browser, timeout = 5_000) {
@@ -227,8 +262,11 @@ export async function openLoupistSwitcher(browser, timeout = 5_000) {
   if (await trigger.getAttribute("aria-expanded") !== "true") {
     await clickControl(browser, loupistSwitcherTrigger);
   }
-  await browser.$(`${loupistSwitcherMenu}[data-state="open"]`).waitForDisplayed({
-    timeout, timeoutMsg: "The Loupist switcher did not open",
+  await browser.waitUntil(() => browser.execute((selector) => {
+    const menu = document.querySelector(selector);
+    return Boolean(menu?.getClientRects().length && getComputedStyle(menu).visibility === "visible");
+  }, openSwitcherMenu), {
+    timeout, interval: 100, timeoutMsg: "The Loupist switcher did not open",
   });
 }
 
@@ -242,11 +280,28 @@ export async function waitForLoupistSwitcherClosed(browser, timeout = 5_000) {
 /** Every Loupist's id and name, read from the switcher, which is closed again. */
 export async function switcherLoupists(browser) {
   await openLoupistSwitcher(browser);
-  const loupists = await browser.execute(() => [...document.querySelectorAll(".loupist-switcher-menu [data-loupist-option]")].map((item) => ({
+  const loupists = await browser.execute(selector => [...document.querySelectorAll(`${selector} [data-loupist-option]`)].map((item) => ({
     id: item.getAttribute("data-loupist-option"),
     name: item.querySelector(".loupist-switcher-name")?.textContent?.trim() ?? "",
-  })));
-  await browser.keys("Escape");
+  })), openSwitcherMenu);
+  // Keep the focus check and Escape in one WebView call. A portal can be
+  // visible before its dismissal handler is ready, especially after a dialog.
+  let lastState;
+  try {
+    await browser.waitUntil(async () => {
+      lastState = await browser.execute(selector => {
+        const menu = document.querySelector(selector);
+        if (!menu) return "closed";
+        const target = document.activeElement;
+        if (!menu.contains(target)) return "focus outside menu";
+        const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+        return target.dispatchEvent(escape) ? "Escape unhandled" : "Escape handled";
+      }, openSwitcherMenu);
+      return lastState === "closed";
+    }, { timeout: 5_000, interval: 100 });
+  } catch (cause) {
+    throw new Error(`The Loupist switcher did not close (last WebView state: ${lastState ?? "unknown"})`, { cause });
+  }
   await waitForLoupistSwitcherClosed(browser);
   return loupists;
 }
@@ -254,9 +309,8 @@ export async function switcherLoupists(browser) {
 /** Opens Loupist settings or New Loupist from the switcher. */
 export async function loupistSwitcherAction(browser, action) {
   await openLoupistSwitcher(browser);
-  const item = await browser.$(action === "settings" ? "[data-header-loupist-settings]" : "[data-testid=loupist-header-new]");
-  await item.waitForDisplayed({ timeout: 5_000 });
-  await item.click();
+  const item = action === "settings" ? "[data-header-loupist-settings]" : "[data-testid=loupist-header-new]";
+  await clickControl(browser, `${openSwitcherMenu} ${item}`);
 }
 
 /**
@@ -475,7 +529,8 @@ async function measurePreviewMapProbe(browser, devUrl, scenario, mode, timeout, 
       snapshot = await browser.execute((expectedUrl) => {
         if (location.href !== expectedUrl) return null;
         const status = document.documentElement.dataset;
-        if (status.previewReady === "error") return { error: status.previewError || "Preview initialization failed" };
+        // A top-level error field is reserved by the native script executor.
+        if (status.previewReady === "error") return { previewError: status.previewError || "Preview initialization failed" };
         if (status.previewReady !== "true") return null;
         const host = document.querySelector('#main-panel-map [data-testid=map-view] [data-testid=map-canvas]');
         const element = host?.querySelector("canvas");
@@ -486,7 +541,7 @@ async function measurePreviewMapProbe(browser, devUrl, scenario, mode, timeout, 
           firstPaintMs: host?.getAttribute("data-first-paint-ms") || null,
         };
       }, url);
-      if (snapshot?.error) return true;
+      if (snapshot?.previewError) return true;
       parsed = parse(snapshot?.text ?? "");
       return Boolean(parsed && snapshot?.canvas);
     },
@@ -496,7 +551,7 @@ async function measurePreviewMapProbe(browser, devUrl, scenario, mode, timeout, 
       timeoutMsg: `The ${scenario} map probe did not report a summary on a rendered canvas at ${url}`,
     },
   );
-  if (snapshot?.error) throw new Error(`The ${scenario} preview failed: ${snapshot.error}`);
+  if (snapshot?.previewError) throw new Error(`The ${scenario} preview failed: ${snapshot.previewError}`);
   return { ...parsed, canvas: snapshot.canvas, firstPaintMs: snapshot.firstPaintMs, url };
 }
 
@@ -505,4 +560,31 @@ export function scrub(text) {
     .replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_\-.]{8,}\b/g, "[redacted]")
     .replace(/\beyJ[A-Za-z0-9_\-.]{12,}\b/g, "[redacted]")
     .replace(/Bearer\s+\S+/gi, "Bearer [redacted]");
+}
+
+/** The check proposal card open in Schedule; it re-renders when its dry run is saved. */
+export const PROPOSED_CHECK = '#main-panel-schedule [data-trigger-state="proposed"]';
+
+/**
+ * Test now on the check proposal open in Schedule, then the task with its saved dry run.
+ * The dry run replays the last 20 weekdays and has no host deadline (50 to 140 s on a
+ * busy Mac). It ends when the host saves it or the card reports a failure; `hang` only
+ * catches a hang. Find the card again afterwards: the save re-renders it.
+ */
+export async function testProposedCheck(browser, { loupistId, task, hang = 300_000 }) {
+  const card = await browser.$(PROPOSED_CHECK);
+  await card.waitForDisplayed({ timeout: 20_000, timeoutMsg: "No check proposal is open in Schedule" });
+  await (await card.$("button=Test now")).click();
+  const started = Date.now();
+  const failure = () => browser.execute((selector) => document.querySelector(`${selector} [role="alert"]`)?.textContent ?? "", PROPOSED_CHECK);
+  let tested;
+  let refused = "";
+  await browser.waitUntil(async () => {
+    tested = await browser.execute((request) => window.__TAURI_INTERNALS__.invoke("scheduled_task_get", { request }),
+      { loupist_id: loupistId, task_id: task.id });
+    refused = await failure();
+    return Boolean(refused) || (tested?.revision > task.revision && Boolean(tested.trigger?.proposal_test));
+  }, { timeout: hang, interval: 500, timeoutMsg: `Test now never returned (${hang} ms)` });
+  if (!tested?.trigger?.proposal_test) throw new Error(`Test now failed after ${Date.now() - started} ms: ${refused}`);
+  return { task: tested, ms: Date.now() - started };
 }

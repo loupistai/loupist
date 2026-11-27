@@ -724,6 +724,8 @@ pub(crate) fn import_world(
                 span_id: span.clone(),
                 role: BindingRole::Supports,
                 attribution: title.clone(),
+                figure_check: None,
+                passage: None,
             })
             .collect();
         if evidence.is_empty() {
@@ -907,6 +909,16 @@ pub(crate) fn remove_world_additions(
         before_nodes - body.nodes.len(),
         before_claims - body.claims.len(),
     );
+    // What only the removed Sources justified (an ending, a conflict link)
+    // leaves with them.
+    crate::commands::knowledge::as_of::recompute_after_removal(
+        &super::KnowledgeWrite::bind(tx, blobs),
+        loupist_id,
+        &record_id,
+        &head,
+        &mut body,
+        spans,
+    )?;
     let mut dependencies: Vec<EvidenceRevision> = serde_json::from_str(&previous.dependency_json)?;
     let before_dependencies = dependencies.len();
     dependencies.retain(|dependency| !refs.sources.contains(&dependency.record_id));

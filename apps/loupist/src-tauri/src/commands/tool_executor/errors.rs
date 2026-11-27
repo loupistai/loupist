@@ -1,6 +1,7 @@
 //! Storage diagnostics can name private files or quote stored/provider bytes.
 //! Keep validation repairs, but never return internal diagnostics to a model.
 use super::*;
+use crate::{app::CommandErrorCode, broker::BrokerRefusalReason};
 
 pub(super) fn command_error(error: crate::app::CommandError) -> BrokerError {
     if error.code == "credential_locked" {
@@ -18,7 +19,19 @@ pub(super) fn command_error(error: crate::app::CommandError) -> BrokerError {
             _ => {}
         }
     }
-    BrokerError::Execution(command_message(error))
+    let reason = if error.code == CommandErrorCode::InvalidConfiguration
+        && error
+            .detail
+            .as_ref()
+            .and_then(|detail| detail.get("reason"))
+            .and_then(Value::as_str)
+            == Some(crate::commands::configuration::BELOW_SOURCE_CALL_LIMIT)
+    {
+        BrokerRefusalReason::BelowSourceCallLimit
+    } else {
+        BrokerRefusalReason::Command(error.code.clone())
+    };
+    BrokerError::Execution(command_message(error)).with_reason(reason)
 }
 
 pub(super) fn credential_read_error(
@@ -62,6 +75,7 @@ pub(super) fn store_error(error: crate::store::StoreError) -> BrokerError {
 
 pub(super) fn knowledge_error(error: crate::knowledge::KnowledgeError) -> BrokerError {
     use crate::knowledge::KnowledgeError as E;
+    let reason = BrokerRefusalReason::Command(CommandErrorCode::parse(error.code()));
     match error {
         E::Sqlite(_) | E::Json(_) | E::PrivateStorage(_) | E::Io(_) | E::LockPoisoned => {
             command_error(crate::app::CommandError::internal(
@@ -70,11 +84,53 @@ pub(super) fn knowledge_error(error: crate::knowledge::KnowledgeError) -> Broker
         }
         error => BrokerError::Execution(error.to_string()),
     }
+    .with_reason(reason)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn command_refusals_keep_typed_reasons_and_their_model_messages() {
+        let message = "A daily allowance must be zero or at least 7.";
+        let command = |code, reason| {
+            command_error(crate::app::CommandError::with_detail(
+                code,
+                message,
+                json!({"reason": reason, "minimum": 7}),
+            ))
+        };
+        for (code, detail, expected) in [
+            (
+                CommandErrorCode::InvalidConfiguration,
+                "below_source_call_limit",
+                "below_source_call_limit",
+            ),
+            (
+                CommandErrorCode::InvalidConfiguration,
+                "private_value",
+                "invalid_configuration",
+            ),
+            (
+                CommandErrorCode::NotFound,
+                "below_source_call_limit",
+                "not_found",
+            ),
+            (
+                CommandErrorCode::Unlisted("private_value".into()),
+                "private_value",
+                "execution_failed",
+            ),
+        ] {
+            let error = command(code, detail);
+            assert_eq!(error.trace_reason(), expected);
+            let body = crate::broker::error_body(&error);
+            assert_eq!(body["code"], "execution_failed");
+            assert_eq!(body["message"], format!("tool execution failed: {message}"));
+            assert!(body.get("reason").is_none());
+        }
+    }
 
     #[test]
     fn bundled_keychain_failures_keep_the_model_recovery_contract() {

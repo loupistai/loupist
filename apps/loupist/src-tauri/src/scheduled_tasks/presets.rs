@@ -31,6 +31,16 @@ struct Template {
     every_minutes: Option<u32>,
     #[serde(default)]
     trigger: Option<String>,
+    /// Locale key for the one line a check shows as "When it is met".
+    #[serde(default)]
+    when_met_summary_key: Option<String>,
+}
+
+/// The locale key a bundled check shows until a saved `when_met_summary` replaces it.
+pub(crate) fn preset_when_met_key(preset: WatchPreset) -> Option<String> {
+    template_for(preset)
+        .ok()
+        .and_then(|template| template.when_met_summary_key)
 }
 
 pub(crate) struct FilledPreset {
@@ -85,6 +95,7 @@ fn scope_from_followed(
                 Some(row.name.as_str())
             }
             TaskSubject::Name { name } => Some(name.as_str()),
+            TaskSubject::World { .. } | TaskSubject::Lens { .. } => None,
         })
         .collect();
     if names.is_empty() {
@@ -121,6 +132,7 @@ pub(crate) fn price_move_followed_ids(
                 subjects.iter().any(|subject| match subject {
                     TaskSubject::Asset { asset } => *asset == row.asset_id,
                     TaskSubject::Name { name } => name.to_lowercase() == row.name.to_lowercase(),
+                    TaskSubject::World { .. } | TaskSubject::Lens { .. } => false,
                 })
             })
             .map(|row| row.asset_id.clone())
@@ -179,6 +191,7 @@ pub(crate) fn fill(
     subjects.retain(|subject| match subject {
         TaskSubject::Asset { asset } => followed.iter().any(|row| &row.asset_id == asset),
         TaskSubject::Name { .. } => true,
+        TaskSubject::World { .. } | TaskSubject::Lens { .. } => false,
     });
     if requested_subjects && subjects.is_empty() {
         return Err(CommandError::invalid("Nothing left to watch"));
@@ -191,6 +204,7 @@ pub(crate) fn fill(
                 .find(|row| &row.asset_id == asset)
                 .map(|row| row.name.as_str()),
             TaskSubject::Name { name } => Some(name.as_str()),
+            TaskSubject::World { .. } | TaskSubject::Lens { .. } => None,
         })
         .collect::<Vec<_>>();
     fill_template(
@@ -204,10 +218,56 @@ pub(crate) fn fill(
     )
 }
 
-fn local_timezone() -> chrono_tz::Tz {
-    iana_time_zone::get_timezone()
-        .ok()
+/// The user's time zone: the system's IANA zone, or when its name cannot be
+/// read, a zone with the system's current offset. It is UTC only when the
+/// system's offset is zero.
+pub(crate) fn local_timezone() -> chrono_tz::Tz {
+    system_zone_name()
         .and_then(|zone| zone.parse().ok())
+        .unwrap_or_else(local_timezone_without_name)
+}
+
+/// The zone `local_timezone` falls back to when the system zone has no readable name.
+pub(crate) fn local_timezone_without_name() -> chrono_tz::Tz {
+    let now = crate::local_time::now();
+    zone_with_offset(now.offset().local_minus_utc(), now.timestamp())
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A test's system zone name; `Some(None)` is a system whose zone has no readable name.
+    pub(crate) static SYSTEM_ZONE_NAME: std::cell::RefCell<Option<Option<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn system_zone_name() -> Option<String> {
+    #[cfg(test)]
+    if let Some(name) = SYSTEM_ZONE_NAME.with(|name| name.borrow().clone()) {
+        return name;
+    }
+    iana_time_zone::get_timezone().ok()
+}
+
+/// A zone whose offset at `at_seconds` is `offset_seconds`. A fixed `Etc/`
+/// zone comes first; an offset no `Etc/` zone has takes the first named zone.
+fn zone_with_offset(offset_seconds: i32, at_seconds: i64) -> chrono_tz::Tz {
+    use chrono::{Offset, TimeZone};
+    let Some(at) = chrono::DateTime::from_timestamp(at_seconds, 0) else {
+        return chrono_tz::UTC;
+    };
+    let fits = |zone: &&chrono_tz::Tz| {
+        zone.offset_from_utc_datetime(&at.naive_utc())
+            .fix()
+            .local_minus_utc()
+            == offset_seconds
+    };
+    let zones = chrono_tz::TZ_VARIANTS.iter();
+    zones
+        .clone()
+        .filter(|zone| zone.name().starts_with("Etc/"))
+        .find(fits)
+        .or_else(|| zones.clone().find(fits))
+        .copied()
         .unwrap_or(chrono_tz::UTC)
 }
 
@@ -314,6 +374,7 @@ fn fill_template(
             subjects: Some(subjects),
             preset: Some(preset),
             terms: Some(render(&template.terms).chars().take(160).collect()),
+            event: None,
         },
         trigger_template: template.trigger,
     })
@@ -332,6 +393,10 @@ fn template_for(preset: WatchPreset) -> Result<Template, CommandError> {
         WatchPreset::WeekInReview => {
             include_str!("../../../agent/watch-presets/week-in-review.json")
         }
+        WatchPreset::FactChanges => {
+            include_str!("../../../agent/watch-presets/fact-changes.json")
+        }
+        WatchPreset::AssetDaily => return Err(CommandError::invalid("Choose a watch preset")),
     };
     serde_json::from_str(bundled)
         .map_err(|_| CommandError::internal("Invalid bundled watch preset"))
@@ -375,6 +440,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(check.args["asset_names"], serde_json::json!(["northwind"]));
+        assert_eq!(
+            check.when_met_summary.as_deref(),
+            Some("schedule.preset.priceMove.whenMet")
+        );
         let followed = state.store.assets_list(id, true).unwrap();
         assert_eq!(
             price_move_followed_ids(&watch, &followed),
@@ -491,6 +560,66 @@ mod tests {
         let edited = format!("{}\nRead the full appendix.", task.prompt);
         let template = template_for(WatchPreset::FilingsAndResults).unwrap();
         assert!(refill_filings(&edited, &template.prompt, &["Live"]).is_none());
+    }
+
+    #[test]
+    fn only_a_trigger_preset_supplies_a_locale_key_for_when_it_is_met() {
+        assert_eq!(
+            preset_when_met_key(WatchPreset::PriceMove).as_deref(),
+            Some("schedule.preset.priceMove.whenMet")
+        );
+        assert_eq!(
+            preset_when_met_key(WatchPreset::FactChanges).as_deref(),
+            Some("schedule.preset.factChanges.whenMet")
+        );
+        for preset in [
+            WatchPreset::FilingsAndResults,
+            WatchPreset::ThesisLines,
+            WatchPreset::ResultsFollowUp,
+            WatchPreset::WeekInReview,
+        ] {
+            assert_eq!(preset_when_met_key(preset), None);
+        }
+        let filled = fill_template(
+            WatchPreset::FactChanges,
+            vec![TaskSubject::Name {
+                name: "Northwind".into(),
+            }],
+            &["Northwind"],
+            PresetParams::default(),
+            "en",
+            chrono_tz::UTC,
+            None,
+        )
+        .unwrap();
+        assert_eq!(filled.trigger_template.as_deref(), Some("world-change"));
+        assert_eq!(filled.schedule, Schedule::Interval { every_minutes: 60 });
+        assert_eq!(filled.watch.report, Some(ReportPolicy::EveryRun));
+        assert!(filled.watch.terms.unwrap().contains("Northwind"));
+    }
+
+    #[test]
+    fn an_unnamed_system_zone_keeps_its_offset_instead_of_utc() {
+        use chrono::{Offset, TimeZone};
+        let at = chrono::Utc
+            .with_ymd_and_hms(2027, 7, 1, 0, 0, 0)
+            .unwrap()
+            .timestamp();
+        for offset in [0, 9 * 3600, -5 * 3600, 19_800, 20_700, 34_200, -9_000] {
+            let zone = zone_with_offset(offset, at);
+            let seen = zone
+                .offset_from_utc_datetime(
+                    &chrono::DateTime::from_timestamp(at, 0).unwrap().naive_utc(),
+                )
+                .fix()
+                .local_minus_utc();
+            assert_eq!(seen, offset, "{zone} for {offset}");
+            assert_eq!(
+                zone == chrono_tz::UTC || zone.name().starts_with("Etc/"),
+                offset % 3600 == 0,
+                "{zone}"
+            );
+        }
     }
 
     #[test]

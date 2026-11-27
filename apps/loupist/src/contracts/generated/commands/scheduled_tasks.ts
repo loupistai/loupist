@@ -2,7 +2,8 @@
 // LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract
 
 import type { PresetParams } from "../scheduled_tasks/presets";
-import type { DeliveryTarget, NotifyPolicy, Task, TaskStatus, TaskSubject, TriggerDryRun, WatchPreset } from "../scheduled_tasks/types";
+import type { ProgramPatch } from "../scheduled_tasks/program_edit";
+import type { DeliveryTarget, NotifyPolicy, PresetId, Task, TaskStatus, TaskSubject, TriggerDryRun } from "../scheduled_tasks/types";
 
 export type DeliveryRequest = {
   loupistId: string,
@@ -12,11 +13,38 @@ export type DeliveryRequest = {
   notify?: NotifyPolicy | null,
 };
 
-export type FromPresetRequest = {
+export type LearningProgramUndoAllRequest = {
   loupistId: string,
-  preset: WatchPreset,
+  taskId: string,
+  /** Counts what Undo all would do and changes nothing. */
+  preview?: boolean,
+};
+
+/** The current state of a task a Chat card shows; `None` once it was deleted. */
+export type LearningProgramUpdateRequest = {
+  loupistId: string,
+  taskId: string,
+  revision: number,
+  patch: ProgramPatch,
+};
+
+/**
+ * Watch presets and learning presets share this command. `preset` is the watch
+ * id or a learning preset id such as `asset-daily` or `market`. `subject` is
+ * the one learning subject; watch presets keep using `subjects`. `slots` fills
+ * a learning preset's text slots, such as the market's name.
+ */
+export type PresetCommand = {
+  loupistId: string,
+  preset: PresetId,
   subjects?: Array<TaskSubject> | null,
+  subject?: TaskSubject | null,
   params?: PresetParams | null,
+  /**
+   * A learning preset's text slots by name, such as the market's name.
+   * Watch presets take none.
+   */
+  slots?: { [key in string]: string } | null,
 };
 
 export type ProposalDeclineRequest = {
@@ -29,6 +57,8 @@ export type ProposalDeclineRequest = {
 export type ProposalVisitRequest = { loupist_id: string, visit: number };
 
 export type RevisionRequest = { loupist_id: string, task_id: string, expected_revision: number };
+
+export type RunNowRequest = { loupist_id: string, task_id: string, confirm?: boolean };
 
 export type RunRequest = { loupist_id: string, task_id: string, run_id: string };
 

@@ -38,6 +38,7 @@ type Compatible<H, W> = [H] extends [W] ? ([W] extends [Widen<H>] ? true : false
 type SameShape<H, W> = Equal<Shape<H>, Shape<W>>;
 /** Requests: everything TS sends deserializes, with no field Rust does not know. */
 type Accepts<H, W> = [H] extends [W] ? Empty<Exclude<KeysOf<H>, KeysOf<W>>> : false;
+
 /** Renderer models: TS knows every Rust field and requires none Rust may leave out. */
 type Covers<H, W> = Equal<[Empty<Exclude<KeysOf<W>, KeysOf<H>>>, Empty<Exclude<RequiredKeysOf<H>, RequiredKeysOf<W>>>], [true, true]>;
 /** Discriminated narrowings: every TS variant is a Rust value, and TS names every Rust field. */
@@ -110,11 +111,20 @@ export type SameShapeContracts = [
   Expect<SameShape<knowledge.KnowledgeMap, Wire.KnowledgeMap>>,
   Expect<SameShape<knowledge.KnowledgeResearchPage, Wire.KnowledgeResearchPageDto>>,
   Expect<SameShape<knowledge.LearningReviewFinishedEvent, Wire.LearningReviewFinishedEvent>>,
+  Expect<SameShape<knowledge.LearningState, Wire.LearningState>>,
   Expect<SameShape<chat.LoupistArtifactItem, Wire.LoupistArtifactItemDto>>,
   Expect<SameShape<chat.LoupistWorkspace, Wire.LoupistWorkspace>>,
   Expect<SameShape<memory.MemoryUpdateResult, Wire.MemoryUpdateResult>>,
   Expect<SameShape<model.ModelCatalog, Wire.ModelCatalogView>>,
   Expect<SameShape<scheduled.ScheduledTask, Wire.Task>>,
+  Expect<Equal<scheduled.ProgramField, "title" | "prompt" | "subjects" | "schedule" | "depth" | "sources" | "keeps" | "report" | "delivery">>,
+  Expect<SameShape<scheduled.LearningProgramPatch, Wire.ProgramPatch>>,
+  Expect<SameShape<scheduled.LearningProgramUpdateRequest, Wire.LearningProgramUpdateRequest>>,
+  Expect<SameShape<scheduled.LearningProgramUndoAllRequest, Wire.LearningProgramUndoAllRequest>>,
+  Expect<SameShape<scheduled.ProgramUndo, Wire.ProgramUndo>>,
+  Expect<SameShape<lens.LearnedMark, Wire.LearnedMark>>,
+  Expect<SameShape<lens.SectionView, Wire.SectionView>>,
+  Expect<SameShape<knowledge.LearningWaitReason, Wire.WaitReason>>,
   Expect<SameShape<scheduled.ScheduledTaskListItem, Wire.TaskListItem>>,
   Expect<SameShape<sharing.ShareSummary, Wire.ShareSummary>>,
   Expect<SameShape<knowledge.SourceDetail, Wire.SourceDetailDto>>,

@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "@/test/selectOption";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../../App";
@@ -72,9 +73,14 @@ describe("as-of answers", () => {
     await user.click(screen.getByRole("option", { name: "/asof" }));
     const dated = screen.getByRole("group", { name: "Look back to" });
     expect(within(dated).getByLabelText("Year")).toHaveFocus();
-    fireEvent.change(within(dated).getByLabelText("Year"), { target: { value: "2026" } });
-    fireEvent.change(within(dated).getByLabelText("Month"), { target: { value: "3" } });
-    fireEvent.change(within(dated).getByLabelText("Day"), { target: { value: "3" } });
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("listbox")).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("group", { name: "Look back to" })).toBeVisible();
+    expect(within(dated).getByLabelText("Year")).toHaveFocus();
+    await chooseSelectOption(user, within(dated).getByLabelText("Year"), "2026");
+    await chooseSelectOption(user, within(dated).getByLabelText("Month"), "Mar");
+    await chooseSelectOption(user, within(dated).getByLabelText("Day"), "3");
     await user.click(within(dated).getByRole("button", { name: "Set date" }));
     expect(screen.getByRole("button", { name: /As of Mar 3, 2026 · Change the as-of date/ })).toBeVisible();
   });

@@ -3,12 +3,17 @@ const DEFAULT_AGENT_MODEL: &str = "openai-codex/gpt-6.2-sol";
 
 #[cfg(test)]
 mod account_fields_tests;
+#[cfg(all(test, target_os = "macos", target_arch = "aarch64", debug_assertions))]
+mod approvals_tests;
 pub(crate) mod artifacts;
 mod batch;
+#[cfg(all(test, target_os = "macos", target_arch = "aarch64", debug_assertions))]
+mod checks_tests;
 #[cfg(test)]
 mod citations;
 pub(crate) mod clock;
 pub mod concurrent;
+mod contract;
 #[cfg(test)]
 mod dart_replay_tests;
 #[cfg(test)]
@@ -17,6 +22,8 @@ mod followed;
 mod growth;
 #[cfg(all(test, target_os = "macos", target_arch = "aarch64", debug_assertions))]
 mod judgment_commit_tests;
+#[cfg(all(test, target_os = "macos", target_arch = "aarch64", debug_assertions))]
+mod learning_tests;
 mod observation;
 pub(crate) mod replay;
 #[cfg(all(test, target_os = "macos", target_arch = "aarch64", debug_assertions))]
@@ -24,14 +31,18 @@ mod replay_scenarios;
 #[cfg(test)]
 mod research;
 mod scheduled;
+mod seeds;
 #[cfg(all(test, target_os = "macos", target_arch = "aarch64", debug_assertions))]
 mod session_language_capture;
 #[cfg(test)]
 mod tests;
 mod trace;
+mod trial;
 #[cfg(test)]
 mod unattended_tests;
 pub mod world;
+#[cfg(test)]
+mod world_staging_tests;
 use crate::{
     app::{AppState, PiArtifacts},
     commands::{
@@ -72,6 +83,13 @@ struct Budget {
 impl Budget {
     fn enforce(&self, record: &mut Value) -> Option<Value> {
         let reason = self.stop_reason(record)?;
+        // A failed unit whose usage is unknown, such as a run that stopped
+        // before its first model round, is recorded and the batch goes on.
+        if record["status"] != "completed" && reason["error"] == "budget_usage_unknown" {
+            record["status"] = json!("failed");
+            record["budget_note"] = reason;
+            return None;
+        }
         if record["error"].is_null() {
             record["error"] = reason["error"].clone();
         }
@@ -147,6 +165,9 @@ struct Scenario {
     #[serde(default)]
     pub seed: Seed,
     pub sessions: Vec<Session>,
+    /// World publications of seeded Sources, scripted or extracted live.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub world: Option<world::script::WorldBlock>,
 }
 #[derive(Default, Deserialize, Serialize)]
 struct Seed {
@@ -166,6 +187,22 @@ struct Seed {
     /// Fixture packs under `evals/sharing/`, added and fully accepted before the run.
     #[serde(default)]
     pub shared_packs: Vec<String>,
+    /// Research pages filed after the seed's World publications; their refs
+    /// name seeded Sources and scripted facts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lens_pages: Vec<seeds::LensPageSeed>,
+    /// Learning programs, turned on, each with an optional completed earlier occurrence.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub programs: Vec<scheduled::ProgramSeed>,
+    /// Learning requests left today when the first occurrence starts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub learning_allowance: Option<u32>,
+    /// A followed asset and the World company a seed publication names.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub asset_links: Vec<seeds::AssetLink>,
+    /// Checks saved from a bundled template and turned on, with their dry run.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<scheduled::CheckSeed>,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -207,9 +244,22 @@ struct LensSeed {
 }
 #[derive(Deserialize, Serialize)]
 struct SourceSeed {
+    /// The name `world.publications`, `lens_pages` refs and replay use.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub title: String,
     pub text: String,
     pub origin: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub company: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub form: Option<String>,
+    /// YYYY-MM-DD or RFC 3339.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publication_time: Option<String>,
+    /// BCP 47.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
 }
 #[derive(Deserialize, Serialize)]
 struct Session {
@@ -238,6 +288,20 @@ struct Turn {
         skip_serializing_if = "Option::is_none"
     )]
     pub scheduled: Option<scheduled::Fixture>,
+    /// How the turn answers the host's cards. `decline`, the default, is a
+    /// cautious user who says "Not now" and leaves proposals unconfirmed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approvals: Option<Approvals>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum Approvals {
+    /// Allow an approval card once, answer a question with its recommended
+    /// option, and confirm the schedule proposals the reply saved.
+    Accept,
+    #[default]
+    Decline,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -433,7 +497,19 @@ fn turn_prompt(state: &AppState, chat: &ChatSession, turn: &Turn) -> Result<Stri
     Ok(parts.join("\n\n"))
 }
 
-fn seed(state: &AppState, loupist_id: &str, seed: &Seed) -> Result<()> {
+#[cfg(test)]
+fn seed(state: &AppState, loupist_id: &str, seed: &Seed) -> Result<seeds::Retained> {
+    seed_at(state, loupist_id, seed, &BTreeMap::new())
+}
+
+/// Seed the Loupist. A Source a World publication names is retained at that
+/// publication's recorded time (`recorded`, by Source id).
+fn seed_at(
+    state: &AppState,
+    loupist_id: &str,
+    seed: &Seed,
+    recorded: &BTreeMap<String, i64>,
+) -> Result<seeds::Retained> {
     if let Some(instructions) = &seed.instructions {
         if instructions.chars().count() > 4_000 {
             return Err("eval Loupist instructions exceed 4000 characters".into());
@@ -447,13 +523,19 @@ fn seed(state: &AppState, loupist_id: &str, seed: &Seed) -> Result<()> {
             chrono::Utc::now().timestamp_millis(),
         )?;
     }
+    // A read at a cutoff (a check's dry run replays earlier days) sees only
+    // assets followed by then. A seeded asset is followed from the scenario's
+    // start: its clock, or its earliest World publication when that is earlier.
+    let followed_at = recorded
+        .values()
+        .fold(clock::now().timestamp_millis(), |first, at| first.min(*at));
     for entry in &seed.watchlist {
         state.store.asset_follow_name(
             loupist_id,
             &entry.name,
             entry.reference.clone(),
             crate::commands::assets::wire::AssetReferenceOrigin::Imported,
-            crate::commands::now_ms(),
+            followed_at,
         )?;
     }
     let assets = state.store.assets_list(loupist_id, false)?;
@@ -526,46 +608,17 @@ fn seed(state: &AppState, loupist_id: &str, seed: &Seed) -> Result<()> {
     }
     let store = KnowledgeStore::for_loupist(state.store.clone(), loupist_id)?;
     let now = chrono::Utc::now().timestamp_millis();
+    let mut retained = seeds::Retained::new();
     store.transact(|write| {
         for source in &seed.sources {
-            let record = write.create_record(CreateRecord {
-                loupist_id: loupist_id.into(),
-                kind: RecordKind::Source,
-                title: source.title.clone(),
-                at_ms: now,
-            })?;
-            write.retain_source(RetainSource {
-                origin: None,
-                loupist_id: loupist_id.into(),
-                record_id: record.record_id,
-                expected_revision_id: None,
-                at_ms: now,
-                source_id: None,
-                title: source.title.clone(),
-                source_class: SourceClass::PublisherDocument,
-                origin_locator: source.origin.clone(),
-                provider_identity: "eval-fixture".into(),
-                authorship: Authorship::Publisher,
-                coverage: Coverage::IncludedFull,
-                origin_chat_id: None,
-                request_ref: None,
-                declared_digest: None,
-                publication_time: None,
-                material: Some(RetainMaterial {
-                    media_type: "text/plain".into(),
-                    role: RepresentationRole::Original,
-                    document_id: uuid::Uuid::new_v4().to_string(),
-                    parser_version: None,
-                    parent_representation_id: None,
-                    input_span_ids: vec![],
-                    bytes: source.text.as_bytes().to_vec(),
-                    selector: Selector::ByteRange {
-                        start: 0,
-                        end: source.text.len() as u64,
-                    },
-                    context_note: "Fictional eval source".into(),
-                }),
-            })?;
+            let at_ms = recorded
+                .get(source.id.as_deref().unwrap_or(""))
+                .copied()
+                .unwrap_or(now);
+            let saved = seeds::retain(write, loupist_id, source, at_ms)?;
+            if let Some(id) = &source.id {
+                retained.insert(id.clone(), saved);
+            }
         }
         for lens in &seed.lens {
             use crate::knowledge::lens_page::{
@@ -604,6 +657,98 @@ fn seed(state: &AppState, loupist_id: &str, seed: &Seed) -> Result<()> {
         }
         Ok(())
     })?;
+    Ok(retained)
+}
+/// Every scenario of a suite is one this runner can stage, before any trial
+/// runs. A suite states its own version; version 2 adds World publications,
+/// Learning and check occurrences and their seeds.
+fn validate_suite(suite: &Suite) -> Result<()> {
+    if suite.schema != "loupist-agent-suite/1" || !matches!(suite.version, 1 | 2) {
+        return Err("unsupported suite schema/version".into());
+    }
+    for scenario in &suite.scenarios {
+        validate_seed(scenario)?;
+        for name in scenario.workspace_files.keys() {
+            relative(Path::new(name))?;
+        }
+        if let Some(path) = &scenario.replay {
+            relative(path)?;
+        }
+        for session in &scenario.sessions {
+            memory_policy(&session.memory)?;
+            for turn in &session.turns {
+                turn.attachment_inputs()?;
+                scheduled::validate(scenario, session, turn)?;
+            }
+            if !matches!(session.role.as_str(), "train" | "probe") {
+                return Err("session role must be train or probe".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Seeds and World publications name each other consistently, and every seed
+/// key the scenario uses is one this runner stages.
+fn validate_seed(scenario: &Scenario) -> Result<()> {
+    let seed = &scenario.seed;
+    let mut ids = std::collections::BTreeSet::new();
+    for source in &seed.sources {
+        if let Some(id) = &source.id {
+            if !ids.insert(id.as_str()) {
+                return Err(format!("{}: seed source ids are unique: {id}", scenario.id).into());
+            }
+        }
+        if let Some(time) = &source.publication_time {
+            world::time_point(time)?;
+        }
+    }
+    trial::world_times(scenario).map_err(|error| format!("{}: {error}", scenario.id))?;
+    let published: std::collections::BTreeSet<_> = scenario
+        .world
+        .iter()
+        .flat_map(|block| &block.publications)
+        .filter(|publication| publication.after == world::script::After::seed())
+        .flat_map(|publication| publication.script.iter())
+        .flat_map(|script| &script.facts)
+        .map(|fact| fact.id.as_str())
+        .collect();
+    let entities: std::collections::BTreeSet<_> = scenario
+        .world
+        .iter()
+        .flat_map(|block| &block.publications)
+        .flat_map(|publication| publication.script.iter())
+        .flat_map(|script| &script.entities)
+        .map(|entity| entity.name.as_str())
+        .collect();
+    for link in &seed.asset_links {
+        if !entities.contains(link.company()) {
+            return Err(format!(
+                "{}: an asset link names a World entity a scripted publication states: {}",
+                scenario.id,
+                link.company()
+            )
+            .into());
+        }
+    }
+    for page in &seed.lens_pages {
+        for (source, fact) in page.refs() {
+            if !ids.contains(source) {
+                return Err(format!(
+                    "{}: lens_pages ref names no seeded Source: {source}",
+                    scenario.id
+                )
+                .into());
+            }
+            if fact.is_some_and(|fact| !published.contains(fact)) {
+                return Err(format!(
+                    "{}: a lens_pages ref names a fact the seed's scripted publications state",
+                    scenario.id
+                )
+                .into());
+            }
+        }
+    }
     Ok(())
 }
 fn enable_connections(state: &AppState, loupist: &str, connections: &[String]) -> Result<()> {
@@ -684,16 +829,21 @@ fn enable_connections(state: &AppState, loupist: &str, connections: &[String]) -
     );
     Ok(())
 }
-/// Nobody watches an eval reply, so an approval card (a new website after
-/// third-party text, a native command or file) is answered "Not now" at once,
-/// as a cautious user would, and a question is left unanswered so its call
-/// continues with the recommended option, instead of holding the turn for the
-/// wait limit.
-fn settle_waiting_cards(loupist_id: &str, event: &crate::commands::ChatStreamEvent) {
+/// Nobody watches an eval reply, so each card is answered at once instead of
+/// holding the turn for the wait limit. Declined, an approval card (a new
+/// website after third-party text, a native command or file) is answered "Not
+/// now", as a cautious user would, and a question is left unanswered so its
+/// call continues with the recommended option. Accepted, the card is allowed
+/// once and the question gets its recommended option.
+fn settle_waiting_cards(
+    loupist_id: &str,
+    event: &crate::commands::ChatStreamEvent,
+    approvals: Approvals,
+) {
     use crate::chat::approvals::{decide, ApprovalDecision, ApprovalState};
-    use crate::chat::questions::{self, QuestionState};
+    use crate::chat::questions::{self, QuestionAnswer, QuestionState};
     use crate::commands::ChatStreamEvent;
-    let (approvals, questions) = match event {
+    let (cards, questions) = match event {
         ChatStreamEvent::Progress { progress, .. } => {
             (Some(&progress.approvals), Some(&progress.questions))
         }
@@ -702,17 +852,82 @@ fn settle_waiting_cards(loupist_id: &str, event: &crate::commands::ChatStreamEve
         }
         _ => (None, None),
     };
-    for approval in approvals.into_iter().flatten() {
+    let decision = match approvals {
+        Approvals::Accept => ApprovalDecision::Once,
+        Approvals::Decline => ApprovalDecision::Deny,
+    };
+    for approval in cards.into_iter().flatten() {
         if approval.state == ApprovalState::Waiting {
-            let _ = decide(loupist_id, &approval.request_id, ApprovalDecision::Deny);
+            let _ = decide(loupist_id, &approval.request_id, decision);
         }
     }
     for question in questions.into_iter().flatten() {
-        if question.state == QuestionState::Waiting {
+        if question.state != QuestionState::Waiting {
+            continue;
+        }
+        match (approvals, question.recommended) {
+            (Approvals::Accept, Some(choice)) => {
+                let _ = questions::answer(
+                    loupist_id,
+                    &question.request_id,
+                    QuestionAnswer::Choice(choice),
+                );
+            }
             // Dropping the registered sender resolves the waiting call unanswered.
-            questions::forget(&question.request_id);
+            _ => questions::forget(&question.request_id),
         }
     }
+}
+
+/// Confirm, as the user's yes on its card, each schedule proposal `reply`
+/// saved. A check turns on at the version its card shows. A card the host
+/// refuses to confirm, such as a check without a successful dry run, is
+/// recorded with the host's reason.
+fn accept_proposals(
+    state: &AppState,
+    loupist_id: &str,
+    reply: &str,
+) -> Result<(Vec<String>, Vec<Value>)> {
+    let mut confirmed = Vec::new();
+    let mut refused = Vec::new();
+    for task in state.store.scheduled_tasks_list(loupist_id)? {
+        if !task.awaiting_confirmation || task.proposed_in_message_id.as_deref() != Some(reply) {
+            continue;
+        }
+        let answered = match &task.trigger {
+            Some(check) => {
+                let (version, sha256) = check.pending.as_ref().map_or(
+                    (check.script.version, check.script.sha256.as_str()),
+                    |pending| (pending.version, pending.sha256.as_str()),
+                );
+                crate::commands::triggers::approve(
+                    state,
+                    loupist_id,
+                    &task.id,
+                    task.revision,
+                    version,
+                    sha256,
+                )
+            }
+            None => {
+                crate::scheduled_tasks::service::confirm(state, loupist_id, &task.id, task.revision)
+            }
+        };
+        match answered {
+            Ok(_) => confirmed.push(task.id),
+            Err(error) => refused
+                .push(json!({"task_id": task.id, "code": error.code, "message": error.message})),
+        }
+    }
+    Ok((confirmed, refused))
+}
+
+/// When a turn gives up. The runner's is its `--turn-timeout-ms`; a test gives
+/// up at the event it proves instead, which a loaded machine cannot miss.
+type Deadline = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
+
+fn after_ms(timeout_ms: u64) -> Deadline {
+    Box::pin(tokio::time::sleep(Duration::from_millis(timeout_ms)))
 }
 
 async fn run_turn(
@@ -724,8 +939,34 @@ async fn run_turn(
     thinking: &str,
     timeout_ms: u64,
 ) -> Result<Value> {
+    run_turn_until(
+        state,
+        chat,
+        session,
+        turn,
+        model,
+        thinking,
+        after_ms(timeout_ms),
+    )
+    .await
+}
+
+/// [`run_turn`], giving up at `deadline`.
+async fn run_turn_until(
+    state: &AppState,
+    chat: &ChatSession,
+    session: &Session,
+    turn: &Turn,
+    model: &str,
+    thinking: &str,
+    deadline: Deadline,
+) -> Result<Value> {
     if let Some(fixture) = &turn.scheduled {
-        return scheduled::run(state, chat, turn, fixture, model, thinking, timeout_ms).await;
+        // Boxed: a scheduled occurrence is a large future for a caller's stack.
+        return Box::pin(scheduled::run(
+            state, chat, turn, fixture, model, thinking, deadline,
+        ))
+        .await;
     }
     let policy = memory_policy(&session.memory)?;
     let captured = Arc::new(Mutex::new(observation::TurnObservation::default()));
@@ -735,10 +976,11 @@ async fn run_turn(
     // reader lease, which is released before the canonical writer acquires.
     // Waiting for the global activity count would also wait for unrelated Chats.
     let (lifetime, mut settled) = tokio::sync::watch::channel(());
+    let approvals = turn.approvals.unwrap_or_default();
     let loupist_id = chat.loupist_id.clone();
     let mut sink = ChatEventSink::new(move |event| {
         let _ = &lifetime;
-        settle_waiting_cards(&loupist_id, &event);
+        settle_waiting_cards(&loupist_id, &event, approvals);
         Ok(())
     });
     sink.eval_pi_event = Some(Arc::new(move |event| {
@@ -753,6 +995,7 @@ async fn run_turn(
             .native_read_authorized(call_id, authorization);
     }));
     let run_id = format!("eval-{}", uuid::Uuid::new_v4());
+    let turn_started_ms = crate::commands::now_ms();
     let started = chrono::Utc::now().to_rfc3339();
     let clock = Instant::now();
     let run_options = model_run_options(state, model)?;
@@ -786,7 +1029,11 @@ async fn run_turn(
         Ok::<(), String>(())
     };
     tokio::pin!(execution);
-    let result = tokio::time::timeout(Duration::from_millis(timeout_ms), &mut execution).await;
+    let result = tokio::select! {
+        biased;
+        done = &mut execution => Ok(done),
+        () = deadline => Err(()),
+    };
     let failure = match result {
         Ok(Ok(())) => None,
         Ok(Err(error)) => Some(error),
@@ -810,6 +1057,18 @@ async fn run_turn(
         .messages
         .last()
         .filter(|m| m.role == crate::domain::ChatRole::Assistant);
+    // A task this turn saved is dated at the turn's clock.
+    for task in state.store.scheduled_tasks_list(&chat.loupist_id)? {
+        if task.created_at_ms >= turn_started_ms {
+            scheduled::date_at_clock(state, task)?;
+        }
+    }
+    let (confirmed, refused) = match (approvals, message) {
+        (Approvals::Accept, Some(message)) => {
+            accept_proposals(state, &chat.loupist_id, &message.id)?
+        }
+        _ => Default::default(),
+    };
     let mut result = if let Some(message) = message {
         let mut result = trace::persisted(message, &captured.lock().unwrap().pi);
         trace::enrich_commits(state, chat, message, &mut result)?;
@@ -831,7 +1090,7 @@ async fn run_turn(
                 .memory_update
                 .as_ref()
                 .and_then(|update| update.skip_reason)
-                == Some(MemorySaveSkipReason::Failed)
+                .is_some_and(MemorySaveSkipReason::is_failure)
     }) {
         let profile = state
             .store
@@ -843,6 +1102,10 @@ async fn run_turn(
         ) {
             result["memory_commit_failure"] = serde_json::to_value(failure)?;
         }
+    }
+    if let Some(approvals) = turn.approvals {
+        result["approvals"] =
+            json!({"answer": approvals, "confirmed_tasks": confirmed, "refused": refused});
     }
     // Observe canonical state independently of tool output or the assistant’s claim.
     result["lens"] = trace::lens_state(state, chat, message.map(|m| m.id.as_str()))?;
@@ -897,10 +1160,16 @@ fn model_run_options(state: &AppState, model: &str) -> Result<BTreeMap<String, S
             .iter()
             .map(|control| (control.id.clone(), control.default_choice.clone()))
             .collect(),
-        std::env::var("LOUPIST_EVAL_PERFORMANCE").ok().as_deref(),
+        eval_performance().as_deref(),
     );
     model.validate_run_options(&options)?;
     Ok(options)
+}
+
+/// The serving mode a paid run asks for (`LOUPIST_EVAL_PERFORMANCE`, for example `fast`),
+/// for the agent's and the World's model alike; none keeps each model's default.
+fn eval_performance() -> Option<String> {
+    std::env::var("LOUPIST_EVAL_PERFORMANCE").ok()
 }
 
 fn with_performance(
@@ -975,12 +1244,16 @@ impl SharedPythonCache {
     }
 }
 
-fn eval_temp_root() -> PathBuf {
-    if cfg!(unix) {
+/// Where every trial, cache and asset snapshot of a run lives: a short root,
+/// by its real path. Pi's extension reads a selected Skill only at a path that
+/// is its own real path, and macOS `/tmp` is a link to `/private/tmp`.
+pub(super) fn eval_temp_root() -> PathBuf {
+    let root = if cfg!(unix) {
         PathBuf::from("/tmp")
     } else {
         std::env::temp_dir()
-    }
+    };
+    fs::canonicalize(&root).unwrap_or(root)
 }
 
 async fn warm_python_cache(cache_root: &Path) -> Result<()> {
@@ -1017,11 +1290,69 @@ async fn warm_python_cache(cache_root: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The runner's [`trial::Recorder`]: it stamps each record with its batch,
+/// enforces the suite budget and rewrites the JSONL after every record.
+struct BatchWriter<'a> {
+    out: &'a Path,
+    bytes: Vec<u8>,
+    summary: batch::Summary,
+    run_id: String,
+    suite: &'a str,
+    budget: Option<&'a Budget>,
+    thinking: &'a str,
+    scenario: &'a str,
+    harness: Value,
+    trial: usize,
+    turns_run: usize,
+    budget_stop: Option<Value>,
+}
+
+impl trial::Recorder for BatchWriter<'_> {
+    fn admit_turn(&mut self) -> bool {
+        match self.budget {
+            Some(budget) if self.turns_run >= budget.max_turns => {
+                self.budget_stop = Some(
+                    json!({"error":"budget_exceeded","limit":"maxTurns","maximum":budget.max_turns,"observed":self.turns_run}),
+                );
+                false
+            }
+            _ => true,
+        }
+    }
+
+    fn record(
+        &mut self,
+        session: &Session,
+        turn_index: usize,
+        turn: &Turn,
+        model: &crate::providers::catalog::ConfiguredModel,
+        mut record: Value,
+    ) -> Result<AfterTurn> {
+        for (key,value) in json!({"schema":"loupist-agent-trace/1","run_id":self.run_id,"suite":self.suite,"scenario_id":self.scenario,"session_id":session.id,"session_role":session.role,"turn_index":turn_index,"trial":self.trial,"model":{"provider":model.provider,"model":model.model,"thinking":self.thinking},"harness":self.harness,"memory_mode":session.memory,"user":turn.user}).as_object().unwrap(){record[key]=value.clone();}
+        record["harness"]["agent_dir_sha256"] = record
+            .as_object_mut()
+            .unwrap()
+            .remove("agent_dir_sha256")
+            .unwrap_or(Value::Null);
+        record["harness"]["dirty"] = json!(batch::dirty(Path::new(env!("CARGO_MANIFEST_DIR")))?);
+        // The turn cap bounds model calls; a Pi that never started made none.
+        if !startup_failed(&record) {
+            self.turns_run += 1;
+        }
+        if let Some(reason) = self.budget.and_then(|b| b.enforce(&mut record)) {
+            self.budget_stop = Some(reason);
+        }
+        self.summary.observe(&record);
+        append_atomic(self.out, &mut self.bytes, &record)?;
+        Ok(after_turn(&record, self.budget_stop.is_some()))
+    }
+}
+
 pub async fn run(options: Options) -> Result<()> {
     if !options.pi_agent_dir.is_absolute() || !options.pi_agent_dir.is_dir() {
         return Err("--pi-agent-dir must be an existing absolute directory (used in place)".into());
     }
-    let mut summary = batch::Summary::default();
+    let summary = batch::Summary::default();
     if options.turn_timeout_ms == 0 {
         return Err("--turn-timeout-ms must be positive".into());
     }
@@ -1038,10 +1369,7 @@ pub async fn run(options: Options) -> Result<()> {
     if options.out.exists() && !options.resume {
         return Err("output already exists; choose a new --out path".into());
     }
-    let suite: Suite = serde_json::from_slice(&fs::read(&options.suite)?)?;
-    if suite.schema != "loupist-agent-suite/1" || suite.version != 1 {
-        return Err("unsupported suite schema/version".into());
-    }
+    let (suite, optional_keys) = contract::load(&fs::read(&options.suite)?)?;
     if suite
         .budget
         .as_ref()
@@ -1049,24 +1377,7 @@ pub async fn run(options: Options) -> Result<()> {
     {
         return Err("suite budget caps must be positive".into());
     }
-    for scenario in &suite.scenarios {
-        for name in scenario.workspace_files.keys() {
-            relative(Path::new(name))?;
-        }
-        if let Some(path) = &scenario.replay {
-            relative(path)?;
-        }
-        for session in &scenario.sessions {
-            memory_policy(&session.memory)?;
-            for turn in &session.turns {
-                turn.attachment_inputs()?;
-                scheduled::validate(scenario, session, turn)?;
-            }
-            if !matches!(session.role.as_str(), "train" | "probe") {
-                return Err("session role must be train or probe".into());
-            }
-        }
-    }
+    validate_suite(&suite)?;
     for id in &options.scenarios {
         match suite.scenarios.iter().find(|s| &s.id == id) {
             None => return Err(format!("unknown scenario: {id}").into()),
@@ -1110,7 +1421,6 @@ pub async fn run(options: Options) -> Result<()> {
     let frozen =
         artifacts::FrozenArtifacts::with_override(artifacts()?, options.agent_assets.as_deref())?;
     let pi = frozen.pi.clone();
-    let run_id = uuid::Uuid::new_v4().to_string();
     let git = std::process::Command::new("git")
         .args(["rev-parse", "HEAD"])
         .current_dir(env!("CARGO_MANIFEST_DIR"))
@@ -1118,19 +1428,44 @@ pub async fn run(options: Options) -> Result<()> {
     if !git.status.success() {
         return Err("cannot determine harness commit".into());
     }
-    let harness = json!({"git_commit":String::from_utf8(git.stdout)?.trim(),"dirty":batch::dirty(Path::new(env!("CARGO_MANIFEST_DIR")))?,"system_prompt_sha256":crate::util::sha256(&fs::read(&pi.system_prompt)?),"tool_catalog_sha256":crate::util::sha256(&fs::read(pi.system_prompt.parent().unwrap().join("tool-catalog.json"))?),"agent_snapshot_sha256":frozen.sha256,"agent_assets_override":options.agent_assets.is_some(),"context_policy":frozen.context_policy});
-    let mut bytes = if options.resume && options.out.exists() {
+    let harness = json!({"git_commit":String::from_utf8(git.stdout)?.trim(),"dirty":batch::dirty(Path::new(env!("CARGO_MANIFEST_DIR")))?,"system_prompt_sha256":crate::util::sha256(&fs::read(&pi.system_prompt)?),"tool_catalog_sha256":crate::util::sha256(&fs::read(pi.system_prompt.parent().unwrap().join("tool-catalog.json"))?),"agent_snapshot_sha256":frozen.sha256,"agent_assets_override":options.agent_assets.is_some(),"context_policy":frozen.context_policy,"world_prompts_sha256":crate::knowledge::world_extract::world_prompts_sha256()?,"optional_keys":optional_keys,"performance":eval_performance()});
+    let bytes = if options.resume && options.out.exists() {
         fs::read(&options.out)?
     } else {
         Vec::new()
     };
     let existing = batch::records(&bytes)?;
-    let mut models = None;
-    let mut turns_run = 0usize;
-    let mut budget_stop = None;
     // Every trial's app profile is disposable; one compiled Python runtime is
     // shared so no scenario's first `run_python` pays the cold compile.
     let mut python_cache = SharedPythonCache::new()?;
+    let mut host = trial::TrialHost {
+        pi: pi.clone(),
+        pi_agent_dir: Some(options.pi_agent_dir.clone()),
+        config_toml: Some(frozen.config_toml()),
+        python_cache: None,
+        model: requested_model.to_owned(),
+        thinking: options.thinking.clone(),
+        turn_timeout_ms: options.turn_timeout_ms,
+        discovery: Some(trial::Discovery {
+            provider: provider.to_owned(),
+            models: None,
+        }),
+        keep: options.keep,
+    };
+    let mut writer = BatchWriter {
+        out: &options.out,
+        bytes,
+        summary,
+        run_id: uuid::Uuid::new_v4().to_string(),
+        suite: &suite.suite,
+        budget: suite.budget.as_ref(),
+        thinking: &options.thinking,
+        scenario: "",
+        harness: Value::Null,
+        trial: 0,
+        turns_run: 0,
+        budget_stop: None,
+    };
     'scenarios: for (scenario, inputs) in inputs {
         let mut harness = harness.clone();
         harness["scenario_input_sha256"] = json!(inputs.sha256);
@@ -1155,154 +1490,25 @@ pub async fn run(options: Options) -> Result<()> {
                 );
                 continue;
             }
-            let temporary = tempfile::Builder::new()
-                .prefix("loupist-eval-")
-                .tempdir_in(eval_temp_root())?;
-            let workspace = temporary.path().join("workspace");
-            fs::create_dir(&workspace)?;
-            for (name, contents) in &scenario.workspace_files {
-                relative(Path::new(name))?;
-                let path = workspace.join(name);
-                if let Some(parent) = path.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                fs::write(path, contents)?;
-            }
-            let mut state = AppState::for_eval(temporary.path().join("app"));
-            configure_market_runtime(&mut state, scenario, &pi.runtime_dir)?;
-            Arc::make_mut(&mut state.artifacts).python_cache_root =
-                python_cache.warmed().await.to_path_buf();
-            // Only this disposable app profile is changed; paid eval attempts never retry.
-            fs::write(
-                state.artifacts.app_data_dir.join("config.toml"),
-                if let Some(language) = scenario.language.as_deref().or_else(|| {
-                    if scenario.tags.iter().any(|tag| tag == "en") {
-                        Some("en")
-                    } else if scenario.tags.iter().any(|tag| tag == "ko") {
-                        Some("ko")
-                    } else {
-                        None
-                    }
-                }) {
-                    if !matches!(language, "en" | "ko") {
-                        return Err("scenario language must be en or ko".into());
-                    }
-                    let mut config = frozen.config_toml().parse::<toml_edit::Document>()?;
-                    config["appearance"]["language"] = toml_edit::value(language);
-                    config.to_string()
-                } else {
-                    frozen.config_toml()
-                },
-            )?;
-            state.eval_pi_agent_dir = Some(options.pi_agent_dir.clone());
-            Arc::make_mut(&mut state.artifacts).pi = Some(pi.clone());
-            if models.is_none() {
-                let available = crate::providers::connection::eval_models(&state, provider).await?;
-                eprintln!(
-                    "discovered models: {}",
-                    available
-                        .iter()
-                        .map(|m| m.id.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-                models = Some(available);
-            }
-            let discovered = models.as_ref().unwrap();
-            let selected = discovered
-                .iter()
-                .find(|model| model.id == requested_model)
-                .ok_or("requested model not found in Pi model discovery")?;
-            state.set_model_catalog(crate::providers::catalog::ModelCatalog {
-                models: discovered.clone(),
-            })?;
-            eprintln!(
-                "eval model {}/{} thinking={}",
-                selected.provider, selected.model, options.thinking
-            );
-            let replay = if let Some(replay) = &inputs.replay {
-                Some(replay.clone().install(&state.credential_environment)?)
-            } else {
-                None
-            };
-            let loupist =
-                crate::commands::loupist::create_folder_loupist(&state, &workspace).await?;
-            seed(&state, &loupist.id, &scenario.seed)?;
-            enable_connections(&state, &loupist.id, &scenario.connections)?;
-            let mut stop_batch = false;
-            'sessions: for session in &scenario.sessions {
-                memory_policy(&session.memory)?;
-                let chat = if session.id == "bot" {
-                    crate::chat::home::ensure_home_thread(&state, &loupist.id)
-                        .map_err(|error| error.message)?
-                } else {
-                    new_chat(&state, &loupist.id, &session.id)?
-                };
-                for (turn_index, turn) in session.turns.iter().enumerate() {
-                    if let Some(budget) = &suite.budget {
-                        if turns_run >= budget.max_turns {
-                            budget_stop = Some(
-                                json!({"error":"budget_exceeded","limit":"maxTurns","maximum":budget.max_turns,"observed":turns_run}),
-                            );
-                            stop_batch = true;
-                            break 'sessions;
-                        }
-                    }
-                    let mut record = run_turn(
-                        &state,
-                        &chat,
-                        session,
-                        turn,
-                        &selected.id,
-                        &options.thinking,
-                        options.turn_timeout_ms,
-                    )
-                    .await?;
-                    for (key,value) in json!({"schema":"loupist-agent-trace/1","run_id":run_id,"suite":suite.suite,"scenario_id":scenario.id,"session_id":session.id,"session_role":session.role,"turn_index":turn_index,"trial":trial,"model":{"provider":selected.provider,"model":selected.model,"thinking":options.thinking},"harness":harness,"memory_mode":session.memory,"user":turn.user}).as_object().unwrap(){record[key]=value.clone();}
-                    record["harness"]["agent_dir_sha256"] = record
-                        .as_object_mut()
-                        .unwrap()
-                        .remove("agent_dir_sha256")
-                        .unwrap_or(Value::Null);
-                    record["harness"]["dirty"] =
-                        json!(batch::dirty(Path::new(env!("CARGO_MANIFEST_DIR")))?);
-                    // The turn cap bounds model calls; a Pi that never started made none.
-                    if !startup_failed(&record) {
-                        turns_run += 1;
-                    }
-                    if let Some(reason) = suite.budget.as_ref().and_then(|b| b.enforce(&mut record))
-                    {
-                        budget_stop = Some(reason);
-                    }
-                    summary.observe(&record);
-                    append_atomic(&options.out, &mut bytes, &record)?;
-                    match after_turn(&record, budget_stop.is_some()) {
-                        AfterTurn::Continue => {}
-                        AfterTurn::NextTrial => break 'sessions,
-                        AfterTurn::StopBatch => {
-                            stop_batch = true;
-                            break 'sessions;
-                        }
-                    }
-                }
-            }
-            state.shutdown().await?;
-            drop(state);
-            drop(replay);
-            if options.keep {
-                eprintln!("kept {}", temporary.keep().display());
-            }
-            if stop_batch {
-                if budget_stop.is_none() {
+            host.python_cache = Some(python_cache.warmed().await.to_path_buf());
+            writer.scenario = &scenario.id;
+            writer.harness = harness.clone();
+            writer.trial = trial;
+            if trial::run_trial(&mut host, scenario, inputs.replay.as_ref(), &mut writer).await? {
+                if writer.budget_stop.is_none() {
                     eprintln!("Stopping batch: provider authentication/quota rejection; no automatic retry.");
                 }
                 break 'scenarios;
             }
-            // A timeout or a Pi that never started aborts this Loupist's dependent
-            // sessions only. Each next trial starts in a fresh Loupist and must
-            // still be measured.
         }
     }
+    let BatchWriter {
+        bytes,
+        summary,
+        turns_run,
+        budget_stop,
+        ..
+    } = writer;
     if let Some(exceeded) = budget_stop {
         let path = options.out.with_extension("budget.json");
         fs::write(

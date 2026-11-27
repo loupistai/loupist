@@ -41,7 +41,7 @@ import type {
   ModelRunSelection,
   ResearchHandoffChoices,
 } from "../types";
-import { usableCatalogModel, visibleCatalogModels } from "../lib/modelSelection";
+import { hasAiAccount, usableCatalogModel, visibleCatalogModels } from "../lib/modelSelection";
 import { quoteChip, type ComposerChip } from "../chat/composerChips";
 import { retainedEvidenceFor } from "../chat/links";
 import { OpenProvider, useOpenLayer, type OpenLayer } from "./navigation/Open";
@@ -154,6 +154,9 @@ type Props = {
   /** Opens the Following page. */
   onOpenFollowing?: () => void;
   initialPrompt?: string;
+  /** A request to send in `threadId` once that thread is open and idle (the Learn entry points); never the composer's text. */
+  pendingSend?: { id: number; threadId: string; text: string };
+  onPendingSendDone?: (id: number) => void;
   draft?: ChatDraft;
   sessionDrafts?: ChatSessionDrafts;
   onConsumeKnowledgePins?: (pins: KnowledgePin[]) => void;
@@ -220,6 +223,8 @@ export function ChatView({
   onOpenChatPreferences,
   onOpenFollowing,
   initialPrompt,
+  pendingSend,
+  onPendingSendDone,
   draft,
   sessionDrafts,
   onConsumeKnowledgePins,
@@ -244,31 +249,10 @@ export function ChatView({
   const visibleDraft = useRef(draft);
   visibleDraft.current = draft;
   const [prompt, setLocalPrompt] = useState(() => initialPrompt ?? "");
-  const taughtFeedback = useRef("");
   const setPrompt = useCallback((nextPrompt: string) => {
-    if (!nextPrompt.trim()) taughtFeedback.current = "";
     setLocalPrompt(nextPrompt);
     onDraftChange?.(nextPrompt);
   }, [onDraftChange]);
-  const promptRef = useRef(prompt);
-  promptRef.current = prompt;
-  const teachFeedback = useCallback((text: string) => {
-    const current = promptRef.current;
-    const previous = taughtFeedback.current;
-    if (current.includes(text)) {
-      taughtFeedback.current = text;
-      return;
-    }
-    if (previous && current.includes(previous)) {
-      taughtFeedback.current = text;
-      setPrompt(current.replace(previous, text));
-      return;
-    }
-    // Preserve edits to this teaching draft, while allowing a different correction.
-    if (previous === text && current.trim()) return;
-    taughtFeedback.current = text;
-    setPrompt(current.trim() ? `${current.trimEnd()}\n\n${text}` : text);
-  }, [setPrompt]);
   const memoryChoices = useRef<{ loupistId?: string; threadId?: string; privateChat?: boolean }>({});
   const [privateChat, setPrivateChat] = useState(false);
   const { userSkills, customConnections } = useExtensionAvailability();
@@ -304,7 +288,7 @@ export function ChatView({
   // The composer's model menu is memoized: keep its inputs stable across streaming ticks.
   const composerModels = useMemo(() => visibleCatalogModels(modelCatalog), [modelCatalog]);
   const composerProviders = useMemo(() => modelCatalog?.providers ?? [], [modelCatalog]);
-  const accountConnected = Boolean(modelCatalog?.providers.some((provider) => provider.credential_source !== "missing") || modelCatalog?.models.some((model) => model.credential_source !== "missing"));
+  const accountConnected = hasAiAccount(modelCatalog);
   const runOptionsKey = JSON.stringify(selectedRunOptions);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- run options compare by value
   const composerSelection = useMemo(() => modelSelection, [selectedModelProfileId, selectedThinkingLevel, runOptionsKey]);
@@ -320,7 +304,10 @@ export function ChatView({
     if (isEmptyChatThreadId(activeThreadId)) {
       return emptyChatThread(loupist.id);
     }
-    return threads.find((thread) => thread.id === activeThreadId) ?? threads[0];
+    // A chosen session that is not in the list yet must not be drawn as another
+    // session, including one whose turn is still running.
+    if (!activeThreadId) return threads[0];
+    return threads.find((thread) => thread.id === activeThreadId);
   }, [activeThreadId, loupist.id, threads]);
   const readAttachment = useCallback(
     async (messageId: string, attachmentId: string) => {
@@ -347,7 +334,6 @@ export function ChatView({
     commitSteers,
     abort,
     retryLast,
-    saveFeedback,
     replaceThread,
   } = useLoupistChat({
     bridge,
@@ -567,12 +553,7 @@ export function ChatView({
 
   useEffect(() => {
     setLocalPrompt(initialPrompt ?? "");
-    if (!initialPrompt?.trim()) taughtFeedback.current = "";
   }, [activeThreadId, initialPrompt]);
-
-  useEffect(() => {
-    taughtFeedback.current = "";
-  }, [loupist.id, activeThreadId]);
 
   useEffect(() => {
     if (memoryChoices.current.loupistId !== loupist.id || memoryChoices.current.threadId !== activeThread?.id) memoryChoices.current = { loupistId: loupist.id, threadId: activeThread?.id };
@@ -740,11 +721,17 @@ export function ChatView({
     return true;
   };
 
-  const send = async (submittedPrompt?: string, files: FileUIPart[] = [], options?: { draftText?: string; preserveDraft?: boolean; asOf?: string | null }) => {
-    const text = withArtifactRange(submittedPrompt ?? prompt);
+  /**
+   * `bare`: a request another surface wrote (a Learn entry point). It carries none of the composer's
+   * pins, chart, as-of date or edit, never joins a running reply, and leaves the composer as it is.
+   */
+  const send = async (submittedPrompt?: string, files: FileUIPart[] = [], options?: { draftText?: string; preserveDraft?: boolean; asOf?: string | null; bare?: boolean }) => {
+    const bare = Boolean(options?.bare);
+    const text = bare ? (submittedPrompt ?? "").trim() : withArtifactRange(submittedPrompt ?? prompt);
     if ((!text && files.length === 0) || !workspaceAvailable) return false;
     // Guidance joins the reply in progress, which keeps its own model; anything else needs one.
     if (!isRunning && !selectedModelAvailable) return false;
+    if (isRunning && bare) return false;
     if (isRunning) {
       if (saving || selectedArtifact || knowledgePins.length > 0 || files.length > 0) return enqueueFollowUp(text, files, options?.draftText);
       if (!text || !activeThread?.id || isEmptyChatThreadId(activeThread.id)) return false;
@@ -757,7 +744,7 @@ export function ChatView({
       }
       return Boolean(receipt);
     }
-    if (editing && activeThread?.id === editing.threadId) {
+    if (!bare && editing && activeThread?.id === editing.threadId) {
       try {
         replaceThread(await bridge.chatBranch({ loupist_id: loupist.id, thread_id: editing.threadId, message_id: editing.messageId, position: editing.position, content: editing.content }));
       } catch (cause) {
@@ -769,7 +756,8 @@ export function ChatView({
     }
     // Freeze settings and evidence before the asynchronous Chat creation.
     // Retry repeats the failed request's own as-of date (null: none).
-    const item = captureSubmission(text, files, options?.asOf === undefined ? draft?.asOf : options.asOf);
+    const item = captureSubmission(text, files, bare ? null : options?.asOf === undefined ? draft?.asOf : options.asOf);
+    if (bare) { item.pins = []; delete item.selectedArtifact; }
     const memoryChoice = { ...memoryChoices.current };
     let composerModel: ComposerModelForSend | undefined;
     if (onResolveModelSelection) {
@@ -810,7 +798,7 @@ export function ChatView({
     if (!targetThread) return false;
     if (onStoreComposerModel && !await storeComposerModel(targetThread.id, composerModel)) return false;
     updateQueued(targetThread.id, (items) => [...items, item]);
-    if (!options?.preserveDraft) consumeComposer(options?.draftText ?? submittedPrompt ?? prompt, targetThread.id);
+    if (!options?.preserveDraft && !bare) consumeComposer(options?.draftText ?? submittedPrompt ?? prompt, targetThread.id);
     if (draftSession.getSnapshot().holds[targetThread.id] === MEMORY_BUSY) return true;
     if (!online) {
       // Offline (X11): the message waits in the queue and is sent when the connection returns.
@@ -822,6 +810,16 @@ export function ChatView({
     else void dispatchSubmission(targetThread.id, item);
     return true;
   };
+
+  // A request another surface asked to send here (plan 4.4): sent once, when its thread is open,
+  // idle and has a model; until then it waits.
+  const sentRequest = useRef<number | null>(null);
+  useEffect(() => {
+    if (!pendingSend || sentRequest.current === pendingSend.id) return;
+    if (activeThread?.id !== pendingSend.threadId || isRunning || !selectedModelAvailable || !workspaceAvailable) return;
+    sentRequest.current = pendingSend.id;
+    void send(pendingSend.text, [], { bare: true }).finally(() => onPendingSendDone?.(pendingSend.id));
+  });
 
   /** Try again repeats a link action or resends the user's request with current settings. */
   const retryFailed = () => {
@@ -1024,8 +1022,6 @@ export function ChatView({
     home={activeThread?.home}
     // A Look back draft already holds its question; generic starters would compete with it.
     offerQuestions={!(draft?.asOf && knowledgePins.some((pin) => pin.kind === "journal"))}
-    onSaveFeedback={saveFeedback}
-    onTeachFeedback={teachFeedback}
     run={{ running: isRunning, stopping: localIsStopping }}
     onAskArtifact={askArtifact}
     onReadAttachment={readAttachment}

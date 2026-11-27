@@ -185,7 +185,8 @@ fn company(company: usize) -> PageTarget {
         }],
     }
 }
-/// What `commit_turn` does: file the turn's put, then enqueue, in one transaction.
+/// Seeds a page the way an older profile already held it, then enqueues.
+/// A new `lens_file` create still goes through subject admission.
 fn put_in(
     store: &KnowledgeStore,
     chat: &str,
@@ -197,7 +198,7 @@ fn put_in(
 ) -> Option<String> {
     store
         .transact(|w| {
-            w.file(
+            w.file_as_held(
                 LOUPIST,
                 &turn_origin(chat, message),
                 vec![PageDelta {
@@ -269,13 +270,22 @@ fn two_chats(store: &KnowledgeStore, now: i64) -> Option<String> {
 }
 fn begin(store: &KnowledgeStore, now: i64) -> Attempt {
     store
-        .transact(|w| claim(w.tx, LOUPIST, "Industrial Loupist", "Capacity ramps", now))
+        .transact(|w| {
+            claim(
+                w.tx,
+                LOUPIST,
+                "Industrial Loupist",
+                "Capacity ramps",
+                now,
+                None,
+            )
+        })
         .unwrap()
         .expect("claim review")
 }
 fn try_claim(store: &KnowledgeStore, now: i64) -> Option<Attempt> {
     store
-        .transact(|w| claim(w.tx, LOUPIST, "Name", "Focus", now))
+        .transact(|w| claim(w.tx, LOUPIST, "Name", "Focus", now, None))
         .unwrap()
 }
 fn reviews(store: &KnowledgeStore) -> Vec<Review> {
@@ -338,6 +348,100 @@ fn defer(store: &KnowledgeStore, a: &Attempt, now: i64) {
         json!({"action":"defer","rationale":"No recurring pattern.","evidenceIds":[]}),
         now,
     );
+}
+
+fn reserved_review_calls(store: &KnowledgeStore) -> i64 {
+    store
+        .read(|read| {
+            Ok(read.tx.query_row(
+                "SELECT coalesce(sum(json_extract(payload_json, '$.extraction.maxLlmCalls')), 0)
+                 FROM knowledge_graph_outbox
+                 WHERE status = 'running'
+                   AND json_extract(payload_json, '$.episodeKind') = 'allowance_reservation'",
+                [],
+                |row| row.get(0),
+            )?)
+        })
+        .unwrap()
+}
+
+#[test]
+fn a_method_review_waits_when_the_background_allowance_is_spent_and_reserves_its_call() {
+    let (_dir, store) = setup();
+    assert!(two_chats(&store, AT + 2).is_some());
+    let admission =
+        crate::scheduled_tasks::allowance::Admission::prepare(&store.connection, Some(LOUPIST))
+            .unwrap();
+    let held = store
+        .transact(|write| {
+            let state = admission
+                .state(
+                    Some(write.tx),
+                    crate::scheduled_tasks::allowance::Limits {
+                        background: 0,
+                        world_chat: 32,
+                    },
+                    AT + 3,
+                )
+                .map_err(|_| KnowledgeError::Invalid("could not read the daily allowance"))?;
+            claim(write.tx, LOUPIST, "Name", "Focus", AT + 3, Some(&state))
+        })
+        .unwrap();
+    assert!(held.is_none());
+    assert_eq!(review_states(&store), vec!["queued".to_string()]);
+    assert_eq!(reserved_review_calls(&store), 0);
+    drop(admission);
+
+    let admission =
+        crate::scheduled_tasks::allowance::Admission::prepare(&store.connection, Some(LOUPIST))
+            .unwrap();
+    let started = store
+        .transact(|write| {
+            let state = admission
+                .state(
+                    Some(write.tx),
+                    crate::scheduled_tasks::allowance::Limits {
+                        background: 2,
+                        world_chat: 32,
+                    },
+                    AT + 4,
+                )
+                .map_err(|_| KnowledgeError::Invalid("could not read the daily allowance"))?;
+            claim(write.tx, LOUPIST, "Name", "Focus", AT + 4, Some(&state))
+        })
+        .unwrap()
+        .expect("one remaining call admits the review");
+    assert_eq!(reserved_review_calls(&store), 1);
+    drop(admission);
+
+    let admission =
+        crate::scheduled_tasks::allowance::Admission::prepare(&store.connection, Some(LOUPIST))
+            .unwrap();
+    store
+        .read(|read| {
+            let state = admission
+                .state(
+                    Some(read.tx),
+                    crate::scheduled_tasks::allowance::Limits {
+                        background: 2,
+                        world_chat: 32,
+                    },
+                    AT + 5,
+                )
+                .map_err(|_| KnowledgeError::Invalid("could not read the daily allowance"))?;
+            assert!(crate::scheduled_tasks::allowance::admit_world_attempt(
+                &state,
+                crate::scheduled_tasks::allowance::WorldOrigin::Background,
+                1,
+                None,
+            )
+            .is_err());
+            Ok(())
+        })
+        .unwrap();
+    drop(admission);
+    defer(&store, &started, AT + 6);
+    assert_eq!(reserved_review_calls(&store), 0);
 }
 
 #[test]
@@ -1033,6 +1137,30 @@ fn contested_research_is_not_evidence() {
 }
 
 #[test]
+fn a_superseded_section_still_exposes_its_sources_to_learning() {
+    let section = |key, kind, record| {
+        serde_json::json!({
+            "key": key, "heading": "Evidence", "markdown": "A historical observation.",
+            "state": {"kind": kind, "sinceMs": 20, "claimIds": ["claim"]},
+            "origin": "loupist", "updatedAtMs": 10,
+            "basis": {"refs": [{"kind": "span", "recordId": record,
+                "revisionDigest": "digest", "spanId": "span"}]},
+        })
+    };
+    let body = LensBody::from_payload(
+        LensKind::Subject,
+        serde_json::json!({
+            "sections": [
+                section("historical", "superseded", "a"),
+                section("contested", "contested", "b"),
+            ],
+        }),
+    )
+    .unwrap();
+    assert_eq!(cited_sources(Some(&body)), BTreeSet::from(["a".into()]));
+}
+
+#[test]
 fn evidence_withdrawn_after_claim_never_publishes() {
     for change in ["undo", "forget", "source_removed"] {
         let (_dir, store) = setup();
@@ -1518,6 +1646,8 @@ fn claim_with_status(
             span_id: span_id.clone(),
             role: BindingRole::ExtractedFrom,
             attribution: "report".into(),
+            figure_check: None,
+            passage: None,
         }],
         status,
         recorded_at_ms: Some(AT),
@@ -3495,4 +3625,552 @@ fn a_refine_sees_the_whole_method_and_never_replaces_text_it_was_not_shown() {
     complete(&store, &c, refined, AT + 2 * SIX_HOURS + 11);
     assert_eq!(reviews(&store)[0].reason.as_deref(), Some("invalid_output"));
     assert_eq!(limits(), before);
+}
+
+/// Files one turn of `refs.len()` sections on `target`, each citing one of
+/// `refs`, then enqueues. Returns the page and the queued review.
+fn file_readings(
+    store: &KnowledgeStore,
+    chat: &str,
+    message: &str,
+    target: PageTarget,
+    refs: &[BasisRef],
+    now: i64,
+) -> (String, Option<String>) {
+    store
+        .transact(|w| {
+            let ops = refs
+                .iter()
+                .enumerate()
+                .map(|(i, r)| {
+                    Ok(LensOp::Put {
+                        key: SectionKey::new(&format!("reading-{message}-{i}"))?,
+                        heading: format!("Reading {i}"),
+                        markdown:
+                            "The series turned while the policy rate held; check the base effect."
+                                .into(),
+                        basis: Basis {
+                            refs: vec![r.clone()],
+                            uncertainty: None,
+                        },
+                        expected: None,
+                    })
+                })
+                .collect::<KnowledgeResult<Vec<_>>>()?;
+            let filed = w.file_as_held(
+                LOUPIST,
+                &turn_origin(chat, message),
+                vec![PageDelta { target, ops }],
+                now,
+            )?;
+            Ok((filed[0].record_id.clone(), enqueue(w.tx, LOUPIST, now)?))
+        })
+        .unwrap()
+}
+
+/// A page with no subject anchor, as research on a theme or a whole market is filed.
+fn untitled_subject(title: &str) -> PageTarget {
+    PageTarget::Create {
+        kind: PageKind::Idea,
+        title: title.into(),
+        anchors: vec![],
+    }
+}
+
+#[test]
+fn macro_series_recur_like_companies_by_their_node_or_grounded_title() {
+    // Two fictional series from two markets, filed as World nodes or, with
+    // no node, by title alone.
+    let series = [
+        ("series-valdoria-cpi", "Índice de precios de Valdoria"),
+        ("series-nordhavn-rate", "Nordhavn Leitzins"),
+    ];
+    for form in ["node", "title"] {
+        for (variant, recurs) in [
+            ("two_chats_two_series", true),
+            ("two_chats_one_series", false),
+            ("one_chat_two_series", false),
+        ] {
+            let label = format!("{form}/{variant}");
+            let (_dir, store) = setup();
+            let mut nodes = manufacturers_and(&[]);
+            nodes.extend(
+                series
+                    .iter()
+                    .map(|(id, name)| company_node(id, name, "metric")),
+            );
+            reseal_graph(&store, nodes, vec![], AT + 1);
+            let refs: Vec<_> = (0..4)
+                .map(|i| source(&store, &format!("Bulletin {i}")))
+                .collect();
+            let page = |n: usize| match form {
+                "node" => about_node(series[n].1, series[n].0),
+                _ => untitled_subject(series[n].1),
+            };
+            let second_chat = if variant == "one_chat_two_series" {
+                "chat-1"
+            } else {
+                "chat-2"
+            };
+            let (first, queued) =
+                file_readings(&store, "chat-1", "m1", page(0), &refs[..2], AT + 2);
+            assert!(queued.is_none(), "{label}");
+            let second = match (variant, form) {
+                ("two_chats_one_series", "node") => {
+                    about_node("Valdoria prices, revisited", series[0].0)
+                }
+                ("two_chats_one_series", _) => PageTarget::Existing { record_id: first },
+                _ => page(1),
+            };
+            let (_, queued) = file_readings(&store, second_chat, "m2", second, &refs[2..], AT + 3);
+            assert_eq!(queued.is_some(), recurs, "{label}");
+        }
+    }
+    // A page with no node and one grounded section, or two citing one
+    // Source, is no case: it could be about anything.
+    for refs_of in [vec![0], vec![0, 0]] {
+        let (_dir, store) = setup();
+        let refs: Vec<_> = (0..3)
+            .map(|i| source(&store, &format!("Bulletin {i}")))
+            .collect();
+        let thin: Vec<_> = refs_of.iter().map(|&i| refs[i].clone()).collect();
+        file_readings(
+            &store,
+            "chat-1",
+            "m1",
+            untitled_subject(series[0].1),
+            &thin,
+            AT + 2,
+        );
+        let (_, queued) = file_readings(
+            &store,
+            "chat-2",
+            "m2",
+            untitled_subject(series[1].1),
+            &refs[1..],
+            AT + 3,
+        );
+        assert!(queued.is_none(), "{refs_of:?}");
+    }
+}
+
+#[test]
+fn thirty_methods_are_all_shown_and_evidence_left_out_stays_held() {
+    let (_dir, store) = setup();
+    store
+        .transact(|w| {
+            // Hold admission until every turn is filed.
+            save_settings(w.tx, LOUPIST, false)?;
+            for i in 0..30i64 {
+                let text = |key: &str| format!("{key} for method {i}: ").repeat(6);
+                let mut ops = vec![LensOp::Summary {
+                    text: format!("Method {i} summary: compare the reading with its own history. ")
+                        .repeat(4),
+                }];
+                for (key, heading) in METHOD_SECTIONS {
+                    ops.push(LensOp::Put {
+                        key: SectionKey::new(key)?,
+                        heading: heading.into(),
+                        markdown: text(key),
+                        basis: Basis {
+                            refs: vec![],
+                            uncertainty: None,
+                        },
+                        expected: None,
+                    });
+                }
+                w.file_as_held(
+                    LOUPIST,
+                    &turn_origin("chat-methods", &format!("mm{i:02}")),
+                    vec![PageDelta {
+                        target: PageTarget::Create {
+                            kind: PageKind::Method,
+                            title: format!("Method {i:02}"),
+                            anchors: vec![],
+                        },
+                        ops,
+                    }],
+                    AT + i,
+                )?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    let long = "Utilization, ramp cost and margin moved together. ".repeat(20);
+    let sources: Vec<_> = (0..4)
+        .map(|i| source(&store, &format!("Filing {i}")))
+        .collect();
+    for i in 0..12 {
+        turn_with(
+            &store,
+            &format!("chat-{}", i % 3),
+            &format!("m{i:02}"),
+            i % 4,
+            &long,
+            &[sources[i % 3].clone()],
+            AT + 100 + i as i64,
+        );
+    }
+    store
+        .transact(|w| save_settings(w.tx, LOUPIST, true))
+        .unwrap();
+    store
+        .transact(|w| enqueue(w.tx, LOUPIST, AT + 200))
+        .unwrap()
+        .expect("queued");
+    let all: Vec<i64> = store
+        .read(|w| {
+            let end = log_head(w.tx, LOUPIST)?;
+            let found = keyed_evidence(w.tx, LOUPIST, &Consumed::default(), end)?;
+            Ok(found.observations.iter().map(|o| o.row).collect())
+        })
+        .unwrap();
+    let a = begin(&store, AT + 201);
+    assert!(a.input.text().unwrap().chars().count() <= MAX_INPUT);
+    // Every method is shown, newest first: the newest with their sections,
+    // the rest by title and summary.
+    let titles: Vec<_> = a.input.methods.iter().map(|m| m.title.clone()).collect();
+    let expected: Vec<_> = (0..30).rev().map(|i| format!("Method {i:02}")).collect();
+    assert_eq!(titles, expected);
+    let full = a
+        .input
+        .methods
+        .iter()
+        .take_while(|m| m.current.is_some())
+        .count();
+    assert!(
+        (1..30).contains(&full),
+        "{full} methods kept their sections"
+    );
+    for m in &a.input.methods[full..] {
+        assert!(
+            m.current.is_none() && m.applicability.is_none(),
+            "{}",
+            m.title
+        );
+        let summary = m.summary.as_deref().unwrap();
+        let n: u32 = m.title["Method ".len()..].parse().unwrap();
+        assert!(
+            summary.starts_with(&format!("Method {n} summary")),
+            "{summary}"
+        );
+        assert_eq!(summary.chars().count(), LISTED_SUMMARY);
+    }
+    // Evidence the input left out is never dropped silently: a row is shown,
+    // held, or above the watermark for the next review.
+    let shown: BTreeSet<_> = a.input.observations.iter().map(|o| o.row).collect();
+    assert!(shown.len() < all.len(), "some evidence must be left out");
+    let (through, _, held) = latest_consumed(&store);
+    for row in all {
+        assert!(
+            shown.contains(&row) || held.contains(&row) || row > through,
+            "row {row} dropped without held saying so"
+        );
+    }
+}
+
+/// The learning state at `now`, with a daily background allowance of
+/// `background` calls when given.
+fn learning_state(store: &KnowledgeStore, now: i64, background: Option<u32>) -> LearningState {
+    let admission =
+        crate::scheduled_tasks::allowance::Admission::prepare(&store.connection, Some(LOUPIST))
+            .unwrap();
+    store
+        .read(|read| {
+            let allowance = background
+                .map(|background| {
+                    admission.state(
+                        Some(read.tx),
+                        crate::scheduled_tasks::allowance::Limits {
+                            background,
+                            world_chat: 32,
+                        },
+                        now,
+                    )
+                })
+                .transpose()
+                .map_err(|_| KnowledgeError::Invalid("could not read the daily allowance"))?;
+            state(read.tx, LOUPIST, now, allowance.as_ref())
+        })
+        .unwrap()
+}
+
+fn waits(store: &KnowledgeStore, now: i64) -> Option<WaitReason> {
+    let read = learning_state(store, now, None);
+    assert_eq!(
+        read.reason.is_some(),
+        read.state == LearningPhase::Waiting,
+        "{read:?}"
+    );
+    read.reason
+}
+
+#[test]
+fn learning_waits_off_while_any_switch_is_off() {
+    let (_dir, store) = setup();
+    two_chats(&store, AT + 2).expect("queued");
+    store
+        .transact(|w| save_settings(w.tx, LOUPIST, false))
+        .unwrap();
+    let read = learning_state(&store, AT + 3, None);
+    assert_eq!(read.reason, Some(WaitReason::Off));
+    assert_eq!(read.cases, 2, "the cases are still counted");
+}
+
+#[test]
+fn learning_waits_for_a_second_case() {
+    let (_dir, store) = setup();
+    assert_eq!(waits(&store, AT), Some(WaitReason::NoSecondCase));
+    let (a, b) = (source(&store, "Filing A"), source(&store, "Filing B"));
+    assert!(turn(&store, "chat-1", "m1", 0, &[a], AT + 2).is_none());
+    // A second page about the same company is still one case.
+    assert!(turn(&store, "chat-2", "m2", 0, &[b], AT + 3).is_none());
+    let read = learning_state(&store, AT + 4, None);
+    assert_eq!(read.reason, Some(WaitReason::NoSecondCase));
+    assert_eq!(read.cases, 1);
+}
+
+#[test]
+fn startup_recovers_a_mixed_knowledge_11_outbox_with_pending_subjects() {
+    let (dir, store) = setup();
+    let span = source(&store, "Quarterly filing");
+    let other = source(&store, "Peer filing");
+    assert!(turn(
+        &store,
+        "chat-2",
+        "m2",
+        0,
+        std::slice::from_ref(&other),
+        AT + 1
+    )
+    .is_none());
+    assert!(put_in(
+        &store,
+        "chat-1",
+        "m1",
+        named("Capacity", "Halvorsen Cellworks"),
+        "Capacity utilization fell during the ramp.",
+        std::slice::from_ref(&span),
+        AT + 1,
+    )
+    .is_none());
+    assert_eq!(pending_subjects(&store), 1);
+    let job = world_job(&store, &span, AT + 2);
+    let other_job = world_job(&store, &other, AT + 2);
+    let running = store
+        .graph_mark_running(&config(), &other_job.job_id, AT + 3)
+        .unwrap();
+    assert_eq!(running.status, "running");
+    store
+        .transact(|w| {
+            w.tx.execute_batch(
+                "DROP INDEX knowledge_graph_jobs_by_source;
+             DROP INDEX knowledge_graph_jobs_by_source_record;
+             DROP TABLE knowledge_world_episodes;
+             ALTER TABLE knowledge_capture_lineage DROP COLUMN allowance_origin;
+             UPDATE knowledge_schema SET version = 11;",
+            )?;
+            // A Source settled while the host was down. Rechecking the pending
+            // subject should now queue a review using both independent filings.
+            w.tx.execute(
+            "UPDATE knowledge_graph_outbox SET status = 'failed_before_mutation' WHERE job_id = ?1",
+            [&job.job_id],
+        )?;
+            // Selecting a recovered follower scans completed predecessors too.
+            w.tx.execute(
+                "UPDATE knowledge_graph_outbox SET payload_json =
+             json_set(payload_json, '$.previousEpisodeKey', 'previous') WHERE job_id = ?1",
+                [&running.job_id],
+            )?;
+            for (id, status, kind, seal) in [
+                ("valid", "completed", "source_span", 1),
+                ("recovery", "completed", "world_recovery", 2),
+                ("malformed", "completed", "", 0),
+                ("duplicate-a", "completed", "source_span", 3),
+                ("duplicate-b", "completed", "source_span", 3),
+                ("interrupted", "reconciled_without_retry", "source_span", 4),
+            ] {
+                let payload = if kind.is_empty() {
+                    "{malformed".into()
+                } else {
+                    json!({
+                        "episodeKind": kind,
+                        "sealedRevisionId": format!("rev_{seal:032x}"),
+                        "sourceBinding": job.document.source_binding,
+                    })
+                    .to_string()
+                };
+                w.tx.execute(
+                    "INSERT INTO knowledge_graph_outbox VALUES (?1,?2,?3,?4,?5,?6,'digest',30)",
+                    params![
+                        id,
+                        LOUPIST,
+                        job.world_record_id,
+                        job.world_revision_id,
+                        status,
+                        payload
+                    ],
+                )?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    drop(store);
+
+    let store = KnowledgeStore::open(dir.path().join("knowledge.sqlite")).unwrap();
+    let supervisor = GraphSupervisor::with_inference(
+        store.connection.clone(),
+        dir.path().to_owned(),
+        None,
+        Default::default(),
+        None,
+    );
+    supervisor.start().unwrap();
+    assert_eq!(
+        store.graph_job(LOUPIST, &running.job_id).unwrap().status,
+        "queued"
+    );
+    assert_eq!(review_states(&store), ["queued"]);
+    store
+        .read(|w| {
+            let recovered: String = w.tx.query_row(
+                "SELECT group_concat(job_id) FROM knowledge_world_episodes WHERE backfilled = 1",
+                [],
+                |r| r.get(0),
+            )?;
+            assert_eq!(recovered, "valid");
+            let runnable = super::super::graph_jobs::queued_runnable(w.tx)?;
+            assert!(runnable
+                .iter()
+                .any(|candidate| candidate.job_id == running.job_id));
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn learning_waits_for_the_world_to_read_the_sources_a_pending_page_cites() {
+    let (_dir, store) = setup();
+    let (a, b, c) = (
+        source(&store, "Filing A"),
+        source(&store, "Filing B"),
+        source(&store, "Filing C"),
+    );
+    assert!(turn(&store, "chat-1", "m1", 0, &[a], AT + 2).is_none());
+    let pending = named("Halvorsen ramp", "Halvorsen Cellworks");
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    assert!(put_in(
+        &store,
+        "chat-2",
+        "m2",
+        pending,
+        text,
+        &[b.clone(), c.clone()],
+        AT + 3
+    )
+    .is_none());
+    let read = learning_state(&store, AT + 4, None);
+    assert_eq!(read.reason, Some(WaitReason::SourcesUnread { n: 2 }));
+    assert_eq!(read.cases, 1, "a held page is no case yet");
+    // Once the World is through with both, the page is the second case.
+    world_read(&store, &[&b, &c], AT + 5);
+    assert_eq!(
+        learning_state(&store, AT + 6, None).state,
+        LearningPhase::Queued
+    );
+}
+
+#[test]
+fn learning_waits_for_the_world_to_confirm_a_subject_named_only_by_notation() {
+    let (_dir, store) = setup();
+    let (a, b) = (source(&store, "Filing A"), source(&store, "Filing B"));
+    assert!(turn(&store, "chat-1", "m1", 0, &[a], AT + 2).is_none());
+    let text = "Margins fell during a capacity ramp at 60 percent utilization.";
+    let notation = named("Holding ramp", "(주)");
+    assert!(put_in(
+        &store,
+        "chat-2",
+        "m2",
+        notation,
+        text,
+        std::slice::from_ref(&b),
+        AT + 3
+    )
+    .is_none());
+    world_read(&store, &[&b], AT + 4);
+    assert_eq!(
+        waits(&store, AT + 5),
+        Some(WaitReason::SubjectsPending { n: 1 })
+    );
+}
+
+#[test]
+fn learning_waits_out_the_rate_limit_then_queues_and_runs() {
+    let (_dir, store) = setup();
+    two_chats(&store, AT + 2).expect("queued");
+    assert_eq!(
+        learning_state(&store, AT + 3, None).state,
+        LearningPhase::Queued
+    );
+    let a = begin(&store, AT + 4);
+    assert_eq!(
+        learning_state(&store, AT + 5, None).state,
+        LearningPhase::Running
+    );
+    defer(&store, &a, AT + 6);
+    assert!(
+        two_chats(&store, AT + 10).is_none(),
+        "pending behind the cooldown"
+    );
+    let until = AT + 4 + SIX_HOURS;
+    assert_eq!(
+        waits(&store, AT + 11),
+        Some(WaitReason::RateLimited { until_ms: until })
+    );
+    // The same check admits it at the boundary.
+    assert_eq!(
+        learning_state(&store, until, None).state,
+        LearningPhase::Queued
+    );
+    assert!(try_claim(&store, until).is_some());
+}
+
+#[test]
+fn learning_waits_for_the_allowance_or_a_call_budget() {
+    let (_dir, store) = setup();
+    two_chats(&store, AT + 2).expect("queued");
+    let spent = learning_state(&store, AT + 3, Some(0));
+    assert_eq!(spent.reason, Some(WaitReason::Allowance));
+    assert_eq!(
+        learning_state(&store, AT + 3, Some(2)).state,
+        LearningPhase::Queued
+    );
+    store
+        .transact(|w| {
+            w.tx.execute("UPDATE knowledge_learning_reviews SET call_budget=0", [])?;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(waits(&store, AT + 4), Some(WaitReason::Allowance));
+    assert!(
+        try_claim(&store, AT + 4).is_none(),
+        "the claim waits the same way"
+    );
+}
+
+#[test]
+fn learning_state_serializes_its_reason_by_kind() {
+    let read = LearningState {
+        state: LearningPhase::Waiting,
+        reason: Some(WaitReason::RateLimited { until_ms: AT }),
+        cases: 1,
+    };
+    assert_eq!(
+        serde_json::to_value(&read).unwrap(),
+        json!({"state":"waiting","reason":{"kind":"rate_limited","untilMs":AT},"cases":1})
+    );
+    assert_eq!(
+        serde_json::to_value(WaitReason::SourcesUnread { n: 2 }).unwrap(),
+        json!({"kind":"sources_unread","n":2})
+    );
 }

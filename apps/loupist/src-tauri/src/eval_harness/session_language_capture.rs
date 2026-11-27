@@ -1,6 +1,170 @@
 //! Compare matched inputs at Pi's provider callback, using the real host and
-//! extension with a scripted SDK provider. No changes to turn composition.
+//! extension with a scripted SDK provider.
 use super::*;
+
+#[tokio::test]
+async fn learning_script_exercises_context_omission_quiet_commit_and_budget_stop() {
+    use crate::scheduled_tasks::types::*;
+
+    let root = tempfile::tempdir_in("/tmp").unwrap();
+    let workspace = root.path().join("workspace");
+    fs::create_dir(&workspace).unwrap();
+    let mut state = AppState::for_eval(root.path().join("app"));
+    super::tests::scripted(&mut state, root.path());
+    let node = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|dir| dir.join("node"))
+        .find(|path| path.is_absolute() && path.is_file())
+        .expect("Node from the worktree");
+    let module =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/eval_harness/session_language_capture.mjs");
+    fs::write(
+        root.path().join("session-language-capture.json"),
+        json!([node, module]).to_string(),
+    )
+    .unwrap();
+    let mut catalog = state.model_catalog().unwrap();
+    catalog.models[0].provider = "custom-faux".into();
+    state.set_model_catalog(catalog).unwrap();
+    let loupist = crate::commands::loupist::create_folder_loupist(&state, &workspace)
+        .await
+        .unwrap();
+    let owner = &loupist.id;
+    let suite: Suite =
+        serde_json::from_str(include_str!("../../../evals/agent/suites/language-v1.json")).unwrap();
+    let fixture = suite
+        .scenarios
+        .iter()
+        .find(|scenario| scenario.id == "LG-003")
+        .unwrap();
+    seed(&state, owner, &fixture.seed).unwrap();
+    let previous = crate::commands::now_ms() - 400;
+    let task = state
+        .store
+        .scheduled_task_create_definition(
+            owner,
+            "learning-fixture",
+            TaskDraft {
+                title: "Fictional learning program".into(),
+                prompt: "Review the Alder Rail quarterly note.".into(),
+                schedule: Schedule::Interval { every_minutes: 60 },
+                target: TaskTarget::NewChat,
+                model_profile_id: "fixture".into(),
+                thinking_level: "medium".into(),
+                run_options: Default::default(),
+                use_memory: true,
+                update_memory: true,
+                status: TaskStatus::Active,
+            },
+            TaskKind::Learning,
+            TaskDefinition {
+                program: Some(LearningProgram {
+                    depth: LearningDepth::Standard,
+                    scope: LearningScope {
+                        connections: LearningConnections::Selected(vec![]),
+                        web: false,
+                    },
+                    keeps: LearningKeeps {
+                        sources: false,
+                        lens: true,
+                        asset_reads: false,
+                    },
+                    preset: None,
+                }),
+                watch: TaskWatch {
+                    report: Some(ReportPolicy::WhenNew),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            previous - 1,
+        )
+        .unwrap();
+    for (at, status) in [
+        (previous, RunStatus::Succeeded),
+        (previous + 10, RunStatus::Failed),
+    ] {
+        let (claim, ()) = state
+            .store
+            .scheduled_task_claim_with(owner, &task.id, at, true, |_| Ok(()))
+            .unwrap()
+            .unwrap();
+        state
+            .store
+            .scheduled_task_finish(owner, &claim.run.run_id, status, None, at + 1)
+            .unwrap();
+    }
+    let mut last_success = previous;
+    for (cancel, title) in [
+        (false, "Alder Rail valuation"),
+        (true, "Alder Rail discarded draft"),
+    ] {
+        fs::write(
+            root.path().join("learning-script.json"),
+            json!({
+                "previous": last_success, "requests": 24, "soft": 12, "hard": 16,
+                "cancel": cancel, "title": title,
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let started = state
+            .scheduled
+            .dispatch(&state, owner, &task.id, true)
+            .await
+            .unwrap()
+            .unwrap();
+        let finished = tokio::time::timeout(std::time::Duration::from_secs(60), async {
+            loop {
+                let run = state
+                    .store
+                    .scheduled_task_run_get(owner, &started.run_id)
+                    .unwrap()
+                    .unwrap();
+                if run.status != RunStatus::Running {
+                    break run;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let lens =
+            crate::knowledge::KnowledgeStore::for_loupist(state.store.clone(), owner).unwrap();
+        let kept = lens
+            .read(|store| store.lens_index(owner))
+            .unwrap()
+            .iter()
+            .any(|page| page.title == title);
+        let ledger_usage = state
+            .store
+            .scheduled_run_ledger_usage(owner, &started.run_id)
+            .unwrap();
+        assert_eq!(finished.usage, ledger_usage);
+        if cancel {
+            assert_eq!(finished.status, RunStatus::Interrupted, "{finished:?}");
+            assert_eq!(
+                finished.error.as_deref(),
+                Some(crate::scheduled_tasks::BUDGET_EXCEEDED)
+            );
+            assert_eq!(finished.budget.unwrap().outcome, BudgetOutcome::Cancelled);
+            assert_eq!(finished.usage.unwrap().requests, Some(24));
+            assert!(!kept);
+        } else {
+            assert_eq!(
+                finished.status,
+                RunStatus::Succeeded,
+                "{finished:?} {:?}",
+                fs::read_to_string(root.path().join("learning-script-error.txt")).ok(),
+            );
+            assert!(finished.quiet);
+            assert_eq!(finished.budget.unwrap().outcome, BudgetOutcome::Soft);
+            assert_eq!(finished.usage.unwrap().requests, Some(14));
+            assert!(kept);
+            last_success = started.started_at_ms;
+        }
+    }
+    state.shutdown().await.unwrap();
+}
 
 #[tokio::test]
 async fn session_language_capture_lg003_at_both_appearances() {

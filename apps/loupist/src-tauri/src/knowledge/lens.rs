@@ -4,22 +4,25 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use rusqlite::{params, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::authority::{require_edit, require_record, OwnedRecordState};
 use super::canonical::{canonical_string, from_json, to_value};
+use super::entity_codes::Codes;
 use super::error::{KnowledgeError, KnowledgeResult};
+use super::identity::entity_name_keys;
 use super::lens_page::{
-    apply, links, op_texts, private_reference, section_digest, text_forbidden, world_link_ids,
-    AnchorInput, ApplyContext, Basis, BasisChip, BasisRef, FiledOp, FiledPage, FilingOrigin,
-    IdeaState, IdeaStatus, LensBody, LensKind, LensOp, OpOutcome, Origin, PageDelta, PageKind,
-    PageSection, PageTarget, SectionKey, SectionState, TextField, TextRefusal,
+    apply_with_sections, links, op_texts, private_reference, section_digest, text_forbidden,
+    world_link_ids, AnchorInput, ApplyContext, Basis, BasisChip, BasisRef, FiledOp, FiledPage,
+    FilingOrigin, IdeaState, IdeaStatus, LensBody, LensKind, LensOp, OpOutcome, Origin, PageDelta,
+    PageKind, PageSection, PageTarget, SectionFiling, SectionKey, SectionRole, SectionState,
+    TextField, TextRefusal,
 };
 use super::model::{
-    mint_id, validate_knowledge_id, validate_loupist_id, validate_time, ClaimStatus, GraphNode,
-    RecordKind, WorldSnapshotBody,
+    mint_id, validate_knowledge_id, validate_loupist_id, validate_time, ClaimStatus, GraphClaim,
+    GraphNode, RecordKind, TimePoint, WorldSnapshotBody, SUPERSEDED_BY_CLAIM, SUPERSEDED_BY_SPAN,
 };
 use super::revision::{load_revision, publish_revision, StoredRevision};
 
@@ -124,14 +127,26 @@ fn load(tx: &Transaction<'_>, loupist_id: &str, record_id: &str) -> KnowledgeRes
 }
 
 /// Node ids, folded names and active claims of the Loupist's current World.
-/// A name anchor binds to a node only through an exact folded name or alias:
-/// a company key is a hint for learning, never an identity for storage.
+/// A name anchor binds through an exact folded spelling or stored alias, or
+/// through one node's identifying codes. A shared entity key does not bind it.
 #[derive(Default)]
 struct WorldIndex {
     ids: BTreeSet<String>,
     names: BTreeMap<String, String>,
     labels: BTreeMap<String, String>,
+    nodes: Vec<NodeIdentity>,
     active_claims: BTreeSet<String>,
+    claims: BTreeMap<String, GraphClaim>,
+}
+
+struct NodeIdentity {
+    id: String,
+    keys: BTreeSet<String>,
+    codes: Codes,
+}
+
+struct Spelling {
+    codes: Codes,
 }
 
 /// The Loupist's current World snapshot, if one was published.
@@ -158,11 +173,17 @@ fn world_index(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<WorldI
         return Ok(index);
     };
     index_nodes(&mut index, &body.nodes);
+    let now = TimePoint::from_unix_ms(crate::local_time::now().timestamp_millis());
     index.active_claims = body
         .claims
         .iter()
-        .filter(|claim| claim.status == ClaimStatus::Active)
+        .filter(|claim| claim.is_current(&now))
         .map(|claim| claim.id.clone())
+        .collect();
+    index.claims = body
+        .claims
+        .into_iter()
+        .map(|claim| (claim.id.clone(), claim))
         .collect();
     Ok(index)
 }
@@ -208,13 +229,61 @@ fn index_nodes(index: &mut WorldIndex, nodes: &[GraphNode]) {
     for node in nodes {
         index.ids.insert(node.id.clone());
         index.labels.insert(node.id.clone(), node.name.clone());
+        let mut keys = BTreeSet::new();
         for name in std::iter::once(&node.name).chain(&node.aliases) {
             index
                 .names
                 .entry(fold_lens_title(name))
                 .or_insert_with(|| node.id.clone());
+            keys.extend(entity_name_keys(name));
         }
+        let mut codes = Codes::of_node(
+            &node.name,
+            &node.kind,
+            node.properties
+                .iter()
+                .map(|(key, value)| (key.as_str(), value)),
+        );
+        codes.add_spellings(node.aliases.iter().map(String::as_str));
+        index.nodes.push(NodeIdentity {
+            id: node.id.clone(),
+            keys,
+            codes,
+        });
     }
+}
+
+fn spelling_of(name: &str) -> Spelling {
+    Spelling {
+        codes: Codes::of_name(name, "Organization"),
+    }
+}
+
+fn spelling_matches(spelling: &Spelling, node: &NodeIdentity) -> bool {
+    if spelling.codes.is_empty() || spelling.codes.market_split(&node.codes) {
+        return false;
+    }
+    spelling.codes.joins(&node.codes)
+}
+
+/// The one node `name` is: its folded spelling or a stored alias, or the only
+/// node whose identifying codes say so. A shared entity key does not bind a
+/// node. Two matches bind nothing.
+fn node_for_name(index: &WorldIndex, name: &str) -> Option<String> {
+    let fold = fold_lens_title(name);
+    if let Some(id) = index.names.get(&fold) {
+        return Some(id.clone());
+    }
+    let spelling = spelling_of(name);
+    let mut hits: Vec<&str> = index
+        .nodes
+        .iter()
+        .filter(|node| spelling_matches(&spelling, node))
+        .map(|node| node.id.as_str())
+        .collect();
+    hits.sort_unstable();
+    hits.dedup();
+    (hits.len() == 1).then(|| hits[0].to_string())
 }
 
 /// Keys the user retired on this page and did not re-add since.
@@ -261,6 +330,7 @@ fn resolve_target(
     loupist_id: &str,
     target: &PageTarget,
     world: &mut Option<WorldIndex>,
+    admit: bool,
 ) -> KnowledgeResult<Resolved> {
     match target {
         PageTarget::Existing { record_id } => {
@@ -276,16 +346,19 @@ fn resolve_target(
             kind,
             title,
             anchors,
-        } => Ok(
-            match create_resolves_to(tx, loupist_id, *kind, title, anchors, world)? {
+        } => {
+            if admit {
+                refuse_existing_subject(tx, loupist_id, *kind, title, anchors, world)?;
+            }
+            Ok(match create_resolves_to(tx, loupist_id, *kind, title)? {
                 Some(record_id) => Resolved::Found(Box::new(load(tx, loupist_id, &record_id)?)),
                 None => Resolved::Pending {
                     kind: *kind,
                     title: title.trim().to_owned(),
                     anchors: anchors.clone(),
                 },
-            },
-        ),
+            })
+        }
     }
 }
 
@@ -337,63 +410,179 @@ fn inactive_target(
     }))
 }
 
-/// The active page an idempotent create lands on: the perspective, a
-/// subject with the same primary anchor, or the page with the same kind and
-/// folded title.
+/// The active page an idempotent create lands on: the perspective, or the
+/// page with the same kind and folded title. A subject spelled differently
+/// is refused ([`refuse_existing_subject`]), not merged.
 fn create_resolves_to(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    kind: PageKind,
+    title: &str,
+) -> KnowledgeResult<Option<String>> {
+    if kind == PageKind::Perspective {
+        if let Some(found) = active_perspective(tx, loupist_id)? {
+            return Ok(Some(found));
+        }
+    }
+    active_by_title(tx, loupist_id, kind.lens_kind(), title)
+}
+
+struct StoredSubject {
+    record_id: String,
+    title: String,
+    texts: Vec<String>,
+    node_ids: BTreeSet<String>,
+}
+
+fn stored_subjects(tx: &Transaction<'_>, loupist_id: &str) -> KnowledgeResult<Vec<StoredSubject>> {
+    let mut statement = tx.prepare(
+        "SELECT m.record_id, m.title, a.node_id, a.name_fold
+         FROM knowledge_lens_metadata m
+         LEFT JOIN knowledge_lens_anchors a
+           ON a.record_id = m.record_id AND a.role = 'subject'
+         WHERE m.loupist_id = ?1 AND m.kind = 'subject' AND m.archived_at_ms IS NULL
+         ORDER BY m.record_id",
+    )?;
+    let rows = statement.query_map([loupist_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, Option<String>>(3)?,
+        ))
+    })?;
+    let mut pages: BTreeMap<String, StoredSubject> = BTreeMap::new();
+    for row in rows {
+        let (record_id, title, node_id, name_fold) = row?;
+        let page = pages
+            .entry(record_id.clone())
+            .or_insert_with(|| StoredSubject {
+                record_id,
+                title,
+                texts: Vec::new(),
+                node_ids: BTreeSet::new(),
+            });
+        if let Some(node_id) = node_id.filter(|id| !id.is_empty()) {
+            page.node_ids.insert(node_id);
+        }
+        if let Some(name) = name_fold.filter(|name| !name.is_empty()) {
+            page.texts.push(name);
+        }
+    }
+    let mut pages: Vec<StoredSubject> = pages.into_values().collect();
+    for page in &mut pages {
+        page.texts.insert(0, page.title.clone());
+    }
+    Ok(pages)
+}
+
+/// The subject page `title` and `anchors` already are, by entity keys, codes
+/// or a node's stored spellings. The same inputs resolve to the same page.
+fn matching_subject(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    title: &str,
+    anchors: &[AnchorInput],
+    world: &mut Option<WorldIndex>,
+) -> KnowledgeResult<Option<(String, String)>> {
+    let pages = stored_subjects(tx, loupist_id)?;
+    let index = ensure_world(tx, loupist_id, world)?;
+    let mut texts = vec![title.to_string()];
+    let mut nodes = BTreeSet::new();
+    for anchor in anchors {
+        match anchor {
+            AnchorInput::Node { node_id } => {
+                nodes.insert(node_id.clone());
+            }
+            AnchorInput::Name { name } => {
+                if let Some(id) = node_for_name(index, name) {
+                    nodes.insert(id);
+                }
+                texts.push(name.clone());
+            }
+        }
+    }
+    if let Some(id) = node_for_name(index, title) {
+        nodes.insert(id);
+    }
+    let create_keys: BTreeSet<String> = texts
+        .iter()
+        .flat_map(|text| entity_name_keys(text))
+        .collect();
+    let create_codes: Vec<Codes> = texts
+        .iter()
+        .map(|text| Codes::of_name(text, "Organization"))
+        .collect();
+    Ok(pages.into_iter().find_map(|page| {
+        page_matches(&page, index, &create_keys, &create_codes, &nodes)
+            .then_some((page.record_id, page.title))
+    }))
+}
+
+fn page_matches(
+    page: &StoredSubject,
+    index: &WorldIndex,
+    create_keys: &BTreeSet<String>,
+    create_codes: &[Codes],
+    create_nodes: &BTreeSet<String>,
+) -> bool {
+    let mut page_nodes = page.node_ids.clone();
+    for text in &page.texts {
+        if let Some(id) = node_for_name(index, text) {
+            page_nodes.insert(id);
+        }
+    }
+    if create_nodes.iter().any(|id| page_nodes.contains(id)) {
+        return true;
+    }
+    let mut page_keys = BTreeSet::new();
+    let mut split = false;
+    let mut joined = false;
+    for text in &page.texts {
+        page_keys.extend(entity_name_keys(text));
+        let codes = Codes::of_name(text, "Organization");
+        for create in create_codes {
+            split |= create.market_split(&codes);
+            joined |= !create.is_empty() && !codes.is_empty() && create.joins(&codes);
+        }
+    }
+    for id in &page_nodes {
+        let Some(node) = index.nodes.iter().find(|node| &node.id == id) else {
+            continue;
+        };
+        page_keys.extend(node.keys.iter().cloned());
+        for create in create_codes {
+            split |= create.market_split(&node.codes);
+            joined |= !create.is_empty() && create.joins(&node.codes);
+        }
+    }
+    if split {
+        return false;
+    }
+    joined || create_keys.iter().any(|key| page_keys.contains(key))
+}
+
+/// A subject create that is an existing subject under another spelling, or
+/// that names a node a subject page already anchors. The same folded title
+/// still lands on that page.
+fn refuse_existing_subject(
     tx: &Transaction<'_>,
     loupist_id: &str,
     kind: PageKind,
     title: &str,
     anchors: &[AnchorInput],
     world: &mut Option<WorldIndex>,
-) -> KnowledgeResult<Option<String>> {
-    let mut found = if kind == PageKind::Perspective {
-        active_perspective(tx, loupist_id)?
-    } else {
-        None
-    };
-    if found.is_none() && kind == PageKind::Subject {
-        found = subject_by_anchor(tx, loupist_id, anchors, world)?;
+) -> KnowledgeResult<()> {
+    if kind != PageKind::Subject {
+        return Ok(());
     }
-    if found.is_none() {
-        found = active_by_title(tx, loupist_id, kind.lens_kind(), title)?;
+    if active_by_title(tx, loupist_id, kind.lens_kind(), title)?.is_some() {
+        return Ok(());
     }
-    Ok(found)
-}
-
-fn subject_by_anchor(
-    tx: &Transaction<'_>,
-    loupist_id: &str,
-    anchors: &[AnchorInput],
-    world: &mut Option<WorldIndex>,
-) -> KnowledgeResult<Option<String>> {
-    let Some(primary) = anchors.first() else {
-        return Ok(None);
-    };
-    let (node_id, name_fold) = match primary {
-        AnchorInput::Node { node_id } => (Some(node_id.clone()), String::new()),
-        AnchorInput::Name { name } => {
-            let fold = fold_lens_title(name);
-            let node = ensure_world(tx, loupist_id, world)?
-                .names
-                .get(&fold)
-                .cloned();
-            (node, fold)
-        }
-    };
-    Ok(tx
-        .query_row(
-            "SELECT a.record_id FROM knowledge_lens_anchors a
-             JOIN knowledge_lens_metadata m ON m.record_id = a.record_id
-             WHERE a.loupist_id = ?1 AND a.role = 'subject' AND m.kind = 'subject'
-               AND m.archived_at_ms IS NULL
-               AND ((?2 <> '' AND a.node_id = ?2) OR (?3 <> '' AND a.name_fold = ?3))
-             ORDER BY m.updated_at_ms DESC LIMIT 1",
-            params![loupist_id, node_id.unwrap_or_default(), name_fold],
-            |row| row.get(0),
-        )
-        .optional()?)
+    if let Some((record_id, title)) = matching_subject(tx, loupist_id, title, anchors, world)? {
+        return Err(KnowledgeError::ExistingPage { record_id, title });
+    }
+    Ok(())
 }
 
 fn ensure_world<'a>(
@@ -439,10 +628,7 @@ fn create_page(
             }
             AnchorInput::Name { name } => {
                 let fold = fold_lens_title(name);
-                let node = ensure_world(tx, loupist_id, world)?
-                    .names
-                    .get(&fold)
-                    .cloned();
+                let node = node_for_name(ensure_world(tx, loupist_id, world)?, name);
                 (node, fold)
             }
         };
@@ -579,10 +765,13 @@ pub(super) fn screen(
             kind,
             title,
             anchors,
-        } => (
-            kind.lens_kind(),
-            create_resolves_to(tx, loupist_id, *kind, title, anchors, &mut world)?,
-        ),
+        } => {
+            refuse_existing_subject(tx, loupist_id, *kind, title, anchors, &mut world)?;
+            (
+                kind.lens_kind(),
+                create_resolves_to(tx, loupist_id, *kind, title)?,
+            )
+        }
     };
     Ok(Screen {
         existing,
@@ -613,12 +802,182 @@ fn fallen_claims(
     if cited.is_empty() {
         return Ok(BTreeSet::new());
     }
-    let active = &ensure_world(tx, loupist_id, world)?.active_claims;
+    let index = ensure_world(tx, loupist_id, world)?;
     Ok(cited
         .into_iter()
-        .filter(|id| !active.contains(*id))
+        .filter(|id| {
+            !index.active_claims.contains(*id)
+                && index
+                    .claims
+                    .get(*id)
+                    .is_none_or(|claim| claim.status != ClaimStatus::Active)
+        })
         .map(str::to_owned)
         .collect())
+}
+
+/// Publication of the exact Source span cited on a page.
+fn span_publication(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    record_id: &str,
+    span_id: &str,
+) -> KnowledgeResult<Option<TimePoint>> {
+    let publication: Option<String> = tx.query_row(
+        "SELECT c.publication_time_json FROM knowledge_source_spans s
+         JOIN knowledge_source_captures c ON c.record_id = s.record_id AND c.capture_id = s.capture_id
+         JOIN knowledge_records r ON r.record_id = s.record_id
+         WHERE r.owner_loupist_id = ?1 AND s.record_id = ?2 AND s.span_id = ?3",
+        params![loupist_id, record_id, span_id],
+        |row| row.get(0),
+    ).optional()?.flatten();
+    publication.as_deref().map(from_json).transpose()
+}
+
+/// The publication of the span that established an ending.
+fn witness_publication(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    span_id: &str,
+) -> KnowledgeResult<Option<TimePoint>> {
+    let publication: Option<String> = tx
+        .query_row(
+            "SELECT c.publication_time_json FROM knowledge_source_spans s
+             JOIN knowledge_source_captures c ON c.record_id = s.record_id AND c.capture_id = s.capture_id
+             JOIN knowledge_records r ON r.record_id = s.record_id
+             WHERE r.owner_loupist_id = ?1 AND s.span_id = ?2",
+            params![loupist_id, span_id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten();
+    publication.as_deref().map(from_json).transpose()
+}
+
+fn stale_basis(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    basis: &Basis,
+    world: &WorldIndex,
+    at: &TimePoint,
+    removed: &BTreeSet<String>,
+) -> KnowledgeResult<Vec<String>> {
+    let mut stale = BTreeSet::new();
+    for reference in &basis.refs {
+        let BasisRef::Claim { claim_id } = reference else {
+            continue;
+        };
+        let Some(claim) = world.claims.get(claim_id) else {
+            continue;
+        };
+        if claim.status != ClaimStatus::Active || claim.is_current(at) {
+            continue;
+        }
+        if claim.invalid_at.is_none() {
+            continue;
+        }
+        let ender = claim.qualifier(SUPERSEDED_BY_CLAIM);
+        let witness = claim.qualifier(SUPERSEDED_BY_SPAN);
+        // A ref answers the ending only when it is the ending claim, the
+        // witness span, or published after the witness: a ref of the same day
+        // (the section's own earlier evidence) may not have known of it. The
+        // effective date of the end says nothing about whether the ref knew.
+        let witnessed = match witness {
+            Some(span) => witness_publication(tx, loupist_id, span)?,
+            None => None,
+        };
+        let mut answered = false;
+        for reference in &basis.refs {
+            let published = match reference {
+                BasisRef::Claim { claim_id: other } if other != claim_id => {
+                    if ender == Some(other.as_str()) {
+                        answered = true;
+                        break;
+                    }
+                    world
+                        .claims
+                        .get(other)
+                        .and_then(|other| other.publication_time.clone())
+                }
+                BasisRef::Span {
+                    record_id, span_id, ..
+                } if !removed.contains(record_id) => {
+                    if witness == Some(span_id.as_str()) {
+                        answered = true;
+                        break;
+                    }
+                    span_publication(tx, loupist_id, record_id, span_id)?
+                }
+                _ => None,
+            };
+            if published
+                .as_ref()
+                .zip(witnessed.as_ref())
+                .is_some_and(|(time, witnessed)| {
+                    witnessed.compare_at_common_precision(time) == Some(std::cmp::Ordering::Less)
+                })
+            {
+                answered = true;
+                break;
+            }
+        }
+        if !answered {
+            stale.insert(claim_id.clone());
+        }
+    }
+    Ok(stale.into_iter().collect())
+}
+
+fn reconcile_superseded(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    body: &mut LensBody,
+    world: &WorldIndex,
+    at_ms: i64,
+    previous: Option<&LensBody>,
+) -> KnowledgeResult<Vec<SectionKey>> {
+    let mut superseded = Vec::new();
+    let Some(page) = body.page_mut() else {
+        return Ok(superseded);
+    };
+    let at = TimePoint::from_unix_ms(at_ms);
+    let controls = super::memory_controls::load(tx, loupist_id)?;
+    for section in &mut page.sections {
+        if matches!(section.state, SectionState::Contested { .. }) {
+            continue;
+        }
+        let claim_ids = stale_basis(
+            tx,
+            loupist_id,
+            &section.basis,
+            world,
+            &at,
+            &controls.removed,
+        )?;
+        let state = if claim_ids.is_empty() {
+            SectionState::Current
+        } else {
+            let prior = previous
+                .and_then(LensBody::page)
+                .and_then(|page| page.section(&section.key))
+                .map_or(&section.state, |section| &section.state);
+            let since_ms = match prior {
+                SectionState::Superseded { since_ms, .. } => *since_ms,
+                _ => at_ms,
+            };
+            SectionState::Superseded {
+                since_ms,
+                claim_ids,
+            }
+        };
+        if state != section.state {
+            if matches!(state, SectionState::Superseded { .. }) {
+                superseded.push(section.key.clone());
+            }
+            section.state = state;
+        }
+    }
+    Ok(superseded)
 }
 
 /// One op of a filing as the fold met it.
@@ -634,6 +993,8 @@ fn fold(
     ops: &[LensOp],
     refused: &BTreeSet<usize>,
     ctx: &ApplyContext,
+    sections: Option<&BTreeMap<usize, SectionFiling>>,
+    grounded: bool,
 ) -> KnowledgeResult<(LensBody, Vec<Step>)> {
     let mut body = base.clone();
     let mut steps = Vec::with_capacity(ops.len());
@@ -645,7 +1006,8 @@ fn fold(
             });
             continue;
         }
-        let (next, mut outcomes) = apply(&body, std::slice::from_ref(op), ctx)?;
+        let section = sections.and_then(|sections| sections.get(&index));
+        let (next, mut outcomes) = apply_with_sections(&body, [(op, section)], ctx, grounded)?;
         steps.push(Step {
             outcome: outcomes.pop().expect("one outcome per op"),
             before: std::mem::replace(&mut body, next),
@@ -665,17 +1027,96 @@ pub(super) fn file(
     deltas: Vec<PageDelta>,
     at_ms: i64,
 ) -> KnowledgeResult<Vec<FiledPage>> {
-    file_with(tx, loupist_id, origin, deltas, at_ms, None)
+    file_impl(
+        tx,
+        loupist_id,
+        origin,
+        deltas,
+        at_ms,
+        FilingWrite {
+            undoes_op_id: None,
+            sections: None,
+            admit: true,
+        },
+    )
 }
 
-fn file_with(
+/// Writes pages the way a profile held them before subject admission. A create
+/// that now resolves to an existing subject still lands as its own page.
+#[cfg(test)]
+pub(super) fn file_as_held(
     tx: &Transaction<'_>,
     loupist_id: &str,
     origin: &FilingOrigin,
     deltas: Vec<PageDelta>,
     at_ms: i64,
-    undoes_op_id: Option<&str>,
 ) -> KnowledgeResult<Vec<FiledPage>> {
+    file_impl(
+        tx,
+        loupist_id,
+        origin,
+        deltas,
+        at_ms,
+        FilingWrite {
+            undoes_op_id: None,
+            sections: None,
+            admit: false,
+        },
+    )
+}
+
+impl super::KnowledgeWrite<'_> {
+    pub(crate) fn file_turn_sections(
+        &self,
+        loupist_id: &str,
+        origin: &FilingOrigin,
+        deltas: Vec<PageDelta>,
+        at_ms: i64,
+        sections: &[BTreeMap<usize, SectionFiling>],
+    ) -> KnowledgeResult<Vec<FiledPage>> {
+        if sections.iter().all(BTreeMap::is_empty)
+            && deltas
+                .iter()
+                .all(|delta| matches!(delta.target, PageTarget::Existing { .. }))
+        {
+            return self.file(loupist_id, origin, deltas, at_ms);
+        }
+        file_impl(
+            self.tx,
+            loupist_id,
+            origin,
+            deltas,
+            at_ms,
+            FilingWrite {
+                undoes_op_id: None,
+                sections: Some(sections),
+                admit: true,
+            },
+        )
+    }
+}
+
+struct FilingWrite<'a> {
+    undoes_op_id: Option<&'a str>,
+    sections: Option<&'a [BTreeMap<usize, SectionFiling>]>,
+    /// A new create is refused when it is an existing subject. Seeding a
+    /// profile that already held the page passes false.
+    admit: bool,
+}
+
+fn file_impl(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    origin: &FilingOrigin,
+    deltas: Vec<PageDelta>,
+    at_ms: i64,
+    write: FilingWrite<'_>,
+) -> KnowledgeResult<Vec<FiledPage>> {
+    let FilingWrite {
+        undoes_op_id,
+        sections,
+        admit,
+    } = write;
     validate_loupist_id(loupist_id)?;
     validate_time(at_ms)?;
     for delta in &deltas {
@@ -683,7 +1124,7 @@ fn file_with(
     }
     let mut world: Option<WorldIndex> = None;
     let mut filed = Vec::with_capacity(deltas.len());
-    for delta in deltas {
+    for (index, delta) in deltas.into_iter().enumerate() {
         // The user acts on a page they see and must restore it first; any
         // other filer read the page earlier and only logs the refusal.
         if !matches!(origin, FilingOrigin::User { .. }) {
@@ -709,7 +1150,7 @@ fn file_with(
                 continue;
             }
         }
-        let resolved = resolve_target(tx, loupist_id, &delta.target, &mut world)?;
+        let resolved = resolve_target(tx, loupist_id, &delta.target, &mut world, admit)?;
         let (kind, base, record) = match &resolved {
             Resolved::Found(loaded) => {
                 require_edit(&loaded.record, loupist_id)?;
@@ -751,7 +1192,30 @@ fn file_with(
             add_only: record.is_some() && matches!(delta.target, PageTarget::Create { .. }),
             fallen_claims: fallen_claims(tx, loupist_id, &delta.ops, &mut world)?,
         };
-        let (next, steps) = fold(&base, &delta.ops, &refused, &ctx)?;
+        let section_filing = sections.and_then(|sections| sections.get(index));
+        // An evidence-backed section can be filed after the open question it
+        // grounds. Only accepted puts can satisfy that condition.
+        let (mut next, mut steps) = fold(&base, &delta.ops, &refused, &ctx, section_filing, true)?;
+        let grounded = |body: &LensBody| {
+            body.page()
+                .is_some_and(super::lens_page::Page::has_grounded_section)
+        };
+        if matches!(kind, LensKind::Subject | LensKind::Idea)
+            && !grounded(&base)
+            && !grounded(&next)
+        {
+            (next, steps) = fold(&base, &delta.ops, &refused, &ctx, section_filing, false)?;
+        }
+        if record.is_none() && section_filing.is_some() && next.summary().trim().is_empty() {
+            for step in &mut steps {
+                if step.outcome.changed() {
+                    step.outcome = OpOutcome::RefusedText;
+                }
+            }
+        }
+        if let Some(world) = &world {
+            reconcile_superseded(tx, loupist_id, &mut next, world, at_ms, Some(&base))?;
+        }
         let (loaded, created) = match resolved {
             Resolved::Found(loaded) => (*loaded, false),
             Resolved::Pending {
@@ -1039,7 +1503,15 @@ fn replace_links(
     Ok(())
 }
 
-/// A final-answer `lens:` link applied a page to the World nodes of that turn.
+/// A principle carried in the envelope does not count as an answer that used
+/// it. An exact read does. A citation is an applied anchor, counted apart
+/// from these rows.
+pub(super) fn delivery_counts_as_answer(kind: &str, delivery: &str) -> bool {
+    kind != "principle" || delivery != "context"
+}
+
+/// A final-answer `lens:` link applied a page. World nodes of that turn are
+/// recorded when the answer read any; a citation with none still counts once.
 pub(super) fn record_applied(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -1048,7 +1520,12 @@ pub(super) fn record_applied(
     node_ids: &BTreeSet<String>,
     at_ms: i64,
 ) -> KnowledgeResult<()> {
-    for node_id in node_ids {
+    let nodes = if node_ids.is_empty() {
+        vec![None]
+    } else {
+        node_ids.iter().map(String::as_str).map(Some).collect()
+    };
+    for node_id in nodes {
         tx.execute(
             "INSERT OR IGNORE INTO knowledge_lens_anchors (loupist_id, record_id, role, node_id, name_fold, turn_id, created_at_ms)
              VALUES (?1, ?2, 'applied', ?3, '', ?4, ?5)",
@@ -1068,6 +1545,75 @@ pub(super) fn contest_pages(
     claim_ids: &BTreeSet<String>,
     at_ms: i64,
 ) -> KnowledgeResult<usize> {
+    change_world_pages(tx, loupist_id, claim_ids, at_ms, |body| {
+        Ok((body.contest(claim_ids, at_ms), Vec::new()))
+    })
+    .map(|(contested, _)| contested)
+}
+
+pub(super) fn supersede_pages(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    ending_ids: &BTreeSet<String>,
+    fallen: &BTreeSet<String>,
+    at_ms: i64,
+) -> KnowledgeResult<(usize, usize)> {
+    let world = world_index(tx, loupist_id)?;
+    let affected = ending_ids.union(fallen).cloned().collect();
+    change_world_pages(tx, loupist_id, &affected, at_ms, |body| {
+        let contested = body.contest(fallen, at_ms);
+        let superseded = reconcile_superseded(tx, loupist_id, body, &world, at_ms, None)?;
+        Ok((contested, superseded))
+    })
+}
+
+fn section_state_claims(body: &LensBody, key: &SectionKey) -> Vec<String> {
+    body.page()
+        .and_then(|page| page.sections.iter().find(|section| &section.key == key))
+        .map(|section| match &section.state {
+            SectionState::Superseded { claim_ids, .. }
+            | SectionState::Contested { claim_ids, .. } => claim_ids.clone(),
+            SectionState::Current => Vec::new(),
+        })
+        .unwrap_or_default()
+}
+
+/// Claims newly attached by this transition. A later claim in the same section
+/// must not replay the earlier claim's alert.
+fn section_claim_origin(before: &LensBody, after: &LensBody, keys: &[SectionKey]) -> Value {
+    let state = |body: &LensBody, key: &SectionKey| {
+        body.page()
+            .and_then(|page| page.sections.iter().find(|section| &section.key == key))
+            .map(|section| std::mem::discriminant(&section.state))
+    };
+    let mut sections = serde_json::Map::new();
+    for key in keys {
+        // Only a transition of the same kind attached them before: a section
+        // superseded by a claim that is then contested by it alerts for it.
+        let prior: BTreeSet<_> = if state(before, key) == state(after, key) {
+            section_state_claims(before, key).into_iter().collect()
+        } else {
+            BTreeSet::new()
+        };
+        let ids: Vec<_> = section_state_claims(after, key)
+            .into_iter()
+            .filter(|id| !prior.contains(id))
+            .collect();
+        sections.insert(key.as_str().to_owned(), json!(ids));
+    }
+    json!({ "sections": sections })
+}
+
+fn change_world_pages(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    claim_ids: &BTreeSet<String>,
+    at_ms: i64,
+    mut update: impl FnMut(&mut LensBody) -> KnowledgeResult<(Vec<SectionKey>, Vec<SectionKey>)>,
+) -> KnowledgeResult<(usize, usize)> {
+    if claim_ids.is_empty() {
+        return Ok((0, 0));
+    }
     let mut candidates = BTreeSet::new();
     let mut statement = tx.prepare(
         "SELECT m.record_id FROM knowledge_lens_metadata m
@@ -1084,12 +1630,12 @@ pub(super) fn contest_pages(
         }
     }
     drop(statement);
-    let mut changed_pages = 0;
+    let mut counts = [0, 0];
     for record_id in candidates {
         let loaded = load(tx, loupist_id, &record_id)?;
         let mut next = loaded.body.clone();
-        let changed = next.contest(claim_ids, at_ms);
-        if changed.is_empty() {
+        let (contested, superseded) = update(&mut next)?;
+        if next == loaded.body {
             continue;
         }
         let payload = next.to_payload()?;
@@ -1117,31 +1663,45 @@ pub(super) fn contest_pages(
             "UPDATE knowledge_lens_metadata SET updated_at_ms = ?1 WHERE record_id = ?2",
             params![at_ms, record_id],
         )?;
-        let mut event = super::growth::GrowthEvent::new(
-            loupist_id,
-            &record_id,
-            at_ms,
-            "lens_contested",
-            "processing",
-            &loaded.record.title,
-        );
-        event.after_summary = Some(super::growth::one_line(
-            &changed
-                .iter()
-                .map(SectionKey::as_str)
-                .collect::<Vec<_>>()
-                .join(", "),
-        ));
-        event.insert(tx)?;
-        changed_pages += 1;
+        for ((kind, changed), count) in [
+            ("lens_contested", contested),
+            ("lens_superseded", superseded),
+        ]
+        .into_iter()
+        .zip(&mut counts)
+        {
+            if changed.is_empty() {
+                continue;
+            }
+            let mut event = super::growth::GrowthEvent::new(
+                loupist_id,
+                &record_id,
+                at_ms,
+                kind,
+                "processing",
+                &loaded.record.title,
+            );
+            event.after_summary = Some(super::growth::one_line(
+                &changed
+                    .iter()
+                    .map(SectionKey::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ));
+            // Replay matches an asset by the claims each section cited when it
+            // changed. A section-key summary alone cannot do that.
+            event.origin = Some(section_claim_origin(&loaded.body, &next, &changed));
+            event.insert(tx)?;
+            *count += 1;
+        }
     }
-    Ok(changed_pages)
+    Ok((counts[0], counts[1]))
 }
 
-/// Pending subject name anchors resolve once the World knows the name or an
-/// alias exactly (mention and applied anchors are born with a node); nothing
-/// else ever sets a node, so a shared company key binds no page. Returns how
-/// many gained a node. Discovery calls this after every World publication.
+/// Pending subject name anchors resolve when the World stores that spelling
+/// or an identifying code of one node. A shared entity key does not store a
+/// node. Returns how many gained a node. Discovery calls this after every
+/// World publication.
 pub(super) fn resolve_anchors(
     tx: &Transaction<'_>,
     loupist_id: &str,
@@ -1161,7 +1721,7 @@ pub(super) fn resolve_anchors(
     drop(statement);
     let mut resolved = 0;
     for (rowid, name_fold) in pending {
-        if let Some(node_id) = index.names.get(&name_fold) {
+        if let Some(node_id) = node_for_name(&index, &name_fold) {
             resolved += tx.execute(
                 "UPDATE OR IGNORE knowledge_lens_anchors SET node_id = ?1 WHERE rowid = ?2",
                 params![node_id, rowid],
@@ -1294,14 +1854,34 @@ pub struct SectionView {
     pub origin: Origin,
     pub contested: bool,
     pub contested_claim_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub role: Option<SectionRole>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub as_of: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional), ts(type = "number"))]
+    pub since_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub claim_ids: Option<Vec<String>>,
     pub updated_at_ms: i64,
+    /// The learning run that filed this section's newest op, while nothing changed it since.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub learned: Option<super::learned_marks::LearnedMark>,
 }
 
 impl SectionView {
     fn of(section: &PageSection) -> Self {
-        let (contested, contested_claim_ids) = match &section.state {
-            SectionState::Current => (false, Vec::new()),
-            SectionState::Contested { claim_ids, .. } => (true, claim_ids.clone()),
+        let (contested, contested_claim_ids, since_ms, claim_ids) = match &section.state {
+            SectionState::Current => (false, Vec::new(), None, None),
+            SectionState::Contested { claim_ids, .. } => (true, claim_ids.clone(), None, None),
+            SectionState::Superseded {
+                since_ms,
+                claim_ids,
+            } => (false, Vec::new(), Some(*since_ms), Some(claim_ids.clone())),
         };
         Self {
             key: section.key.clone(),
@@ -1313,7 +1893,12 @@ impl SectionView {
             origin: section.origin,
             contested,
             contested_claim_ids,
+            role: section.role,
+            as_of: section.as_of.clone(),
+            since_ms,
+            claim_ids,
             updated_at_ms: section.updated_at_ms,
+            learned: None,
         }
     }
 }
@@ -1403,11 +1988,20 @@ impl LensBodyView {
                     heading: section.heading.clone(),
                     markdown: section.markdown.clone(),
                     basis: section.basis.clone(),
+                    role: section.role,
+                    as_of: section.as_of.clone(),
                     origin: section.origin,
                     state: if section.contested {
                         SectionState::Contested {
                             since_ms: section.updated_at_ms,
                             claim_ids: section.contested_claim_ids.clone(),
+                        }
+                    } else if let (Some(since_ms), Some(claim_ids)) =
+                        (section.since_ms, &section.claim_ids)
+                    {
+                        SectionState::Superseded {
+                            since_ms,
+                            claim_ids: claim_ids.clone(),
                         }
                     } else {
                         SectionState::Current
@@ -1502,7 +2096,275 @@ pub(super) fn read_page(
     loupist_id: &str,
     record_id: &str,
 ) -> KnowledgeResult<PageRead> {
-    let loaded = load(tx, loupist_id, record_id)?;
+    read_page_with_state(tx, loupist_id, record_id, true, None)
+}
+
+impl super::KnowledgeWrite<'_> {
+    #[cfg(test)]
+    pub(crate) fn read_lens_page_for_cutoff(
+        &self,
+        loupist_id: &str,
+        record_id: &str,
+    ) -> KnowledgeResult<PageRead> {
+        read_page_with_state(self.tx, loupist_id, record_id, false, None)
+    }
+
+    /// The page as it stood at `until_ms` (the end of a cutoff day): each
+    /// section as the first change after then found it (from the Lens log), and
+    /// each Superseded or Contested state the dated Lens events had reached.
+    /// Only the head revision is kept, so the page is rebuilt from it.
+    pub(crate) fn read_lens_page_as_of(
+        &self,
+        loupist_id: &str,
+        record_id: &str,
+        until_ms: i64,
+        replayed: Option<&super::world_changes::LensReplay>,
+    ) -> KnowledgeResult<PageRead> {
+        let mut page = read_page_with_state(self.tx, loupist_id, record_id, false, Some(until_ms))?;
+        // After a reading the cutoff does not know, the dated events follow the
+        // full World's history: the replay's transitions decide from then on.
+        if let Some(replayed) = replayed {
+            let sections = match &mut page.body {
+                LensBodyView::Perspective { sections, .. }
+                | LensBodyView::Method { sections, .. }
+                | LensBodyView::Subject { sections, .. }
+                | LensBodyView::Idea { sections, .. } => sections,
+                LensBodyView::Principle { .. } => return Ok(page),
+            };
+            for section in sections.iter_mut() {
+                let state =
+                    replayed.state_at(self.tx, record_id, section.key.as_str(), until_ms)?;
+                let (contested, contested_claim_ids, since_ms, claim_ids) = match state {
+                    SectionState::Current => (false, Vec::new(), None, None),
+                    // As `SectionView::of` shows it: a contested section names
+                    // its claims once and carries no superseded fields.
+                    SectionState::Contested { claim_ids, .. } => (true, claim_ids, None, None),
+                    SectionState::Superseded {
+                        since_ms,
+                        claim_ids,
+                    } => (false, Vec::new(), Some(since_ms), Some(claim_ids)),
+                };
+                section.contested = contested;
+                section.contested_claim_ids = contested_claim_ids;
+                section.since_ms = since_ms;
+                section.claim_ids = claim_ids;
+            }
+        }
+        Ok(page)
+    }
+
+    /// Each Lens section a replay to `until_ms` follows: page, title, key, when
+    /// it was filed, and the claims and spans its basis cites, as it stood then.
+    pub(crate) fn lens_sections_for_replay(
+        &self,
+        loupist_id: &str,
+        until_ms: i64,
+    ) -> KnowledgeResult<Vec<super::world_changes::ReplaySection>> {
+        let mut out = Vec::new();
+        for entry in index_entries(self.tx, loupist_id)? {
+            if entry.kind == LensKind::Principle || entry.created_at_ms > until_ms {
+                continue;
+            }
+            let mut loaded = load(self.tx, loupist_id, &entry.record_id)?;
+            page_as_of(self.tx, &entry.record_id, &mut loaded.body, until_ms)?;
+            let Some(page) = loaded.body.page() else {
+                continue;
+            };
+            for section in &page.sections {
+                let filed: Option<i64> = self.tx.query_row(
+                    "SELECT MIN(created_at_ms) FROM knowledge_lens_log
+                     WHERE record_id = ?1 AND section_key = ?2",
+                    params![entry.record_id, section.key.as_str()],
+                    |row| row.get(0),
+                )?;
+                let mut claims = Vec::new();
+                let mut spans = Vec::new();
+                for reference in &section.basis.refs {
+                    match reference {
+                        BasisRef::Claim { claim_id } => claims.push(claim_id.clone()),
+                        BasisRef::Span {
+                            record_id, span_id, ..
+                        } => spans.push((
+                            span_id.clone(),
+                            span_publication(self.tx, loupist_id, record_id, span_id)?,
+                        )),
+                        _ => {}
+                    }
+                }
+                out.push(super::world_changes::ReplaySection {
+                    record_id: entry.record_id.clone(),
+                    title: entry.title.clone(),
+                    key: section.key.as_str().to_owned(),
+                    filed_at_ms: filed.unwrap_or(entry.created_at_ms),
+                    claims,
+                    spans,
+                });
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// Rolls a page body back to `until_ms`; see `read_lens_page_as_of`.
+fn page_as_of(
+    tx: &Transaction<'_>,
+    record_id: &str,
+    body: &mut LensBody,
+    until_ms: i64,
+) -> KnowledgeResult<()> {
+    let Some(page) = body.page_mut() else {
+        return Ok(());
+    };
+    let mut statement = tx.prepare(
+        "SELECT op_json ->> '$.op', section_key, before_json FROM knowledge_lens_log
+         WHERE record_id = ?1 AND created_at_ms > ?2 ORDER BY created_at_ms, rowid",
+    )?;
+    let rows = statement
+        .query_map(params![record_id, until_ms], |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut rolled = BTreeSet::new();
+    let mut summary = false;
+    for (op, key, before) in rows {
+        match (op.as_deref(), key) {
+            (Some("summary"), _) if !summary => {
+                summary = true;
+                if let Some(text) = before
+                    .as_deref()
+                    .map(from_json::<Value>)
+                    .transpose()?
+                    .and_then(|value| value["summary"].as_str().map(str::to_owned))
+                {
+                    page.summary = text;
+                }
+            }
+            (Some("put" | "retire"), Some(key)) if rolled.insert(key.clone()) => {
+                let earlier = before
+                    .as_deref()
+                    .map(from_json::<super::lens_page::PageSection>)
+                    .transpose()?;
+                let position = page
+                    .sections
+                    .iter()
+                    .position(|section| section.key.as_str() == key);
+                match (earlier, position) {
+                    (Some(earlier), Some(at)) => page.sections[at] = earlier,
+                    (Some(earlier), None) => page.sections.push(earlier),
+                    (None, Some(at)) => {
+                        page.sections.remove(at);
+                    }
+                    (None, None) => {}
+                }
+            }
+            _ => {}
+        }
+    }
+    for section in &mut page.sections {
+        let since = match &section.state {
+            SectionState::Current => None,
+            SectionState::Contested { since_ms, .. }
+            | SectionState::Superseded { since_ms, .. } => Some(*since_ms),
+        };
+        if since.is_some_and(|since| since > until_ms) {
+            section.state = state_from_events(tx, record_id, section.key.as_str(), until_ms, None)?;
+        }
+    }
+    Ok(())
+}
+
+/// A section's state from the dated Lens events up to `until_ms`, starting
+/// from `filed` (when and in what state the section was filed) when given.
+pub(super) fn state_from_events(
+    tx: &Transaction<'_>,
+    record_id: &str,
+    key: &str,
+    until_ms: i64,
+    filed: Option<(i64, SectionState)>,
+) -> KnowledgeResult<SectionState> {
+    let mut statement = tx.prepare(
+        "SELECT at_ms, kind, subject_id, after_summary, origin FROM knowledge_growth_events
+         WHERE record_id = ?1 AND kind IN ('lens_superseded', 'lens_contested') AND at_ms <= ?2
+         ORDER BY at_ms, event_id",
+    )?;
+    let rows = statement
+        .query_map(params![record_id, until_ms], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let (since, mut state) = filed.unwrap_or((i64::MIN, SectionState::Current));
+    for (at_ms, kind, subject, after, origin) in rows {
+        if at_ms < since {
+            continue;
+        }
+        let origin = origin
+            .as_deref()
+            .and_then(|raw| from_json::<Value>(raw).ok());
+        let named = origin
+            .as_ref()
+            .and_then(|value| value.get("sections"))
+            .and_then(Value::as_object)
+            .filter(|sections| !sections.is_empty())
+            .map(|sections| sections.contains_key(key))
+            .unwrap_or_else(|| {
+                subject
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|subject| !subject.is_empty())
+                    .map_or_else(
+                        || {
+                            after
+                                .as_deref()
+                                .unwrap_or("")
+                                .split(',')
+                                .any(|part| part.trim() == key)
+                        },
+                        |subject| subject == key,
+                    )
+            });
+        if !named {
+            continue;
+        }
+        let claim_ids = origin
+            .as_ref()
+            .and_then(|value| {
+                value
+                    .pointer(&format!("/sections/{key}"))
+                    .or_else(|| value.get("claimIds"))
+            })
+            .and_then(|value| serde_json::from_value::<Vec<String>>(value.clone()).ok())
+            .unwrap_or_default();
+        state = super::world_changes::apply_section_transition(
+            state,
+            kind == "lens_contested",
+            at_ms,
+            claim_ids,
+        );
+    }
+    Ok(state)
+}
+
+fn read_page_with_state(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    record_id: &str,
+    project_current: bool,
+    as_of: Option<i64>,
+) -> KnowledgeResult<PageRead> {
+    let mut loaded = load(tx, loupist_id, record_id)?;
+    if let Some(until_ms) = as_of {
+        page_as_of(tx, record_id, &mut loaded.body, until_ms)?;
+    }
     let Some(revision) = loaded.revision else {
         return Err(KnowledgeError::NotFound);
     };
@@ -1516,9 +2378,38 @@ pub(super) fn read_page(
         [record_id],
         |row| row.get(0),
     )?;
+    // As of a cutoff the page was last changed by the last filing then.
+    let updated_at_ms = match as_of {
+        Some(until_ms) => tx
+            .query_row(
+                "SELECT MAX(created_at_ms) FROM knowledge_lens_log
+                 WHERE record_id = ?1 AND created_at_ms <= ?2",
+                params![record_id, until_ms],
+                |row| row.get::<_, Option<i64>>(0),
+            )?
+            .unwrap_or(created_at_ms)
+            .max(created_at_ms),
+        None => updated_at_ms,
+    };
     let paused = super::memory_controls::load(tx, loupist_id)?
         .paused
         .contains(record_id);
+    if project_current
+        && !archived
+        && loaded.body.page().is_some_and(|page| {
+            page.sections.iter().any(|section| {
+                section
+                    .basis
+                    .refs
+                    .iter()
+                    .any(|reference| matches!(reference, BasisRef::Claim { .. }))
+            })
+        })
+    {
+        let world = world_index(tx, loupist_id)?;
+        let now = crate::local_time::now().timestamp_millis();
+        reconcile_superseded(tx, loupist_id, &mut loaded.body, &world, now, None)?;
+    }
     let (lens_links, _) = links(&loaded.body);
     Ok(PageRead {
         record_id: record_id.to_owned(),
@@ -1531,7 +2422,9 @@ pub(super) fn read_page(
         learned,
         created_at_ms,
         updated_at_ms,
-        body: LensBodyView::of(&loaded.body),
+        body: LensBodyView::of(&loaded.body).with_learned(super::learned_marks::learned_marks(
+            tx, loupist_id, record_id,
+        )?),
         suggested_sections: super::lens_page::suggested_sections(loaded.kind)
             .iter()
             .map(|key| (*key).to_owned())
@@ -1737,6 +2630,63 @@ fn log_row(tx: &Transaction<'_>, loupist_id: &str, op_id: &str) -> KnowledgeResu
     })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct MessageUndo {
+    /// Sections this message filed that were restored.
+    pub undone: u32,
+    /// Sections this message filed that a later edit kept.
+    pub kept: u32,
+}
+
+/// A later filing of the same section, summary or status. A later op that a
+/// later inverse undid, and that inverse, cancel out and do not count, so
+/// undoing the newer run first leaves the older one restorable. Rows that undo
+/// an op in `ignored`, and those ops themselves, are the message undo walking
+/// backward and do not count either.
+fn touched_after(
+    tx: &Transaction<'_>,
+    record_id: &str,
+    op_id: &str,
+    section_key: Option<&str>,
+    op_name: &str,
+    ignored: &BTreeSet<String>,
+) -> KnowledgeResult<bool> {
+    let mut statement = tx.prepare(
+        "SELECT op_id, undoes_op_id FROM knowledge_lens_log
+         WHERE record_id = ?1 AND op_id <> ?2
+           AND rowid > (SELECT rowid FROM knowledge_lens_log WHERE op_id = ?2)
+           AND COALESCE(section_key, '') = COALESCE(?3, '')
+           AND outcome IN ('added', 'replaced', 'retired', 'summarized', 'status_set')
+           AND (?3 IS NOT NULL OR json_extract(op_json, '$.op') = ?4)
+           AND NOT EXISTS (
+             SELECT 1 FROM knowledge_lens_log AS inverse
+             WHERE inverse.undoes_op_id = knowledge_lens_log.op_id
+               AND inverse.outcome IN ('added', 'replaced', 'retired', 'summarized', 'status_set')
+           )
+           AND NOT (undoes_op_id IS NOT NULL AND undoes_op_id IN (
+             SELECT later.op_id FROM knowledge_lens_log AS later
+             WHERE later.rowid > (SELECT rowid FROM knowledge_lens_log WHERE op_id = ?2)
+           ))",
+    )?;
+    let rows = statement.query_map(params![record_id, op_id, section_key, op_name], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+    })?;
+    for row in rows {
+        let (id, undoes) = row?;
+        if ignored.contains(&id)
+            || undoes
+                .as_ref()
+                .is_some_and(|target| ignored.contains(target))
+        {
+            continue;
+        }
+        return Ok(true);
+    }
+    Ok(false)
+}
+
 /// Appends the inverse of one logged op. Refuses when a later op changed the
 /// same section (or the summary or status), or when the op was undone already.
 pub(super) fn undo_op(
@@ -1745,6 +2695,17 @@ pub(super) fn undo_op(
     op_id: &str,
     at_ms: i64,
 ) -> KnowledgeResult<PageRead> {
+    let record_id = undo_one(tx, loupist_id, op_id, at_ms, &BTreeSet::new())?;
+    read_page(tx, loupist_id, &record_id)
+}
+
+fn undo_one(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    op_id: &str,
+    at_ms: i64,
+    ignored: &BTreeSet<String>,
+) -> KnowledgeResult<String> {
     let row = log_row(tx, loupist_id, op_id)?;
     let undone: bool = tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM knowledge_lens_log WHERE undoes_op_id = ?1)",
@@ -1754,28 +2715,33 @@ pub(super) fn undo_op(
     if undone {
         return Err(KnowledgeError::Invalid("this change was undone already"));
     }
-    let later_changed: bool = tx.query_row(
-        "SELECT EXISTS(SELECT 1 FROM knowledge_lens_log
-         WHERE record_id = ?1 AND op_id <> ?2
-           AND rowid > (SELECT rowid FROM knowledge_lens_log WHERE op_id = ?2)
-           AND COALESCE(section_key, '') = COALESCE(?3, '')
-           AND outcome IN ('added', 'replaced', 'retired', 'summarized', 'status_set')
-           AND (?3 IS NOT NULL OR json_extract(op_json, '$.op') = ?4))",
-        params![row.record_id, op_id, row.section_key, row.op.name()],
-        |row| row.get(0),
-    )?;
-    if later_changed {
+    if touched_after(
+        tx,
+        &row.record_id,
+        op_id,
+        row.section_key.as_deref(),
+        row.op.name(),
+        ignored,
+    )? {
         return Err(KnowledgeError::Invalid(
             "a later change touched this section; undo it first",
         ));
     }
     let before: Option<Value> = row.before_json.as_deref().map(from_json).transpose()?;
-    let restore_section = |before: &Option<Value>, expected: Option<String>| {
+    let mut sections = BTreeMap::new();
+    let mut restore_section = |before: &Option<Value>, expected: Option<String>| {
         let section: PageSection = serde_json::from_value(
             before
                 .clone()
                 .ok_or(KnowledgeError::Invalid("nothing to restore"))?,
         )?;
+        sections.insert(
+            0,
+            SectionFiling {
+                role: section.role,
+                as_of: section.as_of,
+            },
+        );
         Ok::<_, KnowledgeError>(LensOp::Put {
             key: section.key,
             heading: section.heading,
@@ -1814,7 +2780,7 @@ pub(super) fn undo_op(
         }
     };
     let record_id = row.record_id.clone();
-    let filed = file_with(
+    let filed = file_impl(
         tx,
         loupist_id,
         &FilingOrigin::User {
@@ -1828,14 +2794,269 @@ pub(super) fn undo_op(
             ops: vec![inverse],
         }],
         at_ms,
-        Some(op_id),
+        FilingWrite {
+            undoes_op_id: Some(op_id),
+            sections: Some(&[sections]),
+            admit: true,
+        },
     )?;
     if !filed.iter().any(|page| page.changed) {
         return Err(KnowledgeError::Invalid(
             "the page no longer holds what this change wrote",
         ));
     }
-    read_page(tx, loupist_id, &record_id)
+    Ok(record_id)
+}
+
+struct FiledByMessage {
+    op_id: String,
+    record_id: String,
+    section_key: Option<String>,
+    op_name: String,
+}
+
+/// Restores the sections one message filed. A section edited since that filing
+/// stays as it is. The decision is one transaction: either every restoration
+/// lands, or none do. A second call changes nothing.
+pub(super) fn undo_message(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    message_id: &str,
+    at_ms: i64,
+) -> KnowledgeResult<MessageUndo> {
+    validate_loupist_id(loupist_id)?;
+    super::model::validate_text(message_id, 256, false, "message is invalid")?;
+    validate_time(at_ms)?;
+    let mut statement = tx.prepare(
+        "SELECT op_id, record_id, section_key, json_extract(op_json, '$.op')
+         FROM knowledge_lens_log
+         WHERE loupist_id = ?1 AND message_id = ?2
+           AND outcome IN ('added', 'replaced', 'retired', 'summarized', 'status_set')
+           AND undoes_op_id IS NULL
+         ORDER BY rowid",
+    )?;
+    let filed = statement
+        .query_map(params![loupist_id, message_id], |row| {
+            Ok(FiledByMessage {
+                op_id: row.get(0)?,
+                record_id: row.get(1)?,
+                section_key: row.get(2)?,
+                op_name: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(statement);
+    if let Some(recorded) = recorded_message_undo(tx, loupist_id, message_id)? {
+        return Ok(recorded);
+    }
+    if filed.is_empty() {
+        return Ok(MessageUndo { undone: 0, kept: 0 });
+    }
+    let groups = group_message_filings(filed);
+    let ignored = groups
+        .iter()
+        .flat_map(|group| group.iter().map(|op| op.op_id.clone()))
+        .collect::<BTreeSet<_>>();
+    let mut undone = 0;
+    let mut kept = 0;
+    let mut restore = Vec::new();
+    for group in &groups {
+        let last = group.last().expect("group");
+        if touched_after(
+            tx,
+            &last.record_id,
+            &last.op_id,
+            last.section_key.as_deref(),
+            &last.op_name,
+            &BTreeSet::new(),
+        )? {
+            kept += 1;
+        } else {
+            undone += 1;
+            restore.extend(group.iter().rev().map(|op| op.op_id.clone()));
+        }
+    }
+    for op_id in &restore {
+        undo_one(tx, loupist_id, op_id, at_ms, &ignored)?;
+    }
+    note_message_undo(
+        tx,
+        loupist_id,
+        &groups[0][0],
+        message_id,
+        undone,
+        kept,
+        at_ms,
+    )?;
+    Ok(MessageUndo { undone, kept })
+}
+
+/// The counts stored with a message undo, for a later call and for a loaded run.
+///
+/// A marker written before counts were stored has no `message_id`. It is still
+/// this message's undo when `undoes_op_id` names one of the message's ops, and
+/// the counts are the sections that undo restored and the ones it left.
+pub(crate) fn recorded_message_undo(
+    connection: &Connection,
+    loupist_id: &str,
+    message_id: &str,
+) -> Result<Option<MessageUndo>, rusqlite::Error> {
+    let stored: Option<String> = connection
+        .query_row(
+            "SELECT op_json FROM knowledge_lens_log
+             WHERE loupist_id = ?1 AND message_id = ?2 AND outcome = 'message_undo'
+             ORDER BY created_at_ms DESC, rowid DESC LIMIT 1",
+            params![loupist_id, message_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(counts) = stored.as_deref().and_then(message_undo_counts) {
+        return Ok(Some(counts));
+    }
+    let marker: Option<(i64, i64)> = connection
+        .query_row(
+            "SELECT marker.rowid, marker.created_at_ms FROM knowledge_lens_log AS marker
+             WHERE marker.loupist_id = ?1 AND marker.outcome = 'message_undo'
+               AND (
+                 marker.message_id = ?2
+                 OR marker.undoes_op_id IN (
+                   SELECT filed.op_id FROM knowledge_lens_log AS filed
+                   WHERE filed.loupist_id = ?1 AND filed.message_id = ?2
+                     AND filed.outcome IN ('added', 'replaced', 'retired', 'summarized', 'status_set')
+                     AND filed.undoes_op_id IS NULL
+                 )
+               )
+             ORDER BY marker.created_at_ms DESC, marker.rowid DESC LIMIT 1",
+            params![loupist_id, message_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let Some((marker, at_ms)) = marker else {
+        return Ok(None);
+    };
+    Ok(Some(counts_before_marker(
+        connection, loupist_id, message_id, marker, at_ms,
+    )?))
+}
+
+/// Sections this message undo restored, and sections it left.
+///
+/// The restorations are the inverses written with the marker. An earlier undo
+/// of one section is why that section was kept, and a later undo is not this
+/// decision.
+fn counts_before_marker(
+    connection: &Connection,
+    loupist_id: &str,
+    message_id: &str,
+    marker_rowid: i64,
+    marker_at_ms: i64,
+) -> Result<MessageUndo, rusqlite::Error> {
+    let mut filed_statement = connection.prepare(
+        "SELECT op_id, record_id, section_key, json_extract(op_json, '$.op')
+         FROM knowledge_lens_log
+         WHERE loupist_id = ?1 AND message_id = ?2
+           AND outcome IN ('added', 'replaced', 'retired', 'summarized', 'status_set')
+           AND undoes_op_id IS NULL
+         ORDER BY rowid",
+    )?;
+    let filed = filed_statement
+        .query_map(params![loupist_id, message_id], |row| {
+            Ok(FiledByMessage {
+                op_id: row.get(0)?,
+                record_id: row.get(1)?,
+                section_key: row.get(2)?,
+                op_name: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(filed_statement);
+    let mut inverted_statement = connection.prepare(
+        "SELECT undoes_op_id FROM knowledge_lens_log
+         WHERE loupist_id = ?1 AND rowid < ?2 AND created_at_ms = ?3
+           AND undoes_op_id IS NOT NULL
+           AND outcome IN ('added', 'replaced', 'retired', 'summarized', 'status_set')",
+    )?;
+    let inverted = inverted_statement
+        .query_map(params![loupist_id, marker_rowid, marker_at_ms], |row| {
+            row.get(0)
+        })?
+        .collect::<Result<BTreeSet<String>, _>>()?;
+    drop(inverted_statement);
+    let mut undone = 0;
+    let mut kept = 0;
+    for group in group_message_filings(filed) {
+        if group.iter().any(|op| inverted.contains(&op.op_id)) {
+            undone += 1;
+        } else {
+            kept += 1;
+        }
+    }
+    Ok(MessageUndo { undone, kept })
+}
+
+fn group_message_filings(filed: Vec<FiledByMessage>) -> Vec<Vec<FiledByMessage>> {
+    let mut groups: Vec<Vec<FiledByMessage>> = Vec::new();
+    for op in filed {
+        let same = groups.iter_mut().find(|group| {
+            let first = &group[0];
+            first.record_id == op.record_id
+                && first.section_key == op.section_key
+                && (first.section_key.is_some() || first.op_name == op.op_name)
+        });
+        if let Some(group) = same {
+            group.push(op);
+        } else {
+            groups.push(vec![op]);
+        }
+    }
+    groups
+}
+
+fn message_undo_counts(json: &str) -> Option<MessageUndo> {
+    let value: Value = serde_json::from_str(json).ok()?;
+    if value.get("op").and_then(Value::as_str) != Some("message_undo") {
+        return None;
+    }
+    Some(MessageUndo {
+        undone: value
+            .get("undone")
+            .and_then(Value::as_u64)?
+            .try_into()
+            .ok()?,
+        kept: value.get("kept").and_then(Value::as_u64)?.try_into().ok()?,
+    })
+}
+
+fn note_message_undo(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    sample: &FiledByMessage,
+    message_id: &str,
+    undone: u32,
+    kept: u32,
+    at_ms: i64,
+) -> KnowledgeResult<()> {
+    let op_json = serde_json::json!({
+        "op": "message_undo",
+        "undone": undone,
+        "kept": kept,
+    })
+    .to_string();
+    tx.execute(
+        "INSERT INTO knowledge_lens_log
+            (op_id, loupist_id, record_id, op_json, outcome, origin, message_id, created_at_ms, undoes_op_id)
+         VALUES (?1, ?2, ?3, ?4, 'message_undo', 'user', ?5, ?6, ?7)",
+        params![
+            mint_id("lop"),
+            loupist_id,
+            sample.record_id,
+            op_json,
+            message_id,
+            at_ms,
+            sample.op_id,
+        ],
+    )?;
+    Ok(())
 }
 
 /// The user retires a section. Only a user put may bring that key back.
@@ -2885,30 +4106,137 @@ mod tests {
                 .unwrap();
         };
         seal(vec![node("nod_hana", "Hana", &[])], 2);
-        // "Hana" is the World's node. "Hana Co." may be another company the
-        // World has not met yet: its page stays its own and its anchor pending.
         let hana = subject("m1", "Hana", 3);
         assert_eq!(node_of(&hana).as_deref(), Some("nod_hana"));
-        let hana_co = subject("m2", "Hana Co.", 4);
-        assert_ne!(hana_co, hana);
-        assert_eq!(node_of(&hana_co), None);
-        let suffixed = subject("m3", "Halvorsen Cellworks ASA", 5);
+        // "Hana Co." is the same subject as the page already anchored to Hana.
+        let refused = store.transact(|write| {
+            write.file(
+                LOUPIST,
+                &turn("m2"),
+                vec![PageDelta {
+                    target: PageTarget::Create {
+                        kind: PageKind::Subject,
+                        title: "Hana Co.".into(),
+                        anchors: vec![AnchorInput::Name {
+                            name: "Hana Co.".into(),
+                        }],
+                    },
+                    ops: vec![put("facts", "A", None)],
+                }],
+                4,
+            )
+        });
+        match refused {
+            Err(crate::knowledge::KnowledgeError::ExistingPage { record_id, title }) => {
+                assert_eq!(record_id, hana);
+                assert_eq!(title, "Hana");
+            }
+            other => panic!("expected existing_page, got {other:?}"),
+        }
+        let other = subject("m-other", "Nordic Auto", 5);
+        assert_ne!(other, hana);
+        assert_eq!(node_of(&other), None);
+        let suffixed = subject("m3", "Halvorsen Cellworks ASA", 6);
         assert_eq!(node_of(&suffixed), None);
-        // A publication that spells the names, as a name or an alias, binds
-        // them to the nodes it says, and the pages stay apart.
+        // A shared entity key does not store the node. The anchor links when
+        // the World stores that spelling.
         seal(
             vec![
                 node("nod_hana", "Hana", &[]),
                 node("nod_hana_co", "Hana Company", &["Hana Co."]),
                 node("nod_h", "Halvorsen Cellworks", &[]),
             ],
-            6,
+            7,
         );
-        assert_eq!(node_of(&hana_co).as_deref(), Some("nod_hana_co"));
         assert_eq!(node_of(&suffixed), None);
+        seal(
+            vec![
+                node("nod_hana", "Hana", &[]),
+                node("nod_hana_co", "Hana Company", &["Hana Co."]),
+                node("nod_h", "Halvorsen Cellworks", &["Halvorsen Cellworks ASA"]),
+            ],
+            8,
+        );
+        assert_eq!(node_of(&suffixed).as_deref(), Some("nod_h"));
+        assert_eq!(node_of(&other), None);
         assert_eq!(node_of(&hana).as_deref(), Some("nod_hana"));
-        assert_eq!(subject("m4", "hana co.", 7), hana_co);
-        assert_eq!(subject("m5", "Hana", 8), hana);
+        assert_eq!(subject("m5", "Hana", 9), hana);
+    }
+
+    #[test]
+    fn subject_spellings_resolve_to_one_page_and_a_second_create_is_refused() {
+        let (_dir, store) = store();
+        let first = file_in(
+            &store,
+            &turn("m1"),
+            vec![create_subject("Apple", vec![put("facts", "A", None)])],
+            1,
+        );
+        let id = first[0].record_id.clone();
+        let resolve = |title: &str| {
+            store
+                .read(|write| {
+                    let mut world = None;
+                    super::matching_subject(
+                        write.tx,
+                        LOUPIST,
+                        title,
+                        &[AnchorInput::Name {
+                            name: title.to_string(),
+                        }],
+                        &mut world,
+                    )
+                })
+                .unwrap()
+        };
+        for title in ["Apple", "Apple Inc.", "Apple Inc. (AAPL)"] {
+            let once = resolve(title);
+            let twice = resolve(title);
+            assert_eq!(once, twice, "{title}");
+            assert_eq!(
+                once.as_ref().map(|page| page.0.as_str()),
+                Some(id.as_str()),
+                "{title}"
+            );
+            assert_eq!(
+                once.as_ref().map(|page| page.1.as_str()),
+                Some("Apple"),
+                "{title}"
+            );
+        }
+        let second = store.transact(|write| {
+            write.file(
+                LOUPIST,
+                &turn("m2"),
+                vec![create_subject("Apple Inc.", vec![put("facts", "B", None)])],
+                2,
+            )
+        });
+        match second {
+            Err(crate::knowledge::KnowledgeError::ExistingPage { record_id, title }) => {
+                assert_eq!(record_id, id);
+                assert_eq!(title, "Apple");
+            }
+            other => panic!("expected existing_page, got {other:?}"),
+        }
+        let third = store.transact(|write| {
+            write.file(
+                LOUPIST,
+                &turn("m3"),
+                vec![create_subject(
+                    "Apple Inc. (AAPL)",
+                    vec![put("drivers", "C", None)],
+                )],
+                3,
+            )
+        });
+        match third {
+            Err(crate::knowledge::KnowledgeError::ExistingPage { record_id, .. }) => {
+                assert_eq!(record_id, id)
+            }
+            other => panic!("expected existing_page, got {other:?}"),
+        }
+        assert_eq!(read(&store, &id).body.sections().len(), 1);
     }
 
     #[test]
@@ -3404,6 +4732,8 @@ mod tests {
                 span_id: span_id.clone(),
                 role: crate::knowledge::BindingRole::ExtractedFrom,
                 attribution: "report".into(),
+                figure_check: None,
+                passage: None,
             }],
             status: ClaimStatus::Active,
             recorded_at_ms: Some(7),
@@ -3609,5 +4939,377 @@ mod tests {
         assert_eq!(entries[0].summary, "GPU maker.");
         assert_eq!(entries[0].section_count, 1);
         assert_eq!(entries[0].map_names, vec!["nvidia".to_string()]);
+    }
+
+    fn learning_run_undo(
+        store: &KnowledgeStore,
+        message_id: &str,
+    ) -> Option<crate::knowledge::MessageUndo> {
+        use std::collections::BTreeMap;
+
+        use crate::scheduled_tasks::types::*;
+
+        let sqlite = store.app_store();
+        if sqlite.get_loupist(LOUPIST).unwrap().is_none() {
+            sqlite
+                .create_loupist(&crate::test_fixtures::loupist_profile(LOUPIST))
+                .unwrap();
+        }
+        for task in sqlite.scheduled_tasks_list(LOUPIST).unwrap() {
+            for run in sqlite.scheduled_task_runs(LOUPIST, &task.id).unwrap() {
+                if run.message_id.as_deref() == Some(message_id) {
+                    return run.undo;
+                }
+            }
+        }
+        let task = sqlite
+            .scheduled_task_create(
+                LOUPIST,
+                TaskDraft {
+                    title: "Learn".into(),
+                    prompt: "Learn the filing.".into(),
+                    schedule: Schedule::Interval { every_minutes: 60 },
+                    target: TaskTarget::NewChat,
+                    model_profile_id: "fixture/model".into(),
+                    thinking_level: "off".into(),
+                    run_options: BTreeMap::new(),
+                    use_memory: true,
+                    update_memory: false,
+                    status: TaskStatus::Active,
+                },
+                1_000,
+            )
+            .unwrap();
+        let (claim, ()) = sqlite
+            .scheduled_task_claim_with(LOUPIST, &task.id, 1_100, true, |_| Ok(()))
+            .unwrap()
+            .unwrap();
+        sqlite
+            .scheduled_task_finish(
+                LOUPIST,
+                &claim.run.run_id,
+                RunStatus::Succeeded,
+                None,
+                1_200,
+            )
+            .unwrap();
+        sqlite
+            .scheduled_run_result(LOUPIST, &claim.run.run_id, "Learned it.", message_id, None)
+            .unwrap();
+        sqlite
+            .scheduled_task_runs(LOUPIST, &task.id)
+            .unwrap()
+            .into_iter()
+            .find(|run| run.message_id.as_deref() == Some(message_id))
+            .and_then(|run| run.undo)
+    }
+
+    fn section_markdown(page: &PageRead, key: &str) -> Option<String> {
+        page.body
+            .sections()
+            .iter()
+            .find(|section| section.key.as_str() == key)
+            .map(|section| section.markdown.clone())
+    }
+
+    #[test]
+    fn undo_message_restores_what_that_run_wrote_and_keeps_a_later_edit() {
+        for edit_since in [false, true] {
+            let (directory, store) = store();
+            let filed = file_in(
+                &store,
+                &turn("earlier"),
+                vec![create_subject(
+                    "Northwind",
+                    vec![
+                        put("base", "original", None),
+                        put("stay", "untouched", None),
+                    ],
+                )],
+                100,
+            );
+            let id = filed[0].record_id.clone();
+            let base = digest(&read(&store, &id), "base");
+            file_in(
+                &store,
+                &turn("run-1"),
+                vec![existing(
+                    &id,
+                    vec![
+                        put("base", "from-run", Some(base)),
+                        put("added", "from-run", None),
+                    ],
+                )],
+                200,
+            );
+            if edit_since {
+                let current = digest(&read(&store, &id), "base");
+                file_in(
+                    &store,
+                    &turn("later"),
+                    vec![existing(&id, vec![put("base", "edited", Some(current))])],
+                    300,
+                );
+            }
+            let result = store
+                .transact(|write| write.undo_message(LOUPIST, "run-1", 400))
+                .unwrap();
+            let page = read(&store, &id);
+            assert_eq!(
+                section_markdown(&page, "stay").as_deref(),
+                Some("untouched")
+            );
+            assert!(section_markdown(&page, "added").is_none());
+            if edit_since {
+                assert_eq!(result, MessageUndo { undone: 1, kept: 1 });
+                assert_eq!(section_markdown(&page, "base").as_deref(), Some("edited"));
+            } else {
+                assert_eq!(result, MessageUndo { undone: 2, kept: 0 });
+                assert_eq!(section_markdown(&page, "base").as_deref(), Some("original"));
+            }
+            let loaded = learning_run_undo(&store, "run-1");
+            assert_eq!(loaded, Some(result));
+            let again = store
+                .transact(|write| write.undo_message(LOUPIST, "run-1", 500))
+                .unwrap();
+            assert_eq!(again, result);
+            assert_eq!(
+                section_markdown(&read(&store, &id), "base"),
+                section_markdown(&page, "base")
+            );
+            let path = directory.path().join("knowledge.sqlite");
+            drop(store);
+            let store = KnowledgeStore::open(&path).unwrap();
+            let reloaded = read(&store, &id);
+            assert_eq!(
+                section_markdown(&reloaded, "base"),
+                section_markdown(&page, "base")
+            );
+            assert!(section_markdown(&reloaded, "added").is_none());
+            assert_eq!(
+                section_markdown(&reloaded, "stay").as_deref(),
+                Some("untouched")
+            );
+            assert_eq!(learning_run_undo(&store, "run-1"), Some(result));
+            let after_restart = store
+                .transact(|write| write.undo_message(LOUPIST, "run-1", 600))
+                .unwrap();
+            assert_eq!(after_restart, result);
+            assert_eq!(
+                section_markdown(&read(&store, &id), "base"),
+                section_markdown(&page, "base")
+            );
+        }
+    }
+
+    #[test]
+    fn undoing_the_newer_run_first_lets_the_older_run_restore_the_same_section() {
+        let (_directory, store) = store();
+        let filed = file_in(
+            &store,
+            &turn("earlier"),
+            vec![create_subject(
+                "Northwind",
+                vec![put("base", "original", None)],
+            )],
+            100,
+        );
+        let id = filed[0].record_id.clone();
+        for (run, markdown, at) in [("run-1", "first run", 200), ("run-2", "second run", 300)] {
+            let current = digest(&read(&store, &id), "base");
+            file_in(
+                &store,
+                &turn(run),
+                vec![existing(&id, vec![put("base", markdown, Some(current))])],
+                at,
+            );
+        }
+        let newer = store
+            .transact(|write| write.undo_message(LOUPIST, "run-2", 400))
+            .unwrap();
+        assert_eq!(newer, MessageUndo { undone: 1, kept: 0 });
+        assert_eq!(
+            section_markdown(&read(&store, &id), "base").as_deref(),
+            Some("first run")
+        );
+        let older = store
+            .transact(|write| write.undo_message(LOUPIST, "run-1", 500))
+            .unwrap();
+        assert_eq!(older, MessageUndo { undone: 1, kept: 0 });
+        assert_eq!(
+            section_markdown(&read(&store, &id), "base").as_deref(),
+            Some("original")
+        );
+    }
+
+    #[test]
+    fn a_legacy_undo_marker_keeps_its_counts_on_a_repeat_and_when_the_run_loads() {
+        let (directory, store) = store();
+        let filed = file_in(
+            &store,
+            &turn("earlier"),
+            vec![create_subject(
+                "Northwind",
+                vec![
+                    put("base", "original", None),
+                    put("stay", "untouched", None),
+                ],
+            )],
+            100,
+        );
+        let id = filed[0].record_id.clone();
+        let base = digest(&read(&store, &id), "base");
+        file_in(
+            &store,
+            &turn("run-1"),
+            vec![existing(
+                &id,
+                vec![
+                    put("base", "from-run", Some(base)),
+                    put("added", "from-run", None),
+                ],
+            )],
+            200,
+        );
+        let current = digest(&read(&store, &id), "base");
+        file_in(
+            &store,
+            &turn("later"),
+            vec![existing(&id, vec![put("base", "edited", Some(current))])],
+            300,
+        );
+        let result = store
+            .transact(|write| write.undo_message(LOUPIST, "run-1", 400))
+            .unwrap();
+        assert_eq!(result, MessageUndo { undone: 1, kept: 1 });
+        {
+            // The log is append-only. Replace the counted marker with the shape
+            // written before counts and message_id were stored.
+            let sqlite = store.app_store();
+            let mut connection = sqlite.lock().unwrap();
+            let tx = connection.transaction().unwrap();
+            tx.execute("UPDATE knowledge_erasure SET armed = 1 WHERE id = 1", [])
+                .unwrap();
+            let (record_id, undoes, at): (String, String, i64) = tx
+                .query_row(
+                    "SELECT record_id, undoes_op_id, created_at_ms FROM knowledge_lens_log
+                     WHERE loupist_id = ?1 AND outcome = 'message_undo'",
+                    [LOUPIST],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .unwrap();
+            tx.execute(
+                "DELETE FROM knowledge_lens_log WHERE loupist_id = ?1 AND outcome = 'message_undo'",
+                [LOUPIST],
+            )
+            .unwrap();
+            tx.execute(
+                "INSERT INTO knowledge_lens_log
+                    (op_id, loupist_id, record_id, op_json, outcome, origin, created_at_ms, undoes_op_id)
+                 VALUES ('lop_legacy', ?1, ?2, '{\"op\":\"message_undo\"}', 'message_undo', 'user', ?3, ?4)",
+                rusqlite::params![LOUPIST, record_id, at, undoes],
+            )
+            .unwrap();
+            tx.execute("UPDATE knowledge_erasure SET armed = 0 WHERE id = 1", [])
+                .unwrap();
+            tx.commit().unwrap();
+        }
+        let again = store
+            .transact(|write| write.undo_message(LOUPIST, "run-1", 500))
+            .unwrap();
+        assert_eq!(again, result);
+        assert_eq!(learning_run_undo(&store, "run-1"), Some(result));
+        let path = directory.path().join("knowledge.sqlite");
+        drop(store);
+        let store = KnowledgeStore::open(&path).unwrap();
+        assert_eq!(learning_run_undo(&store, "run-1"), Some(result));
+        let after_restart = store
+            .transact(|write| write.undo_message(LOUPIST, "run-1", 600))
+            .unwrap();
+        assert_eq!(after_restart, result);
+    }
+
+    #[test]
+    fn a_legacy_marker_keeps_a_section_an_earlier_undo_already_restored() {
+        let (directory, store) = store();
+        let filed = file_in(
+            &store,
+            &turn("earlier"),
+            vec![create_subject(
+                "Northwind",
+                vec![
+                    put("base", "original", None),
+                    put("stay", "untouched", None),
+                ],
+            )],
+            100,
+        );
+        let id = filed[0].record_id.clone();
+        let base = digest(&read(&store, &id), "base");
+        let run = file_in(
+            &store,
+            &turn("run-1"),
+            vec![existing(
+                &id,
+                vec![
+                    put("base", "from-run", Some(base)),
+                    put("added", "from-run", None),
+                ],
+            )],
+            200,
+        );
+        let added = run[0]
+            .outcomes
+            .iter()
+            .find(|op| matches!(op.outcome, OpOutcome::Added { .. }))
+            .expect("added section")
+            .op_id
+            .clone();
+        store
+            .transact(|write| write.undo_op(LOUPIST, &added, 250))
+            .unwrap();
+        let result = store
+            .transact(|write| write.undo_message(LOUPIST, "run-1", 400))
+            .unwrap();
+        assert_eq!(result, MessageUndo { undone: 1, kept: 1 });
+        {
+            let sqlite = store.app_store();
+            let mut connection = sqlite.lock().unwrap();
+            let tx = connection.transaction().unwrap();
+            tx.execute("UPDATE knowledge_erasure SET armed = 1 WHERE id = 1", [])
+                .unwrap();
+            let (record_id, undoes, at): (String, String, i64) = tx
+                .query_row(
+                    "SELECT record_id, undoes_op_id, created_at_ms FROM knowledge_lens_log
+                     WHERE loupist_id = ?1 AND outcome = 'message_undo'",
+                    [LOUPIST],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .unwrap();
+            tx.execute(
+                "DELETE FROM knowledge_lens_log WHERE loupist_id = ?1 AND outcome = 'message_undo'",
+                [LOUPIST],
+            )
+            .unwrap();
+            tx.execute(
+                "INSERT INTO knowledge_lens_log
+                    (op_id, loupist_id, record_id, op_json, outcome, origin, created_at_ms, undoes_op_id)
+                 VALUES ('lop_legacy_kept', ?1, ?2, '{\"op\":\"message_undo\"}', 'message_undo', 'user', ?3, ?4)",
+                rusqlite::params![LOUPIST, record_id, at, undoes],
+            )
+            .unwrap();
+            tx.execute("UPDATE knowledge_erasure SET armed = 0 WHERE id = 1", [])
+                .unwrap();
+            tx.commit().unwrap();
+        }
+        let again = store
+            .transact(|write| write.undo_message(LOUPIST, "run-1", 500))
+            .unwrap();
+        assert_eq!(again, result);
+        assert_eq!(learning_run_undo(&store, "run-1"), Some(result));
+        let path = directory.path().join("knowledge.sqlite");
+        drop(store);
+        let store = KnowledgeStore::open(&path).unwrap();
+        assert_eq!(learning_run_undo(&store, "run-1"), Some(result));
     }
 }

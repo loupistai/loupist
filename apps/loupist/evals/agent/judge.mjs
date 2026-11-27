@@ -161,12 +161,18 @@ export function buildJudgeInput(suite, item, traces) {
   }
   if (turn?.scheduled && scheduledDeliveryEvidence(item.trace, scenario, turn, traces).pass === true) {
     input.answer = item.trace.session_answer.content;
-    input.bot_preview = answer;
+    input.bot_preview = item.trace.delivered_summary;
   }
   if (turn?.expect?.trace?.some(check => check.assert === 'scheduled_tasks') && Array.isArray(item.trace.scheduled_tasks)) {
     input.saved_tasks = item.trace.scheduled_tasks.map(({ title, prompt, status }) => ({ title, prompt, status }));
   }
   if (item.memory_item) input.memory_item = item.memory_item;
+  // What the runner observed beside the reply. A trace without a record adds no field,
+  // so the input and the cached verdict of an earlier trace stay as they were.
+  if (Array.isArray(item.trace.progress_notes)) input.progress_notes = item.trace.progress_notes.map((note) => note?.text ?? null);
+  for (const field of ['scheduled_run', 'trigger_dry_run']) {
+    if (isRecord(item.trace[field])) input[field] = item.trace[field];
+  }
   const pages = storedLensPages(item.trace);
   if (pages) input.lens_pages_after_turn = pages;
   return input;
@@ -195,6 +201,15 @@ export function renderJudgePrompt(input) {
     ...(Object.hasOwn(input, 'bot_preview') ? [
       'The answer is the full scheduled session reply. The bot_preview is the delivered excerpt.',
     ] : []),
+    ...(Object.hasOwn(input, 'progress_notes') ? [
+      'The progress_notes are the notes the user saw while the agent worked, in order. An empty list means none was shown.',
+    ] : []),
+    ...(Object.hasOwn(input, 'scheduled_run') ? [
+      'The scheduled_run is the stored record of this scheduled occurrence: its status, whether it stayed quiet and its request budget.',
+    ] : []),
+    ...(Object.hasOwn(input, 'trigger_dry_run') ? [
+      'The trigger_dry_run lists the days a saved check was met on a replay of recent days, and the tools it read.',
+    ] : []),
     ...(Object.hasOwn(input, 'screen_labels') ? [
       'The screen_labels are the actual labels in this turn’s resolved appearance. Compare the answer with these exact labels. Correct directions can pass when no tool call was made.',
     ] : []),
@@ -206,8 +221,10 @@ export function renderJudgePrompt(input) {
   ].join('\n');
 }
 
-export function judgeCacheKey({ input, criterion, model, promptVersion = PROMPT_VERSION, reasoningEffort = DEFAULT_REASONING_EFFORT }) {
-  return createHash('sha256').update(JSON.stringify({ input: canonical(input), criterion, model, prompt_version: promptVersion, reasoning_effort: reasoningEffort })).digest('hex');
+export function judgeCacheKey({ input, criterion, model, promptVersion = PROMPT_VERSION, reasoningEffort = DEFAULT_REASONING_EFFORT, performance = 'standard' }) {
+  // A fast verdict is its own entry, so a run compares like with like; standard keys are unchanged.
+  return createHash('sha256').update(JSON.stringify({ input: canonical(input), criterion, model, prompt_version: promptVersion, reasoning_effort: reasoningEffort,
+    ...(performance === 'standard' ? {} : { performance }) })).digest('hex');
 }
 
 async function readCache(cacheDir, key) {
@@ -224,6 +241,23 @@ async function readCache(cacheDir, key) {
 async function writeCache(cacheDir, key, model, promptVersion, reasoningEffort, result) {
   await mkdir(cacheDir, { recursive: true });
   await writeFile(join(cacheDir, `${key}.json`), `${JSON.stringify({ key, model, prompt_version: promptVersion, reasoning_effort: reasoningEffort, pass: result.pass, reason: result.reason })}\n`, { mode: 0o600 });
+}
+
+/**
+ * One verdict for one judge input. The cache key covers the input, the criterion, the model,
+ * the prompt version and the effort, so a hit never spends a model call. Every judge of this
+ * directory goes through here: rubric items and the refusal-rule items share one cache.
+ */
+export async function cachedVerdict({ input, criterion, prompt, model, promptVersion = PROMPT_VERSION,
+  reasoningEffort = DEFAULT_REASONING_EFFORT, cacheDir, backend, controls = {} }) {
+  if (!cacheDir) throw new Error('Judge cache directory is required');
+  if (!backend?.judge) throw new Error('Judge backend is required');
+  const key = judgeCacheKey({ input, criterion, model, promptVersion, reasoningEffort, performance: backend.performance ?? 'standard' });
+  const cached = await readCache(cacheDir, key);
+  if (cached) return { ...cached, cache: 'hit' };
+  const judged = parseJudgeResult(await backend.judge(prompt, { input, model, reasoningEffort, ...controls }));
+  await writeCache(cacheDir, key, model, promptVersion, reasoningEffort, judged);
+  return { ...judged, cache: 'miss' };
 }
 
 function judgmentRow(item, extra) {
@@ -248,15 +282,9 @@ export async function judgeAll({ suite, traces, model = DEFAULT_JUDGE_MODEL, cac
   const judgeAt = async (index) => {
     const item = items[index];
     const input = buildJudgeInput(suite, item, traces);
-    const key = judgeCacheKey({ input, criterion: item.criterion, model, promptVersion, reasoningEffort });
-    const cached = await readCache(cacheDir, key);
-    if (cached) {
-      results[index] = judgmentRow(item, { ...cached, model, prompt_version: promptVersion, reasoning_effort: reasoningEffort, cache: 'hit' });
-      return;
-    }
-    const judged = parseJudgeResult(await backend.judge(renderJudgePrompt(input), { input, item, model, reasoningEffort }));
-    await writeCache(cacheDir, key, model, promptVersion, reasoningEffort, judged);
-    results[index] = judgmentRow(item, { ...judged, model, prompt_version: promptVersion, reasoning_effort: reasoningEffort, cache: 'miss' });
+    const verdict = await cachedVerdict({ input, criterion: item.criterion, prompt: renderJudgePrompt(input), model, promptVersion,
+      reasoningEffort, cacheDir, backend, controls: { item } });
+    results[index] = judgmentRow(item, { ...verdict, model, prompt_version: promptVersion, reasoning_effort: reasoningEffort });
   };
   let next = 0;
   const worker = async () => {
@@ -301,24 +329,29 @@ export function grokBackend({ model = DEFAULT_JUDGE_MODEL, reasoningEffort = DEF
   };
 }
 
-export function codexJudgeArgs({ model, cwd, schemaPath, outputPath, reasoningEffort = DEFAULT_REASONING_EFFORT }) {
+export function codexJudgeArgs({ model, cwd, schemaPath, outputPath, reasoningEffort = DEFAULT_REASONING_EFFORT, performance = 'standard' }) {
   return ['exec', '--ignore-user-config', '--ignore-rules', '--skip-git-repo-check', '--ephemeral', '-m', model,
-    '-c', `model_reasoning_effort="${reasoningEffort}"`, '-c', 'features.shell_tool=false', '-c', 'web_search="disabled"',
+    '-c', `model_reasoning_effort="${reasoningEffort}"`,
+    // Fast is the provider's priority tier for the same model and effort. The user config is
+    // ignored, so the tier is named here.
+    ...(performance === 'fast' ? ['-c', 'service_tier="priority"'] : []),
+    '-c', 'features.shell_tool=false', '-c', 'web_search="disabled"',
     '-c', 'features.multi_agent=false', '--sandbox', 'read-only', '--cd', cwd,
     '--output-schema', schemaPath, '--output-last-message', outputPath, '-'];
 }
 
 /** A tool-free `codex exec` judge, for agents whose own family is xAI. */
-export function codexBackend({ model = 'gpt-6-astra', reasoningEffort = DEFAULT_REASONING_EFFORT, command = 'codex', run = runProcess } = {}) {
+export function codexBackend({ model = 'gpt-6-astra', reasoningEffort = DEFAULT_REASONING_EFFORT, performance = 'standard', command = 'codex', run = runProcess } = {}) {
   return {
     model,
+    performance,
     async judge(prompt, controls = {}) {
       const cwd = await mkdtemp(join(tmpdir(), 'agent-judge-'));
       try {
         const schemaPath = join(cwd, 'schema.json');
         const outputPath = join(cwd, 'verdict.json');
         await writeFile(schemaPath, JSON.stringify(JUDGE_SCHEMA));
-        await run(command, codexJudgeArgs({ model, cwd, schemaPath, outputPath, reasoningEffort: controls.reasoningEffort ?? reasoningEffort }), { cwd, input: prompt });
+        await run(command, codexJudgeArgs({ model, cwd, schemaPath, outputPath, reasoningEffort: controls.reasoningEffort ?? reasoningEffort, performance }), { cwd, input: prompt });
         return parseJudgeResult(await readFile(outputPath, 'utf8'));
       } finally {
         await rm(cwd, { recursive: true, force: true });

@@ -16,8 +16,10 @@ import { agreement, importLabels, labelInteractive, labelViews } from './labels.
 import { compareReports, comparisonMarkdown } from './compare-reports.mjs';
 import { buildReport, compareRuns } from './report.mjs';
 import { assessAdoption } from './adopt.mjs';
+import { judgeAgreement } from './judge-agreement.mjs';
+import { firstAttemptRefusals, judgeRefusalItems, refusalJudgeItems, refusalPairs, refusalReport } from './refusal-evidence.mjs';
 
-export const SUBCOMMANDS = ['run', 'grade', 'judge', 'label', 'lens-pages', 'calibrate', 'report', 'compare', 'adopt'];
+export const SUBCOMMANDS = ['run', 'grade', 'judge', 'agree', 'refusals', 'label', 'lens-pages', 'calibrate', 'report', 'compare', 'adopt'];
 const JUDGE_BACKENDS = ['grok', 'codex', 'claude', 'openai'];
 export const DEFAULT_RUNNER = [
   'cargo', 'run', '--manifest-path', 'apps/loupist/src-tauri/Cargo.toml',
@@ -25,10 +27,14 @@ export const DEFAULT_RUNNER = [
 ];
 
 const outputRoot = fileURLToPath(new URL('../output/', import.meta.url));
+const defaultCatalog = fileURLToPath(new URL('../../agent/tool-catalog.json', import.meta.url));
+const JUDGE_OPTIONS = ['model', 'reasoning-effort', 'performance', 'endpoint', 'backend', 'api-key-env', 'cache', 'concurrency', 'allow-same-family'];
 const COMMAND_OPTIONS = {
   run: ['suite', 'runner', 'trials', 'split'],
   grade: ['suite', 'traces', 'split', 'fail-on-regression'],
-  judge: ['split', 'suite', 'traces', 'model', 'reasoning-effort', 'endpoint', 'backend', 'api-key-env', 'cache', 'concurrency', 'allow-same-family'],
+  judge: ['split', 'suite', 'traces', ...JUDGE_OPTIONS],
+  agree: ['a', 'b'],
+  refusals: ['traces', 'catalog', ...JUDGE_OPTIONS],
   calibrate: ['suite', 'traces', 'judgments', 'labels', 'out', 'split', 'model', 'prompt-version', 'reasoning-effort'],
   label: ['import', 'traces', 'judgments'],
   'lens-pages': ['traces', 'out'],
@@ -45,6 +51,9 @@ export function helpText() {
     '  run       Run the configurable headless agent runner',
     '  grade     Grade trace, memory, and answer assertions',
     '  judge     Binary LLM judge for rubrics and save_precision',
+    '  agree     Agreement of two judges on the same items: --a judgments.jsonl --b judgments.jsonl',
+    '  refusals  First-attempt tool refusals by tool and reason: --traces a.jsonl[,b.jsonl] [--catalog tool-catalog.json];',
+    '            with --backend, one judgment per pair on whether the tool description states the rule',
     '  label     Label judged items on a TTY, or import labels',
     '  lens-pages Render each run\'s final Lens pages and per-turn ops as Markdown for review',
     '  calibrate Save judge calibration against human labels',
@@ -57,7 +66,10 @@ export function helpText() {
     'Judge readiness requires 30 matched labels, 10 positives, 10 negatives, TPR >= 0.8 and TNR >= 0.8.',
     'calibrate requires --suite, --traces, --judgments, --labels; --out selects judge-calibration.json.',
     'Same-family judging requires --allow-same-family; unknown model families never block.',
+    'agree marks a criterion unreliable under 85% agreement or under ten shared items; it calls no model.',
+    'refusals without --backend counts and calls no model; --catalog names the candidate catalog under test.',
     'Judge --reasoning-effort defaults to medium and is stored on each judgment and in the cache key.',
+    'Judge --performance fast (default: LOUPIST_EVAL_PERFORMANCE, else standard) asks the codex judge for the priority tier; a fast verdict has its own cache key.',
     'Judge --backend grok (default, grok-4.7), codex (gpt-6-astra), claude (claude-opus-5-5, tool-free',
     '  `claude -p` on the Claude subscription login) or openai (--endpoint, --api-key-env); --model overrides.',
     'run/report/compare --trials N defaults to 3; completion goals require all three trials.',
@@ -163,6 +175,34 @@ function selectRows(rows, suite, split) {
   return rows.filter((row) => row.suite === suite.suite && ids.has(row.scenario_id));
 }
 
+/** The judge of one command, refused when it shares a model family with an agent it judges. */
+function judgeBackend(options, io, traces) {
+  if (options.backend && !JUDGE_BACKENDS.includes(options.backend)) throw new Error(`--backend must be one of ${JUDGE_BACKENDS.join(', ')}`);
+  const codex = options.backend === 'codex';
+  const claude = options.backend === 'claude';
+  const model = options.model ?? (codex ? 'gpt-6-astra' : claude ? DEFAULT_CLAUDE_JUDGE_MODEL : DEFAULT_JUDGE_MODEL);
+  const reasoningEffort = options['reasoning-effort'] ?? DEFAULT_REASONING_EFFORT;
+  // The eval runners' switch: fast asks a GPT judge for the priority tier of the same model.
+  const performance = options.performance ?? process.env.LOUPIST_EVAL_PERFORMANCE ?? 'standard';
+  if (!['standard', 'fast'].includes(performance)) throw new Error('--performance must be standard or fast');
+  // io.judgeRun replaces the judge CLI process in tests; undefined keeps each backend's own runner.
+  const run = io.judgeRun;
+  const backend = io.backend ?? (options.endpoint || options.backend === 'openai'
+    ? openAIBackend({ endpoint: options.endpoint, apiKeyEnv: options['api-key-env'], model, reasoningEffort })
+    : codex ? codexBackend({ model, reasoningEffort, performance, run })
+      : claude ? claudeBackend({ model, reasoningEffort, run }) : grokBackend({ model, reasoningEffort, run }));
+  const judgeModel = backend.model ?? model;
+  const family = modelFamily(judgeModel);
+  const conflicts = [...new Set(traces.flatMap((trace) => [trace.observed_model, trace.model?.model])
+    .filter((id) => family !== 'unknown' && modelFamily(id) === family))];
+  if (conflicts.length) {
+    const message = `Judge ${judgeModel} shares model family ${family} with agent models: ${conflicts.join(', ')}. Use --allow-same-family to override.`;
+    if (!options['allow-same-family']) throw Object.assign(new Error(message), { exitCode: 2 });
+    (io.warn ?? console.warn)(`Warning: ${message}`);
+  }
+  return { backend, judgeModel, reasoningEffort };
+}
+
 export async function main(argv = process.argv.slice(2), io = {}) {
   const { command, options } = parseArgv(argv);
   if (!command || command === '--help' || command === '-h' || options.help) {
@@ -247,6 +287,35 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     console.log(JSON.stringify({ output: directory, adopted: result.adopted, reasons: result.reasons }));
     return { ...result, exitCode: result.adopted ? 0 : 1 };
   }
+  if (command === 'agree') {
+    if (!options.a || !options.b) throw new Error('agree requires --a and --b');
+    const report = judgeAgreement(await readJsonl(resolve(options.a)), await readJsonl(resolve(options.b)));
+    const path = await emit(directory, 'agreement.json', `${JSON.stringify(report, null, 2)}\n`);
+    console.log(JSON.stringify({ output: path, shared: report.items.shared, agreement: report.agreement,
+      disagreements: report.disagreements.length, unreliable: report.unreliable }));
+    return report;
+  }
+  if (command === 'refusals') {
+    if (!options.traces) throw new Error('refusals requires --traces');
+    const traces = (await Promise.all(options.traces.split(',').map((path) => readJsonl(resolve(path))))).flat();
+    const catalog = await readJson(resolve(options.catalog ?? defaultCatalog));
+    let judgments = [];
+    // Counting is free. A judge is called only when one is named.
+    if (options.backend || options.endpoint || io.backend) {
+      const { backend, judgeModel, reasoningEffort } = judgeBackend(options, io, traces);
+      judgments = await judgeRefusalItems({
+        items: refusalJudgeItems(refusalPairs(firstAttemptRefusals(traces, catalog).refusals), catalog),
+        model: judgeModel, reasoningEffort, backend,
+        cacheDir: resolve(options.cache ?? resolve(directory, 'cache')), concurrency: Number(options.concurrency ?? 1),
+      });
+      await emit(directory, 'refusal-judgments.jsonl', jsonl(judgments));
+    }
+    const report = refusalReport(traces, catalog, judgments);
+    const path = await emit(directory, 'refusals.json', `${JSON.stringify(report, null, 2)}\n`);
+    console.log(JSON.stringify({ output: path, first_attempt_refusals: report.first_attempt_refusals, pairs: report.pairs.length,
+      hidden_rule_refusal: report.hidden_rule_refusal, uncached_judgments: judgments.filter((row) => row.cache === 'miss').length }));
+    return report;
+  }
   if (command === 'compare' && !options.suite) {
     if (!options.baseline || !options.candidate) throw new Error('compare requires --baseline and --candidate');
     const result = compareReports(await readJson(resolve(options.baseline)), await readJson(resolve(options.candidate)));
@@ -308,27 +377,8 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     return { ...calibration, exitCode: ready ? 0 : 3 };
   }
   if (command === 'judge') {
-    if (options.backend && !JUDGE_BACKENDS.includes(options.backend)) throw new Error(`--backend must be one of ${JUDGE_BACKENDS.join(', ')}`);
     const traces = await readRows(options.traces);
-    const codex = options.backend === 'codex';
-    const claude = options.backend === 'claude';
-    const model = options.model ?? (codex ? 'gpt-6-astra' : claude ? DEFAULT_CLAUDE_JUDGE_MODEL : DEFAULT_JUDGE_MODEL);
-    const reasoningEffort = options['reasoning-effort'] ?? DEFAULT_REASONING_EFFORT;
-    // io.judgeRun replaces the judge CLI process in tests; undefined keeps each backend's own runner.
-    const run = io.judgeRun;
-    const backend = io.backend ?? (options.endpoint || options.backend === 'openai'
-      ? openAIBackend({ endpoint: options.endpoint, apiKeyEnv: options['api-key-env'], model, reasoningEffort })
-      : codex ? codexBackend({ model, reasoningEffort, run })
-        : claude ? claudeBackend({ model, reasoningEffort, run }) : grokBackend({ model, reasoningEffort, run }));
-    const judgeModel = backend.model ?? model;
-    const family = modelFamily(judgeModel);
-    const conflicts = [...new Set(traces.flatMap((trace) => [trace.observed_model, trace.model?.model])
-      .filter((id) => family !== 'unknown' && modelFamily(id) === family))];
-    if (conflicts.length) {
-      const message = `Judge ${judgeModel} shares model family ${family} with agent models: ${conflicts.join(', ')}. Use --allow-same-family to override.`;
-      if (!options['allow-same-family']) throw Object.assign(new Error(message), { exitCode: 2 });
-      (io.warn ?? console.warn)(`Warning: ${message}`);
-    }
+    const { backend, judgeModel, reasoningEffort } = judgeBackend(options, io, traces);
     const judgments = await judgeAll({
       suite, traces, model: judgeModel, reasoningEffort,
       cacheDir: resolve(options.cache ?? resolve(directory, 'cache')), backend,

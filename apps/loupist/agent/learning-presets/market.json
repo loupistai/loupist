@@ -1,0 +1,33 @@
+{
+  "id": "market",
+  "title": "Follow the {market} market",
+  "brief": "Keep what this Loupist knows about the {market} market current. New since the previous run means a policy or rule change, official data, a day the market did not trade, or a material move with the cause its sources report. Follow this market in its own trading calendar, currency and language, from its exchange, regulator and official statistics first. Keep one Lens page as a current account of the market, and report what is new with dates and sources; stay quiet when nothing is.",
+  "slots": {
+    "market": {
+      "max_chars": 120
+    }
+  },
+  "subject_kind": "name",
+  "subject_slot": "market",
+  "schedule": {
+    "kind": "daily",
+    "hour": 18,
+    "minute": 10
+  },
+  "program": {
+    "depth": "standard",
+    "scope": {
+      "connections": "all_enabled",
+      "web": true
+    },
+    "keeps": {
+      "sources": true,
+      "lens": true,
+      "asset_reads": false
+    }
+  },
+  "report": "when_new",
+  "delivery": {
+    "to": "bot"
+  }
+}

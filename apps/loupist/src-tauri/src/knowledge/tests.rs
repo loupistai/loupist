@@ -682,7 +682,12 @@ fn repeated_paste_updates_its_provenance_under_one_source() {
     let save = |request: &RetainNewSource, origin: &ProvidedOrigin| {
         store
             .transact(|write| {
-                write.retain_new_source_with_origin(request.clone(), "reply", Some(origin))
+                write.retain_new_source_with_origin(
+                    request.clone(),
+                    "reply",
+                    crate::knowledge::JobOrigin::Chat,
+                    Some(origin),
+                )
             })
             .unwrap()
     };
@@ -913,6 +918,8 @@ fn world_source_links_resolve_both_directions_for_the_owner_only() {
             span_id: source.span_id.clone().unwrap(),
             role: BindingRole::ExtractedFrom,
             attribution: format!("Source {index}"),
+            figure_check: None,
+            passage: None,
         });
         claims.push(edge);
         sources.push(source);

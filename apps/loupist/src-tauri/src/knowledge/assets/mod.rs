@@ -4,7 +4,7 @@ pub(crate) mod saved_read;
 #[cfg(test)]
 mod tests;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use chrono::NaiveDate;
 use rusqlite::{params, OptionalExtension, Transaction};
@@ -1116,6 +1116,153 @@ fn day_of_ms(at_ms: i64) -> NaiveDate {
     crate::local_time::date_at_ms(at_ms).unwrap_or_default()
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct SinceRead {
+    pub since_ms: i64,
+    pub counts: BTreeMap<String, usize>,
+    pub rows: Vec<super::growth::GrowthEvent>,
+}
+
+/// Changes near the asset's linked entity since the latest thesis move.
+#[allow(dead_code)] // The asset reader wires this in with the change feed.
+pub(crate) fn since_read(
+    tx: &Transaction<'_>,
+    loupist_id: &str,
+    asset_id: &str,
+) -> KnowledgeResult<Option<SinceRead>> {
+    let Some(entity) = get_page(tx, loupist_id, asset_id)?.and_then(|page| page.entity_id) else {
+        return Ok(None);
+    };
+    let since_ms: Option<i64> = tx.query_row(
+        "SELECT max(at_ms) FROM knowledge_asset_moves WHERE loupist_id = ?1 AND asset_id = ?2",
+        params![loupist_id, asset_id],
+        |row| row.get(0),
+    )?;
+    let Some(since_ms) = since_ms else {
+        return Ok(None);
+    };
+    let controls = super::memory_controls::load(tx, loupist_id)?;
+    let body = world(tx, loupist_id)?;
+    let claims: BTreeSet<&str> = body
+        .iter()
+        .flat_map(|body| &body.claims)
+        .filter(|claim| {
+            claim
+                .endpoints
+                .iter()
+                .any(|endpoint| endpoint.node_id == entity)
+        })
+        .map(|claim| claim.id.as_str())
+        .collect();
+    let mut anchors = tx.prepare(
+        "SELECT a.record_id FROM knowledge_lens_anchors a
+         JOIN knowledge_lens_metadata m ON m.record_id = a.record_id
+         WHERE a.loupist_id = ?1 AND a.node_id = ?2 AND a.role = 'subject'
+           AND m.archived_at_ms IS NULL",
+    )?;
+    let pages: BTreeSet<String> = anchors
+        .query_map(params![loupist_id, entity], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    let mut counts = BTreeMap::new();
+    let mut rows = VecDeque::new();
+    let mut request = super::GrowthEventsQuery {
+        loupist_id: loupist_id.to_owned(),
+        since_ms: Some(since_ms),
+        until_ms: None,
+        world_revision_id: None,
+        cursor: None,
+        limit: Some(256),
+    };
+    loop {
+        let page = super::growth::query(tx, &request)?;
+        for event in page.events {
+            let publication = event.publication.as_ref();
+            if event.at_ms <= since_ms
+                || event
+                    .record_id
+                    .as_ref()
+                    .is_some_and(|record| controls.removed.contains(record))
+                || publication
+                    .and_then(|publication| publication.source.as_ref())
+                    .is_some_and(|source| controls.removed.contains(&source.record_id))
+            {
+                continue;
+            }
+            let relevant = match event.kind.as_str() {
+                "claim_added" | "claim_ended" | "claim_conflict" => {
+                    event
+                        .subject_id
+                        .as_deref()
+                        .is_some_and(|id| claims.contains(id))
+                        || publication.and_then(|item| item.fact_subject_id.as_deref())
+                            == Some(entity.as_str())
+                }
+                "lens_superseded" | "lens_contested" => event
+                    .record_id
+                    .as_ref()
+                    .is_some_and(|record| pages.contains(record)),
+                _ => false,
+            };
+            if relevant {
+                *counts.entry(event.kind.clone()).or_default() += 1;
+                if rows.len() == 8 {
+                    rows.pop_front();
+                }
+                rows.push_back(event);
+            }
+        }
+        request.cursor = page.next_cursor;
+        if request.cursor.is_none() {
+            break;
+        }
+    }
+    Ok(Some(SinceRead {
+        since_ms,
+        counts,
+        rows: rows.into_iter().rev().collect(),
+    }))
+}
+
+#[cfg(test)]
+#[test]
+fn since_read_counts_all_scoped_changes_and_keeps_eight_newest() {
+    use super::growth::{GrowthEvent, WorldGrowthPublication};
+    let store = crate::store::SqliteStore::open_in_memory().unwrap();
+    let mut connection = store.lock().unwrap();
+    let tx = connection.transaction().unwrap();
+    tx.execute(
+        "INSERT INTO knowledge_asset_pages
+         (loupist_id, asset_id, display_name, entity_id, created_at_ms, revision)
+         VALUES ('owner', 'asset', 'Asset', 'entity', 1, 1)",
+        [],
+    )
+    .unwrap();
+    assert!(since_read(&tx, "owner", "asset").unwrap().is_none());
+    tx.execute(
+        "INSERT INTO knowledge_asset_moves
+         (move_id, loupist_id, asset_id, to_verdict, fact_date, reason, evidence_json, actor, at_ms)
+         VALUES ('move', 'owner', 'asset', 'unsupported', '2026-04-01', '', '[]', 'user', 4)",
+        [],
+    )
+    .unwrap();
+    for at in 3..=15 {
+        let mut event =
+            GrowthEvent::new("owner", "world", at, "claim_ended", "processing", "change");
+        event.publication = Some(WorldGrowthPublication {
+            revision_id: "rev".into(),
+            source: None,
+            fact_subject_id: Some(if at == 15 { "other" } else { "entity" }.into()),
+        });
+        event.insert(&tx).unwrap();
+    }
+    let changes = since_read(&tx, "owner", "asset").unwrap().unwrap();
+    assert_eq!(changes.since_ms, 4);
+    assert_eq!(changes.counts["claim_ended"], 10);
+    assert_eq!(changes.rows.len(), 8);
+    assert_eq!(changes.rows[0].at_ms, 14);
+    assert_eq!(changes.rows[7].at_ms, 7);
+}
+
 fn read_since(
     page: &PageRecord,
     reasons: &[JournalRecord],
@@ -1336,6 +1483,7 @@ fn page_view_at(
         history: history.into_iter().rev().collect(),
         map,
         revision: page.revision,
+        since_read: None,
     })
 }
 

@@ -55,6 +55,7 @@ fn staged(bytes: &str) -> StagedSource {
         document_id: "doc-notes".into(),
         material_role: "original".into(),
         provided: None,
+        admitted: crate::knowledge::JobOrigin::Chat,
     }
 }
 
@@ -218,6 +219,8 @@ fn claim(node_id: &str, proposition: &str, span_id: Option<&str>) -> GraphClaim 
                 span_id: span_id.into(),
                 role: BindingRole::Supports,
                 attribution: "publisher-a".into(),
+                figure_check: None,
+                passage: None,
             })
             .into_iter()
             .collect(),
@@ -379,6 +382,7 @@ fn renderer_world_detail_across_a_publication() {
         crate::knowledge::KnowledgeMapQuery {
             loupist_id: loupist.into(),
             max_nodes: Some(1000),
+            as_of: None,
         },
     )
     .unwrap();
@@ -1430,8 +1434,10 @@ fn custom_connection_origin_is_retained_in_source_readers_catalog_and_map() {
             &crate::knowledge::KnowledgeMapQuery {
                 loupist_id: "loupist-custom".into(),
                 max_nodes: None,
+                as_of: None,
             },
             &Default::default(),
+            None,
         )?;
         assert_eq!(map.nodes[0].origin.as_ref(), Some(&origin));
         Ok(saved)

@@ -6,11 +6,12 @@ import { TRACE_ASSERTS, MEMORY_ASSERTS, MEMORY_KINDS, ANSWER_ASSERTS,
   toolCalls, memoryCommits, answerEvidence, visibleAnswerText, withoutEmphasis, numberSpellings, answerPatterns, validDate, executionMismatches,
   citationAssertion, returnedCitationUrls, citingParagraphs, numbersLinkedAssertion, asOfLeftOutAssertion,
   asOfRefusedAssertion, calculateInputsAssertion, metricTolerance, numberChecks, asOfReport,
-  toolCalledAssertion, argumentsInclude, isRecord,
+  toolCalledAssertion, argumentsInclude, isRecord, fileWrittenBeforeAssertion,
   LENS_ASSERTS, lensAssertion, lensPages, memoryReads, isNegativeAssertion, toolOrderAssertion } from './eval-contract.mjs';
 import { analyzeToolCalls, toolValidity, comparableArgs, toolExecutionState, skillReadEvidence, capabilityLoadEvidence, firstPackUseEvidence, hostResult } from './tool-evidence.mjs';
 import { noFalseSaveClaimEvidence } from './memory-evidence.mjs';
 import { scheduledDeliveryEvidence } from './scheduled-evidence.mjs';
+import { scheduledRunEvidence, checkDryRunEvidence, progressLanguageEvidence } from './run-evidence.mjs';
 import { visibleLabelsEvidence, visibleLabels } from './label-evidence.mjs';
 import { answerLanguageEvidence } from './language-evidence.mjs';
 import { figuresPresentEvidence, matchingNumber } from './figure-evidence.mjs';
@@ -287,6 +288,18 @@ function evaluateTraceAssertion(assertion, trace, scenario, turn, traces) {
     const result = scheduledDeliveryEvidence(trace, scenario, turn, traces, assertion.assert === 'scheduled_quiet');
     return resultOf(trace, assertion, result.pass, result.detail);
   }
+  if (assertion.assert === 'scheduled_run') {
+    const result = scheduledRunEvidence(assertion, trace);
+    return resultOf(trace, assertion, result.pass, result.detail);
+  }
+  if (assertion.assert === 'progress_language') {
+    const result = progressLanguageEvidence(assertion, trace);
+    return resultOf(trace, assertion, result.pass, result.detail);
+  }
+  if (assertion.assert === 'check_dry_run') {
+    const result = checkDryRunEvidence(assertion, trace, toolCalls(trace));
+    return resultOf(trace, assertion, result.pass, result.detail);
+  }
   const calls = toolCalls(trace);
   if (calls === null) return resultOf(trace, assertion, null, 'tool call evidence unavailable');
   if (assertion.assert === 'skill_read') {
@@ -335,6 +348,17 @@ function evaluateTraceAssertion(assertion, trace, scenario, turn, traces) {
     const states = calls.filter(call => call.name === assertion.tool).map(toolExecutionState);
     const pass = states.includes(true) ? false : states.includes(null) ? null : true;
     return resultOf(trace, assertion, pass, pass === null ? `${assertion.tool} execution unavailable` : pass ? `did not execute ${assertion.tool}` : `executed ${assertion.tool}`);
+  }
+  if (assertion.assert === 'file_written_before') {
+    const { path, before } = fileWrittenBeforeAssertion(assertion);
+    const writes = calls.map((call, index) => ({ call, index })).filter(({ call }) => call.name === 'write' && call.outcome !== 'error');
+    const written = writes.find(({ call }) => call.outcome === 'ok' && typeof call.args?.path === 'string' && path.test(call.args.path));
+    const first = calls.findIndex((call) => before.includes(call.name));
+    // A write whose path or outcome is not in the trace could be the file.
+    const unknown = !written && writes.some(({ call }) => call.outcome !== 'ok' || comparableArgs(call.args) === null);
+    const pass = written ? first < 0 || written.index < first : unknown ? null : false;
+    return resultOf(trace, assertion, pass, written ? `wrote ${written.call.args.path} at ${written.index}, first of ${before.join(', ')} at ${first}`
+      : unknown ? 'write evidence unavailable' : `no successful write matching ${path.source}`);
   }
   if (assertion.assert === 'tool_called_before') {
     const { tools, id } = toolOrderAssertion(assertion);

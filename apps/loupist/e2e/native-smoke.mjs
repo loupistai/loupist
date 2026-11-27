@@ -32,6 +32,7 @@ import {
   openMainTab,
   openCustomConnections,
   waitForNoRuns,
+  waitForRenderedButton,
   waitForShell,
 } from "./native-shell.mjs";
 
@@ -187,37 +188,14 @@ async function openRunningSession(row) {
   await displayed('#main-panel-chat button[aria-label="Stop response"]');
 }
 
-/** WebKit sometimes leaves a Radix menu shut after a WebDriver click; the keyboard opens it (as agent-driver does). */
-async function openComposerModelMenu() {
-  const trigger = await displayed("[data-testid=composer-model-menu]");
-  const opened = async () => {
-    for (let attempt = 0; attempt < 15; attempt += 1) {
-      await browser.pause(100);
-      for (const menu of await browser.$$('[data-slot="dropdown-menu-content"]')) {
-        if (await menu.isDisplayed().catch(() => false)) return true;
-      }
-    }
-    return false;
-  };
-  await trigger.click();
-  for (const key of ["Space", "Enter"]) {
-    if (await opened()) return;
-    await browser.keys("Escape");
-    await browser.keys(key);
-  }
-  if (!(await opened())) throw new Error("The Bot composer's model menu did not open");
-}
-
 async function runSlowHandoffJourney() {
   await preferEnglish(browser);
   await waitForShell(browser);
   await openBot();
-  // Look into it sends the Bot composer's choices; the fixture's model runs the scripted child.
-  await openComposerModelMenu();
-  await (await childWithText(browser, '[role="menuitemradio"] .model-menu-name', "Fixture research model")).click();
-  await browser.keys("Escape");
+  // In this fixture the Bot already resolves to the only offered model.
+  // Look into it locks that resolved model when it starts the scripted child.
   await browser.waitUntil(async () => (await browser.$("[data-testid=composer-model-menu]").getAttribute("aria-label"))?.startsWith("Fixture research model"), {
-    timeout: 5_000, timeoutMsg: "The Bot composer did not keep the fixture model",
+    timeout: 5_000, timeoutMsg: "The Bot composer did not resolve the fixture model",
   });
   const draft = await (await displayed("[data-chat-composer]")).getValue();
   const linkLabel = await (await displayed('#main-panel-chat article[aria-label^="New link: "]', 30_000)).getAttribute("aria-label");
@@ -242,14 +220,22 @@ async function runSlowHandoffJourney() {
   await waitForText(await displayed(link), "Researching it. The result will arrive here.");
   assert.equal(await browser.$(handoffPost(title)).isExisting(), false, "Bot posted the hand-off while its session worked");
   await openRunningSession(row);
-  await capture("handoff-running-session");
 
   // Guidance reaches the run from the session's composer.
   const composer = await displayed("[data-chat-composer]");
+  await browser.execute((element) => element.scrollIntoView({ block: "nearest" }), composer);
   await composer.setValue(GUIDE);
-  await (await displayed('#main-panel-chat button[aria-label="Guide this response"]')).click();
+  const guide = '#main-panel-chat button[aria-label="Guide this response"]';
+  await browser.waitUntil(() => browser.execute((selector) => {
+    const button = document.querySelector(selector);
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+    button.scrollIntoView({ block: "nearest" });
+    return true;
+  }, guide), { timeout: 15_000, timeoutMsg: "The running reply never offered guidance for the draft" });
+  await clickControl(browser, guide);
   await browser.waitUntil(async () => (await composer.getValue()) === "", { timeout: 10_000, timeoutMsg: "The guidance was not accepted" });
   await waitForText(await displayed("#main-panel-chat [data-turn-latest]"), GUIDE, 10_000);
+  await capture("handoff-running-session");
 
   // Stop ends the run in its session; Bot then posts it once, Stopped with Open, and the link
   // offers to look again.
@@ -258,11 +244,12 @@ async function runSlowHandoffJourney() {
     timeout: 20_000, timeoutMsg: "Stop did not end the hand-off's run",
   });
   await openBot();
-  const stopped = await displayed(`#main-panel-chat article[aria-label=${JSON.stringify(`Research: ${title}`)}][data-status="stopped"]`, 20_000);
+  const stoppedPost = `${handoffPost(title)}[data-status="stopped"]`;
+  const stopped = await displayed(stoppedPost, 20_000);
   await waitForText(stopped, "Stopped");
   assert.equal((await browser.$$(handoffPost(title))).length, 1, "Bot posted the hand-off more than once");
   assert.equal(await stopped.$("button=Stop").isExisting(), false, "Bot's post of a stopped hand-off offers Stop");
-  assert.ok(await (await stopped.$("button=Open")).isDisplayed(), "The stopped hand-off lost Open");
+  await waitForRenderedButton(browser, stoppedPost, "Open");
   await childWithText(await displayed(link), "button", "Look into it again", 20_000);
   await capture("handoff-stopped-card");
 }
@@ -372,17 +359,17 @@ try {
     await (await displayed("[data-notice-acknowledgment]")).click();
     await clickButton("Get started");
     await waitForOnboardingStep(browser, 3, 20_000);
-    await selectLoupistTemplate(browser, "My portfolio");
+    await selectLoupistTemplate(browser, "Watchlist research");
     assert.equal(await browser.$("#onboarding-focus").isExisting(), false);
     assert.equal(await browser.$("[data-loupist-tone]").isExisting(), false);
     await (await displayed("[data-onboarding-next]")).click();
     // The name step: the template suggests a name, and the face colour is chosen beside it.
     await waitForOnboardingStep(browser, 4, 20_000);
-    assert.equal(await (await displayed("#onboarding-name")).getValue(), "Portfolio Loupist");
+    assert.equal(await (await displayed("#onboarding-name")).getValue(), "Watchlist Loupist");
     await displayed('main[data-onboarding="4"] [data-loupist-identity] .loupist-face');
     await (await displayed("[data-onboarding-create]")).click();
     await waitForShell(browser, 30_000);
-    assert.equal(await selectedLoupistTitle(browser), "Portfolio Loupist");
+    assert.equal(await selectedLoupistTitle(browser), "Watchlist Loupist");
     await displayed("[data-testid=loupist-chat-row][data-home] [aria-current=page]");
     await capture("onboarding-bot");
   });
@@ -404,7 +391,7 @@ try {
     await loupistSwitcherAction(browser, "settings");
     const sheet = await displayed("[data-testid=loupist-settings-page]");
     // The page header says Loupist settings; the page's own heading names the Loupist.
-    await waitForText(sheet, "Portfolio Loupist");
+    await waitForText(sheet, "Watchlist Loupist");
     await clickButton("Remove Loupist", sheet);
     const dialog = await dialogByTitle(browser, "Remove Loupist?");
     await capture("loupist-settings");
@@ -420,7 +407,7 @@ try {
     const close = await sheet.$("[data-loupist-settings-back]");
     if (await close.isExisting()) await close.click();
     const titles = await visibleLoupistTitles();
-    assert.ok(titles.includes("Portfolio Loupist"), `Sidebar loupists: ${titles.join(", ")}`);
+    assert.ok(titles.includes("Watchlist Loupist"), `Sidebar loupists: ${titles.join(", ")}`);
     await capture("shell");
     performanceReport.shellObservedMs = (await pageTiming(browser)).observedMs;
   });
@@ -454,6 +441,27 @@ try {
       pass: ms <= 300,
     };
     console.log(JSON.stringify(performanceReport.loupistSwitch));
+  });
+
+  await step("Notification defaults use the full heading width in English and Korean", async () => {
+    const selector = '[data-testid="notification-defaults"]';
+    const check = async (title) => {
+      await openSettings("notifications");
+      await displayed(selector);
+      const [legend] = await assertFormLegendsFit(browser, { selector });
+      assert.equal(legend.text, title);
+    };
+    await check("Defaults by kind");
+    await openSettings("appearance");
+    await clickButton("한국어", await displayed("#main-panel-settings"));
+    try {
+      await browser.waitUntil(() => browser.execute(() => document.documentElement.lang === "ko"), {
+        timeout: 10_000, timeoutMsg: "The interface did not switch to Korean",
+      });
+      await check("종류별 기본값");
+    } finally {
+      await preferEnglish(browser);
+    }
   });
 
   await step("Settings Data connections", async () => {

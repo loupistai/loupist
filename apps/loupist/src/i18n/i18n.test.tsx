@@ -98,7 +98,6 @@ it("renders Korean appearance with English placeholder values and English fallba
   i18n.removeResourceBundle("ko", "settings");
   render(<AppearanceSettings theme="system" onThemeChange={vi.fn()} language="ko" onLanguageChange={change} />);
   expect(screen.getByRole("heading", { name: resources.en.settings.appearance.theme.label })).toBeInTheDocument();
-  expect(screen.getByText(resources.en.settings.appearance.language.description)).toBeInTheDocument();
   const group = screen.getByRole("group", { name: "Language" });
   expect(within(group).getByRole("button", { name: "한국어" })).toHaveAttribute("aria-pressed", "true");
   fireEvent.click(within(group).getByRole("button", { name: "English" }));

@@ -128,6 +128,31 @@ fn node_text(node: &super::super::model::GraphNode) -> (String, String, String) 
     )
 }
 
+fn node_search_text(node: &super::super::model::GraphNode) -> String {
+    let mut spellings = Vec::new();
+    for alias in &node.aliases {
+        if !alias.trim().is_empty() {
+            spellings.push(alias.clone());
+        }
+    }
+    if let Some(original) = node
+        .properties
+        .get("original_name")
+        .and_then(serde_json::Value::as_str)
+    {
+        spellings.push(original.to_string());
+    }
+    let codes = crate::knowledge::entity_codes::Codes::of_node(
+        &node.name,
+        &node.kind,
+        node.properties
+            .iter()
+            .map(|(key, value)| (key.as_str(), value)),
+    );
+    let code_values: Vec<String> = codes.values().map(str::to_string).collect();
+    super::pipeline::candidate_search_text(&node.name, &spellings, &code_values)
+}
+
 fn digest(parts: &[&str]) -> String {
     sha256(parts.join("\u{0}").as_bytes())
 }
@@ -150,10 +175,11 @@ pub(crate) fn missing_texts(
     let mut texts = Vec::new();
     let mut seen = HashSet::new();
     for node in &body.nodes {
-        if nodes.get(&node.id).map(|(vector, _)| vector) != Some(&digest(&[&node.name]))
-            && seen.insert(node.name.clone())
+        let search = node_search_text(node);
+        if nodes.get(&node.id).map(|(vector, _)| vector) != Some(&digest(&[&search]))
+            && seen.insert(search.clone())
         {
-            texts.push(node.name.clone());
+            texts.push(search);
         }
     }
     for claim in &body.claims {
@@ -249,7 +275,8 @@ pub(crate) fn sync(
     for node in &body.nodes {
         keep_nodes.insert(node.id.clone());
         let (name, summary, aliases) = node_text(node);
-        let vector_digest = digest(&[&name]);
+        let search = node_search_text(node);
+        let vector_digest = digest(&[&search]);
         let text_digest = digest(&[&name, &summary, &aliases]);
         let stored = stored_nodes.get(&node.id);
         if stored.map(|(vector, _)| vector) != Some(&vector_digest) {
@@ -258,7 +285,7 @@ pub(crate) fn sync(
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                  ON CONFLICT(loupist_id, world_record_id, node_id) DO UPDATE SET
                     vector_digest = excluded.vector_digest, vector = excluded.vector",
-                params![loupist_id, world_record_id, node.id, vector_digest, "", vector_for(&name)?],
+                params![loupist_id, world_record_id, node.id, vector_digest, "", vector_for(&search)?],
             )?;
         }
         if stored.map(|(_, text)| text) != Some(&text_digest) {

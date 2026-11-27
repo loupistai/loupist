@@ -238,6 +238,22 @@ pub(in crate::commands) struct CitationInputs<'a> {
     pub lens_deliveries: &'a [crate::domain::LensReceipt],
 }
 
+/// A principle shows in the answer's activity when the answer cites it or the
+/// turn read it. Other pages, and an exact read, stay as recorded. A principle
+/// only carried in the envelope does not.
+pub(in crate::commands) fn shows_in_activity(
+    receipt: &crate::domain::LensReceipt,
+    cited: &std::collections::BTreeSet<String>,
+    reads: &[crate::commands::tool_executor::StagedKnowledgeRead],
+) -> bool {
+    receipt.kind != "principle"
+        || receipt.delivery == "exact_read"
+        || cited.contains(&receipt.record_id)
+        || reads
+            .iter()
+            .any(|read| read.scope == "lens" && read.record_id == receipt.record_id)
+}
+
 pub(in crate::commands) fn answer_lens_links(answer: &str) -> impl Iterator<Item = String> + '_ {
     use pulldown_cmark::{Event, Parser, Tag};
     Parser::new(answer).filter_map(|event| match event {
@@ -607,5 +623,135 @@ mod tests {
         )
         .unwrap();
         assert_eq!(after, before);
+    }
+
+    #[test]
+    fn activity_keeps_a_cited_or_read_principle_and_drops_one_only_carried() {
+        let receipt = |id: &str, kind: &str, delivery: &str| crate::domain::LensReceipt {
+            record_id: id.into(),
+            revision_id: "rev_1".into(),
+            revision_digest: "a".repeat(64),
+            kind: kind.into(),
+            title: id.into(),
+            delivery: delivery.into(),
+        };
+        let read = crate::commands::tool_executor::StagedKnowledgeRead {
+            read_ref: "read".into(),
+            scope: "lens".into(),
+            record_id: "rec_read".into(),
+            span_id: None,
+            revision_id: "rev_1".into(),
+            object_id: "rec_read".into(),
+            title: "read".into(),
+            payload: crate::commands::tool_executor::AckedPayload::Lens {
+                revision_digest: "a".repeat(64),
+                document_json: "{}".into(),
+                body_digest: "b".repeat(64),
+                status: "active".into(),
+            },
+            evidence_origin: None,
+        };
+        let cited = std::collections::BTreeSet::from(["rec_cited".to_owned()]);
+        let reads = [read];
+        for (id, kind, delivery, shown) in [
+            ("rec_carried", "principle", "context", false),
+            ("rec_cited", "principle", "context", true),
+            ("rec_exact", "principle", "exact_read", true),
+            ("rec_method", "method", "context", true),
+            ("rec_read", "principle", "context", true),
+        ] {
+            assert_eq!(
+                shows_in_activity(&receipt(id, kind, delivery), &cited, &reads),
+                shown,
+                "{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_carried_principle_does_not_count_until_the_answer_cites_or_reads_it() {
+        let (_temp, state) = state();
+        let page = create(&state, request("Check operating cash flow")).unwrap();
+        let receipt = host_memory_context_for_turn(&state, "loupist-a", "", true, &[], None)
+            .unwrap()
+            .unwrap()
+            .principle_receipts
+            .remove(0);
+        assert_eq!(receipt.delivery, "context");
+        with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
+            super::super::memory_usage::persist_deliveries(
+                tx,
+                blobs,
+                "loupist-a",
+                "chat-a",
+                "turn-carried",
+                std::slice::from_ref(&receipt),
+                3,
+            )?;
+            let stored: i64 = tx.query_row(
+                "SELECT count(*) FROM knowledge_lens_deliveries WHERE turn_id='turn-carried'",
+                [],
+                |row| row.get(0),
+            )?;
+            assert_eq!(stored, 1);
+            Ok(())
+        })
+        .unwrap();
+        assert!(super::super::memory_usage::usage(&state, "loupist-a")
+            .unwrap()
+            .iter()
+            .all(|entry| entry.record_id != page.record_id));
+        with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
+            assert_eq!(
+                persist_citations(
+                    tx,
+                    blobs,
+                    "loupist-a",
+                    "turn-carried",
+                    &format!("See [rule](lens:{})", page.record_id),
+                    CitationInputs {
+                        reads: &[],
+                        lens_deliveries: std::slice::from_ref(&receipt),
+                    },
+                    4,
+                )?,
+                0
+            );
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            super::super::memory_usage::usage(&state, "loupist-a")
+                .unwrap()
+                .iter()
+                .find(|entry| entry.record_id == page.record_id)
+                .unwrap()
+                .used_count,
+            1
+        );
+        let mut exact = receipt;
+        exact.delivery = "exact_read".into();
+        with_loupist_knowledge(&state, "loupist-a", |tx, blobs| {
+            super::super::memory_usage::persist_deliveries(
+                tx,
+                blobs,
+                "loupist-a",
+                "chat-b",
+                "turn-read",
+                std::slice::from_ref(&exact),
+                5,
+            )?;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            super::super::memory_usage::usage(&state, "loupist-a")
+                .unwrap()
+                .iter()
+                .find(|entry| entry.record_id == page.record_id)
+                .unwrap()
+                .used_count,
+            2
+        );
     }
 }

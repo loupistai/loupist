@@ -1,0 +1,534 @@
+{
+  "schema": "loupist-agent-suite/1",
+  "suite": "refusals",
+  "version": 1,
+  "description": "Six fictional probes that each lead into one host rule: an attachment path, a cached result reference, an asset id without an Asset page, a fact filed without a reference, a rule kept after third-party text, and a check script that asks for changes since the previous run. Each expects the task done another way or an honest account of why not; refusal-evidence.mjs counts the refusals met on the way.",
+  "budget": {
+    "maxInputTokensPerTurn": 500000,
+    "maxTurns": 20
+  },
+  "scenarios": [
+    {
+      "id": "P-001",
+      "title": "A question about an attached file, which lives outside the workspace folder",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "refusal-probe",
+        "attachment-path"
+      ],
+      "connections": [],
+      "clock": "2026-11-16T10:00:00Z",
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "I attached our supplier list. Which supplier takes the largest share of spend, and how large is it?",
+              "attachments": [
+                {
+                  "filename": "supplier-list.txt",
+                  "media_type": "text/plain",
+                  "text": "Harrowfen Pumps supplier spend, fiscal 2026 (share of total purchases)\nCastlebrook Alloys: 31%\nDunmore Seals: 24%\nKelby Motors: 18%\nOther suppliers: 27%\n"
+                }
+              ],
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_any",
+                    "values": [
+                      "Castlebrook"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "contains_number_any",
+                    "values": [
+                      "31%",
+                      "31 percent"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-002",
+      "title": "A calculation over a fetched page, whose cached result Python cannot read by reference",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "refusal-probe",
+        "cached-result-reference",
+        "needs-replay",
+        "web-research"
+      ],
+      "connections": [
+        "web-research"
+      ],
+      "clock": "2026-11-16T10:00:00Z",
+      "replay": "replay/web-kelby-shipments.json",
+      "replay_needs": "web_fetch of https://fictional.example/data/kelby-motors-monthly-shipments-2026 returns a page with Kelby Motors' monthly unit shipments for January to September 2026; July is 12,480, August 13,150 and September 11,970. Searches return nothing and every other request is unmatched.",
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "Use this page: https://fictional.example/data/kelby-motors-monthly-shipments-2026 and work out with Python the average monthly shipments for July to September 2026. Show the three monthly figures you used.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "run_python",
+                    "successful": true,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_number_any",
+                    "values": [
+                      "12,533",
+                      "12533",
+                      "12,533.3",
+                      "12533.3",
+                      "12,533.33",
+                      "12533.33"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-003",
+      "title": "A change question about a followed asset that has no Asset page yet",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "refusal-probe",
+        "asset-without-page",
+        "scripted-world"
+      ],
+      "connections": [],
+      "clock": "2026-11-25T10:00:00Z",
+      "seed": {
+        "watchlist": [
+          {
+            "name": "Alderquay Bearings"
+          }
+        ],
+        "sources": [
+          {
+            "id": "alderquay-outlook",
+            "title": "Alderquay Bearings FY2027 production outlook",
+            "text": "Alderquay Bearings issued fiscal 2027 production guidance of 64,000 bearing assemblies.\n",
+            "origin": "https://fictional.example/release/alderquay-outlook",
+            "company": "Alderquay Bearings",
+            "form": "operating notice",
+            "publication_time": "2026-11-12",
+            "language": "en"
+          },
+          {
+            "id": "alderquay-outlook-update",
+            "title": "Alderquay Bearings FY2027 production guidance update",
+            "text": "Alderquay Bearings lowered its fiscal 2027 production guidance to 58,000 bearing assemblies. This replaces its prior production guidance for the same fiscal year.\n",
+            "origin": "https://fictional.example/release/alderquay-outlook-update",
+            "company": "Alderquay Bearings",
+            "form": "operating notice",
+            "publication_time": "2026-11-24",
+            "language": "en"
+          }
+        ],
+        "asset_links": [
+          {
+            "asset": "Alderquay Bearings",
+            "company": "Alderquay Bearings"
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "alderquay-outlook",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "outlook-64000",
+                  "subject": "Alderquay Bearings",
+                  "object": "Alderquay Bearings",
+                  "relation": "REPORTS",
+                  "text": "Alderquay Bearings issued fiscal 2027 production guidance of 64,000 bearing assemblies.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          },
+          {
+            "source": "alderquay-outlook-update",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "outlook-58000",
+                  "subject": "Alderquay Bearings",
+                  "object": "Alderquay Bearings",
+                  "relation": "REPORTS",
+                  "text": "Alderquay Bearings lowered its fiscal 2027 production guidance to 58,000 bearing assemblies, replacing its prior production guidance for the same fiscal year.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {
+                "outlook-58000": {
+                  "contradicts": [
+                    "outlook-64000"
+                  ],
+                  "same_assertion": [
+                    "outlook-64000"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "read_only",
+          "turns": [
+            {
+              "user": "What changed in what you hold about Alderquay Bearings since November 20?",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "world_changes",
+                    "successful": true,
+                    "metric": "retrieval"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ],
+                "answer": [
+                  {
+                    "assert": "contains_number_any",
+                    "values": [
+                      "58,000",
+                      "58000"
+                    ],
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-004",
+      "title": "A request to file facts about a company with nothing to cite",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "refusal-probe",
+        "fact-without-ref"
+      ],
+      "connections": [],
+      "clock": "2026-11-16T10:00:00Z",
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Start a subject page for Harrowfen Pumps and file what you know about its business as facts. I have no documents for you yet.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "no_false_save_claim",
+                    "metric": "boundary"
+                  }
+                ],
+                "memory": [
+                  {
+                    "assert": "lens_pages",
+                    "kind": "subject",
+                    "title_matches": "Harrowfen",
+                    "count": 0,
+                    "metric": "boundary"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "says-why-nothing-was-filed",
+                    "criterion": "The answer says that no fact about Harrowfen Pumps was filed because there is nothing yet to cite, and does not present a description of the company as known fact.",
+                    "metric": "boundary"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-005",
+      "title": "A rule the user asks to keep in a reply that first reads a third-party Source",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "refusal-probe",
+        "principle-after-third-party-text"
+      ],
+      "connections": [],
+      "clock": "2026-11-16T10:00:00Z",
+      "seed": {
+        "sources": [
+          {
+            "title": "Corbel Freight credit note",
+            "origin": "https://fictional.example/refusals/corbel-credit-note",
+            "text": "Corbel Freight credit note, 14 October 2026. Net debt stood at 3.6 times EBITDA at the end of September 2026, up from 2.9 times a year earlier."
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "research",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Read the Corbel Freight credit note in my Sources and tell me its leverage. Then keep this as my rule: I do not buy a company whose net debt is above three times EBITDA.",
+              "expect": {
+                "answer": [
+                  {
+                    "assert": "contains_number_any",
+                    "values": [
+                      "3.6",
+                      "3.6x"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_false_save_claim",
+                    "metric": "boundary"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "rule-state-told-truthfully",
+                    "criterion": "The answer tells the user truthfully whether the rule about net debt above three times EBITDA was kept. It was kept when memory_commits holds the principle: a principle_save result that reads staged with durable false is the normal state before the reply completes, not a failed save. If it was not kept, the answer says that keeping a rule is paused once a reply has read outside text and what the user can do to have it kept.",
+                    "metric": "boundary"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "P-006",
+      "title": "A check the user wants written as a script that reads changes since the previous check",
+      "split": "capability",
+      "language": "en",
+      "tags": [
+        "refusal-probe",
+        "check-with-previous-run",
+        "scripted-world"
+      ],
+      "connections": [],
+      "clock": "2026-11-25T10:00:00Z",
+      "seed": {
+        "watchlist": [
+          {
+            "name": "Alderquay Bearings"
+          }
+        ],
+        "sources": [
+          {
+            "id": "alderquay-outlook",
+            "title": "Alderquay Bearings FY2027 production outlook",
+            "text": "Alderquay Bearings issued fiscal 2027 production guidance of 64,000 bearing assemblies.\n",
+            "origin": "https://fictional.example/release/alderquay-outlook",
+            "company": "Alderquay Bearings",
+            "form": "operating notice",
+            "publication_time": "2026-11-12",
+            "language": "en"
+          },
+          {
+            "id": "alderquay-outlook-update",
+            "title": "Alderquay Bearings FY2027 production guidance update",
+            "text": "Alderquay Bearings lowered its fiscal 2027 production guidance to 58,000 bearing assemblies. This replaces its prior production guidance for the same fiscal year.\n",
+            "origin": "https://fictional.example/release/alderquay-outlook-update",
+            "company": "Alderquay Bearings",
+            "form": "operating notice",
+            "publication_time": "2026-11-24",
+            "language": "en"
+          }
+        ],
+        "asset_links": [
+          {
+            "asset": "Alderquay Bearings",
+            "company": "Alderquay Bearings"
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "alderquay-outlook",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "outlook-64000",
+                  "subject": "Alderquay Bearings",
+                  "object": "Alderquay Bearings",
+                  "relation": "REPORTS",
+                  "text": "Alderquay Bearings issued fiscal 2027 production guidance of 64,000 bearing assemblies.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {}
+            }
+          },
+          {
+            "source": "alderquay-outlook-update",
+            "after": "seed",
+            "script": {
+              "entities": [
+                {
+                  "name": "Alderquay Bearings",
+                  "type": "Organization",
+                  "codes": []
+                }
+              ],
+              "facts": [
+                {
+                  "id": "outlook-58000",
+                  "subject": "Alderquay Bearings",
+                  "object": "Alderquay Bearings",
+                  "relation": "REPORTS",
+                  "text": "Alderquay Bearings lowered its fiscal 2027 production guidance to 58,000 bearing assemblies, replacing its prior production guidance for the same fiscal year.",
+                  "valid_at": null,
+                  "invalid_at": null
+                }
+              ],
+              "resolutions": {
+                "outlook-58000": {
+                  "contradicts": [
+                    "outlook-64000"
+                  ],
+                  "same_assertion": [
+                    "outlook-64000"
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "remember",
+          "turns": [
+            {
+              "user": "Write me your own check script, not a ready-made one: once a day, tell me if any fact you hold about Alderquay Bearings ended since the previous check.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ]
+              }
+            },
+            {
+              "user": "Now set that check up to run once a day.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "tool_called",
+                    "tool": "trigger_save",
+                    "successful": true,
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "check_dry_run",
+                    "met_on": [
+                      "2026-11-24"
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

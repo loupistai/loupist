@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "@/test/selectOption";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "../../App";
@@ -93,7 +94,7 @@ it.each(["the app", "this Loupist"] as const)("lets a Chat default saved for %s 
   }
   const level = await screen.findByLabelText("Reasoning level");
   await waitFor(() => expect(level).toBeEnabled());
-  await user.selectOptions(level, "high");
+  await chooseSelectOption(user, level, "High");
   expect(await screen.findByText("Saved · Applies to new responses")).toBeInTheDocument();
   await user.click(await mainTab(/Chat/));
   // The chat that used the pick and a new one both answer with the saved default.
@@ -182,7 +183,7 @@ it("keeps naming each stored Chat default while its account is disconnected, in 
   await openApp(bridge);
   const words = {
     en: { defaultModel: "Default model", back: "Back", loupistSettings: "Loupist settings", chatDefaults: "Chat defaults", caption: "Not available now. Chat uses the recommended model until it is." },
-    ko: { defaultModel: "기본 모델", back: "뒤로", loupistSettings: "루피스트 설정", chatDefaults: "대화 기본값", caption: "지금은 사용할 수 없습니다. 사용할 수 있을 때까지 채팅은 권장 모델을 씁니다." },
+    ko: { defaultModel: "기본 모델", back: "뒤로", loupistSettings: "Loupist 설정", chatDefaults: "대화 기본값", caption: "지금은 사용할 수 없습니다. 사용할 수 있을 때까지 채팅은 권장 모델을 씁니다." },
   };
   type Language = keyof typeof words;
   /** The model a Chat defaults page names, and its caption. */

@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 
 use super::authority::{require_record, revision_in_record};
 use super::canonical::from_json;
-use super::model::{EvidenceRevision, RecordKind, SourceRecordPayload, WorldSnapshotBody};
+use super::model::{
+    EvidenceRevision, RecordKind, SourceRecordPayload, WorldSnapshotBody, SUPERSEDED_BY_SPAN,
+};
 use super::revision::{load_revision, load_revision_by_digest};
 use super::{KnowledgeError, KnowledgeResult};
 
@@ -116,12 +118,14 @@ pub(super) fn resolve(
                 .evidence
                 .iter()
                 .map(|evidence| evidence.span_id.as_str())
+                .chain(claim.qualifier(SUPERSEDED_BY_SPAN))
         })
         .chain(
             body.annotations
                 .iter()
                 .flat_map(|annotation| annotation.source_span_ids.iter().map(String::as_str)),
         )
+        .chain(body.temporal.witness_spans())
         .collect();
     if span_ids.iter().any(|span| !cited.contains(span.as_str())) {
         return Err(KnowledgeError::Unauthorized(

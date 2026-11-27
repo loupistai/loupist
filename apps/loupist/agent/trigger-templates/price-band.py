@@ -16,7 +16,8 @@ except (loupist.Unavailable, loupist.Refused):
 
 for asset in assets:
     try:
-        points = loupist.price(asset["id"], days=7)["points"]
+        quote = loupist.price(asset["id"], days=7)
+        points = quote["points"]
     except (loupist.Unavailable, loupist.Refused) as error:
         unread.append({"name": asset["name"], "why": error.code})
         continue
@@ -24,15 +25,27 @@ for asset in assets:
         unread.append({"name": asset["name"], "why": "no_data"})
         continue
     before, last = points[-2], points[-1]
+    if not loupist.fresh_pair(before["date"], last["date"], asset, quote.get("market")):
+        unread.append({"name": asset["name"], "date": last["date"], "why": "stale"})
+        continue
+    if before["value"] <= 0 or last["value"] <= 0:
+        unread.append({"name": asset["name"], "why": "no_data"})
+        continue
+    seen = loupist.accept_bar(asset["id"], last["date"])
+    if seen is None:
+        unread.append({"name": asset["name"], "date": last["date"], "why": "stale"})
+        continue
     newest = max(newest or last["date"], last["date"])
-    change = (last["value"] / before["value"] - 1) * 100
-    if abs(change) > BAND and loupist.state.get(asset["id"]) != last["date"]:
-        loupist.state[asset["id"]] = last["date"]
-        moved.append({"id": asset["id"], "name": asset["name"], "change_percent": round(change, 2),
+    delta = last["value"] - before["value"]
+    if abs(delta) * 100 > BAND * before["value"] and seen.get("met") != last["date"]:
+        seen["met"] = last["date"]
+        moved.append({"id": asset["id"], "name": asset["name"], "change_percent": round(delta / before["value"] * 100, 2),
                       "from": before, "to": last})
 
 if newest is None:
-    raise loupist.Unavailable("no_data")
+    raise loupist.Unavailable("stale" if any(row["why"] == "stale" for row in unread) else "no_data")
 reading = "; ".join(f"{m['name']} {m['change_percent']:+.1f}%" for m in moved) or "No asset beyond the band"
-loupist.result(met=bool(moved), reading=reading[:160], as_of=newest,
+if unread:
+    reading += " · Unavailable: " + ", ".join(row["name"] for row in unread)
+loupist.result(met=bool(moved), reading=reading[:160], as_of=max((row["to"]["date"] for row in moved), default=newest),
                evidence={"band_percent": BAND, "moved": moved, "unread": unread})

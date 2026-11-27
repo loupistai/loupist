@@ -56,6 +56,10 @@ pub(crate) const RUN_CHAT_PREFIX: &str = "scheduled-chat-";
 const TASK_COLUMNS: &str =
     "id,loupist_id,revision,status,next_run_at_ms,target_thread_id,updated_at_ms,data_json";
 const RUN_COLUMNS: &str = "id,task_id,loupist_id,task_revision,thread_id,run_id,status,scheduled_for_ms,started_at_ms,finished_at_ms,data_json,task_snapshot_json";
+const QUIET_POLICY: &str =
+    "status='running' AND json_extract(data_json,'$.kind') IN ('custom','learning')
+    AND coalesce(json_extract(data_json,'$.first_run'),0)=0
+    AND coalesce(json_extract(task_snapshot_json,'$.report'),'')<>'every_run'";
 const INBOX_VISIBLE: &str =
     "coalesce(json_extract(task_snapshot_json,'$.delivery.to'),'bot') NOT IN ('none','briefing')
  AND coalesce(json_extract(data_json,'$.error'),'')<>'unreachable'
@@ -96,6 +100,69 @@ type RawRun = (
 pub(super) enum ClaimScope {
     Unscoped,
     Definition(u64),
+}
+
+pub(super) struct LaunchAllowance<'a> {
+    pub admission: super::allowance::Admission<'a>,
+    pub limits: super::allowance::Limits,
+    pub provider: Option<String>,
+    pub confirmed: bool,
+}
+
+type ClaimResult<T> = StoreResult<Result<Option<(Claim, T)>, super::allowance::Hold>>;
+
+enum RunAllowance {
+    Allowed(Option<RunBudget>),
+    Busy,
+    Held(super::allowance::Hold),
+}
+
+impl LaunchAllowance<'_> {
+    fn admit(&self, transaction: &Connection, task: &Task, now: i64) -> StoreResult<RunAllowance> {
+        let state = self.admission.state(Some(transaction), self.limits, now)?;
+        let mut remaining = state.background_remaining();
+        let levels = if let Some(program) = &task.program {
+            if state.learning_running {
+                return Ok(RunAllowance::Busy);
+            }
+            remaining = remaining.min(state.learning_remaining(&task.loupist_id));
+            program.budget(
+                task.watch.subjects.as_deref().unwrap_or_default(),
+                !has_completed_learning_run(transaction, &task.id)?,
+            )
+        } else {
+            LearningBudget { soft: 32, hard: 42 }
+        };
+        let wanted = levels.hard + crate::runs::budget::GRACE_ROUNDS;
+        if self.confirmed {
+            // The explicit Run now confirmation is for this occurrence only.
+            return Ok(RunAllowance::Allowed(Some(RunBudget::freeze(
+                levels, remaining, wanted,
+            ))));
+        }
+        let requests = match super::allowance::admit_run(
+            &state,
+            self.provider.as_deref(),
+            wanted.min(remaining),
+        ) {
+            Ok(requests) => requests,
+            Err(hold) => return Ok(RunAllowance::Held(hold)),
+        };
+        if task.kind == TaskKind::Learning && remaining < levels.soft {
+            return Ok(RunAllowance::Held(state.allowance_hold()));
+        }
+        Ok(RunAllowance::Allowed(Some(RunBudget::freeze(
+            levels, remaining, requests,
+        ))))
+    }
+}
+
+fn has_completed_learning_run(connection: &Connection, task_id: &str) -> StoreResult<bool> {
+    Ok(connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM scheduled_task_runs WHERE task_id=?1 AND status='succeeded')",
+        [task_id],
+        |row| row.get(0),
+    )?)
 }
 
 #[derive(Clone, Copy)]
@@ -248,6 +315,10 @@ impl SqliteStore {
         now: i64,
     ) -> StoreResult<Run> {
         validate_now(now)?;
+        let usage = self
+            .scheduled_run_ledger_usage(loupist_id, run_id)
+            .ok()
+            .flatten();
         let mut connection = self.lock_loupist(loupist_id)?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let run = load_run(&transaction, loupist_id, run_id)?
@@ -262,6 +333,7 @@ impl SqliteStore {
             run_id,
             RunStatus::Succeeded,
             None,
+            usage,
             false,
             now,
         )?;
@@ -378,6 +450,7 @@ impl SqliteStore {
                 let latest_run = latest_run
                     .and_then(|row| {
                         readable(decode_run_with_references(
+                            &connection,
                             ReadReferences::Batched(&references),
                             row,
                         ))
@@ -424,19 +497,39 @@ impl SqliteStore {
         self.scheduled_tasks_due_for_loupists(now, limit, &loupists)
     }
 
+    #[cfg(test)]
     pub(crate) fn scheduled_tasks_due_for_loupists(
         &self,
         now: i64,
         limit: usize,
         loupist_ids: &[String],
     ) -> StoreResult<Vec<Task>> {
+        self.scheduled_tasks_due_excluding(now, limit, loupist_ids, &[])
+    }
+
+    pub(super) fn scheduled_tasks_due_excluding(
+        &self,
+        now: i64,
+        limit: usize,
+        loupist_ids: &[String],
+        checking: &[super::TaskKey],
+    ) -> StoreResult<Vec<Task>> {
         validate_now(now)?;
         let eligible = serde_json::to_string(loupist_ids)?;
+        let checking = serde_json::to_string(checking)?;
         // A kind another version wrote is never due here, so it cannot take a slot.
         let runnable = serde_json::to_string(&TaskKind::KNOWN)?;
         let pages = self.for_each_readable_database(|_, connection| {
-            let mut statement = connection.prepare(&format!("SELECT {TASK_COLUMNS} FROM scheduled_tasks WHERE status='active' AND next_run_at_ms<=?1 AND loupist_id IN (SELECT value FROM json_each(?3)) AND json_extract(data_json,'$.kind') IN (SELECT value FROM json_each(?4)) AND coalesce(json_extract(data_json,'$.trigger.state'),'')<>'failing' ORDER BY next_run_at_ms,id LIMIT ?2"))?;
-            let rows = statement.query_map(params![now, limit.min(MAX_TASKS_PER_LOUPIST) as i64, eligible, runnable], raw_task)?.collect::<Result<Vec<_>, _>>()?;
+            if let Some(day) = crate::local_time::date_at_ms(now) {
+                connection.execute(
+                    "UPDATE scheduled_tasks SET data_json=json_remove(data_json, '$.hold')
+                     WHERE CASE WHEN json_valid(data_json)
+                       THEN json_extract(data_json, '$.hold.local_day') <> ?1 ELSE 0 END",
+                    [day.to_string()],
+                )?;
+            }
+            let mut statement = connection.prepare(&format!("SELECT {TASK_COLUMNS} FROM scheduled_tasks AS task WHERE status='active' AND next_run_at_ms<=?1 AND loupist_id IN (SELECT value FROM json_each(?3)) AND json_extract(data_json,'$.kind') IN (SELECT value FROM json_each(?4)) AND coalesce(json_extract(data_json,'$.trigger.state'),'')<>'failing' AND NOT EXISTS (SELECT 1 FROM json_each(?5) AS live WHERE json_extract(live.value,'$[0]')=task.loupist_id AND json_extract(live.value,'$[1]')=task.id) AND NOT EXISTS (SELECT 1 FROM scheduled_task_runs AS run WHERE run.task_id=task.id AND run.status='running') ORDER BY next_run_at_ms, CASE WHEN json_extract(data_json,'$.kind')='learning' THEN coalesce(json_extract(data_json,'$.last_run_at_ms'),0) ELSE 0 END,id LIMIT ?2"))?;
+            let rows = statement.query_map(params![now, limit.min(MAX_TASKS_PER_LOUPIST) as i64, eligible, runnable, checking], raw_task)?.collect::<Result<Vec<_>, _>>()?;
             // Skipped silently: this scan runs on each scheduler wake, and the task list
             // logs the same row when it is shown.
             Ok(rows
@@ -446,7 +539,14 @@ impl SqliteStore {
                 .collect::<Vec<_>>())
         })?;
         let mut tasks = pages.into_iter().flatten().collect::<Vec<_>>();
-        tasks.sort_by_key(|t| (t.next_run_at_ms, t.id.clone()));
+        tasks.sort_by_key(|task| {
+            let last = if task.kind == TaskKind::Learning {
+                task.last_run_at_ms.unwrap_or(0)
+            } else {
+                0
+            };
+            (task.next_run_at_ms, last, task.id.clone())
+        });
         tasks.truncate(limit);
         Ok(tasks)
     }
@@ -546,6 +646,7 @@ impl SqliteStore {
         identifier(id)?;
         draft.validate()?;
         let TaskDefinition {
+            program,
             watch,
             proposed_in_message_id,
             trigger,
@@ -572,6 +673,7 @@ impl SqliteStore {
             let task = decode_task(transaction, existing)?;
             if task.draft() != draft
                 || task.kind != kind
+                || task.program != program
                 || task.watch != watch
                 || task.proposed_in_message_id != proposed_in_message_id
                 || task.trigger != trigger
@@ -606,6 +708,9 @@ impl SqliteStore {
             next_run_at_ms = Some(now);
         }
         let mut task = Task {
+            program,
+            budget: None,
+            hold: None,
             watch,
             kind,
             id: id.into(),
@@ -638,6 +743,7 @@ impl SqliteStore {
             confirmed_proposal_id: None,
         };
         task.validate()?;
+        require_learning_capacity(transaction, &task)?;
         let json = bounded_task_json(&mut task)?;
         transaction.execute("INSERT INTO scheduled_tasks(id,loupist_id,revision,status,next_run_at_ms,target_thread_id,updated_at_ms,data_json) VALUES(?1,?2,?3,?4,?5,?6,?7,json_set(?8,'$.failure_streak_started_at_ms',?7,'$.failure_streak_started_revision',?3))",
             params![task.id,task.loupist_id,task.revision as i64,task.status.as_str(),task.next_run_at_ms,target_thread(&task),task.updated_at_ms,json])?;
@@ -842,6 +948,9 @@ impl SqliteStore {
                         "briefing proposal changed its host definition",
                     ));
                 }
+            }
+            if original.kind == TaskKind::Learning {
+                original.program = task.program.clone();
             }
             apply_draft(&transaction, &mut original, draft, Some(task.watch), now)?;
             if let (Some(live), Some(proposed)) = (&mut original.trigger, task.trigger) {
@@ -1082,6 +1191,20 @@ impl SqliteStore {
             .collect())
     }
 
+    pub(super) fn completed_learning_programs(
+        &self,
+        loupist_id: &str,
+    ) -> StoreResult<std::collections::BTreeSet<String>> {
+        let connection = self.lock_loupist(loupist_id)?;
+        let mut statement = connection.prepare(
+            "SELECT DISTINCT task_id FROM scheduled_task_runs
+             WHERE loupist_id=?1 AND status='succeeded'
+               AND json_extract(data_json,'$.kind')='learning'",
+        )?;
+        let rows = statement.query_map([loupist_id], |row| row.get(0))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
     /// The task's finished runs other than `run_id`, newest first, back to the
     /// last one that ran another prompt: a run before an edit of the prompt
     /// answered a different request. Every claim advances the task revision,
@@ -1114,6 +1237,16 @@ impl SqliteStore {
         loupist_id: &str,
         run_id: &str,
     ) -> StoreResult<Option<TaskDelivery>> {
+        Ok(self
+            .scheduled_run_task_snapshot(loupist_id, run_id)?
+            .map(|task| task.delivery()))
+    }
+
+    pub(crate) fn scheduled_run_task_snapshot(
+        &self,
+        loupist_id: &str,
+        run_id: &str,
+    ) -> StoreResult<Option<Task>> {
         let connection = self.lock_loupist(loupist_id)?;
         let snapshot: Option<String> = connection.query_row(
             "SELECT task_snapshot_json FROM scheduled_task_runs WHERE loupist_id=?1 AND run_id=?2",
@@ -1121,11 +1254,7 @@ impl SqliteStore {
             |row| row.get(0),
         ).optional()?;
         snapshot
-            .map(|snapshot| {
-                serde_json::from_str::<Task>(&snapshot)
-                    .map(|task| task.delivery())
-                    .map_err(StoreError::from)
-            })
+            .map(|json| serde_json::from_str(&json).map_err(StoreError::from))
             .transpose()
     }
 
@@ -1159,9 +1288,10 @@ impl SqliteStore {
     ) -> StoreResult<bool> {
         let connection = self.lock_loupist(loupist_id)?;
         Ok(connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM scheduled_task_runs WHERE loupist_id=?1 AND run_id=?2
-             AND coalesce(json_extract(data_json,'$.first_run'),0)=0
-             AND coalesce(json_extract(task_snapshot_json,'$.report'),'')<>'every_run')",
+            &format!(
+                "SELECT EXISTS(SELECT 1 FROM scheduled_task_runs WHERE loupist_id=?1 AND run_id=?2
+             AND {QUIET_POLICY})"
+            ),
             params![loupist_id, run_id],
             |row| row.get(0),
         )?)
@@ -1175,6 +1305,21 @@ impl SqliteStore {
         let connection = self.lock_loupist(loupist_id)?;
         require_loupist(&connection, loupist_id)?;
         load_run(&connection, loupist_id, run_id)
+    }
+
+    pub(crate) fn scheduled_run_set_budget_outcome(
+        &self,
+        loupist_id: &str,
+        run_id: &str,
+        outcome: BudgetOutcome,
+    ) -> StoreResult<()> {
+        let connection = self.lock_loupist(loupist_id)?;
+        connection.execute(
+            "UPDATE scheduled_task_runs SET data_json=json_set(data_json,'$.budget.outcome',json(?3))
+             WHERE loupist_id=?1 AND run_id=?2 AND status='running' AND json_type(data_json,'$.budget')='object'",
+            params![loupist_id, run_id, serde_json::to_string(&outcome)?],
+        )?;
+        Ok(())
     }
 
     /// Reserve execution before publishing the occurrence. The callback runs
@@ -1193,6 +1338,7 @@ impl SqliteStore {
         self.scheduled_task_claim_scoped(loupist_id, id, now, manual, ClaimScope::Unscoped, admit)
     }
 
+    #[cfg(test)]
     pub(super) fn scheduled_task_claim_scoped<T>(
         &self,
         loupist_id: &str,
@@ -1202,30 +1348,83 @@ impl SqliteStore {
         scope: ClaimScope,
         admit: impl FnOnce(&Claim) -> StoreResult<T>,
     ) -> StoreResult<Option<(Claim, T)>> {
+        Ok(self
+            .scheduled_task_claim(loupist_id, id, now, manual, scope, None, admit)?
+            .expect("claim without allowance"))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn scheduled_task_claim<T>(
+        &self,
+        loupist_id: &str,
+        id: &str,
+        now: i64,
+        manual: bool,
+        scope: ClaimScope,
+        allowance: Option<&LaunchAllowance<'_>>,
+        admit: impl FnOnce(&Claim) -> StoreResult<T>,
+    ) -> ClaimResult<T> {
         validate_now(now)?;
         let mut connection = self.lock_loupist(loupist_id)?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let snapshot = require_task(&transaction, loupist_id, id)?;
+        let mut snapshot = require_task(&transaction, loupist_id, id)?;
         require_known_kind(&snapshot)?;
         if let ClaimScope::Definition(revision) = scope {
             require_revision(&snapshot, revision)?;
         }
         if snapshot.awaiting_confirmation || snapshot.is_trigger_task() {
-            return Ok(None);
+            return Ok(Ok(None));
         }
         if !manual
             && (snapshot.status != TaskStatus::Active
                 || snapshot.next_run_at_ms.is_none_or(|at| at > now))
         {
-            return Ok(None);
+            return Ok(Ok(None));
         }
-        let claimed = claim_in(&transaction, snapshot, now, manual, None, admit)?;
+        if has_running(&transaction, id)? {
+            return Ok(Ok(None));
+        }
+        let budget = match allowance
+            .map(|allowance| allowance.admit(&transaction, &snapshot, now))
+            .transpose()?
+            .unwrap_or(RunAllowance::Allowed(None))
+        {
+            RunAllowance::Allowed(budget) => budget,
+            RunAllowance::Busy => return Ok(Ok(None)),
+            RunAllowance::Held(hold) => {
+                if !manual {
+                    snapshot.hold = Some(hold.clone());
+                    if matches!(snapshot.schedule, Schedule::Once { .. }) {
+                        snapshot.status = TaskStatus::Completed;
+                        snapshot.next_run_at_ms = None;
+                    } else {
+                        snapshot.next_run_at_ms = next_run_after(&snapshot.schedule, now)?;
+                    }
+                    let revision = snapshot.revision;
+                    touch(&mut snapshot, now)?;
+                    update_task(&transaction, &mut snapshot, revision)?;
+                }
+                transaction.commit()?;
+                return Ok(Err(hold));
+            }
+        };
+        let provider = allowance.and_then(|allowance| allowance.provider.clone());
+        let claimed = claim_in(
+            &transaction,
+            snapshot,
+            now,
+            manual,
+            None,
+            RunAdmission { budget, provider },
+            admit,
+        )?;
         transaction.commit()?;
-        Ok(claimed)
+        Ok(Ok(claimed))
     }
 
     /// Commit the slot, its script state, and its card with the run reservation.
     /// If admission declines, roll back the reservation and settle the card here.
+    #[cfg(test)]
     pub(crate) fn scheduled_trigger_consume<T>(
         &self,
         occurrence: &crate::commands::triggers::TriggerOccurrence,
@@ -1233,6 +1432,19 @@ impl SqliteStore {
         empty_scope: bool,
         admit: impl FnOnce(&Claim) -> StoreResult<T>,
     ) -> StoreResult<Option<(Claim, T)>> {
+        Ok(self
+            .scheduled_trigger_claim(occurrence, now, empty_scope, None, admit)?
+            .expect("claim without allowance"))
+    }
+
+    pub(super) fn scheduled_trigger_claim<T>(
+        &self,
+        occurrence: &crate::commands::triggers::TriggerOccurrence,
+        now: i64,
+        empty_scope: bool,
+        allowance: Option<&LaunchAllowance<'_>>,
+        admit: impl FnOnce(&Claim) -> StoreResult<T>,
+    ) -> ClaimResult<T> {
         validate_now(now)?;
         let mut task = occurrence.task.clone();
         let mut connection = self.lock_loupist(&task.loupist_id)?;
@@ -1277,7 +1489,22 @@ impl SqliteStore {
             ));
         }
 
-        let claim = if occurrence.start_run && !empty_scope {
+        let mut hold = None;
+        let mut budget = None;
+        let mut busy = false;
+        if occurrence.start_run && !empty_scope {
+            if let Some(allowance) = allowance {
+                // Evaluation can span midnight. Reserve against the day the
+                // explanation claims its model worker, with the check's own
+                // timestamp still identifying the evaluated slot.
+                match allowance.admit(&transaction, &task, crate::commands::now_ms())? {
+                    RunAllowance::Allowed(value) => budget = value,
+                    RunAllowance::Busy => busy = true,
+                    RunAllowance::Held(reason) => hold = Some(reason),
+                }
+            }
+        }
+        let claim = if occurrence.start_run && !empty_scope && !busy && hold.is_none() {
             let mut reservation = transaction.savepoint()?;
             match claim_in(
                 &reservation,
@@ -1285,6 +1512,10 @@ impl SqliteStore {
                 now,
                 occurrence.manual,
                 Some(occurrence.run_trigger.clone()),
+                RunAdmission {
+                    budget,
+                    provider: allowance.and_then(|allowance| allowance.provider.clone()),
+                },
                 admit,
             ) {
                 Ok(Some(claim)) => {
@@ -1310,6 +1541,9 @@ impl SqliteStore {
                 task.next_run_at_ms = None;
                 task.last_error = Some(super::EMPTY_WATCH.into());
             } else if !occurrence.manual {
+                if let Some(reason) = &hold {
+                    task.hold = Some(reason.clone());
+                }
                 task.next_run_at_ms = next_trigger_slot(&task, now)?;
             } else {
                 defer_manual_trigger_slot(&mut task, now)?;
@@ -1317,7 +1551,7 @@ impl SqliteStore {
             touch(&mut task, now)?;
             update_task(&transaction, &mut task, current.revision)?;
         }
-        if let Some(card) = occurrence.card.clone() {
+        if let Some(card) = occurrence.card.clone().filter(|_| hold.is_none()) {
             crate::chat::home::insert_trigger_card_in(
                 &transaction,
                 &task.loupist_id,
@@ -1333,7 +1567,7 @@ impl SqliteStore {
             )?;
         }
         transaction.commit()?;
-        Ok(claim)
+        Ok(hold.map_or(Ok(claim), Err))
     }
 
     pub fn scheduled_task_finish(
@@ -1374,6 +1608,10 @@ impl SqliteStore {
         now: i64,
     ) -> StoreResult<Run> {
         validate_now(now)?;
+        let usage = self
+            .scheduled_run_ledger_usage(loupist_id, run_id)
+            .ok()
+            .flatten();
         let mut connection = self.lock_loupist(loupist_id)?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let was_running = load_run(&transaction, loupist_id, run_id)?
@@ -1384,6 +1622,7 @@ impl SqliteStore {
             run_id,
             status,
             error.map(str::to_owned),
+            usage,
             account_required,
             now,
         )?;
@@ -1393,6 +1632,46 @@ impl SqliteStore {
             crate::runs::log::record_scheduled(self, &run);
         }
         Ok(run)
+    }
+
+    /// An evaluation fixture's completed earlier occurrence of a task: claimed
+    /// and finished as succeeded at the fixture's times, with no Chat turn.
+    #[cfg(feature = "eval-harness")]
+    pub(crate) fn scheduled_task_record_completed_run(
+        &self,
+        loupist_id: &str,
+        id: &str,
+        started_at_ms: i64,
+        finished_at_ms: i64,
+    ) -> StoreResult<Run> {
+        validate_now(started_at_ms)?;
+        let claimed = {
+            let mut connection = self.lock_loupist(loupist_id)?;
+            let transaction =
+                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let snapshot = require_task(&transaction, loupist_id, id)?;
+            let claimed = claim_in(
+                &transaction,
+                snapshot,
+                started_at_ms,
+                true,
+                None,
+                RunAdmission::default(),
+                |_| Ok(()),
+            )?;
+            transaction.commit()?;
+            claimed
+        };
+        let (claim, ()) = claimed.ok_or(StoreError::Conflict(
+            "the task already has a running occurrence",
+        ))?;
+        self.scheduled_task_finish(
+            loupist_id,
+            &claim.run.run_id,
+            RunStatus::Succeeded,
+            None,
+            finished_at_ms,
+        )
     }
 
     pub fn scheduled_tasks_recover_running(&self, now: i64) -> StoreResult<usize> {
@@ -1446,6 +1725,7 @@ impl SqliteStore {
                     &run.run_id,
                     status,
                     error,
+                    None,
                     false,
                     now,
                 )?);
@@ -1499,15 +1779,40 @@ fn defer_manual_trigger_slot(task: &mut Task, now: i64) -> StoreResult<()> {
     Ok(())
 }
 
+/// What admission froze for a run: its request budget and its provider.
+#[derive(Default)]
+struct RunAdmission {
+    budget: Option<RunBudget>,
+    provider: Option<String>,
+}
+
 fn claim_in<T>(
     connection: &Connection,
-    mut snapshot: Task,
+    snapshot: Task,
     now: i64,
     manual: bool,
     trigger: Option<RunTrigger>,
+    admitted: RunAdmission,
     admit: impl FnOnce(&Claim) -> StoreResult<T>,
 ) -> StoreResult<Option<(Claim, T)>> {
-    let snapshot_json = bounded_task_json(&mut snapshot)?;
+    let RunAdmission { budget, provider } = admitted;
+    let mut effective = snapshot.clone();
+    if snapshot.kind == TaskKind::Learning && snapshot.delivery().to == DeliveryTarget::Briefing {
+        let briefing_on: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM scheduled_tasks WHERE loupist_id=?1 AND status='active'
+              AND json_extract(data_json,'$.kind')='briefing')",
+            [&snapshot.loupist_id],
+            |row| row.get(0),
+        )?;
+        if !briefing_on {
+            effective
+                .watch
+                .delivery
+                .get_or_insert_with(Default::default)
+                .to = DeliveryTarget::Bot;
+        }
+    }
+    let snapshot_json = bounded_task_json(&mut effective)?;
     let loupist_id = snapshot.loupist_id.as_str();
     let id = snapshot.id.as_str();
     if has_running(connection, id)? {
@@ -1545,8 +1850,14 @@ fn claim_in<T>(
         }
     };
     let run = Run {
+        usage: None,
+        budget,
         failure_streak: None,
-        first_run: snapshot.last_run_at_ms.is_none(),
+        first_run: if snapshot.kind == TaskKind::Learning {
+            !has_completed_learning_run(connection, id)?
+        } else {
+            snapshot.last_run_at_ms.is_none()
+        },
         discarded_memory_items: None,
         memory_save_skip: None,
         briefing_context: None,
@@ -1573,9 +1884,12 @@ fn claim_in<T>(
         status: RunStatus::Running,
         error: None,
         trigger,
+        undo: None,
+        provider,
     };
     run.validate()?;
     let mut task = snapshot.clone();
+    task.hold = None;
     if task.target == TaskTarget::Dedicated {
         task.session_thread_id = Some(thread_id);
     }
@@ -1607,7 +1921,7 @@ fn claim_in<T>(
         .flatten()
         .collect();
     let claim = Claim {
-        task: snapshot,
+        task: effective,
         run,
         released,
     };
@@ -1677,12 +1991,14 @@ fn retained_scheduled_answer(
         }))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn finish_run(
     connection: &Connection,
     loupist_id: &str,
     run_id: &str,
     status: RunStatus,
     error: Option<String>,
+    usage: Option<RunUsage>,
     account_required: bool,
     now: i64,
 ) -> StoreResult<Run> {
@@ -1704,6 +2020,7 @@ fn finish_run(
         };
     }
     run.status = status;
+    run.usage = usage;
     run.finished_at_ms = Some(now.max(run.started_at_ms));
     run.error = if status == RunStatus::Succeeded {
         None
@@ -1716,8 +2033,25 @@ fn finish_run(
             }
         }))
     };
+    if run.status == RunStatus::Interrupted && run.error.as_deref() == Some(super::BUDGET_EXCEEDED)
+    {
+        if let Some(budget) = &mut run.budget {
+            budget.outcome = BudgetOutcome::Cancelled;
+        }
+    }
+    let neutral = [
+        super::UNREACHABLE,
+        crate::pi::provider_failure::PLAN_LIMIT,
+        crate::pi::provider_failure::OUT_OF_CREDIT,
+        super::BUDGET_EXCEEDED,
+    ];
+    let neutral_failure = run
+        .error
+        .as_deref()
+        .is_some_and(|error| neutral.contains(&error));
+    let neutral_json = serde_json::to_string(&neutral)?;
     if (status == RunStatus::Failed || run.error.as_deref() == Some(super::UNEXPECTED_INTERRUPTION))
-        && run.error.as_deref() != Some(super::UNREACHABLE)
+        && !neutral_failure
     {
         let previous: Option<String> = connection.query_row(
             "SELECT prior.data_json FROM scheduled_task_runs AS prior
@@ -1725,9 +2059,9 @@ fn finish_run(
              WHERE prior.task_id=?1 AND prior.run_id<>?2 AND prior.task_revision<?3
                AND prior.task_revision>=coalesce(json_extract(task.data_json,'$.failure_streak_started_revision'),0)
                AND (prior.status IN ('succeeded','failed') OR json_extract(prior.data_json,'$.error')=?4)
-               AND coalesce(json_extract(prior.data_json,'$.error'),'')<>?5
+               AND coalesce(json_extract(prior.data_json,'$.error'),'') NOT IN (SELECT value FROM json_each(?5))
              ORDER BY prior.rowid DESC LIMIT 1",
-            params![run.task_id, run.run_id, run.task_revision as i64, super::UNEXPECTED_INTERRUPTION, super::UNREACHABLE],
+            params![run.task_id, run.run_id, run.task_revision as i64, super::UNEXPECTED_INTERRUPTION, neutral_json],
             |row| row.get(0),
         ).optional()?;
         run.failure_streak = Some(
@@ -1773,12 +2107,12 @@ fn finish_run(
             // The revision disambiguates old and new runs at the same millisecond.
             // Deliberate Stops and graceful shutdowns neither count nor reset it.
             let failures = connection.prepare(
-                "SELECT run.status FROM scheduled_task_runs AS run JOIN scheduled_tasks AS task ON task.id=run.task_id WHERE run.task_id=?1 AND run.status<>'running' AND run.started_at_ms>=coalesce(json_extract(task.data_json,'$.failure_streak_started_at_ms'),0) AND run.task_revision>=coalesce(json_extract(task.data_json,'$.failure_streak_started_revision'),0) AND coalesce(json_extract(run.data_json,'$.error'),'')<>?5 AND NOT (run.status='interrupted' AND coalesce(json_extract(run.data_json,'$.error'),'') IN (?2,?3,?4)) ORDER BY run.rowid DESC LIMIT 3",
-            )?.query_map(params![task.id, super::USER_STOPPED, super::APP_QUIT, super::LEGACY_INTERRUPTED, super::UNREACHABLE], |row| row.get::<_, String>(0))?
+                "SELECT run.status FROM scheduled_task_runs AS run JOIN scheduled_tasks AS task ON task.id=run.task_id WHERE run.task_id=?1 AND run.status<>'running' AND run.started_at_ms>=coalesce(json_extract(task.data_json,'$.failure_streak_started_at_ms'),0) AND run.task_revision>=coalesce(json_extract(task.data_json,'$.failure_streak_started_revision'),0) AND coalesce(json_extract(run.data_json,'$.error'),'') NOT IN (SELECT value FROM json_each(?5)) AND NOT (run.status='interrupted' AND coalesce(json_extract(run.data_json,'$.error'),'') IN (?2,?3,?4)) ORDER BY run.rowid DESC LIMIT 3",
+            )?.query_map(params![task.id, super::USER_STOPPED, super::APP_QUIT, super::LEGACY_INTERRUPTED, neutral_json], |row| row.get::<_, String>(0))?
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter().take_while(|status| status != "succeeded").count();
             if account_required
-                || (failures >= 3 && run.error.as_deref() != Some(super::UNREACHABLE))
+                || (failures >= 3 && !neutral_failure)
                 || run.error.as_deref().is_some_and(requires_setup)
             {
                 task.status = TaskStatus::Paused;
@@ -1859,6 +2193,7 @@ fn apply_draft(
     if let Some(watch) = watch {
         require_watch_capacity(connection, &task.loupist_id, &task.id, &watch, draft.status)?;
         task.watch = watch;
+        sync_check_subjects(task);
     }
     task.title = draft.title;
     task.prompt = draft.prompt;
@@ -1878,26 +2213,56 @@ fn apply_draft(
 }
 
 fn invalidate_proposal_review(task: &mut Task) {
-    if !task.awaiting_confirmation {
+    if !task.awaiting_confirmation || task.trigger.is_none() {
+        sync_check_subjects(task);
         return;
     }
-    let Some(trigger) = &mut task.trigger else {
-        return;
-    };
-    if let Some(pending) = &mut trigger.pending {
+    if let Some(pending) = task
+        .trigger
+        .as_mut()
+        .and_then(|trigger| trigger.pending.as_mut())
+    {
         pending.test = None;
     }
-    if trigger.approved.is_some() {
+    let approved = task
+        .trigger
+        .as_ref()
+        .is_some_and(|trigger| trigger.approved.is_some());
+    if !approved {
+        if let Some(trigger) = task.trigger.as_mut() {
+            trigger.proposal_test = None;
+            trigger.tools.clear();
+            trigger.reads_per_check = 0;
+            if let Some(terms) = task.watch.terms.clone() {
+                trigger.summary = terms;
+            }
+        }
+    }
+    sync_check_subjects(task);
+}
+
+/// Subject edits change the assets a check reads. Every check preset, not only
+/// a price move, keeps those arguments on the trigger that will run.
+fn sync_check_subjects(task: &mut Task) {
+    if !task.watch.preset.is_some_and(WatchPreset::runs_on_check) {
         return;
     }
-    trigger.proposal_test = None;
-    trigger.tools.clear();
-    trigger.reads_per_check = 0;
-    if let Some(terms) = &task.watch.terms {
-        trigger.summary.clone_from(terms);
-    }
-    if task.watch.preset == Some(WatchPreset::PriceMove) {
-        super::trigger::set_price_subject_args(&mut trigger.args, task.watch.subjects.as_deref());
+    let price_move = task.watch.preset == Some(WatchPreset::PriceMove);
+    let subjects = task.watch.subjects.clone();
+    let Some(trigger) = task.trigger.as_mut() else {
+        return;
+    };
+    super::trigger::set_price_subject_args(&mut trigger.args, subjects.as_deref());
+    let Some(configuration) = trigger
+        .approved
+        .as_mut()
+        .and_then(|approved| approved.configuration.as_mut())
+    else {
+        return;
+    };
+    super::trigger::set_price_subject_args(&mut configuration.args, subjects.as_deref());
+    if price_move {
+        configuration.price_subjects = subjects;
     }
 }
 
@@ -2009,6 +2374,9 @@ fn bounded_task_json(task: &mut Task) -> StoreResult<String> {
 /// any of its definition. Point reads and all execution paths remain strict.
 fn unreadable_task(id: String, loupist_id: String, revision: i64, updated_at_ms: i64) -> Task {
     Task {
+        program: None,
+        budget: None,
+        hold: None,
         watch: TaskWatch::default(),
         kind: TaskKind::Custom,
         id,
@@ -2050,10 +2418,30 @@ fn update_task(
     expected_revision: u64,
 ) -> StoreResult<()> {
     task.validate()?;
+    require_learning_capacity(connection, task)?;
     let json = bounded_task_json(task)?;
     let changed=connection.execute("UPDATE scheduled_tasks SET revision=?3,status=?4,next_run_at_ms=?5,target_thread_id=?6,updated_at_ms=?7,data_json=json_set(?8,'$.failure_streak_started_at_ms',coalesce(CAST(json_extract(data_json,'$.failure_streak_started_at_ms') AS INTEGER),0),'$.failure_streak_started_revision',coalesce(CAST(json_extract(data_json,'$.failure_streak_started_revision') AS INTEGER),0)) WHERE id=?1 AND loupist_id=?2 AND revision=?9",params![task.id,task.loupist_id,task.revision as i64,task.status.as_str(),task.next_run_at_ms,target_thread(task),task.updated_at_ms,json,expected_revision as i64])?;
     if changed != 1 {
         return Err(StoreError::Conflict("scheduled task compare-and-swap"));
+    }
+    Ok(())
+}
+
+fn require_learning_capacity(connection: &Connection, task: &Task) -> StoreResult<()> {
+    if task.kind == TaskKind::Learning && task.status == TaskStatus::Active {
+        let active: i64 = connection.query_row(
+            "SELECT count(*) FROM scheduled_tasks
+             WHERE loupist_id=?1 AND id<>?2 AND status='active'
+               AND json_extract(data_json,'$.kind')='learning'",
+            params![task.loupist_id, task.id],
+            |row| row.get(0),
+        )?;
+        let cap = super::learning::settings_beside(connection)?.program_cap;
+        if active >= i64::from(cap) {
+            return Err(invalid(&format!(
+                "up to {cap} learning programs can be active in this Loupist"
+            )));
+        }
     }
     Ok(())
 }
@@ -2288,10 +2676,14 @@ fn decode_task_with_references(references: ReadReferences<'_>, row: RawTask) -> 
 }
 
 fn decode_run(connection: &Connection, row: RawRun) -> StoreResult<Run> {
-    decode_run_with_references(ReadReferences::Database(connection), row)
+    decode_run_with_references(connection, ReadReferences::Database(connection), row)
 }
 
-fn decode_run_with_references(references: ReadReferences<'_>, row: RawRun) -> StoreResult<Run> {
+fn decode_run_with_references(
+    connection: &Connection,
+    references: ReadReferences<'_>,
+    row: RawRun,
+) -> StoreResult<Run> {
     let (
         id,
         task_id,
@@ -2309,7 +2701,7 @@ fn decode_run_with_references(references: ReadReferences<'_>, row: RawRun) -> St
     if json.len() > 128 * 1024 || snapshot.len() > MAX_TASK_JSON_BYTES {
         return Err(invalid("stored scheduled run exceeds its limit"));
     }
-    let run: Run = serde_json::from_str(&json)?;
+    let mut run: Run = serde_json::from_str(&json)?;
     run.validate()?;
     let task: Task = serde_json::from_str(&snapshot)?;
     task.validate()?;
@@ -2343,6 +2735,12 @@ fn decode_run_with_references(references: ReadReferences<'_>, row: RawRun) -> St
             false,
         )?;
     }
+    // The undo marker is the record. A count copied into an older run JSON does not outlive it.
+    run.undo = run.message_id.as_deref().and_then(|message_id| {
+        crate::knowledge::recorded_message_undo(connection, &run.loupist_id, message_id)
+            .ok()
+            .flatten()
+    });
     Ok(run)
 }
 
@@ -2528,15 +2926,15 @@ pub(crate) fn validate_saved_tasks(connection: &Connection) -> StoreResult<()> {
 /// Record quiet delivery with the Chat reply in the same transaction.
 pub(crate) fn mark_quiet(tx: &Transaction<'_>, loupist_id: &str, run_id: &str) -> StoreResult<()> {
     let matched = tx.execute(
-        "UPDATE scheduled_task_runs SET data_json=json_set(data_json,'$.quiet',json('true'))
-         WHERE run_id=?1 AND loupist_id=?2 AND status='running' AND json_extract(data_json,'$.kind')='custom'
-         AND coalesce(json_array_length(data_json,'$.skipped_tools'),0)=0
-         AND coalesce(json_extract(data_json,'$.first_run'),0)=0
-         AND coalesce(json_extract(task_snapshot_json,'$.report'),'')<>'every_run' ",
+        &format!(
+            "UPDATE scheduled_task_runs SET data_json=json_set(data_json,'$.quiet',json('true'))
+         WHERE run_id=?1 AND loupist_id=?2 AND {QUIET_POLICY}
+         AND coalesce(json_array_length(data_json,'$.skipped_tools'),0)=0"
+        ),
         params![run_id, loupist_id],
     )?;
     if matched != 1 {
-        return Err(invalid("scheduled custom run cannot be marked quiet"));
+        return Err(invalid("scheduled run cannot be marked quiet"));
     }
     Ok(())
 }

@@ -113,7 +113,7 @@ export function StandingSheet({ open, loupistId, bridge, onClose }: Props) {
     setBusy(id);
     setActionError(null);
     void bridge.botMemoryForget({ loupistId, id }).then(
-      list => { setEntries(list); setEditing(current => current?.id === id ? null : current); setBusy(null); },
+      result => { setEntries(result.entries); setEditing(current => current?.id === id ? null : current); setBusy(null); },
       cause => { setActionError(errorMessage(cause, t("standing.saveError"))); setBusy(null); },
     );
   };

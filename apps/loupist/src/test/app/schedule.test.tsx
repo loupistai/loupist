@@ -56,7 +56,6 @@ it("offers a built-in briefing, a filings watch and a custom task in the empty S
   await openScheduleFromResearch(bridge, user);
   const heading = await screen.findByRole("heading", { name: "Nothing is scheduled yet" });
   const choices = within(heading.parentElement!);
-  expect(choices.getByText("Loupist can run work for you at set times and post the result in Bot.")).toBeVisible();
   const cards = choices.getAllByRole("heading", { level: 3 });
   expect(cards.map(node => node.textContent)).toEqual(["Morning briefing", "Evening briefing", "Watch for filings and results", "Your own task"]);
   const actionInCard = (heading: string, name: string) => within(choices.getByRole("heading", { name: heading, level: 3 }).parentElement!).getByRole("button", { name });
@@ -64,12 +63,12 @@ it("offers a built-in briefing, a filings watch and a custom task in the empty S
   const turnOnEvening = actionInCard("Evening briefing", "Turn on");
   const turnOnWatch = actionInCard("Watch for filings and results", "Turn on");
   const askBot = actionInCard("Your own task", "Ask Bot");
-  const note = choices.getByText(/Scheduled tasks use your AI account/);
+  const note = choices.getByText(/Scheduled runs may incur AI charges/);
   for (const action of [turnOn, turnOnEvening, turnOnWatch, askBot]) {
     expect(action.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   }
   expect(note.closest("header")).toBeNull();
-  expect(screen.getAllByText(/Scheduled tasks use your AI account/)).toHaveLength(1);
+  expect(screen.getAllByText(/Scheduled runs may incur AI charges/)).toHaveLength(1);
   await user.click(turnOn);
   expect(send).not.toHaveBeenCalled();
   expect(enable).toHaveBeenCalledExactlyOnceWith({ loupistId: "loupist-quality", enabled: true });
@@ -142,7 +141,7 @@ it("updates the tab and Loupist badge on inbox-changed, and routes inbox-open to
   expect(bridge.inboxList).toHaveBeenCalledWith(expect.objectContaining({ loupistId: other.id }));
 });
 
-it.each([false, true])("opens the selected answer and describes whether this session was continued (%s)", async continued => {
+it.each([false, true])("opens the selected answer and offers the appropriate Chat action (%s)", async continued => {
   const { bridge, user, run } = await fixture({ thread_id: "briefing-chat", message_id: "briefing-answer" });
   const select = bridge.loupistSelect.bind(bridge);
   vi.spyOn(bridge, "loupistSelect").mockImplementation(async id => {
@@ -156,7 +155,6 @@ it.each([false, true])("opens the selected answer and describes whether this ses
   });
   await openApp(bridge); await openFirstRun(user);
   expect(await screen.findByText("The specific briefing answer.")).toBeVisible();
-  expect(Boolean(screen.queryByText("Sending a message adds this session to Research sessions."))).toBe(!continued);
   await user.click(screen.getByRole("button", { name: continued ? "Open the session" : "Continue in Chat →" }));
   expect(await screen.findByRole("heading", { name: "Briefings Chat" })).toBeVisible();
   const session = screen.getByRole("button", { name: "Briefings Chat" });
@@ -221,7 +219,7 @@ it("shows a task on an account at its plan limit or needing reconnect as waiting
   await openApp(bridge);
   await user.click(await mainTab(/Schedule/));
   const briefing = await taskRow(/^Briefing/);
-  expect(briefing).toHaveTextContent("Waiting: ChatGPT plan at its limit");
+  expect(briefing).toHaveTextContent("Waiting: AI plan limit reached");
   act(() => bridge.setProviderStatus("openai", { notice: null, state: "needs_reconnect" }));
   await waitFor(() => expect(briefing).toHaveTextContent("Waiting: sign-in needs reconnect"));
 });

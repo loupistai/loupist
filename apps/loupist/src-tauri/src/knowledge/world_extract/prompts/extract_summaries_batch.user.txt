@@ -15,8 +15,8 @@ Guidelines:
         10. Begin with the entity name or a direct fact, not with "A", "An", "The", or "This is" unless that wording is part of the entity name.
 
         Example summary:
-        BAD: "The context shows John ordered pizza. Due to length constraints, other details are omitted from this summary."
-        GOOD: "John ordered pepperoni pizza from Mario's at 7:30 PM and had it delivered to the office."
+        BAD: "The context shows Kestrel Shipping raised its dividend. Due to length constraints, other details are omitted from this summary."
+        GOOD: "Kestrel Shipping raised its interim dividend to EUR 0.42 per share, payable on 12 June 2026 to shareholders of record on 29 May 2026."
         
 
 <MESSAGES>

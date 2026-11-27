@@ -821,6 +821,33 @@ pub(crate) fn provider_credential_generation(
 
 /// Secret-free readiness metadata for host-owned background inference. Pi
 /// remains the owner of token refresh and authenticated requests.
+/// The API key this provider will use: the environment credential the catalog
+/// already prefers, otherwise the key saved in Pi's `auth.json`. The string is
+/// for one request header; callers do not log or retain it.
+pub(crate) fn provider_api_key(
+    agent_data_dir: &Path,
+    provider: &str,
+) -> Result<Option<String>, CommandError> {
+    if let Some((_, secret)) = provider_credential_from_environment(provider) {
+        return Ok(Some(secret));
+    }
+    let auth = read_auth_map(&agent_data_dir.join("auth.json"))?;
+    let Some(entry) = auth
+        .get(provider)
+        .filter(|entry| valid_saved_credential(entry))
+    else {
+        return Ok(None);
+    };
+    Ok(match entry.get("type").and_then(Value::as_str) {
+        Some("api_key") => entry
+            .get("key")
+            .and_then(Value::as_str)
+            .filter(|key| !key.is_empty())
+            .map(str::to_owned),
+        _ => None,
+    })
+}
+
 pub(crate) fn provider_credential_kind(
     agent_data_dir: &Path,
     provider: &str,

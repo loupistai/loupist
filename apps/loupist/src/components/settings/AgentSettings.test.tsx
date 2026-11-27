@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "@/test/selectOption";
 import { useState } from "react";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import i18n from "@/i18n";
@@ -33,7 +34,7 @@ describe("Agent configuration", () => {
     const thread = await fixture.bridge.chatCreate({ loupist_id: "loupist-quality" });
     expect(thread).toMatchObject({ use_memory: false, update_memory: false });
     expect((await fixture.bridge.loupistSelect("loupist-quality")).threads.find((item) => item.id === existing.id)).toMatchObject({ use_memory: existing.use_memory, update_memory: existing.update_memory });
-    await user.selectOptions(screen.getByLabelText("Settings apply to"), "loupist-quality");
+    await chooseSelectOption(user, screen.getByLabelText("Settings apply to"), "Quality Compounder");
     await waitFor(() => expect(screen.getByRole("switch", { name: "Remember new conversations" })).toBeEnabled());
     expect(screen.getByRole("switch", { name: "Remember new conversations" })).not.toBeChecked();
     await user.click(screen.getByRole("switch", { name: "Remember new conversations" }));
@@ -105,7 +106,7 @@ describe("Agent configuration", () => {
     await user.keyboard("{Escape}");
     expect(await screen.findByText("Saved · Applies to new responses")).toBeInTheDocument();
     expect((await fixture.bridge.configRead({ scope: { kind: "global" } })).explicit?.chat?.model_profile_id).toBe("google/google-default");
-    await user.selectOptions(screen.getByLabelText("Settings apply to"), "loupist-quality");
+    await chooseSelectOption(user, screen.getByLabelText("Settings apply to"), "Quality Compounder");
     await user.click(await screen.findByRole("button", { name: /google default.*Default model/ }));
     expect(screen.getByRole("menuitemradio", { name: "google default" })).toBeChecked();
     expect(screen.queryByText("Default")).toBeNull();
@@ -151,12 +152,10 @@ describe("Agent configuration", () => {
       await waitFor(async () => expect((await fixture.bridge.configRead({ scope })).effective.chat.update_memory).toBe(false));
       expect(saved).not.toHaveBeenCalled();
       await waitFor(() => expect(screen.getByLabelText("Reasoning level")).toBeEnabled());
-      await user.selectOptions(screen.getByLabelText("Reasoning level"), "high");
+      await chooseSelectOption(user, screen.getByLabelText("Reasoning level"), "High");
       await waitFor(() => expect(saved).toHaveBeenCalledExactlyOnceWith(scope));
-      await user.click(screen.getByRole("button", { name: /GPT-5.6 Luna.*Default model/ }));
-      await user.click(screen.getByRole("menuitem", { name: "Advanced" }));
-      await user.click(await screen.findByRole("menuitemradio", { name: "Fast" }));
-      await user.keyboard("{Escape}");
+      await user.click(screen.getByText("Advanced"));
+      await chooseSelectOption(user, screen.getByRole("combobox", { name: "Performance" }), "Fast");
       await waitFor(() => expect(saved).toHaveBeenCalledTimes(2));
       expect((await fixture.bridge.configRead({ scope })).explicit?.chat).toMatchObject({ thinking_level: "high", run_options: { performance: "fast" } });
     },
@@ -182,7 +181,7 @@ describe("Agent configuration", () => {
     render(<Settings {...fixture} />);
     await user.click(await screen.findByText("Advanced"));
     await screen.findByDisplayValue("5");
-    await user.selectOptions(screen.getByLabelText("Settings apply to"), "loupist-quality");
+    await chooseSelectOption(user, screen.getByLabelText("Settings apply to"), "Quality Compounder");
     const field = screen.getByLabelText("Maximum retries");
     expect(field).toHaveValue(5);
     expect(screen.queryByRole("button", { name: "Reset Maximum retries" })).not.toBeInTheDocument();
@@ -191,9 +190,9 @@ describe("Agent configuration", () => {
     await user.click(screen.getByRole("button", { name: "Save Maximum retries" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Reset Maximum retries" })).toBeEnabled());
     expect((await fixture.bridge.configRead({ scope: { kind: "project", loupistId: "loupist-quality" } })).explicit?.pi?.retry?.max_retries).toBe(2);
-    await user.selectOptions(screen.getByLabelText("Settings apply to"), "loupist-cycle");
+    await chooseSelectOption(user, screen.getByLabelText("Settings apply to"), "Cycle Reader");
     expect(screen.getByLabelText("Maximum retries")).toHaveValue(5);
-    await user.selectOptions(screen.getByLabelText("Settings apply to"), "loupist-quality");
+    await chooseSelectOption(user, screen.getByLabelText("Settings apply to"), "Quality Compounder");
     await screen.findByDisplayValue("2");
     await user.click(screen.getByRole("button", { name: "Reset Maximum retries" }));
     await waitFor(() => expect(screen.getByLabelText("Maximum retries")).toHaveValue(5));

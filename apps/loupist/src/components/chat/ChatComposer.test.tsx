@@ -244,7 +244,7 @@ describe("ChatComposer input", () => {
   it("localizes the short composer prompt in Korean", async () => {
     render(<RunningComposer isRunning={false} />);
     await act(async () => { await i18n.changeLanguage("ko"); });
-    const textarea = screen.getByRole("textbox", { name: "루피스트에게 메시지" });
+    const textarea = screen.getByRole("textbox", { name: "Loupist에게 메시지" });
     expect(textarea).toHaveAttribute("placeholder", "Loupist에게 메시지");
   });
 

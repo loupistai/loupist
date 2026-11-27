@@ -2,7 +2,7 @@
 // LOUPIST_WRITE_CONTRACTS=1 cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml --lib bridge_contract
 
 import type { CustomOrigin } from "../custom_connections/taint";
-import type { ClaimStatus } from "../knowledge/model";
+import type { ClaimStatus, WorldAsOfReport } from "../knowledge/model";
 import type { ExtensionCategory, ExtensionLabels } from "../knowledge/world_schema";
 import type { MapContextItem } from "../store/user_context";
 
@@ -15,6 +15,8 @@ export type KnowledgeMap = {
   worldRevisionId: string | null,
   /** Latest contributing stored timestamp, not wall-clock request time. */
   generatedAtMs: number,
+  /** What the query's `asOf` left out; absent without one. */
+  asOfReport?: WorldAsOfReport,
 };
 
 export type KnowledgeMapCount = { total: number, shown: number, truncated: boolean };
@@ -54,4 +56,12 @@ export type KnowledgeMapNode = {
   learnedRationale?: string,
 };
 
-export type KnowledgeMapQuery = { loupistId: string, maxNodes?: number | null };
+export type KnowledgeMapQuery = {
+  loupistId: string,
+  maxNodes?: number | null,
+  /**
+   * World as of a calendar day (`YYYY-MM-DD`, today or earlier), as
+   * `WorldGraphQuery.asOf` reads it.
+   */
+  asOf?: string | null,
+};

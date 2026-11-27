@@ -4,7 +4,7 @@ import { prepareLensSources } from "../fixtures/lensSources";
 import { rememberLegendOpen } from "../../components/map/mapVisit";
 import type { GrowthEvent, KnowledgeMapEdge, KnowledgeMapNode, WorldGrowthSource } from "../../contracts/knowledge";
 import { MIN_VISIT_MS, recordVisit } from "../../app/loupistVisit";
-import { base, click, clickMapAction, enterMap, localViewMap, mapCanvas, navigate, pressMenu, select, selectPanel, until, type PreviewScenario } from "./kit";
+import { base, click, clickMapAction, enterMap, localViewMap, mapCanvas, navigate, prepareMapCanvas, pressMenu, select, selectPanel, until, type PreviewScenario } from "./kit";
 
 /** Last visit two days ago and five changes since: two names, a relationship, conflicting evidence and a learned method. */
 function whatsNewFixture(bridge: PreviewBridge, withChanges: boolean) {
@@ -208,11 +208,7 @@ export const mapScenarios: PreviewScenario[] = [
         product.focus();
         product.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
       }
-      if (map.clientWidth > 0 && id !== "map-empty") {
-        await until(() => map.querySelector("canvas"), "World canvas did not mount");
-        for (let frame = 0; frame < 3; frame++) await new Promise(requestAnimationFrame);
-        if (id !== "map-replay-paused" && id !== "map-selected") await clickMapAction("[data-map-fit]", map);
-      }
+      if (id !== "map-empty") await prepareMapCanvas(map, id !== "map-replay-paused" && id !== "map-selected");
       if (id === "map-export-menu") {
         pressMenu(await until(() => select("[data-map-more]"), "More actions did not load"));
         await until(() => select(".map-more-menu [data-map-export]"), "Export choices did not open");

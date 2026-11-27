@@ -83,7 +83,7 @@ describe("the footer slot", () => {
     expect(view.container.querySelectorAll(".turn-live")).toHaveLength(1);
     expect(view.container.querySelector(".turn-live-dot, .chat-progress-live")).toBeNull();
     expect(screen.queryByRole("button", { name: "Copy answer" })).toBeNull();
-    view.rerender(<TurnFooter footer={{ kind: "settled", sources: [], copyText: "Done.", feedback: true, runState: null }} announce="Worked 6s · 1 step"><button>Copy answer</button></TurnFooter>);
+    view.rerender(<TurnFooter footer={{ kind: "settled", sources: [], copyText: "Done.", runState: null }} announce="Worked 6s · 1 step"><button>Copy answer</button></TurnFooter>);
     expect(screen.getByRole("button", { name: "Copy answer" }).parentElement).toHaveAttribute("data-arriving");
     // The live line leaves (120 ms) while the actions arrive in its place.
     expect(view.container.querySelector(".turn-live[data-leaving]")).not.toBeNull();
@@ -112,7 +112,7 @@ describe("the footer slot", () => {
   });
 
   it("draws a settled turn read later with no entrance", () => {
-    render(<TurnFooter footer={{ kind: "settled", sources: [], copyText: "Done.", feedback: true, runState: null }} announce=""><button>Copy answer</button></TurnFooter>);
+    render(<TurnFooter footer={{ kind: "settled", sources: [], copyText: "Done.", runState: null }} announce=""><button>Copy answer</button></TurnFooter>);
     expect(screen.getByRole("button", { name: "Copy answer" }).parentElement).not.toHaveAttribute("data-arriving");
   });
 });

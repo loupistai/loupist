@@ -1,5 +1,5 @@
 import i18n, { useTranslation } from "@/i18n";
-import { formatDate, formatNumber } from "@/i18n/format";
+import { formatDate } from "@/i18n/format";
 import { useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ArrowRightIcon, XIcon } from "lucide-react";
 import type { LoupistBridge } from "../../types";
@@ -114,11 +114,11 @@ export function BotGreeting({ bridge, loupistId, loupist, onAsk, accountConnecte
   const cards: Card[] = [];
   if (read) {
     // The card names the question; the composer gets it as the user's own request.
-    const ask = (key: string, label: string, hint: string, prompt: string): Card => ({ key, label, hint, run: () => onAsk(prompt) });
-    if (!accountConnected && onConnectAccount) cards.push({ key: "connect", label: t("bot.greeting.setup.connect.label"), hint: t("bot.greeting.setup.connect.hint"), run: onConnectAccount });
+    const ask = (key: string, label: string, hint: string | undefined, prompt: string): Card => ({ key, label, hint, run: () => onAsk(prompt) });
+    if (!accountConnected && onConnectAccount) cards.push({ key: "connect", label: t("bot.greeting.setup.connect.label"), run: onConnectAccount });
     const setupBriefing: Card = { key: "setup-briefing", label: t("bot.greeting.setup.briefing.label"), hint: t("bot.greeting.setup.briefing.hint"), run: () => onAsk(t("today.setup.briefing.insert")) };
     if (!followed.length) {
-      if (onOpenFollowing) cards.push({ key: "follow", label: t("bot.greeting.setup.follow.label"), hint: t("bot.greeting.setup.follow.hint"), run: onOpenFollowing });
+      if (onOpenFollowing) cards.push({ key: "follow", label: t("bot.greeting.setup.follow.label"), run: onOpenFollowing });
       if (read.briefingOn === false) cards.push(setupBriefing);
       cards.push(ask("markets", t("bot.greeting.ask.markets.label"), t("bot.greeting.ask.markets.hint"), t("bot.greeting.ask.markets.prompt")));
     } else {
@@ -136,7 +136,7 @@ export function BotGreeting({ bridge, loupistId, loupist, onAsk, accountConnecte
       });
       cards.push(ask("status", t("bot.greeting.ask.status.label", { name: lead.name }), t("bot.greeting.ask.status.hint"), t("bot.greeting.ask.status.prompt", { name: lead.name })));
       cards.push(read.briefingOn === false ? setupBriefing
-        : ask("briefing", t("bot.greeting.ask.briefing.label"), t("bot.greeting.ask.briefing.hint", { count: followed.length, formattedCount: formatNumber(followed.length) }), t("bot.greeting.ask.briefing.prompt")));
+        : ask("briefing", t("bot.greeting.ask.briefing.label"), undefined, t("bot.greeting.ask.briefing.prompt")));
       const next = followed.find((item) => item !== lead);
       if (next) cards.push(ask("earnings", t("bot.greeting.ask.earnings.label", { name: next.name }), t("bot.greeting.ask.earnings.hint"), t("bot.greeting.ask.earnings.prompt", { name: next.name })));
       if (followed.length > 1) cards.push(ask("movers", t("bot.greeting.ask.movers.label"), t("bot.greeting.ask.movers.hint"), t("bot.greeting.ask.movers.prompt")));
@@ -162,10 +162,6 @@ export function BotGreeting({ bridge, loupistId, loupist, onAsk, accountConnecte
         </span>
       </header>
       {read ? <>
-        <div className="bot-greeting-bubbles">
-          {!followed.length ? <p className="bot-bubble">{t("bot.greeting.introNew")}</p> : null}
-          <p className="bot-bubble">{t("bot.greeting.prompt")}</p>
-        </div>
         {shownCards.length ? <section className="bot-greeting-group" aria-label={asksLabel}>
           <p className="bot-greeting-label" aria-hidden="true">{asksLabel}</p>
           <ul ref={asksRef} className="bot-asks">

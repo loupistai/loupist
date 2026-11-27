@@ -1,4 +1,8 @@
 use super::*;
+mod allowance;
+#[path = "../../allowance_oracle.rs"]
+mod allowance_oracle;
+mod chunking;
 mod continue_all;
 mod price_data;
 mod publication;
@@ -1323,6 +1327,7 @@ fn processed_chat_source_stamps_world_growth_and_a_map_source_does_not() {
                     material: source_request(loupist, "", b"Ada directed the engine.").material,
                 },
                 "message-a",
+                crate::knowledge::JobOrigin::Chat,
                 None,
             )
         })
@@ -1442,7 +1447,7 @@ fn sleep_through_an_attempt_runs_it_again_before_the_one_retry() {
         uncertain: true,
         paid: true,
         suspended: true,
-        settings_changed: false,
+        ..Unpublished::default()
     };
     for expected in 1..=HOST_INTERRUPTION_RETRIES {
         let attempt = paid_attempt(&store, &settings, &job.job_id, T);
@@ -1481,8 +1486,7 @@ fn a_failure_while_awake_keeps_the_one_retry_rule() {
     let failed = Unpublished {
         uncertain: true,
         paid: true,
-        suspended: false,
-        settings_changed: false,
+        ..Unpublished::default()
     };
     let attempt = paid_attempt(&store, &settings, &job.job_id, T);
     let view = store
@@ -1974,30 +1978,6 @@ fn saving_a_long_source_while_paused_pauses_every_chunk() {
 }
 
 #[test]
-fn chunking_preserves_unicode_paragraphs_and_large_unbroken_sources() {
-    for body in [
-        "한".repeat(EPISODE_CHUNK_CHARS * 3 + 19),
-        format!(
-            "{}\n\n{}\n\n{}",
-            "é".repeat(6_998),
-            "한".repeat(7_001),
-            "tail"
-        ),
-        "x".repeat(1_000_000),
-    ] {
-        let chunks = chunk_episode(&body);
-        assert_eq!(chunks.concat(), body);
-        assert!(chunks
-            .iter()
-            .all(|chunk| !chunk.is_empty() && chunk.chars().count() <= EPISODE_CHUNK_CHARS));
-    }
-    assert_eq!(
-        chunk_episode(&format!("{}\n\ntail", "한".repeat(6_998))),
-        vec![format!("{}\n\n", "한".repeat(6_998)), "tail".into()]
-    );
-}
-
-#[test]
 fn an_underfunded_source_parks_every_chunk_without_blocking_another_source() {
     let (_dir, store) = open();
     let mut settings = enabled();
@@ -2218,6 +2198,8 @@ fn explicit_source_retry_funds_one_span_and_its_tail_once_per_action() {
         .transact(|write| retry_source_processing(write.tx, &settings, "loupist-a", &source))
         .unwrap();
     assert_eq!(retried.status, JOB_QUEUED);
+    assert!(retried.document.user_attempt);
+    assert_eq!(retried.document.origin, JobOrigin::Chat);
     assert_eq!(retried.document.extraction.max_llm_calls, 8);
     let jobs = store.graph_jobs("loupist-a").unwrap();
     assert_eq!(
@@ -2473,4 +2455,240 @@ fn a_user_pause_resumes_the_funded_span_and_its_unfunded_followers_without_refil
             .sum::<u32>(),
         6
     );
+}
+
+#[test]
+fn a_malformed_reply_parks_the_next_chunk_and_keeps_its_calls() {
+    let (_directory, store) = open();
+    let settings = enabled();
+    let first = queued(
+        &store,
+        &settings,
+        "loupist-a",
+        "A".repeat(EPISODE_CHUNK_CHARS * 2).as_bytes(),
+    );
+    let second = store
+        .graph_jobs("loupist-a")
+        .unwrap()
+        .into_iter()
+        .find(|job| job.job_id != first.job_id)
+        .unwrap();
+    assert_eq!(second.document.extraction.max_llm_calls, 0);
+    let running = claim(&store, &settings, &first.job_id, T);
+    let attempt = running.document.attempt_id.clone().unwrap();
+    let kept = running.document.extraction.max_llm_calls;
+    assert!(kept >= 2);
+    store
+        .transact(|write| {
+            fail_model_output(write.tx, &first.job_id, &attempt, "invalid_json", T + 1)
+        })
+        .unwrap();
+    let failed = store.graph_job("loupist-a", &first.job_id).unwrap();
+    assert_eq!(failed.status, JOB_FAILED_EXTRACTION);
+    assert_eq!(failed.document.extraction.max_llm_calls, kept);
+    let parked = store.graph_job("loupist-a", &second.job_id).unwrap();
+    assert_eq!(parked.status, JOB_PAUSED);
+    assert_eq!(parked.document.extraction.max_llm_calls, 0);
+    store
+        .transact(|write| {
+            write_status(
+                write.tx,
+                &second.job_id,
+                JOB_PAUSED,
+                JOB_QUEUED,
+                &parked.document,
+            )
+        })
+        .unwrap();
+    assert!(!heads(&store).iter().any(|id| id == &second.job_id));
+    let claimed = claim(&store, &settings, &second.job_id, T + 2);
+    assert_ne!(claimed.status, JOB_RUNNING);
+    assert_eq!(claimed.document.extraction.max_llm_calls, 0);
+    assert_eq!(
+        store
+            .graph_job("loupist-a", &first.job_id)
+            .unwrap()
+            .document
+            .extraction
+            .max_llm_calls,
+        kept
+    );
+    let source = failed
+        .document
+        .source_binding
+        .as_ref()
+        .unwrap()
+        .source_record_id
+        .clone();
+    let retried = store
+        .transact(|write| retry_source_processing(write.tx, &settings, "loupist-a", &source))
+        .unwrap();
+    assert_eq!(retried.job_id, first.job_id);
+    assert_eq!(retried.status, JOB_QUEUED);
+}
+
+#[test]
+fn model_output_stops_are_failed_extraction_and_only_retryable_stops_run_again() {
+    let settings = enabled();
+    for kind in [
+        "invalid_json",
+        "schema_mismatch",
+        "incomplete_response",
+        "output_size",
+        "content_type",
+    ] {
+        let (_directory, store) = open();
+        let job = queued(&store, &settings, "loupist-a", b"Notes about Acme");
+        let running = claim(&store, &settings, &job.job_id, T);
+        let attempt = running.document.attempt_id.clone().unwrap();
+        let span = running
+            .document
+            .source_binding
+            .as_ref()
+            .unwrap()
+            .span_id
+            .clone();
+        let attempts_before = running.document.interrupted_attempts;
+        store
+            .transact(|write| {
+                reserve_model_call(write.tx, &job.job_id, &attempt)?;
+                fail_model_output(write.tx, &job.job_id, &attempt, kind, T + 1)
+            })
+            .unwrap();
+        let failed = store.graph_job("loupist-a", &job.job_id).unwrap();
+        assert_eq!(failed.status, JOB_FAILED_EXTRACTION, "{kind}");
+        assert_ne!(failed.status, JOB_RECONCILE, "{kind}");
+        assert_ne!(failed.status, JOB_RECONCILED, "{kind}");
+        assert_eq!(
+            failed.failure.as_ref().map(|failure| failure.kind),
+            JobFailureKind::model_output(kind),
+            "{kind}"
+        );
+        assert_eq!(failed.retryable, Some(true), "{kind}");
+        assert!(
+            failed.document.interrupted_attempts >= attempts_before,
+            "{kind}"
+        );
+        assert_eq!(
+            failed.document.source_binding.as_ref().unwrap().span_id,
+            span,
+            "{kind}"
+        );
+        assert!(store
+            .read(|read| load_settings(read.tx, "loupist-a"))
+            .unwrap()
+            .quarantined_generations
+            .is_empty());
+        let source = failed
+            .document
+            .source_binding
+            .as_ref()
+            .unwrap()
+            .source_record_id
+            .clone();
+        let sealed = failed.document.sealed_revision_id.clone();
+        let retried = store
+            .transact(|write| retry_source_processing(write.tx, &settings, "loupist-a", &source))
+            .unwrap();
+        assert_eq!(retried.status, JOB_QUEUED, "{kind}");
+        assert!(retried.document.failure.is_none(), "{kind}");
+        assert_eq!(retried.document.sealed_revision_id, sealed, "{kind}");
+        assert_eq!(
+            retried.document.source_binding.as_ref().unwrap().span_id,
+            span,
+            "{kind}"
+        );
+        assert!(store
+            .transact(|write| retry_source_processing(write.tx, &settings, "loupist-a", &source))
+            .is_err());
+        let parked = store.graph_job("loupist-a", &job.job_id).unwrap();
+        assert_eq!(parked.status, JOB_QUEUED, "{kind}");
+        assert_eq!(parked.document.sealed_revision_id, sealed, "{kind}");
+    }
+
+    // Statuses Try again accepts, and statuses it leaves untouched.
+    let accepted = [
+        (JOB_PAUSED, true),
+        (JOB_FAILED_EXTRACTION, false),
+        (JOB_FAILED_BEFORE, false),
+    ];
+    for (status, exhaust) in accepted {
+        let (_directory, store) = open();
+        let settings = enabled();
+        let job = queued(&store, &settings, "loupist-a", b"Stopped source");
+        let source = job
+            .document
+            .source_binding
+            .as_ref()
+            .unwrap()
+            .source_record_id
+            .clone();
+        let span = job
+            .document
+            .source_binding
+            .as_ref()
+            .unwrap()
+            .span_id
+            .clone();
+        let mut document = job.document.clone();
+        if exhaust {
+            document.extraction.max_llm_calls = 0;
+        }
+        if status == JOB_FAILED_EXTRACTION {
+            document.failure = Some(JobFailure {
+                kind: JobFailureKind::InvalidJson,
+                at_ms: T,
+            });
+            document.inference_attempted = true;
+        }
+        store
+            .transact(|write| write_status(write.tx, &job.job_id, JOB_QUEUED, status, &document))
+            .unwrap();
+        let view = store.graph_job("loupist-a", &job.job_id).unwrap();
+        assert_eq!(view.retryable, Some(true), "{status}");
+        let retried = store
+            .transact(|write| retry_source_processing(write.tx, &settings, "loupist-a", &source))
+            .unwrap();
+        assert_eq!(retried.status, JOB_QUEUED, "{status}");
+        assert_eq!(
+            retried.document.source_binding.as_ref().unwrap().span_id,
+            span,
+            "{status}"
+        );
+        assert_eq!(
+            retried.document.extraction.max_llm_calls, settings.max_llm_calls,
+            "{status}"
+        );
+    }
+    for status in [
+        JOB_RUNNING,
+        JOB_QUEUED,
+        JOB_COMPLETED,
+        JOB_RECONCILE,
+        JOB_RECONCILED,
+        JOB_CANCELLED,
+        JOB_PRICE_DATA,
+    ] {
+        let (_directory, store) = open();
+        let settings = enabled();
+        let job = queued(&store, &settings, "loupist-a", b"Stopped source");
+        let source = job
+            .document
+            .source_binding
+            .as_ref()
+            .unwrap()
+            .source_record_id
+            .clone();
+        let mut document = job.document.clone();
+        document.extraction.max_llm_calls = 0;
+        store
+            .transact(|write| write_status(write.tx, &job.job_id, JOB_QUEUED, status, &document))
+            .unwrap();
+        let before = store.graph_job("loupist-a", &job.job_id).unwrap();
+        assert_eq!(before.retryable, None, "{status}");
+        assert!(store
+            .transact(|write| retry_source_processing(write.tx, &settings, "loupist-a", &source))
+            .is_err());
+        assert_eq!(store.graph_job("loupist-a", &job.job_id).unwrap(), before);
+    }
 }

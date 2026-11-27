@@ -194,7 +194,7 @@ pub(crate) fn extracted_edges() -> Py {
             ),
             string_field(
                 "relation_type",
-                "The type of relationship between the entities, in SCREAMING_SNAKE_CASE (e.g., WORKS_AT, LIVES_IN, IS_FRIENDS_WITH)",
+                "The type of relationship between the entities, in SCREAMING_SNAKE_CASE (e.g., LICENSES_FROM, AUDITS, REGULATES)",
             ),
             string_field(
                 "fact",
@@ -202,11 +202,11 @@ pub(crate) fn extracted_edges() -> Py {
             ),
             optional_string_field(
                 "valid_at",
-                "The date and time when the relationship described by the edge fact became true or was established. Use ISO 8601 format (YYYY-MM-DDTHH:MM:SS.SSSSSSZ)",
+                "When the relationship described by the edge fact began, if the text states it or a relative expression resolves against REFERENCE_TIME; otherwise null. ISO 8601 at the precision the text gives: YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ",
             ),
             optional_string_field(
                 "invalid_at",
-                "The date and time when the relationship described by the edge fact stopped being true or ended. Use ISO 8601 format (YYYY-MM-DDTHH:MM:SS.SSSSSSZ)",
+                "When the relationship described by the edge fact ended, if the text states it or a relative expression resolves against REFERENCE_TIME; otherwise null. ISO 8601 at the precision the text gives: YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ",
             ),
             integer_list_field(
                 "episode_indices",
@@ -242,6 +242,10 @@ fn edge_duplicate_model() -> Py {
             integer_list_field(
                 "contradicted_facts",
                 "List of idx values of contradicted facts (from full idx range). Empty list if none.",
+            ),
+            integer_list_field(
+                "same_assertion_facts",
+                "List of idx values from contradicted_facts that state the same thing as the NEW FACT with a different value. Empty list if none.",
             ),
         ],
         &["duplicate_facts", "contradicted_facts"],

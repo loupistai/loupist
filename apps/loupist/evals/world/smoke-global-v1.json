@@ -1,0 +1,158 @@
+{
+  "schema": "loupist-world-suite/1",
+  "suite": "world-smoke-global-v1",
+  "version": 1,
+  "description": "Six short fictional Sources in separate profiles, one World-only trial each: four tables from four market profiles (Korea, Germany, India, United Kingdom) and two prose items (Japan, Brazil), each in its market's language and number format.",
+  "scenarios": [
+    {
+      "id": "SMOKE-KR-TABLE",
+      "title": "가람정밀 2026년 3분기 실적 요약",
+      "split": "smoke",
+      "condition": "smoke",
+      "world_enabled": true,
+      "profile": "korea",
+      "form": "table",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "kr-table",
+              "title": "가람정밀 2026년 3분기 실적 요약",
+              "text": "가람정밀 (990431) 2026년 3분기 연결 실적\n구분 | 2026년 3분기 | 2025년 3분기\n매출액 | 1,234억 원 | 1,102억 원\n영업이익 | 87억 원 | 95억 원\n수주잔고 | 1조 2,400억 원 | 1조 1,050억 원\n",
+              "origin": "https://fixtures.invalid/world/smoke-global/kr-table",
+              "publication_time": "2026-11-12",
+              "acquired_at": "2026-11-12T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SMOKE-DE-TABLE",
+      "title": "Lindenhof Maschinenbau Halbjahresfinanzbericht 2026",
+      "split": "smoke",
+      "condition": "smoke",
+      "world_enabled": true,
+      "profile": "germany",
+      "form": "table",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "de-table",
+              "title": "Lindenhof Maschinenbau Halbjahresfinanzbericht 2026",
+              "text": "Lindenhof Maschinenbau AG, Halbjahresfinanzbericht 2026\nKennzahl | 1. Halbjahr 2026 | 1. Halbjahr 2025\nUmsatzerlöse (Mio. EUR) | 1.482,6 | 1.397,4\nEBIT (Mio. EUR) | 118,3 | 131,9\nAuftragsbestand (Mrd. EUR) | 2,1 | 1,9\n",
+              "origin": "https://fixtures.invalid/world/smoke-global/de-table",
+              "publication_time": "2026-08-06",
+              "acquired_at": "2026-08-06T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SMOKE-IN-TABLE",
+      "title": "Saraswati Looms Q2 FY2026-27 results",
+      "split": "smoke",
+      "condition": "smoke",
+      "world_enabled": true,
+      "profile": "india",
+      "form": "table",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "in-table",
+              "title": "Saraswati Looms Q2 FY2026-27 results",
+              "text": "Saraswati Looms Limited, unaudited results for Q2 FY2026-27\nParticulars | Q2 FY2026-27 | Q2 FY2025-26\nRevenue from operations (₹ crore) | 642.80 | 588.15\nProfit after tax (₹ crore) | 41.25 | 46.90\nEmployee benefit expense (₹ lakh) | 9,875.40 | 9,120.65\n",
+              "origin": "https://fixtures.invalid/world/smoke-global/in-table",
+              "publication_time": "2026-11-09",
+              "acquired_at": "2026-11-09T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SMOKE-UK-TABLE",
+      "title": "Marlow & Finch interim results",
+      "split": "smoke",
+      "condition": "smoke",
+      "world_enabled": true,
+      "profile": "united_kingdom",
+      "form": "table",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "uk-table",
+              "title": "Marlow & Finch interim results",
+              "text": "Marlow & Finch plc, interim results for the six months ended 30 September 2026\nMeasure | H1 2026/27 | H1 2025/26\nRevenue (£m) | 318.4 | 301.7\nAdjusted operating profit (£m) | 27.9 | 31.2\nInterim dividend per share (pence) | 4.6 | 4.2\nShare price at period end (GBX) | 1,234 | 1,118\n",
+              "origin": "https://fixtures.invalid/world/smoke-global/uk-table",
+              "publication_time": "2026-11-18",
+              "acquired_at": "2026-11-18T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SMOKE-JP-PROSE",
+      "title": "灯台電子 2027年3月期 第2四半期決算",
+      "split": "smoke",
+      "condition": "smoke",
+      "world_enabled": true,
+      "profile": "japan",
+      "form": "prose",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "jp-prose",
+              "title": "灯台電子 2027年3月期 第2四半期決算",
+              "text": "灯台電子株式会社(証券コード 1188)は2026年11月6日、2027年3月期第2四半期の連結営業利益が前年同期比12.4%増の86億5,000万円になったと発表した。同社は仙台市に新工場を建設し、2027年4月に稼働を開始する予定である。\n",
+              "origin": "https://fixtures.invalid/world/smoke-global/jp-prose",
+              "publication_time": "2026-11-06",
+              "acquired_at": "2026-11-06T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SMOKE-BR-PROSE",
+      "title": "Serra Azul Papel e Celulose: resultado do terceiro trimestre de 2026",
+      "split": "smoke",
+      "condition": "smoke",
+      "world_enabled": true,
+      "profile": "brazil",
+      "form": "prose",
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "br-prose",
+              "title": "Serra Azul Papel e Celulose: resultado do terceiro trimestre de 2026",
+              "text": "A Serra Azul Papel e Celulose S.A. informou em 5 de novembro de 2026 que sua receita líquida no terceiro trimestre de 2026 foi de R$ 1,84 bilhão, alta de 7,5% em relação ao mesmo período de 2025. A companhia assinou contrato de fornecimento de celulose com a Porto Claro Embalagens, com vigência a partir de 1º de janeiro de 2027.\n",
+              "origin": "https://fixtures.invalid/world/smoke-global/br-prose",
+              "publication_time": "2026-11-05",
+              "acquired_at": "2026-11-05T10:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

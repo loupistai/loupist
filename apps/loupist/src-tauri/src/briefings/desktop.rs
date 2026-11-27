@@ -377,6 +377,15 @@ pub(super) fn read_settings(root: &Path) -> Result<ResidentSettings, CommandErro
         )),
     }
 }
+
+/// Whether a chat notification may include the stored answer.
+/// A missing file keeps the default, which shows details. An unreadable file hides them.
+pub(crate) fn notification_shows_details(root: &Path) -> bool {
+    read_settings(root)
+        .map(|settings| settings.notifications.show_details)
+        .unwrap_or(false)
+}
+
 pub(super) fn write_settings(root: &Path, settings: &ResidentSettings) -> Result<(), CommandError> {
     let save = || -> Result<(), Box<dyn std::error::Error>> {
         std::fs::create_dir_all(root)?;
@@ -522,67 +531,6 @@ impl NotificationQueue {
         }
         self.pending.push(result);
     }
-
-    fn flush(
-        &mut self,
-        local: chrono::DateTime<chrono::FixedOffset>,
-        settings: &NotificationSettings,
-        visible_bot: Option<&str>,
-        mut persist: impl FnMut(&Self) -> StoreResult<()>,
-        mut deliver: impl FnMut(&str, &PendingResult, usize) -> Delivery,
-    ) -> StoreResult<()> {
-        if settings.is_quiet_at(local.hour() * 60 + local.minute()) {
-            return Ok(());
-        }
-        let before = (self.day, self.sent, self.pending.len());
-        let day = Some(local.num_days_from_ce());
-        if self.day != day {
-            self.day = day;
-            self.sent = 0;
-        }
-        if settings.daily_cap == 0 {
-            self.pending.clear();
-        } else if self.sent < settings.daily_cap {
-            let now = local.timestamp_millis();
-            self.pending.retain(|result| {
-                result.ready_at > now || visible_bot != Some(result.target.loupist_id.as_str())
-            });
-            let ready = self
-                .pending
-                .iter()
-                .filter(|result| result.ready_at <= now)
-                .map(|result| result.target.loupist_id.clone())
-                .collect::<std::collections::BTreeSet<_>>();
-            for id in ready {
-                if self.sent == settings.daily_cap {
-                    break;
-                }
-                let (results, pending): (Vec<_>, Vec<_>) = std::mem::take(&mut self.pending)
-                    .into_iter()
-                    .partition(|result| result.ready_at <= now && result.target.loupist_id == id);
-                self.pending = pending;
-                self.sent += 1;
-                // Persist the reservation before invoking the non-transactional OS.
-                persist(self)?;
-                match deliver(&id, &results[0], results.len()) {
-                    Delivery::Sent => {}
-                    Delivery::Retry => {
-                        self.pending.extend(results);
-                        self.sent -= 1;
-                        persist(self)?;
-                    }
-                    Delivery::Discard => {
-                        self.sent -= 1;
-                        persist(self)?;
-                    }
-                }
-            }
-        }
-        if before != (self.day, self.sent, self.pending.len()) {
-            persist(self)?;
-        }
-        Ok(())
-    }
 }
 
 fn run_policy(run: &Run, notify: NotifyPolicy, failures: NotifyPolicy) -> NotifyPolicy {
@@ -681,7 +629,7 @@ fn queue_notification(
             });
         next_briefing.unwrap_or_else(|| {
             let local = chrono::Local::now();
-            let zone = iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".into());
+            let zone = crate::scheduled_tasks::presets::local_timezone().to_string();
             let schedule = crate::scheduled_tasks::types::Schedule::Daily {
                 hour: 18,
                 minute: 0,
@@ -792,14 +740,70 @@ fn flush_queue(
     visible_bot: Option<&str>,
     deliver: impl FnMut(&str, &PendingResult, usize) -> Delivery,
 ) -> StoreResult<()> {
-    let _guard = QUEUE_LOCK.lock().map_err(|_| StoreError::LockPoisoned)?;
-    store.desktop_notification_queue()?.flush(
-        local,
-        settings,
-        visible_bot,
-        |queue| store.save_desktop_notification_queue(queue),
-        deliver,
-    )
+    if settings.is_quiet_at(local.hour() * 60 + local.minute()) {
+        return Ok(());
+    }
+    let day = Some(local.num_days_from_ce());
+    let now = local.timestamp_millis();
+    let mut ready = std::collections::BTreeSet::new();
+    update_queue(store, |queue| {
+        let before = (queue.day, queue.sent, queue.pending.len());
+        if queue.day != day {
+            queue.day = day;
+            queue.sent = 0;
+        }
+        if settings.daily_cap == 0 {
+            queue.pending.clear();
+        } else if queue.sent < settings.daily_cap {
+            queue.pending.retain(|result| {
+                result.ready_at > now || visible_bot != Some(result.target.loupist_id.as_str())
+            });
+            ready.extend(
+                queue
+                    .pending
+                    .iter()
+                    .filter(|result| result.ready_at <= now)
+                    .map(|result| result.target.loupist_id.clone()),
+            );
+        }
+        before != (queue.day, queue.sent, queue.pending.len())
+    })?;
+    let mut deliver = deliver;
+    for id in ready {
+        let mut reserved = Vec::new();
+        // Claim and persist one group before invoking the non-transactional OS.
+        update_queue(store, |queue| {
+            if queue.day != day || queue.sent >= settings.daily_cap {
+                return false;
+            }
+            let (results, pending) = std::mem::take(&mut queue.pending)
+                .into_iter()
+                .partition(|result| result.ready_at <= now && result.target.loupist_id == id);
+            queue.pending = pending;
+            reserved = results;
+            if reserved.is_empty() {
+                return false;
+            }
+            queue.sent += 1;
+            true
+        })?;
+        let Some(first) = reserved.first() else {
+            continue;
+        };
+        let delivery = deliver(&id, first, reserved.len());
+        if !matches!(delivery, Delivery::Sent) {
+            update_queue(store, |queue| {
+                if matches!(delivery, Delivery::Retry) {
+                    queue.pending.extend(reserved);
+                }
+                if queue.day == day {
+                    queue.sent -= 1;
+                }
+                true
+            })?;
+        }
+    }
+    Ok(())
 }
 
 fn flush_notification_queue(state: &AppState, app: &tauri::AppHandle) {
@@ -1170,17 +1174,11 @@ mod notification_tests {
         store.save_desktop_notification_queue(&queue).unwrap();
         let mut accepted = false;
         let interrupted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _ = queue.flush(
-                now,
-                &settings,
-                None,
-                |queue| store.save_desktop_notification_queue(queue),
-                |id, _, _| {
-                    assert_eq!(id, "a");
-                    accepted = true;
-                    panic!("Process exited after the OS accepted the first group");
-                },
-            );
+            let _ = flush_queue(&store, now, &settings, None, |id, _, _| {
+                assert_eq!(id, "a");
+                accepted = true;
+                panic!("Process exited after the OS accepted the first group");
+            });
         }));
         assert!(accepted && interrupted.is_err());
         let mut retried = Vec::new();
@@ -1219,23 +1217,18 @@ mod notification_tests {
                 local.timestamp_millis(),
             );
         }
+        let store = SqliteStore::open_in_memory().unwrap();
+        store.save_desktop_notification_queue(&queue).unwrap();
         let mut attempts = Vec::new();
-        queue
-            .flush(
-                local,
-                &settings,
-                None,
-                |_| Ok(()),
-                |id, _, count| {
-                    attempts.push((id.to_owned(), count));
-                    match id {
-                        "denied" | "failed" => Delivery::Retry,
-                        "succeeded" => Delivery::Sent,
-                        _ => unreachable!(),
-                    }
-                },
-            )
-            .unwrap();
+        flush_queue(&store, local, &settings, None, |id, _, count| {
+            attempts.push((id.to_owned(), count));
+            match id {
+                "denied" | "failed" => Delivery::Retry,
+                "succeeded" => Delivery::Sent,
+                _ => unreachable!(),
+            }
+        })
+        .unwrap();
         assert_eq!(
             attempts,
             [
@@ -1244,17 +1237,13 @@ mod notification_tests {
                 ("succeeded".into(), 1)
             ]
         );
+        let queue = store.desktop_notification_queue().unwrap();
         assert_eq!(queue.sent, 1);
         assert_eq!(queue.pending.len(), 3);
-        queue
-            .flush(
-                local,
-                &settings,
-                None,
-                |_| Ok(()),
-                |_, _, _| panic!("The daily slot is spent"),
-            )
-            .unwrap();
+        flush_queue(&store, local, &settings, None, |_, _, _| {
+            panic!("The daily slot is spent")
+        })
+        .unwrap();
 
         let next_day = local + chrono::Days::new(1);
         let settings = NotificationSettings {
@@ -1262,19 +1251,13 @@ mod notification_tests {
             ..settings
         };
         attempts.clear();
-        queue
-            .flush(
-                next_day,
-                &settings,
-                None,
-                |_| Ok(()),
-                |id, _, count| {
-                    attempts.push((id.to_owned(), count));
-                    Delivery::Sent
-                },
-            )
-            .unwrap();
+        flush_queue(&store, next_day, &settings, None, |id, _, count| {
+            attempts.push((id.to_owned(), count));
+            Delivery::Sent
+        })
+        .unwrap();
         assert_eq!(attempts, [("denied".into(), 1), ("failed".into(), 2)]);
+        let queue = store.desktop_notification_queue().unwrap();
         assert_eq!(queue.sent, 2);
         assert!(queue.pending.is_empty());
     }

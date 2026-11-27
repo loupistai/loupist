@@ -6,6 +6,9 @@ import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { ModelSelectionMenu } from "../models/ModelSelectionMenu";
 import { worldReadinessLabels } from "../../knowledge/worldReadiness";
+import { sourceHold, sourceHoldLine, type SourceHold } from "../../knowledge/mapProcessing";
+import { sourceTitle } from "../../knowledge/hostSource";
+import { useSourceRetry } from "./SourceRetry";
 import { errorMessage } from "../../lib/errors";
 import { formatNumber } from "@/i18n/format";
 import type { GraphProcessingSettings, GraphProcessingView, GraphReadinessNote, KeepAwakeStatus, LoupistBridge, ModelCatalog } from "../../types";
@@ -35,7 +38,30 @@ const readinessNotes = (): Record<GraphReadinessNote, string> => ({
   not_connected: i18n.t("settings:worldSettings.readiness.notConnected"),
   account_waiting: i18n.t("settings:worldSettings.readiness.accountWaiting"),
 });
-const recoveryComplete = () => i18n.t("knowledge:worldProcessingSettings.worldProcessingRecoveredSavedSourcesAreRetainedInterruptedProcessingWas");
+const recoveryComplete = () => i18n.t("knowledge:worldProcessingSettings.worldProcessingRecovered");
+
+function HeldSources({ bridge, loupistId }: { bridge: LoupistBridge; loupistId: string }) {
+  const [rows, setRows] = useState<{ recordId: string; title: string; hold: SourceHold }[]>([]);
+  useEffect(() => {
+    let live = true;
+    void bridge.knowledgeCatalog({ loupistId }).then(catalog => {
+      if (!live) return;
+      setRows(catalog.sources.flatMap(record => record.objects.flatMap(object => {
+        const hold = sourceHold(object.processing);
+        return hold ? [{ recordId: record.recordId, title: sourceTitle(object), hold }] : [];
+      })));
+    }).catch(() => { if (live) setRows([]); });
+    return () => { live = false; };
+  }, [bridge, loupistId]);
+  if (!rows.length) return null;
+  return <div className="world-processing-held">{rows.map(row => <HeldSource key={row.recordId} bridge={bridge} loupistId={loupistId} row={row} />)}</div>;
+}
+
+function HeldSource({ bridge, loupistId, row }: { bridge: LoupistBridge; loupistId: string; row: { recordId: string; title: string; hold: SourceHold } }) {
+  const { t } = useTranslation("knowledge");
+  const { pending, error, run } = useSourceRetry(() => bridge.knowledgeGraphRetrySource({ loupistId, recordId: row.recordId }), () => undefined);
+  return <p role="status">{row.title}: {sourceHoldLine(row.hold)} <Button type="button" variant="ghost" size="xs" disabled={pending} onClick={() => void run()}>{pending ? t("sourceRetry.tryingAgain") : t("sourceWorkspace.readNow")}</Button>{error ? <span role="alert">{error}</span> : null}</p>;
+}
 const KEEP_AWAKE_REFRESH_MS = 5_000;
 
 const serializeAnchors = (anchors: GraphProcessingSettings["anchors"]) => (anchors ?? []).map(anchor => [anchor.name, ...(anchor.aliases ?? []), ...(anchor.identifiers ?? [])].join(" | ")).join("; ");
@@ -254,6 +280,7 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
       {view.readiness.modelName ? <span>{view.readiness.providerName ? `${view.readiness.providerName} · ` : ""}{view.readiness.modelName}</span> : null}
       {readinessMessage ? <p className="knowledge-hint">{readinessMessage}</p> : null}
     </div> : null}
+    <HeldSources bridge={bridge} loupistId={loupistId} />
     {view.readiness.status === "reconciliation_required" || recovering ? <div className="world-processing-recovery">
       <p>{t("worldProcessingSettings.recoveryRestoresTheLastConfirmedWorldAndKeepsYourSaved")}</p>
       {recovering ? <p role="status">{t("worldProcessingSettings.restoringConfirmedWorldData")}</p> : <Button type="button" variant="outline" disabled={busy} onClick={recover}>{action === "recover" ? t("worldProcessingSettings.startingRecovery") : t("worldProcessingSettings.recoverWorldProcessing")}</Button>}
@@ -289,7 +316,16 @@ export function WorldProcessingSettings({ bridge, loupistId, active = true, coll
         <div className="knowledge-processing-fields">
           <label>{t("worldProcessingSettings.maximumModelRequestsPerSource")}<Input aria-label={t("worldProcessingSettings.maximumModelRequestsPerSource")} type="number" min={1} max={64} step={1} required value={draft.maxLlmCalls} onChange={(event) => edit({ maxLlmCalls: Number(event.target.value) })} /><span className="knowledge-hint">{t("worldProcessingSettings.164RequestsMoreRequestsCanIncreaseCost")}</span></label>
           <label>{t("worldProcessingSettings.timeLimitPerRequestSeconds")}<Input aria-label={t("worldProcessingSettings.timeLimitPerRequestSeconds")} type="number" min={1} max={300} step={1} required value={draft.timeoutMs / 1000} onChange={(event) => edit({ timeoutMs: Number(event.target.value) * 1000 })} /><span className="knowledge-hint">{t("worldProcessingSettings.1300SecondsPerRequest")}</span></label>
-          <label>{t("worldProcessingSettings.fastModelForRoutineChecks")}<Input aria-label={t("worldProcessingSettings.fastModel")} value={draft.fastModel ?? ""} onChange={(event) => edit({ fastModel: event.target.value.trim() || null })} /><span className="knowledge-hint">{t("worldProcessingSettings.optionalFasterModelForRoutineChecksSuchAsSpottingDuplicates")}</span></label>
+          <div className="world-processing-model">
+            <span>{t("worldProcessingSettings.fastModelForRoutineChecks")}</span>
+            <ModelSelectionMenu models={models} providers={catalog.providers} disabled={busy} ariaLabel={t("worldProcessingSettings.fastModel")}
+              selection={{ model_profile_id: models.find((model) => model.id === draft.fastModel)?.id ?? "", thinking_level: "", run_options: {} }}
+              modelName={models.find((model) => model.id === draft.fastModel)?.name ?? (draft.fastModel || undefined)}
+              recommended={{ label: t("worldProcessingSettings.fastModelSame"), selected: !draft.fastModel, onSelect: () => edit({ fastModel: null }) }}
+              levelOnModelPick={() => ""}
+              onSelectionChange={(selection) => edit({ fastModel: selection.model_profile_id || null })} />
+            <span className="knowledge-hint">{t("worldProcessingSettings.optionalFasterModelForRoutineChecksSuchAsSpottingDuplicates")}</span>
+          </div>
         </div>
       </Disclosure>
     </fieldset>

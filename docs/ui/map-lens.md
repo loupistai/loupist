@@ -87,6 +87,25 @@ The Library drawer has three tabs: Sources, Journal (your entries) and Notes (th
 When the canvas is narrower than 720 px, Library covers it. Closing Library reveals World again.
 The source and note filters stay at the top of the list while it scrolls.
 Entity and claim inspectors and Source and note readers open alongside World.
+A finished World job that left facts out because a figure differed from the passage says so
+on its Library row and in the Source reader ("9 facts were left out: their figures did not
+match the passage"), with the host's examples (at most eight, each with the figure as stated)
+behind a disclosure (`DroppedFigures`; job reads run four at a time, once per finished job).
+In the claim inspector a support whose figure World did not find says "Figure not found in the
+cited passage"; its Open source carries the claim's passage when the host knows it, and the
+reader then shows and marks that passage. A passage that does not fit the saved text, or a
+saved section that does not start at the Source's start, opens the Source as before.
+The claim inspector offers "Tell Loupist this is wrong" for a claim in any state: it
+puts the claim's proposition, its dates and its Source titles, quoted, into the composer
+of the current research session (a new one when the current Chat is Bot or none), with
+the caret after "This is wrong because" (`claimCorrectionDraft`). Nothing is sent; what
+the user sends is an ordinary message.
+"Learn about this" in an entity's inspector and "Keep this page current" on a Lens
+subject page (`LearnRequest`) send Bot the user's request naming the entity or page and
+open Bot, where its learning program proposal card arrives. The request carries none of
+Bot's composer draft, pins or as-of date and waits until Bot is idle and has a model. Both
+are disabled, with "Needs an AI account" or "Memory saving is off" under them, when
+`learnBlock` finds no AI account or Memory reading or saving off.
 World follows the latest published revision, including when opened from an
 older link. If a detail or search result is newer than the canvas, the page
 refreshes the overview before showing that result. Selection and scope stay
@@ -185,6 +204,25 @@ name at NaN, so its dot was not drawn and, in the dark theme, its glow threw and
 canvas down.
 
 What's new, replay and export are in [What changed](../knowledge/growth.md#in-world).
+
+### World as of a date
+
+**As of** in the toolbar opens a year, month and day field (1990-01-01 to today; no later
+day is offered) and **Today**. The date belongs to this World view: a different Loupist or a
+new visit starts on today. While a date is set, the overview and every World read under the
+view (search, highlights, both inspectors, a claim's history and History) send it as `asOf`
+([point-in-time answers](../analysis/point-in-time.md#point-in-time-answers)), and a banner
+under the toolbar reads "Showing what was published by {date}. {n} later facts are hidden."
+from the response's `asOfReport`. A date before the first Source shows the empty World with
+that one line and no first-visit actions. Replay keeps its first-seen order. What's new
+lists what this Loupist learned recently, so the toolbar leaves it out while a date is set
+(`components/map/MapAsOf.tsx`, `WorldAsOfContext` in `useMapData.ts`).
+
+**History**, in the entity inspector after its facts, lists the change feed about that name on the published axis
+(`knowledge_world_changes`, `about: {node}`), oldest first, twenty rows a page with Show more;
+each row names its kind and publication date and opens its claim. Under an as-of date the
+host reads the feed of the World that had read only what was published by then
+(`components/map/MapEntityHistory.tsx`).
 
 Chat materials shows the names and relationships for the conversation, with counts such as "4 names · 3 relationships" and an "Open World →" button. The answer's
 receipt line counts names and relationships added by that message (growth events

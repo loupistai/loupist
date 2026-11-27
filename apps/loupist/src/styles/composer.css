@@ -163,6 +163,10 @@
   flex-direction: column;
   overflow: hidden;
   border-radius: 14px;
+  /* An opaque card above the composer. A translucent popover let the thread show through. */
+  background: var(--gg-color-bg-raised);
+  opacity: 1;
+  box-shadow: var(--gg-shadow-md);
 }
 .model-menu-advanced { display: flex; justify-content: space-between; }
 .model-menu-advanced[aria-expanded="true"] > svg { transform: rotate(180deg); }

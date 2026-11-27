@@ -3,7 +3,7 @@ import { useTranslation } from "../../i18n";
 import { formatDay } from "../../i18n/format";
 import type { DisplayFx } from "../../app/useDisplayFx";
 import { Button } from "../ui/button";
-import { NativeSelect } from "../ui/native-select";
+import { SelectField, SelectItem } from "../ui/select";
 
 /**
  * The euro and the 29 currencies of the ECB reference table (currency design §1.5),
@@ -49,14 +49,13 @@ export function DisplayCurrencySetting({ value, onChange, fx, onConnect, disable
   return (
     <>
       <h3 className="text-sm font-semibold"><label htmlFor={`${id}-select`}>{t("appearance.displayCurrency.label")}</label></h3>
-      <p id={`${id}-description`} className="text-sm text-muted-foreground">{t("appearance.displayCurrency.description")}</p>
       <div className="display-currency-setting" data-display-currency-setting>
-        <NativeSelect id={`${id}-select`} data-display-currency-select aria-describedby={`${id}-description ${id}-status`} value={selected} disabled={disabled || !onChange}
-          onChange={(event) => onChange?.(event.target.value === AS_LISTED ? null : event.target.value)}>
-          <option value={AS_LISTED}>{t("appearance.displayCurrency.asListed")}</option>
-          {unsupported ? <option value={unsupported}>{t("appearance.displayCurrency.unsupported", { code: unsupported })}</option> : null}
-          {DISPLAY_CURRENCIES.map((code) => <option key={code} value={code}>{option(code)}</option>)}
-        </NativeSelect>
+        <SelectField id={`${id}-select`} data-display-currency-select aria-describedby={`${id}-status`} value={selected} placeholder={t("appearance.displayCurrency.asListed")} disabled={disabled || !onChange}
+          onValueChange={value => onChange?.(value === AS_LISTED ? null : value)}>
+          <SelectItem value={AS_LISTED}>{t("appearance.displayCurrency.asListed")}</SelectItem>
+          {unsupported ? <SelectItem value={unsupported}>{t("appearance.displayCurrency.unsupported", { code: unsupported })}</SelectItem> : null}
+          {DISPLAY_CURRENCIES.map((code) => <SelectItem key={code} value={code}>{option(code)}</SelectItem>)}
+        </SelectField>
         <p id={`${id}-status`} role="status" className="display-currency-status text-sm text-muted-foreground" data-fx-status={statusId(fx)}>
           <FxStatus fx={fx} onConnect={onConnect} />
         </p>

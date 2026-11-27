@@ -9,6 +9,7 @@ import type { LoupistCreateRequest, LoupistBridge, LoupistSummary, ModelCatalog 
 import { ConnectStep } from "./ConnectStep";
 import { loupistPortraitId } from "@/lib/loupistAvatar";
 import { errorMessage } from "@/lib/errors";
+import { hasAiAccount } from "@/lib/modelSelection";
 import "@/styles/onboarding.css";
 import "@/styles/briefings.css";
 
@@ -35,7 +36,7 @@ export function Onboarding({ bridge, catalog, onCatalogChange, onCreate, onCompl
   const finishing = useRef(false);
   const [saving, setSaving] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
-  const alreadyConnected = catalog?.providers.some(provider => provider.credential_source !== "missing") || catalog?.models.some(model => model.credential_source !== "missing");
+  const alreadyConnected = hasAiAccount(catalog);
   const next = () => {
     if (!hasLoupist) setStep(3);
     else if (existing) { setDraft(existingDraft(existing)); setStep(4); }

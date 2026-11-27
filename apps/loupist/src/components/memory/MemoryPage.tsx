@@ -1,5 +1,6 @@
 import i18n, { useTranslation } from "@/i18n";
 import { formatDate, formatDateTime, formatNumber, formatTime } from "@/i18n/format";
+import { localizedValue } from "@/i18n/localized";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ArrowLeftIcon, SearchIcon, XIcon } from "lucide-react";
 import type { ChatThread, LoupistSummary, LoupistBridge, KnowledgeCatalog, KnowledgeLocation, KnowledgePin, LensKind } from "../../types";
@@ -221,7 +222,7 @@ export function MemoryPage({ bridge, loupist, threads, initialItem, onOpenChat, 
         <ItemList label={t("memoryPage.tabs.pages")} description={t("memoryPage.pages.description")} items={shown} selectedId={selected?.id} usage={data.usage} onOpen={open}
           before={suggestions} searching={Boolean(terms)} empty={<div className="memory-empty-state">
             <p className="memory-empty">{t("memoryPage.pages.empty")}</p>
-            {addingPrinciple ? <PrincipleForm bridge={bridge} loupistId={loupistId} origin="settings" onCancel={() => setAddingPrinciple(false)}
+            {addingPrinciple ? <PrincipleForm bridge={bridge} loupistId={loupistId} onCancel={() => setAddingPrinciple(false)}
               onSaved={saved => { setAddingPrinciple(false); open(saved.recordId); changed(); }} />
               : <Button variant="outline" size="sm" data-add-principle onClick={() => setAddingPrinciple(true)}>{t("memoryPage.principles.add")}</Button>}
           </div>}
@@ -316,6 +317,11 @@ function UsedIn({ usage, threads, onOpenChat, principle }: { principle?: boolean
   </ul></section>;
 }
 
+function oneSentence(text: string) {
+  const body = text.trim().replace(/[.!?。]+$/u, "");
+  return !/[.!?。]/u.test(body);
+}
+
 function Reader({ item, takeFocus, bridge, loupistId, usage, paused, threads, onOpenChat, onChanged, onClose, backLabel, catalog, onOpenKnowledge, onOpenPage, onAsk, onShare, onAboutShared }: {
   item?: Item; takeFocus?: boolean; bridge: LoupistBridge; loupistId: string; usage: Map<string, MemoryUsage>; paused: boolean; threads: readonly ChatThread[];
   onOpenChat: (threadId: string) => void; onChanged: () => void; onClose: () => void; backLabel: string;
@@ -326,7 +332,8 @@ function Reader({ item, takeFocus, bridge, loupistId, usage, paused, threads, on
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { setError(null); }, [item?.id]);
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { setError(null); setEditing(false); }, [item?.id]);
   if (!item) return <aside className="memory-reader is-empty" data-testid="memory-reader" aria-hidden="true" />;
   const act = async (action: () => Promise<unknown>) => {
     setBusy(true); setError(null);
@@ -357,7 +364,9 @@ function Reader({ item, takeFocus, bridge, loupistId, usage, paused, threads, on
       : t("memoryPage.reader.originSettings", { date: day(principle.createdAtMs) });
   return <aside className="memory-reader" data-testid="memory-reader" aria-label={item.title}>
     {back}{kind}{pausedHint}
-    <p className="memory-reader-statement">{principle.statement}</p><PrincipleSource key={principle.revisionId} statement={principle.statement} why={principle.why ?? ""} example={principle.example ?? ""} />
+    {editing ? <PrincipleForm bridge={bridge} loupistId={loupistId} principle={principle} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onChanged(); }} /> : <p className="memory-reader-statement">{principle.statement}</p>}
+    {oneSentence(principle.statement) ? <details className="memory-reader-more"><summary>{t("memoryPage.actions.more")}</summary><PrincipleSource key={principle.revisionId} statement={principle.statement} why={principle.why ?? ""} example={principle.example ?? ""} /></details>
+      : <PrincipleSource key={principle.revisionId} statement={principle.statement} why={principle.why ?? ""} example={principle.example ?? ""} />}
     <SharedOrigin bridge={bridge} loupistId={loupistId} subjectId={item.id} onAbout={onAboutShared} />
     {principle.why ? <section className="memory-reader-section"><h3>{t("memoryPage.reader.why")}</h3><p>{principle.why}</p></section> : null}
     {principle.example ? <section className="memory-reader-section"><h3>{t("memoryPage.reader.example")}</h3><p>{principle.example}</p></section> : null}
@@ -370,6 +379,7 @@ function Reader({ item, takeFocus, bridge, loupistId, usage, paused, threads, on
       {pauseAction}
       <Button size="sm" onClick={() => onAsk({ kind: "lens", loupistId, objectId: item.id, recordId: item.id, label: principle.statement })}>{t("lensWorkspace.discussInChat")}</Button>
       {onShare ? <Button size="sm" variant="outline" disabled={busy} data-share-item onClick={() => onShare(item.id)}>{i18n.t("sharing:share")}</Button> : null}
+      <Button size="sm" variant="ghost" disabled={busy || editing} onClick={() => setEditing(true)}>{t("memoryPage.actions.edit")}</Button>
       <Button size="sm" variant="ghost" disabled={busy} onClick={() => void act(() => bridge.principleArchive({ loupistId, recordId: item.id, archived: true }))}>{t("memoryPage.actions.archive")}</Button>
     </div>
   </aside>;
@@ -408,7 +418,7 @@ function historyRows(data: Data, threads: readonly ChatThread[]): HistoryRow[] {
   for (const event of data.events) {
     if (event.kind !== "schema_extended" && event.kind !== "schema_reduced") continue;
     const labels = event.origin && typeof event.origin === "object" && "labels" in event.origin ? event.origin.labels : undefined;
-    const label = labels ? (i18n.language.toLowerCase().startsWith("ko") && labels.ko ? labels.ko : labels.en) : event.summary;
+    const label = labels ? localizedValue(labels, i18n.language) ?? labels.en : event.summary;
     rows.push({ key: event.eventId, atMs: event.atMs, map: true, text: t(event.kind === "schema_extended" ? "memoryPage.history.vocabularyAdded" : "memoryPage.history.vocabularyRemoved", { labels: label }) });
   }
   for (const review of data.reviews) {

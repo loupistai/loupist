@@ -143,6 +143,16 @@ pub fn principle_read(tx: &Transaction<'_>, loupist: &str, id: &str) -> Knowledg
 }
 
 /// Caller owns the transaction, so creation, revision, metadata, and growth publish together.
+/// Folded statement text, the same fold Lens uses for a principle's identity.
+pub fn same_folded_text(statement: &str, text: &str) -> bool {
+    super::lens::fold_lens_title(statement) == super::lens::fold_lens_title(text)
+}
+
+/// Whether a delivery row counts toward the page's answer total.
+pub fn delivery_counts_as_answer(kind: &str, delivery: &str) -> bool {
+    super::lens::delivery_counts_as_answer(kind, delivery)
+}
+
 pub(crate) fn principle_title(statement: &str) -> String {
     statement
         .split_whitespace()
@@ -491,5 +501,29 @@ mod tests {
             .read(|w| principle_read(w.tx, "g", &p.record_id))
             .unwrap();
         assert_eq!(p, restored);
+    }
+
+    #[test]
+    fn a_carried_principle_does_not_count_as_an_answer_and_a_read_does() {
+        for (kind, delivery, counts) in [
+            ("principle", "context", false),
+            ("principle", "exact_read", true),
+            ("method", "context", true),
+            ("perspective", "context", true),
+        ] {
+            assert_eq!(
+                delivery_counts_as_answer(kind, delivery),
+                counts,
+                "{kind}/{delivery}"
+            );
+        }
+        assert!(same_folded_text(
+            "  Answer   in two lines ",
+            "answer in two lines"
+        ));
+        assert!(!same_folded_text(
+            "Answer in two lines",
+            "Wait on the basket"
+        ));
     }
 }

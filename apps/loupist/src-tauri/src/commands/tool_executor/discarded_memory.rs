@@ -32,7 +32,11 @@ impl Items {
         }
         let title = title_excerpt(title, MAX_DISCARDED_MEMORY_TITLE_CHARS);
         if !title.is_empty() {
-            let item = DiscardedMemoryItem { kind, title };
+            let item = DiscardedMemoryItem {
+                kind,
+                title,
+                reason: None,
+            };
             if !self.0.contains(&item) {
                 self.0.push(item);
             }
@@ -251,6 +255,7 @@ mod tests {
             Some(vec![DiscardedMemoryItem {
                 kind: Kind::Principle,
                 title: "Current statement".into(),
+                reason: None,
             }])
         );
     }
@@ -283,6 +288,7 @@ mod tests {
             vec![DiscardedMemoryItem {
                 kind: Kind::Method,
                 title: "Cash flow checks — Overlap".into(),
+                reason: None,
             }]
         );
     }

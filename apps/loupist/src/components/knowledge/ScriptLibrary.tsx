@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
-import { formatDateTime } from "../../i18n/format";
+import { formatDateTime, formatNumber } from "../../i18n/format";
 import { useTranslation } from "../../i18n";
 import { errorMessage } from "../../lib/errors";
 import type { LoupistBridge } from "../../types";
+import type { ScheduledTaskListItem } from "../../contracts/scheduled";
 import type { PythonStep, ScriptDraft, ScriptSummary, ScriptVersion } from "../../contracts/generated";
+import { useGo } from "../navigation/Open";
 import { Button } from "../ui/button";
+import { folded, oneReading, scriptOutcome, scriptReads, scriptTask } from "./scriptCard";
 import { CopyTextButton } from "../ui/copy-text-button";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
@@ -20,14 +23,19 @@ type Props = {
 export function ScriptLibrary({ bridge, loupistId, query, onQueryChange }: Props) {
   const { t } = useTranslation("knowledge");
   const [scripts, setScripts] = useState<ScriptSummary[]>();
+  const [tasks, setTasks] = useState<ScheduledTaskListItem[]>([]);
   const [selected, setSelected] = useState<ScriptVersion>();
   const [error, setError] = useState<string>();
   const [revision, setRevision] = useState(0);
+  const go = useGo();
   useEffect(() => {
     let active = true;
     setError(undefined);
     void bridge.scriptsList({ loupistId, query: query.trim() || undefined })
-      .then(items => { if (active) setScripts(items); })
+      .then(async items => {
+        const listed = await bridge.scheduledTasksList({ loupist_id: loupistId }).catch(() => [] as ScheduledTaskListItem[]);
+        if (active) { setScripts(items); setTasks(listed); }
+      })
       .catch((cause: unknown) => { if (active) setError(errorMessage(cause, t("scripts.error"))); });
     return () => { active = false; };
   }, [bridge, loupistId, query, revision, t]);
@@ -46,16 +54,31 @@ export function ScriptLibrary({ bridge, loupistId, query, onQueryChange }: Props
     </div>
     {error ? <p role="alert">{error}</p> : scripts === undefined ? <p role="status">{t("scripts.loading")}</p> : <>
       {!scripts.length ? <p>{t(query ? "scripts.noMatches" : "scripts.empty")}</p> : null}
-      <ul>{scripts.map(({ name, version, metadata, usedBy }) => <li key={name}>
-        <Button className="research-library-row" variant="ghost" onClick={() => void open(name)}>
-          <span className="memory-rail-copy">
-            <strong>{metadata.title}</strong>
-            <small>{name} · {t("scripts.version", { version })}{usedBy.length ? ` · ${t("scripts.usedByCount", { count: usedBy.length })}` : ""}</small>
-            <span className="source-summary">{metadata.summary}</span>
-            {metadata.lastTest ? <small>{t("scripts.lastRun", { date: formatDateTime(metadata.lastTest.atMs) })}</small> : null}
-          </span>
-        </Button>
-      </li>)}</ul>
+      <ul>{scripts.map(script => {
+        const { name, version, metadata, usedBy } = script;
+        const task = scriptTask(script, tasks);
+        const reads = scriptReads(script);
+        const summary = folded(metadata.summary) !== folded(metadata.title) ? metadata.summary : undefined;
+        const last = task?.trigger?.last;
+        const outcome = last ? scriptOutcome(last.outcome) : undefined;
+        const tools = reads.extra > 0 ? `${reads.labels.join(", ")} +${formatNumber(reads.extra)}` : reads.labels.join(", ");
+        return <li key={name}>
+          <Button className="research-library-row" variant="ghost" onClick={() => void open(name)}>
+            <span className="memory-rail-copy">
+              <strong>{metadata.title}</strong>
+              <small>{t("scripts.versionOrigin", { version, origin: t(`scripts.origin.${metadata.origin.kind}`) })}</small>
+              {summary ? <span className="source-summary">{summary}</span> : null}
+              {reads.labels.length ? <small>{t("scripts.reads", { tools })}</small> : null}
+              {!task && usedBy.length ? <small>{t("scripts.usedByTitles", { tasks: usedBy.join(", ") })}</small> : null}
+              {last && outcome ? <small>{t("scripts.lastResult", { outcome: t(`scripts.outcome.${outcome}`), reading: oneReading(last.reading), time: formatDateTime(last.at_ms) })}</small>
+                : !last && metadata.lastTest ? <small>{t("scripts.tested", { time: formatDateTime(metadata.lastTest.atMs) })}</small> : null}
+            </span>
+          </Button>
+          {task ? go
+            ? <Button variant="link" size="sm" onClick={() => go({ kind: "schedule", taskId: task.id })}>{t("scripts.usedByTask", { task: task.title })}</Button>
+            : <small>{t("scripts.usedByTask", { task: task.title })}</small> : null}
+        </li>;
+      })}</ul>
     </>}
   </section>;
 }
@@ -117,6 +140,7 @@ function ScriptViewer({ bridge, loupistId, initial, onClose, onChanged }: {
   return <section className="script-library-view research-reader-pane">
     <Button size="sm" variant="ghost" onClick={onClose}>{t("scripts.back")}</Button>
     <h3>{metadata.title} · {t("scripts.version", { version })}</h3>
+    <p><span className="knowledge-hint">{t("scripts.scriptName")}</span> {name}</p>
     <p>{metadata.summary}</p>
     <small>{formatDateTime(script.summary.createdAtMs)} · {t(`scripts.origin.${metadata.origin.kind}`)}</small>
     {metadata.afterOutsideText ? <p className="reader-notice">{t("scripts.outside")}</p> : null}

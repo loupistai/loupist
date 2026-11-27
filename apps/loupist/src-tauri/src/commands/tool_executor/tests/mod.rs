@@ -284,6 +284,7 @@ fn run_result_receipts_record_origin_provider_and_warnings() {
     assert_eq!(fetch.provider.as_deref(), Some("investor.example.test"));
 }
 
+mod change_feed;
 mod knowledge_seam;
 mod lens_file;
 mod memory_as_of;
@@ -292,6 +293,7 @@ mod pasted;
 mod question;
 mod scope_and_artifacts;
 mod shared_delivery;
+mod standing_instruction;
 mod untrusted_text;
 mod web_as_of;
 mod workspace;
@@ -699,6 +701,7 @@ loupist.result(False, 'No change', '2026-11-24')
 "#;
     let run = |args, after_outside_text, use_memory| {
         executor.run_check(super::python_reads::CheckRun {
+            stale_after_days: crate::scheduled_tasks::trigger::DEFAULT_STALE_AFTER_DAYS,
             code,
             after_outside_text,
             use_memory,
@@ -718,6 +721,7 @@ loupist.result(False, 'No change', '2026-11-24')
     assert_eq!(clean.ledger.len(), 1);
     let replay = |ledger| {
         executor.run_check(super::python_reads::CheckRun {
+            stale_after_days: crate::scheduled_tasks::trigger::DEFAULT_STALE_AFTER_DAYS,
             code: r#"
 import loupist
 try:
@@ -769,6 +773,37 @@ loupist.result(False, 'No change', '2026-11-24')
         Err(BrokerError::UntrustedTextPaused)
     ));
     assert!(executor.capture.turn_taint.has_untrusted_content());
+}
+
+/// Agent loop (P-006): a script name the store refuses comes back as its rule,
+/// not as a local storage failure.
+#[tokio::test]
+async fn script_save_with_an_underscore_name_returns_the_name_rule() {
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let executor = executor_for(&state, Arc::new(ToolCapture::for_chat("reply-a".into())));
+    let error = executor
+        .execute(
+            &policy(true, true),
+            ToolMethod::ScriptSave,
+            json!({
+                "name":"fact_endings", "summary":"Report fact endings.",
+                "code":"import loupist\nloupist.result(met=False, reading='none')",
+            }),
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, BrokerError::InvalidArguments { ref expected, .. }
+            if expected.contains("lowercase letters, digits or hyphens")),
+        "{error}"
+    );
+    assert!(!error.to_string().contains("Local data could not be read"));
+    assert!(state
+        .store
+        .script_list("loupist-a", None)
+        .unwrap()
+        .is_empty());
 }
 
 #[cfg(unix)]

@@ -9,12 +9,13 @@ function Harness({ onDraft }: { onDraft?: (draft: LoupistDraft) => void }) {
   return <LoupistTemplateFields draft={draft} onChange={next => { setDraft(next); onDraft?.(next); }} />;
 }
 
-it("offers eight templates in order, with no icons on the cards", () => {
+it("offers the templates in order, each with its one-line description and no icons", () => {
   render(<Harness />);
   const cards = within(screen.getByRole("group", { name: /template/i })).getAllByRole("button");
   expect(cards.map(card => card.querySelector("strong")?.textContent)).toEqual([
-    "My portfolio", "Semiconductors", "Dividend income", "US big tech", "Crypto", "Macro & rates", "Commodities", "Custom",
+    "Watchlist research", "Semiconductors", "Dividend income", "US big tech", "Crypto", "Macro & rates", "Commodities", "Custom",
   ]);
+  expect(screen.getByRole("button", { name: "Watchlist research Follows filings, results and your reasons. It does not track holdings or returns." })).toBeInTheDocument();
   expect(cards.every(card => !card.querySelector("svg"))).toBe(true);
 });
 
@@ -92,7 +93,7 @@ it("keeps onboarding's template step to templates and starters, plus Focus for C
 
 it("suggests a template's name for a Loupist the host named after its folder, and keeps a chosen one", () => {
   const seeded = { id: "loupist-seed", name: "workspace", philosophy: "", instructions: "", avatar: "initial", tone: "balanced", workspace_path: "/tmp/e2e/workspace", record_count: 0, updated_at: "", accent: "", enabled_skill_ids: [], last_model_profile_id: null, availability: { status: "available" } } as unknown as LoupistSummary;
-  expect(existingDraft(seeded).name).toBe("Portfolio Loupist");
+  expect(existingDraft(seeded).name).toBe("Watchlist Loupist");
   expect(existingDraft({ ...seeded, template: "macro" }).name).toBe("Macro Loupist");
   expect(existingDraft({ ...seeded, name: "Rates desk" }).name).toBe("Rates desk");
 });

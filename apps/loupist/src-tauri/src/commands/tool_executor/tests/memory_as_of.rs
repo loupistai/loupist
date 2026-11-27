@@ -119,6 +119,8 @@ async fn a_cutoff_leaves_out_later_sources_and_world_facts_and_counts_them() {
                 span_id: span.into(),
                 role: BindingRole::ExtractedFrom,
                 attribution: "example-publisher".into(),
+                figure_check: None,
+                passage: None,
             }],
             status: ClaimStatus::Active,
             recorded_at_ms: Some(1_700_000_000_000),
@@ -348,12 +350,15 @@ async fn a_page_revised_after_the_cutoff_is_left_out_of_reads_search_and_context
     let executor = executor_for(&state, capture.clone());
     let cutoff = as_of("2026-03-10");
 
-    let refused = executor
+    // A page that existed by then reads as it stood: the revised section shows
+    // its earlier text, and the later text is not there.
+    let then = executor
         .execute(&cutoff, ToolMethod::LensRead, json!({"recordId": revised}))
         .await
-        .unwrap_err();
-    assert!(refused.to_string().contains("as_of_later"), "{refused}");
-    assert!(!refused.to_string().contains("LATER"), "{refused}");
+        .unwrap();
+    let text = then["text"].as_str().unwrap();
+    assert!(text.contains("Original check."), "{text}");
+    assert!(!text.contains("LATER"), "{text}");
     let read = executor
         .execute(
             &cutoff,
@@ -686,8 +691,8 @@ fn noon(date: &str) -> i64 {
 }
 
 /// A World whose guidance relationship (published 2026-02-20) also cites the
-/// later filing and was invalidated on 2026-04-01; the results relationship is
-/// published 2026-03-18. Annotations: one citing the early filing, one citing
+/// later filing, which first discloses its March ending in May. Annotations:
+/// one citing the early filing, one citing
 /// the later filing, one citing nothing. Returns (record, revision, early, later).
 fn later_world(state: &AppState) -> (String, String, String, String) {
     let early = retain(
@@ -699,7 +704,7 @@ fn later_world(state: &AppState) -> (String, String, String, String) {
     let later = retain(
         state,
         "Solsup annual filing",
-        "2026-03-18",
+        "2026-05-01",
         "Revenue was 452.3bn.",
     );
     let node = |id: &str| GraphNode {
@@ -734,6 +739,8 @@ fn later_world(state: &AppState) -> (String, String, String, String) {
                     span_id: (*span).into(),
                     role: BindingRole::Supports,
                     attribution: "example-publisher".into(),
+                    figure_check: None,
+                    passage: None,
                 })
                 .collect(),
             status: ClaimStatus::Active,
@@ -751,13 +758,17 @@ fn later_world(state: &AppState) -> (String, String, String, String) {
         &[&early.2, &later.2],
         "2026-02-20",
     );
-    guidance.invalid_at = Some(day("2026-04-01"));
+    guidance.invalid_at = Some(day("2026-03-01"));
+    guidance.qualifiers.push(crate::knowledge::Qualifier {
+        key: crate::knowledge::SUPERSEDED_BY_SPAN.into(),
+        value: later.2.clone(),
+    });
     let results = claim(
         "claim-results",
         "Solsup reported revenue of 452.3bn",
         "results",
         &[&later.2],
-        "2026-03-18",
+        "2026-05-01",
     );
     let annotation =
         |topic: &str, markdown: &str, spans: &[&str]| crate::knowledge::TopicAnnotation {
@@ -773,7 +784,7 @@ fn later_world(state: &AppState) -> (String, String, String, String) {
                 title: "Solsup".into(),
                 at_ms: 1_700_000_000_000,
             })?;
-            write.seal_world(SealWorld {
+            let revision = write.seal_world(SealWorld {
                 loupist_id: "loupist-a".into(),
                 record_id: record.record_id.clone(),
                 expected_revision_id: None,
@@ -793,7 +804,68 @@ fn later_world(state: &AppState) -> (String, String, String, String) {
                         role: DependencyRole::WorldSource,
                     })
                     .collect(),
-            })
+            })?;
+            use crate::knowledge::world_episodes::{
+                EndBasis, EpisodeChanges, EpisodeEnd, EpisodeModel, ReferenceBasis, WorldEpisode,
+            };
+            for (id, source, date, changes) in [
+                (
+                    "guidance-episode",
+                    &early,
+                    "2026-02-20",
+                    EpisodeChanges {
+                        created: vec!["claim-guidance".into()],
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "results-episode",
+                    &later,
+                    "2026-05-01",
+                    EpisodeChanges {
+                        created: vec!["claim-results".into()],
+                        supported: vec!["claim-guidance".into()],
+                        ended: vec![EpisodeEnd {
+                            claim: "claim-guidance".into(),
+                            by: None,
+                            end: day("2026-03-01"),
+                            basis: EndBasis::Stated,
+                        }],
+                        ..Default::default()
+                    },
+                ),
+            ] {
+                let source_revision_id = write
+                    .owned_record("loupist-a", &source.0)?
+                    .revision_id
+                    .unwrap();
+                write.insert_world_episode(&WorldEpisode {
+                    episode_id: id.into(),
+                    loupist_id: "loupist-a".into(),
+                    world_record_id: record.record_id.clone(),
+                    job_id: id.into(),
+                    sealed_revision_id: format!("fixture-rev-{id}"),
+                    previous_revision_id: None,
+                    source_record_id: source.0.clone(),
+                    source_revision_id,
+                    span_id: source.2.clone(),
+                    chunk_index: Some(0),
+                    chunk_count: Some(1),
+                    char_start: Some(0),
+                    char_end: Some(4),
+                    reference_time: Some(date.into()),
+                    reference_basis: Some(ReferenceBasis::Published),
+                    publication_time: Some(day(date)),
+                    model: Some(EpisodeModel {
+                        model_profile: "fixture".into(),
+                        thinking_level: "low".into(),
+                    }),
+                    changes,
+                    backfilled: false,
+                    created_at_ms: noon(date),
+                })?;
+            }
+            Ok(revision)
         })
         .unwrap();
     (revision.record_id, revision.revision_id, early.2, later.2)
@@ -808,7 +880,8 @@ async fn graph_search_views_and_annotations_keep_to_the_cutoff() {
         json!({"adapter_id": id, "proposition": format!("{id} proposition"),
             "endpoints": [{"node_id": "solsup", "role": "source"}, {"node_id": target, "role": "target"}],
             "evidence": spans.iter().map(|span| json!({"span_id": span, "role": "supports", "attribution": "p"})).collect::<Vec<_>>(),
-            "invalid_at": {"precision": "date", "value": "2026-04-01", "approximate": false},
+            "ended": true, "end": day("2026-03-01"),
+            "invalid_at": day("2026-03-01"),
             "expired_at": null})
     };
     let node = |id: &str| {
@@ -834,10 +907,12 @@ async fn graph_search_views_and_annotations_keep_to_the_cutoff() {
         annotation("solsup"),
         annotation("guidance"),
         annotation("results"),
+        json!({"scope": "world", "recordId": world, "revisionId": revision,
+            "objectId": "claim-guidance", "ended": true, "end": day("2026-03-01")}),
         // A World hit without an object id says nothing datable.
         json!({"scope": "world", "recordId": world, "revisionId": revision, "title": "Solsup"}),
     ]);
-    let cutoff = crate::commands::knowledge::as_of::Cutoff::parse(Some("2026-03-10")).unwrap();
+    let cutoff = crate::commands::knowledge::as_of::Cutoff::parse(Some("2026-04-01")).unwrap();
     let mut left = crate::commands::knowledge::as_of::LeftOut::default();
     crate::commands::knowledge::as_of::filter_hits(
         &state,
@@ -851,7 +926,9 @@ async fn graph_search_views_and_annotations_keep_to_the_cutoff() {
     assert!(!encoded.contains("452.3bn"), "{encoded}");
     assert!(!encoded.contains("claim-results"), "{encoded}");
     assert!(!encoded.contains(&later), "{encoded}");
-    assert!(!encoded.contains("2026-04-01"), "{encoded}");
+    assert!(!encoded.contains("2026-03-01"), "{encoded}");
+    assert!(rows[2].get("ended").is_none());
+    assert!(rows[0]["view"]["view"]["edges"][0].get("ended").is_none());
     let view = &rows[0]["view"]["view"];
     assert_eq!(view["edges"].as_array().unwrap().len(), 1);
     assert_eq!(view["edges"][0]["evidence"].as_array().unwrap().len(), 1);
@@ -868,7 +945,7 @@ async fn graph_search_views_and_annotations_keep_to_the_cutoff() {
         .iter()
         .map(|hit| hit["objectId"].as_str().unwrap())
         .collect();
-    assert_eq!(topics, ["solsup"]);
+    assert_eq!(topics, ["solsup", "claim-guidance"]);
     assert!(left.facts.contains("claim-results"));
 
     // Without a cutoff the search keeps everything.
@@ -881,8 +958,9 @@ async fn a_world_read_shows_relationships_as_they_stood_at_the_cutoff() {
     let temporary = tempfile::tempdir().unwrap();
     let state = seeded_state(&temporary);
     let (world, _, early, later) = later_world(&state);
-    let executor = executor_for(&state, Arc::new(ToolCapture::default()));
-    let read = |policy: ToolPolicy| {
+    let capture = Arc::new(ToolCapture::default());
+    let executor = executor_for(&state, capture.clone());
+    let read = |policy: ToolPolicy, center: &'static str| {
         let executor = executor.clone();
         let world = world.clone();
         async move {
@@ -890,24 +968,45 @@ async fn a_world_read_shows_relationships_as_they_stood_at_the_cutoff() {
                 .execute(
                     &policy,
                     ToolMethod::WorldRead,
-                    json!({"scope": "world", "recordId": world}),
+                    json!({"scope": "world", "recordId": world, "centerClaimId": center,
+                        "history": true, "asOf": "2026-05-10"}),
                 )
                 .await
                 .unwrap();
             let text = read["text"].as_str().unwrap();
-            serde_json::from_str::<Value>(
+            let view = serde_json::from_str::<Value>(
                 crate::custom_connections::taint::delimited_body(text).unwrap_or(text),
             )
-            .unwrap()
+            .unwrap();
+            (view, read["lineage"].clone())
         }
     };
-    let then = read(as_of("2026-03-10")).await;
+    let (then, lineage) = read(as_of("2026-04-01"), "claim-guidance").await;
     let edges = then["edges"].as_array().unwrap();
     assert_eq!(edges.len(), 1, "{then}");
     let claim = &edges[0]["claim"];
-    // The invalidation is dated after the cutoff, and the later filing's
-    // evidence was not published yet.
+    // The ending took effect in March and was first disclosed in May.
     assert!(claim["invalidAt"].is_null(), "{claim}");
+    assert!(edges[0].get("ended").is_none());
+    assert!(edges[0].get("end").is_none());
+    let reads = capture.staged_reads.lock().await;
+    let AckedPayload::World {
+        view_json,
+        view_digest,
+        ..
+    } = &reads[0].payload
+    else {
+        panic!("expected a World receipt");
+    };
+    assert_eq!(serde_json::from_str::<Value>(view_json).unwrap(), then);
+    assert_eq!(*view_digest, crate::util::sha256(view_json.as_bytes()));
+    drop(reads);
+    assert_eq!(lineage["created"]["sourceTitle"], "Solsup guidance filing");
+    assert_eq!(lineage["supported"], json!([]));
+    assert!(lineage["ended"].is_null());
+    assert!(!lineage.to_string().contains(&later));
+    let (_, hidden) = read(as_of("2026-04-01"), "claim-results").await;
+    assert!(hidden.is_null());
     let spans: Vec<_> = claim["evidence"]
         .as_array()
         .unwrap()
@@ -918,7 +1017,7 @@ async fn a_world_read_shows_relationships_as_they_stood_at_the_cutoff() {
     let encoded = then.to_string();
     assert!(!encoded.contains(&later), "{encoded}");
     // Today the relationship shows its invalidation and both filings.
-    let today = read(policy(true, false)).await;
+    let (today, lineage) = read(policy(true, false), "claim-guidance").await;
     let claim = today["edges"]
         .as_array()
         .unwrap()
@@ -926,8 +1025,52 @@ async fn a_world_read_shows_relationships_as_they_stood_at_the_cutoff() {
         .find(|edge| edge["id"] == "claim-guidance")
         .unwrap()["claim"]
         .clone();
-    assert_eq!(claim["invalidAt"]["value"], "2026-04-01");
+    assert_eq!(claim["invalidAt"]["value"], "2026-03-01");
     assert_eq!(claim["evidence"].as_array().unwrap().len(), 2);
+    assert_eq!(lineage["ended"]["sourceTitle"], "Solsup annual filing");
+    assert_eq!(lineage["ended"]["readArgs"]["spanId"], later);
+}
+
+#[tokio::test]
+async fn an_asset_read_keeps_the_live_feed_lower_bound_private() {
+    use crate::commands::assets::wire::AssetReferenceOrigin;
+
+    let temporary = tempfile::tempdir().unwrap();
+    let state = seeded_state(&temporary);
+    let asset = state
+        .store
+        .asset_follow_name(
+            "loupist-a",
+            "Solsup",
+            None,
+            AssetReferenceOrigin::User,
+            noon("2026-04-01"),
+        )
+        .unwrap();
+    crate::commands::assets::with_assets(&state, "loupist-a", true, |tx| {
+        crate::knowledge::assets::ensure_asset_page(tx, "loupist-a", &asset, noon("2026-04-01"))
+    })
+    .unwrap();
+    state.store.lock_loupist("loupist-a").unwrap().execute(
+        "INSERT INTO knowledge_asset_moves
+            (move_id, loupist_id, asset_id, to_verdict, fact_date, reason, evidence_json, actor, at_ms)
+         VALUES ('may-move', 'loupist-a', ?1, 'holding', '2026-05-01', 'May filing', '[]', 'user', ?2)",
+        rusqlite::params![asset.asset_id, noon("2026-05-01")],
+    ).unwrap();
+    let executor = executor_for(&state, Arc::new(ToolCapture::default()));
+    for (policy, live) in [(as_of("2026-04-10"), false), (policy(true, false), true)] {
+        let page = executor
+            .execute(
+                &policy,
+                ToolMethod::AssetPageRead,
+                json!({"assetId": asset.asset_id}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(page["exists"], true);
+        assert!(page.get("sinceMoveAtMs").is_none());
+        assert_eq!(page.get("sinceRead").is_some(), live, "{page}");
+    }
 }
 
 #[tokio::test]

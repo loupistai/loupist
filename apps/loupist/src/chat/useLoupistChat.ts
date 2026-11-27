@@ -10,7 +10,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import type { ChatFeedback, ChatArtifactSelection, ChatKnowledgePin, ChatMessage, ChatThread, LoupistBridge } from "../types";
+import type { ChatArtifactSelection, ChatKnowledgePin, ChatMessage, ChatThread, LoupistBridge } from "../types";
 import { commandErrorCode, errorMessage } from "../lib/errors";
 import { admissionRefusal, type ChatAdmission } from "./submission";
 import { lastTurnMessageIndex } from "./turnMessages";
@@ -493,15 +493,6 @@ export function useLoupistChat({
     }
   }, [activeThread?.id, bridge, chat, loupistId, isRunning, isStopping, messages, setThreads]);
 
-  const saveFeedback = useCallback(async (messageId: string, value: Pick<ChatFeedback, "rating" | "correction">) => {
-    if (!activeThread?.id) throw new Error(t("useLoupistChat.chatThreadIsUnavailable"));
-    const feedback = await bridge.chatFeedbackSet({ loupist_id: loupistId, thread_id: activeThread.id, message_id: messageId, ...value });
-    // Update the captured registry Chat, even if the user has navigated elsewhere.
-    chat.messages = chat.messages.map((message) => (message.metadata?.native_message_id ?? message.id) === messageId
-      ? { ...message, metadata: { ...message.metadata, feedback } } : message);
-    return feedback;
-  }, [activeThread?.id, bridge, chat, loupistId]);
-
   /**
    * Shows a thread the host just rewrote (an edit fork or another version,
    * X18): the SDK's live messages and the thread list both take its messages.
@@ -515,7 +506,6 @@ export function useLoupistChat({
 
   return {
     replaceThread,
-    saveFeedback,
     messages,
     messageKeys,
     isRunning,

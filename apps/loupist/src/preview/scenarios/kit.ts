@@ -333,12 +333,18 @@ export function localViewMap(bridge: PreviewBridge, { lens = false } = {}) {
 export async function enterMap(root: HTMLElement) {
   await navigate(root, "map");
   const map = await until(() => select(".map-view"), "World did not load");
-  if (map.clientWidth > 0) {
-    await until(() => map.querySelector("canvas"), "World canvas did not mount");
-    for (let frame = 0; frame < 3; frame++) await new Promise(requestAnimationFrame);
-    await clickMapAction("[data-map-fit]", map);
-  }
+  await prepareMapCanvas(map);
   return map;
+}
+
+export async function prepareMapCanvas(map: Element, fit = true) {
+  if (map.clientWidth === 0) return;
+  await until(() => map.querySelector("canvas"), "World canvas did not mount");
+  // The draw-cost probe uses a timer so it can run in an unfocused WebView,
+  // where WebKit can suspend animation frames.
+  if (new URLSearchParams(location.search).get("probe") === "draw") return;
+  for (let frame = 0; frame < 3; frame++) await new Promise(requestAnimationFrame);
+  if (fit) await clickMapAction("[data-map-fit]", map);
 }
 
 /** Selects `count` words from word `start` of an answer paragraph's first text run, as a person dragging would. */

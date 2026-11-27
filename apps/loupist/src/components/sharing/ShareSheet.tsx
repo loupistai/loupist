@@ -12,7 +12,7 @@ import { Button } from "../ui/button";
 import { ExternalLinkError, useExternalLink } from "../navigation/ExternalLinkError";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, focusDialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
-import { NativeSelect } from "../ui/native-select";
+import { SelectField, SelectItem } from "../ui/select";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
@@ -394,10 +394,10 @@ export function ShareSheet({ bridge, loupistId, loupistName, scope, open, onOpen
               </li>)}</ul>
             </section> : <div className="share-field">
               <label className="share-label" htmlFor={ids.license}>{t("licenseLabel")}</label>
-              <NativeSelect id={ids.license} value={license} aria-describedby={[license ? `${ids.license}-summary` : null, fixedLicense ? `${ids.license}-fixed` : null].filter(Boolean).join(" ") || undefined}
-                disabled={fixedLicense} onChange={event => setLicense(event.target.value as PackLicense)}>
-                {summary.allowedLicenses.map(({ id }) => <option key={id} value={id}>{licenseName(id)}</option>)}
-              </NativeSelect>
+              <SelectField id={ids.license} value={license ?? ""} aria-describedby={[license ? `${ids.license}-summary` : null, fixedLicense ? `${ids.license}-fixed` : null].filter(Boolean).join(" ") || undefined}
+                disabled={fixedLicense} onValueChange={value => setLicense(value as PackLicense)}>
+                {summary.allowedLicenses.map(({ id }) => <SelectItem key={id} value={id}>{licenseName(id)}</SelectItem>)}
+              </SelectField>
               {/* The chosen license's name opens its legal text (Rust supplies each allowed license's URL), then one plain line. */}
               {license ? <div className="share-license-about">
                 {licenseUrl ? <Button variant="link" size="sm" className="share-license-link" title={licenseUrl} data-share-license-link onClick={() => void openBrowser(licenseUrl)}>{licenseName(license)}<ExternalLinkIcon aria-hidden="true" /></Button> : null}

@@ -14,6 +14,14 @@ review of the lifecycle and acquisition grader.
 | `implicit-memory-*.json` | `memory-grade.mjs` | Uncued saving, recall and restraint |
 | `ontology-corpus-v1.json` + `ontology-oracle-v2.json` | `ontology-grade.mjs` | World entity/relation typing in English, Korean and mixed input |
 | `temporal-corpus-v2.json` + `temporal-oracle-v2.json` | `temporal-grade.mjs` | [Temporal invalidation](#temporal-invalidation): a later Source with an explicit effective instant ends an earlier claim; a denied allegation does not |
+| `temporal-corpus-v3.json` + `temporal-oracle-v3.json` | `temporal-grade.mjs` | [Temporal invalidation](#temporal-invalidation): dates, publication-time fallback, backfill order, controls and Lens propagation |
+| `temporal-corpus-v4.json` + `temporal-oracle-v4.json` | `temporal-grade.mjs` | [Temporal invalidation](#temporal-invalidation): version 3 unchanged, plus Japanese, German, Indian English and Chinese Sources, numeric dates whose day and month could swap, and a restatement after an ending |
+| `temporal-corpus-v4.json` + `temporal-oracle-v5.json` | `temporal-grade.mjs` | [Temporal invalidation](#temporal-invalidation): the same corpus under the reopen rule for an assertion restated after it was replaced |
+| `smoke-v018.json` | `smoke-grade.mjs` | [Release extraction smoke](#release-extraction-smoke): a filing excerpt, a news item and a table |
+| `smoke-global-v1.json` | `smoke-grade.mjs` | [Release extraction smoke](#release-extraction-smoke): four tables and two prose Sources from six market profiles |
+| `smoke-long-tables-v1.json` | `long-tables-grade.mjs` | [Long tables](#long-tables): two table Sources longer than one chunk, with 36 labelled cells each |
+| `figures-corpus-v1.json` | `figures-grade.mjs` | [Structured figures](#structured-figures): sixteen Sources, two per market profile, with every figure labelled |
+| `figure-corpus-v1.json` | Rust table test of the figure check | [Figure corpus](#figure-corpus): 64 labelled passage and proposition pairs, eight per market profile |
 | `template-seed-corpus-v2.json` | `template-seed-grade.mjs` | The asset-class template seeds (Crypto, Commodities, Macro & rates, Real assets) |
 | `growth-scenario-v1/` | Rust test + `report.py` | [Five-session product growth](growth-scenario-v1/README.md) |
 | List in `src-tauri/src/eval_harness/followed.rs` | Rust test | [Followed assets on the Map](#followed-assets-on-the-map), at creation and followed later |
@@ -298,6 +306,167 @@ node apps/loupist/evals/world/temporal-grade.mjs \
   --out <NEW-temporal-report.json>
 ```
 
+Version 3 measures calendar-date replacements, publication-time fallback, raised
+guidance, a corrected figure and explicit departure notices. Three duplicate
+publication arms ingest the same January, February and March Sources in separate
+profiles. All three must end the January assertion in February while retaining
+March as support and keeping January as its earliest publication. The controls
+cover reporting periods, a forecast and its later actual, a denied allegation,
+same-day disagreement and an undated paste. The same-day scenario also includes
+a separate pair with explicit starts that must end at the later start.
+
+The `pre_file` fixture tells the runner when to file a subject page section and
+how to find its claim by Source and selector. The runner needs to consume it
+after the named step's World jobs finish. The January-backfill arm files after
+the other two Sources are already present, exercising stale-basis handling on
+write. Keep the oracle out of ingestion and filing.
+
+Use `--trials 1 --keep` so the grader can read each trial's
+`.loupist/loupist.sqlite3`. The v3 grader checks the final World snapshot and
+the active Lens head in read-only SQLite. It checks the end value, precision,
+basis, approximation, witness span and replacement claim. It requires
+reciprocal links for the same-day conflict, equal validity across the three
+order arms, zero unexpected endings and a Superseded Lens section.
+
+When a step declares `as_of_reads`, the runner needs to call the product World
+reader at each cutoff after publication and record each unmodified view in the
+step's `as_of_views`, keyed by date. The April view keeps both the future
+departure and the late-notice claim current and omits ending metadata. The
+later view confirms the corresponding end. An absent cutoff view, final step
+or required profile database makes the trial incomplete.
+
+```sh
+node apps/loupist/evals/world/temporal-grade.mjs \
+  --oracle apps/loupist/evals/world/temporal-oracle-v3.json \
+  --arm candidate=<NEW-candidate.jsonl> \
+  --out <NEW-temporal-report.json>
+```
+
+Version 4 keeps the twelve scenarios of version 3, apart from one selector, and adds
+six, so a version 3 arm is still comparable scenario by scenario. `T-SAMEDAY` selects
+its conflicting pair by proposition (`kestle bay`, `amber quay`) from each Source rather
+than by endpoints, because a model may give the distribution centre its own node and
+join that node, not the company, to the place. `T-JP-FY` (Japanese: revised
+guidance for a fiscal year ending in March), `T-DE-CFO` (German: two half-year reports
+naming different finance chiefs, no dates) and `T-IN-RESTATE` (a restated quarter in
+crore beside an unchanged figure in lakh) must end the earlier claim at the later
+publication date, approximate, on the `reference` basis. `T-ZH-PERIOD` (Chinese: revenue
+of two quarters) is a control. Their selectors accept the figure in the Source's own
+scale word or converted, because the grader does not fix the language of a proposition.
+`T-AMBIGUOUS-DATE` is a control with two same-day Sources whose only dates are
+`03/04/2026` and `04/03/2026`: nothing may end, and its `max_date_precision: "month"`
+fails a start or end date written to the day (`pooled.invented_dates`). `T-RESTATED`
+has `check: "record"`: an assertion is replaced and then restated by a later Source.
+The grader writes what it observed in `recorded` (`first_ended`, `restated_as`:
+`support_on_ended`, `support_on_open`, `new_claim` or `absent`, `second_ended`) and
+passes every complete trial; the scenario adds to no gated count.
+
+From version 3 on, every trial reports `restated_after_end`: how many ended claims gained
+support from a Source published after the Source that witnessed their ending (null when a
+publication time is unknown). The arm sums it per scenario. A restatement after an ending
+is support on the ended claim today, so the count is a baseline for a reopen rule and
+never changes `failed` or the acceptance. `--trials <n>` grades more trials than the
+oracle's one without editing the oracle.
+
+```sh
+node apps/loupist/evals/world/temporal-grade.mjs \
+  --oracle apps/loupist/evals/world/temporal-oracle-v4.json --trials 3 \
+  --arm candidate=<t0.jsonl>,<t1.jsonl>,<t2.jsonl> \
+  --out <NEW-temporal-report.json>
+```
+
+Oracle version 5 grades the same corpus (`temporal-corpus-v4.json`) under the reopen rule.
+It differs from version 4 only in the four scenarios where an assertion is replaced and
+then restated by a still later Source with no dates: the three `T-DUP` orders and
+`T-RESTATED`, now `check: "restated"` with the restating Source and its day. Each accepts
+two outcomes: `reopened` (the first assertion is current, and the second ended
+approximately at the restatement's day on the `reference` basis, witnessed by the restating
+Source) or `conflict` (both current, linked to each other). `first_ended_second_current`,
+which version 4 expects, fails: the newest Source says the first holds. The three orders
+must still agree. A claim's `reopened` and `lapsed` qualifiers are read into its
+description and counted in `pooled.reopened_claims`; they are lineage, so an ingestion order
+in which the first assertion never ended has none and passes the same. The pre-filed Lens
+section of those four scenarios is not gated here. Use version 5 for a build that has the
+reopen rule and version 4 for one that does not; `pooled.restated_outcomes` counts the
+trials by outcome.
+
+The [agent change-feed suite](../agent/suites/change-feed-v1.json) grades how a
+scheduled agent uses the feed, compares two filings and answers across a cutoff.
+Its scenarios state their Sources and what each says as data
+([seeds a suite states](../README.md#scenario-suites)), so the agent runner stages
+the endings and the conflict through production code without a World model call.
+
+## Release extraction smoke
+
+Run `smoke-v018.json` with `--trials 1`. Each profile has one fictional Source.
+The offline grader requires a completed trace, at least one active claim tied to
+the fixture's retained bytes, at least one associated World node and recorded
+input and output usage. It checks typed failure evidence and the 100-call cap
+across the three profiles.
+
+```sh
+node apps/loupist/evals/world/smoke-grade.mjs \
+  apps/loupist/evals/world/smoke-v018.json <run.jsonl> <NEW-smoke-report.json>
+```
+
+`smoke-global-v1.json` runs the same way and under the same checks and cap. Its six
+Sources are four tables (Korea in 억 and 조, Germany with a decimal comma and Mio. and
+Mrd., India in crore and lakh, the United Kingdom in pounds, pence and GBX) and two
+prose items (Japan, Brazil), each in its market's language; a scenario's `profile` and
+`form` are for the report and the runner ignores them. For every scenario the report
+gives `figures_left_out` and `left_out_examples`: the facts the figure check left out at
+publication, read from the job receipts (`dropped.figureMismatch`, `droppedFigures`). A
+receipt omits a zero count, so the count is 0 once the World evidence carries
+`figureCheck`; a build with neither leaves it null. They gate nothing: after a live run,
+read every left-out fact against its passage.
+
+## Long tables
+
+`smoke-long-tables-v1.json` runs like the smoke, one trial per Source. Its two fictional
+Sources are tables longer than 7,000 characters: segment information in Markdown (India,
+₹ crore, six periods) and divisional results in HTML (United Kingdom, £m and head counts,
+five periods). Each scenario lists 36 `cells`, `{row, column, value, unit, currency}`,
+spread over the whole table so that most lie where a chunk no longer holds the header row.
+`cells`, `profile` and `form` are grader-only: the runner ingests the Source text alone.
+The figures come from a seeded generator and the test checks every label against the
+figure the Source prints at that row and column.
+
+`long-tables-grade.mjs` calls no model. For each arm it reads the active claims that cite
+the Source and gives every labelled cell one outcome: `found` when a claim names the row
+(by the first word of its name, in its text or an endpoint's name, and a word of its
+measure in its text), states the column's period and
+states the value, as printed or restated in another scale; `wrong` when a claim names the
+row and the period and states only other figures; `missing` otherwise. A full-year column
+is not stated by a quarter or a half of that year. An incomplete trial has no counts. Two
+arms of the same Sources compare two chunkers: the later one should find at least as many
+labelled figures and no more wrong ones. Read the `wrong` cells' propositions before
+drawing a conclusion: the grader matches words, and a paraphrase of a measure is `missing`.
+
+```sh
+node apps/loupist/evals/world/long-tables-grade.mjs \
+  --suite apps/loupist/evals/world/smoke-long-tables-v1.json \
+  --arm chunker1=<one.jsonl> --arm chunker2=<two.jsonl> --out <NEW-long-tables-report.json>
+```
+
+## Figure corpus
+
+`figure-corpus-v1.json` is an array of `{id, profile, passage, proposition, expect}`,
+eight cases for each of eight market profiles (`us`, `korea`, `japan`, `germany`,
+`united_kingdom`, `india`, `brazil`, `hong_kong_china`), all fictional. A Rust table test
+runs the figure check over it; `figure-corpus.test.mjs` checks only the file's shape and
+coverage. `expect` is the verdict of the whole proposition, the worst of its amounts:
+
+| `expect` | The label means |
+| --- | --- |
+| `matched` | every amount equals a passage amount exactly, after a scale or unit conversion (억 to billion, crore to million, pence or GBX to pounds, a decimal comma, a parenthesized negative) |
+| `rounded` | an amount is a passage amount rounded to the digits the proposition prints |
+| `differs` | a planted error: a passage amount of the same kind and currency times a power of ten, or the same amount with the opposite stated sign or direction |
+| `not_found` | an amount the passage does not state: a rate derived from two passage numbers, or a percentage where the passage gives percentage points |
+| `unchecked` | no verdict: the proposition states no amount (a year, a date and a code are not amounts), or a scale word is outside the recognized formats (`F-JP-05` 兆, `F-DE-08` TEUR) |
+
+Sixteen cases are planted errors, two per profile. A case never labelled `differs` must
+never come out `differs`. A recognized format that changes makes a new corpus version.
+
 ## Template seed check
 
 `template-seed-corpus-v2.json` has four fictional World-only scenarios, `S-CRYPTO`,
@@ -347,5 +516,34 @@ cargo test --manifest-path apps/loupist/src-tauri/Cargo.toml \
 `openai-codex/gpt-6.2-sol` at `medium`. The resources directory supplies the embedding
 assets; the World job runs in-process. The retired baseline comparison harness
 has been removed; temporal, ontology and template-seed corpora and graders remain.
+
+## Structured figures
+
+`figures-corpus-v1.json` (not `figure-corpus-v1.json`, the check's table above) has sixteen
+fictional Sources, two for each of the eight market profiles: a report of results and a
+statement of outlook. Each scenario's `cells` label every figure of its Source as stated:
+`{metric, period, period_end, basis, value, scale, unit, currency}`. `metric` and `period`
+are the Source's own words in its language; `period_end` is a date at the precision the
+Source states (`2027-03` for a fiscal year named only by its month); `scale` is a
+multiplier (1e8 for 억, 億 and 亿, 1e7 for crore, 0.01 for pence); `unit` is `amount`,
+`percent` or `count`. No two cells of one Source have the same amount. `cells` and
+`profile` are grader-only.
+
+`figures-grade.mjs` calls no model and grades one trial. A kept structure is the `figure`
+qualifier of an active claim that cites the scenario's Source. It is right when one
+labelled cell has its amount (value times scale, in its currency, whatever spelling states
+the scale), its period end and its basis. `forecast` and `guidance` are one basis, a
+company's own outlook under two markets' names; `estimate`, a third party's, and `actual`
+are distinct, and `unknown` is never right. A period end finer than the Source states
+(`2027-03-31` for `2027-03`) is right and counted in `finer_period_end`. The gate is
+precision: the run passes when it is complete, kept at least one structure, and at least
+95% of the kept structures are right. Recall (labelled cells with a right structure) and
+`metric_as_stated` are reported, by profile too, and `not_right` lists every other
+structure with its claim and the reason (`value`, `period`, `basis`, `unreadable`).
+
+```sh
+node apps/loupist/evals/world/figures-grade.mjs \
+  apps/loupist/evals/world/figures-corpus-v1.json <run.jsonl> <NEW-figures-report.json>
+```
 
 Grader contracts: `node --test apps/loupist/evals/world/*.test.mjs`.

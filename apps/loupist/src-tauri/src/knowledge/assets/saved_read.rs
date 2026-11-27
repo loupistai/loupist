@@ -81,16 +81,29 @@ pub(crate) fn points(
     loupist: &str,
     asset: &str,
 ) -> KnowledgeResult<Vec<AssetPricePoint>> {
+    points_through(tx, loupist, asset, None)
+}
+
+pub(crate) fn points_through(
+    tx: &Transaction<'_>,
+    loupist: &str,
+    asset: &str,
+    cutoff: Option<NaiveDate>,
+) -> KnowledgeResult<Vec<AssetPricePoint>> {
     let mut statement = tx.prepare(
         "SELECT fact_date,value FROM knowledge_asset_price_points
-         WHERE loupist_id=?1 AND asset_id=?2 ORDER BY fact_date DESC LIMIT 4000",
+         WHERE loupist_id=?1 AND asset_id=?2 AND (?3 IS NULL OR fact_date <= ?3)
+         ORDER BY fact_date DESC LIMIT 4000",
     )?;
-    let rows = statement.query_map(params![loupist, asset], |row| {
-        Ok(AssetPricePoint {
-            date: row.get(0)?,
-            value: row.get(1)?,
-        })
-    })?;
+    let rows = statement.query_map(
+        params![loupist, asset, cutoff.map(|day| day.to_string())],
+        |row| {
+            Ok(AssetPricePoint {
+                date: row.get(0)?,
+                value: row.get(1)?,
+            })
+        },
+    )?;
     let mut points = rows.collect::<Result<Vec<_>, _>>()?;
     points.reverse();
     Ok(points)
@@ -133,7 +146,7 @@ fn price_date(date: &str) -> Option<NaiveDateTime> {
     parsed?.and_hms_opt(0, 0, 0)
 }
 
-fn point(price: &AssetStoredPrice) -> Option<AssetPricePoint> {
+pub(crate) fn point(price: &AssetStoredPrice) -> Option<AssetPricePoint> {
     Some(AssetPricePoint {
         date: price_date(&price.date)?.date().to_string(),
         value: price.value,

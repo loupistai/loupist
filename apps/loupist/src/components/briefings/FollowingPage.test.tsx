@@ -59,6 +59,27 @@ it("shows each available stored price beside its followed asset", async () => {
   expect(row("No stored quote")).not.toHaveTextContent("$");
 });
 
+it("shows the price with its currency, the change from the previous close, and a watch", async () => {
+  await fixture(async (bridge, loupist) => {
+    const asset = bridge.assets.installAsset(NVIDIA);
+    bridge.assets.installPrice(loupist.id, asset.assetId, { price: {
+      value: 120, currency: "USD", currencySource: "result", date: "2026-11-24", kind: "close", provider: "yfinance",
+      sourceUrl: null, dataset: { dataset_id: "quote", revision: 1, digest: "test" },
+    }, points: [{ value: 100, date: "2026-11-20" }, { value: 120, date: "2026-11-24" }] });
+    vi.spyOn(bridge, "scheduledTasksList").mockResolvedValue([{
+      kind: "custom", id: "watch", loupist_id: loupist.id, revision: 1, title: "Watch", prompt: "", schedule: { kind: "daily", hour: 8, minute: 0, timezone: "UTC" },
+      target: { kind: "new_chat" }, session_thread_id: null, model_profile_id: "", thinking_level: "", run_options: {}, use_memory: true, update_memory: false,
+      status: "active", next_run_at_ms: null, last_run_at_ms: null, created_at_ms: 0, updated_at_ms: 0, last_error: null, awaiting_confirmation: false, latest_run: null,
+      preset: "price-move", subjects: [{ asset: asset.assetId }],
+    }]);
+  });
+  const item = row("NVIDIA CORP");
+  expect(await within(item).findByText("$120.00")).toBeVisible();
+  expect(within(item).getByText(/Close · Nov 24/)).toBeVisible();
+  expect(within(item).getByTitle("vs close on Nov 20")).toHaveTextContent("↑ +20.00 (+20.0%)");
+  expect(within(item).getByText("Watch")).toBeVisible();
+});
+
 it("opens an asset page from a row by its id", async () => {
   const { openAsset, loupist, user, bridge } = await fixture(bridge => { bridge.assets.installAsset(NVIDIA); });
   const [asset] = await bridge.assetsList({ loupistId: loupist.id });
@@ -303,6 +324,28 @@ it("drops an answer for text that was cleared before it arrived", async () => {
   await settle();
   await user.type(field(), "nvidia");
   expect(options().map(item => item.dataset.kind)).toEqual(["search", "typed"]);
+});
+
+it("asks to pause Track daily, checked, before stopping following an asset that is tracked daily", async () => {
+  const { bridge, loupist, user } = await fixture((bridge, loupist) => {
+    const asset = bridge.assets.installAsset(NVIDIA);
+    vi.spyOn(bridge, "scheduledTasksList").mockResolvedValue([{
+      kind: "learning", id: "daily", loupist_id: loupist.id, revision: 4, title: "Track daily", prompt: "",
+      schedule: { kind: "daily", hour: 7, minute: 0, timezone: "UTC" }, target: { kind: "new_chat" }, session_thread_id: null,
+      model_profile_id: "", thinking_level: "", run_options: {}, use_memory: true, update_memory: false,
+      status: "active", next_run_at_ms: null, last_run_at_ms: null, created_at_ms: 0, updated_at_ms: 0, last_error: null,
+      awaiting_confirmation: false, latest_run: null, subjects: [{ asset: asset.assetId }],
+    }]);
+  });
+  const status = vi.spyOn(bridge, "scheduledTaskSetStatus").mockResolvedValue({} as never);
+  const unfollow = vi.spyOn(bridge, "assetUnfollow");
+  await user.click(screen.getByRole("button", { name: "Stop following NVIDIA CORP" }));
+  const dialog = await screen.findByRole("dialog", { name: "Stop following NVIDIA CORP?" });
+  const option = within(dialog).getByRole("checkbox", { name: "Also pause Track daily for NVIDIA CORP?" });
+  expect(option).toBeChecked();
+  await user.click(within(dialog).getByRole("button", { name: "Stop following" }));
+  await waitFor(() => expect(unfollow).toHaveBeenCalled());
+  expect(status).toHaveBeenCalledWith({ loupist_id: loupist.id, task_id: "daily", expected_revision: 4, status: "paused" });
 });
 
 it("stops following at once, moving focus to the next row, then the field; a failure says so and retries", async () => {

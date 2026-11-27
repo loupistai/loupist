@@ -9,7 +9,7 @@ use super::error::KnowledgeResult;
 #[cfg(test)]
 use crate::fs::artifact_trust::ensure_private_directory;
 
-pub const KNOWLEDGE_SCHEMA_VERSION: i64 = 11;
+pub const KNOWLEDGE_SCHEMA_VERSION: i64 = 12;
 pub const KNOWLEDGE_FORMAT_VERSION: u32 = 1;
 
 const EXPECTED_TABLES: &[&str] = &[
@@ -50,6 +50,7 @@ const EXPECTED_TABLES: &[&str] = &[
     "knowledge_turn_pins",
     "knowledge_turns",
     "knowledge_world_deliveries",
+    "knowledge_world_episodes",
     "knowledge_world_snapshots",
 ];
 
@@ -68,6 +69,7 @@ const IMMUTABLE_TABLES: &[&str] = &[
     "knowledge_source_spans",
     "knowledge_turns",
     "knowledge_world_deliveries",
+    "knowledge_world_episodes",
     "knowledge_world_snapshots",
 ];
 
@@ -302,6 +304,7 @@ fn schema_sql() -> String {
             chat_id TEXT,
             request_ref TEXT,
             private_locator TEXT,
+            allowance_origin TEXT CHECK (allowance_origin IN ('background', 'chat')),
             PRIMARY KEY (record_id, capture_id),
             FOREIGN KEY (record_id, capture_id)
                 REFERENCES knowledge_source_captures(record_id, capture_id) ON DELETE RESTRICT
@@ -543,6 +546,44 @@ fn schema_sql() -> String {
     sql.push_str(super::assets::PAGE_DDL);
     sql.push_str(super::assets::DDL);
     sql.push_str(super::assets::READ_DDL);
+    sql.push_str(
+        r#"
+        CREATE TABLE knowledge_world_episodes (
+            episode_id TEXT PRIMARY KEY NOT NULL,
+            loupist_id TEXT NOT NULL,
+            world_record_id TEXT NOT NULL,
+            job_id TEXT NOT NULL UNIQUE,
+            sealed_revision_id TEXT NOT NULL UNIQUE,
+            previous_revision_id TEXT,
+            source_record_id TEXT NOT NULL,
+            source_revision_id TEXT NOT NULL,
+            span_id TEXT NOT NULL,
+            chunk_index INTEGER CHECK (chunk_index >= 0),
+            chunk_count INTEGER CHECK (chunk_count >= 1),
+            char_start INTEGER CHECK (char_start >= 0),
+            char_end INTEGER CHECK (char_end >= char_start),
+            reference_time TEXT,
+            reference_basis TEXT,
+            publication_json TEXT,
+            model_json TEXT,
+            changes_json TEXT NOT NULL,
+            backfilled INTEGER NOT NULL DEFAULT 0 CHECK (backfilled IN (0, 1)),
+            created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
+            CHECK ((char_start IS NULL) = (char_end IS NULL)),
+            CHECK (chunk_index < chunk_count),
+            CHECK (backfilled = 1 OR (
+                chunk_index IS NOT NULL AND chunk_count IS NOT NULL
+                AND char_start IS NOT NULL AND char_end IS NOT NULL
+                AND reference_time IS NOT NULL AND reference_basis IS NOT NULL
+                AND model_json IS NOT NULL
+            ))
+        ) STRICT;
+        CREATE INDEX knowledge_world_episodes_by_source
+            ON knowledge_world_episodes (loupist_id, source_record_id, chunk_index);
+        CREATE INDEX knowledge_world_episodes_by_time
+            ON knowledge_world_episodes (loupist_id, created_at_ms);
+        "#,
+    );
     sql.push_str(&format!(
         "INSERT INTO knowledge_schema (id, version) VALUES (1, {KNOWLEDGE_SCHEMA_VERSION});"
     ));

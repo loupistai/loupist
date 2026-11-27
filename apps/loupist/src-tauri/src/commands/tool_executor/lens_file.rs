@@ -9,15 +9,26 @@ use std::collections::{BTreeMap, BTreeSet};
 use rusqlite::Transaction;
 
 use super::*;
+use crate::knowledge::figure_check::FigureVerdict;
 use crate::knowledge::lens_page::{
     AnchorInput, Basis, BasisRef, FiledPage, FilingOrigin, IdeaStatus, LensOp, PageDelta, PageKind,
-    PageTarget, SectionKey, TextField, TextRefusal,
+    PageTarget, SectionFiling, SectionKey, SectionRole, TextField, TextRefusal,
 };
+use crate::{app::CommandErrorCode, broker::BrokerRefusalReason};
 
 /// Pages one turn may file across its `lens_file` calls.
 const MAX_TURN_PAGES: usize = 8;
 /// Ops one turn may file across its `lens_file` calls.
 const MAX_TURN_OPS: usize = 40;
+// The reply's receipt must hold every change the turn's budgets admit: its
+// Sources, a `note_save`'s Journal pair or working note, principles and pages.
+const _: () = assert!(
+    crate::broker::MAX_CHAT_TURN_SOURCES as usize
+        + 2
+        + crate::broker::MAX_MEMORY_PROPOSALS as usize
+        + MAX_TURN_PAGES
+        <= crate::domain::MAX_MEMORY_UPDATE_CHANGES
+);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::commands) struct StagedFiling {
@@ -26,9 +37,14 @@ pub(in crate::commands) struct StagedFiling {
     /// only once the reply commits, so the ref is completed there.
     pub pending_spans: Vec<PendingSpan>,
     pub rationale: String,
-    /// (page, op) of the retire and summary ops that cite the user's message;
-    /// a method page accepts those ops only with it.
-    pub said_ops: BTreeSet<(usize, usize)>,
+    pub said_ops: FilingNotes,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(in crate::commands) struct FilingNotes {
+    /// (page, op) of retire and summary ops that cite the user's teaching.
+    said: BTreeSet<(usize, usize)>,
+    sections: Vec<BTreeMap<usize, SectionFiling>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -115,6 +131,8 @@ enum OpInput {
         #[serde(default)]
         basis: BasisInput,
         expected: Option<String>,
+        role: Option<SectionRole>,
+        as_of: Option<String>,
     },
     Retire {
         key: String,
@@ -185,6 +203,8 @@ struct SourceHandle {
     record_id: String,
     revision_digest: String,
     span_id: Option<String>,
+    /// The delivered text, when it is text: what a figure check reads.
+    text: Option<String>,
 }
 
 /// The identifiers this turn acknowledged, copied out of the capture so
@@ -193,12 +213,16 @@ struct SourceHandle {
 pub(super) struct TurnHandles {
     /// World `readRef` to the claim ids its view delivered.
     world_reads: BTreeMap<String, BTreeSet<String>>,
+    /// Claim id to its proposition, as a delivered World view printed it.
+    propositions: BTreeMap<String, String>,
     source_reads: BTreeMap<String, SourceHandle>,
     /// Pages exact-read by the model this turn, by record id, with their titles.
     lens_reads: BTreeMap<String, String>,
     /// Pages the turn saw: exact reads and the standing context.
     lens_known: BTreeSet<String>,
     save_refs: BTreeSet<String>,
+    /// A `saveRef` to the text of the Source it saves, when it is text.
+    saved_texts: BTreeMap<String, String>,
     /// The user message a `said` basis names; None without one or unattended.
     said: Option<String>,
     unattended: bool,
@@ -224,13 +248,24 @@ impl AppToolExecutor {
             )
         })?;
         let handles = self.turn_handles().await;
-        let (mut filing, pages) = resolve(request, &handles)?;
+        let date = crate::commands::knowledge::as_of::Cutoff::parse(
+            policy
+                .as_of
+                .as_deref()
+                .or(self.capture.turn_as_of.as_deref()),
+        )
+        .map_or_else(crate::local_time::today, |cutoff| cutoff.0);
+        let (mut filing, pages, number_checks) = resolve(request, &handles, date)?;
         self.screen(&policy.loupist_id, &mut filing, &handles)?;
         self.reserve_budget(delivery_id, &filing).await?;
         self.capture
             .stage(delivery_id, |pending| pending.filings.push(filing))
             .await;
-        Ok(json!({"status": "staged", "durable": false, "pages": pages}))
+        let mut result = json!({"status": "staged", "durable": false, "pages": pages});
+        if !number_checks.is_empty() {
+            result["number_checks"] = json!(number_checks);
+        }
+        Ok(result)
     }
 
     /// Runs the writer's text policy and create resolution now, so what the
@@ -245,8 +280,16 @@ impl AppToolExecutor {
     ) -> Result<(), BrokerError> {
         let screens =
             crate::commands::knowledge::screen_filing(&self.state, loupist_id, &filing.deltas)
-                .map_err(command_error)?;
-        let said_ops = &filing.said_ops;
+                .map_err(|error| {
+                    if error.code == CommandErrorCode::ExistingPage {
+                        // The message carries existing_page, that page's record id and its title.
+                        return BrokerError::invalid("page", error.message).with_next(
+                            "This subject already has the page the message names. Revise that page by its record id instead of creating another.",
+                        ).with_reason(BrokerRefusalReason::Command(error.code));
+                    }
+                    command_error(error)
+                })?;
+        let said_ops = &filing.said_ops.said;
         for (index, (delta, screen)) in filing.deltas.iter_mut().zip(screens).enumerate() {
             if let Some((field, reason)) = screen.refusals.first() {
                 let field = match field {
@@ -303,6 +346,17 @@ impl AppToolExecutor {
                 }
             }
             let Some(record_id) = screen.existing else {
+                if matches!(delta.target, PageTarget::Create { .. })
+                    && !delta
+                        .ops
+                        .iter()
+                        .any(|op| matches!(op, LensOp::Summary { text } if !text.trim().is_empty()))
+                {
+                    return Err(BrokerError::invalid(
+                        format!("pages[{index}].ops"),
+                        "new Lens page needs a non-empty summary",
+                    ));
+                }
                 continue;
             };
             if handles.lens_reads.contains_key(&record_id) {
@@ -363,9 +417,12 @@ impl AppToolExecutor {
                     handles
                         .world_reads
                         .insert(read.read_ref.clone(), claim_ids(view_json));
+                    handles.propositions.extend(claim_propositions(view_json));
                 }
                 AckedPayload::Source {
-                    revision_digest, ..
+                    revision_digest,
+                    bytes,
+                    ..
                 } => {
                     handles.source_reads.insert(
                         read.read_ref.clone(),
@@ -373,6 +430,7 @@ impl AppToolExecutor {
                             record_id: read.record_id.clone(),
                             revision_digest: revision_digest.clone(),
                             span_id: read.span_id.clone(),
+                            text: String::from_utf8(bytes.clone()).ok(),
                         },
                     );
                 }
@@ -390,14 +448,12 @@ impl AppToolExecutor {
                 handles.lens_known.insert(read.record_id.clone());
             }
         }
-        handles.save_refs = self
-            .capture
-            .staged_sources
-            .lock()
-            .await
-            .iter()
-            .map(|source| source.request_ref.clone())
-            .collect();
+        for source in self.capture.staged_sources.lock().await.iter() {
+            handles.save_refs.insert(source.request_ref.clone());
+            if let Ok(text) = String::from_utf8(source.bytes.clone()) {
+                handles.saved_texts.insert(source.request_ref.clone(), text);
+            }
+        }
         if !handles.unattended {
             handles.said = self.capture.principle_user_message_id.clone();
         }
@@ -431,12 +487,93 @@ fn claim_ids(view_json: &str) -> BTreeSet<String> {
         .collect()
 }
 
+/// Claim id to proposition for each claim a delivered World view carries.
+fn claim_propositions(view_json: &str) -> Vec<(String, String)> {
+    let Ok(view) = serde_json::from_str::<Value>(view_json) else {
+        return Vec::new();
+    };
+    view["edges"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|edge| {
+            let claim = if edge["claim"].is_object() {
+                &edge["claim"]
+            } else {
+                edge
+            };
+            Some((
+                claim["id"].as_str()?.to_owned(),
+                claim["proposition"].as_str()?.to_owned(),
+            ))
+        })
+        .collect()
+}
+
+/// The text a basis ref cites, when this turn delivered it as text: a
+/// claim's proposition, a Source read's passage or a saved Source.
+fn cited_text<'a>(reference: &RefInput, handles: &'a TurnHandles) -> Option<&'a str> {
+    match reference {
+        RefInput::World(world) => handles.propositions.get(&world.claim_id),
+        RefInput::Source(source) => handles
+            .source_reads
+            .get(&source.source)
+            .and_then(|read| read.text.as_ref())
+            .or_else(|| handles.saved_texts.get(&source.source)),
+        RefInput::Said(_) | RefInput::Lens(_) => None,
+    }
+    .map(String::as_str)
+}
+
+/// Checks a fact section's amounts against what it cites. A section of
+/// another role holds derived figures, thresholds and targets, and is not
+/// checked. `Differs` refuses the call; each `NotFound` figure is listed in
+/// the result's `number_checks`.
+fn check_section_figures(
+    field: String,
+    markdown: &str,
+    role: Option<SectionRole>,
+    cited: &[&str],
+    not_found: &mut Vec<Value>,
+) -> Result<(), BrokerError> {
+    if !matches!(role, None | Some(SectionRole::Fact)) || cited.is_empty() {
+        return Ok(());
+    }
+    let check = crate::knowledge::figure_check::check(markdown, cited);
+    let differs = check
+        .figures
+        .iter()
+        .filter(|figure| figure.verdict == FigureVerdict::Differs)
+        .map(|figure| {
+            (
+                figure.stated.clone(),
+                figure.cited.clone().unwrap_or_default(),
+            )
+        })
+        .collect::<Vec<_>>();
+    if !differs.is_empty() {
+        return Err(BrokerError::FigureDiffers {
+            field,
+            figures: differs,
+        });
+    }
+    not_found.extend(
+        check
+            .figures
+            .iter()
+            .filter(|figure| figure.verdict == FigureVerdict::NotFound)
+            .map(|figure| json!({"field": field, "text": figure.stated, "status": "not_found"})),
+    );
+    Ok(())
+}
+
 /// Turns the call into deltas the writer accepts, refusing any handle this
 /// turn did not acknowledge by the field that carried it.
 fn resolve(
     request: Input,
     handles: &TurnHandles,
-) -> Result<(StagedFiling, Vec<Value>), BrokerError> {
+    date: chrono::NaiveDate,
+) -> Result<(StagedFiling, Vec<Value>, Vec<Value>), BrokerError> {
     if request.pages.is_empty() {
         return Err(BrokerError::invalid("pages", "at least one page"));
     }
@@ -454,8 +591,9 @@ fn resolve(
     }
     let mut deltas = Vec::with_capacity(request.pages.len());
     let mut pending_spans = Vec::new();
-    let mut said_ops = BTreeSet::new();
+    let mut notes = FilingNotes::default();
     let mut summaries = Vec::with_capacity(request.pages.len());
+    let mut number_checks = Vec::new();
     for (page_index, page) in request.pages.into_iter().enumerate() {
         let (target, title, kind) = match page.page {
             PageRef::Existing(existing) => {
@@ -499,6 +637,7 @@ fn resolve(
         };
         let creating = matches!(target, PageTarget::Create { .. });
         let mut ops = Vec::with_capacity(page.ops.len());
+        let mut sections = BTreeMap::new();
         for (op_index, op) in page.ops.into_iter().enumerate() {
             let field = |name: &str| format!("pages[{page_index}].ops[{op_index}].{name}");
             let section_key = |key: &str, name: &str| {
@@ -516,7 +655,40 @@ fn resolve(
                     markdown,
                     basis,
                     expected,
+                    role,
+                    as_of,
                 } => {
+                    let as_of = if let Some(value) = as_of {
+                        let valid = chrono::NaiveDate::parse_from_str(&value, "%Y-%m-%d")
+                            .ok()
+                            .is_some_and(|parsed| {
+                                value.len() == 10 && parsed.to_string() == value && parsed <= date
+                            });
+                        if !valid {
+                            return Err(BrokerError::invalid(
+                                field("asOf"),
+                                "a YYYY-MM-DD date on or before the turn date",
+                            ));
+                        }
+                        value
+                    } else {
+                        date.to_string()
+                    };
+                    let key = section_key(&key, "key")?;
+                    let role = role.or_else(|| SectionRole::from_key(&key));
+                    sections.insert(
+                        op_index,
+                        SectionFiling {
+                            role,
+                            as_of: Some(as_of),
+                        },
+                    );
+                    let cited = basis
+                        .refs
+                        .iter()
+                        .filter_map(|reference| cited_text(reference, handles))
+                        .collect::<Vec<_>>();
+
                     if creating && expected.is_some() {
                         return Err(BrokerError::invalid(
                             field("expected"),
@@ -545,8 +717,16 @@ fn resolve(
                             }
                         });
                     }
+                    // After every handle resolved, so a figure refusal never masks a handle one.
+                    check_section_figures(
+                        field("markdown"),
+                        &markdown,
+                        role,
+                        &cited,
+                        &mut number_checks,
+                    )?;
                     LensOp::Put {
-                        key: section_key(&key, "key")?,
+                        key,
                         heading,
                         markdown,
                         basis: Basis {
@@ -567,7 +747,7 @@ fn resolve(
                 } => {
                     if said {
                         user_said(handles, field("said"))?;
-                        said_ops.insert((page_index, op_index));
+                        notes.said.insert((page_index, op_index));
                     }
                     if creating {
                         return Err(BrokerError::invalid(
@@ -582,9 +762,12 @@ fn resolve(
                     }
                 }
                 OpInput::Summary { text, said } => {
+                    if text.trim().is_empty() {
+                        return Err(BrokerError::invalid(field("text"), "a non-empty summary"));
+                    }
                     if said {
                         user_said(handles, field("said"))?;
-                        said_ops.insert((page_index, op_index));
+                        notes.said.insert((page_index, op_index));
                     }
                     LensOp::Summary { text }
                 }
@@ -602,15 +785,17 @@ fn resolve(
             "ops": delta.ops.len(),
         }));
         deltas.push(delta);
+        notes.sections.push(sections);
     }
     Ok((
         StagedFiling {
             deltas,
             pending_spans,
             rationale: request.rationale.trim().to_owned(),
-            said_ops,
+            said_ops: notes,
         },
         summaries,
+        number_checks,
     ))
 }
 
@@ -734,6 +919,7 @@ pub(crate) fn commit_turn(
 ) -> Result<Vec<crate::domain::MemoryUpdateChange>, crate::knowledge::KnowledgeError> {
     let mut deltas = Vec::new();
     let mut rationales = Vec::new();
+    let mut sections = Vec::new();
     for filing in staged {
         let mut filing_deltas = filing.deltas.clone();
         let mut dropped: BTreeMap<(usize, usize), BTreeSet<usize>> = BTreeMap::new();
@@ -782,13 +968,14 @@ pub(crate) fn commit_turn(
             }
         }
         rationales.push(filing.rationale.as_str());
+        sections.extend(filing.said_ops.sections.iter().cloned());
         deltas.extend(filing_deltas);
     }
     if deltas.is_empty() {
         return Ok(Vec::new());
     }
     let filed = crate::knowledge::KnowledgeWrite::bind(tx, blobs)
-        .file(loupist_id, origin, deltas, at_ms)?;
+        .file_turn_sections(loupist_id, origin, deltas, at_ms, &sections)?;
     crate::knowledge::learning::enqueue(tx, loupist_id, at_ms)?;
     Ok(changes(filed, &rationales.join(" ")))
 }

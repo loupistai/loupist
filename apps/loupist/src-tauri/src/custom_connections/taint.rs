@@ -942,6 +942,78 @@ pub(crate) fn delimited(text: &str, source: &str, id: &str) -> String {
     format!("<<untrusted id={id} source=\"{source}\">>\n{text}\n<<end untrusted id={id}>>")
 }
 
+/// `trigger_save` naming a bundled template and no saved script.
+fn bundled_template_proposal(params: &Value) -> bool {
+    params.get("script").is_none_or(Value::is_null)
+        && params
+            .get("template")
+            .and_then(Value::as_str)
+            .is_some_and(|id| crate::commands::triggers::template_source(id).is_ok())
+}
+
+/// The bundled learning presets as the app ships them, by id.
+const LEARNING_PRESETS: &[(&str, &str)] = &[
+    (
+        "asset-daily",
+        include_str!("../../../agent/learning-presets/asset-daily.json"),
+    ),
+    (
+        "company-filings",
+        include_str!("../../../agent/learning-presets/company-filings.json"),
+    ),
+    (
+        "macro-series",
+        include_str!("../../../agent/learning-presets/macro-series.json"),
+    ),
+    (
+        "market",
+        include_str!("../../../agent/learning-presets/market.json"),
+    ),
+    (
+        "question",
+        include_str!("../../../agent/learning-presets/question.json"),
+    ),
+    (
+        "theme",
+        include_str!("../../../agent/learning-presets/theme.json"),
+    ),
+];
+
+/// Whether every slot of a bundled learning preset is the name of its subject.
+/// A free-text slot (a question) goes into the brief of later unattended runs.
+fn learning_preset_takes_only_names(id: crate::scheduled_tasks::types::LearningPresetId) -> bool {
+    LEARNING_PRESETS
+        .iter()
+        .find(|(name, _)| *name == id.as_str())
+        .and_then(|(_, definition)| {
+            serde_json::from_str::<crate::scheduled_tasks::learning::LearningPreset>(definition)
+                .ok()
+        })
+        .is_some_and(|preset| {
+            preset
+                .slots
+                .keys()
+                .all(|slot| preset.subject_slot.as_deref() == Some(slot.as_str()))
+        })
+}
+
+/// `learning_program_save` naming a bundled learning preset with its slots and
+/// no brief of its own, whose slots are only its subject's name: the host
+/// fills the brief from the preset.
+fn bundled_learning_preset_proposal(params: &Value) -> bool {
+    params.get("prompt").is_none_or(Value::is_null)
+        && params.get("slots").is_some_and(Value::is_object)
+        && params
+            .get("preset")
+            .and_then(|id| {
+                serde_json::from_value::<crate::scheduled_tasks::types::LearningPresetId>(
+                    id.clone(),
+                )
+                .ok()
+            })
+            .is_some_and(learning_preset_takes_only_names)
+}
+
 fn custom_server(params: &Value) -> bool {
     text_at(params, &["server_id"]).is_some_and(crate::custom_connections::service::valid_id)
 }
@@ -1117,6 +1189,18 @@ fn outbound_capable(method: ToolMethod, _params: &Value) -> bool {
 /// Python) and pauses what could act on injected instructions beyond this
 /// reply. Native file tools are not judged here: the native policy decides.
 fn command_or_outbound_write(method: ToolMethod, params: &Value) -> bool {
+    // A check proposal that saves a bundled, hash-pinned template with
+    // arguments: the user accepts it on a card that shows what will run, and
+    // its code is not the model's. A check with model-written code stays paused.
+    if method == ToolMethod::TriggerSave && bundled_template_proposal(params) {
+        return false;
+    }
+    // The same for a learning program the host writes from a bundled preset
+    // whose slots name only its subject. A program with a model-written brief,
+    // or a preset with a free-text slot, stays paused.
+    if method == ToolMethod::LearningProgramSave && bundled_learning_preset_proposal(params) {
+        return false;
+    }
     match method.safety().after_text {
         AfterText::Open => false,
         AfterText::Paused => true,
@@ -1126,6 +1210,34 @@ fn command_or_outbound_write(method: ToolMethod, params: &Value) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_taint_rule_reads_every_bundled_learning_preset() {
+        use crate::scheduled_tasks::types::LearningPresetId;
+        for id in LearningPresetId::ALL {
+            let (_, definition) = super::LEARNING_PRESETS
+                .iter()
+                .find(|(name, _)| *name == id.as_str())
+                .unwrap_or_else(|| panic!("{} is not in LEARNING_PRESETS", id.as_str()));
+            serde_json::from_str::<crate::scheduled_tasks::learning::LearningPreset>(definition)
+                .unwrap_or_else(|error| panic!("{}: {error}", id.as_str()));
+        }
+        assert!(!super::learning_preset_takes_only_names(
+            LearningPresetId::Question
+        ));
+        for id in [
+            LearningPresetId::Theme,
+            LearningPresetId::Market,
+            LearningPresetId::MacroSeries,
+            LearningPresetId::AssetDaily,
+        ] {
+            assert!(
+                super::learning_preset_takes_only_names(id),
+                "{}",
+                id.as_str()
+            );
+        }
+    }
+
     #[test]
     fn unanswered_questions_only_block_explicit_destructive_operations() {
         use crate::broker::{tools::TOOL_CATALOG, BrokerError, ToolMethod};

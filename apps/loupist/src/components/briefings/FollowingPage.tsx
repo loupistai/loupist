@@ -1,12 +1,13 @@
 import { useTranslation } from "@/i18n";
-import { formatNumber } from "@/i18n/format";
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { formatNumber, formatPercent } from "@/i18n/format";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { SearchIcon, XIcon } from "lucide-react";
-import type { LoupistBridge, LoupistSummary } from "../../types";
-import { assetTicker, type AssetLookupCandidate, type AssetRow, type AssetStoredPrice } from "../../contracts/assets";
+import type { LoupistBridge, LoupistSummary, ScheduledTaskListItem } from "../../types";
+import { assetTicker, type AssetLookupCandidate, type AssetPage, type AssetPricePoint, type AssetRow, type AssetStoredPrice } from "../../contracts/assets";
 import { useOnline } from "../../app/useOnline";
 import { commandErrorCode } from "../../lib/errors";
 import { Button } from "../ui/button";
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton } from "../ui/input-group";
 import { Spinner } from "../ui/spinner";
@@ -14,7 +15,12 @@ import { EmptyState } from "../ui/empty-state";
 import { useAssetPageOpener } from "../assets/assetOpener";
 import { PriceText } from "../market/PriceText";
 import { useAssetNames } from "../assets/assetName";
-import { listingLabel } from "./assetListing";
+import { followingBadges, learningProgramsFor, listingLabel, priceChange } from "./assetListing";
+import { SegmentedControl, SegmentedControlItem } from "../ui/segmented-control";
+import { FollowingAhead } from "./FollowingAhead";
+import { VerdictChip } from "../assets/VerdictChip";
+import { verdictLabel } from "../assets/assetText";
+import { statedDate } from "../market/priceAsOf";
 import "@/styles/following.css";
 
 /** The host refuses longer queries and names (`asset_lookup`, `asset_follow_name`). */
@@ -46,6 +52,23 @@ type Lookup = { query: string; state: "waiting" }
 
 /** Reasons fixed in Settings › Connections, where Try again alone would fail the same way. */
 const FIXED_IN_CONNECTIONS = new Set(["connection", "keyRejected"]);
+const ROW_READS = 4;
+const rowQueue: Array<() => void> = [];
+let rowReads = 0;
+/** At most four per-row reads at once. Each row fills as its own read arrives. */
+function enqueueRowRead<T>(work: () => Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const run = () => {
+      rowReads += 1;
+      void work().then(resolve, reject).finally(() => {
+        rowReads -= 1;
+        rowQueue.shift()?.();
+      });
+    };
+    if (rowReads < ROW_READS) run();
+    else rowQueue.push(run);
+  });
+}
 
 export type FollowingPageProps = {
   bridge: LoupistBridge;
@@ -54,6 +77,8 @@ export type FollowingPageProps = {
   onOpenConnections?: (connectionId?: string) => void;
   /** Puts a request into Bot's composer without sending it. */
   onAskInChat?: (text: string) => void;
+  /** Opens a scheduled task. The shell owns that navigation. */
+  onOpenTask?: (taskId: string) => void;
   /** Bot's "Add assets to follow" opened the page: the field takes focus. */
   focusSearch?: boolean;
 };
@@ -66,7 +91,7 @@ export type FollowingPageProps = {
  * or opens a followed asset with that name. The host starts one short delegated run
  * per burst of follows to find each new asset's price.
  */
-export function FollowingPage({ bridge, loupist, onOpenConnections, onAskInChat, focusSearch }: FollowingPageProps) {
+export function FollowingPage({ bridge, loupist, onOpenConnections, onAskInChat, onOpenTask, focusSearch }: FollowingPageProps) {
   const { t, i18n: { language } } = useTranslation(["briefings", "assets", "connections"]);
   const loupistId = loupist.id;
   const names = useAssetNames(bridge, loupistId);
@@ -75,6 +100,7 @@ export function FollowingPage({ bridge, loupist, onOpenConnections, onAskInChat,
 
   const [assets, setAssets] = useState<AssetRow[] | null>(null);
   const [prices, setPrices] = useState(new Map<string, AssetStoredPrice>());
+  const [tasks, setTasks] = useState<ScheduledTaskListItem[]>([]);
   const [listFailed, setListFailed] = useState(false);
   const [listRevision, setListRevision] = useState(0);
   const [query, setQuery] = useState("");
@@ -83,7 +109,9 @@ export function FollowingPage({ bridge, loupist, onOpenConnections, onAskInChat,
   const [active, setActive] = useState<string | null>(null);
   const [picks, setPicks] = useState<Readonly<Record<string, "adding" | "failed">>>({});
   const [removals, setRemovals] = useState<Readonly<Record<string, "pending" | "failed">>>({});
+  const [stopAsk, setStopAsk] = useState<Row | null>(null);
   const [announcement, setAnnouncement] = useState("");
+  const [view, setView] = useState<"list" | "ahead">("list");
   const fieldRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   /** A newer submit or a cleared field drops an older answer. */
@@ -100,6 +128,9 @@ export function FollowingPage({ bridge, loupist, onOpenConnections, onAskInChat,
     void bridge.watchlistQuotes({ loupistId })
       .then(quotes => { if (live) setPrices(new Map(quotes.map(({ assetId, price }) => [assetId, price]))); })
       .catch(() => { if (live) setPrices(new Map()); });
+    void bridge.scheduledTasksList({ loupist_id: loupistId })
+      .then(next => { if (live) setTasks(next); })
+      .catch(() => { if (live) setTasks([]); });
     void Promise.resolve().then(() => bridge.assetsList({ loupistId }))
       .then(next => { if (live) { setAssets(next); setListFailed(false); } })
       .catch(() => { if (live) setListFailed(true); });
@@ -273,10 +304,16 @@ export function FollowingPage({ bridge, loupist, onOpenConnections, onAskInChat,
     }
   };
 
-  const stopFollowing = async (row: Row) => {
+  const stopFollowing = async (row: Row, pauseDaily: boolean) => {
     const id = row.asset.assetId;
+    setStopAsk(null);
     setRemovals(current => ({ ...current, [id]: "pending" }));
     try {
+      if (pauseDaily) {
+        for (const task of learningProgramsFor(id, tasks)) {
+          await bridge.scheduledTaskSetStatus({ loupist_id: loupistId, task_id: task.id, expected_revision: task.revision, status: "paused" });
+        }
+      }
       await bridge.assetUnfollow({ loupistId, assetId: id });
       const index = rows.findIndex(item => item.asset.assetId === id);
       const neighbour = rows[index + 1] ?? rows[index - 1];
@@ -372,14 +409,15 @@ export function FollowingPage({ bridge, loupist, onOpenConnections, onAskInChat,
               <span className="following-name" title={row.name}>{row.name}</span>
               <span className="following-identity gg-num">{row.identity}</span>
             </>;
+            const lead = openAsset
+              ? <button type="button" className="following-open" onClick={() => openAsset({ loupistId, assetId: id, name: row.name })}>{content}</button>
+              : <span className="following-open">{content}</span>;
             return <li key={id} className="following-row" data-row-key={id} data-ticker={row.asset.reference?.ticker ?? undefined} data-removing={removal === "pending" || undefined}>
-              {openAsset ? <button type="button" className="following-open" onClick={() => openAsset({ loupistId, assetId: id, name: row.name })}>{content}</button>
-                : <span className="following-open">{content}</span>}
-              {price ? <PriceText value={price.value} currency={price.currency ?? undefined} digits="auto" /> : null}
+              <FollowingFacts bridge={bridge} loupistId={loupistId} assetId={id} price={price} tasks={tasks} lead={lead} />
               <Button variant="ghost" size="sm" className="following-stop" aria-label={t("following.stop.label", { name: row.name })} aria-disabled={removal === "pending" || undefined}
-                onClick={() => { if (removal !== "pending") void stopFollowing(row); }}>{t("following.stop.action")}</Button>
+                onClick={() => { if (removal === "pending") return; if (learningProgramsFor(id, tasks).length) setStopAsk(row); else void stopFollowing(row, false); }}>{t("following.stop.action")}</Button>
               {removal === "failed" ? <p role="alert" className="following-row-error">
-                {t("following.stop.failed", { name: row.name })}{" "}<Button variant="link" size="sm" onClick={() => void stopFollowing(row)}>{t("retry")}</Button>
+                {t("following.stop.failed", { name: row.name })}{" "}<Button variant="link" size="sm" onClick={() => { if (learningProgramsFor(id, tasks).length) setStopAsk(row); else void stopFollowing(row, false); }}>{t("retry")}</Button>
               </p> : null}
             </li>;
           })}
@@ -387,6 +425,10 @@ export function FollowingPage({ bridge, loupist, onOpenConnections, onAskInChat,
     </>;
 
   return <section className="following-page" data-testid="following-page" aria-labelledby="current-location">
+    <SegmentedControl className="following-view" value={view} onValueChange={value => setView(value as "list" | "ahead")} aria-label={t("following.view.label")}>
+      <SegmentedControlItem value="list">{t("following.view.list")}</SegmentedControlItem>
+      <SegmentedControlItem value="ahead">{t("following.view.ahead")}</SegmentedControlItem>
+    </SegmentedControl>
     <div className="following-search">
       <InputGroup className="following-field">
         <Input ref={fieldRef} type="text" data-slot="input-group-control" className="following-input" value={query} maxLength={QUERY_MAX}
@@ -402,7 +444,7 @@ export function FollowingPage({ bridge, loupist, onOpenConnections, onAskInChat,
       </InputGroup>
     </div>
     <div ref={listRef} className="following-body" aria-busy={assets === null && !listFailed}>
-      {trimmed ? <>
+      {view === "ahead" && !trimmed ? <FollowingAhead bridge={bridge} loupistId={loupistId} assets={assets} onOpenTask={onOpenTask} /> : trimmed ? <>
         {listFailed && assets === null ? listFailure : null}
         <div id={listboxId} role="listbox" aria-label={t("following.search.results")} className="following-results">
           {options.map(optionRow)}
@@ -413,5 +455,96 @@ export function FollowingPage({ bridge, loupist, onOpenConnections, onAskInChat,
     {/* What typing and Enter do, for a screen reader; sighted users read it under the results. */}
     <p id={hintId} className="sr-only">{t("following.search.hint")}</p>
     <p className="sr-only" aria-live="polite">{announcement}</p>
+    <UnfollowDailyDialog name={stopAsk?.name ?? ""} open={stopAsk !== null} onCancel={() => setStopAsk(null)} onConfirm={pause => { if (stopAsk) void stopFollowing(stopAsk, pause); }} />
   </section>;
+}
+
+export function UnfollowDailyDialog({ name, open, onCancel, onConfirm }: {
+  name: string; open: boolean; onCancel: () => void; onConfirm: (pauseDaily: boolean) => void;
+}) {
+  const { t } = useTranslation("briefings");
+  const [pauseDaily, setPauseDaily] = useState(true);
+  useEffect(() => { if (open) setPauseDaily(true); }, [open]);
+  return <Dialog open={open} onOpenChange={next => { if (!next) onCancel(); }}>
+    <DialogContent>
+      <DialogHeader><DialogTitle>{t("following.stop.confirm", { name })}</DialogTitle></DialogHeader>
+      <DialogBody>
+        <label className="following-pause-daily">
+          <input type="checkbox" checked={pauseDaily} onChange={event => setPauseDaily(event.target.checked)} />
+          {t("following.stop.pauseDaily", { name })}
+        </label>
+      </DialogBody>
+      <DialogFooter>
+        <Button type="button" variant="ghost" onClick={onCancel}>{t("following.stop.cancel")}</Button>
+        <Button type="button" onClick={() => onConfirm(pauseDaily)}>{t("following.stop.action")}</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>;
+}
+
+function FollowingFacts({ bridge, loupistId, assetId, price, tasks, lead }: {
+  bridge: LoupistBridge; loupistId: string; assetId: string; price?: AssetStoredPrice; tasks: readonly ScheduledTaskListItem[]; lead: ReactNode;
+}) {
+  const { t } = useTranslation(["briefings", "assets"]);
+  const [series, setSeries] = useState<AssetPricePoint[] | null | undefined>(undefined);
+  const [page, setPage] = useState<AssetPage | "failed" | undefined>(undefined);
+  const [showWait, setShowWait] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setSeries(undefined);
+    setPage(undefined);
+    setShowWait(false);
+    const timer = window.setTimeout(() => { if (live) setShowWait(true); }, 300);
+    let seriesDone = false;
+    let pageDone = false;
+    const settled = () => { if (seriesDone && pageDone) window.clearTimeout(timer); };
+    void enqueueRowRead(() => bridge.assetPriceSeries({ loupistId, assetId, storedOnly: true }))
+      .then(points => { if (live) setSeries(points); }, () => { if (live) setSeries(null); })
+      .finally(() => { seriesDone = true; settled(); });
+    void enqueueRowRead(() => bridge.assetPageGet({ loupistId, assetId, storedOnly: true }))
+      .then(view => { if (live) setPage(view); }, () => { if (live) setPage("failed"); })
+      .finally(() => { pageDone = true; settled(); });
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [bridge, loupistId, assetId, attempt]);
+  const pending = series === undefined || page === undefined;
+  const read = page !== "failed" && page ? page.read : null;
+  const setup = page !== "failed" && page ? page.priceSetupRunning : false;
+  const badges = page === "failed" ? [] : followingBadges(assetId, tasks);
+  const change = price && series ? priceChange(price, series) : null;
+  const unseen = Boolean(read?.latestMove && read.latestMove.seenAtMs == null);
+  const priceDate = price ? (price.kind ? `${t(`price.kind.${price.kind}`, { ns: "assets" })} · ${statedDate(price.date)}` : statedDate(price.date)) : "";
+  const quote = !price && setup ? <p className="following-quote-meta">{t("following.priceFinding")}</p>
+    : !price && pending && showWait ? <p className="following-quote-meta" role="status"><Spinner aria-hidden="true" />{t("following.priceFinding")}</p>
+    : !price && !pending ? <p className="following-quote-meta">{t("following.priceNone")}</p>
+    : price ? <p className="following-quote">
+      <span title={price.currencySource === "none" ? t("following.currencyUnstated") : undefined}>
+        <PriceText value={price.value} currency={price.currencySource === "none" ? undefined : price.currency ?? undefined} digits="auto" />
+      </span>
+      <small className="following-quote-meta">
+        {series === undefined && showWait ? <Spinner aria-hidden="true" /> : null}
+        {change ? <span className="following-change" data-direction={change.delta > 0 ? "up" : change.delta < 0 ? "down" : "flat"} title={t("following.changeVersus", { date: statedDate(change.date) })}>
+          {change.delta > 0 ? "↑ " : change.delta < 0 ? "↓ " : ""}{formatNumber(change.delta, { signDisplay: "always", minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {change.percent === null ? "" : ` (${formatPercent(change.percent, { signDisplay: "always", minimumFractionDigits: 1, maximumFractionDigits: 1 })})`}
+        </span> : null}
+        {priceDate ? <span className="following-price-date">{change ? " · " : ""}{priceDate}</span> : null}
+      </small>
+    </p> : null;
+  const chipName = read && unseen ? `${verdictLabel(read.verdict)} · ${t("following.newMove")}` : undefined;
+  return <>
+    <div className="following-lead">
+      {lead}
+      {read ? <span className="following-thesis" role={unseen ? "img" : undefined} aria-label={chipName}>
+        {unseen ? <i className="following-move-dot" aria-hidden="true" /> : null}
+        <span aria-hidden={unseen || undefined}><VerdictChip verdict={read.verdict} /></span>
+      </span> : null}
+    </div>
+    <span className="following-badges">
+      {badges.map(badge => <span key={badge.kind} className="following-badge" data-failing={badge.failing || undefined}>
+        {badge.kind === "watch" && badge.count > 1 ? t("following.badge.watches", { count: badge.count }) : t(`following.badge.${badge.kind}`)}
+      </span>)}
+    </span>
+    {quote}
+    {page === "failed" || series === null ? <Button variant="link" size="sm" className="following-row-retry" onClick={() => setAttempt(value => value + 1)}>{t("retry")}</Button> : null}
+  </>;
 }

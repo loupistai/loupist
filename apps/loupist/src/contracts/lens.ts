@@ -9,6 +9,8 @@ export type BasisRefView =
   | { kind: "page"; recordId: string; sectionKey?: string };
 
 export type SectionView = Wire.SectionView;
+/** `SectionView.learned`: the learning run that filed the section's newest op, while nothing changed it since. */
+export type LearnedMark = Wire.LearnedMark;
 
 export type LensBodyView =
   | { kind: "principle"; statement: string; why: string; example: string; origin: string }

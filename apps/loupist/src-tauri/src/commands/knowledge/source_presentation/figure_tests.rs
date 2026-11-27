@@ -55,7 +55,12 @@ fn retain(state: &AppState, envelope: &str, url: &str, origin: Option<&str>) -> 
         };
         let write = KnowledgeWrite::bind(tx, blobs);
         match origin {
-            Some(answer) => write.retain_new_source_with_origin(request, answer, None),
+            Some(answer) => write.retain_new_source_with_origin(
+                request,
+                answer,
+                crate::knowledge::JobOrigin::Chat,
+                None,
+            ),
             None => write.retain_new_source(request),
         }
     })

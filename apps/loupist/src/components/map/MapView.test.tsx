@@ -28,7 +28,7 @@ async function setup() {
     return <MapView bridge={bridge} catalog={catalog} location={location} onPatch={setLocation} onOpen={onOpen} onAsk={onAsk} />;
   }
   render(<Harness />);
-  await screen.findByText('37 in World · 36 relationships');
+  await screen.findByText('37 names · 36 relationships');
   return { bridge, onAsk, onOpen, user: userEvent.setup() };
 }
 it('shows the first-map guidance when the host has only seeded its standing Lens', async () => {
@@ -43,7 +43,7 @@ it('shows the first-map guidance when the host has only seeded its standing Lens
   render(<MapView bridge={bridge} catalog={catalog} location={{ loupistId: catalog.loupistId, surface: 'world' }} onPatch={vi.fn()} onOpen={onOpen} onAsk={vi.fn()} onAddSource={addSource} />);
   expect(await screen.findByRole('heading', { name: "Your World grows as you research" })).toBeVisible();
   expect(screen.queryByText('No names match these filters.')).not.toBeInTheDocument();
-  expect(screen.queryByText('0 in World · 0 relationships')).not.toBeInTheDocument();
+  expect(screen.queryByText('0 names · 0 relationships')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Library' })).toBeVisible();
   screen.getByRole('button', { name: 'Add source' }).click();
   expect(addSource).toHaveBeenCalledOnce();
@@ -66,7 +66,7 @@ it('provides list navigation and combines the followed and kind filters', async 
   const { user } = await setup();
   await user.click(screen.getByRole('button', { name: 'Filter' }));
   await user.click(screen.getByLabelText('Only what I follow'));
-  await screen.findByText('3 in World · 2 relationships');
+  await screen.findByText('3 names · 2 relationships');
   await user.keyboard('{Escape}');
   await user.click(screen.getByRole('button', { name: 'More actions' }));
   await user.click(screen.getByRole('menuitemcheckbox', { name: 'List view' }));
@@ -84,7 +84,7 @@ it('retries a failed projection without switching Loupist', async () => {
   const request = vi.spyOn(bridge, 'knowledgeMap').mockRejectedValueOnce(new Error('offline'));
   render(<MapView bridge={bridge} catalog={catalog} location={{ loupistId: catalog.loupistId, surface: 'world' }} onPatch={vi.fn()} onOpen={vi.fn()} onAsk={vi.fn()} />);
   await userEvent.click(await screen.findByRole('button', { name: 'Try again' }));
-  await screen.findByText('37 in World · 36 relationships');
+  await screen.findByText('37 names · 36 relationships');
   expect(request).toHaveBeenLastCalledWith({ loupistId: 'loupist-quality', maxNodes: 1000 });
 });
 it('opens the key strip with its first-visit lead, keeps unlinked principles off the canvas, and remembers a collapse', async () => {
@@ -153,7 +153,7 @@ it('reads World through a Lens and clears the highlight', async () => {
   await user.click(screen.getByRole('button', { name: 'No highlight' }));
   expect(screen.queryByText('Applied Lens: Compare competitive advantages')).not.toBeInTheDocument();
   expect(canvas()).toHaveAttribute('data-overlay', '');
-  expect(await screen.findByText('37 in World · 36 relationships')).toBeVisible();
+  expect(await screen.findByText('37 names · 36 relationships')).toBeVisible();
 });
 it('counts no relationship for a value a name reports about itself', async () => {
   const bridge = new MockLoupistBridge({ delay_ms: 0 });
@@ -167,7 +167,7 @@ it('counts no relationship for a value a name reports about itself', async () =>
     return <MapView bridge={bridge} catalog={catalog} location={location} onPatch={setLocation} onOpen={vi.fn()} onAsk={vi.fn()} />;
   }
   render(<Harness />);
-  expect(await screen.findByText('37 in World · 36 relationships')).toBeVisible();
+  expect(await screen.findByText('37 names · 36 relationships')).toBeVisible();
 });
 it('highlights the companies a Lens was applied to in Korean', async () => {
   setPreviewLanguage('ko');
@@ -242,7 +242,7 @@ it("counts new this week as What's new does for its last seven days", async () =
   }));
   const user = userEvent.setup();
   render(<MapView bridge={bridge} catalog={catalog} location={{ loupistId: catalog.loupistId, surface: 'world', recordId: catalog.worlds[0]?.recordId, revisionId: catalog.worlds[0]?.revisionId }} onPatch={vi.fn()} onOpen={vi.fn()} onAsk={vi.fn()} />);
-  expect(await screen.findByText('10 new this week')).toBeVisible();
+  expect(await screen.findByTestId("map-stats")).toHaveTextContent("10 new names this week");
   await user.click(screen.getByRole('button', { name: "What's new" }));
   expect(await screen.findByRole('button', { name: '7 days', pressed: true })).toBeVisible();
   expect(document.querySelector('.map-whats-new-summary')).toHaveTextContent('+10 in World');

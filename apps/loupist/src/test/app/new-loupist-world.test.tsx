@@ -47,8 +47,8 @@ it("resets a cancelled creation draft on the next opening", async () => {
   // The switcher has closed, so focus returns to the Loupist that opened it.
   await waitFor(() => expect(selectedLoupistButton()).toHaveFocus());
   await user.click(headerAction("New Loupist"));
-  expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Portfolio Loupist");
-  expect(screen.getByLabelText("Focus")).toHaveValue("Companies I follow");
+  expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Watchlist Loupist");
+  expect(screen.getByLabelText("Focus")).toHaveValue("Follows filings, results and your reasons. It does not track holdings or returns.");
 });
 
 it("follows a picked starter in the Loupist it creates, not the open one, and nothing when cancelled", async () => {

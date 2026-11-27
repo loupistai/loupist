@@ -26,21 +26,6 @@
     "retainedRequestError": "{{error}} The request was kept. Check the conversation before sending it again.",
     "appendWorkingNoteRequest": "{{prompt}}\n\nI'd like to change the research note: "
   },
-  "answerFeedback": {
-    "availableWhenTheReplyFinishes": "Available when the reply finishes",
-    "couldNotSaveFeedback": "Could not save feedback.",
-    "helpful": "Helpful",
-    "notHelpful": "Not helpful",
-    "correct": "Suggest a correction",
-    "yourCorrection": "Your correction",
-    "savedCorrection": "Your correction",
-    "saving": "Saving…",
-    "saveCorrection": "Save correction",
-    "cancel": "Cancel",
-    "teachTheLoupist": "Teach the Loupist",
-    "pleaseRevisitThisAnswerUsingMyCorrectionAnswerExcerpt": "Please revisit this answer using my correction.\n\nAnswer excerpt:\n{{value1}}{{value2}}\n\nMy correction:\n{{value3}}",
-    "characterCount": "{{formattedCount}} / 4000 characters · Saved on this Mac"
-  },
   "chatActivityDetailView": {
     "thisActivityIsNotAvailableInThisChat": "This activity is not available in this chat.",
     "couldNotOpenThisActivity": "Could not open this activity.",
@@ -179,6 +164,8 @@
     "tryAgain": "Try again",
     "answerCopied": "Answer copied",
     "copyAnswer": "Copy answer",
+    "answerMenu": "More for this answer",
+    "copyMarkdown": "Copy as Markdown",
     "copied": "Copied",
     "afterCurrentReply": "Available when the current reply finishes.",
     "editMessage": "Edit message",
@@ -359,7 +346,9 @@
     "unfinished": "Saving did not finish",
     "waitedForChat": "Waited {{duration}} for “{{title}}”",
     "waitedForOthers": "Waited {{duration}} for other conversations in this Loupist",
-    "claimNotKept": "What this answer says it saved was not kept.",
+    "claimNotKept": "Anything this answer says it saved or filed was not kept.",
+    "partlySaved": "Partly saved to Memory: Loupist refused something this answer tried to keep and saved the rest.",
+    "claimPartlyNotKept": "Anything listed below that this answer says it saved or filed was not kept.",
     "notKept": "Not kept",
     "discardedKind": {
       "note": "Note",
@@ -382,7 +371,17 @@
       "deadline": "Not saved to Memory: another conversation was still running after 10 minutes.",
       "interrupted": "Not saved to Memory: Loupist quit before saving finished.",
       "failed": "Not saved to Memory: saving failed.",
-      "policy_changed": "Not saved to Memory: Memory was reset while this answer was being written."
+      "policy_changed": "Not saved to Memory: Memory was reset while this answer was being written.",
+      "invalid": "Not saved to Memory: Loupist refused something this answer tried to keep, so nothing from it was saved.",
+      "store_busy": "Not saved to Memory: Loupist was busy saving other work and could not finish this save in time.",
+      "storage": "Not saved to Memory: Loupist could not write to this Loupist’s data.",
+      "conflict": "Not saved to Memory: this conversation or Memory changed while the answer was being saved."
+    },
+    "next": {
+      "invalid": "Ask again in this conversation to read and keep them again. If it fails again, keep fewer items in one answer.",
+      "store_busy": "Ask again in this conversation to read and keep them again.",
+      "storage": "Check that the disk has free space and the Loupist folder is available, then ask again in this conversation.",
+      "conflict": "Ask again in this conversation to read and keep them again."
     }
   },
   "chatReceipt": {
@@ -451,8 +450,19 @@
     "discarded": "Discarded",
     "nextRun": "Next run {{date}}",
     "couldNotChange": "Couldn't change it. Try again.",
-    "proposalHint": "Nothing runs until you turn it on.",
-    "spending": "Scheduled tasks use your AI account each run."
+    "learningProgram": {
+      "kicker": "Learning program",
+      "kickerPreset": "Learning program · {{preset}}",
+      "what": "What it learns",
+      "when": "First run starts when you turn it on",
+      "on": "On · first run started",
+      "notNow": "Paused. Turn it on in Schedule.",
+      "cap_one": "Only {{formattedCount}} program can be active.",
+      "cap_other": "Up to {{formattedCount}} programs can be active.",
+      "replaced": "A newer revision replaced this program.",
+      "cost": "Each run is a model run on your AI account, about {{formattedCount}} requests.",
+      "costPlain": "Each run is a model run on your AI account."
+    }
   },
   "worldProcessingStatus": {
     "sourceSavedCouldNotRefreshWorldStatus": "Source saved · Could not refresh World status",
@@ -465,7 +475,10 @@
     "paused_budget": "World: building paused for this source (request allowance reached)",
     "failed_before_mutation": "World: building failed",
     "reconcile_required": "World: outcome uncertain — review it in World",
-    "reconciled_without_retry": "Source retained · Interrupted World building was not retried",
+    "interrupted": "Source saved · World building was interrupted",
+    "timed_out": "Source saved · World building timed out",
+    "usage_uncertain": "Source saved · World building stopped because model usage could not be confirmed",
+    "reconciled_without_retry": "Source saved · World building did not finish",
     "cancelled_before_start": "World: building cancelled",
     "no_text": "Source saved · No readable text for World",
     "price_data": "Source saved · Price data, not added to World",
@@ -784,6 +797,14 @@
     "chartCouldNotBeRendered": "Chart could not be rendered"
   },
   "chartAxis": {
+    "scale": {
+      "tn": "tn",
+      "bn": "bn",
+      "m": "m",
+      "k": "k",
+      "eok": "100m",
+      "man": "10k"
+    },
     "unit": "{{currency}} {{scale}}",
     "titleWithUnit": "{{label}} ({{unit}})",
     "unitOnly": "In {{unit}}",
@@ -966,7 +987,6 @@
     "couldNotStopTheResponse": "Could not stop the response.",
     "theAttachedFilesFromThatRequestCouldNotBe": "The attached files from that request could not be read.",
     "couldNotTryThatResponseAgain": "Could not try that response again.",
-    "chatThreadIsUnavailable": "This chat is unavailable.",
     "theReplyDidNotStartCheckTheConversationBeforeTryingAgain": "The reply did not start. Check the conversation before trying again."
   },
   "runRegistry": {
@@ -1168,7 +1188,7 @@
       }
     },
     "focusSubject": {
-      "portfolio": "my portfolio",
+      "portfolio": "the companies you follow",
       "semiconductors": "semiconductors",
       "dividends": "dividend stocks",
       "technology": "US big tech",
@@ -1240,6 +1260,10 @@
       "done": "Searched saved notes"
     },
     "world_read": {
+      "running": "Reading saved notes",
+      "done": "Read saved notes"
+    },
+    "world_changes": {
       "running": "Reading saved notes",
       "done": "Read saved notes"
     },
@@ -1482,6 +1506,34 @@
     "fx_rate": {
       "running": "Reading the exchange rate",
       "done": "Read the exchange rate"
+    },
+    "script_save": {
+      "running": "Saving a script",
+      "done": "Saved a script"
+    },
+    "script_list": {
+      "running": "Finding saved scripts",
+      "done": "Found saved scripts"
+    },
+    "script_read": {
+      "running": "Reading a saved script",
+      "done": "Read a saved script"
+    },
+    "trigger_save": {
+      "running": "Testing a check",
+      "done": "Proposed a check"
+    },
+    "schedule_briefing": {
+      "running": "Setting the briefing",
+      "done": "Set the briefing"
+    },
+    "learning_handoff": {
+      "running": "Handing a learning request to Bot",
+      "done": "Handed a learning request to Bot"
+    },
+    "learning_program_save": {
+      "running": "Proposing a learning program",
+      "done": "Proposed a learning program"
     }
   },
   "nextSteps": {
@@ -1670,6 +1722,7 @@
   "skillBlurb": {
     "comparison": "Compare companies or assets side by side",
     "data-analysis": "Analyze a dataset and explain what it shows",
+    "deep-research": "Plan an in-depth investigation and write a cited report",
     "dividend-income": "Check how safe a dividend looks",
     "word-documents": "Write or edit a Word document",
     "events-stats": "See how prices moved around past events",
@@ -2034,7 +2087,6 @@
     "quickMonth": "One month ago",
     "quickYearStart": "Start of this year",
     "quickYear": "One year ago",
-    "explain": "Answers use only what was published by the end of that day. Your principles still apply as they are today.",
     "chip": "As of {{date}}",
     "chipEdit": "Change the as-of date",
     "remove": "Remove as-of date",
@@ -2079,6 +2131,7 @@
       "asset_page_read": "the asset page",
       "world_search": "saved notes",
       "world_read": "saved notes",
+      "world_changes": "saved notes",
       "lens_search": "Lens",
       "lens_read": "Lens",
       "conversation_memory": "earlier conversations",
@@ -2475,8 +2528,6 @@
       "morning": "Good morning",
       "afternoon": "Good afternoon",
       "evening": "Good evening",
-      "prompt": "Pick an item below or type a question.",
-      "introNew": "I follow the markets you care about and answer with sources you can check.",
       "asks": "Suggested questions",
       "start": "Start here",
       "following": "Following",
@@ -2489,8 +2540,6 @@
         },
         "briefing": {
           "label": "This morning's briefing",
-          "hint_one": "Your {{formattedCount}} followed asset",
-          "hint_other": "Your {{formattedCount}} followed assets",
           "prompt": "Give me this morning's briefing on what I follow."
         },
         "earnings": {
@@ -2511,12 +2560,10 @@
       },
       "setup": {
         "connect": {
-          "label": "Connect an AI account",
-          "hint": "Needed before answers"
+          "label": "Connect an AI account"
         },
         "follow": {
-          "label": "Add assets to follow",
-          "hint": "Stocks, funds or coins"
+          "label": "Add assets to follow"
         },
         "briefing": {
           "label": "Get a morning briefing",

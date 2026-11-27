@@ -32,7 +32,7 @@ it("requests a localized menu after Settings changes language and dispatches New
   await waitFor(() => expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ language: "ko", shell: true })));
 
   act(() => bridge.emitMenuAction("new-loupist"));
-  const dialog = await screen.findByRole("dialog", { name: "새 루피스트" });
+  const dialog = await screen.findByRole("dialog", { name: "새 Loupist" });
   expect(dialog).toBeVisible();
   await waitFor(() => expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ language: "ko", modal: true })));
   act(() => bridge.emitMenuAction("map"));

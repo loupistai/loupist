@@ -19,7 +19,8 @@
   "preparing": "준비 중…",
   "preparingBody": {
     "briefing": "브리핑을 준비하는 중…",
-    "custom": "리서치를 실행하는 중…"
+    "custom": "리서치를 실행하는 중…",
+    "learning": "학습을 실행하는 중…"
   },
   "off": "꺼짐",
   "today": "오늘",
@@ -45,7 +46,8 @@
   "failure": {
     "title": {
       "briefing": "브리핑을 끝내지 못했습니다",
-      "custom": "예약 리서치를 끝내지 못했습니다"
+      "custom": "예약 리서치를 끝내지 못했습니다",
+      "learning": "학습을 끝내지 못했습니다"
     },
     "unreachable": "AI 서비스에 연결하지 못했습니다. 연결을 확인한 뒤 다시 시도하십시오.",
     "auth": "AI 계정에 다시 로그인해야 합니다.",
@@ -60,24 +62,23 @@
     "checks": "확인 항목",
     "tellsYou": "알림 기준",
     "whenMet": "조건을 충족할 때",
+    "whenCheckMet": "확인이 맞을 때",
     "everyRun": "실행할 때마다",
     "postsTo": "결과 표시",
-    "postBot": "Bot",
-    "postSchedule": "일정에만 표시",
+    "postBot": "봇",
+    "postSchedule": "예약에만 표시",
     "notifies": "알림 방식",
     "notifyInherited": "알림 기본값 사용",
     "notifyNow": "즉시",
     "notifyDigest": "모아서 알림",
-    "notifyOff": "Bot에만 표시",
-    "botOnAsset": "이 자산을 보는 Bot",
+    "notifyOff": "봇에만 표시",
+    "botOnAsset": "이 자산을 보는 봇",
     "filings": "공시와 실적 지켜보기",
     "lines": "기준 지켜보기",
     "results": "실적 후속",
     "week": "한 주 돌아보기",
-    "watchCost": "Loupist가 열려 있는 동안 확인할 때마다 내 AI 계정으로 모델이 실행됩니다.",
-    "locationRule": "실행 결과는 예약에 남습니다. 대화를 이어간 실행은 리서치 세션에도 표시됩니다.",
+    "watchCost": "확인에 AI 요금이 부과될 수 있습니다.",
     "openSession": "세션 열기",
-    "continueHelp": "메시지를 보내면 이 세션이 리서치 세션에 추가됩니다.",
     "model": "모델: {{model}}",
     "title": "예약",
     "summary_other": "예약 작업 {{formattedCount}}개",
@@ -86,15 +87,13 @@
     "tasks": "예약된 작업",
     "open": "열기",
     "emptyTitle": "아직 예약된 작업이 없습니다",
-    "emptyBody": "루피스트가 정해진 시간에 작업을 실행하고 결과를 봇에 올립니다.",
     "filterLabel": "보기",
-    "loginHint": "예약 작업은 루피스트가 열려 있을 때만 실행됩니다.",
+    "loginHint": "예약 작업을 계속 실행합니다.",
     "openAtLogin": "로그인할 때 열기",
-    "willOpenAtLogin": "로그인하면 루피스트가 열립니다.",
+    "willOpenAtLogin": "로그인하면 Loupist가 열립니다.",
     "filterActive": "사용 중",
     "filterAll": "모두",
     "noActiveTitle": "사용 중인 작업이 없습니다",
-    "noActiveBody": "일시정지했거나 끝난 작업은 그대로 있습니다.",
     "showAll": "모두 보기",
     "status": {
       "active": "사용 중",
@@ -104,21 +103,43 @@
     },
     "kind": {
       "briefing": "브리핑",
-      "custom": "예약 리서치"
+      "check": "확인",
+      "custom": "예약 리서치",
+      "learning": "학습"
+    },
+    "sections": {
+      "briefings": "브리핑"
     },
     "next": "다음: {{time}}",
     "pause": "일시정지",
     "resume": "다시 시작",
     "turnOn": "켜기",
     "priceMoves": "가격 변동",
+    "factChanges": "사실 변경",
+    "preset": {
+      "priceMove": {
+        "whenMet": "변동과 두 가격, 그 날짜, 그리고 보도된 이유를 알립니다."
+      },
+      "factChanges": {
+        "whenMet": "무엇이 바뀌었는지, 이전과 지금의 내용, 그리고 출처와 날짜를 알립니다."
+      }
+    },
     "check": {
       "fromYourCheck": "내 확인에서",
       "reads": "읽는 것",
       "runs": "실행",
       "dryRun": "미리 확인",
       "whenMet": "조건이 맞으면",
-      "cost": "조건이 맞기 전에는 AI를 쓰지 않습니다. 그다음 내 AI 계정으로 모델 한 번, 하루에 최대 3번.",
+      "whenMetGeneric": "확인이 맞으면 알립니다.",
+      "showInstructions": "지시 보기",
+      "hideInstructions": "지시 숨기기",
+      "cost": "조건 충족 시 AI 요금이 부과될 수 있습니다. 하루 최대 3회.",
+      "noModelUntilMet": "확인이 맞기 전에는 모델이 실행되지 않습니다.",
       "viewCode": "코드 보기",
+      "hideCode": "코드 숨기기",
+      "assets": "자산",
+      "removedAsset": "삭제된 자산",
+      "metDays": "확인이 맞았을 날",
       "testNow": "지금 시험",
       "notNow": "나중에",
       "change": "바꾸기",
@@ -130,7 +151,7 @@
       "noExplanation": "설명이 없습니다. {{reason}}",
       "checkedAfterClosed": "Loupist가 꺼져 있어 {{time}}에 확인했습니다",
       "waitingRate": "제공자 속도 제한으로 기다리는 중",
-      "stale": "{{date}} 이후 데이터가 그대로입니다",
+      "stale": "오래된 데이터 · {{date}}",
       "couldNotRead": "{{time}}부터 데이터를 읽지 못했습니다",
       "unreplayed": "{{count}}일은 다시 볼 수 없었습니다",
       "firedOn": "최근 {{replayed}}거래일 중 {{count}}일에 맞았을 것입니다",
@@ -153,33 +174,141 @@
     "deleteWhileRunning": "이번 실행이 끝난 뒤에 삭제할 수 있습니다.",
     "deleteTitle": "“{{title}}” 작업을 삭제하시겠습니까?",
     "deleteBody": "더 이상 실행되지 않습니다. 실행 기록과 직접 작성하지 않은 실행 세션도 함께 삭제됩니다. 직접 작성한 세션은 리서치 세션에 남고, 기억에 저장한 내용도 남습니다. 이미 봇에 전달된 요약은 남지만 실행으로 가는 링크는 없어집니다.",
-    "briefingChangeHint": "브리핑 요일과 시간을 바꾸려면 봇에게 말하십시오.",
-    "changeHint": "작업 시간이나 내용을 바꾸려면 봇에게 말하십시오.",
-    "changeAsk": "봇에서 요청",
+    "changeAsk": "봇에서 변경",
     "changePrompt": "예약 작업 “{{title}}”을(를) 이렇게 바꿔 줘: ",
     "lastFailed": "지난 실행을 마치지 못했습니다.",
     "lastFailedReason": "지난 실행을 마치지 못했습니다. {{reason}}",
     "history": "{{title}} 실행 기록",
     "noRuns": "아직 실행한 적이 없습니다.",
+    "checkHistory": "점검 기록",
+    "noChecks": "점검 기록 없음",
+    "checkOutcome": {
+      "met": "충족",
+      "not_met": "미충족",
+      "error": "오류",
+      "no_data": "데이터 없음",
+      "rate_limited": "요청 한도 도달",
+      "stale": "오래된 데이터",
+      "skipped_busy": "건너뜀"
+    },
     "back": "← 예약",
     "backTo": "← {{title}}",
     "prompt": "요청 내용",
     "runs": "실행 기록",
     "quiet": "보고할 내용 없음",
-    "waitingPlan": "대기 중: ChatGPT 요금제 한도 도달",
+    "waitingPlan": "대기 중: AI 요금제 한도 도달",
     "waitingReconnect": "대기 중: 다시 로그인 필요",
-    "spending": "예약 작업은 실행할 때마다 AI 계정을 사용하며, 루피스트가 열려 있거나 메뉴 막대에 있을 때만 실행됩니다.",
-    "runNowCost": "AI 계정 사용",
+    "spending": "예약 실행에 AI 요금이 부과될 수 있습니다.",
+    "runNowCost": "AI 요금 발생 가능",
     "moreActions": "{{title}} 더보기",
     "deleteEllipsis": "삭제…",
-    "footer": "작업을 추가하거나 바꾸려면 봇에게 할 일과 시간을 말하십시오.",
-    "briefingDescription": "평일 아침마다 관심 자산에 달라진 점을 알려 드립니다. 기본 제공 작업입니다.",
-    "eveningDescription": "오늘 있었던 일과 다음 거래일에 예정된 일을 다룹니다. 기본 제공.",
+    "briefingDescription": "평일 아침 관심 자산 요약.",
+    "eveningDescription": "장 마감 및 다음 거래일 요약.",
     "ownTask": "나만의 작업",
     "ownDescription": "봇에 할 일과 시간을 알려 주십시오. 예: “{{example}}”",
     "ownExample": "매주 월요일 오전 8시에 반도체 뉴스를 정리해 줘",
     "askBot": "봇에 요청",
-    "builtIn": "기본 제공"
+    "builtIn": "기본 제공",
+    "learning": {
+      "preset": {
+        "theme": "테마",
+        "companyFilings": "기업 공시",
+        "macroSeries": "경제 지표",
+        "question": "질문",
+        "market": "시장",
+        "label": "템플릿"
+      },
+      "limits": {
+        "allowance": "하루 학습 허용량",
+        "allowanceHint": "학습 실행에 쓰는 하루 요청 수입니다. 백그라운드 허용량 안에서 쓰며, 0이면 학습 실행을 끕니다.",
+        "off": "학습 실행이 꺼져 있습니다.",
+        "allowanceRefused": "학습 실행을 끄려면 0을, 아니면 {{minimum}} 이상을 입력하십시오.",
+        "cap": "켤 수 있는 학습 프로그램",
+        "capHint": "동시에 켜 둘 수 있는 학습 프로그램 수입니다.",
+        "capRefused": "{{minimum}}부터 {{maximum}}까지의 수를 입력하십시오.",
+        "save": "{{label}} 저장",
+        "saveShort": "저장",
+        "saveFailed": "설정을 저장하지 못했습니다. 다시 시도하십시오."
+      },
+      "entry": {
+        "learnAbout": "이 대상 학습",
+        "keepCurrent": "이 페이지 최신으로 유지",
+        "noAccount": "AI 계정이 필요합니다",
+        "memoryOff": "메모리 저장이 꺼져 있습니다",
+        "requestWorld": "{{name}}: 이 대상에 대해 아는 내용을 최신으로 유지하는 학습 프로그램을 제안해 줘.",
+        "requestLens": "렌즈 페이지 “{{title}}”: 이 페이지를 최신으로 유지하는 학습 프로그램을 제안해 줘."
+      },
+      "trackDaily": "매일 학습",
+      "trackDailyLine": "평일마다 브리핑 전에 {{name}}을(를) 학습합니다. AI 계정을 사용합니다.",
+      "followToTrack": "매일 학습하려면 {{name}}을(를) 관심 자산에 추가하십시오.",
+      "thisAsset": "이 자산",
+      "alsoLearned": "다른 프로그램: {{program}} · {{outcome}}",
+      "openPrograms": "학습 프로그램",
+      "defaultTime": "기본 시각: {{cadence}}.",
+      "what": "학습할 내용",
+      "about": "대상",
+      "when": "시각",
+      "depthLabel": "깊이",
+      "sources": "자료",
+      "keeps": "보관",
+      "reports": "보고",
+      "delivers": "전달",
+      "askChange": "봇에게 변경 요청",
+      "beyondAllowance": "오늘 허용량을 넘겨 실행합니다.",
+      "allowanceUsed": "오늘 허용량의 {{pct}}%를 사용했습니다",
+      "allowanceWaiting": "내일 허용량을 기다리는 중입니다",
+      "holdPlan": "AI 요금제 한도에 도달했습니다. 내일 다시 실행합니다.",
+      "waitingOther": "다른 학습 실행을 기다리는 중입니다",
+      "stoppedLimit": "요청 한도에서 멈췄습니다.",
+      "undo": "이 실행 되돌리기",
+      "undid": "이 실행을 되돌렸습니다. 이후 바뀐 섹션 {{formattedCount}}개는 유지했습니다.",
+      "usage_one": "요청 {{formattedCount}}회 · {{outcome}}",
+      "usage_other": "요청 {{formattedCount}}회 · {{outcome}}",
+      "usageOutcome": {
+        "limit": "요청 한도에서 멈췄습니다",
+        "finished": "마쳤습니다",
+        "quiet": "보고할 내용 없음",
+        "failed": "마치지 못했습니다",
+        "running": "실행 중"
+      },
+      "learned_one": "{{formattedCount}}가지를 학습했습니다",
+      "learned_other": "{{formattedCount}}가지를 학습했습니다",
+      "moreSubjects": "+{{formattedCount}}",
+      "subjectWorld": "월드",
+      "subjectLens": "렌즈",
+      "depth": {
+        "light": "얕게",
+        "standard": "표준",
+        "deep": "깊게"
+      },
+      "scope": {
+        "all": "이 루피스트에서 켠 연결 전부",
+        "some_one": "연결 {{formattedCount}}개",
+        "some_other": "연결 {{formattedCount}}개",
+        "webOn": "웹 리서치 켜짐",
+        "webOff": "웹 리서치 꺼짐"
+      },
+      "keep": {
+        "sources": "자료",
+        "lens": "렌즈",
+        "reads": "자산 기록",
+        "none": "보관하지 않습니다"
+      },
+      "report": {
+        "whenNew": "새 내용이 있을 때",
+        "condition": "조건이 맞을 때"
+      },
+      "delivery": {
+        "briefing": "다음 브리핑"
+      },
+      "budgetLabel": "한도",
+      "budget": "실행당 최대 {{hard}}회이며 {{soft}}회 근처에서 마무리합니다.",
+      "outcome": {
+        "added": "추가",
+        "updated": "수정",
+        "retired": "제외"
+      }
+    }
   },
   "sections": {
     "changed": "바뀐 내용",
@@ -219,6 +348,38 @@
     "typedOpen": "“{{name}}” 열기",
     "typedFollowed": "이미 관심 자산에 있음",
     "nameOnly": "이름만",
+    "priceNone": "아직 가격이 없습니다",
+    "priceFinding": "가격을 찾는 중입니다…",
+    "currencyUnstated": "통화가 표시되지 않았습니다",
+    "changeVersus": "{{date}} 종가 대비",
+    "newMove": "새 움직임",
+    "badge": {
+      "check": "확인",
+      "watch": "지켜보기",
+      "watches": "지켜보기 {{count}}",
+      "daily": "매일 학습"
+    },
+    "view": {
+      "label": "관심 자산",
+      "list": "목록",
+      "ahead": "예정"
+    },
+    "ahead": {
+      "overdue": "기한 지남",
+      "today": "오늘",
+      "tomorrow": "내일",
+      "followUp": "실적 후속 확인 실행",
+      "results": "실적 발표: {{date}}",
+      "resultsExpected": "실적 발표 예정: {{date}} 전후",
+      "checkDue": "점검 기한: {{claim}}",
+      "untied": "자산과 연결되지 않음",
+      "undated": "날짜 없음",
+      "fromBriefing": "{{date}} 브리핑에서",
+      "open": "열기",
+      "empty": "관심 자산에 예정된 일이 없습니다. 봇에게 실적 후속 확인을 요청하십시오.",
+      "loading": "예정된 일을 불러오는 중입니다…",
+      "failed": "예정된 일을 불러오지 못했습니다."
+    },
     "securityType": {
       "commonStock": "보통주",
       "preferredStock": "우선주",
@@ -253,7 +414,7 @@
     "listLabel": "관심 자산 목록",
     "loading": "관심 자산을 불러오는 중…",
     "emptyTitle": "관심 자산 없음",
-    "emptyBody": "위에서 이름이나 티커로 검색해 추가하십시오. 추가하면 루피스트가 가격을 찾고 브리핑에서 다룹니다.",
+    "emptyBody": "위에서 이름이나 티커로 검색해 추가하십시오. 추가하면 Loupist가 가격을 찾고 브리핑에서 다룹니다.",
     "result": {
       "follow": "관심 추가",
       "followed": "관심 자산에 있음",
@@ -273,7 +434,7 @@
       "noneFollowed": "일치하는 종목이 없습니다. OpenFIGI는 영문 이름이나 티커(예: 005930)로 찾습니다.",
       "offline": "오프라인에서는 종목을 검색할 수 없습니다. 입력한 그대로 추가할 수 있습니다.",
       "offlineFollowed": "오프라인에서는 종목을 검색할 수 없습니다.",
-      "connection": "이 루피스트에서 자산 조회가 꺼져 있습니다. 종목을 검색하려면 연결에서 켜십시오.",
+      "connection": "이 Loupist에서 자산 조회가 꺼져 있습니다. 종목을 검색하려면 연결에서 켜십시오.",
       "busy": "OpenFIGI가 잠시 기다리라고 응답했습니다. 1분 뒤 다시 시도하십시오.",
       "keyRejected": "OpenFIGI가 저장된 API 키를 거부했습니다. 연결에서 키를 바꾸거나 삭제하십시오.",
       "keyUnreadable": "저장된 OpenFIGI API 키를 사용할 수 없습니다. 연결에서 접근을 허용하거나 키를 다시 저장하십시오.",
@@ -291,7 +452,10 @@
     "stop": {
       "action": "관심 해제",
       "label": "{{name}} 관심 해제",
-      "failed": "{{name}}을(를) 관심 해제하지 못했습니다."
+      "failed": "{{name}}을(를) 관심 해제하지 못했습니다.",
+      "confirm": "{{name}}을(를) 관심 목록에서 빼시겠습니까?",
+      "pauseDaily": "{{name}}의 매일 학습도 일시 중지하시겠습니까?",
+      "cancel": "취소"
     }
   },
   "standing": {
@@ -304,7 +468,7 @@
       "offline": "연결할 수 없어 {{time}}에 확인하지 못했습니다",
       "quiet_other": "최근 확인 {{count}}건에서 보고할 내용이 없었습니다.",
       "empty": "아직 자동으로 실행되는 작업이 없습니다",
-      "openSchedule": "일정 열기",
+      "openSchedule": "예약 열기",
       "openRun": "실행 열기",
       "needsYou": "확인 필요 · {{count}}",
       "notNow": "나중에",
@@ -316,5 +480,96 @@
       "quiet": "{{title}} · 오래 조용함",
       "loud": "{{title}} · 알림이 잦음",
       "notifyQuietly": "조용히 알림"
+    },
+  "programs": {
+    "edit": "편집",
+    "editor": {
+      "heading": "학습 프로그램 편집",
+      "description": "변경 사항은 다음 실행부터 적용됩니다. 진행 중인 실행은 시작할 때의 설정을 유지합니다.",
+      "title": "제목",
+      "briefSize": "{{limit}}KB 중 {{used}}KB",
+      "aboutHint": "최대 {{formattedCount}}개: 팔로우한 자산, 월드 이름, 렌즈 페이지 또는 일반 이름입니다.",
+      "removeSubject": "{{name}} 제거",
+      "addName": "이름 추가",
+      "addNamePlaceholder": "이름, 테마 또는 시장",
+      "add": "추가",
+      "addAsset": "팔로우한 자산 추가",
+      "repeat": "반복",
+      "kind": {
+        "once": "한 번",
+        "daily": "매일",
+        "weekly": "선택한 요일",
+        "interval": "몇 시간마다"
+      },
+      "days": "요일",
+      "time": "시간",
+      "every": "간격",
+      "everyHours_one": "1시간마다",
+      "everyHours_other": "{{formattedCount}}시간마다",
+      "everyMinutes_one": "1분마다",
+      "everyMinutes_other": "{{formattedCount}}분마다",
+      "onceAt": "{{date}}에 한 번 실행합니다.",
+      "timeZone": "시간은 {{zone}} 기준입니다.",
+      "depthHint": {
+        "light": "실행마다 요청을 적게 사용합니다.",
+        "standard": "실행마다 적당한 수의 요청을 사용합니다.",
+        "deep": "실행마다 요청을 더 많이 사용해 더 자세히 읽습니다."
+      },
+      "connections": "데이터 연결",
+      "chosenConnections_one": "이 프로그램에 선택한 연결 하나만",
+      "chosenConnections_other": "이 프로그램에 선택한 연결 {{formattedCount}}개만",
+      "web": "웹 리서치",
+      "save": "저장",
+      "saving": "저장 중…",
+      "saveFailed": "변경 사항을 저장하지 못했습니다. 다시 시도하십시오.",
+      "stale": "이 프로그램이 변경되었습니다. 다시 불러오십시오",
+      "reload": "다시 불러오기",
+      "paused": "이 프로그램은 일시 중지되었습니다. 변경 사항은 재개하면 적용됩니다.",
+      "noAccount": "AI 계정을 연결해야 이 프로그램을 실행할 수 있습니다. 편집은 지금도 할 수 있습니다."
+    },
+    "problems": {
+      "titleRequired": "프로그램 제목을 입력하십시오.",
+      "titleTooLong": "제목을 더 짧게 입력하십시오.",
+      "titleInvalid": "제목은 한 줄로 입력하십시오.",
+      "promptRequired": "무엇을 학습할지 입력하십시오.",
+      "promptTooLong": "8KB 이하로 줄이십시오.",
+      "subjectsTooMany": "주제는 최대 {{formattedCount}}개까지 선택하십시오.",
+      "scheduleRequired": "요일을 하나 이상 선택하십시오.",
+      "scheduleInvalid": "아직 지나지 않은 시간을 선택하십시오.",
+      "sourcesNotGranted": "이 Loupist는 이 소스를 허용하지 않습니다. 허용된 소스 중에서 선택하십시오.",
+      "keepsInvalid": "자산 판단을 보관하려면 주제에 팔로우한 자산이 있어야 합니다.",
+      "fallback": "이 항목을 확인하십시오."
+    },
+    "discard": {
+      "title": "변경 사항을 버리시겠습니까?",
+      "body": "이 프로그램의 편집 내용은 저장되지 않습니다.",
+      "keep": "계속 편집",
+      "discard": "버리기"
+    },
+    "undoAll": {
+      "button": "모든 실행 실행 취소",
+      "title": "“{{title}}”의 모든 실행을 실행 취소하시겠습니까?",
+      "keeps": "소스는 라이브러리에 남고, 투자 논지 변경은 자산 페이지에서 따로 실행 취소할 수 있습니다.",
+      "counting": "실행 취소할 항목을 세는 중…",
+      "previewFailed": "실행 취소할 항목을 세지 못했습니다.",
+      "previewRuns_one": "실행 {{formattedCount}}개를 실행 취소합니다.",
+      "previewRuns_other": "실행 {{formattedCount}}개를 실행 취소합니다.",
+      "previewUndone_one": "섹션 {{formattedCount}}개가 이전 상태로 돌아갑니다.",
+      "previewUndone_other": "섹션 {{formattedCount}}개가 이전 상태로 돌아갑니다.",
+      "previewKept_one": "섹션 {{formattedCount}}개는 이후에 변경되어 유지됩니다.",
+      "previewKept_other": "섹션 {{formattedCount}}개는 이후에 변경되어 유지됩니다.",
+      "nothing": "실행 취소할 항목이 남아 있지 않습니다.",
+      "confirm": "모든 실행 실행 취소",
+      "failed": "실행을 실행 취소하지 못했습니다. 아무것도 변경되지 않았습니다.",
+      "done": "실행 취소 완료: {{runs}}({{kept}})",
+      "runs_one": "실행 {{formattedCount}}개",
+      "runs_other": "실행 {{formattedCount}}개",
+      "keptSince_one": "섹션 {{formattedCount}}개는 이후에 변경되어 유지했습니다",
+      "keptSince_other": "섹션 {{formattedCount}}개는 이후에 변경되어 유지했습니다"
+    },
+    "learned": {
+      "chip": "{{date}} 학습 · {{program}}",
+      "open": "예약에서 이 실행을 엽니다"
     }
+  }
 }

@@ -45,7 +45,7 @@ it("opens the exact Schedule run from Bot and excludes quiet runs from the unrea
   const result = await screen.findByRole("article", { name: "Result from Inventory check" });
   expect(within(result).getByTitle(`Schedule · Inventory check · ${formatDateTime(delivered.delivery!.finished_at_ms)}`)).toBeVisible();
   expect(within(result).getByText("Not saved to Memory: another conversation was still running after 10 minutes.")).toBeVisible();
-  expect(within(result).getByText("What this answer says it saved was not kept.")).toBeVisible();
+  expect(within(result).getByText("Anything this answer says it saved or filed was not kept.")).toBeVisible();
   expect(within(result).getByRole("list", { name: "Not kept" })).toHaveTextContent("Inventory filing");
   const badge = document.querySelector<HTMLButtonElement>("[data-sidebar-schedule]")!;
   await vi.waitFor(() => expect(badge).toHaveAccessibleDescription("1 unread scheduled result"));

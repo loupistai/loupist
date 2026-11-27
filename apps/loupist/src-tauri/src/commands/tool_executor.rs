@@ -11,6 +11,7 @@ mod calculation;
 #[cfg(test)]
 mod calculation_tests;
 mod cards;
+mod learning_handoff;
 mod lens_file;
 mod question;
 pub(crate) use lens_file::commit_turn as commit_filings;
@@ -41,6 +42,8 @@ pub(crate) use mcp_host::prewarm_market_data;
 mod memory_reads;
 mod memory_saves;
 pub(super) use memory_saves::finish_setup_theses;
+#[cfg(test)]
+pub(crate) use memory_saves::source_save_origin;
 pub(in crate::commands) mod number_checks;
 mod pasted;
 mod research;
@@ -231,6 +234,13 @@ pub(super) struct ToolCapture {
     pub(super) as_of_turn: std::sync::atomic::AtomicBool,
     /// The user's as-of date for this turn (`YYYY-MM-DD`), set by the host.
     pub(in crate::commands) turn_as_of: Option<String>,
+    /// Start of this task's previous succeeded run, or the task's creation time
+    /// when none has succeeded. Set from the scheduled-run context for ordinary
+    /// scheduled, learning and trigger turns, and absent otherwise.
+    pub(in crate::commands) previous_run_started_at_ms: Option<i64>,
+    /// The scheduled run's first-run flag. A first learning run is true, and
+    /// stays true until a run of that program succeeds. False otherwise.
+    pub(in crate::commands) first_run: bool,
     /// Saved Memory the cutoff left out, from context assembly and tool reads.
     pub(in crate::commands) as_of_left_out:
         std::sync::Mutex<crate::commands::knowledge::as_of::LeftOut>,
@@ -372,6 +382,8 @@ pub(super) struct StagedSource {
     pub(super) material_role: String,
     /// The message a user-provided Source was pasted in.
     pub(super) provided: Option<crate::knowledge::ProvidedOrigin>,
+    /// The allowance the saving turn was admitted under; World reads it.
+    pub(super) admitted: crate::knowledge::JobOrigin,
 }
 
 #[derive(Clone, Debug)]
@@ -1308,6 +1320,7 @@ impl AppToolExecutor {
             ToolMethod::ScheduleList
             | ToolMethod::ScheduleRead
             | ToolMethod::ScheduleCreate
+            | ToolMethod::LearningProgramSave
             | ToolMethod::ScheduleHandoff
             | ToolMethod::ScheduleBriefing
             | ToolMethod::ScheduleUpdate
@@ -1327,6 +1340,7 @@ impl AppToolExecutor {
                     .stage_research_open(policy, params, delivery_id)
                     .await
             }
+            ToolMethod::LearningHandoff => self.learning_handoff(policy, params).await,
             ToolMethod::BotMemory => self.stage_bot_memory(policy, params, delivery_id).await,
             ToolMethod::ChatHistory => self.chat_history(policy, params),
             ToolMethod::InterfaceLabels => {
@@ -1387,6 +1401,7 @@ impl AppToolExecutor {
             ToolMethod::SourceSave => self.stage_source_save(policy, params, delivery_id).await,
             ToolMethod::WorldSearch => self.world_search(policy, params).await,
             ToolMethod::WorldRead => self.world_read(policy, params, delivery_id).await,
+            ToolMethod::WorldChanges => self.world_changes(policy, params, delivery_id).await,
             ToolMethod::LensRead => self.lens_read(policy, params, delivery_id).await,
             ToolMethod::WorldJob => self.world_job(policy, params).await,
             ToolMethod::ConversationMemory => {
@@ -1779,6 +1794,8 @@ fn delivered_world_node_ids(reads: &[StagedKnowledgeRead]) -> Vec<String> {
     ids
 }
 
+#[cfg(test)]
+mod taint_oracle;
 #[cfg(test)]
 mod tests;
 

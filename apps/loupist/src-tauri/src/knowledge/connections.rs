@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use super::model::{ClaimStatus, GraphClaim, WorldSnapshotBody};
+use super::model::{ClaimStatus, GraphClaim, TimePoint, WorldSnapshotBody};
 
 pub const HUB_DEGREE: usize = 40;
 const MAX_INCIDENCES: usize = 64;
@@ -55,10 +55,10 @@ struct Edge<'a> {
     reversed: bool,
 }
 
-fn adjacency(body: &WorldSnapshotBody) -> BTreeMap<&str, Vec<Edge<'_>>> {
+fn adjacency<'a>(body: &'a WorldSnapshotBody, at: &TimePoint) -> BTreeMap<&'a str, Vec<Edge<'a>>> {
     let mut out: BTreeMap<&str, Vec<Edge<'_>>> = BTreeMap::new();
     for claim in &body.claims {
-        if claim.status == ClaimStatus::Withdrawn {
+        if claim.status == ClaimStatus::Withdrawn || claim.has_ended(at) {
             continue;
         }
         for (from_index, from) in claim.endpoints.iter().enumerate() {
@@ -234,8 +234,9 @@ impl<'a> Walk<'a> {
 }
 
 pub fn detect(input: &DetectInput<'_>) -> Detection {
-    let next_adjacency = adjacency(input.next);
-    let previous_adjacency = input.previous.map(adjacency);
+    let at = TimePoint::from_unix_ms(input.at_ms);
+    let next_adjacency = adjacency(input.next, &at);
+    let previous_adjacency = input.previous.map(|previous| adjacency(previous, &at));
     let degree = next_adjacency
         .iter()
         .map(|(node, edges)| (*node, neighbours(Some(edges)).len()))
@@ -369,6 +370,7 @@ mod tests {
             claims,
             annotations: Vec::new(),
             relation_vocabulary: Vec::new(),
+            temporal: Default::default(),
         }
     }
 
@@ -431,6 +433,26 @@ mod tests {
             candidate.score > 100,
             "crossing categories scores above base"
         );
+    }
+
+    #[test]
+    fn paths_use_a_present_relationship_until_its_end_arrives() {
+        let first = |end_at| {
+            let mut edge = claim("c1", "a", "b", ClaimStatus::Active);
+            edge.invalid_at = Some(TimePoint::from_unix_ms(end_at));
+            edge
+        };
+        for (end_at, count) in [(1_500, 0), (2_500, 1)] {
+            let graph = body(
+                vec![
+                    node("a", "Organization"),
+                    node("b", "Organization"),
+                    node("c", "Technology"),
+                ],
+                vec![first(end_at), claim("c2", "c", "b", ClaimStatus::Active)],
+            );
+            assert_eq!(run(None, &graph).candidates.len(), count);
+        }
     }
 
     #[test]

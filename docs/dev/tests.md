@@ -44,8 +44,10 @@ produces a test failure and releases the test runner.
 ### World extraction fixtures
 
 World extraction golden tests replay frozen prompt and response-schema fixtures
-in `src-tauri/src/knowledge/world_extract/golden/stages.json`. Intentional prompt
-changes require reviewing and updating those fixtures with the Rust tests.
+in `src-tauri/src/knowledge/world_extract/golden/stages.json`. After an intentional
+change to a prompt template, the policy or a response-schema description, run
+`golden/vendor_prompts.py` beside it to render the frozen requests from the new
+text, review the diff, and run the Rust tests.
 The in-process job tests exercise extraction, atomic publication/indexing,
 uncertain-call quarantine, local recovery and hybrid search with deterministic
 model replies and real local embeddings.

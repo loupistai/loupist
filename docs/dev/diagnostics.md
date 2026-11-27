@@ -65,6 +65,10 @@ A failed Chat commit also records `memoryCommitFailure { stage, reason }`. Both
 values come from fixed host enums: the stage identifies the first failed commit
 phase (for example `research` or `lens`), and the reason categorizes its code
 (for example `journal_entity` or `storage`; unrecognized codes become `other`).
+A failure of the Chat transaction itself is classed from the store error: an
+invalid record or refused receipt is `invalid_input`, a save past its store budget
+or a busy database is `other`, and only other SQLite, JSON, private-storage or lock
+failures are `storage`.
 It contains no error text, arguments, paths or secrets. The eval trace copies
 this category from the terminal host log for that exact run as
 `memory_commit_failure`; it never accepts a Pi-authored cause. Older log entries

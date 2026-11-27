@@ -9,7 +9,7 @@ function pseudoLocalize(text: string): string {
     visibleLength += part.length;
     return part.replace(/[a-z]/gi, (letter) => accents[letter]);
   }).join("");
-  return `⟦${transformed}${"·~".repeat(Math.round(visibleLength * 0.35 / 2))}⟧`;
+  return `⟦${transformed}${"·~".repeat(Math.round(visibleLength * 0.4 / 2))}⟧`;
 }
 
 export function pseudoResources<T>(value: T): T {

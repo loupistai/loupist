@@ -161,14 +161,19 @@ describe("connection states", () => {
 });
 
 describe("connection list", () => {
-  it("leads Market data with the keyless platform, ready entries next, then display names", async () => {
+  it("groups keyless providers, then filings and market data, then the rest, without a market heading", async () => {
     await renderView();
-    const group = screen.getByRole("heading", { name: /^Market data/, level: 3 }).closest("section")!;
-    const names = within(group).getAllByRole("heading", { level: 4 }).map((heading) => heading.textContent!);
-    expect(names.slice(0, 2)).toEqual(["Market data platform", "CFTC"]);
-    const rest = names.slice(2);
-    expect(rest).toEqual([...rest].sort((left, right) => left.localeCompare(right, "en", { sensitivity: "base" })));
-    expect(rest.indexOf("U.S. Bureau of Labor Statistics")).toBeGreaterThan(rest.indexOf("Tiingo"));
+    const headings = screen.getAllByRole("heading", { level: 3 }).map(heading => heading.textContent);
+    expect(headings).toEqual(["Works without a key7", "Filings and market data10", "More providers7"]);
+    const keyless = screen.getByRole("heading", { name: "Works without a key", level: 3 }).closest("section")!;
+    expect(within(keyless).getAllByRole("heading", { level: 4 }).map(heading => heading.textContent)).toEqual([
+      "SEC EDGAR", "Market data platform", "World Bank Indicators", "Asset lookup", "Web Research", "CFTC", "DefiLlama",
+    ]);
+    const filings = screen.getByRole("heading", { name: "Filings and market data", level: 3 }).closest("section")!;
+    const filingNames = within(filings).getAllByRole("heading", { level: 4 }).map(heading => heading.textContent);
+    expect(filingNames.indexOf("OpenDART")).toBeLessThan(filingNames.indexOf("Alpha Vantage"));
+    expect(filingNames).toEqual(expect.arrayContaining(["KRX Open API", "Korea Investment Open Trading API"]));
+    expect(screen.queryByRole("heading", { name: /^Korea/, level: 3 })).toBeNull();
   });
 
   it("searches only the text a card shows", async () => {
@@ -199,8 +204,8 @@ describe("connection list", () => {
     try {
       const bridge = new MockLoupistBridge({ delay_ms: 0 });
       render(<MarketplaceView bridge={bridge} />);
-      // Its one entry is the group: the card title stands as its heading, as "Asset lookup" does in English.
-      expect(await screen.findByRole("heading", { name: "자산 검색", level: 3 })).toBeVisible();
+      expect(await screen.findByRole("heading", { name: "키 없이 사용", level: 3 })).toBeVisible();
+      expect(screen.getByRole("heading", { name: "자산 검색", level: 4 })).toBeVisible();
       expect(screen.queryByRole("heading", { name: /^Asset lookup/u })).toBeNull();
     } finally {
       await i18n.changeLanguage("en");

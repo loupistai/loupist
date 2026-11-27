@@ -205,6 +205,8 @@ fn reset_removes_only_loupist_authored_memory_and_queues_world_reload() {
             span_id: source.span_id.clone().unwrap(),
             role: BindingRole::Supports,
             attribution: "Exact source".into(),
+            figure_check: None,
+            passage: None,
         });
         claims.push(link);
         dependencies.push(EvidenceRevision {
@@ -343,6 +345,8 @@ fn reset_keeps_user_claims_and_independent_support_and_removes_owned_unbacked_cl
         span_id: span.clone().unwrap(),
         role: BindingRole::Supports,
         attribution: "Source".into(),
+        figure_check: None,
+        passage: None,
     };
     let mut user_claim = claim(
         "user-claim",

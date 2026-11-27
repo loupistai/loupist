@@ -169,12 +169,13 @@ it("translates connection names, summaries and group labels in Loupist settings"
   await act(async () => { window.dispatchEvent(new Event("languagechange")); });
   try {
     const list = (await within(page).findByText("시장 데이터 플랫폼")).closest(".agent-capability-list") as HTMLElement;
-    expect(within(list).getByText("온체인 데이터")).toBeVisible();
-    expect(within(list).getByText("세계은행")).toBeVisible();
+    expect(within(list).getByRole("heading", { name: "키 없이 사용" })).toBeVisible();
+    expect(within(list).getByRole("heading", { name: "공시와 시장 데이터" })).toBeVisible();
+    expect(within(list).queryByRole("heading", { name: "한국" })).toBeNull();
     expect(within(list).queryByText("Market data platform")).toBeNull();
     expect(within(list).queryByText(/Public blockchains|Global development/)).toBeNull();
     const names = [...list.querySelectorAll(".agent-capability strong")].map((item) => item.textContent);
-    expect(names[0]).toBe("시장 데이터 플랫폼");
+    expect(names).toContain("시장 데이터 플랫폼");
   } finally {
     setPreviewLanguage("en");
     await act(async () => { window.dispatchEvent(new Event("languagechange")); });

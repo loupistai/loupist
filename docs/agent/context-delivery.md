@@ -46,8 +46,9 @@ restart or a cold rebuild, preserve the current goal and corrections, completed 
 pending work, data revisions, evidence IDs, permissions and next exact reads. Test
 continuation on work that depends on earlier context. In Bot, your Loupist carries
 the user's preferences, decisions and open requests past the cold transcript bound in [Bot memory](../ui/home-thread.md#bot-memory)
-(tool `bot_memory`). An unattended run with Memory on receives the preference
+(tool `bot_memory`). An unattended run or a research session with Memory on receives the preference
 entries as `standing_preferences` ([context bounds](context.md#context-assembly-and-bounds)).
+The Bot keeps the full `bot_memory` block instead. A private turn receives neither.
 
 During a reply, the host freezes the current request and full turn envelope in the
 private Pi bootstrap. After Pi compacts in this reply's process, the extension
@@ -109,7 +110,10 @@ after headings, tables and lists. With Memory on, the same envelope carries
 open request, context note or review excerpt is not delivered, and neither is
 text the user wrote in a private turn and never stored. A changed preference
 changes the envelope digest, so the next briefing sees it and nothing else in
-Bot memory does.
+Bot memory does. A research session with Memory on receives that same block.
+Its words are registered as the user's private text, as the research focus is,
+so a URL may not carry them after third-party text. Forgetting an entry leaves
+it out of the next turn.
 
 A completed delegated answer without prose uses its research title in Bot.
 Opening the research session shows the complete answer. A Bot-initiated
@@ -207,3 +211,5 @@ due reviews, record counts and relevant pointers. A changed definition produces 
 new digest and full context; compaction forces full context delivery again. Stable
 Loupist blocks precede per-turn data without rewriting the system prefix. Provider
 cache counters, not this structural property alone, establish observed cache reuse.
+
+A Lens index line carries no count of Superseded or Contested sections: `LearnedMemoryIndexEntry` has no such field. Model text therefore names no index count; a run finds out-of-date sections in `lens[]` of `world_changes` and in the page it reads.

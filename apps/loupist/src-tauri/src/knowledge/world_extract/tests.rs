@@ -16,8 +16,11 @@ use crate::knowledge::graph_inference::{InferenceDisposition, InferenceReply};
 
 mod entity_names;
 mod identity_codes;
+#[path = "../entity_codes/oracle.rs"]
+mod identity_oracle;
 mod indexing;
 mod jobs;
+mod reliability;
 mod temporal;
 
 const GOLDEN: &str = include_str!("golden/stages.json");
@@ -114,6 +117,7 @@ fn episode(case: &Value) -> (Episode, Vec<PreviousEpisode>) {
             key: EPISODE_KEY.into(),
             content: case["episode"]["content"].as_str().unwrap().into(),
             valid_at: time(&case["episode"]["valid_at"]).unwrap(),
+            source: None,
         },
         case["previous"]
             .as_array()
@@ -172,8 +176,13 @@ fn edge(value: &Value) -> Edge {
         expired_at: value["expired_at"]
             .as_str()
             .and_then(text::from_isoformat)
-            .or_else(|| (value["expired"] == true).then(|| chrono::Utc::now().fixed_offset())),
+            .or_else(|| {
+                (value["expired"] == true).then(|| text::instant(chrono::Utc::now().fixed_offset()))
+            }),
         fact_embedding: None,
+        assertions: Default::default(),
+        ending: None,
+        conflicts: Vec::new(),
     }
 }
 
@@ -226,13 +235,37 @@ fn assert_calls(case: &Value, host: &Host) {
         case["id"]
     );
     for (index, (actual, expected)) in host.calls.iter().zip(expected).enumerate() {
-        for key in ["kind", "model_profile", "max_tokens", "response_schema"] {
+        for key in ["kind", "model_profile", "max_tokens"] {
             assert_eq!(
                 actual[key], expected[key],
                 "{} call {index}: {key}",
                 case["id"]
             );
         }
+        let mut expected_schema = expected["response_schema"].clone();
+        // Preserve the frozen call comparison with the two approved schema changes.
+        let duplicate = if expected_schema["title"] == "EdgeDuplicate" {
+            Some(&mut expected_schema)
+        } else {
+            expected_schema.pointer_mut("/$defs/EdgeDuplicate")
+        };
+        let duplicate = duplicate.filter(|duplicate| {
+            duplicate["properties"]
+                .get("same_assertion_facts")
+                .is_none()
+        });
+        let duplicate_schema_changed = duplicate.is_some();
+        if let Some(duplicate) = duplicate {
+            duplicate["properties"]["same_assertion_facts"] = json!({
+                "description": "", "items": {"type":"integer"},
+                "title": "Same Assertion Facts", "type": "array"
+            });
+        }
+        assert_eq!(
+            actual["response_schema"], expected_schema,
+            "{} call {index}: response_schema",
+            case["id"]
+        );
         let actual_messages = actual["messages"].as_array().unwrap();
         let expected_messages = expected["messages"].as_array().unwrap();
         assert_eq!(
@@ -247,10 +280,20 @@ fn assert_calls(case: &Value, host: &Host) {
                 "{} call {index} message {position} role",
                 case["id"]
             );
-            let (left, right) = (
+            let (mut left, mut right) = (
                 left["content"].as_str().unwrap(),
                 right["content"].as_str().unwrap(),
             );
+            if position + 1 == actual_messages.len() && duplicate_schema_changed {
+                let marker = "\n\nRespond with a JSON object in the following format:\n\n";
+                let (message, schema) = left.rsplit_once(marker).expect("embedded response schema");
+                assert_eq!(
+                    serde_json::from_str::<Value>(schema).unwrap(),
+                    expected_schema
+                );
+                left = message;
+                right = right.rsplit_once(marker).expect("golden response schema").0;
+            }
             if left != right {
                 let at = left
                     .char_indices()
@@ -446,6 +489,22 @@ fn golden_extract_edges() {
         .iter()
         .map(|value| {
             let mut value = python_edge(value, &known);
+            // The frozen adapter widened calendar dates to midnight. The
+            // extraction now preserves the precision of the model response.
+            if let Some(row) = case["responses"][0]["edges"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["fact"] == value["fact"])
+            {
+                for field in ["valid_at", "invalid_at"] {
+                    if let Some(raw) = row[field].as_str().filter(|raw| {
+                        [4, 7, 10].contains(&raw.len()) && text::from_isoformat(raw).is_some()
+                    }) {
+                        value[field] = json!(raw);
+                    }
+                }
+            }
             value.as_object_mut().unwrap().remove("uuid");
             value
         })
@@ -535,10 +594,24 @@ fn golden_resolution(id: &str) {
             .map(|value| python_edge(value, &known))
             .collect()
     };
-    assert_eq!(actual_resolved, expected("resolved"), "{id}: resolved");
+    // The frozen adapter returned separate copies of a merged claim and its
+    // invalidation. The arena now publishes the final state once per claim.
+    let mut expected_resolved = expected("resolved");
+    let mut expected_invalidated = expected("invalidated");
+    expected_invalidated.retain(|change| {
+        let Some(merged) = expected_resolved
+            .iter_mut()
+            .find(|row| row["uuid"] == change["uuid"])
+        else {
+            return true;
+        };
+        merged["invalid_at"] = change["invalid_at"].clone();
+        merged["expired"] = change["expired"].clone();
+        false
+    });
+    assert_eq!(actual_resolved, expected_resolved, "{id}: resolved");
     assert_eq!(
-        actual_invalidated,
-        expected("invalidated"),
+        actual_invalidated, expected_invalidated,
         "{id}: invalidated"
     );
     let expected_new: Vec<String> = serde_json::from_value(case["result"]["new"].clone()).unwrap();
@@ -615,13 +688,34 @@ fn golden_projection() {
         .iter()
         .map(node)
         .collect();
-    let edges: Vec<Edge> = fixture["edges"]
+    let binding = &fixture["binding"];
+    let mut edges: Vec<Edge> = fixture["edges"]
         .as_array()
         .unwrap()
         .iter()
         .map(edge)
         .collect();
-    let binding = &fixture["binding"];
+    for edge in &mut edges {
+        use crate::knowledge::model::AssertionWitness;
+        use crate::knowledge::world_episodes::EndBasis;
+        let prior = prior_claims.get(&edge.uuid);
+        let spans = &edge.episodes;
+        let original = spans.first().cloned().unwrap_or_default();
+        let publication = prior.map_or(&fixture["publication_time"], |prior| {
+            &prior["publication_time"]
+        });
+        edge.assertions.witness = Some(AssertionWitness {
+            span: original,
+            publication: Some(serde_json::from_value(publication.clone()).unwrap()),
+        });
+        edge.ending = edge.invalid_at.clone().map(|time| pipeline::Ending {
+            time,
+            by: None,
+            span: binding["span_id"].as_str().unwrap().into(),
+            basis: EndBasis::Stated,
+            ender_open: false,
+        });
+    }
     let projected = projection::project_extraction(
         &projection::Context {
             source_role: "source",
@@ -630,7 +724,6 @@ fn golden_projection() {
                 binding_role: binding["binding_role"].as_str().unwrap(),
                 attribution: binding["attribution"].as_str().unwrap(),
             },
-            publication_time: &fixture["publication_time"],
             effective_time: None,
             recorded_at_ms: fixture["recorded_at_ms"].as_i64().unwrap(),
             prior_nodes: &prior_nodes,
@@ -641,7 +734,13 @@ fn golden_projection() {
         &edges,
     );
     assert_eq!(Value::Array(projected.nodes), fixture["projected_nodes"]);
-    assert_eq!(Value::Array(projected.claims), fixture["claims"]);
+    let mut expected = fixture["claims"].clone();
+    expected[0]["qualifiers"]
+        .as_array_mut()
+        .unwrap()
+        .insert(0, json!({"key": "end_basis", "value": "stated"}));
+    expected[0]["qualifiers"].as_array_mut().unwrap().swap(1, 2);
+    assert_eq!(Value::Array(projected.claims), expected);
 }
 
 #[test]

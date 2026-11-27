@@ -16,15 +16,16 @@
 //! against Neo4j; nothing here writes. Node and edge values are an arena so a
 //! resolved candidate is one shared object, as in Graphiti.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use chrono::{DateTime, FixedOffset, Utc};
+use chrono::Utc;
 use serde_json::Value;
 
 use super::bridge::{
     Bridge, LlmCall, Stop, StopResult, DEFAULT_MAX_TOKENS, EXTRACT_EDGES_MAX_TOKENS,
 };
-use super::ontology::Schema;
+use super::ontology::{Schema, REFERENCE_BASIS_LABEL};
+use super::projection::normalize_relation;
 use super::prompts::{self, Message, ATTRIBUTE_INSTRUCTIONS, EDGE_BATCH_INSTRUCTIONS};
 use super::pyjson::Py;
 use super::schema;
@@ -34,6 +35,15 @@ use super::text::{
     truncate_at_sentence,
 };
 use crate::knowledge::entity_codes::{self, Codes};
+use crate::knowledge::figure_check::{self, FigureVerdict, Passage};
+use crate::knowledge::identity;
+pub(crate) use crate::knowledge::model::Ending;
+use crate::knowledge::model::{
+    decide_pair, ending_order, witness_order, Assertion, AssertionLink, AssertionSources,
+    AssertionWitness, PairEffects, PairSelection, StatedEnd,
+};
+use crate::knowledge::numbers::FigurePassage;
+use crate::knowledge::world_episodes::{EndBasis, ReferenceBasis};
 
 const ENTITY_TYPE_DESCRIPTION: &str = "A specific, identifiable entity that does not fit any of the other listed types. Must still be a concrete, meaningful thing — specific enough to be uniquely identifiable. GOOD: a named entity not covered by the other types. BAD: \"luck\", \"ideas\", \"tomorrow\", \"things\", \"them\", \"everybody\", \"a sense of wonder\", \"great times\". When in doubt, do not extract the entity.";
 const NODE_DEDUP_CANDIDATE_LIMIT: usize = 15;
@@ -46,7 +56,7 @@ const MAX_CASE_BYTES: usize = 96 * 1024;
 const MAX_CASES: usize = 16;
 const MAX_ATTRIBUTE_ENTITIES: usize = 24;
 
-pub(crate) type Time = DateTime<FixedOffset>;
+pub(crate) type Time = crate::knowledge::TimePoint;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Node {
@@ -72,15 +82,19 @@ impl Node {
             .find(|label| *label != "Entity")
     }
 
-    /// The identifying codes its name and attributes state.
+    /// The identifying codes its name, attributes and spellings state: the
+    /// names merged into a stored node count, so a merge veto sees every code
+    /// the node already holds.
     pub(crate) fn codes(&self) -> Codes {
-        Codes::of_node(
+        let mut codes = Codes::of_node(
             &self.name,
             self.kind().unwrap_or("Entity"),
             self.attributes
                 .iter()
                 .map(|(key, value)| (key.as_str(), value)),
-        )
+        );
+        codes.add_spellings(self.spellings.iter().map(String::as_str));
+        codes
     }
 
     fn attribute(&self, key: &str) -> Option<&Value> {
@@ -104,6 +118,47 @@ pub(crate) struct Edge {
     pub invalid_at: Option<Time>,
     pub expired_at: Option<Time>,
     pub fact_embedding: Option<Vec<f32>>,
+    pub assertions: AssertionSources,
+    pub ending: Option<Ending>,
+    pub conflicts: Vec<String>,
+}
+
+impl Edge {
+    pub(crate) fn publication(&self) -> Option<&Time> {
+        self.assertions.publication()
+    }
+
+    fn observe(&mut self, new: &Self) {
+        self.assertions
+            .source_ids
+            .extend(new.assertions.source_ids.iter().cloned());
+        if let Some(witness) = &new.assertions.witness {
+            if self
+                .assertions
+                .witness
+                .as_ref()
+                .is_none_or(|old| witness_order(witness, old).is_lt())
+            {
+                self.assertions.witness = Some(witness.clone());
+            }
+        }
+        if let Some(stated) = &new.assertions.stated {
+            if self.assertions.stated.as_ref().is_none_or(|old| {
+                stated.time == old.time && witness_order(&stated.witness, &old.witness).is_lt()
+            }) {
+                self.assertions.stated = Some(stated.clone());
+            }
+        }
+    }
+
+    fn assertion<'a>(&'a self, relation: &'a str) -> Assertion<'a> {
+        Assertion {
+            relation,
+            endpoints: [&self.source, &self.target],
+            valid_at: self.valid_at.as_ref(),
+            assertions: &self.assertions,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -112,6 +167,14 @@ pub(crate) struct Episode {
     pub key: String,
     pub content: String,
     pub valid_at: Time,
+    pub source: Option<EpisodeSource>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct EpisodeSource {
+    pub source_id: String,
+    pub witness: AssertionWitness,
+    pub basis: ReferenceBasis,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -125,6 +188,7 @@ pub(crate) struct PreviousEpisode {
 pub(crate) struct Graph {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    pub links: Vec<AssertionLink>,
 }
 
 /// BM25 over stored claim text (FTS5 in the derived index).
@@ -140,6 +204,9 @@ pub(crate) struct Input<'a> {
     pub instructions: String,
     pub graph: Graph,
     pub text: &'a dyn ClaimText,
+    /// The whole Source when the episode is one chunk of it: a figure the
+    /// chunk does not print is looked for there. Scanned once per chunk job.
+    pub source: Option<&'a dyn Passage>,
 }
 
 /// Graphiti's add_episode result: hydrated nodes and resolved plus invalidated edges.
@@ -147,7 +214,167 @@ pub(crate) struct Input<'a> {
 pub(crate) struct Output {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    pub links: Vec<AssertionLink>,
     pub resolution: ResolutionTally,
+    pub dropped: DroppedRows,
+    pub figures: FigureDrops,
+}
+
+/// Facts left out because a figure differs from the passage: how many, and
+/// the first [`FIGURE_EXAMPLES`] of them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct FigureDrops {
+    pub count: u32,
+    pub examples: Vec<FigureMismatch>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FigureMismatch {
+    pub proposition: String,
+    /// The figure as the proposition states it.
+    pub stated: String,
+}
+
+pub(crate) const FIGURE_EXAMPLES: usize = 8;
+
+impl FigureDrops {
+    pub(crate) fn note(
+        &mut self,
+        proposition: &str,
+        check: &crate::knowledge::figure_check::FactCheck,
+    ) {
+        self.count = self.count.saturating_add(1);
+        if self.examples.len() < FIGURE_EXAMPLES {
+            let stated = check
+                .figures
+                .iter()
+                .find(|figure| figure.verdict == FigureVerdict::Differs)
+                .map(|figure| figure.stated.clone())
+                .unwrap_or_default();
+            self.examples.push(FigureMismatch {
+                proposition: proposition.chars().take(240).collect(),
+                stated,
+            });
+        }
+    }
+}
+
+/// Leave out each extracted fact whose figure differs from its passages (the
+/// chunk, then the whole Source), before resolution: it neither becomes a
+/// claim nor adds support to one, and no other claim changes because of it.
+pub(super) fn drop_mismatched_figures(
+    edges: &[Edge],
+    extracted: &mut Vec<usize>,
+    passages: &[&dyn Passage],
+) -> FigureDrops {
+    let mut drops = FigureDrops::default();
+    extracted.retain(|index| {
+        let fact = &edges[*index].fact;
+        let check = figure_check::check_in(fact, passages);
+        if check.verdict != FigureVerdict::Differs {
+            return true;
+        }
+        drops.note(fact, &check);
+        false
+    });
+    drops
+}
+
+/// Bad rows removed from an attribute or relation-resolution batch.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct DroppedRows {
+    pub attributes: u32,
+    pub edges: u32,
+}
+
+/// Text embedded for name candidates: the name, its spellings and its codes.
+pub(crate) fn candidate_search_text(name: &str, spellings: &[String], codes: &[String]) -> String {
+    let mut parts = Vec::new();
+    let mut push = |text: &str| {
+        let text = text.replace('\n', " ");
+        let text = text.trim();
+        if text.is_empty() || parts.iter().any(|part: &String| part == text) {
+            return;
+        }
+        parts.push(text.to_string());
+    };
+    push(name);
+    for spelling in spellings {
+        push(spelling);
+    }
+    for code in codes {
+        push(code);
+    }
+    parts.join(" ")
+}
+
+fn shares_name_key(left: &str, right: &str) -> bool {
+    let left_keys = identity::entity_name_keys(left);
+    let right_keys = identity::entity_name_keys(right);
+    if left_keys.is_empty() || right_keys.is_empty() {
+        return normalize_exact(left) == normalize_exact(right);
+    }
+    left_keys.intersection(&right_keys).next().is_some()
+}
+
+/// Tickers that differ inside one market, read from the names themselves.
+/// The shared issuer key must not collapse those spellings before repair or
+/// the resolver can see both.
+fn names_market_split(left: &str, right: &str) -> bool {
+    Codes::of_name(left, "Entity").market_split(&Codes::of_name(right, "Entity"))
+}
+
+/// The name a group of one chunk's names keeps: the more specific type, then
+/// the longer name, then the first in code-point order, so the choice does not
+/// depend on the order the model listed them.
+fn kept_rank(node: &Node) -> (usize, usize, std::cmp::Reverse<&str>) {
+    let specific = node
+        .labels
+        .iter()
+        .filter(|label| *label != "Entity")
+        .count();
+    (
+        specific,
+        node.name.trim().chars().count(),
+        std::cmp::Reverse(node.name.as_str()),
+    )
+}
+
+fn entity_by_name(nodes: &[Node], extracted: &[usize], name: &str) -> Option<usize> {
+    if let Some(index) = extracted
+        .iter()
+        .copied()
+        .rev()
+        .find(|index| nodes[*index].name == name)
+    {
+        return Some(index);
+    }
+    let wanted = identity::entity_name_keys(name);
+    if wanted.is_empty() {
+        return None;
+    }
+    let mut best_shared = 0usize;
+    let mut winners = Vec::new();
+    for index in extracted {
+        let node_name = nodes[*index].name.as_str();
+        if names_market_split(name, node_name) {
+            continue;
+        }
+        let shared = identity::entity_name_keys(node_name)
+            .intersection(&wanted)
+            .count();
+        if shared == 0 {
+            continue;
+        }
+        if shared > best_shared {
+            best_shared = shared;
+            winners.clear();
+            winners.push(*index);
+        } else if shared == best_shared {
+            winners.push(*index);
+        }
+    }
+    (winners.len() == 1).then(|| winners[0])
 }
 
 /// How entity resolution went, by count only: what the model proposed and
@@ -171,6 +398,7 @@ struct Run<'a, 'b> {
     instructions: String,
     graph: Graph,
     text: &'a dyn ClaimText,
+    source: Option<&'a dyn Passage>,
     /// Arena of every node object this episode touches.
     nodes: Vec<Node>,
     edges: Vec<Edge>,
@@ -179,6 +407,7 @@ struct Run<'a, 'b> {
     /// computed when an extracted name first carries a code.
     graph_codes: Option<GraphCodes>,
     tally: ResolutionTally,
+    dropped: DroppedRows,
 }
 
 struct GraphCodes {
@@ -270,11 +499,13 @@ pub(crate) fn add_episode(input: Input<'_>, bridge: &mut Bridge<'_>) -> StopResu
         instructions: input.instructions,
         graph: input.graph,
         text: input.text,
+        source: input.source,
         nodes: Vec::new(),
         edges: Vec::new(),
         response_models: HashMap::new(),
         graph_codes: None,
         tally: ResolutionTally::default(),
+        dropped: DroppedRows::default(),
     };
     let extracted = run.extract_nodes()?;
     let resolution = if extracted.is_empty() {
@@ -309,8 +540,18 @@ pub(crate) fn add_episode(input: Input<'_>, bridge: &mut Bridge<'_>) -> StopResu
     // relationship either, and resolving it would spend calls on a claim publication drops.
     extracted_edges.retain(|index| {
         let edge = &run.edges[*index];
-        edge.source != edge.target || edge.name == "REPORTS"
+        if edge.name == "REPORTS" {
+            edge.source == edge.target
+        } else {
+            edge.source != edge.target
+        }
     });
+    let figures = {
+        let chunk = FigurePassage::new(&run.episode.content);
+        let mut passages: Vec<&dyn Passage> = vec![&chunk];
+        passages.extend(run.source);
+        drop_mismatched_figures(&run.edges, &mut extracted_edges, &passages)
+    };
     let decisions = run.plan_edge_resolution(&mut extracted_edges)?;
     let attributes = run.plan_attributes(&resolved);
     let mut calls = Vec::new();
@@ -335,7 +576,10 @@ pub(crate) fn add_episode(input: Input<'_>, bridge: &mut Bridge<'_>) -> StopResu
             .chain(&invalidated)
             .map(|index| run.edges[*index].clone())
             .collect(),
+        links: run.graph.links,
         resolution: run.tally,
+        dropped: run.dropped,
+        figures,
     })
 }
 
@@ -466,13 +710,13 @@ fn new_uuid() -> String {
 }
 
 fn now() -> Time {
-    Utc::now().fixed_offset()
+    super::text::instant(Utc::now().fixed_offset())
 }
 
 /// Graphiti's datetime parse of a model-returned timestamp, in UTC.
 fn parse_model_time(value: Option<&str>) -> Option<Time> {
     let value = value.filter(|value| !value.is_empty())?;
-    super::text::from_isoformat(&value.replace('Z', "+00:00")).map(|time| to_utc(&time))
+    super::text::from_isoformat(&value.replace('Z', "+00:00")).map(to_utc)
 }
 
 impl Run<'_, '_> {
@@ -482,6 +726,13 @@ impl Run<'_, '_> {
     }
 
     fn push_edge(&mut self, edge: Edge) -> usize {
+        if let Some(index) = self
+            .edges
+            .iter()
+            .position(|stored| stored.uuid == edge.uuid)
+        {
+            return index;
+        }
         self.edges.push(edge);
         self.edges.len() - 1
     }
@@ -547,37 +798,33 @@ impl Run<'_, '_> {
                 spellings: Vec::new(),
             });
         }
-        // Graphiti collapses same-name duplicates, keeping the more specific one.
-        let mut chosen: HashMap<String, Node> = HashMap::new();
-        let mut order: Vec<String> = Vec::new();
-        for node in extracted {
-            let key = normalize_exact(&node.name);
-            let Some(existing) = chosen.get(&key) else {
-                order.push(key.clone());
-                chosen.insert(key, node);
-                continue;
-            };
-            let specific = |node: &Node| {
-                node.labels
-                    .iter()
-                    .filter(|label| *label != "Entity")
-                    .count()
-            };
-            let (new_specific, old_specific) = (specific(&node), specific(existing));
-            if new_specific > old_specific
-                || (new_specific == old_specific
-                    && node.name.trim().chars().count() > existing.name.trim().chars().count())
-            {
-                chosen.insert(key, node);
-            }
+        // Names in one chunk that share a name key, or a code the host joins
+        // by, are one entity unless their codes keep them apart; a code they
+        // share joins them only as [`Codes::may_join_unasked`] says. One
+        // grouping whatever the order.
+        let codes: Vec<Codes> = extracted.iter().map(Node::codes).collect();
+        let groups = entity_codes::partition(
+            extracted.len(),
+            |left, right| {
+                (shares_name_key(&extracted[left].name, &extracted[right].name)
+                    || codes[left].joins(&codes[right]))
+                    && codes[left].may_join_unasked(&codes[right])
+            },
+            |left, right| codes[left].keeps_apart(&codes[right]),
+        );
+        let mut slots: Vec<Option<Node>> = extracted.into_iter().map(Some).collect();
+        let mut out = Vec::with_capacity(groups.len());
+        for group in groups {
+            let kept = *group
+                .iter()
+                .max_by(|left, right| {
+                    let (left, right) = (slots[**left].as_ref(), slots[**right].as_ref());
+                    kept_rank(left.expect("unused")).cmp(&kept_rank(right.expect("unused")))
+                })
+                .expect("a non-empty group");
+            out.push(self.push_node(slots[kept].take().expect("kept once")));
         }
-        Ok(order
-            .into_iter()
-            .map(|key| {
-                let node = chosen.remove(&key).expect("collapsed node");
-                self.push_node(node)
-            })
-            .collect())
+        Ok(out)
     }
 
     // --- 2. Entity resolution ------------------------------------------------
@@ -586,7 +833,11 @@ impl Run<'_, '_> {
     fn node_candidates(&mut self, extracted: &[usize]) -> StopResult<Vec<Vec<Node>>> {
         let queries: Vec<String> = extracted
             .iter()
-            .map(|index| self.nodes[*index].name.replace('\n', " "))
+            .map(|index| {
+                let node = &self.nodes[*index];
+                let codes: Vec<String> = node.codes().values().map(str::to_string).collect();
+                candidate_search_text(&node.name, &node.spellings, &codes)
+            })
             .collect();
         let vectors = self.bridge.embed(&queries)?;
         let candidates: Vec<Vec<String>> = vectors
@@ -603,7 +854,7 @@ impl Run<'_, '_> {
                 )
             })
             .collect();
-        Ok(candidates
+        let mut lists: Vec<Vec<Node>> = candidates
             .iter()
             .map(|uuids| {
                 uuids
@@ -617,7 +868,26 @@ impl Run<'_, '_> {
                     })
                     .collect()
             })
-            .collect())
+            .collect();
+        for (position, index) in extracted.iter().enumerate() {
+            let wanted: std::collections::BTreeSet<String> = self.nodes[*index]
+                .codes()
+                .values()
+                .map(str::to_string)
+                .collect();
+            if wanted.is_empty() {
+                continue;
+            }
+            for stored in &self.graph.nodes {
+                if lists[position].iter().any(|node| node.uuid == stored.uuid) {
+                    continue;
+                }
+                if stored.codes().values().any(|value| wanted.contains(value)) {
+                    lists[position].push(stored.clone());
+                }
+            }
+        }
+        Ok(lists)
     }
 
     /// Graphiti's `_resolve_with_llm` over each extracted node's candidates.
@@ -695,6 +965,25 @@ impl Run<'_, '_> {
                         set("name", Py::str(node.name.as_str()));
                         set("entity_types", labels_py(&node.labels));
                         set("summary", Py::str(prefix_chars(&node.summary, 120)));
+                        if !node.spellings.is_empty() {
+                            set(
+                                "spellings",
+                                Py::List(
+                                    node.spellings
+                                        .iter()
+                                        .map(|spelling| Py::str(spelling.as_str()))
+                                        .collect(),
+                                ),
+                            );
+                        }
+                        let codes: Vec<String> =
+                            node.codes().values().map(str::to_string).collect();
+                        if !codes.is_empty() {
+                            set(
+                                "codes",
+                                Py::List(codes.iter().map(|code| Py::str(code.as_str())).collect()),
+                            );
+                        }
                         Py::Dict(items)
                     })
                     .collect(),
@@ -723,9 +1012,10 @@ impl Run<'_, '_> {
 
     /// Apply the resolution reply, then hold the codes over it: a merge into
     /// a node whose identifying code differs from the extracted name's, under
-    /// a name that does not agree, is refused, and a name the host joins to a
-    /// stored node ([`Codes::joins`]) joins it whatever the model answered.
-    /// Every other answer stands; nodes without a merge stay as extracted.
+    /// a name that does not agree, is refused, as is a merge across a market
+    /// split. A name the host joins to a stored node ([`Codes::joins`]) joins
+    /// it whatever the model answered. Every other answer stands; nodes
+    /// without a merge stay as extracted.
     fn apply_resolution(
         &mut self,
         extracted: &[usize],
@@ -802,7 +1092,8 @@ impl Run<'_, '_> {
         let mut target = chosen;
         if let Some(candidate) = chosen {
             self.tally.proposed += 1;
-            if codes.refuses(&self.nodes[candidate].codes()) {
+            let candidate_codes = self.nodes[candidate].codes();
+            if codes.keeps_apart(&candidate_codes) {
                 self.tally.refused += 1;
                 target = None;
             }
@@ -982,13 +1273,21 @@ impl Run<'_, '_> {
                 })
                 .collect(),
         );
+        let mut reference = python_str(&self.episode.valid_at);
+        if let Some(source) = &self.episode.source {
+            let basis = match source.basis {
+                ReferenceBasis::Published => "published",
+                ReferenceBasis::Received => "received",
+            };
+            reference.push_str(&format!("\n{REFERENCE_BASIS_LABEL}: {basis}"));
+        }
         Planned {
             stage: "extract_edges",
             messages: prompts::extract_edges(
                 &previous_context(&self.previous),
                 &self.episode.content,
                 &nodes_py,
-                &python_str(&self.episode.valid_at),
+                &reference,
                 &edge_types,
                 &self.instructions,
             ),
@@ -1005,10 +1304,6 @@ impl Run<'_, '_> {
         response: Value,
     ) -> StopResult<Vec<usize>> {
         // `{node.name: node}`: a later duplicate name wins.
-        let mut by_name: HashMap<String, usize> = HashMap::new();
-        for index in extracted {
-            by_name.insert(self.nodes[*index].name.clone(), *index);
-        }
         let mut parsed = Vec::new();
         for item in schema::objects(schema::field(&response, "edges")?)? {
             let source = schema::lax_str(schema::field(item, "source_entity_name")?)?;
@@ -1030,19 +1325,25 @@ impl Run<'_, '_> {
         }
         let mut out = Vec::new();
         for (source, target, relation, fact, valid_at, invalid_at) in parsed {
-            let (Some(source), Some(target)) = (by_name.get(&source), by_name.get(&target)) else {
+            let (Some(source), Some(target)) = (
+                entity_by_name(&self.nodes, extracted, &source),
+                entity_by_name(&self.nodes, extracted, &target),
+            ) else {
                 continue;
             };
             let (source, target) = (
-                self.nodes[*source].uuid.clone(),
-                self.nodes[*target].uuid.clone(),
+                self.nodes[source].uuid.clone(),
+                self.nodes[target].uuid.clone(),
             );
-            // A quantitative observation belongs to its subject. REPORTS uses
-            // that subject in both roles instead of inventing a value node.
-            if (source == target && relation != "REPORTS") || fact.trim().is_empty() {
+            // REPORTS is a value about one subject, so both roles are that
+            // subject. Any other relation needs two entities.
+            if fact.trim().is_empty()
+                || (relation == "REPORTS" && source != target)
+                || (relation != "REPORTS" && source == target)
+            {
                 continue;
             }
-            let edge = Edge {
+            let mut edge = Edge {
                 uuid: new_uuid(),
                 source,
                 target,
@@ -1053,7 +1354,11 @@ impl Run<'_, '_> {
                 invalid_at: parse_model_time(invalid_at.as_deref()),
                 expired_at: None,
                 fact_embedding: None,
+                assertions: AssertionSources::default(),
+                ending: None,
+                conflicts: Vec::new(),
             };
+            self.set_initial_assertion(&mut edge);
             out.push(self.push_edge(edge));
         }
         Ok(out)
@@ -1176,7 +1481,12 @@ impl Run<'_, '_> {
         let plan = self.plan_decisions(extracted, related_lists, other_lists);
         let calls = plan.batches.iter().map(|batch| batch.call.call()).collect();
         let mut replies = self.bridge.llm_many(calls).into_iter();
-        self.apply_edge_resolution(plan, &mut replies)
+        let (resolved, changed, new) = self.apply_edge_resolution(plan, &mut replies)?;
+        let invalidated = changed
+            .into_iter()
+            .filter(|index| self.edges[*index].invalid_at.is_some())
+            .collect();
+        Ok((resolved, invalidated, new))
     }
 
     /// Decisions the candidates settle without a model (no candidates, or a
@@ -1206,10 +1516,6 @@ impl Run<'_, '_> {
                     && normalize_exact(&candidate.fact) == fact
                     && (!has_end(&edge) || candidate.invalid_at == edge.invalid_at)
             }) {
-                if !self.edges[found].episodes.contains(&self.episode.key) {
-                    let key = self.episode.key.clone();
-                    self.edges[found].episodes.push(key);
-                }
                 decisions[position] = Some(Decision::Verbatim(found));
                 continue;
             }
@@ -1331,30 +1637,40 @@ impl Run<'_, '_> {
                 decisions[batch.positions[0]] = Some(parse_edge_duplicate(&response, false)?);
                 continue;
             }
-            let object = response
-                .as_object()
-                .ok_or(Stop::Rejected("model result was not an object"))?;
-            if object.len() != batch.positions.len() {
-                return Err(Stop::Invalid("edge batch has missing or extra cases"));
-            }
+            let Some(object) = response.as_object() else {
+                self.dropped.edges = self
+                    .dropped
+                    .edges
+                    .saturating_add(batch.positions.len() as u32);
+                for position in &batch.positions {
+                    decisions[*position] = Some(Decision::Unchanged);
+                }
+                continue;
+            };
             for (case, position) in batch.positions.iter().enumerate() {
-                let value = object
+                match object
                     .get(&format!("case_{case}"))
-                    .ok_or(Stop::Invalid("edge batch case is missing"))?;
-                decisions[*position] = Some(parse_edge_duplicate(value, true)?);
+                    .map(|value| parse_edge_duplicate(value, true))
+                {
+                    Some(Ok(decision)) => decisions[*position] = Some(decision),
+                    _ => {
+                        self.dropped.edges = self.dropped.edges.saturating_add(1);
+                        decisions[*position] = Some(Decision::Unchanged);
+                    }
+                }
             }
         }
         let mut resolved_edges = Vec::new();
-        let mut invalidated_edges = Vec::new();
         let mut new_edges = Vec::new();
         for (position, index) in extracted.iter().enumerate() {
             let related = related_lists[position].clone();
             let others = other_lists[position].clone();
             let decision = decisions[position].take().expect("edge decision");
-            let (resolved, invalidated) = match decision {
-                Decision::Unchanged => (*index, Vec::new()),
-                Decision::Verbatim(found) => (found, Vec::new()),
-                Decision::Model(duplicates, contradicted) => {
+            let mut selected = Vec::new();
+            let resolved = match decision {
+                Decision::Unchanged => *index,
+                Decision::Verbatim(found) => found,
+                Decision::Model(duplicates, contradicted, same_assertion) => {
                     let duplicate_ids: Vec<usize> = duplicates
                         .iter()
                         .filter_map(|id| usize::try_from(*id).ok())
@@ -1368,68 +1684,44 @@ impl Run<'_, '_> {
                                     == self.edges[*index].invalid_at
                         })
                         .collect();
-                    let mut resolved = *index;
-                    if let Some(first) = duplicate_ids.first() {
-                        resolved = related[*first];
-                        let key = self.episode.key.clone();
-                        self.edges[resolved].episodes.push(key);
-                    }
-                    let mut candidates = Vec::new();
-                    let last = related.len() + others.len();
+                    let resolved = duplicate_ids
+                        .first()
+                        .map_or(*index, |first| related[*first]);
                     for id in contradicted {
-                        let Ok(id) = usize::try_from(id) else {
-                            continue;
-                        };
-                        if id < related.len() {
-                            candidates.push(related[id]);
-                        } else if id < last {
-                            candidates.push(others[id - related.len()]);
-                        }
-                    }
-                    let now = now();
-                    {
-                        let edge = &mut self.edges[resolved];
-                        if edge.invalid_at.is_some() && edge.expired_at.is_none() {
-                            edge.expired_at = Some(now);
-                        }
-                    }
-                    if self.edges[resolved].expired_at.is_none() {
-                        candidates.sort_by(|left, right| {
-                            let key = |index: &usize| {
-                                let valid = self.edges[*index].valid_at.as_ref().map(to_utc);
-                                (valid.is_none(), valid)
-                            };
-                            key(left).cmp(&key(right))
-                        });
-                        let resolved_valid = self.edges[resolved].valid_at.as_ref().map(to_utc);
-                        for candidate in &candidates {
-                            let candidate_valid = self.edges[*candidate].valid_at;
-                            if let (Some(candidate_time), Some(resolved_time)) =
-                                (candidate_valid.as_ref().map(to_utc), resolved_valid)
-                            {
-                                if candidate_time > resolved_time {
-                                    let edge = &mut self.edges[resolved];
-                                    edge.invalid_at = candidate_valid;
-                                    edge.expired_at = Some(now);
-                                    break;
-                                }
+                        if let Ok(offset) = usize::try_from(id) {
+                            if let Some(candidate) = related.iter().chain(&others).nth(offset) {
+                                selected.push((*candidate, same_assertion.contains(&id)));
                             }
                         }
                     }
-                    let invalidated = self.contradictions(resolved, &candidates);
-                    (resolved, invalidated)
+                    resolved
                 }
             };
+            if resolved != *index {
+                let incoming = self.edges[*index].clone();
+                let edge = &mut self.edges[resolved];
+                edge.observe(&incoming);
+                if !edge.episodes.contains(&self.episode.key) {
+                    edge.episodes.push(self.episode.key.clone());
+                }
+            }
+            for (candidate, same_assertion) in selected {
+                self.link_assertions(resolved, candidate, same_assertion);
+            }
             resolved_edges.push(resolved);
-            invalidated_edges.extend(invalidated);
             if self.edges[resolved].uuid == self.edges[*index].uuid {
                 new_edges.push(resolved);
             }
         }
+        let invalidated_edges = self.recompute_endings(&resolved_edges);
         // create_entity_edge_embeddings over resolved and invalidated edges, one wave.
         let wave: Vec<usize> = resolved_edges
             .iter()
-            .chain(&invalidated_edges)
+            .chain(
+                invalidated_edges
+                    .iter()
+                    .filter(|index| self.edges[**index].invalid_at.is_some()),
+            )
             .copied()
             .filter(|index| !self.edges[*index].fact.is_empty())
             .collect();
@@ -1446,43 +1738,223 @@ impl Run<'_, '_> {
         Ok((resolved_edges, invalidated_edges, new_edges))
     }
 
-    /// `resolve_edge_contradictions`.
-    fn contradictions(&mut self, resolved: usize, candidates: &[usize]) -> Vec<usize> {
-        let mut invalidated = Vec::new();
-        // A termination often states only the end of the old relationship. It
-        // does not establish a new start. The resolver must still select the
-        // same assertion as superseded; an end instant alone selects nothing.
-        let resolved_start = self.edges[resolved].valid_at;
-        let resolved_end = self.edges[resolved].invalid_at;
-        let resolved_invalid = resolved_end.as_ref().map(to_utc);
-        for candidate in candidates {
-            // Restating the same start while adding an end closes the old
-            // interval at that end, not at its own start. A replacement with
-            // a different start keeps the existing start-boundary rule.
-            let boundary =
-                if resolved_end.is_some() && resolved_start == self.edges[*candidate].valid_at {
-                    resolved_end
-                } else {
-                    resolved_start.or(resolved_end)
-                };
-            let resolved_valid = boundary.as_ref().map(to_utc);
-            let edge_invalid = self.edges[*candidate].invalid_at.as_ref().map(to_utc);
-            let edge_valid = self.edges[*candidate].valid_at.as_ref().map(to_utc);
-            if matches!((edge_invalid, resolved_valid), (Some(a), Some(b)) if a <= b)
-                || matches!((edge_valid, resolved_invalid), (Some(a), Some(b)) if b <= a)
+    fn set_initial_assertion(&self, edge: &mut Edge) {
+        let fallback = edge.episodes.first().cloned().unwrap_or_default();
+        let (source_id, witness) = self
+            .episode
+            .source
+            .as_ref()
+            .filter(|_| edge.episodes.contains(&self.episode.key))
+            .map(|source| (source.source_id.clone(), source.witness.clone()))
+            .unwrap_or_else(|| {
+                (
+                    fallback.clone(),
+                    AssertionWitness {
+                        span: fallback,
+                        publication: None,
+                    },
+                )
+            });
+        edge.assertions.source_ids.insert(source_id);
+        if let Some(time) = edge.invalid_at.clone() {
+            edge.assertions.stated = Some(StatedEnd {
+                time,
+                witness: witness.clone(),
+            });
+        }
+        edge.assertions.witness = Some(witness);
+    }
+
+    fn link_assertions(&mut self, left: usize, right: usize, same_assertion: bool) {
+        if left == right {
+            return;
+        }
+        let mut ids = [
+            self.edges[left].uuid.clone(),
+            self.edges[right].uuid.clone(),
+        ];
+        ids.sort();
+        // A duplicate may have resolved to an older edge. The selection was
+        // made in this episode, independently of which assertion it reused.
+        let witness = self.episode.source.as_ref().map_or_else(
+            || AssertionWitness {
+                span: self.episode.key.clone(),
+                publication: None,
+            },
+            |source| source.witness.clone(),
+        );
+        if let Some(link) = self
+            .graph
+            .links
+            .iter_mut()
+            .find(|link| link.left == ids[0] && link.right == ids[1])
+        {
+            link.same_assertion |= same_assertion;
+            if link
+                .selected_by
+                .as_ref()
+                .is_none_or(|old| witness_order(&witness, old).is_lt())
             {
-                continue;
+                link.selected_by = Some(witness.clone());
             }
-            if matches!((edge_valid, resolved_valid), (Some(a), Some(b)) if a < b) {
-                let edge = &mut self.edges[*candidate];
-                edge.invalid_at = boundary;
-                if edge.expired_at.is_none() {
-                    edge.expired_at = Some(now());
+            if same_assertion {
+                link.reaffirm(&witness);
+                if link
+                    .same_assertion_by
+                    .as_ref()
+                    .is_none_or(|old| witness_order(&witness, old).is_lt())
+                {
+                    link.same_assertion_by = Some(witness);
                 }
-                invalidated.push(*candidate);
+            }
+        } else {
+            let [left, right] = ids;
+            let mut link = AssertionLink {
+                left,
+                right,
+                same_assertion,
+                selected_by: Some(witness.clone()),
+                same_assertion_by: None,
+                reaffirmed_by: Vec::new(),
+            };
+            if same_assertion {
+                link.reaffirm(&witness);
+                link.same_assertion_by = Some(witness);
+            }
+            self.graph.links.push(link);
+        }
+    }
+
+    fn recompute_endings(&mut self, resolved: &[usize]) -> Vec<usize> {
+        let mut indices: HashMap<String, usize> = self
+            .edges
+            .iter()
+            .enumerate()
+            .map(|(index, edge)| (edge.uuid.clone(), index))
+            .collect();
+        let mut touched: BTreeSet<usize> = resolved.iter().copied().collect();
+        // Every resolved claim is asserted by this episode's Source.
+        if let Some(day) = self
+            .episode
+            .source
+            .as_ref()
+            .and_then(|source| source.witness.publication.as_ref())
+        {
+            for &index in &touched {
+                let edge = &mut self.edges[index];
+                if edge.assertions.days.is_empty() {
+                    // The merge may have lowered the witness: start from the stored claim.
+                    if let Some(prior) = self
+                        .graph
+                        .edges
+                        .iter()
+                        .find(|prior| prior.uuid == edge.uuid)
+                    {
+                        for prior_day in prior.assertions.days() {
+                            edge.assertions.add_day(prior_day);
+                        }
+                    }
+                }
+                edge.assertions.add_day(day);
             }
         }
-        invalidated
+        let linked: HashSet<&str> = self
+            .graph
+            .links
+            .iter()
+            .flat_map(|link| [link.left.as_str(), link.right.as_str()])
+            .collect();
+        for edge in &self.graph.edges {
+            if linked.contains(edge.uuid.as_str()) && !indices.contains_key(&edge.uuid) {
+                indices.insert(edge.uuid.clone(), self.edges.len());
+                self.edges.push(edge.clone());
+            }
+        }
+        let mut effects = PairEffects::<usize>::default();
+        for link in &self.graph.links {
+            let (Some(&a), Some(&b)) = (indices.get(&link.left), indices.get(&link.right)) else {
+                continue;
+            };
+            touched.extend([a, b]);
+            let left = &self.edges[a];
+            let right = &self.edges[b];
+            let outcome = decide_pair(
+                left.assertion(&normalize_relation(&left.name).0),
+                right.assertion(&normalize_relation(&right.name).0),
+                PairSelection {
+                    same_assertion: link.same_assertion,
+                    reaffirmed_by: &link.reaffirmed_by,
+                },
+            );
+            effects.record(
+                (&a, &left.uuid, &left.assertions),
+                (&b, &right.uuid, &right.assertions),
+                outcome,
+            );
+        }
+        let finals: BTreeMap<usize, Option<Ending>> = touched
+            .iter()
+            .map(|&index| {
+                let edge = &self.edges[index];
+                let ending = match (
+                    edge.assertions.stated.as_ref().map(Ending::stated),
+                    effects.endings.remove(&index),
+                ) {
+                    (Some(own), Some(other)) if ending_order(&other, &own).is_lt() => Some(other),
+                    (Some(own), _) => Some(own),
+                    (None, Some(other)) => Some(other),
+                    (None, None) => edge
+                        .ending
+                        .clone()
+                        .filter(|end| end.basis == EndBasis::Stated),
+                };
+                (index, ending)
+            })
+            .collect();
+        effects.drop_witnessed_conflicts(
+            |index| finals.get(index).and_then(Option::as_ref),
+            |index| self.edges.get(*index).map(|edge| &edge.assertions),
+        );
+        let at = now();
+        let mut changed = Vec::new();
+        for (index, ending) in finals {
+            let mut partners: Vec<String> = effects
+                .conflicts
+                .remove(&index)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|other| self.edges[other].uuid.clone())
+                .collect();
+            partners.sort_unstable();
+            let (reopened, lapsed) = effects.take_reopening(&index);
+            let edge = &mut self.edges[index];
+            let reopening_changed =
+                edge.assertions.reopened != reopened || edge.assertions.lapsed != lapsed;
+            edge.assertions.reopened = reopened;
+            edge.assertions.lapsed = lapsed;
+            if reopening_changed && edge.ending == ending && edge.conflicts == partners {
+                if !resolved.contains(&index) {
+                    changed.push(index);
+                }
+            } else if edge.ending != ending || edge.conflicts != partners {
+                edge.invalid_at = ending.as_ref().map(|end| end.time.clone());
+                edge.expired_at = if edge
+                    .invalid_at
+                    .as_ref()
+                    .is_some_and(|end| end.at_or_before(&at))
+                {
+                    edge.expired_at.take().or_else(|| Some(at.clone()))
+                } else {
+                    None
+                };
+                edge.ending = ending;
+                edge.conflicts = partners;
+                if !resolved.contains(&index) {
+                    changed.push(index);
+                }
+            }
+        }
+        changed
     }
 
     // --- 5 and 6. Attributes and summaries ----------------------------------------
@@ -1742,12 +2214,13 @@ impl Run<'_, '_> {
     }
 
     fn attribute_assigned(
-        &self,
+        &mut self,
         batch: &[(usize, String)],
         fields: &Fields,
         response: &Value,
     ) -> StopResult<Assigned> {
-        let rows = parse_attribute_batch(response, batch.len(), fields)?;
+        let (rows, dropped) = parse_attribute_batch(response, batch.len(), fields);
+        self.dropped.attributes = self.dropped.attributes.saturating_add(dropped);
         let mut out = Vec::new();
         for (position, (index, kind)) in batch.iter().enumerate() {
             let node = &self.nodes[*index];
@@ -1774,7 +2247,8 @@ impl Run<'_, '_> {
                 entity.fields.iter().any(|(field, _)| field == key)
                     && !(value.is_string() || value.is_null())
             }) {
-                return Err(Stop::Invalid("attribute value is not a string"));
+                self.dropped.attributes = self.dropped.attributes.saturating_add(1);
+                continue;
             }
             out.push((*index, merged));
         }
@@ -1821,7 +2295,7 @@ fn edge_batches(pending: Vec<(usize, Vec<Message>)>) -> Vec<Vec<(usize, Vec<Mess
 enum Decision {
     Unchanged,
     Verbatim(usize),
-    Model(Vec<i64>, Vec<i64>),
+    Model(Vec<i64>, Vec<i64>, Vec<i64>),
 }
 
 /// `EdgeDuplicate`: lax for a single call, strict inside the batch model.
@@ -1837,57 +2311,62 @@ fn parse_edge_duplicate(value: &Value, strict: bool) -> StopResult<Decision> {
     Ok(Decision::Model(
         list("duplicate_facts")?,
         list("contradicted_facts")?,
+        if value.get("same_assertion_facts").is_some() {
+            list("same_assertion_facts")?
+        } else {
+            Vec::new()
+        },
     ))
 }
 
 /// `CoreAttributeBatch.model_validate(result, strict=True)` per row index.
-fn parse_attribute_batch(
-    value: &Value,
-    count: usize,
-    fields: &[(String, String)],
-) -> StopResult<Rows> {
-    let invalid = || Stop::Rejected("model result was not an object");
-    let object = value.as_object().ok_or_else(invalid)?;
-    if object.keys().any(|key| key != "entities") {
-        return Err(invalid());
-    }
-    let rows = object
-        .get("entities")
+fn parse_attribute_batch(value: &Value, count: usize, fields: &[(String, String)]) -> (Rows, u32) {
+    let mut dropped = 0u32;
+    let Some(rows) = value
+        .as_object()
+        .and_then(|object| object.get("entities"))
         .and_then(Value::as_array)
-        .ok_or_else(invalid)?;
+    else {
+        return (HashMap::new(), count as u32);
+    };
     let mut parsed = HashMap::new();
     for row in rows {
-        let row = row.as_object().ok_or_else(invalid)?;
+        let Some(row) = row.as_object() else {
+            dropped = dropped.saturating_add(1);
+            continue;
+        };
         if row.keys().any(|key| key != "index" && key != "attributes") {
-            return Err(invalid());
+            dropped = dropped.saturating_add(1);
+            continue;
         }
-        let index = row
-            .get("index")
-            .and_then(Value::as_i64)
-            .filter(|_| row.get("index").is_some_and(Value::is_i64))
-            .ok_or_else(invalid)?;
-        let attributes = row
-            .get("attributes")
-            .and_then(Value::as_object)
-            .ok_or_else(invalid)?;
+        let Some(index) = row.get("index").and_then(Value::as_i64) else {
+            dropped = dropped.saturating_add(1);
+            continue;
+        };
+        let Some(attributes) = row.get("attributes").and_then(Value::as_object) else {
+            dropped = dropped.saturating_add(1);
+            continue;
+        };
         let mut values = Vec::new();
+        let mut bad = false;
         for (name, _) in fields {
-            let value = match attributes.get(name) {
-                None | Some(Value::Null) => None,
-                Some(Value::String(text)) => Some(text.clone()),
-                Some(_) => return Err(invalid()),
-            };
-            values.push((name.clone(), value));
+            match attributes.get(name) {
+                None | Some(Value::Null) => values.push((name.clone(), None)),
+                Some(Value::String(text)) => values.push((name.clone(), Some(text.clone()))),
+                Some(_) => bad = true,
+            }
         }
         let Ok(index) = usize::try_from(index) else {
-            return Err(invalid());
+            dropped = dropped.saturating_add(1);
+            continue;
         };
-        if index >= count || parsed.contains_key(&index) {
-            return Err(invalid());
+        if bad || index >= count || parsed.contains_key(&index) {
+            dropped = dropped.saturating_add(1);
+            continue;
         }
         parsed.insert(index, values);
     }
-    Ok(parsed)
+    (parsed, dropped)
 }
 
 /// Stage-level access for the golden tests, which drive each stage with the
@@ -1917,17 +2396,27 @@ impl<'a, 'b> Harness<'a, 'b> {
                 instructions,
                 graph,
                 text,
+                source: None,
                 nodes: Vec::new(),
                 edges: Vec::new(),
                 response_models: HashMap::new(),
                 graph_codes: None,
                 tally: ResolutionTally::default(),
+                dropped: DroppedRows::default(),
             },
         }
     }
 
     pub(super) fn tally(&self) -> ResolutionTally {
         self.run.tally
+    }
+
+    pub(super) fn dropped(&self) -> DroppedRows {
+        self.run.dropped
+    }
+
+    pub(super) fn assertion_links(&self) -> &[AssertionLink] {
+        &self.run.graph.links
     }
 
     pub(super) fn node(&self, index: usize) -> &Node {
@@ -1942,7 +2431,10 @@ impl<'a, 'b> Harness<'a, 'b> {
         self.run.push_node(node)
     }
 
-    pub(super) fn add_edge(&mut self, edge: Edge) -> usize {
+    pub(super) fn add_edge(&mut self, mut edge: Edge) -> usize {
+        if edge.assertions.source_ids.is_empty() {
+            self.run.set_initial_assertion(&mut edge);
+        }
         self.run.push_edge(edge)
     }
 

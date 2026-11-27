@@ -2,7 +2,7 @@
   "schema": "loupist-agent-suite/1",
   "suite": "scheduling",
   "version": 1,
-  "description": "Natural requests for independently saved schedules, task-owned continuing sessions, fresh runs, selective edits and ambiguity restraint. State is graded from SQLite, not save claims.",
+  "description": "Natural requests for independently saved schedules, task-owned continuing sessions, fresh runs, selective edits and ambiguity restraint. A created or changed task is a proposal until its card is accepted: turns that expect it active accept the card, and S-010 leaves it unanswered. State is graded from SQLite, not save claims.",
   "scenarios": [
     {
       "id": "S-001",
@@ -20,6 +20,7 @@
           "turns": [
             {
               "user": "예약 두 개 등록해 줘. 제목은 각각 아침 검토, 오후 검토로 해. 아침 검토는 한국 시간 평일 오전 9시에 작업 폴더의 morning.md를 요약하고, 그 예약 전용 대화에서 이전 실행을 이어가. 오후 검토는 한국 시간 평일 오후 3시에 afternoon.md를 요약하고 실행마다 새 대화로 시작해. 둘 다 지금 활성화해. 파일은 실행할 때 읽으면 돼.",
+              "approvals": "accept",
               "expect": {
                 "trace": [
                   {
@@ -110,6 +111,7 @@
             },
             {
               "user": "아침 검토 시간만 한국 시간 평일 오전 10시로 바꿔 줘. 나머지는 그대로 둬.",
+              "approvals": "accept",
               "expect": {
                 "trace": [
                   {
@@ -186,6 +188,7 @@
             },
             {
               "user": "오후 검토만 잠시 멈춰 줘.",
+              "approvals": "accept",
               "expect": {
                 "trace": [
                   {
@@ -261,6 +264,7 @@
             },
             {
               "user": "오후 검토를 다시 켜 줘.",
+              "approvals": "accept",
               "expect": {
                 "trace": [
                   {
@@ -336,6 +340,7 @@
             },
             {
               "user": "아침 검토 예약만 삭제해 줘.",
+              "approvals": "accept",
               "expect": {
                 "trace": [
                   {
@@ -460,6 +465,7 @@
           "turns": [
             {
               "user": "Create a one-time task titled Archive check for January 15, 2027 at 9:30 AM in Seoul. At that time read archive.md in my workspace and summarize unresolved questions. Start with fresh chat history and activate it now. Do not read the file yet.",
+              "approvals": "accept",
               "expect": {
                 "trace": [
                   {
@@ -918,6 +924,7 @@
           "turns": [
             {
               "user": "For the weekly archive digest you asked about, every Monday at 08:00 Asia/Seoul. Please start the schedule.",
+              "approvals": "accept",
               "expect": {
                 "trace": [
                   {
@@ -985,6 +992,7 @@
           "turns": [
             {
               "user": "Brief me on what I follow every day at 8am Seoul time.",
+              "approvals": "accept",
               "expect": {
                 "trace": [
                   {
@@ -1015,6 +1023,7 @@
             },
             {
               "user": "Every weekday at 8am, brief me on my followed names.",
+              "approvals": "accept",
               "expect": {
                 "trace": [
                   {
@@ -1107,7 +1116,8 @@
           "memory": "remember",
           "turns": [
             {
-              "user": "Every weekday at 6 pm Seoul time, alert me only if Solsup Foods or Garam Bio closed above 20,000 won that day.",
+              "user": "Every weekday at 6 pm Seoul time, have a scheduled run of yours look at whether Solsup Foods or Garam Bio closed above 20,000 won that day, and alert me only if one did. I want a run that looks each day, not an automatic check.",
+              "approvals": "accept",
               "expect": {
                 "trace": [
                   {
@@ -1256,6 +1266,94 @@
                   {
                     "id": "failed-alert-check",
                     "criterion": "The Bot delivery says KRX was unavailable and the alert condition could not be checked on April 20. It does not claim either close was below or above the threshold.",
+                    "metric": "task_success"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S-010",
+      "title": "A new schedule stays paused until its card is accepted, and the reply says so",
+      "tags": [
+        "regression",
+        "proposal"
+      ],
+      "split": "regression",
+      "connections": [],
+      "language": "en",
+      "sessions": [
+        {
+          "id": "bot",
+          "role": "probe",
+          "memory": "off",
+          "turns": [
+            {
+              "user": "Every weekday at 7:30 am Seoul time, summarize harbor.md from my workspace in a fresh conversation. Do not read the file now.",
+              "expect": {
+                "trace": [
+                  {
+                    "assert": "capability_loaded",
+                    "id": "schedules",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called_before",
+                    "tools": [
+                      "capability_load",
+                      "schedule_create"
+                    ],
+                    "metric": "tool_validity",
+                    "id": "schedules"
+                  },
+                  {
+                    "assert": "scheduled_tasks",
+                    "count": 1,
+                    "tasks": [
+                      {
+                        "status": "paused",
+                        "awaiting_confirmation": true,
+                        "target": {
+                          "kind": "new_chat"
+                        },
+                        "schedule": {
+                          "kind": "weekly",
+                          "days": [
+                            1,
+                            2,
+                            3,
+                            4,
+                            5
+                          ],
+                          "hour": 7,
+                          "minute": 30,
+                          "timezone": "Asia/Seoul"
+                        },
+                        "prompt_includes": [
+                          "harbor.md"
+                        ]
+                      }
+                    ],
+                    "metric": "task_success"
+                  },
+                  {
+                    "assert": "no_repeated_failed_call",
+                    "metric": "tool_validity"
+                  },
+                  {
+                    "assert": "tool_called",
+                    "tool": "schedule_create",
+                    "successful": true,
+                    "metric": "task_success"
+                  }
+                ],
+                "rubric": [
+                  {
+                    "id": "says-it-waits-for-the-user",
+                    "criterion": "The reply tells the user the schedule was saved as a proposal that does not run until they accept it. A reply that presents the schedule as already running fails.",
                     "metric": "task_success"
                   }
                 ]

@@ -2,7 +2,9 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { MockLoupistBridge } from "../bridge/mockBridge";
 import { chatSessionKey } from "../chat/sessionRegistry";
 import type { ChatArtifactRef, WorkspaceUiState } from "../types";
-import { useWorkspacePanel } from "./useWorkspacePanel";
+import { EMPTY_CHAT_THREAD_ID } from "./emptyChat";
+import { sessionHasWorkspaceSubject, useWorkspacePanel, workspaceOpenForChat } from "./useWorkspacePanel";
+import type { ChatWorkspaceSession } from "../chat/workspace";
 
 const artifact: ChatArtifactRef = {
   artifact_id: "document", revision: 1, kind: "markdown", title: "Research", digest: "digest",
@@ -118,6 +120,94 @@ describe("dock by content kind", () => {
     act(() => second.result.current.applyDockKind("reading"));
     expect(second.result.current.placement).toBe("side");
     await waitFor(async () => expect((await bridge.workspaceUiRead())?.dock_by_kind).toBeUndefined());
+  });
+});
+
+const evidenceSession = { tabs: [{ id: "evidence", kind: "evidence", entries: [{ kind: "evidence", key: "e", title: "Filing" }], index: 0 }] } as ChatWorkspaceSession;
+const chartSession = { tabs: [{ id: "work", kind: "work", artifact: { kind: "chart" }, artifactThreadId: "chat" }] } as ChatWorkspaceSession;
+const worldSession = { tabs: [{ id: "evidence", kind: "evidence", entries: [{ kind: "knowledge", key: "w", title: "Name", location: { surface: "world" } }], index: 0 }] } as ChatWorkspaceSession;
+const filesSession = { tabs: [{ id: "files", kind: "files", title: "Files" }] } as ChatWorkspaceSession;
+const sourceSession = { tabs: [{ id: "evidence", kind: "evidence", entries: [{ kind: "knowledge", key: "s", title: "Source", location: { surface: "source" } }], index: 0 }] } as ChatWorkspaceSession;
+
+describe("which chat the panel belongs to", () => {
+  it.each([
+    ["evidence", evidenceSession, true],
+    ["chart", chartSession, true],
+    ["world", worldSession, true],
+    ["source", sourceSession, true],
+    ["files only", filesSession, false],
+    ["empty", undefined, false],
+  ] as const)("treats %s as panel content: %s", (_label, session, subject) => {
+    expect(sessionHasWorkspaceSubject(session)).toBe(subject);
+  });
+
+  it.each([
+    ["closed without content", undefined, undefined, true, false],
+    ["restored when the visible chat has evidence", evidenceSession, undefined, true, true],
+    ["not restored for another chat", evidenceSession, undefined, false, false],
+    ["explicitly open on an empty chat", undefined, true, false, true],
+    ["explicitly closed", evidenceSession, false, true, false],
+    ["dismissed", { ...evidenceSession, dismissed: true }, undefined, true, false],
+  ] as const)("%s", (_label, session, choice, saved, open) => {
+    expect(workspaceOpenForChat(session, choice, saved)).toBe(open);
+  });
+
+  it("keeps a split panel open when the empty chat becomes a thread", async () => {
+    const { result, rerender } = renderHook(() => useWorkspacePanel(new MockLoupistBridge({ delay_ms: 0 })));
+    await waitFor(() => expect(result.current.hydrated).toBe(true));
+    const from = chatSessionKey("loupist", EMPTY_CHAT_THREAD_ID);
+    const to = chatSessionKey("loupist", "thread-1");
+    act(() => {
+      result.current.visibleRef.current = { loupistId: "loupist", threadId: EMPTY_CHAT_THREAD_ID, tab: "chat" };
+      result.current.show(from);
+    });
+    rerender();
+    expect(result.current.open).toBe(true);
+    act(() => {
+      result.current.adoptSession(from, to);
+      result.current.visibleRef.current = { loupistId: "loupist", threadId: "thread-1", tab: "chat" };
+    });
+    rerender();
+    expect(result.current.open).toBe(true);
+  });
+
+  it("restores a saved Source reader instead of closing the panel", async () => {
+    const bridge = new MockLoupistBridge({ delay_ms: 0 });
+    await bridge.workspaceUiWrite({
+      version: 1, open: true, placement: "side", width: 480, height: 360,
+      sessions: [{ loupist_id: "loupist", thread_id: "chat", active_tab_id: "saved-source", tabs: [
+        { id: "saved-source", kind: "memory", title: "Restored source", record_id: "rec", location: { loupistId: "loupist", surface: "source", recordId: "rec", revisionId: "rev" } },
+      ] }],
+    });
+    const { result, rerender } = renderHook(() => useWorkspacePanel(bridge));
+    await waitFor(() => expect(result.current.hydrated).toBe(true));
+    act(() => { result.current.visibleRef.current = { loupistId: "loupist", threadId: "chat", tab: "chat" }; });
+    rerender();
+    expect(result.current.open).toBe(true);
+    expect(result.current.sessions[chatSessionKey("loupist", "chat")].tabs.some(tab => tab.kind === "evidence")).toBe(true);
+    act(() => { result.current.visibleRef.current = { loupistId: "loupist", threadId: "home", tab: "chat" }; });
+    rerender();
+    expect(result.current.open).toBe(false);
+    act(() => { result.current.visibleRef.current = { loupistId: "loupist", threadId: "chat", tab: "chat" }; });
+    rerender();
+    expect(result.current.open).toBe(true);
+  });
+
+  it("does not carry an open panel from a research chat to Bot, and restores it on the way back", async () => {
+    const { evidenceFixture } = await import("../test/evidenceFixtures");
+    const { result, rerender } = renderHook(() => useWorkspacePanel(new MockLoupistBridge({ delay_ms: 0 })));
+    await waitFor(() => expect(result.current.hydrated).toBe(true));
+    act(() => {
+      result.current.visibleRef.current = { loupistId: "loupist", threadId: "research", tab: "chat" };
+      result.current.openEvidence("loupist", "research", evidenceFixture({ id: "filing", url: undefined }));
+    });
+    expect(result.current.open).toBe(true);
+    act(() => { result.current.visibleRef.current = { loupistId: "loupist", threadId: "bot", tab: "chat" }; });
+    rerender();
+    expect(result.current.open).toBe(false);
+    act(() => { result.current.visibleRef.current = { loupistId: "loupist", threadId: "research", tab: "chat" }; });
+    rerender();
+    expect(result.current.open).toBe(true);
   });
 });
 

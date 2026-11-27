@@ -35,7 +35,11 @@ button.page-chip:hover { border-color: var(--gg-color-border-strong); color: var
 .page-chip[data-chip="claim"] { color: var(--gg-color-text-primary); }
 .page-section-tools .page-chip[data-chip="page"] { max-width: 22ch; }
 .page-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.page-section-role, .page-as-of { margin: 0; color: var(--gg-color-text-secondary); font-size: var(--gg-text-caption); }
+.page-as-of { margin-bottom: var(--gg-space-2); }
+.page-changed { margin: var(--gg-space-1) 0 0; }
 .page-contested { display: inline-flex; align-items: center; gap: var(--gg-space-1); min-height: 24px; padding: 0 var(--gg-space-2); border: 1px solid currentColor; border-radius: var(--gg-radius-full); background: transparent; color: var(--gg-color-map-edge-disputed); font: inherit; font-size: var(--gg-text-caption); cursor: pointer; }
+.page-contested[data-chip="superseded"] { color: var(--gg-color-text-secondary); }
 .page-contested:disabled { cursor: default; }
 .page-contested svg { width: 12px; height: 12px; }
 .page-section[data-contested] { box-shadow: -2px 0 0 var(--gg-color-map-edge-disputed); padding-left: var(--gg-space-3); }

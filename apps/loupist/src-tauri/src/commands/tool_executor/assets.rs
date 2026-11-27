@@ -164,14 +164,35 @@ impl AppToolExecutor {
             }
         };
         let as_of = effective_as_of(policy, &Value::Null)?;
-        commands::with_assets(&self.state, &self.loupist_id, false, |tx| {
+        let asset_id = asset.asset_id.clone();
+        let (mut result, since_ms) = commands::with_assets(&self.state, &self.loupist_id, false, |tx| {
             // A first agent read can inspect an empty page without persisting it.
             assets::ensure_asset_page(tx, &self.loupist_id, &asset, crate::commands::now_ms())?;
+            let moved_at: Option<i64> = if as_of.is_none() {
+                tx.query_row(
+                    "SELECT MAX(at_ms) FROM knowledge_asset_moves WHERE loupist_id = ?1 AND asset_id = ?2",
+                    rusqlite::params![self.loupist_id, asset_id],
+                    |row| row.get(0),
+                )?
+            } else {
+                None
+            };
             let mut result = assets::model_read(tx, &self.loupist_id, asset, as_of)?;
             result["exists"] = json!(true);
-            Ok(result)
+            Ok((result, moved_at.unwrap_or(0)))
         })
-        .map_err(command_error)
+        .map_err(command_error)?;
+        if as_of.is_none() {
+            if let Ok(block) = crate::commands::knowledge::world_changes::asset_since_read(
+                &self.state,
+                &self.loupist_id,
+                &asset_id,
+                since_ms,
+            ) {
+                result["sinceRead"] = serde_json::to_value(block).unwrap_or(Value::Null);
+            }
+        }
+        Ok(result)
     }
 
     pub(super) async fn asset_lookup(&self, params: Value) -> Result<Value, BrokerError> {

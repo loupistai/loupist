@@ -13,6 +13,12 @@ const GUARDED_APIS = new Set(["openai-responses", "openai-codex-responses", "ope
 /** Whether isolated inference can dispatch a model on this Pi API. */
 export const isGuardedInferenceApi = (api) => GUARDED_APIS.has(api);
 const reply = (disposition, message) => ({ disposition, body: { status: disposition, message }, usage: null });
+const JSON_SCHEMA_APIS = new Set(["openai-responses", "openai-codex-responses"]);
+const FAILURE_KINDS = new Set([
+  "payload_invalid", "retry_refused", "dispatch_marker_failed", "identity_mismatch",
+  "incomplete_response", "content_type", "output_size", "invalid_json", "schema_mismatch",
+  "cancelled", "provider_failure",
+]);
 const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const DIAGNOSTIC_STOP_REASONS = new Set(["stop", "length", "toolUse", "error", "aborted"]);
 // Rust classifies at most this much of the provider's error text.
@@ -72,6 +78,11 @@ function usageOf(message) {
     const value = message.usage?.[key];
     if (Number.isSafeInteger(value) && value >= 0) result[key] = value;
   }
+  // A malformed reported cache count makes total input unknown. Preserve
+  // that distinction without putting the malformed value on the wire.
+  if (["cacheRead", "cacheWrite"].some((key) => message.usage?.[key] != null && !(key in result))) {
+    delete result.input;
+  }
   const cost = message.usage?.cost;
   if (Number.isFinite(cost?.total) && cost.total >= 0) {
     result.cost = { total: cost.total, totalFromProvider: cost.totalFromProvider === true };
@@ -100,6 +111,32 @@ function inferencePayload(model, payload, request) {
   return next;
 }
 
+// APIs that are not given a JSON schema often wrap the object in one Markdown
+// fence. Strip that one fence only; a schema API is parsed as it was sent.
+function modelJsonText(text, api) {
+  if (JSON_SCHEMA_APIS.has(api) || !text.startsWith("```") || !text.endsWith("```")) return text;
+  const headerEnd = text.indexOf("\n");
+  if (headerEnd < 0 || headerEnd >= text.length - 3) return text;
+  const header = text.slice(3, headerEnd).trim();
+  if (header !== "" && header !== "json") return text;
+  return text.slice(headerEnd + 1, -3).trim();
+}
+
+function failedReply(dispatched, kind, message) {
+  const failure_kind = FAILURE_KINDS.has(kind) ? kind : "provider_failure";
+  const usage = message ? usageOf(message) : {};
+  const disposition = dispatched ? "uncertain" : "not_sent";
+  const text = dispatched
+    ? "The model response was incomplete, invalid, cancelled, or unavailable after dispatch. Automatic retry is disabled."
+    : "The model request could not be dispatched.";
+  return {
+    disposition,
+    body: { status: disposition, message: text, failure_kind },
+    usage: Object.keys(usage).length ? usage : null,
+    failure_kind,
+  };
+}
+
 /** A single isolated request through Pi's credential/refresh owner. No agent loop. */
 export async function runProviderInference(ctx, request, { signal, onDispatch = () => {}, onDiagnostic, fetch: send = globalThis.fetch } = {}) {
   let validator;
@@ -118,6 +155,7 @@ export async function runProviderInference(ctx, request, { signal, onDispatch = 
   let httpStatus = null;
   let stopReason = null;
   let providerError = null;
+  let providerMessage = null;
   const diagnose = (kind) => reportDiagnostic(onDiagnostic, {
     type: "inference_diagnostic", phase, failure_kind: kind,
     dispatched, cancelled: cancellation.aborted,
@@ -137,7 +175,7 @@ export async function runProviderInference(ctx, request, { signal, onDispatch = 
       messages: [{ role: "user", content: [{ type: "text", text: request.messages.filter((message) => message.role !== "system").map((message) => message.content).join("\n\n") }], timestamp: Date.now() }],
       tools: [],
     };
-    const message = await ctx.modelRegistry.streamSimple(model, context, {
+    const message = providerMessage = await ctx.modelRegistry.streamSimple(model, context, {
       // Pi represents disabled reasoning by an absent option, not the UI value "off".
       reasoning: request.thinkingLevel === "off" ? undefined : request.thinkingLevel,
       maxTokens: request.maxOutputTokens,
@@ -175,7 +213,7 @@ export async function runProviderInference(ctx, request, { signal, onDispatch = 
     if (!text || Buffer.byteLength(text) > MAX_OUTPUT_BYTES) { failureKind = "output_size"; throw new Error("output size"); }
     phase = "json";
     failureKind = "invalid_json";
-    const body = JSON.parse(text);
+    const body = JSON.parse(modelJsonText(text, model.api));
     phase = "schema";
     failureKind = "schema_mismatch";
     if (!object(body) || !validator.Check(body)) throw new Error("schema mismatch");
@@ -186,9 +224,10 @@ export async function runProviderInference(ctx, request, { signal, onDispatch = 
     // Error messages can contain provider headers/body. The reply body carries
     // only host-owned copy; the provider's error text goes to Rust alone, which
     // classifies it (plan limit, reconnect…) and drops it. Uncertain calls are
-    // never retried here.
-    diagnose(failureKind ?? (cancellation.aborted ? "cancelled" : "provider_failure"));
-    const failed = dispatched ? reply("uncertain", "The model response was incomplete, invalid, cancelled, or unavailable after dispatch. Automatic retry is disabled.") : reply("not_sent", "The model request could not be dispatched.");
+    // never retried here. Usage the provider already reported stays on the reply.
+    const kind = failureKind ?? (cancellation.aborted ? "cancelled" : "provider_failure");
+    diagnose(kind);
+    const failed = failedReply(dispatched, kind, providerMessage);
     return providerError ? { ...failed, provider_error: providerError } : failed;
   }
 }

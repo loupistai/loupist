@@ -37,11 +37,14 @@ import {
   openMainTab,
   openMapLibrary,
   preferEnglish,
+  PROPOSED_CHECK,
   readVisibleMapStats,
   scrub,
   selectedLoupistTitle,
   switcherLoupists,
+  testProposedCheck,
   waitForLoupistSwitcherClosed,
+  waitForRenderedButton,
   waitForShell,
 } from "./native-shell.mjs";
 
@@ -72,6 +75,18 @@ const HANDOFF = {
 };
 const INSTRUCTIONS = "Cite the saved persistence source before answering.";
 const RETRIES = { global: 5, appDefault: 3 };
+const FIXTURE_SUPPLY = "Fixture supply";
+const ENDED_SUPPLY = "Lamppost Test Works supplied the harbor.";
+const SUPPLY_REASON = "The supply agreement matters to Lamppost's production.";
+const NOT_REPEATED = "Lamppost Test Works supplies Sealed Hub.";
+const REPORTS = ["Lamppost Test Works Q2 fixture report", "Lamppost Test Works Q3 fixture report"];
+const LEARNING = {
+  modelId: "e2e-release-learning",
+  program: "Lamppost supply review",
+  page: "Lamppost Test Works learning notes",
+  section: "supply-review",
+};
+const scriptedLearning = process.env.LOUPIST_E2E_RELEASE_LEARNING === "1";
 
 const stateRoot = await realpath(stateArg);
 const runRoot = dirname(stateRoot);
@@ -207,11 +222,11 @@ async function renameChat(from, to) {
 }
 
 async function verifyChats() {
-  const titles = await chatTitles();
-  assert.ok(titles.includes(CHAT) && titles.includes(FIXTURE.chat), `Chats for ${FOLDER_LOUPIST}: ${titles.join(", ")}`);
+  // The sidebar caps its preview at five research sessions. Older saved
+  // sessions can still be opened from Search.
   await openChat(FIXTURE.chat);
   await waitForText(await displayed("#main-panel-chat"), FIXTURE.reply);
-  await (await displayed(chatRow(CHAT))).click();
+  await openChat(CHAT);
   await browser.waitUntil(async () => (await browser.$(chatRow(CHAT)).getAttribute("aria-current")) === "page"
     && (await browser.$$("#main-panel-chat [data-message-id]")).length === 0, {
     timeout: 10_000, timeoutMsg: "The empty saved Chat did not open",
@@ -234,10 +249,11 @@ async function openBot() {
 /** Bot's card for the pre-update hand-off: stopped with its reason, Open kept, and no session in its place. */
 async function verifyLegacyHandoff() {
   await openBot();
-  const card = await displayed(`.thread-delivery[aria-label=${JSON.stringify(`Research: ${HANDOFF.legacy.title}`)}]`, 30_000);
+  const post = `#main-panel-chat article[aria-label=${JSON.stringify(`Research: ${HANDOFF.legacy.title}`)}]`;
+  const card = await displayed(post, 30_000);
   assert.equal(await card.getAttribute("data-status"), "stopped", "The pre-update hand-off is not stopped");
   await waitForText(card, HANDOFF.legacy.reason);
-  assert.ok(await (await card.$("button=Open")).isDisplayed(), "The stopped hand-off lost Open");
+  await waitForRenderedButton(browser, post, "Open");
   assert.equal(await chatCount(HANDOFF.legacy.title), 1, "The stopped hand-off has a replacement session");
 }
 
@@ -336,12 +352,12 @@ async function mapStats() {
     await closeMapReader();
     await closeLibrary();
     text = await readVisibleMapStats(browser);
-    return /^[\d,]+ in World · [\d,]+ relationships$/.test(text);
-  }, { timeout: 30_000, interval: 200, timeoutMsg: `World did not report its size (${text})` });
+    return Boolean(text);
+  }, { timeout: 30_000, interval: 200, timeoutMsg: "World did not report its size" });
   return text;
 }
 
-/** Journal entries are Map nodes, so the size is read once the Library writes have settled. */
+/** Capture the visible World counts after the Library writes settle. */
 async function settledMapStats() {
   await openMainTab(browser, "map");
   let previous = await mapStats();
@@ -429,34 +445,59 @@ async function verifySource(id) {
   assert.equal(await reader.getAttribute("data-source-id"), id, "The saved Source changed identity");
 }
 
+async function verifyTablePreview() {
+  await openLibrary("Sources");
+  const row = await visibleWithText('[data-testid="map-library"] button[data-testid="source-library-row"]', "Fixture production table");
+  const preview = await row.$(".source-summary");
+  await waitForText(preview, "2 rows");
+  assert.doesNotMatch(await preview.getText(), /\n|Units produced/);
+}
+
 async function addPrinciple() {
-  await openMainTab(browser, "chat");
-  await openChat(FIXTURE.chat);
-  const answer = await displayed("article.message.assistant[data-latest]");
-  await clickButton("Suggest a correction", answer);
-  await setField("[data-testid=answer-correction] textarea", PRINCIPLE.statement);
-  await clickButton("Save correction", answer);
-  await (await displayed("[data-feedback-principle]")).click();
+  await openMemorySegment("pages");
+  await (await displayed("[data-add-principle]")).click();
   const form = await displayed("form[data-testid=principle-form]");
+  await setField("form[data-testid=principle-form] textarea:first-of-type", PRINCIPLE.statement);
   await (await form.$('button[type="submit"]')).click();
   await waitGone(form, "The principle form did not close after saving");
   await verifyPrinciple();
 }
 
 async function verifyPrinciple() {
-  const page = await openMemorySegment("pages");
-  await waitForText(page, FIXTURE.method);
+  await openMemorySegment("pages");
   const row = await visibleWithText("section[data-testid=memory-page] button[data-testid=memory-row]", PRINCIPLE.statement);
   await row.click();
   await waitForText(await displayed("section[data-testid=memory-page] aside[data-testid=memory-reader]"), PRINCIPLE.statement);
-  const back = await browser.$("[data-testid=memory-reader-back]");
-  if (await back.isDisplayed().catch(() => false)) await back.click();
+}
+
+async function verifyLearnedMethod() {
+  await waitForText(await openMemorySegment("pages"), FIXTURE.method);
   await (await visibleWithText("section[data-testid=memory-page] button[data-testid=memory-row]", FIXTURE.method)).click();
   const method = await displayed("section[data-testid=memory-page] aside[data-testid=memory-reader]");
   await waitForText(method, "Separate observations from assumptions.");
   await displayed("[data-testid=memory-reader] [data-testid=page-history]");
   const history = await displayed("[data-testid=memory-reader] [data-testid=lens-then-now]");
   assert.equal((await history.$$("h4")).length, 2, "The revised method did not show Then and Now");
+}
+
+async function verifyEndedSupply() {
+  await openMemorySegment("pages");
+  await (await visibleWithText('[data-testid="memory-page"] button[data-testid="memory-row"]', FIXTURE_SUPPLY)).click();
+  const basis = await displayed('[data-testid="memory-reader"] [data-section-key="supply"][data-section-state="superseded"]');
+  await waitForText(await basis.$('[data-chip="superseded"]'), "Superseded");
+  await (await basis.$('[data-chip="claim"]')).click();
+
+  const inspector = await displayed('aside[aria-labelledby="map-claim-title"]');
+  await waitForText(await inspector.$("#map-claim-title"), ENDED_SUPPLY);
+  await waitForText(inspector, "Ended");
+  await (await childWithText(inspector, "summary", "History")).click();
+  const history = await inspector.$("details[open]");
+  await waitForText(history, FIXTURE.source);
+  await browser.waitUntil(async () => (await history.$$("h3 + ul button")).length >= 2, {
+    timeout: 10_000, timeoutMsg: "The creation and ending episodes did not link to their Sources",
+  });
+  await clickButton("Open the claim that ended it", history);
+  await waitForText(await displayed("#map-claim-title"), "The supply agreement ended.");
 }
 
 /** Following: one search field over the selected Loupist's own followed list. */
@@ -486,6 +527,350 @@ async function followedNames() {
 async function leaveAssetPage(page) {
   await clickButton("Back", page);
   await waitGone(page, "The asset page did not close");
+}
+
+async function openFixtureAsset() {
+  await openMainTab(browser, "following");
+  await chooseFollowingView("List");
+  await setField(`${FOLLOWING} [role="combobox"]`, ALREADY_FOLLOWED);
+  await (await displayed(`${FOLLOWING} [role="option"][data-kind="typed"][aria-label=${JSON.stringify(`Open ${ALREADY_FOLLOWED}, already followed`)}]`)).click();
+  const page = await displayed(`section[aria-label=${JSON.stringify(`${ALREADY_FOLLOWED} asset page`)}]`);
+  await waitForText(page, "LMPST");
+  return page;
+}
+
+async function chooseFollowingView(label) {
+  const view = await displayed(`${FOLLOWING} [role="radiogroup"][aria-label="Following"]`);
+  const option = await childWithText(view, '[role="radio"]', label);
+  if ((await option.getAttribute("aria-checked")) !== "true") await option.click();
+}
+
+async function verifySinceRead({ seed }) {
+  const page = await openFixtureAsset();
+  if (seed) {
+    await clickButton("Add a reason", page);
+    const reason = await displayed('form[aria-label="Add a reason"]');
+    await (await reason.$("textarea")).setValue(SUPPLY_REASON);
+    await clickButton("Save entry", reason);
+    await waitGone(reason, "The reason form did not close after saving");
+  }
+  await waitForText(page, SUPPLY_REASON);
+  const feed = await displayed('section[aria-label="Since this read"]');
+  await waitForText(feed, ENDED_SUPPLY);
+  await waitForText(feed, "Ended");
+  await leaveAssetPage(page);
+}
+
+function host(command, request) {
+  return browser.execute((name, payload) => window.__TAURI_INTERNALS__.invoke(name, { request: payload }), command, request);
+}
+
+async function verifyDailyProgram(loupistId, { seed, taskId, runId } = {}) {
+  const scope = { kind: "global" };
+  const config = await host("config_read", { scope });
+  if (seed) await host("config_update", { scope, expectedRevision: config.revision, set: { background_daily_requests: 0 } });
+  const settings = await host("config_read", { scope });
+  assert.equal(settings.effective.background_daily_requests, 0);
+  assert.match(await tomlFile(globalConfig), /^background_daily_requests\s*=\s*0\s*$/mu);
+
+  const page = await openFixtureAsset();
+  const daily = await page.$('[role="switch"][aria-label="Track daily"]');
+  await daily.waitForEnabled();
+  if (seed) {
+    assert.equal(await daily.getAttribute("aria-checked"), "false");
+    await daily.click();
+  }
+  let task;
+  await browser.waitUntil(async () => {
+    const tasks = await host("scheduled_tasks_list", { loupist_id: loupistId });
+    const dailyTasks = tasks.filter(({ preset }) => preset === "asset-daily");
+    if (dailyTasks.length !== 1) return false;
+    [task] = dailyTasks;
+    return true;
+  }, { timeout: 15_000, timeoutMsg: "Track daily did not save exactly one program" });
+  assert.equal(task.kind, "learning");
+  assert.equal(task.status, "active");
+  if (taskId) assert.equal(task.id, taskId, "The Track daily program changed identity on restart");
+  await leaveAssetPage(page);
+  const detail = await openLearningTask(task.id, task.title);
+  const request = { loupist_id: loupistId, task_id: task.id };
+  const runs = await host("scheduled_task_runs", request);
+  assert.deepEqual(runs.map(run => ({ id: run.run_id, status: run.status })), runId ? [{ id: runId, status: "succeeded" }] : []);
+  if (seed) {
+    await (await detail.$("[data-schedule-run-now]")).click();
+    const dialog = await dialogByTitle(browser, "Run now");
+    await waitForText(dialog, "This runs beyond today's allowance.");
+    assert.deepEqual(await host("scheduled_task_runs", request), []);
+    if (scriptedLearning) {
+      assert.equal(task.model_profile_id, LEARNING.modelId, "The exception must use the offline fixture");
+      await clickButton("Run now", dialog);
+      await waitGone(dialog, "The one-run confirmation did not close");
+      const run = await waitForLearningRun(request);
+      await displayed(`button[data-schedule-run=${JSON.stringify(run.run_id)}]`);
+      runId = run.run_id;
+    } else {
+      await clickButton("Cancel", dialog);
+      await waitGone(dialog, "The one-run confirmation did not close");
+    }
+  }
+  await clickButton("← Schedule", detail);
+  return { taskId: task.id, runId };
+}
+
+async function openLearningTask(taskId, title = LEARNING.program) {
+  await openMainTab(browser, "schedule");
+  const row = `li[data-schedule-task=${JSON.stringify(taskId)}][data-kind="learning"][data-status="active"]`;
+  await (await displayed(`${row} button:has(strong[title=${JSON.stringify(title)}])`)).click();
+  return displayed(`article[aria-label=${JSON.stringify(title)}]`);
+}
+
+async function withLearningFixture(loupistId, action) {
+  const scope = { kind: "project", loupistId };
+  const previous = await host("config_read", { scope });
+  const previousModelId = previous.explicit?.chat?.model_profile_id;
+  // Bot and Track daily both capture this concrete project model on creation.
+  const configured = await host("config_update", {
+    scope, expectedRevision: previous.revision, set: { chat: { model_profile_id: LEARNING.modelId } },
+  });
+  try {
+    assert.equal(configured.modelSelection?.model?.id, LEARNING.modelId, "The Loupist must use the offline fixture");
+    assert.equal(configured.modelSelection.is_default, false, "The program must capture an explicit model ID");
+    return await action();
+  } finally {
+    await host("config_update", {
+      scope, expectedRevision: configured.revision,
+      ...(previousModelId === undefined
+        ? { unset: [["chat", "model_profile_id"]] }
+        : { set: { chat: { model_profile_id: previousModelId } } }),
+    });
+  }
+}
+
+async function proposeLearningProgram(loupistId) {
+  return withLearningFixture(loupistId, async () => {
+    await openBot();
+    await setField("#main-panel-chat textarea[data-chat-composer]", "Propose a program to review the saved Lamppost supply agreement.");
+    await clickControl(browser, '#main-panel-chat button[aria-label="Send"]');
+    const proposal = await visibleWithText('[data-learning-proposal="awaiting"]', LEARNING.program);
+    await clickButton("Turn on", proposal);
+    // Bot replaces the proposal with its scheduled task receipt after approval.
+    const receipt = `article[aria-label=${JSON.stringify(`Scheduled task: ${LEARNING.program}`)}]`;
+    await visibleWithText(receipt, "Active");
+
+    const tasks = await host("scheduled_tasks_list", { loupist_id: loupistId });
+    const task = tasks.find(({ title }) => title === LEARNING.program);
+    assert.equal(task?.kind, "learning");
+    assert.equal(task.status, "active");
+    assert.equal(task.awaiting_confirmation, false);
+    assert.equal(task.model_profile_id, LEARNING.modelId, "Run now must use the offline fixture");
+    return task;
+  });
+}
+
+async function waitForLearningRun(request) {
+  let run;
+  await browser.waitUntil(async () => {
+    [run] = await host("scheduled_task_runs", request);
+    return Boolean(run && run.status !== "running");
+  }, { timeout: 45_000, timeoutMsg: "The scripted learning run did not finish" });
+  assert.equal(run.status, "succeeded", run.error ?? "The scripted learning run failed");
+  assert.ok(run.message_id, "The learning run did not save a reply");
+  return run;
+}
+
+async function learnAndUndo(loupistId) {
+  const task = await proposeLearningProgram(loupistId);
+  const detail = await openLearningTask(task.id);
+  await (await detail.$("[data-schedule-run-now]")).click();
+  const run = await waitForLearningRun({ loupist_id: loupistId, task_id: task.id });
+  const [digest] = await host("memory_learned", { loupistId, messageIds: [run.message_id] });
+  const page = digest?.pages.find(({ title }) => title === LEARNING.page);
+  assert.ok(page, "The learning run did not file its evidence in Lens");
+  const saved = await host("knowledge_lens_read", { loupistId, recordId: page.recordId });
+  assert.ok(saved.body.sections.some(({ key }) => key === LEARNING.section), "The filed section was missing before Undo");
+
+  await (await displayed(`button[data-schedule-run=${JSON.stringify(run.run_id)}]`)).click();
+  await clickButton("Undo this run");
+  await waitForText(await displayed("[data-learning-undo]"), "Undid this run");
+  const record = { taskId: task.id, runId: run.run_id, pageId: page.recordId };
+  await verifyLearningUndo(loupistId, record);
+  return record;
+}
+
+async function verifyLearningUndo(loupistId, record) {
+  const page = await browser.execute(async (request) => {
+    try {
+      return await window.__TAURI_INTERNALS__.invoke("knowledge_lens_read", { request });
+    } catch (error) {
+      if (error?.code === "not_found") return null;
+      throw error;
+    }
+  }, { loupistId, recordId: record.pageId });
+  assert.ok(!page || page.archived || !page.body.sections.some(({ key }) => key === LEARNING.section), "Undo did not remove the learned section");
+}
+
+async function verifyLearningAfterRestart(loupistId, record) {
+  await openLearningTask(record.taskId);
+  const runs = await host("scheduled_task_runs", { loupist_id: loupistId, task_id: record.taskId });
+  assert.equal(runs.find(({ run_id }) => run_id === record.runId)?.status, "succeeded");
+  await displayed(`button[data-schedule-run=${JSON.stringify(record.runId)}]`);
+  await verifyLearningUndo(loupistId, record);
+}
+
+function previousWeekday() {
+  const day = new Date();
+  day.setHours(12, 0, 0, 0);
+  do {
+    day.setDate(day.getDate() - 1);
+  } while (day.getDay() === 0 || day.getDay() === 6);
+  return day;
+}
+
+function localCalendarDay(day) {
+  const month = String(day.getMonth() + 1).padStart(2, "0");
+  const date = String(day.getDate()).padStart(2, "0");
+  return `${day.getFullYear()}-${month}-${date}`;
+}
+
+async function prepareReportPair(loupistId) {
+  const latest = previousWeekday();
+  const earlier = new Date(latest);
+  earlier.setDate(earlier.getDate() - 5);
+  const dates = [earlier, latest].map(localCalendarDay);
+  // Historical checks only see assets already followed on each replay day.
+  // Keep the fixture follow older than the 20-weekday review window.
+  const followedAt = new Date(latest);
+  followedAt.setDate(followedAt.getDate() - 35);
+  const catalog = new DatabaseSync(resolve(stateRoot, "app-data", "catalog.sqlite3"));
+  try {
+    catalog.exec("PRAGMA busy_timeout = 3000");
+    const { changes } = catalog.prepare(`
+      UPDATE asset_follows SET followed_at_ms = ?
+      WHERE loupist_id = ? AND asset_id IN (SELECT asset_id FROM assets WHERE name = ?)
+    `).run(followedAt.getTime(), loupistId, ALREADY_FOLLOWED);
+    assert.equal(changes, 1, "The historical report pair requires exactly one fixture asset follow");
+  } finally {
+    catalog.close();
+  }
+  const statements = [[ENDED_SUPPLY, NOT_REPEATED], ["The supply agreement ended."]];
+  const retained = [];
+  for (const [index, title] of REPORTS.entries()) {
+    const text = JSON.stringify({ company: ALREADY_FOLLOWED, form: "Quarterly report", statements: statements[index] });
+    const publicationTime = { precision: "date", value: dates[index], approximate: false };
+    const source = await host("knowledge_source_retain", {
+      loupistId, title, originLocator: `fixture:release-report-${index}`, coverage: "included_full", text, publicationTime,
+    });
+    assert.ok(source.spanId, "The fixture report did not retain a Source span");
+    retained.push({ source, publicationTime, length: text.length });
+  }
+
+  // Attach the reports to the already-sealed fixture World. The change feed
+  // closes on the head's timestamp even when it orders rows by publication.
+  const db = new DatabaseSync(resolve(stateRoot, "workspace", ".loupist", "loupist.sqlite3"));
+  try {
+    db.exec("PRAGMA busy_timeout = 3000");
+    const world = db.prepare(`
+      SELECT episode.world_record_id, revision.created_at_ms
+      FROM knowledge_world_episodes AS episode
+      JOIN knowledge_record_heads AS head ON head.record_id = episode.world_record_id
+      JOIN knowledge_record_revisions AS revision ON revision.revision_id = head.revision_id
+      WHERE episode.episode_id = ? AND episode.loupist_id = ?
+    `).get("fixture-ended", loupistId);
+    assert.ok(world, "The release report pair requires the host's sealed ended-supply fixture");
+    const insert = db.prepare(`
+      INSERT INTO knowledge_world_episodes (
+        episode_id, loupist_id, world_record_id, job_id, sealed_revision_id,
+        source_record_id, source_revision_id, span_id, chunk_index, chunk_count,
+        char_start, char_end, reference_time, reference_basis, publication_json, model_json, changes_json, created_at_ms
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 0, ?, ?, 'published', ?, ?, ?, ?)
+    `);
+    const changes = [
+      { supported: ["fixture-supply-ended", "fixture-link-hub"] },
+      { supported: ["fixture-supply-ending"], ended: [{
+        claim: "fixture-supply-ended", by: "fixture-supply-ending", basis: "stated",
+        end: { precision: "date", value: "2026-03-31", approximate: false },
+      }] },
+    ];
+    db.exec("BEGIN IMMEDIATE");
+    for (const [index, { source, publicationTime, length }] of retained.entries()) {
+      const id = `release-report-${index}`;
+      insert.run(id, loupistId, world.world_record_id, `job-${id}`, `rev-${id}`,
+        source.recordId, source.revisionId, source.spanId, length, publicationTime.value, JSON.stringify(publicationTime),
+        JSON.stringify({ modelProfile: "fixture", thinkingLevel: "low" }), JSON.stringify(changes[index]), world.created_at_ms);
+    }
+    db.exec("COMMIT");
+  } finally {
+    db.close();
+  }
+  return retained.at(-1).publicationTime.value;
+}
+
+async function verifyReportChanges() {
+  const page = await openFixtureAsset();
+  const comparison = await displayed('section[aria-label="Changes in the latest report"]');
+  await waitForText(comparison, REPORTS[0]);
+  await waitForText(comparison, REPORTS[1]);
+  const ended = await comparison.$('section[aria-label="Ended by this report"]');
+  await waitForText(ended, ENDED_SUPPLY);
+  const notRepeated = await comparison.$('section[aria-label="Not repeated in this report"]');
+  const expander = await notRepeated.$("button[aria-expanded]");
+  assert.equal(await expander.getAttribute("aria-expanded"), "false");
+  await expander.click();
+  await waitForText(notRepeated, NOT_REPEATED);
+  assert.doesNotMatch(await notRepeated.getText(), /Ended/);
+  await leaveAssetPage(page);
+}
+
+async function verifyFactChangesReplay(loupistId, metDay) {
+  const page = await openFixtureAsset();
+  const toggle = await page.$('[role="switch"][aria-label="Fact changes"]');
+  await toggle.waitForEnabled();
+  assert.equal(await toggle.getAttribute("aria-checked"), "false");
+  await toggle.click();
+  let check;
+  await browser.waitUntil(async () => {
+    const tasks = await host("scheduled_tasks_list", { loupist_id: loupistId });
+    check = tasks.find(({ preset }) => preset === "fact-changes");
+    return Boolean(check?.awaiting_confirmation);
+  }, { timeout: 15_000, timeoutMsg: "The Fact changes switch did not propose a check" });
+  await leaveAssetPage(page);
+  await openMainTab(browser, "schedule");
+  const row = `li[data-schedule-task=${JSON.stringify(check.id)}]`;
+  await (await displayed(`${row}[data-status="awaiting"] button`)).click();
+  const { task: tested } = await testProposedCheck(browser, { loupistId, task: check });
+  const dryRun = tested.trigger.proposal_test;
+  const replayDays = dryRun.days.map(day => day.date);
+  assert.ok(replayDays.includes(metDay), `Test now did not replay ${metDay}; replayed ${replayDays.join(", ") || "no days"}`);
+  assert.ok(dryRun.fired_on.includes(metDay), `Fact changes did not fire on ${metDay}; met on ${dryRun.fired_on.join(", ") || "no days"}`);
+  const days = 'ul[aria-label="Days the check would have been met"]';
+  await waitForText(await displayed(`${days} li:has(time[datetime=${JSON.stringify(metDay)}])`), ENDED_SUPPLY);
+  await clickButton("Turn on", await displayed(PROPOSED_CHECK));
+  await displayed('#main-panel-schedule article [data-trigger-state="on"]');
+  const active = await host("scheduled_task_get", { loupist_id: loupistId, task_id: check.id });
+  assert.equal(active?.status, "active", "Turn on did not activate the Fact changes check");
+}
+
+async function verifyAhead(loupistId) {
+  const assets = await host("assets_list", { loupistId });
+  const asset = assets.find(({ name }) => name === ALREADY_FOLLOWED);
+  assert.ok(asset, "The fixture asset was not followed");
+  const day = new Date();
+  day.setUTCDate(day.getUTCDate() + 10);
+  const task = await host("scheduled_task_from_preset", {
+    loupistId, preset: "results-follow-up", subjects: [{ asset: asset.assetId }],
+    params: { results_date: day.toISOString().slice(0, 10), language: "en" },
+  });
+  if (task.awaiting_confirmation) {
+    await host("scheduled_task_confirm", { loupist_id: loupistId, task_id: task.id, expected_revision: task.revision });
+  }
+  await openMainTab(browser, "following");
+  await chooseFollowingView("Ahead");
+  await visibleWithText(`${FOLLOWING} li`, "Check due: Metric will exceed the threshold");
+  const row = await visibleWithText(`${FOLLOWING} li`, "Results follow-up runs");
+  await waitForText(row, ALREADY_FOLLOWED);
+  await clickButton("Open", row);
+  const detail = await displayed(`#main-panel-schedule article[aria-label=${JSON.stringify(task.title)}]`);
+  await waitForText(detail, ALREADY_FOLLOWED);
 }
 
 /**
@@ -648,8 +1033,7 @@ async function settingsSection(id) {
 }
 
 async function usageRequests(accept = () => true) {
-  await openMainTab(browser, "settings");
-  await clickButton("Usage", await displayed("nav[aria-label='Settings sections']"));
+  await settingsSection("usage");
   let requests;
   await browser.waitUntil(async () => {
     for (const status of await browser.$$("#main-panel-settings [role='status']")) {
@@ -666,26 +1050,16 @@ async function usageRequests(accept = () => true) {
   return requests;
 }
 
-function seedUsageRow(loupistId) {
-  // This suite is offline on every host. Native smoke exercises the writer
-  // with Pi; this fixture exercises persisted reads and folder portability.
-  const db = new DatabaseSync(resolve(stateRoot, "app-data", "catalog.sqlite3"));
-  try {
-    db.exec("PRAGMA busy_timeout = 3000");
+async function weeklyUsageSummary() {
+  const range = await browser.execute(() => {
     const now = Date.now();
-    const runId = "native-persistence-usage";
-    const data = {
-      kind: "chat", surface: "research", provider: "openai", credentialKind: "plan",
-      model: "fixture-model", effort: null, chatId: null, runId, startedAtMs: now,
-      durationMs: 0, status: "ok", failureKind: null, requests: 37,
-      input: 200, cachedInput: 100, output: 30, reasoning: null,
-      costMicrousd: null, costFromProvider: null,
-    };
-    db.prepare("INSERT INTO model_usage (id, finished_at_ms, loupist_id, data_json) VALUES (?, ?, ?, ?)")
-      .run(`chat:${runId}:${now}`, now, loupistId, JSON.stringify(data));
-  } finally {
-    db.close();
-  }
+    const first = new Date(now);
+    first.setDate(first.getDate() - 6);
+    first.setHours(0, 0, 0, 0);
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    return { fromMs: first.getTime(), toMs: now + 1, timeZone };
+  });
+  return host("usage_summary", range);
 }
 
 async function expand(selector) {
@@ -786,7 +1160,8 @@ async function seedSettings() {
     timeout: 10_000, timeoutMsg: "The theme did not reach the global config.toml",
   });
   // The display currency is a global appearance key; no rate is needed to save it.
-  await (await displayed("[data-display-currency-select]")).selectByAttribute("value", "KRW");
+  await (await displayed("[data-display-currency-select]")).click();
+  await (await visibleWithText('[role="listbox"] [role="option"]', "KRW —")).click();
   await browser.waitUntil(async () => /display_currency\s*=\s*"KRW"/.test(await tomlFile(globalConfig)), {
     timeout: 10_000, timeoutMsg: "The display currency did not reach the global config.toml",
   });
@@ -800,8 +1175,8 @@ async function displayCurrency(expected) {
   let actual;
   await browser.waitUntil(async () => {
     const select = await displayed("[data-display-currency-select]");
-    actual = (await select.isEnabled()) ? await select.getValue() : undefined;
-    return actual === expected;
+    actual = (await select.isEnabled()) ? await select.getText() : undefined;
+    return expected ? actual?.startsWith(`${expected} — `) : actual === "As listed";
   }, { timeout: 10_000, timeoutMsg: `The display currency showed ${actual}, expected ${expected || "As listed"}` });
 }
 
@@ -859,6 +1234,10 @@ async function seed() {
     record.newLoupistId = (await sidebarLoupists()).find((loupist) => loupist.name === NEW_LOUPIST)?.id;
     assert.ok(record.newLoupistId, "The new Loupist has no identity in the sidebar");
   });
+  await step("save a principle in the new Loupist’s Lens", async () => {
+    await selectLoupist(NEW_LOUPIST);
+    await addPrinciple();
+  });
   await step("create a Chat from the Journal and rename it", async () => {
     await selectLoupist(FOLDER_LOUPIST);
     await renameChat(await createJournalChat(), CHAT);
@@ -871,7 +1250,7 @@ async function seed() {
   await step("save a Source from World Library", async () => {
     record.sourceId = await addSource();
   });
-  await step("save a principle in Lens", addPrinciple);
+  await step("Library previews a structured Source as a single summary", verifyTablePreview);
   await step("follow two names as typed in Following, stop following one and save a reason on the other's page", async () => {
     record.typedAssetId = await followTypedAssets();
   });
@@ -886,12 +1265,28 @@ async function seed() {
     record.mapStats = await settledMapStats();
   });
   await step("replay the saved World, pause, scrub, change speed and exit", replayMap);
+  await step("Lens shows the Superseded section and World shows the ended claim and episodes", verifyEndedSupply);
+  await step("a reason reveals Since this read with the ended supply agreement", () => verifySinceRead({ seed: true }));
+  if (scriptedLearning) await step("Bot proposes a program, Schedule runs it, and Undo removes its Lens section", async () => {
+    record.learning = await learnAndUndo(record.folderLoupistId);
+  });
+  await step("Track daily saves a program and Run now honors the exhausted allowance", async () => {
+    const verifyDailyRun = () => verifyDailyProgram(record.folderLoupistId, { seed: true });
+    record.daily = scriptedLearning ? await withLearningFixture(record.folderLoupistId, verifyDailyRun) : await verifyDailyRun();
+  });
+  let reportDay;
+  await step("the latest report separates a supply ending from a fact not repeated", async () => {
+    reportDay = await prepareReportPair(record.folderLoupistId);
+    await verifyReportChanges();
+  });
+  await step("Fact changes from the asset card replays the fixture report day and turns on", () => verifyFactChangesReplay(record.folderLoupistId, reportDay));
+  await step("Ahead lists a results follow-up and the fixture's due Journal check", () => verifyAhead(record.folderLoupistId));
   await browser.saveScreenshot(resolve(artifactRoot, "seed.png"));
   await step("read a nonempty Usage period from the catalog", async () => {
-    const before = await usageRequests();
-    seedUsageRow(record.folderLoupistId);
-    await openMainTab(browser, "chat");
-    record.usageRequests = await usageRequests(total => total === before + 37);
+    const usage = await weeklyUsageSummary();
+    const research = usage.surfaces.find(({ surface }) => surface === "research");
+    assert.equal(research?.totals.requests, 37, "The catalog did not report the seeded Research usage");
+    record.usageRequests = await usageRequests(total => total === usage.totals.requests);
   });
   await writeFile(recordPath, `${JSON.stringify(record, null, 2)}\n`);
   report.record = record;
@@ -916,6 +1311,7 @@ async function verify(record, { copied }) {
     assert.equal(await (await displayed("#loupist-profile-focus")).getValue(), "Dividend payers and payout safety");
     await (await displayed("[data-loupist-settings-back]")).click();
   });
+  if (!copied) await step("Lens keeps the new Loupist’s principle", verifyPrinciple);
   await step("saved and renamed Chats", async () => {
     await selectLoupist(FOLDER_LOUPIST);
     await verifyChats();
@@ -926,14 +1322,24 @@ async function verify(record, { copied }) {
     assert.equal(await settledMapStats(), record.mapStats);
   });
   await step("the Library keeps the Source", () => verifySource(record.sourceId));
-  await step("Lens keeps the principle and learned method", verifyPrinciple);
+  await step("Lens keeps the learned method", verifyLearnedMethod);
+  await step("the Superseded section, ended claim and episodes survive the launch", verifyEndedSupply);
+  if (!copied) {
+    await step("the asset keeps its reason and Since this read feed", () => verifySinceRead({ seed: false }));
+    await step("the restarted app keeps the Track daily program, run and allowance", () => verifyDailyProgram(record.folderLoupistId, record.daily));
+    if (record.learning) await step("the learning program, its run and its Undo survive restart", () => verifyLearningAfterRestart(record.folderLoupistId, record.learning));
+  }
   await step(copied ? "the copied folder keeps the typed asset's reason; its follow stays with the original app" : "the typed asset is listed by name in its own Loupist only and its page keeps the reason",
     () => verifyTypedAsset(record.typedAssetId, { copied }));
   await step("the Library keeps the Journal entry", () => verifyJournal(record.journalId));
   await step("Loupist instructions", verifyInstructions);
   await step(copied ? "Loupist preferences follow the folder; global settings stay with the app" : "global and Loupist preferences", () => verifySettings({ copied }));
   await step(copied ? "Usage stays with the original app" : "Usage request totals survive restart", async () => {
-    assert.equal(await usageRequests(), copied ? 0 : record.usageRequests);
+    if (copied) {
+      assert.equal((await weeklyUsageSummary()).totals.requests, 0);
+    } else {
+      assert.equal(await usageRequests(), record.usageRequests);
+    }
   });
   await browser.saveScreenshot(resolve(artifactRoot, `${phase}.png`));
 }

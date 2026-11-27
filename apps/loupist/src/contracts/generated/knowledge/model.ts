@@ -22,7 +22,25 @@ export type EarlierResearch = {
   coverage: string,
 };
 
-export type EvidenceBinding = { spanId: string, role: BindingRole, attribution: string };
+export type EvidenceBinding = {
+  spanId: string,
+  role: BindingRole,
+  attribution: string,
+  /**
+   * How the cited passage's figures stood against the proposition when
+   * World published this support. Absent: no figure was checked, or the
+   * snapshot predates figure checks.
+   */
+  figureCheck?: EvidenceFigure,
+  /** The chunk of the Source this support was extracted from. Absent: unknown. */
+  passage?: PassageRange,
+};
+
+/**
+ * A stored figure check. A figure that differs is never published, and an
+ * unchecked one stores nothing.
+ */
+export type EvidenceFigure = "matched" | "rounded" | "not_found";
 
 export type GraphClaim = {
   id: string,
@@ -52,6 +70,9 @@ export type GraphEdge = {
   endpoints: Array<ClaimEndpoint>,
   status: ClaimStatus,
   claim: GraphClaim,
+  /** `true` when the claim is no longer current. Omitted while it is. */
+  ended?: boolean,
+  end?: TimePoint,
 };
 
 export type GraphNode = {
@@ -152,6 +173,9 @@ export type LaterNote = { noteId: string, chatId: string, title: string, updated
 
 export type LensUseStatus = "considered" | "applied" | "adapted" | "rejected";
 
+/** A chunk of a Source's text, in Unicode scalar values from its start. */
+export type PassageRange = { chunkIndex: number, charStart: number, charEnd: number };
+
 /**
  * Where a user-provided capture (`SourceClass::UserProvided`) came from: the
  * Chat message its bytes were copied from verbatim, when that message was
@@ -202,6 +226,12 @@ export type WorkingNote = {
   recordedAtMs: number,
 };
 
+/**
+ * What a read of World under an as-of date left out: relationships with no
+ * evidence published by then, and Sources World cites with no evidence that was.
+ */
+export type WorldAsOfReport = { facts: number, sources: number };
+
 export type WorldGraphQuery = {
   loupistId: string,
   recordId: string,
@@ -215,10 +245,13 @@ export type WorldGraphQuery = {
   statuses?: Array<ClaimStatus>,
   publicationTimes?: Array<string>,
   /**
-   * An as-of cutoff (`YYYY-MM-DD`): only relationships published by then,
-   * and only the names they connect, reduced to name and kind.
+   * World as of a calendar day (`YYYY-MM-DD`, today or earlier): only
+   * relationships published by then, as they stood then, and only the names
+   * they connect, reduced to name and kind. The response's `asOfReport`
+   * counts what was left out. The chat as-of reads and World's As of
+   * control share this one cutoff.
    */
-  publishedBy?: string,
+  asOf?: string,
   cursor?: string | null,
   nodeLimit?: number | null,
   edgeLimit?: number | null,

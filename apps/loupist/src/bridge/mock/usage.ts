@@ -1,6 +1,6 @@
 import type { UsageSummary, UsageSummaryRequest, UsageTotals } from "../../contracts/generated";
 
-export function mockUsageSummary({ fromMs, toMs, timeZone }: UsageSummaryRequest, loupist?: { id: string; name: string }): UsageSummary {
+export function mockUsageSummary({ fromMs, toMs, timeZone }: UsageSummaryRequest, loupist?: { id: string; name: string }, learningRunning = false): UsageSummary {
   const chat: UsageTotals = { runs: 2, unknownRuns: 0, requests: 5, inputTokens: 3200, cachedInputTokens: 4800, outputTokens: 700, costEstimate: null };
   const world: UsageTotals = { runs: 1, unknownRuns: 0, requests: 2, inputTokens: 5600, cachedInputTokens: 0, outputTokens: 1100, costEstimate: { microusd: 18300, fromProvider: true } };
   const date = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(toMs - 1);
@@ -18,5 +18,12 @@ export function mockUsageSummary({ fromMs, toMs, timeZone }: UsageSummaryRequest
     surfaces: [{ surface: "research", totals: chat }, { surface: "world", totals: world }],
     loupists: [{ loupistId: loupist?.id ?? null, name: loupist?.name ?? null, totals }],
     programs: [],
+    allowance: {
+      background: { limit: 400, used: world.requests, reserved: 0, state: "ok" },
+      worldChat: { limit: 300, used: 0, reserved: 0, state: "ok" },
+      worldShare: { limit: 200, used: world.requests },
+      learningRunning,
+      providerHolds: {},
+    },
   };
 }

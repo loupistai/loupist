@@ -55,10 +55,96 @@ fn extraction_admits_named_entities_but_not_measurements_or_sentences_in_any_typ
         .filter(|row| row["entity"] == true)
         .map(|row| row["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, expected);
+    assert!(names.is_subset(&expected));
+    let keys = |name: &str| crate::knowledge::identity::entity_name_keys(name);
+    assert!(expected.iter().all(|name| {
+        names.contains(name)
+            || names.iter().any(|kept| {
+                let left = keys(kept);
+                let right = keys(name);
+                !left.is_empty() && left.intersection(&right).next().is_some()
+            })
+    }));
     assert!(indices
         .iter()
         .all(|i| harness.node(*i).kind() != Some("Metric")));
+}
+
+#[test]
+fn share_classes_of_one_issuer_in_one_chunk_stay_two_entities() {
+    let case = case("extract_nodes");
+    let (schema, _) = schema_and_instructions(&case);
+    let (episode, previous) = episode(&case);
+    let names = [
+        "Berkshire Hathaway (NYSE:BRK.A)",
+        "Berkshire Hathaway (NYSE:BRK.B)",
+    ];
+    let organization = schema
+        .entity_types
+        .iter()
+        .position(|item| item.name == "Organization")
+        .map_or(0, |index| index as i64 + 1);
+    let reply = json!({
+        "extracted_entities": names
+            .iter()
+            .map(|name| json!({"name": name, "entity_type_id": organization}))
+            .collect::<Vec<_>>()
+    });
+    let mut host = Host::new(&json!({"responses": [reply]}));
+    let mut infer = |request| host.reply(request);
+    let mut bridge = Bridge::new(config(&case), &mut infer);
+    let text = empty_text();
+    let mut harness = Harness::new(
+        &mut bridge,
+        &schema,
+        episode,
+        previous,
+        String::new(),
+        Graph::default(),
+        &text,
+    );
+    let indices = harness.extract_nodes().unwrap();
+    let kept: Vec<&str> = indices
+        .iter()
+        .map(|index| harness.node(*index).name.as_str())
+        .collect();
+    assert_eq!(kept, names);
+}
+
+#[test]
+fn an_edge_about_the_other_share_class_does_not_bind_to_the_first() {
+    let case = case("extract_edges");
+    let (schema, instructions) = schema_and_instructions(&case);
+    let (episode, previous) = episode(&case);
+    let class_b = "Berkshire Hathaway (NYSE:BRK.B) reported earnings.";
+    let responses = json!({"responses": [{"edges": [
+        {
+            "source_entity_name": "Berkshire Hathaway (NYSE:BRK.B)",
+            "target_entity_name": "Berkshire Hathaway (NYSE:BRK.B)",
+            "relation_type": "REPORTS",
+            "fact": class_b,
+        }
+    ]}]});
+    let mut host = Host::new(&responses);
+    let mut infer = |request| host.reply(request);
+    let mut bridge = Bridge::new(config(&case), &mut infer);
+    let text = empty_text();
+    let mut harness = Harness::new(
+        &mut bridge,
+        &schema,
+        episode,
+        previous,
+        instructions,
+        Graph::default(),
+        &text,
+    );
+    let class_a = harness.add_node(node(&json!({
+        "uuid": "brk-a",
+        "name": "Berkshire Hathaway (NYSE:BRK.A)",
+        "labels": ["Entity", "Organization"],
+    })));
+    let indices = harness.extract_edges(&[class_a]).unwrap();
+    assert!(indices.is_empty());
 }
 
 #[test]

@@ -1,0 +1,294 @@
+{
+  "schema": "loupist-agent-fixture/1",
+  "suite": "change-feed",
+  "description": "Runner seeds of change-feed-v1. `sources` and `scripts` are shared by id: a unit's seed lists Source ids and its publications take the script of their Source. Each scenario of the suite carries the same seeds inline; suites.test.mjs proves they are equal.",
+  "sources": {
+    "alderquay-q2": {
+      "title": "Alderquay Bearings Q2 2026 report",
+      "text": "Officers: Lila Trent is chief financial officer. Supply: Seabright Metals has supplied bearing steel under a contract effective June 1, 2026. Service: Our bearing housings carry a 24-month warranty. Risk factors: Port delays may interrupt inbound shipments.\n",
+      "origin": "https://fictional.example/change-feed/alderquay-q2",
+      "company": "Alderquay Bearings",
+      "form": "quarterly report",
+      "publication_time": "2026-08-06",
+      "language": "en"
+    },
+    "alderquay-q3": {
+      "title": "Alderquay Bearings Q3 2026 report",
+      "text": "Officers: Micah Reed is chief financial officer, succeeding Lila Trent. Supply: On September 23, 2026, the bearing-steel supply agreement with Seabright Metals ended. Risk factors: The heat-treatment ramp could raise quality rejects until operators complete qualification.\n",
+      "origin": "https://fictional.example/change-feed/alderquay-q3",
+      "company": "Alderquay Bearings",
+      "form": "quarterly report",
+      "publication_time": "2026-10-22",
+      "language": "en"
+    },
+    "alderquay-east-quay": {
+      "title": "Alderquay Bearings East Quay commissioning notice",
+      "text": "On October 23, 2026, Alderquay Bearings commissioned its East Quay automated inspection line.\n",
+      "origin": "https://fictional.example/change-feed/alderquay-east-quay",
+      "company": "Alderquay Bearings",
+      "form": "operating notice",
+      "publication_time": "2026-10-23",
+      "language": "en"
+    }
+  },
+  "scripts": {
+    "alderquay-q2": {
+      "entities": [
+        {
+          "name": "Alderquay Bearings",
+          "type": "Organization",
+          "codes": []
+        },
+        {
+          "name": "Lila Trent",
+          "type": "Person",
+          "codes": []
+        },
+        {
+          "name": "Seabright Metals",
+          "type": "Organization",
+          "codes": []
+        },
+        {
+          "name": "Port delays",
+          "type": "Event",
+          "codes": []
+        }
+      ],
+      "facts": [
+        {
+          "id": "q2-cfo",
+          "subject": "Lila Trent",
+          "object": "Alderquay Bearings",
+          "relation": "LEADS",
+          "text": "Lila Trent is chief financial officer of Alderquay Bearings.",
+          "valid_at": null,
+          "invalid_at": null
+        },
+        {
+          "id": "q2-supply",
+          "subject": "Seabright Metals",
+          "object": "Alderquay Bearings",
+          "relation": "SUPPLIES",
+          "text": "Seabright Metals has supplied bearing steel to Alderquay Bearings under a contract effective June 1, 2026.",
+          "valid_at": "2026-06-01",
+          "invalid_at": null
+        },
+        {
+          "id": "q2-warranty",
+          "subject": "Alderquay Bearings",
+          "object": "Alderquay Bearings",
+          "relation": "REPORTS",
+          "text": "Alderquay Bearings' bearing housings carry a 24-month warranty.",
+          "valid_at": null,
+          "invalid_at": null
+        },
+        {
+          "id": "q2-risk-port",
+          "subject": "Port delays",
+          "object": "Alderquay Bearings",
+          "relation": "AFFECTS",
+          "text": "Port delays may interrupt Alderquay Bearings' inbound shipments.",
+          "valid_at": null,
+          "invalid_at": null
+        }
+      ],
+      "resolutions": {}
+    },
+    "alderquay-q3": {
+      "entities": [
+        {
+          "name": "Alderquay Bearings",
+          "type": "Organization",
+          "codes": []
+        },
+        {
+          "name": "Micah Reed",
+          "type": "Person",
+          "codes": []
+        },
+        {
+          "name": "Lila Trent",
+          "type": "Person",
+          "codes": []
+        },
+        {
+          "name": "Seabright Metals",
+          "type": "Organization",
+          "codes": []
+        },
+        {
+          "name": "Heat-treatment ramp",
+          "type": "Event",
+          "codes": []
+        }
+      ],
+      "facts": [
+        {
+          "id": "q3-cfo",
+          "subject": "Micah Reed",
+          "object": "Alderquay Bearings",
+          "relation": "LEADS",
+          "text": "Micah Reed is chief financial officer of Alderquay Bearings, succeeding Lila Trent.",
+          "valid_at": null,
+          "invalid_at": null
+        },
+        {
+          "id": "q3-supply-end",
+          "subject": "Seabright Metals",
+          "object": "Alderquay Bearings",
+          "relation": "SUPPLIES",
+          "text": "The bearing-steel supply agreement between Seabright Metals and Alderquay Bearings ended on September 23, 2026.",
+          "valid_at": null,
+          "invalid_at": "2026-09-23"
+        },
+        {
+          "id": "q3-risk-ramp",
+          "subject": "Heat-treatment ramp",
+          "object": "Alderquay Bearings",
+          "relation": "AFFECTS",
+          "text": "The heat-treatment ramp could raise quality rejects at Alderquay Bearings until operators complete qualification.",
+          "valid_at": null,
+          "invalid_at": null
+        }
+      ],
+      "resolutions": {
+        "q3-cfo": {
+          "contradicts": [
+            "q2-cfo"
+          ],
+          "same_assertion": [
+            "q2-cfo"
+          ]
+        },
+        "q3-supply-end": {
+          "contradicts": [
+            "q2-supply"
+          ]
+        }
+      }
+    },
+    "alderquay-east-quay": {
+      "entities": [
+        {
+          "name": "Alderquay Bearings",
+          "type": "Organization",
+          "codes": []
+        },
+        {
+          "name": "East Quay automated inspection line",
+          "type": "Technology",
+          "codes": []
+        }
+      ],
+      "facts": [
+        {
+          "id": "east-quay-line",
+          "subject": "Alderquay Bearings",
+          "object": "East Quay automated inspection line",
+          "relation": "USES",
+          "text": "Alderquay Bearings commissioned its East Quay automated inspection line on October 23, 2026.",
+          "valid_at": "2026-10-23",
+          "invalid_at": null
+        }
+      ],
+      "resolutions": {}
+    }
+  },
+  "units": {
+    "CF-001": {
+      "seed": {
+        "sources": [
+          "alderquay-q2",
+          "alderquay-q3",
+          "alderquay-east-quay"
+        ],
+        "lens_pages": [
+          {
+            "title": "Alderquay Bearings research",
+            "summary": "Research notes on Alderquay Bearings.",
+            "kind": "subject",
+            "sections": [
+              {
+                "key": "leadership",
+                "heading": "Leadership",
+                "markdown": "Lila Trent is CFO.",
+                "refs": [
+                  {
+                    "source": "alderquay-q2",
+                    "fact": "q2-cfo"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "alderquay-q2",
+            "after": "seed"
+          },
+          {
+            "source": "alderquay-q3",
+            "after": {
+              "session": "bot",
+              "turn": 0
+            }
+          },
+          {
+            "source": "alderquay-east-quay",
+            "after": {
+              "session": "bot",
+              "turn": 0
+            }
+          }
+        ]
+      }
+    },
+    "CF-002": {
+      "seed": {
+        "sources": [
+          "alderquay-q2",
+          "alderquay-q3"
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "alderquay-q2",
+            "after": "seed"
+          },
+          {
+            "source": "alderquay-q3",
+            "after": "seed"
+          }
+        ]
+      }
+    },
+    "CF-003": {
+      "seed": {
+        "sources": [
+          "alderquay-q2",
+          "alderquay-q3"
+        ]
+      },
+      "world": {
+        "mode": "scripted",
+        "publications": [
+          {
+            "source": "alderquay-q2",
+            "after": "seed"
+          },
+          {
+            "source": "alderquay-q3",
+            "after": "seed"
+          }
+        ]
+      }
+    }
+  }
+}

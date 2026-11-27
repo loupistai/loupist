@@ -80,7 +80,13 @@ export function useAppUpdate(bridge: LoupistBridge) {
     const epoch = requestEpoch.current;
     try {
       const next = await bridge.updateStatus();
-      if (!mounted.current || epoch !== requestEpoch.current) return;
+      if (!mounted.current) return;
+      // Install waits inside one call. Status read during that wait still names the work it is blocked on.
+      if (acting.current) {
+        setStatus((current) => current ? { ...current, blockers: next.blockers } : current);
+        return;
+      }
+      if (epoch !== requestEpoch.current) return;
       setStatus(current => JSON.stringify(current) === JSON.stringify(next) ? current : next);
       setStatusError(null);
       if (!next.error && !preserveActionError) setActionError(null);
@@ -169,14 +175,15 @@ export function useAppUpdate(bridge: LoupistBridge) {
   useEffect(() => { latestStatus.current = status; }, [status]);
 
   const phase = status?.phase && status.phase !== "idle" ? status.phase : actionPhase ?? "idle";
+  const waitingOnWork = (status?.blockers.length ?? 0) > 0;
   useEffect(() => {
-    const busy = phase !== "idle";
+    const busy = phase === "confirming" || phase === "downloading" || phase === "installing" || waitingOnWork;
     const interval = window.setInterval(
       () => void refreshStatus(),
       busy ? 250 : 15_000,
     );
     return () => window.clearInterval(interval);
-  }, [refreshStatus, phase]);
+  }, [refreshStatus, phase, waitingOnWork]);
 
   const errorKey = actionError ?? statusError ?? (status?.error ? statusErrorKey(status.error) : null);
   return {

@@ -1,0 +1,903 @@
+{
+  "schema": "loupist-world-suite/1",
+  "suite": "world-temporal-v4",
+  "version": 1,
+  "description": "Eighteen fictional World fixtures. The first twelve are version 3 unchanged; six add Japanese, German, Indian English and Chinese Sources, a control on numeric dates whose day and month could swap, and a restatement after an ending that the grader records without gating.",
+  "scenarios": [
+    {
+      "id": "T-CEO-DATE",
+      "title": "Chief executive replacement with a calendar date",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "ceo-date-appointed",
+              "title": "Corvane Logistics names Lena Ortiz chief executive",
+              "text": "The board of Corvane Logistics appointed Lena Ortiz chief executive officer effective January 5, 2026.\n",
+              "origin": "https://fixtures.invalid/world/temporal/ceo-date-appointed",
+              "publication_time": "2026-01-06",
+              "acquired_at": "2026-01-06T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "ceo-date-replaced",
+              "title": "Corvane Logistics names Marcus Hale chief executive",
+              "text": "The board of Corvane Logistics appointed Marcus Hale chief executive officer, replacing Lena Ortiz effective June 15, 2026.\n",
+              "origin": "https://fixtures.invalid/world/temporal/ceo-date-replaced",
+              "publication_time": "2026-06-16",
+              "acquired_at": "2026-06-16T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "pre_file": {
+        "after_step": "s1",
+        "source_id": "ceo-date-appointed",
+        "claim": {
+          "between": [
+            "^lena ortiz$",
+            "^corvane logistics$"
+          ]
+        },
+        "title": "Corvane Logistics names Lena Ortiz chief executive | research",
+        "summary": "Lena Ortiz is chief executive officer.",
+        "section": {
+          "key": "current-view",
+          "heading": "Leadership",
+          "markdown": "Lena Ortiz is chief executive officer."
+        }
+      }
+    },
+    {
+      "id": "T-GUIDE",
+      "title": "A raised forecast replaces guidance for the same fiscal period",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "guide-initial",
+              "title": "Nacreline Systems issues annual production outlook",
+              "text": "Nacreline Systems forecasts production of 14,200 units for fiscal 2026.\n",
+              "origin": "https://fixtures.invalid/world/temporal/guide-initial",
+              "publication_time": "2026-04-15",
+              "acquired_at": "2026-04-15T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "guide-raised",
+              "title": "Nacreline Systems raises annual production outlook",
+              "text": "Nacreline Systems raised its forecast for fiscal 2026 production to 16,800 units. This replaces the prior outlook.\n",
+              "origin": "https://fixtures.invalid/world/temporal/guide-raised",
+              "publication_time": "2026-07-17",
+              "acquired_at": "2026-07-17T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "pre_file": {
+        "after_step": "s1",
+        "source_id": "guide-initial",
+        "claim": {
+          "proposition": "\\b14[ ,]?200\\b"
+        },
+        "title": "Nacreline Systems issues annual production outlook | research",
+        "summary": "Forecast fiscal 2026 production is 14,200 units.",
+        "section": {
+          "key": "current-view",
+          "heading": "Production outlook",
+          "markdown": "Forecast fiscal 2026 production is 14,200 units."
+        }
+      }
+    },
+    {
+      "id": "T-RESTATE",
+      "title": "A correction replaces the same period's reported output",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "restate-original",
+              "title": "Clovewick Works Q2 output report",
+              "text": "Clovewick Works produced 2,640 pumps in the second quarter of 2026.\n",
+              "origin": "https://fixtures.invalid/world/temporal/restate-original",
+              "publication_time": "2026-07-23",
+              "acquired_at": "2026-07-23T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "restate-correction",
+              "title": "Clovewick Works corrects Q2 output",
+              "text": "Clovewick Works corrects its report for the second quarter of 2026. Corrected output was 2,460 pumps. The correction replaces the previously reported total.\n",
+              "origin": "https://fixtures.invalid/world/temporal/restate-correction",
+              "publication_time": "2026-08-03",
+              "acquired_at": "2026-08-03T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "pre_file": {
+        "after_step": "s1",
+        "source_id": "restate-original",
+        "claim": {
+          "proposition": "\\b2[ ,]?640\\b"
+        },
+        "title": "Clovewick Works Q2 output report | research",
+        "summary": "Second-quarter 2026 output was 2,640 pumps.",
+        "section": {
+          "key": "current-view",
+          "heading": "Reported output",
+          "markdown": "Second-quarter 2026 output was 2,640 pumps."
+        }
+      }
+    },
+    {
+      "id": "T-DUP",
+      "title": "Repeated CFO assertion in jan then mar then feb order",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "dup-jan",
+              "title": "Marlwyn Instruments January officers report",
+              "text": "Marlwyn Instruments reports that Priya Desai is its chief financial officer.\n",
+              "origin": "https://fixtures.invalid/world/temporal/dup-jan",
+              "publication_time": "2026-01-16",
+              "acquired_at": "2026-01-16T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "dup-mar",
+              "title": "Marlwyn Instruments March officers report",
+              "text": "Marlwyn Instruments reports that Priya Desai is its chief financial officer.\n",
+              "origin": "https://fixtures.invalid/world/temporal/dup-mar",
+              "publication_time": "2026-03-18",
+              "acquired_at": "2026-03-18T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s3",
+          "sources": [
+            {
+              "id": "dup-feb",
+              "title": "Marlwyn Instruments February officers report",
+              "text": "Marlwyn Instruments reports that Owen Bell is its chief financial officer.\n",
+              "origin": "https://fixtures.invalid/world/temporal/dup-feb",
+              "publication_time": "2026-02-13",
+              "acquired_at": "2026-02-13T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "pre_file": {
+        "after_step": "s1",
+        "source_id": "dup-jan",
+        "claim": {
+          "between": [
+            "^priya desai$",
+            "^marlwyn instruments$"
+          ]
+        },
+        "title": "Repeated CFO assertion in jan then mar then feb order | research",
+        "summary": "Priya Desai is chief financial officer.",
+        "section": {
+          "key": "current-view",
+          "heading": "Current view",
+          "markdown": "Priya Desai is chief financial officer."
+        }
+      }
+    },
+    {
+      "id": "T-DUP-MARCH-FIRST",
+      "title": "Repeated CFO assertion in mar then jan then feb order",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "dup-mar",
+              "title": "Marlwyn Instruments March officers report",
+              "text": "Marlwyn Instruments reports that Priya Desai is its chief financial officer.\n",
+              "origin": "https://fixtures.invalid/world/temporal/dup-mar",
+              "publication_time": "2026-03-18",
+              "acquired_at": "2026-03-18T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "dup-jan",
+              "title": "Marlwyn Instruments January officers report",
+              "text": "Marlwyn Instruments reports that Priya Desai is its chief financial officer.\n",
+              "origin": "https://fixtures.invalid/world/temporal/dup-jan",
+              "publication_time": "2026-01-16",
+              "acquired_at": "2026-01-16T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s3",
+          "sources": [
+            {
+              "id": "dup-feb",
+              "title": "Marlwyn Instruments February officers report",
+              "text": "Marlwyn Instruments reports that Owen Bell is its chief financial officer.\n",
+              "origin": "https://fixtures.invalid/world/temporal/dup-feb",
+              "publication_time": "2026-02-13",
+              "acquired_at": "2026-02-13T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "pre_file": {
+        "after_step": "s2",
+        "source_id": "dup-jan",
+        "claim": {
+          "between": [
+            "^priya desai$",
+            "^marlwyn instruments$"
+          ]
+        },
+        "title": "Repeated CFO assertion in mar then jan then feb order | research",
+        "summary": "Priya Desai is chief financial officer.",
+        "section": {
+          "key": "current-view",
+          "heading": "Current view",
+          "markdown": "Priya Desai is chief financial officer."
+        }
+      }
+    },
+    {
+      "id": "T-DUP-BACKFILL-JANUARY",
+      "title": "Repeated CFO assertion in mar then feb then jan order",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "dup-mar",
+              "title": "Marlwyn Instruments March officers report",
+              "text": "Marlwyn Instruments reports that Priya Desai is its chief financial officer.\n",
+              "origin": "https://fixtures.invalid/world/temporal/dup-mar",
+              "publication_time": "2026-03-18",
+              "acquired_at": "2026-03-18T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "dup-feb",
+              "title": "Marlwyn Instruments February officers report",
+              "text": "Marlwyn Instruments reports that Owen Bell is its chief financial officer.\n",
+              "origin": "https://fixtures.invalid/world/temporal/dup-feb",
+              "publication_time": "2026-02-13",
+              "acquired_at": "2026-02-13T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s3",
+          "sources": [
+            {
+              "id": "dup-jan",
+              "title": "Marlwyn Instruments January officers report",
+              "text": "Marlwyn Instruments reports that Priya Desai is its chief financial officer.\n",
+              "origin": "https://fixtures.invalid/world/temporal/dup-jan",
+              "publication_time": "2026-01-16",
+              "acquired_at": "2026-01-16T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "pre_file": {
+        "after_step": "s3",
+        "source_id": "dup-jan",
+        "claim": {
+          "between": [
+            "^priya desai$",
+            "^marlwyn instruments$"
+          ]
+        },
+        "title": "Repeated CFO assertion in mar then feb then jan order | research",
+        "summary": "Priya Desai is chief financial officer.",
+        "section": {
+          "key": "current-view",
+          "heading": "Current view",
+          "markdown": "Priya Desai is chief financial officer."
+        }
+      }
+    },
+    {
+      "id": "T-PERIOD",
+      "title": "Reported revenue for different periods coexists",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "period-q2",
+              "title": "Junewick Fibers Q2 results",
+              "text": "Junewick Fibers recorded revenue of 12 million crowns in the second quarter of 2026.\nJunewick Fibers forecasts producing 39,600 reels in fiscal 2026, which ends September 30.\n",
+              "origin": "https://fixtures.invalid/world/temporal/period-q2",
+              "publication_time": "2026-07-22",
+              "acquired_at": "2026-07-22T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "period-q3",
+              "title": "Junewick Fibers Q3 results",
+              "text": "Junewick Fibers recorded revenue of 15 million crowns in the third quarter of 2026.\nJunewick Fibers produced 41,300 reels in fiscal 2026, which ended September 30.\n",
+              "origin": "https://fixtures.invalid/world/temporal/period-q3",
+              "publication_time": "2026-10-22",
+              "acquired_at": "2026-10-22T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T-DISPUTE",
+      "title": "A denied allegation does not end a contract",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "t-dispute-contract",
+              "title": "Orion Ferry Works signs Pell Shipyards contract",
+              "text": "Orion Ferry Works, a fictional steel fabricator, supplies hull steel to Pell Shipyards under a contract that took effect on April 2, 2026 at 09:00 UTC.\n",
+              "origin": "https://fixtures.invalid/world/temporal/dispute-contract",
+              "publication_time": "2026-04-03T09:00:00Z",
+              "acquired_at": "2026-04-03T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "t-dispute-report",
+              "title": "Short-seller report on Pell Shipyards suppliers",
+              "text": "A short-seller report published on August 10, 2026 at 09:00 UTC alleges that Pell Shipyards plans to stop buying hull steel from Orion Ferry Works. Pell Shipyards denied the report and said its contract with Orion Ferry Works remains in force.\n",
+              "origin": "https://fixtures.invalid/world/temporal/dispute-report",
+              "publication_time": "2026-08-11T09:00:00Z",
+              "acquired_at": "2026-08-11T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T-SAMEDAY",
+      "title": "Two publishers disagree on the same day",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "sameday-channel",
+              "title": "Channel Desk profile of Eversilt Ceramics",
+              "text": "Channel Desk says Eversilt Ceramics operates its only distribution centre in Kestle Bay.\nEversilt Ceramics appointed Tessa Bell as board chair effective February 2, 2026.\n",
+              "origin": "https://fixtures.invalid/world/temporal/sameday-channel",
+              "publication_time": "2026-08-19",
+              "acquired_at": "2026-08-19T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "sameday-bulletin",
+              "title": "Trade Bulletin profile of Eversilt Ceramics",
+              "text": "Trade Bulletin says Eversilt Ceramics operates its only distribution centre in Amber Quay.\nEversilt Ceramics appointed Ian Crowe as board chair effective July 6, 2026, succeeding Tessa Bell.\n",
+              "origin": "https://fixtures.invalid/world/temporal/sameday-bulletin",
+              "publication_time": "2026-08-19",
+              "acquired_at": "2026-08-19T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ],
+      "pre_file": {
+        "after_step": "s1",
+        "source_id": "sameday-channel",
+        "claim": {
+          "between": [
+            "^tessa bell$",
+            "^eversilt ceramics$"
+          ]
+        },
+        "title": "Two publishers disagree on the same day | research",
+        "summary": "Tessa Bell is board chair.",
+        "section": {
+          "key": "current-view",
+          "heading": "Current view",
+          "markdown": "Tessa Bell is board chair."
+        }
+      }
+    },
+    {
+      "id": "T-RECEIVED",
+      "title": "An undated pasted note cannot end a published claim",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "received-directory",
+              "title": "Fenward Lighting officers directory",
+              "text": "The operations director of Fenward Lighting is Iris Chen.\n",
+              "origin": "https://fixtures.invalid/world/temporal/received-directory",
+              "publication_time": "2026-05-12",
+              "acquired_at": "2026-05-12T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "received-note",
+              "title": "Undated Fenward Lighting note",
+              "text": "Pasted note, author unknown. The operations director of Fenward Lighting is Noah Aziz.\n",
+              "origin": "https://fixtures.invalid/world/temporal/received-note",
+              "publication_time": null,
+              "acquired_at": "2026-10-09T12:00:00Z",
+              "authorship": "user"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T-FUTURE-END",
+      "title": "Bramblewick Gears departure notice",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "t-future-end-appointed",
+              "title": "Bramblewick Gears finance appointment",
+              "text": "Bramblewick Gears appointed Mae Salter as CFO effective January 2, 2026.\n",
+              "origin": "https://fixtures.invalid/world/temporal/t-future-end-appointed",
+              "publication_time": "2026-01-03",
+              "acquired_at": "2026-01-03T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "t-future-end-departure",
+              "title": "Bramblewick Gears finance departure notice",
+              "text": "Mae Salter will step down as CFO of Bramblewick Gears effective June 15, 2026.\n",
+              "origin": "https://fixtures.invalid/world/temporal/t-future-end-departure",
+              "publication_time": "2026-03-12",
+              "acquired_at": "2026-03-12T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ],
+          "as_of_reads": [
+            "2026-04-01",
+            "2026-06-16"
+          ]
+        }
+      ],
+      "pre_file": {
+        "after_step": "s1",
+        "source_id": "t-future-end-appointed",
+        "claim": {
+          "between": [
+            "^mae salter$",
+            "^bramblewick gears$"
+          ]
+        },
+        "title": "Bramblewick Gears departure notice | research",
+        "summary": "Mae Salter is chief financial officer.",
+        "section": {
+          "key": "current-view",
+          "heading": "Current view",
+          "markdown": "Mae Salter is chief financial officer."
+        }
+      }
+    },
+    {
+      "id": "T-LATE-NOTICE",
+      "title": "Larchstone Welders departure notice",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "t-late-notice-appointed",
+              "title": "Larchstone Welders finance appointment",
+              "text": "Larchstone Welders appointed Kai Venn as CFO effective January 2, 2026.\n",
+              "origin": "https://fixtures.invalid/world/temporal/t-late-notice-appointed",
+              "publication_time": "2026-01-03",
+              "acquired_at": "2026-01-03T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "t-late-notice-departure",
+              "title": "Larchstone Welders finance departure notice",
+              "text": "Kai Venn stepped down as CFO of Larchstone Welders effective March 15, 2026.\n",
+              "origin": "https://fixtures.invalid/world/temporal/t-late-notice-departure",
+              "publication_time": "2026-05-12",
+              "acquired_at": "2026-05-12T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ],
+          "as_of_reads": [
+            "2026-04-01",
+            "2026-05-13"
+          ]
+        }
+      ],
+      "pre_file": {
+        "after_step": "s1",
+        "source_id": "t-late-notice-appointed",
+        "claim": {
+          "between": [
+            "^kai venn$",
+            "^larchstone welders$"
+          ]
+        },
+        "title": "Larchstone Welders departure notice | research",
+        "summary": "Kai Venn is chief financial officer.",
+        "section": {
+          "key": "current-view",
+          "heading": "Current view",
+          "markdown": "Kai Venn is chief financial officer."
+        }
+      }
+    },
+    {
+      "id": "T-JP-FY",
+      "title": "Revised guidance for a fiscal year ending in March, in Japanese",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "jp-fy-initial",
+              "title": "朝凪精機 2027年3月期 連結業績予想",
+              "text": "朝凪精機株式会社は、2027年3月期の連結売上高予想を4,200億円と発表した。\n",
+              "origin": "https://fixtures.invalid/world/temporal/jp-fy-initial",
+              "publication_time": "2026-05-12",
+              "acquired_at": "2026-05-12T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "jp-fy-revised",
+              "title": "朝凪精機 2027年3月期 連結業績予想の修正",
+              "text": "朝凪精機株式会社は、2027年3月期の連結売上高予想を3,900億円に下方修正した。これは前回発表した予想に代わるものである。\n",
+              "origin": "https://fixtures.invalid/world/temporal/jp-fy-revised",
+              "publication_time": "2026-11-10",
+              "acquired_at": "2026-11-10T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T-DE-CFO",
+      "title": "Two half-year reports name different finance chiefs, in German",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "de-cfo-h1-2025",
+              "title": "Rheinfels Antriebstechnik Halbjahresfinanzbericht 2025",
+              "text": "Finanzvorstand der Rheinfels Antriebstechnik AG ist Jonas Brandt.\n",
+              "origin": "https://fixtures.invalid/world/temporal/de-cfo-h1-2025",
+              "publication_time": "2025-08-14",
+              "acquired_at": "2025-08-14T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "de-cfo-h1-2026",
+              "title": "Rheinfels Antriebstechnik Halbjahresfinanzbericht 2026",
+              "text": "Finanzvorstand der Rheinfels Antriebstechnik AG ist Miriam Stolz.\n",
+              "origin": "https://fixtures.invalid/world/temporal/de-cfo-h1-2026",
+              "publication_time": "2026-08-13",
+              "acquired_at": "2026-08-13T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T-IN-RESTATE",
+      "title": "A restated quarter in crore, beside an unchanged figure in lakh",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "in-restate-original",
+              "title": "Vindhya Agro Foods Q1 FY2026-27 results",
+              "text": "Vindhya Agro Foods Limited reported revenue from operations of ₹1,284.50 crore for the first quarter of FY2026-27. Other income for the quarter was ₹86.40 lakh.\n",
+              "origin": "https://fixtures.invalid/world/temporal/in-restate-original",
+              "publication_time": "2026-08-08",
+              "acquired_at": "2026-08-08T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "in-restate-correction",
+              "title": "Vindhya Agro Foods restates Q1 FY2026-27 revenue",
+              "text": "Vindhya Agro Foods Limited restates its revenue from operations for the first quarter of FY2026-27. Restated revenue from operations was ₹1,248.50 crore. The restatement replaces the figure reported earlier.\n",
+              "origin": "https://fixtures.invalid/world/temporal/in-restate-correction",
+              "publication_time": "2026-09-02",
+              "acquired_at": "2026-09-02T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T-ZH-PERIOD",
+      "title": "Revenue for two quarters coexists, in Chinese",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "zh-period-q1",
+              "title": "岚川新材料2026年第一季度报告",
+              "text": "岚川新材料股份有限公司2026年第一季度实现营业收入18.6亿元。\n",
+              "origin": "https://fixtures.invalid/world/temporal/zh-period-q1",
+              "publication_time": "2026-04-28",
+              "acquired_at": "2026-04-28T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "zh-period-q2",
+              "title": "岚川新材料2026年半年度报告",
+              "text": "岚川新材料股份有限公司2026年第二季度实现营业收入21.3亿元。\n",
+              "origin": "https://fixtures.invalid/world/temporal/zh-period-q2",
+              "publication_time": "2026-08-27",
+              "acquired_at": "2026-08-27T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T-AMBIGUOUS-DATE",
+      "title": "Numeric dates whose day and month could swap order nothing",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "ambiguous-register",
+              "title": "Northgate Register entry for Hollowmere Tools",
+              "text": "Northgate Register lists Dara Whitlock as finance director of Hollowmere Tools plc, appointed 03/04/2026.\n",
+              "origin": "https://fixtures.invalid/world/temporal/ambiguous-register",
+              "publication_time": "2026-06-10",
+              "acquired_at": "2026-06-10T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "ambiguous-gazette",
+              "title": "Calder Gazette entry for Hollowmere Tools",
+              "text": "Calder Gazette lists Owen Tarrant as finance director of Hollowmere Tools plc, appointed 04/03/2026.\n",
+              "origin": "https://fixtures.invalid/world/temporal/ambiguous-gazette",
+              "publication_time": "2026-06-10",
+              "acquired_at": "2026-06-10T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T-RESTATED",
+      "title": "An assertion restated after it ended",
+      "split": "temporal",
+      "condition": "temporal",
+      "world_enabled": true,
+      "seed_sources": [],
+      "steps": [
+        {
+          "id": "s1",
+          "sources": [
+            {
+              "id": "restated-march",
+              "title": "Tavish Row Brewing March officers list",
+              "text": "Tavish Row Brewing reports that Ines Calloway is its head of finance.\n",
+              "origin": "https://fixtures.invalid/world/temporal/restated-march",
+              "publication_time": "2026-03-05",
+              "acquired_at": "2026-03-05T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s2",
+          "sources": [
+            {
+              "id": "restated-may",
+              "title": "Tavish Row Brewing May officers list",
+              "text": "Tavish Row Brewing reports that Rufus Dane is its head of finance.\n",
+              "origin": "https://fixtures.invalid/world/temporal/restated-may",
+              "publication_time": "2026-05-07",
+              "acquired_at": "2026-05-07T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        },
+        {
+          "id": "s3",
+          "sources": [
+            {
+              "id": "restated-july",
+              "title": "Tavish Row Brewing July officers list",
+              "text": "Tavish Row Brewing reports that Ines Calloway is its head of finance.\n",
+              "origin": "https://fixtures.invalid/world/temporal/restated-july",
+              "publication_time": "2026-07-09",
+              "acquired_at": "2026-07-09T12:00:00Z",
+              "authorship": "publisher"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

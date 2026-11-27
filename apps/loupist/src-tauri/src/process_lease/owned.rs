@@ -125,6 +125,24 @@ impl ProcessGroups {
     }
 }
 
+/// A headless evaluation runs its trials one after another in one process,
+/// each in its own AppState. A trial ends with the app's exit path, which
+/// closes this process's admission ([`ProcessGroups::finish_shutdown`]) so
+/// that no late spawn escapes the sweep; the next trial readmits spawns.
+#[cfg(feature = "eval-harness")]
+impl ProcessGroups {
+    /// The registry every spawn of this process joins.
+    pub(crate) fn host() -> &'static Arc<ProcessGroups> {
+        &HOST_PROCESS_GROUPS
+    }
+
+    /// Admit spawns again. A group the previous sweep could not confirm stays
+    /// owned, so the next shutdown signals it again.
+    pub(crate) fn readmit(&self) {
+        self.lock().closed = false;
+    }
+}
+
 impl Groups {
     fn wait_for_exit(&mut self, deadline: Instant) -> bool {
         loop {

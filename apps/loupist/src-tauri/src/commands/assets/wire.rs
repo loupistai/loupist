@@ -1,5 +1,7 @@
 //! Asset catalog, saved price and renderer wire types.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -258,4 +260,25 @@ pub struct ThinAssetPageView {
     pub history: Vec<MoveView>,
     pub map: Option<MapCounts>,
     pub revision: i64,
+    /// Changes about this asset since its latest move. Omitted under an as-of date.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub since_read: Option<SinceReadBlock>,
+}
+
+/// Counts and at most eight rows, the same feed as `world_changes` about this asset.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct SinceReadBlock {
+    /// Counts for the whole window, not only the rows shown.
+    pub counts: BTreeMap<String, u32>,
+    #[cfg_attr(test, ts(type = "unknown[]"))]
+    pub changes: Vec<Value>,
+    #[cfg_attr(test, ts(type = "unknown[]"))]
+    pub lens: Vec<Value>,
+    pub pending: u32,
+    pub failed: u32,
+    pub capped: bool,
+    pub next: String,
 }

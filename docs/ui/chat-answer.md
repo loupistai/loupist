@@ -29,8 +29,8 @@ happen) and the **live line** (the one present-tense status, always the turn's l
 line). Nothing is inserted above what is on screen; the ledger and the live line change
 in place. This is a research session's anatomy. In Bot the same turn view draws no ledger
 and no notes: the live line is one quiet line beside the Loupist's face without glyph,
-"+N" or chips, and the settled row is the figures-checked-and-sources line, copy and
-feedback ([Home Thread](home-thread.md)). The reveal, commit gate and anchored scroll are
+"+N" or chips, and the settled row is the figures-checked-and-sources line and Copy
+([Home Thread](home-thread.md)). The reveal, commit gate and anchored scroll are
 the same on both surfaces.
 
 Segments are prose, one ledger, cards, questions and approvals. A closed commentary
@@ -140,25 +140,32 @@ Bot's working line takes the same label. A label stays at least 600 ms and a fin
 Thinking, a note or a batch, so quick steps never strobe and the gap between steps
 never flashes Thinking. The slot is the turn's only live region, spoken at
 most every 5 s, then the receipt once. When the turn settles the live line fades out and
-Sources (n), the receipt line, Copy and feedback fade in one after another in the same
+Sources (n), the receipt line and Copy fade in one after another in the same
 place. A stop is one quiet line ("Stopped · kept 6 steps" and Try again, no border); a
 failure is the bordered error block with "The steps and the text so far were kept." when
 they were. The outline and details triggers fade into the meta row, which already has
 their height; next steps and the as-of note render below the footer. The commit itself
 waits until the answer's last received word is shown, at most 400 ms after the host's
 `completed`, and changes no wrapping and no position of anything already read. On
-older answers only Copy and feedback wait for hover; Sources and a failure stay visible.
+older answers Copy waits for hover or focus. Sources and a failure stay visible.
 Response details shows input and output tokens, including measured compactions.
 It also shows the model request count when available. For an API-key account,
 the details show an estimated cost or the amount billed when the service reports
 it. Scheduled replies use the same answer card in the Schedule reader.
-While a turn is active, feedback on earlier answers and Edit explain that they
-will be available when the current reply finishes. The answer being written has
-its own completion hint. Copy, sources, receipts, figures and Activity remain
-available on finished answers throughout the run.
+While a turn is active, Edit explains that it will be available when the current
+reply finishes. Copy, sources, receipts, figures and Activity remain available on
+finished answers throughout the run. Reply in the conversation to correct an answer
+or ask your Loupist to save a principle. The host still reads feedback stored on
+older answers.
 Copy takes every piece of prose the page shows, in page order: each note that stayed on
 the page, then the answer, each as written, so indentation that makes code or a nested
 list survives. A short note that gave its place is in the timeline only and is not copied.
+Beside Copy, a settled answer's menu offers Print or save as PDF and Copy as Markdown;
+an answer still streaming offers neither. Paper is the answer as drawn now
+(`printAnswer`): charts as rendered, controls and the Sources fold left out, then its
+Sources as a numbered list with each full URL and the AI notice, under the question's
+words and the answer's date. Copy as Markdown (`answerMarkdown`) turns figure links and
+citations into numbered footnotes with each Source's title and URL, as the Chat export does.
 
 The renderer draws the reply's shell (name, time and "Starting") as soon as the
 question is sent, 120 ms after the question rises in, without waiting for the host.
@@ -285,8 +292,16 @@ off, shows no Learned part and does not ask Rust for one, and a running or faile
 shows no line.
 
 When Memory saving is skipped, the receipt gives the reason and the retained
-answer stays as written. If the host recorded staged items it discarded, the
-next line says that the answer's claimed saves were not kept. The receipt lists
+answer stays as written. A save that failed names its cause: an item Loupist
+refused (`invalid`), a store busy past the save budget (`store_busy`), data it
+could not write (`storage`) or a conversation or Memory that changed meanwhile
+(`conflict`), and its last line says what to do next. A receipt from before
+causes were recorded says only that saving failed. If the host recorded staged
+items it discarded, the next line says that whatever the answer claims it saved
+or filed was not kept. A save that kept part of its turn after refusing one item
+([commit failures](../knowledge/growth.md#when-the-commit-fails)) reads "Partly
+saved to Memory": its kept changes show as saved, each left-out item is listed
+under Not kept, and the last line says what to do. The receipt lists
 their kinds and titles under Not kept. Bot's scheduled and hand-off posts and the Schedule
 run reader show the same notice.
 

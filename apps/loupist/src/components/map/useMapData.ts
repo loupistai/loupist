@@ -1,11 +1,19 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { readKnowledgeMap } from "../../knowledge/mapRead";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { MAP_READ_NODES, readKnowledgeMap } from "../../knowledge/mapRead";
 import type { LoupistBridge, KnowledgeLocation, WorldGraphView, WorldGraphQuery } from "../../types";
 import { readWithWorldRetry } from "../../knowledge/readWithWorldRetry";
 import type { KnowledgeMap } from "../../contracts/knowledge";
 
+/**
+ * The World view's as-of date (`YYYY-MM-DD`), or undefined for today. Every World read under
+ * the provider carries it, so the overview, search, conflict highlights and both inspectors
+ * read one cutoff.
+ */
+export const WorldAsOfContext = createContext<string | undefined>(undefined);
+
 export function useMapData(bridge: LoupistBridge, loupistId: string, refreshKey: unknown, active = true, catalogRevision?: string) {
-  const [result, setResult] = useState<{ loupistId: string; map: KnowledgeMap; arrivedAt: number }>();
+  const asOf = useContext(WorldAsOfContext);
+  const [result, setResult] = useState<{ loupistId: string; asOf?: string; map: KnowledgeMap; arrivedAt: number }>();
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [retryKey, setRetryKey] = useState(0);
@@ -14,20 +22,24 @@ export function useMapData(bridge: LoupistBridge, loupistId: string, refreshKey:
     if (!active) return;
     let cancelled = false;
     setLoading(true); setError(false);
-    void readWithWorldRetry(() => readKnowledgeMap(bridge, loupistId, { fresh: true }), () => !cancelled).then((map) => {
-      if (!cancelled) setResult({ loupistId, map, arrivedAt: performance.now() });
+    // An as-of World is this view's own: other surfaces share today's read, never this one.
+    const read = () => asOf ? bridge.knowledgeMap({ loupistId, maxNodes: MAP_READ_NODES, asOf }) : readKnowledgeMap(bridge, loupistId, { fresh: true });
+    void readWithWorldRetry(read, () => !cancelled).then((map) => {
+      if (!cancelled) setResult({ loupistId, asOf, map, arrivedAt: performance.now() });
     }).catch(() => { if (!cancelled) setError(true); }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [bridge, loupistId, refreshKey, retryKey, active, catalogRevision]);
-  return { arrivedAt: result?.loupistId === loupistId ? result.arrivedAt : undefined, map: result?.loupistId === loupistId ? result.map : undefined, loading, error, retry };
+  }, [bridge, loupistId, refreshKey, retryKey, active, catalogRevision, asOf]);
+  const current = result?.loupistId === loupistId && result.asOf === asOf ? result : undefined;
+  return { arrivedAt: current?.arrivedAt, map: current?.map, loading, error, retry };
 }
 
-type WorldRead = Partial<Pick<WorldGraphQuery, "centerNodeId" | "centerClaimId" | "search" | "statuses" | "nodeLimit" | "edgeLimit">>;
+type WorldRead = Partial<Pick<WorldGraphQuery, "centerNodeId" | "centerClaimId" | "search" | "statuses" | "nodeLimit" | "edgeLimit" | "asOf">>;
 
 /** Live first-page reads. A World page applies the results when its overview has caught up. */
 export function useWorldReads(bridge: LoupistBridge, location: KnowledgeLocation, reads: WorldRead[], advance?: () => void) {
   const { loupistId, recordId, revisionId } = location;
-  const queryKey = JSON.stringify(reads);
+  const asOf = useContext(WorldAsOfContext);
+  const queryKey = JSON.stringify(asOf ? reads.map(read => ({ ...read, asOf })) : reads);
   const key = JSON.stringify([loupistId, recordId, queryKey, revisionId]);
   const [result, setResult] = useState<{ key: string; graphs: WorldGraphView[] }>();
   const [errorKey, setErrorKey] = useState<string>();
