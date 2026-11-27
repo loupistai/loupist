@@ -561,3 +561,30 @@ export function scrub(text) {
     .replace(/\beyJ[A-Za-z0-9_\-.]{12,}\b/g, "[redacted]")
     .replace(/Bearer\s+\S+/gi, "Bearer [redacted]");
 }
+
+/** The check proposal card open in Schedule; it re-renders when its dry run is saved. */
+export const PROPOSED_CHECK = '#main-panel-schedule [data-trigger-state="proposed"]';
+
+/**
+ * Test now on the check proposal open in Schedule, then the task with its saved dry run.
+ * The dry run replays the last 20 weekdays and has no host deadline (50 to 140 s on a
+ * busy Mac). It ends when the host saves it or the card reports a failure; `hang` only
+ * catches a hang. Find the card again afterwards: the save re-renders it.
+ */
+export async function testProposedCheck(browser, { loupistId, task, hang = 300_000 }) {
+  const card = await browser.$(PROPOSED_CHECK);
+  await card.waitForDisplayed({ timeout: 20_000, timeoutMsg: "No check proposal is open in Schedule" });
+  await (await card.$("button=Test now")).click();
+  const started = Date.now();
+  const failure = () => browser.execute((selector) => document.querySelector(`${selector} [role="alert"]`)?.textContent ?? "", PROPOSED_CHECK);
+  let tested;
+  let refused = "";
+  await browser.waitUntil(async () => {
+    tested = await browser.execute((request) => window.__TAURI_INTERNALS__.invoke("scheduled_task_get", { request }),
+      { loupist_id: loupistId, task_id: task.id });
+    refused = await failure();
+    return Boolean(refused) || (tested?.revision > task.revision && Boolean(tested.trigger?.proposal_test));
+  }, { timeout: hang, interval: 500, timeoutMsg: `Test now never returned (${hang} ms)` });
+  if (!tested?.trigger?.proposal_test) throw new Error(`Test now failed after ${Date.now() - started} ms: ${refused}`);
+  return { task: tested, ms: Date.now() - started };
+}

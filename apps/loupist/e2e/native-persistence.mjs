@@ -37,10 +37,12 @@ import {
   openMainTab,
   openMapLibrary,
   preferEnglish,
+  PROPOSED_CHECK,
   readVisibleMapStats,
   scrub,
   selectedLoupistTitle,
   switcherLoupists,
+  testProposedCheck,
   waitForLoupistSwitcherClosed,
   waitForRenderedButton,
   waitForShell,
@@ -835,20 +837,14 @@ async function verifyFactChangesReplay(loupistId, metDay) {
   await openMainTab(browser, "schedule");
   const row = `li[data-schedule-task=${JSON.stringify(check.id)}]`;
   await (await displayed(`${row}[data-status="awaiting"] button`)).click();
-  const review = await displayed('[data-trigger-state="proposed"]');
-  await clickButton("Test now", review);
-  let dryRun;
-  await browser.waitUntil(async () => {
-    const task = await host("scheduled_task_get", { loupist_id: loupistId, task_id: check.id });
-    dryRun = task?.trigger?.proposal_test;
-    return task?.revision > check.revision && Boolean(dryRun);
-  }, { timeout: 90_000, timeoutMsg: "Test now did not save a Fact changes replay" });
+  const { task: tested } = await testProposedCheck(browser, { loupistId, task: check });
+  const dryRun = tested.trigger.proposal_test;
   const replayDays = dryRun.days.map(day => day.date);
   assert.ok(replayDays.includes(metDay), `Test now did not replay ${metDay}; replayed ${replayDays.join(", ") || "no days"}`);
   assert.ok(dryRun.fired_on.includes(metDay), `Fact changes did not fire on ${metDay}; met on ${dryRun.fired_on.join(", ") || "no days"}`);
   const days = 'ul[aria-label="Days the check would have been met"]';
   await waitForText(await displayed(`${days} li:has(time[datetime=${JSON.stringify(metDay)}])`), ENDED_SUPPLY);
-  await clickButton("Turn on", review);
+  await clickButton("Turn on", await displayed(PROPOSED_CHECK));
   await displayed('#main-panel-schedule article [data-trigger-state="on"]');
   const active = await host("scheduled_task_get", { loupist_id: loupistId, task_id: check.id });
   assert.equal(active?.status, "active", "Turn on did not activate the Fact changes check");
